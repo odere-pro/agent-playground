@@ -78,6 +78,6 @@ Walking skeleton:
 ## Links
 
 - Plan: [000-plan.md](000-plan.md) · Next: [PoC-2](002-PoC-2-two-engines-one-contract.md)
-- Decision: [ADR-001](../adr/001-chassis-delivery-model.md)
+- Decisions: [ADR-001](../adr/001-chassis-delivery-model.md), [ADR-002](../adr/002-template-a2a-server-placement.md) (where the template A2A server lives)
 - Backlog issues this previews: [007 H-1](../issues/007-H-1-harness-library-ports-envelope.md), [009 CH-1](../issues/009-CH-1-engine-connectors-a2a.md) (the template A2A server and `inprocess` only), [015 H-8](../issues/015-H-8-testing-kit.md), [010 H-12](../issues/010-H-12-config-loader.md) (`spec.adapters` only), [011 H-2](../issues/011-H-2-inbound-adapters.md) (native only), [012 H-3](../issues/012-H-3-model-port.md), [002 G-1](../issues/002-G-1-litellm-router.md), [003 G-1b](../issues/003-G-1b-named-model-routes.md), [004 G-2](../issues/004-G-2-token-cost-counting.md)
 - Epic: [F.1](../slm-agent-platform-epic-v3.md#f1), [F.2](../slm-agent-platform-epic-v3.md#f2), [G.1](../slm-agent-platform-epic-v3.md#g1)

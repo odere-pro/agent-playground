@@ -44,7 +44,7 @@ A2A is the one contract to workloads. There is no local API of our own, no SDK, 
 
 New chassis issues from the ADR:
 
-- [009 CH-1](009-CH-1-engine-connectors-a2a.md): the `inprocess` and `sidecar` connectors, and the template A2A server that wraps `handle`.
+- [009 CH-1](009-CH-1-engine-connectors-a2a.md): the `inprocess` and `sidecar` connectors, and the template A2A server that wraps `handle`. Where that server lives is decided in [ADR-002](../adr/002-template-a2a-server-placement.md).
 - [013 CH-2](013-CH-2-outbound-model-proxy.md): the outbound model proxy. The tool proxy is part of [054 H-16](054-H-16-tool-port.md).
 - [024 CH-3](024-CH-3-helm-library-chart.md): the shared Helm library chart that adds the chassis container.
 - [026 CH-4](026-CH-4-chassis-only-credentials-egress.md): chassis-only credentials and default-deny egress (hard requirement 1).

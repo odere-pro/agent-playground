@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 from chassis.core.envelope import Context, Request
-from chassis.core.events import End, Error, Start, parse_event
+from chassis.core.events import End, Error, Metrics, Start, parse_event
 from chassis.ports.engine import LANES, EngineConnector
 
 from chassis_contracts.helpers import make_context, make_request
@@ -49,6 +49,21 @@ class EngineConnectorContract:
         async for event in engine.run(run_request, context):
             wire = event.model_dump(mode="json")
             assert parse_event(wire) == event
+
+    async def test_metrics_keep_their_integers(
+        self, engine: EngineConnector, run_request: Request, context: Context
+    ) -> None:
+        """A lane may carry numbers as doubles (protobuf `Struct`); token counts come back as
+        `int`. Skips, rather than passing for nothing, when the binding emits no `metrics`.
+        """
+        seen = False
+        async for event in engine.run(run_request, context):
+            if isinstance(event, Metrics):
+                seen = True
+                assert type(event.input_tokens) is int and type(event.output_tokens) is int
+                assert type(event.attempt) is int
+        if not seen:
+            pytest.skip("this binding emits no metrics")
 
     async def test_cancel_is_clean(
         self, engine: EngineConnector, run_request: Request, context: Context

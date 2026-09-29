@@ -1,0 +1,98 @@
+# PoC-1 Compose stack, `fake` variant (the default): the chassis, the LiteLLM router, and the
+# scripted fake model server. Starts with an empty `.env` and no internet once the images exist.
+#   docker compose up -d --wait
+# Real models: add docker-compose.local.yaml (see README.md). Rules: SECURITY.md.
+#
+# Images are pinned by digest. Bump on purpose, in its own commit, with the output of
+#   docker buildx imagetools inspect <image:tag>
+# in the PR (SECURITY.md, section 2).
+
+name: poc01
+
+services:
+  fake-model-server:
+    # Scripted OpenAI-compatible server (packages/fake-model-server). No ports, no keys.
+    build:
+      context: ../..
+      dockerfile: packages/fake-model-server/Dockerfile
+    image: agent-platform/fake-model-server:poc01
+    volumes:
+      - ../../packages/fake-model-server/scripts/example.yaml:/app/scripts/example.yaml:ro
+    command: ["--script", "/app/scripts/example.yaml"]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/health', timeout=2).status == 200 else 1)"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  litellm:
+    # LiteLLM proxy 1.103.0 (after the malicious 1.82.7 and 1.82.8; reuse analysis, watch-outs).
+    # Tag `v1.103.0` resolved on 2026-09-29 (same digest as `main-stable` that day). Verify against
+    # https://docs.litellm.ai/blog/security-update-march-2026 before a bump.
+    image: ghcr.io/berriai/litellm:v1.103.0@sha256:bd089afdcd35b894b14a93f9743cdc8b591f82da1a38dd43a010a7b0c9de5fd7
+    command: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
+    volumes:
+      - ./litellm/config.yaml:/etc/litellm/config.yaml:ro
+      - ./litellm/token_log.py:/etc/litellm/token_log.py:ro
+    environment:
+      # No key here on purpose: the fake variant runs LiteLLM open on 127.0.0.1, and LiteLLM
+      # 1.103.0 treats an empty `LITELLM_MASTER_KEY` env as "auth on" (verified 2026-09-29).
+      # docker-compose.local.yaml adds LITELLM_MASTER_KEY and OPENAI_API_KEY, to this service only.
+      LITELLM_LOG: INFO
+    ports:
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      fake-model-server:
+        condition: service_healthy
+    healthcheck:
+      # No curl in the LiteLLM image (verified 2026-09-29); python is at /app/.venv/bin.
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=3).status == 200 else 1)"
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+
+  chassis:
+    # Built from the repo root with packages/chassis/Dockerfile. Owns the public port.
+    build:
+      context: ../..
+      dockerfile: packages/chassis/Dockerfile
+    image: agent-platform/chassis:poc01
+    volumes:
+      - ../../packages/chassis/configs/local.yaml:/etc/chassis/config.yaml:ro
+    environment:
+      # The chassis is the only service that holds a key to the router (ADR-001 hard requirement 1).
+      LITELLM_BASE_URL: http://litellm:4000/v1
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-}
+      # PoC-1: the workload runs in the chassis process and calls the chassis's own model proxy;
+      # PoC-2 moves it to the sidecar.
+      CHASSIS_MODEL_URL: http://127.0.0.1:8080/v1
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      litellm:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).status == 200 else 1)"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+# One internal network, the project default. No `network_mode: host` anywhere.
+networks:
+  default:
+    name: poc01
