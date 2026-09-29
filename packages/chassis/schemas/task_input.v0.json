@@ -1,0 +1,25 @@
+{
+  "additionalProperties": false,
+  "description": "What the caller asks for. `text` for transformers; `data` for structured input.",
+  "properties": {
+    "data": {
+      "additionalProperties": true,
+      "title": "Data",
+      "type": "object"
+    },
+    "text": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Text"
+    }
+  },
+  "title": "TaskInput",
+  "type": "object"
+}

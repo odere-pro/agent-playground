@@ -1,0 +1,54 @@
+flowchart TB
+  subgraph CLIENT["CLIENT"]
+    direction LR
+    APP["Apps and services"]
+    MCPC["MCP clients (e.g. Claude)"]
+    A2AC["A2A agents"]
+    EVP["Event producers<br/>other systems"]
+  end
+
+  subgraph AGENT["AGENT (abstraction): every agent runs behind the service chassis"]
+    BROKER["Event broker, CloudEvents<br/>NATS JetStream or Kafka"]
+    IFACE["Service chassis, in front of every agent<br/>standard interface: REST (OpenAPI 3.1), OpenAI and Anthropic formats, MCP, A2A, events (AsyncAPI)<br/>pipeline, engine connector, model and tool proxies; holds each service's scoped keys"]
+    ORCH["Orchestrator agents<br/>route, plan, run workflows<br/>run state kept outside"]
+    STATELESS["Stateless agents<br/>transformer, evaluator, tool agent<br/>workload next to its chassis (sidecar lane)"]
+    REMOTE["Remote workloads (remote lane)<br/>untrusted code in sandboxed pods,<br/>managed runtimes (AgentCore, Vertex AI)"]
+    DATAAG["Data agents<br/>recorder, golden set"]
+    FACTORY["Agent factory<br/>builds every agent from<br/>template + config"]
+    CFGS[("Config store")]
+    REG["Service registry<br/>also the AI system inventory"]
+    TOOLS["MCP gateway, then tools<br/>MCP servers, APIs"]
+    DATA[("Data<br/>Postgres, lakeFS, audit log")]
+    OBS["Observability backend<br/>every agent sends logs, metrics, traces"]
+  end
+
+  subgraph MODELS["MODELS"]
+    ROUTER["LLM router<br/>one scoped key per service"]
+    BIG["Big models<br/>Claude, Gemini, OpenAI, any"]
+    SLM["SLMs on vLLM"]
+    TRAIN["Training loop<br/>Unsloth, MLflow"]
+  end
+
+  APP --> IFACE
+  MCPC --> IFACE
+  A2AC --> IFACE
+  EVP --> BROKER
+  BROKER -- "event triggers" --> IFACE
+  IFACE -- "A2A" --> ORCH
+  IFACE -- "A2A on localhost" --> STATELESS
+  IFACE -- "A2A, sandboxed or managed" --> REMOTE
+  ORCH -- "same interface" --> STATELESS
+  CFGS -- "config" --> FACTORY
+  ORCH -- "find agents, tools" --> REG
+  STATELESS -- "register" --> REG
+  STATELESS -- "allow-listed tool calls,<br/>through the chassis" --> TOOLS
+  STATELESS -. "result events via broker" .-> DATAAG
+  ORCH -. "run events via broker" .-> DATAAG
+  DATAAG -- "records, golden sets, audit log" --> DATA
+  ORCH -- "run state, memory" --> DATA
+  ORCH -- "model calls, through the chassis" --> ROUTER
+  STATELESS -- "model calls, through the chassis" --> ROUTER
+  ROUTER --> BIG
+  ROUTER --> SLM
+  DATA -- "golden sets" --> TRAIN
+  TRAIN -- "promote model" --> SLM

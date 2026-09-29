@@ -1,0 +1,14 @@
+# The first rule whose `match` is in the last user message wins. A rule with no `match` catches all.
+model: fake-model
+rules:
+  - match: "glossary"
+    reply: ""
+    tool_call:
+      name: glossary_lookup
+      arguments: { term: "SLM" }
+  - match: "fail"
+    error: { status: 500, message: "scripted failure" }
+  - match: "simplify"
+    reply: "Plain words. Short sentences. Same facts."
+    usage: { prompt_tokens: 42, completion_tokens: 9 }
+default_reply: "ok"

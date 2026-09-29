@@ -1,0 +1,54 @@
+flowchart TB
+  CLIENT["Client or event<br/>app, MCP client, A2A agent, orchestrator, event producer"]
+
+  subgraph POD["STATELESS AGENT POD (transformer, evaluator, or tool agent): two containers, one network"]
+    subgraph CH["Chassis container, inbound side: the same image for every service"]
+      IN["Inbound adapters, one OpenAPI 3.1 spec<br/>REST /v1/run, OpenAI format, Anthropic format, MCP tools, A2A (optional)<br/>event consumer (CloudEvents, AsyncAPI), declared service operations"]
+      subgraph H["Pipeline (the epic's harness)"]
+        direction LR
+        SEC["Auth, limits, PII redaction,<br/>AI-generated marking"]
+        CFGL["Config loader"]
+        IDEM["Idempotency<br/>key check, optional cache"]
+        GATE["Schema check, evaluator gate,<br/>retry, fallback, budget"]
+        OBSM["Observability<br/>logs, metrics, traces"]
+      end
+      CONN["Engine connector<br/>sidecar: A2A on localhost (default)<br/>remote: A2A to another pod or runtime<br/>inprocess: tests and local runs only"]
+    end
+    subgraph WL["Workload container: the service's own code, any language, no keys"]
+      A2AS["A2A server<br/>localhost only"]
+      CORE["handle(input, ctx): business logic<br/>no local state: same input + same config version = same output<br/>framework events mapped to the chassis event schema"]
+    end
+    subgraph OUT["Chassis container, outbound side: proxies and ports, and only the chassis holds credentials"]
+      direction LR
+      MP["Model proxy<br/>OpenAI and Anthropic formats"]
+      TP["Tool proxy<br/>MCP"]
+      EP["Evaluator port"]
+      EV["Event port"]
+    end
+  end
+
+  REMOTE["Remote workload<br/>sandboxed pod (gVisor, egress denied)<br/>or managed runtime"]
+  CFGS[("Config store<br/>agent config")]
+  KV[("Valkey<br/>idempotency cache")]
+  REG["Service registry"]
+  ROUTER["LLM router<br/>scoped virtual key per service<br/>native tool calls or JSON via guided decoding"]
+  TOOLS["MCP gateway, then tools<br/>allow-list per key, read-only by default"]
+  EVAL["Evaluator agent"]
+  EVENTS["Event broker<br/>then recorder and audit log"]
+  OBSB["Observability backend"]
+
+  CLIENT --> IN
+  IN --> H
+  H --> CONN
+  CONN -- "A2A on localhost" --> A2AS
+  A2AS --> CORE
+  CONN -. "remote lane" .-> REMOTE
+  CORE -- "model and MCP URLs<br/>point at the chassis" --> OUT
+  CFGS --> CFGL
+  IDEM --> KV
+  POD -- "manifest on deploy" --> REG
+  MP --> ROUTER
+  TP --> TOOLS
+  EP --> EVAL
+  EV -. "one way" .-> EVENTS
+  OBSM -.-> OBSB

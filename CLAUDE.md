@@ -1,0 +1,47 @@
+# Agent platform monorepo
+
+The service chassis for the SLM agent platform and the nine PoC iterations that build it. Design: `docs/planning/` (the epic is read-only, ADR-001 decides the delivery model, `poc/000-plan.md` is the PoC track). Before you edit inside a folder, read that folder's `CLAUDE.md`.
+
+## Map
+
+- `packages/chassis` the chassis: `core` (envelope, events, collector, `handle`), `ports` (Protocols), `fakes`, `adapters`, `profiles.py`, `schemas/`.
+- `packages/contract-suites` one pytest suite per port; fakes and real adapters bind the same class.
+- `packages/fake-model-server` scripted OpenAI-compatible server for offline tests.
+- `packages/workloads` what runs behind the chassis, one folder per workload.
+- `pocs/poc-NN-<slug>` one iteration: README (checklist), CLAUDE.md, `tests/`, `demo/`, `notes/`. `pocs/CURRENT` names the one in progress.
+- `deploy/` compose, kind, helm. `docs/` planning, contracts, guides, templates, `plans/`.
+
+## Commands
+
+`make setup` · `make quick` (before every commit) · `make check` (what CI runs) · `make test` · `make test-poc POC=01` · `make schemas` · `make planning-sync` · `make planning-check` · `make harness-lint` · `make fake-model-server`. Run `make help` for the rest.
+
+## Hard rules
+
+- Tests run offline with no keys. `make test` disables sockets and strips `*_API_KEY` variables. A test that needs a socket is marked `network` and is not part of the gate.
+- Every external dependency sits behind a port with an in-memory fake. The fake and every real adapter pass the same contract suite. Adapters are picked by `spec.adapters`, never in code.
+- No agent framework anywhere in `chassis`; no product SDK or web framework in `chassis.core` or `chassis.ports`. `make lint` enforces both.
+- Only the chassis holds credentials (ADR-001 hard requirement 1). No secret in any file, prompt, or log.
+- One wire contract: `handle` is served over A2A in every lane. The event schema is versioned; the previous major stays accepted.
+- `docs/planning/slm-agent-platform-epic-v3.md` is never edited. Backlog order, sizes, and dependencies live in `docs/planning/tools/backlog.py`; run `make planning-sync planning-check` after any planning change.
+- Values the epic does not give are marked `suggested:`.
+- Evidence over narrative: paste the command and its output. Never claim a test passed without the run.
+- Commit only when asked. Never push to `main`, never force-push.
+
+## Delegation
+
+| Need | Agent |
+| ---- | ----- |
+| Write code for one scoped change | `developer` |
+| Tests: unit, contract bindings, PoC scenarios | `tester` |
+| Read-only review before merge | `reviewer` |
+| A contract, port, schema, or lane question | `chassis-architect` |
+| Anything touching keys, egress, sandboxing, images | `platform-security` |
+| Evaluator gate, judge, golden set, eval CI | `eval-expert` |
+| Spans, correlation, Langfuse, OTel | `observability-expert` |
+| README, CLAUDE.md, PoC checklists, planning docs | `docs-editor` |
+
+Skills: `poc-iteration`, `contract-suite`, `adr`, `git-flow`, `planning-sync`.
+
+## Style
+
+Plain words, short sentences, US spelling, one idea per sentence. Docs match `docs/planning`. Code: ruff, mypy strict, line length 100, Python 3.12.

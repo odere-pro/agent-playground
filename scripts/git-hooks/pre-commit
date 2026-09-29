@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Installed by `make setup`. The same gate as `make quick`.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+make quick

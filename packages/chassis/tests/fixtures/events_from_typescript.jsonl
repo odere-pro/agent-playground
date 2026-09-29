@@ -1,0 +1,6 @@
+{"type":"start","request_id":"01J9ZK3W1N2M7Q8R","schema_version":"0"}
+{"type":"delta","text":"Plain ","schema_version":"0"}
+{"type":"tool_call","call_id":"call_01","name":"glossary_lookup","arguments":{"term":"SLM"},"result":{"definition":"small language model"},"schema_version":"0"}
+{"type":"delta","text":"words.","schema_version":"0"}
+{"type":"metrics","input_tokens":12,"output_tokens":3,"cost_usd":0.00002,"model_route":"local-small","latency_ms":41,"attempt":1,"schema_version":"0"}
+{"type":"end","status":"ok","schema_version":"0"}

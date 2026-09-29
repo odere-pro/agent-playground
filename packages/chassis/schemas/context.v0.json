@@ -1,0 +1,124 @@
+{
+  "$defs": {
+    "Budget": {
+      "additionalProperties": false,
+      "properties": {
+        "max_tokens": {
+          "default": 2000,
+          "title": "Max Tokens",
+          "type": "integer"
+        },
+        "timeout_ms": {
+          "default": 30000,
+          "title": "Timeout Ms",
+          "type": "integer"
+        }
+      },
+      "title": "Budget",
+      "type": "object"
+    },
+    "Versions": {
+      "additionalProperties": false,
+      "description": "Every response reports the versions it ran with (epic B.2, \"pinned versions\").",
+      "properties": {
+        "chassis": {
+          "title": "Chassis",
+          "type": "string"
+        },
+        "config": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Config"
+        },
+        "model_route": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Route"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt"
+        }
+      },
+      "required": [
+        "chassis"
+      ],
+      "title": "Versions",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "What the chassis gives a `handle` next to the input. Never holds a key.",
+  "properties": {
+    "agent": {
+      "title": "Agent",
+      "type": "string"
+    },
+    "agent_version": {
+      "title": "Agent Version",
+      "type": "string"
+    },
+    "budget": {
+      "$ref": "#/$defs/Budget"
+    },
+    "idempotency_key": {
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "model_route": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model Route"
+    },
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "trace_id": {
+      "title": "Trace Id",
+      "type": "string"
+    },
+    "versions": {
+      "$ref": "#/$defs/Versions"
+    }
+  },
+  "required": [
+    "request_id",
+    "trace_id",
+    "idempotency_key",
+    "agent",
+    "agent_version",
+    "versions"
+  ],
+  "title": "Context",
+  "type": "object"
+}

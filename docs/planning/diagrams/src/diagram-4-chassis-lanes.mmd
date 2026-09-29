@@ -1,0 +1,33 @@
+flowchart TB
+  CALLER["Callers<br/>apps, OpenAI and Anthropic SDKs, MCP clients, A2A agents, events"]
+  TRUST{{"Trust rule, checked at deploy time<br/>Trusted means: written and reviewed by the owning team, image built in our registry, and runs no code, shell commands, or file writes itself"}}
+  TEST["inprocess lane: tests and local runs only<br/>the chassis calls handle directly<br/>fakes, no network, no keys"]
+
+  subgraph LANE1["sidecar lane (default): trusted code, any language"]
+    subgraph POD1["One pod per replica"]
+      CH1["Chassis container<br/>inbound adapters, pipeline, connector,<br/>model and tool proxies<br/>holds the service's credentials"]
+      WL1["Workload container<br/>handle(input, ctx) behind an A2A server<br/>localhost only, no keys<br/>model and MCP URLs point at the chassis"]
+    end
+  end
+
+  subgraph LANE2["remote lane: untrusted code, third-party images, managed runtimes"]
+    CH2["Chassis pod<br/>outside the sandbox<br/>holds the service's credentials"]
+    subgraph SBX["Workload pod, sandboxed"]
+      UW["Untrusted workload<br/>gVisor RuntimeClass<br/>egress denied, no secrets"]
+    end
+    MR["Managed runtime<br/>AWS Bedrock AgentCore,<br/>Vertex AI Agent Engine"]
+  end
+
+  SHARED["Hard limits live in shared services, not in the chassis<br/>LiteLLM: one scoped virtual key per service (models, budgets, rate limits)<br/>MCP gateway: tool allow-list per key<br/>Broker, Valkey, config store: refuse calls without the chassis's credential<br/>NetworkPolicy: default-deny egress for every workload pod"]
+
+  CALLER --> CH1
+  CALLER --> CH2
+  TRUST -. "trusted" .-> LANE1
+  TRUST -. "untrusted" .-> LANE2
+  CH1 -- "A2A on localhost" --> WL1
+  CH2 -- "A2A" --> UW
+  CH2 -- "A2A with a<br/>cloud auth adapter" --> MR
+  CH1 -- "scoped credentials" --> SHARED
+  CH2 -- "scoped credentials" --> SHARED
+  MR -. "model and tool URLs point at our LiteLLM and MCP gateway" .-> SHARED
+  SHARED ~~~ TEST

@@ -1,0 +1,82 @@
+[project]
+name = "agent-platform"
+version = "0.1.0"
+description = "Monorepo for the SLM agent platform PoC track: the service chassis and the nine PoC iterations"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[dependency-groups]
+# Pinned exactly after `uv lock`, so a gate never floats under the tree. Bump on purpose, in their own commit.
+dev = [
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "pytest-socket==0.8.1",
+  "httpx==0.28.1",
+  "ruff==0.16.9",
+  "mypy==2.3.1",
+  "import-linter==2.15",
+  "pyyaml==6.0.3",
+  "types-pyyaml==6.0.12.20260906",
+  "jsonschema==4.26.0",
+  "types-jsonschema==4.26.0.20260518",
+]
+
+[tool.uv.workspace]
+members = ["packages/chassis", "packages/contract-suites", "packages/fake-model-server"]
+
+[tool.uv.sources]
+chassis = { workspace = true }
+chassis-contracts = { workspace = true }
+fake-model-server = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["packages", "pocs"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+  "slow: takes more than a few seconds (import-lint, subprocesses)",
+  "network: needs a real socket; never part of `make test`",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["docs/planning"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "RUF"]
+
+[tool.ruff.format]
+exclude = ["*.md"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["packages", "pocs", "scripts"]
+exclude = ["docs/planning"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["pytest_socket.*"]
+ignore_missing_imports = true
+
+[tool.importlinter]
+root_packages = ["chassis"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "chassis layers: core has no upward imports"
+type = "layers"
+layers = ["chassis.fakes | chassis.adapters", "chassis.ports", "chassis.core"]
+
+[[tool.importlinter.contracts]]
+name = "no agent framework anywhere in the chassis"
+type = "forbidden"
+source_modules = ["chassis"]
+forbidden_modules = ["pydantic_ai", "langgraph", "agents", "smolagents", "claude_agent_sdk", "crewai"]
+
+[[tool.importlinter.contracts]]
+name = "no product SDK or web framework in core and ports"
+type = "forbidden"
+source_modules = ["chassis.core", "chassis.ports"]
+forbidden_modules = ["fastapi", "starlette", "httpx", "openai", "anthropic", "litellm", "a2a", "opentelemetry"]

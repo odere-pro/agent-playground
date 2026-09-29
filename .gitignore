@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.import_linter_cache/
+*.egg-info/
+dist/
+build/
+.DS_Store
+.claude/settings.local.json
+.env
+.env.*
+!.env.example

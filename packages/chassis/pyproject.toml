@@ -1,0 +1,13 @@
+[project]
+name = "chassis"
+version = "0.1.0"
+description = "The service chassis: core, ports, fakes, adapters, and the JSON Schemas of the contract"
+requires-python = ">=3.12,<3.13"
+dependencies = ["pydantic>=2.11,<3"]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "chassis"

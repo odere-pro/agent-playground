@@ -1,0 +1,16 @@
+[project]
+name = "fake-model-server"
+version = "0.1.0"
+description = "A scripted OpenAI-compatible model server, so every engine is tested offline"
+requires-python = ">=3.12,<3.13"
+dependencies = ["fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.11,<3", "pyyaml>=6.0"]
+
+[project.scripts]
+fake-model-server = "fake_model_server.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "fake_model_server"

@@ -1,0 +1,102 @@
+{
+  "$defs": {
+    "Budget": {
+      "additionalProperties": false,
+      "properties": {
+        "max_tokens": {
+          "default": 2000,
+          "title": "Max Tokens",
+          "type": "integer"
+        },
+        "timeout_ms": {
+          "default": 30000,
+          "title": "Timeout Ms",
+          "type": "integer"
+        }
+      },
+      "title": "Budget",
+      "type": "object"
+    },
+    "TaskInput": {
+      "additionalProperties": false,
+      "description": "What the caller asks for. `text` for transformers; `data` for structured input.",
+      "properties": {
+        "data": {
+          "additionalProperties": true,
+          "title": "Data",
+          "type": "object"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        }
+      },
+      "title": "TaskInput",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "title": "Agent",
+      "type": "string"
+    },
+    "agent_version": {
+      "title": "Agent Version",
+      "type": "string"
+    },
+    "budget": {
+      "$ref": "#/$defs/Budget"
+    },
+    "context_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Context Ref"
+    },
+    "idempotency_key": {
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "input": {
+      "$ref": "#/$defs/TaskInput"
+    },
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "stream": {
+      "default": false,
+      "title": "Stream",
+      "type": "boolean"
+    },
+    "trace_id": {
+      "title": "Trace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "trace_id",
+    "idempotency_key",
+    "agent",
+    "agent_version",
+    "input"
+  ],
+  "title": "Request",
+  "type": "object"
+}

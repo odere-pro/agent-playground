@@ -1,0 +1,59 @@
+flowchart TB
+  CLIENT["Client or event<br/>app, MCP client, A2A agent, event producer"]
+
+  subgraph OA["ORCHESTRATOR AGENT POD (processes are stateless, run state lives in Temporal)"]
+    subgraph CHC["Chassis container, inbound side (same image as every service)"]
+      IN["Inbound adapters (same as every agent)<br/>REST, OpenAI, Anthropic, MCP, A2A, events"]
+      H["Pipeline (same as every agent)<br/>auth, config loader, budgets, observability"]
+      TW["Temporal worker<br/>calls the workload once per step"]
+    end
+    subgraph CORE["Workload container: orchestration core"]
+      direction LR
+      RULES["Routing rules<br/>task to workflow"]
+      PLAN["Planner<br/>smart model"]
+      WF["Workflow engine<br/>chain, fan-out, compare"]
+      MERGE["Merge and<br/>consistency pass"]
+      HUMAN["Human oversight<br/>approve, stop"]
+    end
+    subgraph OUT["Chassis container, outbound side: proxies and connectors, and only the chassis holds credentials"]
+      direction LR
+      MP["Model proxy"]
+      RP["Registry connector"]
+      AP["Agent connector<br/>A2A"]
+      MEM["Memory connector"]
+      EV["Event port"]
+    end
+  end
+
+  CFGS[("Config store<br/>orchestrator config, workflows")]
+  REG["Service registry<br/>top matches and fallbacks"]
+  TEMP["Temporal<br/>run state, checkpoints"]
+  LTM[("Long-term memory<br/>settings, gotchas, feedback")]
+  subgraph POOLS["Agent pools: each pod is a chassis plus a workload, scaled by KEDA"]
+    direction LR
+    P1["Transformer pool<br/>e.g. simplifier"]
+    P2["Evaluator pool"]
+    P3["Tool agent pool"]
+  end
+  ROUTER["LLM router<br/>scoped key per service"]
+  EVENTS["Event broker<br/>run events, then recorder and audit log"]
+
+  CLIENT --> IN
+  IN --> H
+  H -- "A2A on localhost" --> CORE
+  TW -- "one step at a time" --> CORE
+  RULES -- "rule matches" --> WF
+  RULES -- "no match" --> PLAN
+  PLAN -- "plan" --> WF
+  WF --> MERGE
+  WF -- "approval step" --> HUMAN
+  CORE -- "every outbound call<br/>goes through the chassis" --> OUT
+  CFGS --> H
+  TW -- "task queues, checkpoints" --> TEMP
+  RP --> REG
+  AP -- "same interface, task queues" --> POOLS
+  MEM --> TEMP
+  MEM --> LTM
+  MP -- "planner calls" --> ROUTER
+  POOLS -- "model calls, through their own chassis" --> ROUTER
+  EV -. "one way" .-> EVENTS

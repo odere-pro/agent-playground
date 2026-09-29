@@ -1,0 +1,16 @@
+[project]
+name = "chassis-contracts"
+version = "0.1.0"
+description = "One pytest contract suite per chassis port. Fakes and real adapters pass the same one."
+requires-python = ">=3.12,<3.13"
+dependencies = ["chassis", "pytest>=8.4"]
+
+[project.entry-points.pytest11]
+chassis_contracts = "chassis_contracts.plugin"
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "chassis_contracts"
