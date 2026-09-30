@@ -1,6 +1,6 @@
 # PoC-1: how to run and test it locally
 
-One request through the chassis and the router. Three ways to run it, from cheapest to fullest: the offline tests, one chassis process with the fake model, and the Docker Compose stack with LiteLLM.
+One request through the chassis and the router. What the pieces are and why they exist is in the README's [What we built](README.md#what-we-built), with the diagram. This file is only about running it. Three ways, from cheapest to fullest: the offline tests, one chassis process with the fake model, and the Docker Compose stack with LiteLLM.
 
 ## Install first
 

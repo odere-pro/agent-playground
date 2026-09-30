@@ -20,7 +20,7 @@ Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still appl
 
 ## How to work with it
 
-- Read first: `docs/planning/poc/001-PoC-1-walking-skeleton.md`, then `README.md` here, then `HOW-TO-RUN.md`.
+- Read first: `docs/planning/poc/001-PoC-1-walking-skeleton.md`, then `README.md` here (its "What we built" section has the diagram and the plain explanation), then `HOW-TO-RUN.md`.
 - The request path, in order: `/v1/run` → `InProcessConnector` → A2A in memory → `HandleExecutor` → `echo_python.handle` → back into the chassis at `/v1/chat/completions` → `ports.model` → (LiteLLM) → events back up. Start from `chassis/server/app.py` and follow it down.
 - A box in `README.md` changes only with evidence: a test name or a command and its output.
 - Before a commit: `make quick`. Before a PR: `make check`. Live checks: `uv run pytest -m network -p no:socket`.

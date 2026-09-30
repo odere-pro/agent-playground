@@ -8,6 +8,56 @@ Time box: 1 week
 
 Is the chassis testable offline from day 0, with every dependency behind a swappable port? Does one request go end to end through the chassis and the router, streaming and complete, with tokens counted?
 
+## What we built
+
+In one line: a generic HTTP front door that runs any agent logic behind it over one contract, with every model call counted and every key hidden.
+
+```
+ client ──POST /v1/run──▶ ┌──────────────── chassis (one process) ────────────────┐
+                          │  /v1/run ─▶ inprocess connector ─▶ A2A (in memory)     │
+                          │                                        │              │
+                          │                     template A2A server ─▶ handle()    │
+                          │                                   (echo_python, no key)│
+                          │                                        │              │
+                          │  /v1/chat/completions ◀────────────────┘              │
+                          │        │  model proxy                                 │
+                          │        ▼                                              │
+                          │  ModelPort: ScriptedModel (fake) │ LiteLLMModel (key) │
+                          └────────────────────────────────────┬──────────────────┘
+                                                               │ agent:echo tag
+                                                               ▼
+                                              LiteLLM router ──▶ fake model server
+                                              big-default │ local-small   (or a real model)
+                                              token_log per call
+```
+
+Events flow back up the same path: `start`, `delta`, `metrics`, `end`. `/v1/run` returns them either as one JSON response or as a stream of server-sent events.
+
+Three parts and one rule:
+
+- **The chassis** is a plain web server. It knows nothing about simplifying text. It takes a request, hands it to whatever is plugged in behind it, and returns the answer. It is the only thing that holds a key.
+- **The workload** is the agent logic, today a 100-line simplifier in `packages/workloads/echo-python`. It talks to the chassis through one fixed contract: dicts in, events out, over A2A. It could be rewritten in another language and the chassis would not change.
+- **The router** (LiteLLM) sits between the chassis and the models. Every model call passes through it, so tokens and cost are counted in one place, and switching from a cloud model to a local one is a config line.
+- **The rule:** every outside dependency sits behind a port with a fake. The whole thing runs and tests offline, with no keys, in under a second.
+
+### What it is for
+
+Today it does one small thing: it simplifies a sentence. The point is the shape, not the task. Once this shape holds:
+
+- **A standard way to ship an agent.** A team writes `handle()`, picks a config, and gets auth, limits, budgets, tracing, and evals for free, because those go into the chassis once, not into every agent. PoC-9 turns this into `agentctl new`.
+- **Framework freedom.** PydanticAI, LangGraph, an OpenAI Agents SDK loop, or a TypeScript agent all plug in behind the same contract. PoC-2 and PoC-6 use exactly this to compare them on equal terms and pick the ones to support.
+- **Cheap models without a rewrite.** Because every model call goes through the router, moving a task from a big API model to a small local one is a route name change. That is the epic's SLM goal.
+- **Untrusted code, contained.** The same chassis can front code you do not trust, in a sandboxed pod, with no key and no network. It does not need to be different software. PoC-5 proves that.
+
+### What it is not yet
+
+- Streaming in the in-memory lane is batched: the events arrive after `handle` returns. The `sidecar` lane in PoC-2 streams over a socket.
+- The model proxy sits on the chassis's public port. PoC-2 moves it to a localhost-only listener.
+- The router keys are the master key, and the agent tag can be faked by a caller. PoC-5 gives each service its own scoped key.
+- The real-model variant of the Compose stack has never been run. It needs a provider key.
+
+Each of these is written down in [notes/](notes/).
+
 ## Scope
 
 Day 0 (first 2 days, before any feature):
