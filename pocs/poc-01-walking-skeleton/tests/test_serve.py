@@ -175,3 +175,19 @@ def test_chassis_serve_subprocess_answers_health(request: pytest.FixtureRequest)
     finally:
         proc.terminate()
         proc.wait(timeout=10)
+
+
+async def test_versions_prompt_matches_the_workload(app_with_workload_routed_back: Any) -> None:
+    """Scope: the response reports the `versions` used. `versions.prompt` comes from config, so
+    the config must name the prompt version the workload ships, or the response lies.
+    """
+    workload: Any = importlib.import_module("echo_python.handle")
+    assert load_config(FAKE_CONFIG).spec.prompt.version == workload.PROMPT_VERSION
+    app = app_with_workload_routed_back
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        httpx.AsyncClient(transport=transport, base_url="http://chassis") as client,
+        app.router.lifespan_context(app),
+    ):
+        out = (await client.post("/v1/run", json={"input": {"text": "simplify: x"}})).json()
+    assert out["versions"]["prompt"] == workload.PROMPT_VERSION

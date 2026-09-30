@@ -112,3 +112,16 @@ async def test_connection_error_becomes_a_retryable_error() -> None:
         handle_module.transport = None
     assert events[-1]["type"] == "error" and events[-1]["code"] == "connect_error"
     assert events[-1]["retryable"] is True
+
+
+async def test_timeout_becomes_a_retryable_error() -> None:
+    def hang(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow model", request=request)
+
+    handle_module.transport = httpx.MockTransport(hang)
+    try:
+        events = await _run("x")
+    finally:
+        handle_module.transport = None
+    assert [e["type"] for e in events] == ["start", "error"]
+    assert events[-1]["code"] == "timeout" and events[-1]["retryable"] is True

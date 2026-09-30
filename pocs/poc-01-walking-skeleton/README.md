@@ -57,6 +57,8 @@ Gate runs on 2026-09-29: `make test-poc POC=01` → `32 passed, 2 skipped` (the 
 make test-poc POC=01
 ```
 
+What to install, how to run one chassis process or the Compose stack, and the `curl` calls: [HOW-TO-RUN.md](HOW-TO-RUN.md).
+
 ## Demo
 
 ```bash
