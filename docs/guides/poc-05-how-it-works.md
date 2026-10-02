@@ -72,7 +72,7 @@ flowchart LR
 - **The public port** binds the pod IP in both lanes. So localhost in the sidecar pod carries only the loopback proxy (8090) and the workload (9000).
 - **Tools.** A workload never reaches a tool server. It calls `/mcp` on its chassis; the chassis calls LiteLLM's MCP gateway with its own virtual key; the gateway calls `fake-mcp-server` or `code-runner`.
 - **No broker.** Both agent configs set `spec.adapters.events: none`. The queue port, `EventPort`, stays broker-agnostic (contract v4, "`EventPort` (unchanged; stays broker-agnostic)"), and no broker runs in PoC-5. Kafka is a deferred pass with no NetworkPolicy edge yet.
-- **Not built in this pass.** The probe pods (`agent-probe-sidecar`, `chassis-probe-remote`, `remote-probe`) are not deployed. `seed.sh` already makes their keys and token.
+- **Probe pods dropped.** T10, the in-pod probe workload, is dropped in PoC-5 (decision 2026-10-02). The probe pods (`agent-probe-sidecar`, `chassis-probe-remote`, `remote-probe`) are not deployed. Their LiteLLM keys and `remote-probe-token` were dropped with T10; `seed.sh` no longer makes them. Exit criterion 8 is "partly shown" (section 7).
 
 ## 3. The trust rule: config load, then admission
 
@@ -243,7 +243,7 @@ What the map says, in words:
 - **The sidecar pod** has the chassis's egress, and so does its workload, because they share one network namespace. So `agent-echo` can reach LiteLLM and Valkey at the network level. Each must refuse it without the chassis's credential (section 6). DNS stays open in this lane: a recorded blind spot (H20).
 - **The fake servers and Postgres** take LiteLLM only and have no egress. No agent pod has a route to the model server (the H09 fix).
 - **MinIO** takes only `minio-init`. No chassis uses `config: s3` in PoC-5 (security review F10), so no chassis edge.
-- **Not in the map:** the probe pods (not built yet) and Kafka (deferred pass, no broker in PoC-5).
+- **Not in the map:** the probe pods (dropped with T10, decision 2026-10-02) and Kafka (deferred pass, no broker in PoC-5).
 - **What this does not prove:** that kindnet drops the packets. The kind suites test that (H01, H03, H04, H18, H19, H20, H30), each with a paired allowed control. They have not run yet. kindnet does not log a drop.
 
 ## 5. The remote-lane request path
@@ -333,7 +333,8 @@ Every Secret is made at run time by `deploy/kind/poc05/platform/seed.sh`, run as
 | `chassis-echo-remote-litellm` | `poc05-agents` | The chassis container of `chassis-echo-remote`, env `LITELLM_API_KEY` | as above |
 | `remote-echo-token` | `poc05-agents` | The chassis container of `chassis-echo-remote`, env `REMOTE_TOKEN` | The chassis's remote listener on 8091: 401 `remote_unauthenticated` (H17). Without it the chassis refuses `--remote-proxy-host` and does not start |
 | `remote-echo-token` | `poc05-remote` | The `remote-echo` workload, env `CHASSIS_API_TOKEN` | The remote's A2A server: it refuses every path without the token, the agent card included |
-| `chassis-probe-sidecar-litellm`, `chassis-probe-remote-litellm`, `remote-probe-token` | `poc05-agents`, `poc05-remote` | Made by `seed.sh`; no pod mounts them yet (the probe pods are not built) | as for the echo pods |
+
+The probe keys and `remote-probe-token` were dropped with T10, so they are not in the map.
 
 The `agent-echo` workload container, `code-runner`, the fake model server, and the fake MCP server hold no Secret. No pod mounts a service account token (`automountServiceAccountToken: false` everywhere; rules 5 and 7d enforce it for remote and tool pods).
 
@@ -410,12 +411,16 @@ flowchart LR
 
 The checks per threat id, each with its paired allowed control, are in [the plan, section 5](../plans/2026-10-02-poc-05-sandboxed.md#5-hostile-suites-how-the-probe-workload-is-driven). A refusal counts only when its control is allowed in the same test. Otherwise the test fails with "control failed: the refusal proves nothing" ([threat model, section 6](../../pocs/poc-05-sandboxed/notes/2026-10-02-threat-model.md#6-pitfalls--making-a-hostile-test-pass-for-the-wrong-reason)). "Pending" below means the kind suite has not run.
 
+**Criterion 8 is "partly shown".** T10, the in-pod probe workload, is dropped (decision 2026-10-02). So no kind suite exists that runs these checks from a workload container with a paired control. H05 to H08 and H10 have bring-up evidence with their controls ([bring-up note](../../pocs/poc-05-sandboxed/notes/2026-10-02-bring-up.md), items 2, 3, and 5). It was not from a workload container. Items 2 and 3 name no caller pod; item 2 sent the master key over curl's stdin. Item 5's refusals came from `valkey-cli`, and its control from the chassis container. The full list per id is in [the blind-spots note](../../pocs/poc-05-sandboxed/notes/2026-10-02-blind-spots.md), section 3.
+
+**Not in CI yet.** Criterion 1's kind half is not in CI. The remote-lane workflow (`.github/workflows/remote-lane.yml`) runs by hand only, until the gVisor x86_64 sum and the kind and kubectl sums are pinned and the remote kind test files exist. Every "Kind: pending" row below is run by hand on the Mac.
+
 | Control | Proves | Does not prove | Evidence |
 | ------- | ------ | -------------- | -------- |
 | `spec.trust` at config load | An `untrusted` config outside the `remote` lane, or a `cloud` config without `spec.trust`, never starts | That the pod is shaped the way the config says | Offline: `test_poc05_trust_config.py` |
 | Admission, rules 0 to 8 | A pod or template that breaks a rule is refused at apply time, with the rule's message | That an image is what its name says (no signatures until H-10); that `trustedRepositories` is right (it is hand-kept) | Offline: the Python model of the CEL, `test_poc05_admission_static.py`. Kind: pending (`test_poc05_kind_admission.py`) |
 | NetworkPolicy, default deny, no `ipBlock` | The manifests allow exactly the edges in `netpol_edges.yaml`, and no rule can allow the metadata service, the API, or a node | That kindnet drops the packets; it does not log a drop. In the sidecar lane the workload rides the chassis's edges | Offline: `test_poc05_netpol_static.py`. Kind: pending (H01, H03, H04, H18, H19, H20, H30) |
-| Service auth (LiteLLM keys, the gateway allow-list, Valkey ACL, MinIO) | Without the chassis's credential each service refuses; through the chassis the same call works | That a call made with the chassis's credential was the workload's to make: the chassis cannot tell use from abuse inside an allowed call | Offline: `test_poc05_seed_static.py`, the tool gateway contract. Kind: pending (H05 to H10, H12; H11 has no broker in PoC-5) |
+| Service auth (LiteLLM keys, the gateway allow-list, Valkey ACL, MinIO) | Without the chassis's credential each service refuses; through the chassis the same call works | That a call made with the chassis's credential was the workload's to make: the chassis cannot tell use from abuse inside an allowed call | Offline: `test_poc05_seed_static.py`, the tool gateway contract. Kind: bring-up evidence for H05 to H08 and H10, not from a workload container (see above); H09 and H12 pending; H11 has no broker in PoC-5 |
 | The remote token and `BearerAuth` | Only a caller with the token reaches the 8091 routes | Who holds the token: a compromised remote that still has it looks healthy. The token crosses the pod network in plain HTTP (F14) | Offline: `test_remote_auth.py`, `test_poc05_hostile_offline.py`. Kind: pending (H17) |
 | `RequireRun` and the run budget | A remote spends tokens and calls tools only inside a run the chassis opened, capped at what the run has left | Input tokens: `max_tokens` bounds output only, so a call can overshoot by its prompt. LiteLLM's key budget is the hard cap (B11) | Offline: `test_remote_auth.py`, the model proxy tests. Kind: pending (H29) |
 | The uncorrelated cap | A sidecar workload that drops `traceparent` spends at most `spec.limits.uncorrelated_tokens_per_minute` per replica per minute | A limit across replicas: it is per process | Offline: the model proxy tests. Kind: pending (H15, H16) |

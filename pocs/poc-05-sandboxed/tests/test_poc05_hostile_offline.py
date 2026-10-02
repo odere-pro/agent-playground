@@ -121,6 +121,10 @@ async def test_h08_a_tool_off_the_allow_list_is_refused_through_the_chassis(
     `unlisted_probe` is not listed, and a call to it is refused with the public error code
     `tool_denied` and its fixed public message, before the tool runs. The control: the same
     client, in the same run, calls the allow-listed `glossary_lookup` and gets its answer.
+
+    Stand-in: the allow-list is the MCP gateway's (LiteLLM's per-key tool list, seed script).
+    Here the refusal comes from the fake tool port (`write_mode_tools`), which stands in for that
+    allow-list; the chassis path around it is real. The gateway's own list is checked on kind.
     """
     monkeypatch.setattr(poc05_harness, "default_tools", write_mode_tools)
     async with remote_lane(monkeypatch) as lane:
@@ -380,7 +384,7 @@ async def test_h29_a_route_outside_the_key_is_refused_and_an_in_scope_call_is_20
     assert in_scope[0] == 200, in_scope
     assert in_scope[1]["choices"][0]["message"]["content"] == REPLY
     assert run.response is not None and run.response.json()["status"] == "ok", run.response
-    assert out_of_scope[0] >= 400 and "choices" not in out_of_scope[1], out_of_scope
+    assert out_of_scope[0] == 500 and "choices" not in out_of_scope[1], out_of_scope
     error = out_of_scope[1]["error"]
     assert error["code"] == "http_401" and error["retryable"] is False, error
     assert scoped[0].refused == [OUT_OF_SCOPE], scoped[0].refused

@@ -49,8 +49,8 @@ No test, on any stack, shows a broker refusing a client without a credential.
 
 When a broker reaches kind, H11 becomes one case in `pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py` (task T21, not written yet), built like that file's Valkey and MinIO cases:
 
-1. From the probe workload's pod, connect to the broker with no credential, then with a guessed one. Expect a refusal each time.
-2. The control: through the chassis, with the chassis's own credential from its Secret, a result event is published and lands on its topic.
+1. From the sidecar workload container of `agent-echo` (`kubectl exec`, the echo-python image's Python), connect to the broker with no credential, then with a guessed one. Expect a refusal each time. T10, the probe workload, is dropped, so this container is the caller. It shares the chassis's network namespace, so it has every edge the chassis has: a refusal here is a refusal by credential, not by NetworkPolicy.
+2. The control, paired with step 1 in the same test: through the chassis, with the chassis's own credential from its Secret, a result event is published and lands on its topic.
 3. The broker's manifest is checked offline too: no PLAINTEXT listener, auto-create off, credentials from a Secret that only the chassis pod mounts.
 
 The case and its control close the exception. 020 X-8 also owns topic ACLs per service, TLS, and the controller listener.

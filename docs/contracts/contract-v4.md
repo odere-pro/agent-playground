@@ -250,7 +250,8 @@ Each rule has its own message, which starts `trust rule <n>:`. The kind test mat
 ### Tests
 
 - Offline: `pocs/poc-05-sandboxed/tests/test_poc05_admission_static.py` checks a Python model of the CEL and the syntax it can see. Each rule has a rejected fixture and an admitted twin that differs only in the field the rule checks.
-- On kind: `test_poc05_kind_admission.py` applies each fixture with `--dry-run=server` as the submitter and asserts the outcome and the message. Until it runs, none of the CEL has run on a cluster; `policy.yaml`'s header lists what only the cluster can prove.
+- On kind: `test_poc05_kind_admission.py` applies each fixture with `--dry-run=server` as the submitter (as the deployer for fixtures in `poc05-agents`, `admission/rbac.yaml`) and asserts the outcome and the message. Part of the CEL has run on kind: the API server type-checked the policy with no warning (`status.typeChecking` is `{}`), and the rule-1 canary was refused while its twin was admitted ([bring-up note](../../pocs/poc-05-sandboxed/notes/2026-10-02-bring-up.md), section 9, lines 128-129). The per-rule kind test has not run yet. Until it does, rules 0 and 2 to 8 have no on-cluster refusal of their own; `policy.yaml`'s header lists what only the cluster can prove.
+- CI: criterion 1's kind half is not in CI yet. The remote-lane workflow (`.github/workflows/remote-lane.yml`) runs by hand only, until the gVisor x86_64 sum and the kind and kubectl sums are pinned and the remote kind test files exist.
 
 ## Config reference
 
@@ -320,14 +321,14 @@ This document follows the code. These are the places where [the PoC-5 plan](../p
 
 | Question | Where | Owner |
 | -------- | ----- | ----- |
-| **A model refusal reaches the remote as a 500.** When LiteLLM refuses a route the key does not list, the adapter raises `ModelError("http_401", ..., retryable=False)`. The model proxy sends every non-retryable `ModelError` as 500 (`status_code=502 if exc.retryable else 500`), so the remote gets HTTP 500 with `{"error": {"type": "model_error", "code": "http_401", "retryable": false}}`. A 500 says the chassis broke; here the caller asked for something it may not have. `http_401` also names the chassis's upstream hop, not the caller's problem. Proposal, not built: map an upstream 401 or 403 to 403 with `code: model_route_denied` and `type: permission_error`, `retryable: false`, and a fixed message. Keep the 500 for real upstream failures. Additive: a new code on the proxy listeners only; no event schema change | `pocs/poc-05-sandboxed/tests/test_poc05_hostile_offline.py::test_h29_a_route_outside_the_key_is_refused_and_an_in_scope_call_is_200` (asserts `>= 400` and `http_401`); `server/model_proxy.py` | `chassis-architect` (suggested: PoC-6, with the remote engines) |
+| **A model refusal reaches the remote as a 500.** When LiteLLM refuses a route the key does not list, the adapter raises `ModelError("http_401", ..., retryable=False)`. The model proxy sends every non-retryable `ModelError` as 500 (`status_code=502 if exc.retryable else 500`), so the remote gets HTTP 500 with `{"error": {"type": "model_error", "code": "http_401", "retryable": false}}`. A 500 says the chassis broke; here the caller asked for something it may not have. `http_401` also names the chassis's upstream hop, not the caller's problem. Proposal, not built: map an upstream 401 or 403 to 403 with `code: model_route_denied` and `type: permission_error`, `retryable: false`, and a fixed message. Keep the 500 for real upstream failures. Additive: a new code on the proxy listeners only; no event schema change | `pocs/poc-05-sandboxed/tests/test_poc05_hostile_offline.py::test_h29_a_route_outside_the_key_is_refused_and_an_in_scope_call_is_200` (asserts `== 500` and `http_401`, so a change to this question fails the test); `server/model_proxy.py` | `chassis-architect` (suggested: PoC-6, with the remote engines) |
 | **H11 has no evidence.** No broker runs on kind in PoC-5. Recorded as an exception | `pocs/poc-05-sandboxed/notes/2026-10-02-h11-queue-exception.md` | `platform-security`, closing in 020 X-8 |
 
 ## Known gaps
 
 | Gap | Where | Owner |
 | --- | ----- | ----- |
-| The admission CEL has not run on a cluster; the offline test checks a Python model of it | `deploy/kind/poc05/admission/policy.yaml` header; `test_poc05_kind_admission.py` | PoC-5 kind pass (`tester`) |
+| The per-rule admission test has not run on kind. Only the type check and the rule-1 canary ran there (bring-up note, lines 128-129); the offline test checks a Python model of the CEL | `deploy/kind/poc05/admission/policy.yaml` header; `test_poc05_kind_admission.py` | PoC-5 kind pass (`tester`) |
 | `trustedRepositories` is a hand-kept ConfigMap, not registry metadata or a signature | `deploy/kind/poc05/admission/params.yaml` | 025 H-10 (`platform-security`) |
 | The drain order between chassis replicas and a remote workload is not defined | "Cost per lane" | `chassis-architect` |
 | The uncorrelated cap is per replica; N replicas allow N times L | `server/model_proxy.py` | suggested: accept for PoC-5; LiteLLM's key budget is the cluster-wide cap |

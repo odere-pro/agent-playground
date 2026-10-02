@@ -360,8 +360,24 @@ def test_seed_is_idempotent_and_rotates_on_request() -> None:
     assert re.search(r"(?m)^secret_exists\(\)", text)
     for name in ("litellm-master", "litellm-db", "valkey-auth", "minio-root", "minio-chassis"):
         assert name in text, name
-    for svc in ("echo", "probe-sidecar", "echo-remote", "probe-remote"):
+    for svc in ("echo", "echo-remote"):
         assert f'"{svc}|' in text, svc
+
+
+def test_seed_mints_no_probe_credentials() -> None:
+    """Security review 2026-10-02, item 8: T10 (the probe pods) is dropped, so no pod mounts a
+    probe Secret. The seed mints no `chassis-probe-*-litellm` key and no `remote-probe-token`.
+    Control: the echo service and the echo remote are still seeded.
+    """
+    text = SEED.read_text()
+    services = re.search(r"(?ms)^SERVICES=\((.*?)^\)", text)
+    remotes = re.search(r"(?m)^REMOTES=\((.*)\)$", text)
+    assert services and remotes
+    names = re.findall(r'"([\w-]+)\|', services.group(1))
+    assert names == ["echo", "echo-remote"], names
+    assert remotes.group(1).split() == ["echo"]
+    code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    assert "probe" not in code
 
 
 def test_seed_review_fixes_hold() -> None:

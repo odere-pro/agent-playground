@@ -6,12 +6,16 @@
 # out of band). The job never skips the check. Until then, the offline remote lane in `make check`
 # (ci.yml, LaneContract over the remote lane) stays the every-commit gate (hard requirement 2).
 #
-# Trigger: manual (workflow_dispatch) until the x86_64 sum is pinned and the kind remote tests
-# exist; then switch to push and pull_request (test_poc05_ci_wiring.py enforces both states).
+# Trigger: manual (workflow_dispatch) until three things hold: the x86_64 gVisor sum is pinned,
+# the kind remote test files in run.sh REMOTE_TESTS exist, and KIND_SHA256 and KUBECTL_SHA256 are
+# pinned below. Then switch to push and pull_request (test_poc05_ci_wiring.py enforces both
+# states). Never pull_request_target. The kind half of exit criteria 1 and 2 is not in CI yet.
 #
-# No secret is used: the seed step makes every credential inside the cluster.
-# kind and kubectl are pinned by version and checked against the sha256 file each project
-# publishes next to the binary; that file is fetched in the job from the same release.
+# No secret is used: the seed step makes every credential inside the cluster. Pod logs go
+# through run.sh `logs`, which sends each through redact_logs (the one filter, in run.sh).
+# kind and kubectl are pinned by version and by a sha256 in the job env. KIND_SHA256 and
+# KUBECTL_SHA256 are empty today, so the install steps fail closed. Pin each from the project's
+# published sha256 file (checked out of band) before the push trigger.
 name: remote-lane
 
 on:
@@ -27,9 +31,13 @@ jobs:
     env:
       KIND_VERSION: v0.33.0
       KUBECTL_VERSION: v1.37.0
+      # Must be pinned from the published kind-linux-amd64.sha256sum and kubectl.sha256 files
+      # before the push trigger. Empty: the install step refuses to run (fails closed).
+      KIND_SHA256: ""
+      KUBECTL_SHA256: ""
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5, verify the SHA before the first cloud deploy
+      - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0
         with:
           enable-cache: true
       - name: Sync
@@ -37,21 +45,23 @@ jobs:
       - name: Install kind
         run: |
           set -euo pipefail
+          [[ ${KIND_SHA256} =~ ^[0-9a-f]{64}$ ]] ||
+            { echo "::error::KIND_SHA256 is not pinned; refusing to install kind"; exit 1; }
           base="https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}"
           cd "$RUNNER_TEMP"
           curl -fsSLo kind-linux-amd64 "${base}/kind-linux-amd64"
-          curl -fsSLo kind-linux-amd64.sha256sum "${base}/kind-linux-amd64.sha256sum"
-          sha256sum -c kind-linux-amd64.sha256sum
+          echo "${KIND_SHA256}  kind-linux-amd64" | sha256sum -c -
           sudo install -m 0755 kind-linux-amd64 /usr/local/bin/kind
           kind version
       - name: Install kubectl
         run: |
           set -euo pipefail
+          [[ ${KUBECTL_SHA256} =~ ^[0-9a-f]{64}$ ]] ||
+            { echo "::error::KUBECTL_SHA256 is not pinned; refusing to install kubectl"; exit 1; }
           base="https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64"
           cd "$RUNNER_TEMP"
           curl -fsSLo kubectl "${base}/kubectl"
-          curl -fsSLo kubectl.sha256 "${base}/kubectl.sha256"
-          echo "$(cat kubectl.sha256)  kubectl" | sha256sum -c -
+          echo "${KUBECTL_SHA256}  kubectl" | sha256sum -c -
           sudo install -m 0755 kubectl /usr/local/bin/kubectl
           kubectl version --client
       # Create, gVisor, build, load, seed, apply, one request per lane (run.sh header).
@@ -59,25 +69,18 @@ jobs:
         run: deploy/kind/poc05/run.sh up
       - name: Remote lane and code-runner suites
         run: deploy/kind/poc05/run.sh test-remote
-      # No upload-artifact SHA is pinned in this repo yet, so logs go to the job output.
+      # No upload-artifact SHA is pinned in this repo yet, so logs go to the job output. Every
+      # pod log goes through run.sh `logs` (redact_logs, pinned to kind-poc05); never a bare
+      # `kubectl logs` here (test_poc05_ci_wiring.py).
       - name: Pod logs and probe results
         if: failure()
         run: |
           set -uo pipefail
-          dir="$RUNNER_TEMP/poc05-logs"
-          mkdir -p "$dir"
-          for ns in $(kubectl --context kind-poc05 get namespaces -o name 2>/dev/null |
-            sed 's|^namespace/||' | grep '^poc05-'); do
-            kubectl --context kind-poc05 -n "$ns" get pods -o wide > "$dir/$ns.pods.txt" 2>&1
-            for pod in $(kubectl --context kind-poc05 -n "$ns" get pods -o name 2>/dev/null); do
-              kubectl --context kind-poc05 -n "$ns" logs "$pod" --all-containers --tail=200 \
-                > "$dir/$ns.${pod#pod/}.log" 2>&1
-            done
-          done
-          for f in "$dir"/* pocs/poc-05-sandboxed/notes/hostile/*.jsonl; do
+          deploy/kind/poc05/run.sh logs
+          for f in pocs/poc-05-sandboxed/notes/hostile/*.jsonl; do
             [ -f "$f" ] || continue
             echo "::group::$f"
-            cat "$f"
+            deploy/kind/poc05/run.sh redact < "$f"
             echo "::endgroup::"
           done
       - name: Delete
