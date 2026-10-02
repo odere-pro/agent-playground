@@ -4,7 +4,7 @@ A scripted OpenAI-compatible server. Frameworks call models over HTTP with their
 
 ## Endpoints
 
-`POST /v1/chat/completions` (complete, and `stream: true` as server-sent events with a final chunk carrying `usage`, then `data: [DONE]`), `GET /v1/models`, `GET /health`.
+`POST /v1/chat/completions` (complete, and `stream: true` as server-sent events with a final chunk carrying `usage`, then `data: [DONE]`), `GET /v1/models`, `GET /health`. Chat request bodies are recorded in `app.state.calls`, in order, so a test can check the messages a client sent. It is a `deque` of the last `max_calls` (suggested: 1000; a `create_app` keyword) so load runs stay bounded; `app.state.calls_total` counts every call.
 
 ## Script format
 
@@ -13,6 +13,9 @@ model: fake-model
 rules:
   - match: "glossary"                  # substring of the last user message; first match wins
     tool_call: { name: glossary_lookup, arguments: { term: "SLM" } }
+  - after_tool: true                   # only when the last message is a tool result
+    match: "small language"            # optional; tested against that tool result
+    reply: "From the glossary: SLM means small language model."
   - match: "fail"
     error: { status: 500, message: "scripted failure" }
   - match: "simplify"
@@ -20,6 +23,8 @@ rules:
     usage: { prompt_tokens: 42, completion_tokens: 9 }
 default_reply: "ok"                    # when no rule matches
 ```
+
+A tool loop ends (suggested): a rule without `after_tool` matches only when the last message is not a `tool` message, so the rule that called the tool is not picked again on its result. An `after_tool: true` rule answers the result; when none matches, `default_reply` does. `chassis.fakes.ScriptedModel` follows the same rules (`ScriptRule.after_tool`).
 
 ## Rules
 

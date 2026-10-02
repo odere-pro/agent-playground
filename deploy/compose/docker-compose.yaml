@@ -40,10 +40,13 @@ services:
       - ./litellm/config.yaml:/etc/litellm/config.yaml:ro
       - ./litellm/token_log.py:/etc/litellm/token_log.py:ro
     environment:
-      # No key here on purpose: the fake variant runs LiteLLM open on 127.0.0.1, and LiteLLM
-      # 1.103.0 treats an empty `LITELLM_MASTER_KEY` env as "auth on" (verified 2026-09-29).
+      # No key here on purpose: the fake variant runs LiteLLM open (published on the host's
+      # loopback only, but open to every service on the Compose network), and LiteLLM 1.103.0
+      # treats an empty `LITELLM_MASTER_KEY` env as "auth on" (verified 2026-09-29).
       # docker-compose.local.yaml adds LITELLM_MASTER_KEY and OPENAI_API_KEY, to this service only.
       LITELLM_LOG: INFO
+      # Use the cost map bundled in the pinned image; never download one at run time.
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
     ports:
       - "127.0.0.1:4000:4000"
     depends_on:
@@ -73,20 +76,26 @@ services:
       # The chassis is the only service that holds a key to the router (ADR-001 hard requirement 1).
       LITELLM_BASE_URL: http://litellm:4000/v1
       LITELLM_API_KEY: ${LITELLM_API_KEY:-}
-      # PoC-1: the workload runs in the chassis process and calls the chassis's own model proxy;
-      # PoC-2 moves it to the sidecar.
-      CHASSIS_MODEL_URL: http://127.0.0.1:8080/v1
+      # The workload calls the chassis's model proxy, which listens on the container's loopback
+      # only (`chassis serve --proxy-host 127.0.0.1 --proxy-port 8090`; suggested: 8090) and is
+      # never published. In PoC-1 the workload runs in the chassis process; in PoC-2 the sidecar
+      # workload joins this network namespace with `network_mode: "service:chassis"` and reaches
+      # the proxy at the same URL.
+      CHASSIS_MODEL_URL: http://127.0.0.1:8090/v1
     ports:
+      # The public port only: /health, /ready, /v1/run. The proxy port stays unpublished.
       - "127.0.0.1:8080:8080"
     depends_on:
       litellm:
         condition: service_healthy
     healthcheck:
+      # `/ready`, not `/health`: healthy means the engine is set up. A bad `spec.engine.handle`
+      # makes the process exit ("Application startup failed"; the import error is in the log).
       test:
         - CMD
         - python
         - -c
-        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).status == 200 else 1)"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/ready', timeout=2).status == 200 else 1)"
       interval: 5s
       timeout: 3s
       retries: 12

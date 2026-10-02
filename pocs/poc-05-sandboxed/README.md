@@ -1,6 +1,6 @@
 # PoC-5: Sandboxed: the remote lane and the trust rule
 
-Status: not started
+Status: in progress
 Planning doc: [005-PoC-5-sandboxed.md](../../docs/planning/poc/005-PoC-5-sandboxed.md)
 Time box: 3 weeks
 

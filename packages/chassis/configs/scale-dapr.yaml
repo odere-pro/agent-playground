@@ -1,0 +1,30 @@
+# PoC-4 scale stack with result events through daprd, the third container in each pair
+# (deploy/compose/docker-compose.scale-dapr.yaml, `--profile events`). The same as scale.yaml plus
+# `events: dapr` and `result_events: true`. DAPR_HTTP_ENDPOINT, DAPR_PUBSUB_NAME, DAPR_API_TOKEN,
+# and APP_API_TOKEN come from the chassis env; only the chassis and daprd hold the tokens.
+profile: local
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  adapters:
+    # Straight to the fake model server, no LiteLLM in the measured path (plan, 8a).
+    model: litellm
+    config: minio
+    # Shared by every replica: the idempotency cache and its claims (plan, sections 1 and 4).
+    state: valkey
+    telemetry: memory
+    tools: fake
+    events: dapr
+  engine:
+    connector: sidecar
+    # The workload in the same network namespace (`network_mode: service:chassis-N`).
+    url: http://127.0.0.1:9000
+  model:
+    # The fake model server answers any model name.
+    route: big-default
+  prompt:
+    version: simplifier-v1
+  events:
+    # Publish agents.task.completed.v1 or agents.task.failed.v1 after every run (plan, 2).
+    result_events: true

@@ -3,6 +3,8 @@
 Errors map to `ModelError`: `http_<status>` (retryable at 5xx), `connect_error` and `timeout`
 (retryable), `bad_response` (not). The agent name, when set, rides along as a LiteLLM tag in
 both the `x-litellm-tags` header and `metadata.tags`, so per-agent cost shows up in the router.
+The httpx client ignores the environment (`trust_env=False`), as the sidecar connector's does: no
+proxy variable can route the key elsewhere.
 """
 
 from __future__ import annotations
@@ -40,6 +42,27 @@ def _tool_schema(tool: ToolSpec) -> dict[str, Any]:
     }
 
 
+def _wire_message(message: ModelMessage) -> dict[str, Any]:
+    """The OpenAI shape of a port message: `content` always present (null stays null), `name`,
+    `tool_calls` with `function.arguments` as a JSON string, and `tool_call_id`, when set.
+    """
+    out: dict[str, Any] = {"role": message.role, "content": message.content}
+    if message.name is not None:
+        out["name"] = message.name
+    if message.tool_calls:
+        out["tool_calls"] = [
+            {
+                "id": call.call_id,
+                "type": "function",
+                "function": {"name": call.name, "arguments": json.dumps(call.arguments)},
+            }
+            for call in message.tool_calls
+        ]
+    if message.tool_call_id is not None:
+        out["tool_call_id"] = message.tool_call_id
+    return out
+
+
 def _arguments(raw: str | None) -> dict[str, Any]:
     """Parse `function.arguments`. A model can emit broken JSON; keep it under `raw`."""
     if not raw:
@@ -60,16 +83,22 @@ def _usage(data: dict[str, Any] | None) -> Usage:
     )
 
 
+# suggested: 300 characters of upstream error text; enough to name the cause, short enough for an
+# event and a log line. The epic gives no limit.
 MESSAGE_CAP = 300
 _KEY_SHAPE = re.compile(r"sk-[A-Za-z0-9_-]{8,}")
+# LiteLLM's 401 echo: `Received API Key = sk-...abcd, Key Hash (Token) = <hash>`. The value runs
+# to the next space, comma, or semicolon; a trailing period stays as text.
+_LITELLM_ECHO = re.compile(r"(Received API Key = |Key Hash \(Token\) = )[^\s,;]*[^\s,;.]")
 
 
 def _redact(text: str, api_key: str | None) -> str:
-    """Strip the configured key and anything shaped like one. LiteLLM's 401 text quotes the key
-    it received, and this message travels into events, the proxy body, and `/v1/run` output.
+    """Strip the configured key, anything shaped like one, and LiteLLM's 401 echo of the key
+    suffix and hash. This message travels into events, the proxy body, and `/v1/run` output.
     """
     if api_key:
         text = text.replace(api_key, "[redacted]")
+    text = _LITELLM_ECHO.sub(r"\1[redacted]", text)
     return _KEY_SHAPE.sub("[redacted]", text)
 
 
@@ -142,6 +171,14 @@ class _ToolCallBuffer:
         return calls
 
 
+# suggested: 60 s per router call; the epic gives no number. It is not capped at the run's
+# `budget.timeout_ms`: `ModelPort.complete` and `.stream` take no per-call timeout, so the proxy
+# cannot pass the run's remaining time down without a port change (backlog 013 CH-2, PoC-2
+# budgets). Until then the workload's own client caps the call at `budget.timeout_ms`
+# (`echo_python.handle`), and a run over its time budget is the workload's timeout, not this one.
+DEFAULT_TIMEOUT_S = 60.0
+
+
 class LiteLLMModel:
     """`ModelPort` over OpenAI-compatible HTTP. `base_url` ends with `/v1`."""
 
@@ -154,7 +191,7 @@ class LiteLLMModel:
         *,
         agent: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
-        timeout: float = 60.0,
+        timeout: float = DEFAULT_TIMEOUT_S,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.agent = agent
@@ -165,8 +202,14 @@ class LiteLLMModel:
             headers["Authorization"] = f"Bearer {api_key}"
         if agent:
             headers["x-litellm-tags"] = f"agent:{agent}"
+        # trust_env=False: `HTTP(S)_PROXY`, `ALL_PROXY`, and `SSL_CERT_*` in the chassis
+        # environment cannot route the bearer key through a proxy or swap the trust roots.
         self._client = httpx.AsyncClient(
-            base_url=self.base_url, headers=headers, transport=transport, timeout=timeout
+            base_url=self.base_url,
+            headers=headers,
+            transport=transport,
+            timeout=timeout,
+            trust_env=False,
         )
 
     def __repr__(self) -> str:
@@ -174,7 +217,9 @@ class LiteLLMModel:
         return f"LiteLLMModel(base_url={self.base_url!r}, agent={self.agent!r}, api_key={key})"
 
     @classmethod
-    def from_env(cls, *, agent: str | None = None, timeout: float = 60.0) -> LiteLLMModel:
+    def from_env(
+        cls, *, agent: str | None = None, timeout: float = DEFAULT_TIMEOUT_S
+    ) -> LiteLLMModel:
         """Build from `LITELLM_BASE_URL` (required) and `LITELLM_API_KEY` (optional)."""
         base_url = os.environ.get(BASE_URL_VAR)
         if not base_url:
@@ -194,7 +239,7 @@ class LiteLLMModel:
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
             "model": route,
-            "messages": [dict(m) for m in messages],
+            "messages": [_wire_message(m) for m in messages],
             "temperature": temperature,
         }
         if max_tokens is not None:

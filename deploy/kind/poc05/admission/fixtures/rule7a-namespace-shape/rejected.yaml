@@ -1,0 +1,38 @@
+# Rule 7a, the pod shape matches its namespace (review F3): a remote-shaped pod in poc05-agents.
+# expect: rejected
+# rule: 7a
+# message: trust rule 7a: the pod shape (chassis, remote, or tool) must match the agents.platform/pod-shape label of its namespace
+# differs: .metadata.namespace
+apiVersion: v1
+kind: Pod
+metadata:
+  name: admission-rule7a
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/name: remote-echo
+    agents.platform/lane: remote
+    agents.platform/trust: untrusted
+spec:
+  runtimeClassName: gvisor
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: workload
+    image: ghcr.io/example/third-party-agent:1.0
+    env:
+    - name: CHASSIS_API_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: remote-echo-token
+          key: token
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 10002
+      runAsGroup: 10002

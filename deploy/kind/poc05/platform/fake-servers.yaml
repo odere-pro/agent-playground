@@ -1,0 +1,173 @@
+# The scripted model and the scripted MCP tools, both behind LiteLLM only (plan sections 2.7,
+# 2.10, 2.12). Neither has auth of its own and neither holds a key: network-policy.yaml admits
+# LiteLLM's pods only (the H09 fix) and gives them no egress. Both are local builds (run.sh `build`
+# and `load`), never pulled.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fake-model-server
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fake-model-server
+  labels:
+    app.kubernetes.io/name: fake-model-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fake-model-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fake-model-server
+    spec:
+      serviceAccountName: fake-model-server
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fake-model-server
+          image: kind.local/agent-platform/fake-model-server:poc05
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 48Mi
+            limits:
+              cpu: 500m
+              memory: 64Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10002
+            runAsGroup: 10002
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fake-model-server
+  labels:
+    app.kubernetes.io/name: fake-model-server
+spec:
+  selector:
+    app.kubernetes.io/name: fake-model-server
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+---
+# No `--allow`: LiteLLM's gateway is the per-key allow-list on kind; the server lists all three
+# tools, including `unlisted_probe` (the H08 target), to LiteLLM alone.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fake-mcp-server
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fake-mcp-server
+  labels:
+    app.kubernetes.io/name: fake-mcp-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fake-mcp-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fake-mcp-server
+    spec:
+      serviceAccountName: fake-mcp-server
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fake-mcp-server
+          image: kind.local/agent-platform/fake-mcp-server:poc05
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8082
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 96Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10003
+            runAsGroup: 10003
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fake-mcp-server
+  labels:
+    app.kubernetes.io/name: fake-mcp-server
+spec:
+  selector:
+    app.kubernetes.io/name: fake-mcp-server
+  ports:
+    - name: http
+      port: 8082
+      targetPort: 8082

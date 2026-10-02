@@ -1,0 +1,285 @@
+$ /Users/oleksandrderechei/git/agent-orchestration/deploy/compose/scale.sh up echo-python 1 --events kafka
+scale.sh: generated secrets in .env.poc04 (mode 600, git-ignored)
+scale.sh: echo-python, 1 pair(s), events kafka, config scale-kafka.yaml
+ Network poc04 Creating 
+ Network poc04 Created 
+ Container poc04-traefik-1 Creating 
+ Container poc04-minio-1 Creating 
+ Container poc04-fake-model-server-1 Creating 
+ Container poc04-kafka-1 Creating 
+ Container poc04-valkey-1 Creating 
+ Container poc04-valkey-1 Created 
+ Container poc04-minio-1 Created 
+ Container poc04-minio-init-1 Creating 
+ Container poc04-fake-model-server-1 Created 
+ Container poc04-traefik-1 Created 
+ Container poc04-kafka-1 Created 
+ Container poc04-minio-init-1 Created 
+ Container poc04-chassis-1-1 Creating 
+ Container poc04-chassis-1-1 Created 
+ Container poc04-workload-1-1 Creating 
+ Container poc04-workload-1-1 Created 
+ Container poc04-kafka-1 Starting 
+ Container poc04-fake-model-server-1 Starting 
+ Container poc04-minio-1 Starting 
+ Container poc04-valkey-1 Starting 
+ Container poc04-traefik-1 Starting 
+ Container poc04-valkey-1 Started 
+ Container poc04-fake-model-server-1 Started 
+ Container poc04-minio-1 Started 
+ Container poc04-minio-init-1 Starting 
+ Container poc04-kafka-1 Started 
+ Container poc04-traefik-1 Started 
+ Container poc04-minio-init-1 Started 
+ Container poc04-minio-init-1 Waiting 
+ Container poc04-kafka-1 Waiting 
+ Container poc04-fake-model-server-1 Waiting 
+ Container poc04-valkey-1 Waiting 
+ Container poc04-valkey-1 Healthy 
+ Container poc04-fake-model-server-1 Healthy 
+ Container poc04-minio-init-1 Exited 
+ Container poc04-kafka-1 Healthy 
+ Container poc04-chassis-1-1 Starting 
+ Container poc04-chassis-1-1 Started 
+ Container poc04-workload-1-1 Starting 
+ Container poc04-workload-1-1 Started 
+ Container poc04-traefik-1 Waiting 
+ Container poc04-fake-model-server-1 Waiting 
+ Container poc04-minio-1 Waiting 
+ Container poc04-workload-1-1 Waiting 
+ Container poc04-kafka-1 Waiting 
+ Container poc04-chassis-1-1 Waiting 
+ Container poc04-valkey-1 Waiting 
+ Container poc04-minio-init-1 Waiting 
+ Container poc04-valkey-1 Healthy 
+ Container poc04-traefik-1 Healthy 
+ Container poc04-fake-model-server-1 Healthy 
+ Container poc04-minio-1 Healthy 
+ Container poc04-kafka-1 Healthy 
+ Container poc04-minio-init-1 Exited 
+ Container poc04-workload-1-1 Healthy 
+ Container poc04-chassis-1-1 Healthy 
+poc04-chassis-1-1	running	Up 5 seconds (healthy)
+poc04-fake-model-server-1	running	Up 11 seconds (healthy)
+poc04-kafka-1	running	Up 11 seconds (healthy)
+poc04-minio-1	running	Up 11 seconds
+poc04-traefik-1	running	Up 11 seconds
+poc04-valkey-1	running	Up 11 seconds (healthy)
+poc04-workload-1-1	running	Up 5 seconds (healthy)
+$ uv run --no-project --with locust==2.46.6 locust -f /Users/oleksandrderechei/git/agent-orchestration/pocs/poc-04-stateless-scalable/load/locustfile.py --host http://127.0.0.1:18080 --headless -u 10 -r 10 --run-time 10s --only-summary --stop-timeout 35 --exit-code-on-error 0 --processes 4 --csv /Users/oleksandrderechei/git/agent-orchestration/pocs/poc-04-stateless-scalable/notes/dapr/raw/kafka-rep1-warmup
+[2026-10-01 22:01:47,138] Oleksandr-Derechei-PAL00188/INFO/locust.main: Starting Locust 2.46.6
+[2026-10-01 22:01:47,157] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Oleksandr-Derechei-PAL00188.local_bf0e4a2ed1a74b3fb8d2a48d1a0ee70f (index 0) reported as ready. 1 workers connected.
+[2026-10-01 22:01:47,158] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Oleksandr-Derechei-PAL00188.local_8286bcf9efd7487a906a5008b0a3770f (index 1) reported as ready. 2 workers connected.
+[2026-10-01 22:01:47,158] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Oleksandr-Derechei-PAL00188.local_c0c344207a61420a827c012453105ad6 (index 2) reported as ready. 3 workers connected.
+[2026-10-01 22:01:47,158] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Oleksandr-Derechei-PAL00188.local_d5d9f4594b5e450f9f829567fdf858d5 (index 3) reported as ready. 4 workers connected.
+[2026-10-01 22:01:48,154] Oleksandr-Derechei-PAL00188/INFO/locust.main: Run time limit set to 10 seconds
+[2026-10-01 22:01:48,155] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Sending spawn jobs of 10 users at 10.00 spawn rate to 4 ready workers
+[2026-10-01 22:01:48,193] Oleksandr-Derechei-PAL00188/INFO/locust.runners: All users spawned: {"RunUser": 10} (10 total users)
+[2026-10-01 22:01:58,160] Oleksandr-Derechei-PAL00188/INFO/locust.main: --run-time limit reached, shutting down
+[2026-10-01 22:01:58,160] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Got quit message from master, shutting down...
+[2026-10-01 22:01:58,160] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Got quit message from master, shutting down...
+[2026-10-01 22:01:58,161] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Got quit message from master, shutting down...
+[2026-10-01 22:01:58,160] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Got quit message from master, shutting down...
+[2026-10-01 22:01:58,187] Oleksandr-Derechei-PAL00188/INFO/locust.main: Shutting down (exit code 0)
+[2026-10-01 22:01:58,187] Oleksandr-Derechei-PAL00188/INFO/locust.main: Shutting down (exit code 0)
+[2026-10-01 22:01:58,187] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Worker 'Oleksandr-Derechei-PAL00188.local_d5d9f4594b5e450f9f829567fdf858d5' (index 3) quit. 0 workers ready.
+[2026-10-01 22:01:58,187] Oleksandr-Derechei-PAL00188/INFO/locust.main: Shutting down (exit code 0)
+[2026-10-01 22:01:58,187] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Worker 'Oleksandr-Derechei-PAL00188.local_c0c344207a61420a827c012453105ad6' (index 2) quit. 0 workers ready.
+[2026-10-01 22:01:58,187] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Worker 'Oleksandr-Derechei-PAL00188.local_8286bcf9efd7487a906a5008b0a3770f' (index 1) quit. 0 workers ready.
+[2026-10-01 22:01:58,212] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Worker 'Oleksandr-Derechei-PAL00188.local_bf0e4a2ed1a74b3fb8d2a48d1a0ee70f' (index 0) quit. 0 workers ready.
+[2026-10-01 22:01:58,212] Oleksandr-Derechei-PAL00188/INFO/locust.runners: The last worker quit, stopping test.
+[2026-10-01 22:01:58,212] Oleksandr-Derechei-PAL00188/INFO/locust.main: Shutting down (exit code 0)
+[2026-10-01 22:01:59,181] Oleksandr-Derechei-PAL00188/INFO/locust.main: Shutting down (exit code 0)
+Type     Name                                                                          # reqs      # fails |    Avg     Min     Max    Med |   req/s  failures/s
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+POST     /v1/run (key)                                                                    101     0(0.00%) |    135      23     438     98 |   10.04        0.00
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+         Aggregated                                                                       101     0(0.00%) |    135      23     438     98 |   10.04        0.00
+
+Response time percentiles (approximated)
+Type     Name                                                                                  50%    66%    75%    80%    90%    95%    98%    99%  99.9% 99.99%   100% # reqs
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+POST     /v1/run (key)                                                                          98    110    120    120    150    430    440    440    440    440    440    101
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+         Aggregated                                                                             98    110    120    120    150    430    440    440    440    440    440    101
+
+$ uv run --no-project --with locust==2.46.6 locust -f /Users/oleksandrderechei/git/agent-orchestration/pocs/poc-04-stateless-scalable/load/locustfile.py --host http://127.0.0.1:18080 --headless -u 10 -r 10 --run-time 60s --only-summary --stop-timeout 35 --exit-code-on-error 0 --processes 4 --csv /Users/oleksandrderechei/git/agent-orchestration/pocs/poc-04-stateless-scalable/notes/dapr/raw/kafka-rep1
+[2026-10-01 22:02:05,872] Oleksandr-Derechei-PAL00188/INFO/locust.main: Starting Locust 2.46.6
+[2026-10-01 22:02:05,893] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Oleksandr-Derechei-PAL00188.local_4dfd6da4f56841e6b260d9a2ab55c92c (index 0) reported as ready. 1 workers connected.
+[2026-10-01 22:02:05,893] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Oleksandr-Derechei-PAL00188.local_8badaaf07731470ea59a99b170a149a4 (index 1) reported as ready. 2 workers connected.
+[2026-10-01 22:02:05,893] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Oleksandr-Derechei-PAL00188.local_abe6ac66c60642c18b0eb0a07651c9c8 (index 2) reported as ready. 3 workers connected.
+[2026-10-01 22:02:05,895] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Oleksandr-Derechei-PAL00188.local_1e5f73a93d034ed5bfa6cf9bc92409a9 (index 3) reported as ready. 4 workers connected.
+[2026-10-01 22:02:06,889] Oleksandr-Derechei-PAL00188/INFO/locust.main: Run time limit set to 60 seconds
+[2026-10-01 22:02:06,890] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Sending spawn jobs of 10 users at 10.00 spawn rate to 4 ready workers
+[2026-10-01 22:02:06,937] Oleksandr-Derechei-PAL00188/INFO/locust.runners: All users spawned: {"RunUser": 10} (10 total users)
+[2026-10-01 22:03:06,889] Oleksandr-Derechei-PAL00188/INFO/locust.main: --run-time limit reached, shutting down
+[2026-10-01 22:03:06,890] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Got quit message from master, shutting down...
+[2026-10-01 22:03:06,890] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Got quit message from master, shutting down...
+[2026-10-01 22:03:06,891] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Got quit message from master, shutting down...
+[2026-10-01 22:03:06,891] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Got quit message from master, shutting down...
+[2026-10-01 22:03:07,145] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Worker 'Oleksandr-Derechei-PAL00188.local_abe6ac66c60642c18b0eb0a07651c9c8' (index 2) quit. 0 workers ready.
+[2026-10-01 22:03:07,144] Oleksandr-Derechei-PAL00188/INFO/locust.main: Shutting down (exit code 0)
+[2026-10-01 22:03:07,148] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Worker 'Oleksandr-Derechei-PAL00188.local_1e5f73a93d034ed5bfa6cf9bc92409a9' (index 3) quit. 0 workers ready.
+[2026-10-01 22:03:07,148] Oleksandr-Derechei-PAL00188/INFO/locust.main: Shutting down (exit code 0)
+[2026-10-01 22:03:07,149] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Worker 'Oleksandr-Derechei-PAL00188.local_4dfd6da4f56841e6b260d9a2ab55c92c' (index 0) quit. 0 workers ready.
+[2026-10-01 22:03:07,149] Oleksandr-Derechei-PAL00188/INFO/locust.main: Shutting down (exit code 0)
+[2026-10-01 22:03:07,151] Oleksandr-Derechei-PAL00188/INFO/locust.runners: Worker 'Oleksandr-Derechei-PAL00188.local_8badaaf07731470ea59a99b170a149a4' (index 1) quit. 0 workers ready.
+[2026-10-01 22:03:07,151] Oleksandr-Derechei-PAL00188/INFO/locust.runners: The last worker quit, stopping test.
+[2026-10-01 22:03:07,150] Oleksandr-Derechei-PAL00188/INFO/locust.main: Shutting down (exit code 0)
+[2026-10-01 22:03:07,903] Oleksandr-Derechei-PAL00188/INFO/locust.main: Shutting down (exit code 0)
+Type     Name                                                                          # reqs      # fails |    Avg     Min     Max    Med |   req/s  failures/s
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+POST     /v1/run (key)                                                                    610     0(0.00%) |    141      68     504    120 |   10.12        0.00
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+         Aggregated                                                                       610     0(0.00%) |    141      68     504    120 |   10.12        0.00
+
+Response time percentiles (approximated)
+Type     Name                                                                                  50%    66%    75%    80%    90%    95%    98%    99%  99.9% 99.99%   100% # reqs
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+POST     /v1/run (key)                                                                         120    130    160    170    210    270    440    460    500    500    500    610
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+         Aggregated                                                                            120    130    160    170    210    270    440    460    500    500    500    610
+
+$ /Users/oleksandrderechei/git/agent-orchestration/deploy/compose/scale.sh down
+ Container poc04-workload-1-1 Stopping 
+ Container poc04-traefik-1 Stopping 
+ Container poc04-traefik-1 Stopped 
+ Container poc04-traefik-1 Removing 
+ Container poc04-traefik-1 Removed 
+ Container poc04-workload-1-1 Stopped 
+ Container poc04-workload-1-1 Removing 
+ Container poc04-workload-1-1 Removed 
+ Container poc04-chassis-1-1 Stopping 
+ Container poc04-chassis-1-1 Stopped 
+ Container poc04-chassis-1-1 Removing 
+ Container poc04-chassis-1-1 Removed 
+ Container poc04-minio-init-1 Stopping 
+ Container poc04-valkey-1 Stopping 
+ Container poc04-fake-model-server-1 Stopping 
+ Container poc04-kafka-1 Stopping 
+ Container poc04-minio-init-1 Stopped 
+ Container poc04-minio-init-1 Removing 
+ Container poc04-minio-init-1 Removed 
+ Container poc04-minio-1 Stopping 
+ Container poc04-valkey-1 Stopped 
+ Container poc04-valkey-1 Removing 
+ Container poc04-minio-1 Stopped 
+ Container poc04-minio-1 Removing 
+ Container poc04-valkey-1 Removed 
+ Container poc04-minio-1 Removed 
+ Container poc04-fake-model-server-1 Stopped 
+ Container poc04-fake-model-server-1 Removing 
+ Container poc04-fake-model-server-1 Removed 
+ Container poc04-kafka-1 Stopped 
+ Container poc04-kafka-1 Removing 
+ Container poc04-kafka-1 Removed 
+ Network poc04 Removing 
+ Network poc04 Removed 
+{
+  "name": "kafka-rep1",
+  "events": "kafka",
+  "offsets_before": {
+    "agents.task.completed.v1": 101,
+    "agents.task.failed.v1": 0
+  },
+  "offsets_after": {
+    "agents.task.completed.v1": 711,
+    "agents.task.failed.v1": 0
+  },
+  "events_in_window": {
+    "agents.task.completed.v1": 610,
+    "agents.task.failed.v1": 0
+  },
+  "consumed_total": {
+    "agents.task.completed.v1": 711,
+    "agents.task.failed.v1": 0
+  },
+  "warmup": {
+    "requests": 101,
+    "failures": 0,
+    "rps": 10.04,
+    "p50_ms": 98.0,
+    "p95_ms": 430.0,
+    "ok_rps": 10.04
+  },
+  "load": {
+    "requests": 610,
+    "failures": 0,
+    "rps": 10.12,
+    "p50_ms": 120.0,
+    "p95_ms": 270.0,
+    "ok_rps": 10.12
+  },
+  "containers": {
+    "chassis": {
+      "replicas": 1,
+      "vcpu_mean": 0.1736,
+      "vcpu_max": 0.6572,
+      "mib_mean": 193.66,
+      "mib_max": 206.3,
+      "idle_vcpu": 0.1083,
+      "idle_mib": 179.94
+    },
+    "fake-model-server": {
+      "replicas": 1,
+      "vcpu_mean": 0.0732,
+      "vcpu_max": 0.4074,
+      "mib_mean": 45.59,
+      "mib_max": 47.22,
+      "idle_vcpu": 0.0261,
+      "idle_mib": 41.26
+    },
+    "kafka": {
+      "replicas": 1,
+      "vcpu_mean": 0.1856,
+      "vcpu_max": 1.1873,
+      "mib_mean": 537.96,
+      "mib_max": 636.9,
+      "idle_vcpu": 0.0264,
+      "idle_mib": 516.68
+    },
+    "minio": {
+      "replicas": 1,
+      "vcpu_mean": 0.0005,
+      "vcpu_max": 0.0013,
+      "mib_mean": 257.64,
+      "mib_max": 257.9,
+      "idle_vcpu": 0.0009,
+      "idle_mib": 256.8
+    },
+    "traefik": {
+      "replicas": 1,
+      "vcpu_mean": 0.0058,
+      "vcpu_max": 0.0128,
+      "mib_mean": 103.38,
+      "mib_max": 105.1,
+      "idle_vcpu": 0.0015,
+      "idle_mib": 97.39
+    },
+    "valkey": {
+      "replicas": 1,
+      "vcpu_mean": 0.0053,
+      "vcpu_max": 0.0161,
+      "mib_mean": 21.21,
+      "mib_max": 22.83,
+      "idle_vcpu": 0.0083,
+      "idle_mib": 20.45
+    },
+    "workload": {
+      "replicas": 1,
+      "vcpu_mean": 0.1512,
+      "vcpu_max": 0.755,
+      "mib_mean": 94.82,
+      "mib_max": 95.63,
+      "idle_vcpu": 0.0688,
+      "idle_mib": 82.04
+    }
+  },
+  "host": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "cpus": 14,
+    "docker_cpus": 14,
+    "docker_mem_mib": 7935,
+    "other_running_containers": 17
+  }
+}

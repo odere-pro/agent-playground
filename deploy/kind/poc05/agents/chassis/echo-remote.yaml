@@ -1,0 +1,26 @@
+# The chassis config for `chassis-echo-remote`: the remote lane (plan sections 2.1 to 2.3). The
+# workload is the Sandbox `remote-echo` in poc05-remote, reached through the Service of that name
+# on 9000 (deploy/kind/poc05/remote/). The chassis sends the per-remote token from REMOTE_TOKEN
+# (the Secret `remote-echo-token`, chassis container only) on every A2A call, and its remote proxy
+# listener (pod IP, 8091) accepts the same token from the remote. `config: memory`, as echo.yaml.
+profile: local
+agent:
+  name: echo-remote
+  version: 0.0.1
+spec:
+  trust: untrusted
+  adapters:
+    model: litellm
+    config: memory
+    state: valkey
+    telemetry: memory
+    tools: mcp
+    events: none
+  engine:
+    connector: remote
+    url: http://remote-echo.poc05-remote.svc.cluster.local:9000
+    auth:
+      scheme: bearer
+      token_env: REMOTE_TOKEN
+  model:
+    route: fake-chat

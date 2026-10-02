@@ -1,0 +1,21 @@
+[project]
+name = "echo-pydanticai"
+version = "0.1.0"
+description = "The simplifier as a PydanticAI agent: handle(input, ctx) in the wire form, served by workload-a2a, no chassis dependency, no key"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "pydantic-ai-slim[openai,mcp]",
+  "openai",
+  "httpx2",
+  "workload-a2a",
+]
+
+[dependency-groups]
+dev = ["fake-model-server", "fastmcp"]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "echo_pydanticai"

@@ -1,0 +1,38 @@
+# Q3: native sidecar (initContainer with restartPolicy: Always) on runc and on gVisor.
+# The sidecar serves on localhost:9000; the main container reads from it over the pod's loopback.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sidecar-runc
+spec:
+  initContainers:
+    - name: proxy
+      image: busybox:1.37
+      restartPolicy: Always
+      command: ["sh", "-c", "mkdir -p /www && echo from-sidecar > /www/index.html && httpd -f -p 9000 -h /www"]
+      startupProbe:
+        tcpSocket: {port: 9000}
+        periodSeconds: 1
+  containers:
+    - name: main
+      image: busybox:1.37
+      command: ["sh", "-c", "wget -q -O- http://127.0.0.1:9000/; sleep 3600"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sidecar-gvisor
+spec:
+  runtimeClassName: gvisor
+  initContainers:
+    - name: proxy
+      image: busybox:1.37
+      restartPolicy: Always
+      command: ["sh", "-c", "mkdir -p /www && echo from-sidecar > /www/index.html && httpd -f -p 9000 -h /www"]
+      startupProbe:
+        tcpSocket: {port: 9000}
+        periodSeconds: 1
+  containers:
+    - name: main
+      image: busybox:1.37
+      command: ["sh", "-c", "wget -q -O- http://127.0.0.1:9000/; sleep 3600"]

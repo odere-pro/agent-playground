@@ -53,6 +53,12 @@ New chassis issues from the ADR:
 - {{L:CH-7}}: chassis release in rings, with a minimum-version rule.
 - {{L:CH-8}}: framework event mappings and one non-Python workload.
 
+How the OpenAI, Anthropic, and MCP formats map onto the one canonical request ({{L:H-2}}, {{L:H-13}}) is proposed in [ADR-003](../adr/003-chat-formats-onto-the-canonical-request.md), from PoC-3.
+
+That result events leave through a broker client in the chassis, not Dapr ({{L:H-17}}), is proposed in [ADR-004](../adr/004-events-through-a-broker-client.md), from PoC-4. The broker product stays open in {{L:DEC-1}}.
+
+How a remote workload authenticates to the chassis (one bearer token per remote, a separate listener) and how admission enforces the trust rule ({{L:CH-4}}, {{L:CH-6}}, a ValidatingAdmissionPolicy) is proposed in [ADR-005](../adr/005-remote-lane-auth-and-trust-admission.md), from PoC-5.
+
 ## Definition of done for every issue
 
 The platform must be swappable and testable from day 0. So every issue, on top of its own acceptance criteria, is done only when:
@@ -163,7 +169,7 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 
 - **(a) Services that write their own store:** {{L:D-0}}, {{L:D-1}}, {{L:C-3}}, {{L:R-1}}, {{L:O-9}}. Only the chassis may hold a store credential. Suggested: the chassis holds it and exposes the service's own store to its workload as MCP tools through the tool proxy, the way ADR-001 item 8 adds connectors.
 - **(b) The orchestrator's Temporal worker:** {{L:O-1}}, {{L:O-2}}, {{L:O-3}}, {{L:O-16}}. The framework Temporal integrations run in the workload and need a Temporal credential. Suggested: the worker runs in the chassis and calls the workload once per step through the connector.
-- **(c) Dapr:** {{L:H-17}}, {{L:H-20}}, {{L:H-22}}, {{L:H-23}}, {{L:C-3}}. Dapr is a third container in the pod, which the ADR's cost table leaves out, and the workload can reach its localhost API. Suggested: a broker client in the chassis. The other choice is Dapr with API-token auth and the token in the chassis container only. The PoC track's PoC-4 tries both, and {{L:DEC-1}} records the result.
+- **(c) Dapr:** {{L:H-17}}, {{L:H-20}}, {{L:H-22}}, {{L:H-23}}, {{L:C-3}}. Dapr is a third container in the pod, which the ADR's cost table leaves out, and the workload can reach its localhost API. Suggested: a broker client in the chassis. The other choice is Dapr with API-token auth and the token in the chassis container only. The PoC track's PoC-4 tries both, and {{L:DEC-1}} records the result. PoC-4's result: [ADR-004](../adr/004-events-through-a-broker-client.md) proposes the broker client; the owner has not accepted it yet.
 - **(d) Guardrails per key:** ADR-001 item 6 gives each scoped key its own guardrails, but LiteLLM makes that Enterprise-only ({{L:H-6}}). Buy Enterprise, or set guardrails per route.
 - **(e) The framework owns the model loop in the `sidecar` lane:** {{L:H-4}}, {{L:H-16}}, {{L:G-4}}, {{L:M-3}}. The chassis no longer drives the model calls. Suggested: a retry calls `handle` again. A fallback retries with `ctx.model.route` set to the fallback route, which the model proxy enforces for that request. The model proxy enforces the budget. History swap and shadow calls are decided in their own issues.
 - **(f) Workload logs:** the workload's logs do not pass through the chassis, so the chassis cannot redact them. Suggested: redaction in the OpenTelemetry Collector log pipeline ({{L:H-7}}).

@@ -10,11 +10,18 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.23@sha256:d0a0a753ab981624b49c97abc98821c1
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/app/.venv
 WORKDIR /app
 # Only what the locked resolve needs, so a source edit does not invalidate the dependency layer.
+# `--locked` checks the whole workspace against uv.lock, so every member's pyproject.toml is here.
 COPY pyproject.toml uv.lock ./
 COPY packages/chassis/pyproject.toml packages/chassis/
 COPY packages/contract-suites/pyproject.toml packages/contract-suites/
 COPY packages/fake-model-server/pyproject.toml packages/fake-model-server/
 COPY packages/workloads/echo-python/pyproject.toml packages/workloads/echo-python/
+COPY packages/workload-a2a/pyproject.toml packages/workload-a2a/
+COPY packages/workloads/echo-pydanticai/pyproject.toml packages/workloads/echo-pydanticai/
+COPY packages/workloads/echo-langgraph/pyproject.toml packages/workloads/echo-langgraph/
+COPY packages/fake-mcp-server/pyproject.toml packages/fake-mcp-server/
+COPY packages/code-runner/pyproject.toml packages/code-runner/
+COPY packages/workloads/hostile/pyproject.toml packages/workloads/hostile/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package chassis --package echo-python --no-install-workspace
 # The echo-python workload rides in this image for the `inprocess` lane (PoC-1 only; PoC-2 moves
@@ -31,8 +38,11 @@ COPY --from=build --chown=chassis:chassis /app /app
 ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1
 USER chassis
 EXPOSE 8080
-# The chassis answers `/health` before the engine is up and `/ready` after (server/app.py).
+# Healthy means ready: `/ready` is 200 once the lifespan has built the ports and set up the engine
+# (server/app.py); `/health` only says the process answers. uvicorn runs the lifespan before it
+# binds, so a bad `spec.engine.handle` never reaches either: the process exits with
+# "Application startup failed" and the import error in the log.
 HEALTHCHECK --interval=5s --timeout=3s --retries=12 \
-    CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).status == 200 else 1)"]
+    CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/ready', timeout=2).status == 200 else 1)"]
 ENTRYPOINT ["chassis", "serve"]
 CMD ["--config", "/etc/chassis/config.yaml", "--host", "0.0.0.0", "--port", "8080"]

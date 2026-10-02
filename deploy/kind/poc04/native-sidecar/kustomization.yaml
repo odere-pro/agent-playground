@@ -1,0 +1,11 @@
+# Variant 1: the workload as a Kubernetes native sidecar (an init container with
+# `restartPolicy: Always`), the chassis as the main container. Native sidecars start before the
+# main container (after their startupProbe passes) and stop after it, so on delete the chassis gets
+# SIGTERM first and drains while the workload still serves. Engine: echo-python; the TypeScript
+# engine is ../typescript/native-sidecar.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: poc04
+resources:
+  - ../base
+  - deployment.yaml

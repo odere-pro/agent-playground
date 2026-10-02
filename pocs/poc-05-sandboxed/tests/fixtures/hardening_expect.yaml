@@ -1,0 +1,69 @@
+# The container hardening table (plan section 2.11) as data, for test_poc05_hardening_static.py.
+# One file for T13, T14, and T15 (the plan named remote_expect.yaml and tools_expect.yaml; one
+# table is easier to keep whole). Every pod template under deploy/kind/poc05/{agents,remote,tools}
+# must be listed under `pods`, so a new pod cannot skip the table.
+#
+# Not listed: agent-probe-sidecar, chassis-probe-remote, remote-probe. The probe workload
+# (packages/workloads/hostile) is out of scope for this pass; add them here when they land.
+
+roles:
+  chassis:
+    uid: 10001
+    gid: 10001
+    runtime: runc
+    cpu: 500m
+    memory: 256Mi
+    tmp: 16Mi
+  sidecar-workload:
+    uid: 10002
+    gid: 10002
+    runtime: runc
+    cpu: 500m
+    memory: 256Mi
+    tmp: 32Mi
+  remote-workload:
+    uid: 10002
+    gid: 10002
+    runtime: gvisor
+    cpu: 500m
+    memory: 256Mi
+    tmp: 32Mi
+  code-runner:
+    uid: 10003
+    gid: 10003
+    runtime: gvisor
+    cpu: 500m
+    memory: 256Mi
+    tmp: 64Mi
+
+# pod name: its namespace, its kind, and the role of each container by name.
+pods:
+  agent-echo:
+    namespace: poc05-agents
+    kind: Deployment
+    containers:
+      chassis: chassis
+      workload: sidecar-workload
+  chassis-echo-remote:
+    namespace: poc05-agents
+    kind: Deployment
+    containers:
+      chassis: chassis
+  remote-echo:
+    namespace: poc05-remote
+    kind: Sandbox
+    containers:
+      workload: remote-workload
+  code-runner:
+    namespace: poc05-tools
+    kind: Sandbox
+    containers:
+      code-runner: code-runner
+
+# The remote lane's fixed-ClusterIP Service in front of each remote chassis's port 8091, and the
+# remote that uses it (it has no DNS, so it gets the address as plain env).
+remote_proxies:
+  chassis-echo-remote-proxy:
+    chassis: chassis-echo-remote
+    remote: remote-echo
+    port: 8091

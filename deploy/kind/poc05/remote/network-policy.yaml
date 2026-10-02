@@ -1,0 +1,38 @@
+# poc05-remote: what the remote sandbox may send and receive (plan section 2.10). The namespace's
+# `default-deny` refuses everything else. No rule uses an `ipBlock`, and there is no DNS rule: a
+# remote that asks for a name gets no answer (H20 closed for the remote lane).
+# Not here: `remote-probe` (the probe workload is out of scope for this pass).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: remote-echo
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: remote-echo
+  policyTypes: [Ingress, Egress]
+  # 9000 only from its own chassis pod (H18).
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chassis-echo-remote
+      ports:
+        - port: 9000
+          protocol: TCP
+  # Its chassis's remote proxy port, and nothing else. The policy sees the pod after the Service
+  # rewrite (spike, question 2), so the fixed ClusterIP of chassis-echo-remote-proxy is covered.
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chassis-echo-remote
+      ports:
+        - port: 8091
+          protocol: TCP

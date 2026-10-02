@@ -1,0 +1,26 @@
+# The agent-sandbox controller under the restricted Pod Security Standard, with limits.
+# suggested: 64Mi limit (plan section 8; the spike measured 13 MB idle). uid 65532 is distroless
+# `nonroot`; it is set by number so runAsNonRoot can be checked. The controller keeps its service
+# account token: it is the one pod here that must call the API server.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-sandbox-controller
+  namespace: agent-sandbox-system
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: agent-sandbox-controller
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 64Mi}

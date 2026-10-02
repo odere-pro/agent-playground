@@ -1,0 +1,46 @@
+# Rule 6b, no command on the chassis (review F2): the chassis image runs another command.
+# expect: rejected
+# rule: 6b
+# message: trust rule 6b: the chassis container may not override the image command
+# differs: .spec.initContainers[0].command
+apiVersion: v1
+kind: Pod
+metadata:
+  name: admission-rule6b
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/name: admission-rule6b
+    agents.platform/trust: trusted
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  initContainers:
+  - name: chassis
+    image: kind.local/agent-platform/chassis:poc05
+    imagePullPolicy: Never
+    restartPolicy: Always
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: &id001
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 10001
+      runAsGroup: 10001
+    command:
+    - python
+    - -c
+    - print('any code')
+  containers:
+  - name: workload
+    image: kind.local/agent-platform/echo-python:poc05
+    imagePullPolicy: Never
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: *id001
+      readOnlyRootFilesystem: true
+      runAsUser: 10002
+      runAsGroup: 10002

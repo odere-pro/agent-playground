@@ -19,6 +19,10 @@ dev = [
   "types-pyyaml==6.0.12.20260906",
   "jsonschema==4.26.0",
   "types-jsonschema==4.26.0.20260518",
+  "schemathesis==4.28.0",
+  "pytest-recording==0.13.4",
+  "vcrpy==8.3.0",
+  "testcontainers[minio]==4.15.0",
 ]
 
 [tool.uv.workspace]
@@ -27,6 +31,12 @@ members = [
   "packages/contract-suites",
   "packages/fake-model-server",
   "packages/workloads/echo-python",
+  "packages/workload-a2a",
+  "packages/workloads/echo-pydanticai",
+  "packages/workloads/echo-langgraph",
+  "packages/fake-mcp-server",
+  "packages/code-runner",
+  "packages/workloads/hostile",
 ]
 
 [tool.uv.sources]
@@ -34,6 +44,12 @@ chassis = { workspace = true }
 chassis-contracts = { workspace = true }
 fake-model-server = { workspace = true }
 echo-python = { workspace = true }
+workload-a2a = { workspace = true }
+echo-pydanticai = { workspace = true }
+echo-langgraph = { workspace = true }
+fake-mcp-server = { workspace = true }
+code-runner = { workspace = true }
+hostile = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["packages", "pocs"]
@@ -42,6 +58,8 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
   "slow: takes more than a few seconds (import-lint, subprocesses)",
   "network: needs a real socket; never part of `make test`",
+  "stack: a PoC-4 Compose drill; runs only with POC04_STACK=1 (also `network`)",
+  "kind: a kind drill; PoC-4 runs it only with POC04_KIND=1, PoC-5 only with POC05_KIND=1 (also `network`)",
 ]
 
 [tool.ruff]
@@ -59,28 +77,57 @@ exclude = ["*.md"]
 strict = true
 python_version = "3.12"
 files = ["packages", "pocs", "scripts"]
-exclude = ["docs/planning"]
+# `notes/` holds one-off measurement and drill scripts kept as evidence, not maintained code.
+exclude = [
+  "docs/planning",
+  "pocs/poc-04-stateless-scalable/tests/conftest\\.py$",
+  "pocs/poc-05-sandboxed/tests/conftest\\.py$",
+  "pocs/[^/]+/notes/",
+]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["pytest_socket.*", "google.protobuf.*"]
+module = ["pytest_socket.*", "google.protobuf.*", "vcr.*", "aiokafka.*"]
 ignore_missing_imports = true
 
 [tool.importlinter]
-root_packages = ["chassis", "echo_python"]
+root_packages = [
+  "chassis",
+  "echo_python",
+  "workload_a2a",
+  "echo_pydanticai",
+  "echo_langgraph",
+  "fake_mcp_server",
+  "code_runner",
+  "hostile",
+]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "a workload never imports the chassis (ADR-002)"
 type = "forbidden"
-source_modules = ["echo_python"]
+source_modules = ["echo_python", "workload_a2a", "echo_pydanticai", "echo_langgraph", "hostile"]
+forbidden_modules = ["chassis", "chassis_contracts"]
+
+[[tool.importlinter.contracts]]
+name = "the PoC-5 tool servers never import the chassis (they sit behind the MCP gateway)"
+type = "forbidden"
+source_modules = ["fake_mcp_server", "code_runner"]
 forbidden_modules = ["chassis", "chassis_contracts"]
 
 [[tool.importlinter.contracts]]
 name = "the chassis never imports a workload (no business logic in the chassis)"
 type = "forbidden"
 source_modules = ["chassis"]
-forbidden_modules = ["echo_python"]
+forbidden_modules = [
+  "echo_python",
+  "workload_a2a",
+  "echo_pydanticai",
+  "echo_langgraph",
+  "hostile",
+  "fake_mcp_server",
+  "code_runner",
+]
 # `allow_indirect_imports` stays unset so an indirect import counts too. The connector loads
 # `spec.engine.handle` by dotted path at runtime through `importlib`, which this does not see.
 
@@ -92,18 +139,51 @@ forbidden_modules = ["a2a"]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
+name = "fastmcp and mcp are imported only under chassis.adapters"
+type = "forbidden"
+source_modules = ["chassis.core", "chassis.ports", "chassis.fakes", "chassis.server", "chassis.profiles"]
+forbidden_modules = ["fastmcp", "mcp", "mcp_types"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "openai and anthropic are imported only under chassis.adapters"
+type = "forbidden"
+# The interface routers in `chassis.server.interfaces` reach the SDK types through
+# `chassis.adapters.*_compat`, so indirect imports are allowed (PoC-3 open note, section 1).
+source_modules = ["chassis.core", "chassis.ports", "chassis.fakes", "chassis.server", "chassis.profiles"]
+forbidden_modules = ["openai", "anthropic"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "valkey, aiokafka, and minio are imported only under chassis.adapters (PoC-4)"
+# `chassis.profiles` reaches the adapters through `profiles.lazy` (importlib), so an unused SDK is
+# never loaded; `test_importing_profiles_loads_no_store_sdk` checks it.
+type = "forbidden"
+source_modules = ["chassis.core", "chassis.ports", "chassis.fakes", "chassis.server", "chassis.profiles"]
+forbidden_modules = ["valkey", "aiokafka", "minio"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "testcontainers is a test tool: never imported by the chassis"
+type = "forbidden"
+source_modules = ["chassis"]
+forbidden_modules = ["testcontainers"]
+
+[[tool.importlinter.contracts]]
 name = "chassis layers: core has no upward imports"
 type = "layers"
-layers = ["chassis.fakes | chassis.adapters", "chassis.ports", "chassis.core"]
+# `server` and `profiles` wire the adapters and fakes together; nothing below imports them. `:`
+# (not `|`) because they are not independent: `server` imports `profiles`.
+layers = ["chassis.server : chassis.profiles", "chassis.fakes | chassis.adapters", "chassis.ports", "chassis.core"]
 
 [[tool.importlinter.contracts]]
 name = "no agent framework anywhere in the chassis"
 type = "forbidden"
 source_modules = ["chassis"]
-forbidden_modules = ["pydantic_ai", "langgraph", "agents", "smolagents", "claude_agent_sdk", "crewai"]
+forbidden_modules = ["pydantic_ai", "langgraph", "langchain", "langchain_core", "agents", "smolagents", "claude_agent_sdk", "crewai"]
 
 [[tool.importlinter.contracts]]
 name = "no product SDK or web framework in core and ports"
 type = "forbidden"
 source_modules = ["chassis.core", "chassis.ports"]
-forbidden_modules = ["fastapi", "starlette", "httpx", "openai", "anthropic", "litellm", "a2a", "opentelemetry"]
+forbidden_modules = ["fastapi", "starlette", "httpx", "openai", "anthropic", "litellm", "a2a", "opentelemetry", "valkey", "aiokafka", "minio"]

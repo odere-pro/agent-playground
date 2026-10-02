@@ -1,0 +1,21 @@
+# The PoC-5 platform services in poc05-platform (plan sections 2.9 to 2.12, bring-up order in
+# section 8): Postgres and LiteLLM (models and MCP gateway), the fake model and MCP servers,
+# Valkey, MinIO and its one-shot init Job, and their NetworkPolicies. Apply after base/ and after
+# `seed.sh base`: every Secret these pods read is made by seed.sh at run time, none is here.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: poc05-platform
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: poc05
+resources:
+  - postgres.yaml
+  - litellm.yaml
+  - fake-servers.yaml
+  - valkey.yaml
+  - minio.yaml
+  - network-policy.yaml
+configMapGenerator:
+  - name: litellm-config
+    files:
+      - config.yaml=litellm/config.yaml

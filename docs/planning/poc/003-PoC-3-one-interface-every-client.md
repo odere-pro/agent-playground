@@ -59,4 +59,5 @@ The same agent is called from the OpenAI Python SDK, the Anthropic Python SDK, a
 
 - Plan: [000-plan.md](000-plan.md) · Previous: [PoC-2](002-PoC-2-two-engines-one-contract.md) · Next: [PoC-4](004-PoC-4-stateless-scalable.md)
 - Backlog issues this previews: [011 H-2](../issues/011-H-2-inbound-adapters.md), [051 H-13](../issues/051-H-13-openapi-mcp-tools.md), [015 H-8](../issues/015-H-8-testing-kit.md)
+- Decision: [ADR-003](../adr/003-chat-formats-onto-the-canonical-request.md), chat formats onto the canonical request (proposed) · Contract: [contract v2](../../contracts/contract-v2.md)
 - Epic: [F.2](../slm-agent-platform-epic-v3.md#f2), [G.1](../slm-agent-platform-epic-v3.md#g1), [R2](../slm-agent-platform-epic-v3.md#r2), [R3](../slm-agent-platform-epic-v3.md#r3)

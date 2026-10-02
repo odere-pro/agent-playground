@@ -28,6 +28,7 @@ Every service is built from one template, so a new service gets its workload ske
 - Image signing with cosign, and a Kyverno policy that refuses unsigned images at deploy.
 - Deploy with Argo CD from the Helm chart (GitOps) to a dev cluster (suggested: a local test cluster until 038 X-1a builds the cloud one).
 - A registry registration step that only prints the manifest it would send.
+- Status after PoC-2: the template has two parts to draw on: `packages/workload-a2a`, the Python template server (`workload-a2a serve --handle module:attribute`), and its TypeScript port in `packages/workloads/echo-typescript/src/a2a_server.ts`. [ADR-002](../adr/002-template-a2a-server-placement.md) item 4 is amended (2026-10-01): one shared package, not an `a2a_server.py` per workload, so the template depends on `workload-a2a` instead of copying files. Each workload Dockerfile from PoC-2 is a starting point: non-root uid 10001, the base pinned by digest (the Node base too, since 2026-10-01), and all four ran hardened (`cap_drop: ALL`, `no-new-privileges`, `read_only` with a `tmpfs` on `/tmp`) in [the Compose demo](../../../pocs/poc-02-two-engines-one-contract/demo/2026-10-01-demo-sidecar.md). Carried in from 009 CH-1: the Python template server cannot interrupt `handle` mid-await.
 
 ## Reuse
 

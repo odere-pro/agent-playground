@@ -1,0 +1,23 @@
+# poc05-tools: the code runner (plan section 2.10). Its MCP port only from LiteLLM; no egress at
+# all, not even DNS: the policy names Egress with no rule. No rule uses an `ipBlock`.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: code-runner
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: code-runner
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-platform
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
+      ports:
+        - port: 8000
+          protocol: TCP
+  egress: []

@@ -1,6 +1,8 @@
 # Contract v0
 
-The written contract PoC-1's exit criterion asks for. Generated schemas: `packages/chassis/schemas/*.v0.json` (`make schemas`). Source models: `packages/chassis/src/chassis/core/`. Status: PoC-1 walking skeleton. The A2A mapping below is the wire contract from the first commit; it becomes part of v1 in PoC-2 when the `sidecar` lane runs the same server in its own container.
+> **Superseded by [contract v1](contract-v1.md) (2026-10-01).** This file is the PoC-1 record. Read v1 for the contract in force; the few v0 statements below that the code has since made false are corrected in place and marked "(v1: ...)".
+
+The written contract PoC-1's exit criterion asks for. Generated schemas: `packages/chassis/schemas/*.v0.json` (`make schemas`). Source models: `packages/chassis/src/chassis/core/`. Status: PoC-1 walking skeleton. The A2A mapping below is the wire contract from the first commit; it becomes part of v1 in PoC-2 when the `sidecar` lane runs the same server in its own container. Changes already decided for v1 are at the end, in "Changes decided for v1 (2026-10-01)"; build PoC-2 code to them, not to the v0 text they replace.
 
 ## The `handle` contract
 
@@ -51,8 +53,9 @@ What the chassis gives a `handle` next to the input: the identity fields, `budge
 | `EngineConnector` | `kind` is a lane; `run` streams `start` first and `end` or `error` last; cancel is clean | `FakeEngine` (a test double, not a lane) | `inprocess` A2A in memory (PoC-1), `sidecar` (PoC-2), `remote` (PoC-5) |
 | `ConfigPort` | `load` gives a version; a change gives a new version and notifies subscribers | `InMemoryConfig` | MinIO or S3 (PoC-4) |
 | `TelemetryPort` | one span per call with attributes and parent; counters | `InMemoryTelemetry` | OpenTelemetry SDK (PoC-7) |
+| `ToolPort` | `list_tools` is stable; each definition has a name, a description, and an object schema; a listed tool answers; errors are `ToolError` (`unknown_tool`, `bad_arguments`); a read-only tool repeats. Served to workloads over MCP at `/mcp` | `InMemoryTools` (`glossary_lookup`) | MCP gateway client (PoC-5, 054 H-16) |
 
-The other ports (`StatePort`, `EventPort`, `ToolPort`, `AuthPort`, `GuardrailPort`, `EvaluatorPort`, `FeedbackPort`, `RegistryPort`) arrive with their first adapter, in the same shape.
+The other ports (`StatePort`, `EventPort`, `AuthPort`, `GuardrailPort`, `EvaluatorPort`, `FeedbackPort`, `RegistryPort`) arrive with their first adapter, in the same shape.
 
 ## `EngineConnector`, draft
 
@@ -91,9 +94,9 @@ The connector sends one `SendMessageRequest` with `SendStreamingMessage`, always
 | ---- | ----------------- | -------------------------- |
 | `input.text` | The first `Part` of the `Message`, a text part (`new_text_part`), only when set | `RequestContext.get_user_input()` |
 | `input.data` | A data `Part` (`new_data_part(data, media_type="application/json")`), only when not empty | `get_data_parts(context.message.parts)[0]` |
-| `ctx` (`context.v0.json`) | `SendMessageRequest.metadata["chassis.ctx"]`, as JSON | `RequestContext.metadata["chassis.ctx"]` |
+| `ctx` (`context.v0.json`) | `SendMessageRequest.metadata["chassis.ctx"]`, as a `Struct` (v1: a JSON string; the `Struct` form is still read) | `RequestContext.metadata["chassis.ctx"]` |
 | Schema version | `SendMessageRequest.metadata["chassis.schema_version"]` | `RequestContext.metadata["chassis.schema_version"]` |
-| Trace | `ctx.trace_id`. PoC-2: the connector also sets the `traceparent` HTTP header with the same id; the `inprocess` connector sets no header today | PoC-2: the workload's HTTP client propagates it (ADR-001, item 6) |
+| Trace | `ctx.trace_id`. The connector also sets the `traceparent` HTTP header with the same id, in every lane (v1: `inprocess` included, and the same value in `ctx.traceparent`) | PoC-2: the workload's HTTP client propagates it (ADR-001, item 6) |
 
 `Message.role` is `ROLE_USER`. Nothing else travels: no key, no header of the chassis's own.
 
@@ -110,7 +113,7 @@ Every chassis event is exactly one A2A stream event, in order. The event's full 
 | `end` | `TaskStatusUpdateEvent` | `TASK_STATE_COMPLETED`, for `ok`, `retry`, and `fallback` alike; the chassis status is inside the event | `status.message`: an agent message with one data part `output`, only when set | `update_status(COMPLETED, message=..., metadata=...)` |
 | `error` | `TaskStatusUpdateEvent` | `TASK_STATE_FAILED` | `status.message`: an agent message with one text part `message` | `update_status(FAILED, message=..., metadata=...)` |
 
-`metadata` is a protobuf `Struct`, so numbers cross as doubles: integers survive up to 2^53, and `12` comes back as `12.0`, which pydantic accepts for an `int` field. The contract suite checks that `metrics` round-trips its integers.
+`metadata` is a protobuf `Struct`, so numbers cross as doubles (v1: `chassis.event`, `chassis.ctx`, and `chassis.input` cross as JSON strings instead, so integers stay integers): integers survive up to 2^53, and `12` comes back as `12.0`, which pydantic accepts for an `int` field. The contract suite checks that `metrics` round-trips its integers.
 
 A2A states the connector meets that are not chassis events (suggested):
 
@@ -167,4 +170,86 @@ In PoC-2, the service template (025 H-10) ships `mapping.py` and `server.py` as 
 
 ## Profiles
 
-`spec.adapters {model, engine, config, telemetry}`. Profiles `fake`, `local`, `cloud` set them all; an agent's own `spec.adapters` overrides per port. `build_ports(profile)` returns a `PortBundle` or raises `AdapterNotAvailable` naming the PoC that adds the missing adapter.
+`spec.adapters {model, engine, config, telemetry}` (v1: `{model, config, telemetry, tools}`; the lane is `spec.engine.connector` only). Profiles `fake`, `local`, `cloud` set them all; an agent's own `spec.adapters` overrides per port. `build_ports(profile)` returns a `PortBundle` or raises `AdapterNotAvailable` naming the PoC that adds the missing adapter.
+
+## Changes decided for v1 (2026-10-01)
+
+Decided in the PoC-1 review. They bind now: `chassis.adapters.a2a.mapping`, its copy in `packages/workload-a2a`, and `packages/workloads/echo-typescript/src/a2a_server.ts` implement the same thing. Contract v1 is written from them when PoC-2 closes. None of them changes `events.v0.json`, and item 4 adds one optional field to `context.v0.json`, so `schema_version` stays `"0"`.
+
+### 1. Chassis JSON crosses A2A as a string
+
+Why: A2A `metadata` and a data `Part` are protobuf `Struct` and `Value`, and their numbers are doubles. A workload's `3` in `input.data`, `tool_call.arguments`, or `end.output` came back as `3.0`; only `metrics` survived, by pydantic coercion. A JSON string crosses every SDK byte for byte, in Python and in TypeScript, so the reader gets exactly what the writer wrote.
+
+| Key | Where | v0 | v1 |
+| --- | ----- | -- | -- |
+| `chassis.event` | Every A2A stream event: the status update's `metadata`; for `delta`, the artifact's `metadata` | The event as a `Struct` | The event as a JSON string |
+| `chassis.ctx` | `SendMessageRequest.metadata` | The `Context` as a `Struct` | The `Context` as a JSON string |
+| `chassis.input` (new) | `SendMessageRequest.metadata` | Not sent | The whole `TaskInput`, `{text, data}`, as a JSON string; always set by the chassis |
+| `chassis.schema_version` | `SendMessageRequest.metadata` | A string | Unchanged |
+
+- **Write:** Python `json.dumps(value, separators=(",", ":"), allow_nan=False)`; TypeScript `JSON.stringify(value)`. A yielded event with `NaN` or `Infinity` is `workload.bad_event`.
+- **Read:** `json.loads` or `JSON.parse` when the value is a string. A `Struct` value is the v0 form: read as is, doubles and all, through v1, and dropped in v2. A string that does not parse to an object is `a2a.bad_event` on the connector. On the server, a `chassis.ctx` or `chassis.input` that does not parse is `error {code: "a2a.bad_request"}` and `FAILED` (suggested: the code name).
+- **The server reads the input only from `chassis.input`.** When it is missing (a generic A2A client, not the chassis), the server falls back to the parts, as in v0; numbers from a data part are then doubles.
+- **Native parts do not change.** The request keeps the text part for `input.text` and the data part for `input.data`; `delta` keeps its text part, `tool_call` and `end` their data parts, `error` its text part. They are the view for generic clients. Nothing on the chassis path reads them, and their numbers are doubles.
+- **Number limits, in both languages:** integers are exact up to 2^53 - 1; a workload sends a larger one as a string. TypeScript cannot tell `3` from `3.0` (`JSON.stringify(3.0)` is `"3"`), so a reader of a float field accepts an integer.
+- **Cost per lane:** one encode and one decode per event, and escaped quotes in each SSE frame. `inprocess`: CPU only. `sidecar`: included in PoC-2's per-delta measurement. `remote`: the same bytes over the network.
+- **Contract suite, new case "JSON values survive the lane":** the workload yields `tool_call.arguments` and `end.output` of `{"n": 3, "big": 9007199254740991, "f": 1.5, "nested": [1, {"k": 2}]}`; the connector reads both back equal, with `n`, `big`, and `k` as `int`. The same value in `input.data`, and `ctx.budget.max_tokens`, reach the workload as integers. It runs over every lane and against the Python and the TypeScript servers. A second case checks that a v0 `Struct` `chassis.event` is still read.
+
+### 2. The lane is named once: `spec.engine.connector`
+
+Why: ADR-001 item 4 picks the lane with `spec.engine.connector`. With two fields, `profile: cloud`, `adapters.engine: inprocess`, and `engine.connector: sidecar` passed the guard and ran in process; and `adapters: {}` in `cloud` built every fake.
+
+- **`spec.engine.connector` is the lane.** `build_ports` builds the connector from `REGISTRY["engine"][spec.engine.connector]`.
+- **`spec.adapters.engine` is removed,** not kept as "must equal": two fields that must agree are the bug. A config that sets it is refused at load, and the message names `spec.engine.connector`.
+- **`FakeEngine` leaves the registry.** It is a test double, not a lane; a test passes it in a `PortBundle` it builds itself. The `fake` profile runs `inprocess` with a named `handle`, for example `chassis.core.handle:echo_wire` or `echo_python:handle`.
+- **`spec.adapters` merges over the profile defaults, per field.** Only the fields the agent sets change (pydantic `model_fields_set`); `adapters: {}` is the profile's defaults.
+- **No fakes in `cloud`** (suggested): `build_ports` raises when a port resolves to `fake` or `memory` in `cloud`. `local` allows any mix.
+- **The lifespan checks again after the ports exist,** for built and for injected bundles: `check_lane(bundle.engine.kind, profile)`, and, when it built the bundle, `bundle.engine.kind == spec.engine.connector`. A mismatch fails startup.
+- **The default flips to `sidecar`** (ADR-001 item 4) in the same change that registers the `sidecar` connector. Before that change, every `fake`-profile config and test fixture names `connector: inprocess`, so the flip changes nothing for them.
+- **Cost per lane:** no wire change. `inprocess` configs name the lane; `sidecar` becomes the default and needs `url`; `remote` is unchanged.
+
+### 3. `ModelMessage` carries the tool loop
+
+Why: PoC-2's PydanticAI and LangGraph workloads send the model's `tool_calls` and the tool results back through the proxy. v0 dropped `tool_calls` and `tool_call_id`, turned `content: null` into the string `"null"`, and answered 200.
+
+```python
+class ModelMessage(BaseModel):  # frozen, extra="forbid"
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str | None = None
+    name: str | None = None
+    tool_calls: list[ToolCallRequest] | None = None  # assistant only
+    tool_call_id: str | None = None                  # tool only, and required there
+```
+
+It is a pydantic model, not a `TypedDict`, so the rules below live in one place. The port is internal to the chassis; workloads see only the OpenAI shape on the proxy.
+
+| OpenAI message field | Port |
+| -------------------- | ---- |
+| `content` string | As is |
+| `content` list of text parts only | Joined in order with `"\n"` (suggested) |
+| `content` list with any other part (`image_url`, `input_audio`, `file`) | 400 |
+| `content` null or missing | `None`; allowed only on an assistant message with `tool_calls` |
+| Assistant `tool_calls[i]`: `{id, type: "function", function: {name, arguments}}` | `ToolCallRequest(call_id=id, name=name, arguments=json.loads(arguments))`; `arguments` must parse to an object, else 400 |
+| Tool message | `tool_call_id` and `content` required |
+| `name` | Carried, on any role |
+| Another key whose value is null or empty (`refusal`, `audio`, `function_call`, `annotations`, as SDKs echo them back) | Ignored |
+| Another key with a value, or another role (`developer`, `function`) | 400 (suggested: revisit `developer` if a PoC-2 framework sends it) |
+
+- **The refusal:** 400 with `{"error": {"code": "unsupported_message", "type": "invalid_request_error", "param": "messages[<i>].<field>", "message": ...}}`, before the model is called. Never a 200 on a changed message.
+- **`LiteLLMModel`** sends the OpenAI shape back out: `content: null` as null, `tool_calls` with `arguments` as a JSON string, `tool_call_id`, `name`.
+- **`ScriptedModel` and the fake model server** record the messages they receive (`ScriptedModel.calls`, the server's `app.state.calls`). Both today match rules on the last user message only, so a scripted tool loop would call the tool forever. suggested: a rule gains `after_tool: true`, which matches only when the last message has role `tool` (`match`, when set, is tested against that tool content); a rule without it matches only when the last message is not `tool`; when nothing matches, `default_reply` ends the loop.
+- **`ModelPortContract`, new case "two-turn tool conversation":** send `[user, assistant(content=None, tool_calls=[{call_id: "c1", name, arguments: {"n": 3}}]), tool(tool_call_id="c1", content)]` through `complete` and through `stream`; assert the adapter received the same messages, with `call_id`, `arguments` (`n` an `int`), and `tool_call_id` intact. Each binding provides `received_messages()`: `ScriptedModel.calls` for the fake, the fake model server's `app.state.calls` for `LiteLLMModel`. The proxy's own tests cover each 400 row and the old `"null"` string.
+- **Cost per lane:** none that differs. The proxy is the same in every lane; request bodies grow with the tool history.
+
+### 4. The run's `traceparent` travels in `ctx`
+
+Why: the workload must forward the run's `traceparent` on its model and MCP calls, or the proxies cannot charge the call to its run (ADR-001 item 6). The Python template server's `RequestContext` does not expose HTTP headers to `handle`, and the TypeScript port passed the header as a third `deps` argument. A field in `ctx` reaches `handle` the same way in every language and every lane, and the wire form stays `handle(input, ctx)`.
+
+- **`Context` gains `traceparent: str | None = None`,** in `context.v0.json`. It is additive and optional, so the major stays. A reader treats a missing field as `None`.
+- **The connector sets it per run,** in every lane: a W3C `traceparent`, version `00`, whose trace id is `ctx.trace_id` and whose parent id is the connector's run span (suggested: a fresh random 16-hex id when the telemetry adapter has no span id; flags `01`). It travels inside `chassis.ctx` (item 1).
+- **The HTTP header stays.** The connector also sets the `traceparent` header on the A2A request, with the same value, for OpenTelemetry on the server side and for generic tools. The `inprocess` connector starts setting it too.
+- **The Python and TypeScript servers pass `ctx` through unchanged.** Neither reads the header to build `ctx`, and neither backfills the field. The TypeScript server stops putting `traceparent` in `deps`; `deps` may keep the abort signal, which is a language convenience, not data, and never on the wire.
+- **`handle` forwards `ctx["traceparent"]`** as the `traceparent` header on every model proxy and MCP call, as is. An OpenTelemetry client that sends a child span instead is fine: the proxies key on the trace id only (`chassis.server.correlation.parse_traceparent`).
+- **It is not a credential.** A `remote` workload sees the trace id; the proxies authenticate each remote separately (ADR-001 item 8) and never treat a `traceparent` as proof of anything.
+- **Cost per lane:** about 55 bytes in `ctx` and the same in one header per run, not per event. `inprocess`: the connector now sets both. `sidecar` and `remote`: unchanged otherwise.
+- **Contract suite, new case "the run's traceparent reaches handle":** a workload copies `ctx["traceparent"]` into `end.output`; the connector checks it is a valid version-`00` value whose trace id is `ctx.trace_id`, and, in lanes with a socket, that it equals the A2A request's header. A second case has the workload call the model proxy with it and checks the call is charged to the run: `chassis.model_calls_uncorrelated` stays 0. Both run over every lane and against the Python and the TypeScript servers.

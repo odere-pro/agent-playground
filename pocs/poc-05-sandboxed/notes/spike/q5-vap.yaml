@@ -1,0 +1,58 @@
+# Q5: built-in ValidatingAdmissionPolicy (admissionregistration.k8s.io/v1).
+# In namespaces labeled platform/admission=enforced, reject a Deployment when
+#  (a) its pod template is untrusted AND in the sidecar lane, or
+#  (b) any container image (containers, initContainers) is outside the allowed registry prefixes.
+# Allowed prefixes are suggested: values for the spike; short names like busybox:1.37 are rejected.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: platform-workload-rules
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments"]
+  variables:
+    - name: labels
+      expression: "has(object.spec.template.metadata.labels) ? object.spec.template.metadata.labels : {}"
+    - name: allowedPrefixes
+      expression: "['registry.k8s.io/', 'docker.io/library/']"
+    - name: images
+      expression: >-
+        object.spec.template.spec.containers.map(c, c.image) +
+        (has(object.spec.template.spec.initContainers)
+          ? object.spec.template.spec.initContainers.map(c, c.image) : [])
+  validations:
+    - expression: >-
+        !(variables.labels[?'platform/trust'].orValue('') == 'untrusted' &&
+          variables.labels[?'platform/lane'].orValue('') == 'sidecar')
+      message: "untrusted workloads may not run in the sidecar lane"
+      reason: Forbidden
+    - expression: >-
+        variables.images.all(i, variables.allowedPrefixes.exists(p, i.startsWith(p)))
+      messageExpression: >-
+        'image not from an allowed registry: ' +
+        variables.images.filter(i, !variables.allowedPrefixes.exists(p, i.startsWith(p))).join(', ')
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: platform-workload-rules
+spec:
+  policyName: platform-workload-rules
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        platform/admission: enforced
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vap
+  labels:
+    platform/admission: enforced

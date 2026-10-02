@@ -1,0 +1,362 @@
+# PoC-4 scale stack: Traefik in front of 1, 2, or 4 chassis and workload pairs, with Valkey for
+# shared state, MinIO for the agent config, the fake model server as the model, and Kafka in the
+# `events` profile. A file of its own, project `poc04`, network `poc04`: it never names, stops, or
+# reuses a container of another project. Start it with scale.sh, the one entry point; it
+# generates the secrets this file requires and passes `-p poc04 -f docker-compose.scale.yaml`:
+#   ./scale.sh build
+#   ./scale.sh up echo-python 2            # 2 pairs; engines: echo-python, echo-pydanticai,
+#                                          # echo-langgraph, echo-typescript; or `inprocess 1`
+#   curl -s 127.0.0.1:18080/ready
+#   ./scale.sh down                        # removes project poc04 only
+# Design: docs/plans/2026-10-01-poc-04-stateless-scalable.md, section 8a. Rules: SECURITY.md,
+# sections 1 to 3, 6, and 7. Offline checks: pocs/poc-04-stateless-scalable/tests/
+# test_read_only_compose.py.
+#
+# Pairs. Compose cannot scale two services as one unit when one joins the other's network
+# namespace, so the pairs are explicit: pair 1 has no profile and always starts, pair 2 is in
+# `pairs2` and `pairs4`, pairs 3 and 4 in `pairs4`. Traefik lists all four; a pair that is not
+# running fails its health check and gets no traffic. Each pair differs only in its name, its
+# `network_mode`, its `profiles`, and its `depends_on`; the anchors hold the rest.
+#
+# One engine at a time: WORKLOAD_IMAGE picks it for every workload-N.
+#
+# Secrets: no value in this file. Every secret is `${NAME:?set by scale.sh}`, so a run without
+# scale.sh fails at once instead of starting with a blank one. Only the chassis gets them (and
+# Valkey, MinIO, and minio-init their own); no workload does.
+#
+# Images: the third-party ones are pinned by digest, resolved on 2026-10-01 with
+#   docker buildx imagetools inspect <image:tag>
+# Bump on purpose, in its own commit (SECURITY.md, section 2).
+
+name: poc04
+
+x-hardening: &hardening
+  # SECURITY.md 6 and 7: no Linux capability, no privilege gain through setuid, a read-only root
+  # file system with a small tmpfs for /tmp.
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  tmpfs: [/tmp]
+
+x-chassis: &chassis
+  <<: *hardening
+  build:
+    context: ../..
+    dockerfile: packages/chassis/Dockerfile
+  image: agent-platform/chassis:poc04
+  # The image's `chassis` user. suggested: 1 CPU and 512 MiB are a ceiling for the measurement,
+  # not a reservation (plan, 8a).
+  user: "10001:10001"
+  cpus: 1.0
+  mem_limit: 512m
+  # suggested: drain delay 3 + drain timeout 30 + margin (plan, section 6).
+  stop_grace_period: 45s
+  volumes:
+    # scale.yaml (sidecar), scale-kafka.yaml, scale-dapr.yaml, or scale-inprocess.yaml, picked by
+    # CHASSIS_CONFIG. No secret in any of them.
+    - ../../packages/chassis/configs:/etc/chassis:ro
+  environment: &chassis-env
+    # The model: the fake model server directly, no LiteLLM in the measured path, no key.
+    LITELLM_BASE_URL: http://fake-model-server:8081/v1
+    VALKEY_URL: valkey://valkey:6379/0
+    VALKEY_PASSWORD: ${VALKEY_PASSWORD:?set by scale.sh}
+    CONFIG_S3_ENDPOINT: minio:9000
+    CONFIG_S3_SECURE: "false"
+    CONFIG_S3_BUCKET: agent-configs
+    CONFIG_S3_PREFIX: agents/
+    # The chassis's own MinIO user: read-only, on the `agent-configs` bucket only (minio-init).
+    CONFIG_S3_ACCESS_KEY: ${CHASSIS_S3_ACCESS_KEY:?set by scale.sh}
+    CONFIG_S3_SECRET_KEY: ${CHASSIS_S3_SECRET_KEY:?set by scale.sh}
+    # suggested: 5 s (plan, section 3).
+    CONFIG_POLL_INTERVAL_S: "5"
+    # Used only when the config names `events: kafka` (scale-kafka.yaml, profile `events`).
+    KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  # Serve the public port on the container's own address, not 0.0.0.0, so loopback carries only
+  # the workload and the proxies on 127.0.0.1:8090 (SECURITY.md 6). No wait for the workload here
+  # (PoC-5 H14): `chassis serve` binds its proxies first, and `/ready` is 503 `starting` while it
+  # retries the workload's agent card (`--startup-wait-s`, suggested: 120 s). `$$` is a literal `$`
+  # for the shell: Compose interpolates a single `$`.
+  entrypoint:
+    - sh
+    - -c
+    - |
+      set -eu
+      addr=$$(python -c 'import socket; print(socket.gethostbyname(socket.gethostname()))')
+      exec chassis serve --host "$$addr" "$$@"
+    - "--"
+  # suggested: --drain-delay-s 3 in Compose, --drain-timeout-s 30 (plan, section 6). The proxies
+  # keep their loopback default, 127.0.0.1:8090.
+  command:
+    - --config
+    - /etc/chassis/${CHASSIS_CONFIG:-scale.yaml}
+    - --port
+    - "8080"
+    - --drain-delay-s
+    - "3"
+    - --drain-timeout-s
+    - "30"
+  healthcheck:
+    # `/ready` on the container's own address (the public port is not on localhost). For
+    # `up --wait` only; Traefik runs its own check on the same path.
+    test:
+      - CMD
+      - python
+      - -c
+      - "import socket,urllib.request,sys; a=socket.gethostbyname(socket.gethostname()); sys.exit(0 if urllib.request.urlopen(f'http://{a}:8080/ready', timeout=2).status == 200 else 1)"
+    interval: 2s
+    timeout: 2s
+    retries: 30
+    start_period: 150s
+
+x-chassis-deps: &chassis-deps
+  fake-model-server:
+    condition: service_healthy
+  valkey:
+    condition: service_healthy
+  minio-init:
+    condition: service_completed_successfully
+  kafka:
+    # Only in the `events` profile; skipped when that profile is off.
+    condition: service_healthy
+    required: false
+
+x-workload: &workload
+  # The PoC-2 hardening as is, and the images' non-root user. No health check here: the chassis's
+  # `/ready` covers the workload (plan, section 7). No restart policy: a restarted chassis gets a
+  # new namespace and strands its workload (SECURITY.md 6).
+  <<: *hardening
+  image: ${WORKLOAD_IMAGE:-agent-platform/echo-python:poc04}
+  user: "10001:10001"
+  cpus: 1.0
+  mem_limit: 512m
+  stop_grace_period: 45s
+  environment:
+    # The only variables a workload gets. No key, no `env_file` (SECURITY.md 6).
+    CHASSIS_MODEL_URL: http://127.0.0.1:8090/v1
+    CHASSIS_TOOL_URL: http://127.0.0.1:8090/mcp
+    HOST: 127.0.0.1
+    PORT: "9000"
+    # The TypeScript image's drain bound (suggested: 30000); the Python images ignore it.
+    DRAIN_TIMEOUT_MS: "30000"
+  # Appended to `workload-a2a serve` by the Python images' entrypoint (suggested default 30).
+  # The TypeScript image ignores its arguments and reads DRAIN_TIMEOUT_MS.
+  command: ["--drain-timeout-s", "30"]
+
+services:
+  fake-model-server:
+    # The model (packages/fake-model-server). The image's default script answers any model name.
+    <<: *hardening
+    build:
+      context: ../..
+      dockerfile: packages/fake-model-server/Dockerfile
+    image: agent-platform/fake-model-server:poc04
+    # MODEL_REPLICAS (default 1): more model servers behind the one service name, round robin by
+    # Docker DNS. For the shared-bottleneck check of 2026-10-01 (pocs/poc-04-stateless-scalable/
+    # notes/2026-10-01-load-results.md); every replica has the same hardening.
+    scale: ${MODEL_REPLICAS:-1}
+    # suggested: 2 CPUs, so the model is not what saturates first (plan, section 13).
+    cpus: 2.0
+    mem_limit: 256m
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/health', timeout=2).status == 200 else 1)"
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+
+  valkey:
+    # Shared state for every replica: the idempotency cache and its claims. Nothing persists.
+    <<: *hardening
+    image: valkey/valkey:8.1.4-alpine@sha256:e706d1213aaba6896c162bb6a3a9e1894e1a435f28f8f856d14fab2e10aa098b
+    # The image's `valkey` user, so the entrypoint never needs to switch user.
+    user: "999:1000"
+    mem_limit: 320m
+    environment:
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD:?set by scale.sh}
+    entrypoint:
+      - sh
+      - -c
+      - exec valkey-server --save "" --appendonly no --maxmemory 256mb --requirepass "$$VALKEY_PASSWORD"
+    healthcheck:
+      # REDISCLI_AUTH keeps the password off the command line of the check.
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$VALKEY_PASSWORD\" valkey-cli ping | grep -q PONG"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  minio:
+    # The agent config store (S3 API). MinIO no longer publishes images (minio/minio and
+    # quay.io/minio are not pullable on 2026-10-01), so this is the community build pgsty/minio,
+    # a server release of 2026-08-04 (SECURITY.md 7). Data on a tmpfs: minio-init seeds it on
+    # every `up`.
+    <<: *hardening
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
+    user: "10001:10001"
+    tmpfs:
+      - /tmp:uid=10001,gid=10001
+      - /data:uid=10001,gid=10001,size=128m
+    mem_limit: 384m
+    environment:
+      MINIO_ROOT_USER: poc04-admin
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set by scale.sh}
+      MINIO_BROWSER: "off"
+    command: ["server", "/data", "--address", ":9000", "--certs-dir", "/tmp/certs"]
+
+  minio-init:
+    # One shot: the bucket `agent-configs` with versioning on, the agent config at
+    # agents/echo.yaml (the bootstrap file the chassis reads: the store document must agree with
+    # it on every restart-only field), the published schema at schemas/chassis-config.v0.json
+    # when `make schemas` has written it, and the chassis's read-only user on that bucket only.
+    <<: *hardening
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z@sha256:cfc83108c3abb371f8fb84d99c1fdc88f8c237e022409b0081fb7c0a3be634dd
+    user: "10001:10001"
+    depends_on:
+      minio:
+        condition: service_started
+    volumes:
+      - ../../packages/chassis/configs:/seed/configs:ro
+      - ../../packages/chassis/schemas:/seed/schemas:ro
+    environment:
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set by scale.sh}
+      CHASSIS_S3_ACCESS_KEY: ${CHASSIS_S3_ACCESS_KEY:?set by scale.sh}
+      CHASSIS_S3_SECRET_KEY: ${CHASSIS_S3_SECRET_KEY:?set by scale.sh}
+      SEED_CONFIG: ${CHASSIS_CONFIG:-scale.yaml}
+      MC_CONFIG_DIR: /tmp/mc
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -eu
+        export MC_HOST_local="http://poc04-admin:$${MINIO_ROOT_PASSWORD}@minio:9000"
+        i=0
+        until mc ready local >/dev/null 2>&1; do
+          i=$$((i + 1))
+          [ "$$i" -lt 60 ] || { echo "minio-init: MinIO not ready after 60 s" >&2; exit 1; }
+          sleep 1
+        done
+        mc mb --ignore-existing local/agent-configs
+        mc version enable local/agent-configs
+        mc cp "/seed/configs/$${SEED_CONFIG}" local/agent-configs/agents/echo.yaml
+        if [ -f /seed/schemas/chassis-config.v0.json ]; then
+          mc cp /seed/schemas/chassis-config.v0.json local/agent-configs/schemas/chassis-config.v0.json
+        else
+          echo "minio-init: no chassis-config.v0.json yet; run make schemas" >&2
+        fi
+        cat > /tmp/chassis-read.json <<'POLICY'
+        {"Version": "2012-10-17", "Statement": [
+          {"Effect": "Allow", "Action": ["s3:GetObject", "s3:GetObjectVersion"],
+           "Resource": ["arn:aws:s3:::agent-configs/*"]},
+          {"Effect": "Allow",
+           "Action": ["s3:ListBucket", "s3:ListBucketVersions", "s3:GetBucketLocation"],
+           "Resource": ["arn:aws:s3:::agent-configs"]}]}
+        POLICY
+        mc admin policy create local chassis-read /tmp/chassis-read.json
+        mc admin user add local "$$CHASSIS_S3_ACCESS_KEY" "$$CHASSIS_S3_SECRET_KEY" >/dev/null
+        mc admin policy attach local chassis-read --user "$$CHASSIS_S3_ACCESS_KEY" >/dev/null 2>&1 || true
+        echo "minio-init: seeded agents/echo.yaml from $${SEED_CONFIG}"
+
+  kafka:
+    # Profile `events`: one KRaft node, PLAINTEXT, auto-created topics with 3 partitions
+    # (suggested). Not read-only: the image writes its server.properties and log dirs at start.
+    profiles: [events]
+    image: apache/kafka:4.1.0@sha256:bff074a5d0051dbc0bbbcd25b045bb1fe84833ec0d3c7c965d1797dd289ec88f
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 1g
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: "3"
+      KAFKA_HEAP_OPTS: -Xmx512m -Xms512m
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 24
+      start_period: 15s
+
+  traefik:
+    # The load balancer: file provider only, no Docker socket, no dashboard, no API. Listens on
+    # 8000 inside the container so it runs as nobody with no capability (port 80 would need
+    # NET_BIND_SERVICE); the host sees it on 127.0.0.1:18080 only.
+    <<: *hardening
+    image: traefik:v3.5.3@sha256:d6be8725d21b45bdd84b93ea01438256e0e3c94aa8fa51834fe87f37cd5d4af8
+    user: "65534:65534"
+    cpus: 2.0
+    mem_limit: 256m
+    command:
+      - --entryPoints.web.address=:8000
+      - --providers.file.filename=/etc/traefik/dynamic/poc04.yaml
+      - --providers.file.watch=false
+      - --log.level=WARN
+      - --global.checkNewVersion=false
+      - --global.sendAnonymousUsage=false
+    volumes:
+      - ./traefik/poc04.yaml:/etc/traefik/dynamic/poc04.yaml:ro
+    ports:
+      - "127.0.0.1:18080:8000"
+
+  chassis-1:
+    <<: *chassis
+    depends_on: *chassis-deps
+  workload-1:
+    <<: *workload
+    network_mode: "service:chassis-1"
+    depends_on:
+      chassis-1:
+        condition: service_started
+
+  chassis-2:
+    <<: *chassis
+    profiles: [pairs2, pairs4]
+    depends_on: *chassis-deps
+  workload-2:
+    <<: *workload
+    profiles: [pairs2, pairs4]
+    network_mode: "service:chassis-2"
+    depends_on:
+      chassis-2:
+        condition: service_started
+
+  chassis-3:
+    <<: *chassis
+    profiles: [pairs4]
+    depends_on: *chassis-deps
+  workload-3:
+    <<: *workload
+    profiles: [pairs4]
+    network_mode: "service:chassis-3"
+    depends_on:
+      chassis-3:
+        condition: service_started
+
+  chassis-4:
+    <<: *chassis
+    profiles: [pairs4]
+    depends_on: *chassis-deps
+  workload-4:
+    <<: *workload
+    profiles: [pairs4]
+    network_mode: "service:chassis-4"
+    depends_on:
+      chassis-4:
+        condition: service_started
+
+# One network for the project. No `network_mode: host` anywhere.
+networks:
+  default:
+    name: poc04

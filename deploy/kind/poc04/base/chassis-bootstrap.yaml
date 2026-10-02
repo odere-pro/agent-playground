@@ -1,0 +1,31 @@
+# The chassis bootstrap file (`chassis serve --config`), mounted read-only at
+# /etc/chassis/config.yaml. `config: memory`: the bootstrap is the config, there is no store
+# document, so MinIO is not needed on kind. `state: valkey`: idempotency is shared by the replicas.
+# VALKEY_URL, VALKEY_PASSWORD, and LITELLM_BASE_URL come from the chassis's env (the Deployment).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chassis-bootstrap
+  labels:
+    app.kubernetes.io/part-of: poc04
+data:
+  config.yaml: |
+    profile: local
+    agent:
+      name: echo
+      version: 0.0.1
+    spec:
+      adapters:
+        model: litellm
+        config: memory
+        state: valkey
+        telemetry: memory
+        tools: fake
+        events: none
+      engine:
+        connector: sidecar
+        url: http://127.0.0.1:9000
+      model:
+        route: big-default
+      prompt:
+        version: simplifier-v1

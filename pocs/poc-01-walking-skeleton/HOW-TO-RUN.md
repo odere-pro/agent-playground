@@ -43,7 +43,7 @@ They start `chassis serve` as a real process, then bring up the Compose stack, s
 uv run chassis serve --config packages/chassis/configs/fake.yaml
 ```
 
-It listens on `127.0.0.1:8080`. The `fake` profile uses the scripted model (`ScriptedModel`) and the simplifier workload in the `inprocess` lane, so no other process is needed. In another shell:
+It listens on `127.0.0.1:8080` (`/health`, `/ready`, `/v1/run`) and runs the model proxy (`/v1/chat/completions`) and the MCP tool endpoint (`/mcp`) on a second, localhost-only listener at `127.0.0.1:8090` (suggested: 8090; `--proxy-port`). The `fake` profile uses the scripted model (`ScriptedModel`) and the simplifier workload in the `inprocess` lane, so no other process is needed. In another shell:
 
 ```bash
 curl -s 127.0.0.1:8080/ready
@@ -61,7 +61,7 @@ curl -s -N -X POST 127.0.0.1:8080/v1/run -H 'content-type: application/json' \
 
 The complete call returns one `Response` JSON. The streamed call returns one server-sent event per chassis event (`start`, `delta`, `metrics`, `end`) and a final `response` event with the same `Response`. Both carry `versions` (chassis, config hash, prompt, model route) and token counts in `metrics`.
 
-Note: in the `fake` profile the workload calls the chassis's own model proxy at `CHASSIS_MODEL_URL` (default `http://127.0.0.1:8080/v1`), so the port in the URL and `--port` must match if you change one.
+Note: in the `fake` profile the workload calls the chassis's own model proxy at `CHASSIS_MODEL_URL` (default `http://127.0.0.1:8090/v1`), so the port in the URL and `--proxy-port` must match if you change one. The public port has no `/v1/chat/completions`. `chassis serve` refuses a `--proxy-host` that is not loopback (`deploy/CLAUDE.md`).
 
 ## 3. Run the Compose stack (chassis, LiteLLM, fake model server)
 
@@ -100,7 +100,8 @@ cd deploy/compose && docker compose -f docker-compose.yaml -f docker-compose.loc
 ## If something fails
 
 - `make test` says a test needs a socket: it is marked wrong. Every gate test must run offline; mark it `network` or use the httpx ASGI transport.
-- `address already in use` on 8080 or 4000: another chassis or LiteLLM is running. `lsof -i :8080` finds it; or pass `--port` and set `CHASSIS_MODEL_URL` to match.
+- `address already in use` on 8080, 8090, or 4000: another chassis or LiteLLM is running. `lsof -i :8080` finds it; or pass `--port`, or `--proxy-port` and set `CHASSIS_MODEL_URL` to match.
 - The Compose test skips: Docker is not on `PATH` or not running.
-- `/ready` answers 503: the engine is not set up yet, or `spec.engine.handle` names a module the process cannot import. The chassis log says which.
+- `/ready` answers 503: the engine is not set up yet; wait for the lifespan. A bad `spec.engine.handle` (a module the process cannot import) never gets that far: uvicorn runs the lifespan before it binds, so the process exits with `Application startup failed` and the import error in the log. In Compose the chassis healthcheck probes `/ready`, so `docker compose up --wait` fails and `docker compose logs chassis` shows the error.
+- A config refused at load: `spec.adapters.engine` is gone; name the lane once in `spec.engine.connector` (`inprocess` for the `fake` profile; the default is `sidecar`).
 - A 401 from LiteLLM in the `local` variant: `LITELLM_API_KEY` in `.env` does not match `LITELLM_MASTER_KEY`.

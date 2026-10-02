@@ -1,0 +1,27 @@
+# PoC-4 scale stack, `inprocess` lane: the baseline for the sidecar hop (plan, section 9). The
+# same as scale.yaml, but echo_python runs in the chassis process and no workload container
+# starts (scale.sh: `up inprocess 1`). The difference in p50 and p95 against scale.yaml with
+# echo-python at 1 pair is the hop, model proxy included.
+profile: local
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  adapters:
+    # Straight to the fake model server, no LiteLLM in the measured path (plan, 8a).
+    model: litellm
+    config: minio
+    # Shared by every replica: the idempotency cache and its claims (plan, sections 1 and 4).
+    state: valkey
+    telemetry: memory
+    tools: fake
+    events: none
+  engine:
+    # echo_python runs in the chassis process; the chassis image already holds it.
+    connector: inprocess
+    handle: echo_python:handle
+  model:
+    # The fake model server answers any model name.
+    route: big-default
+  prompt:
+    version: simplifier-v1

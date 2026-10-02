@@ -1,0 +1,8 @@
+# The PoC-5 cluster base: RuntimeClass, namespaces, default deny. run.sh applies this first, then
+# agent-sandbox/ (which waits for its CRD).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - runtimeclass.yaml
+  - namespaces.yaml
+  - default-deny.yaml

@@ -1,0 +1,24 @@
+# The chassis config for `agent-echo`: the sidecar lane, a trusted workload (echo-python) on
+# loopback. Mounted read-only at /etc/chassis/config.yaml (configMapGenerator in
+# kustomization.yaml). `config: memory`: this file is the config, there is no store document, so
+# the chassis needs no MinIO key (suggested, as PoC-4 on kind). LITELLM_BASE_URL, LITELLM_API_KEY,
+# LITELLM_MCP_URL, VALKEY_URL, VALKEY_USERNAME, and VALKEY_PASSWORD come from the chassis
+# container's env (agent-echo.yaml). Loaded by test_poc05_hardening_static.py with the real model.
+profile: local
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  trust: trusted
+  adapters:
+    model: litellm
+    config: memory
+    state: valkey
+    telemetry: memory
+    tools: mcp
+    events: none
+  engine:
+    connector: sidecar
+    url: http://127.0.0.1:9000
+  model:
+    route: fake-chat

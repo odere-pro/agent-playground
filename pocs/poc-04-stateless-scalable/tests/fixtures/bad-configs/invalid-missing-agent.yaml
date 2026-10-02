@@ -1,0 +1,5 @@
+# Invalid: no agent.
+profile: fake
+spec:
+  model:
+    route: other

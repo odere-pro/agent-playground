@@ -14,6 +14,14 @@ from typing import Any
 
 from chassis.core.envelope import Context, Request, Response, TaskInput
 from chassis.core.events import SCHEMA_VERSION, event_json_schema
+from chassis.core.manifest import MANIFEST_VERSION, Manifest
+from chassis.core.results import TaskResult
+from chassis.server.config import ChassisConfig
+
+CONFIG_SCHEMA_VERSION = "0"
+"""`chassis-config.v0.json`: the agent config document in the store (PoC-4 plan, section 3)."""
+TASK_RESULT_SCHEMA_VERSION = "1"
+"""`task-result.v1.json`: the payload of a result event (`agents.task.*.v1`)."""
 
 SCHEMA_DIR = Path(__file__).resolve().parents[2] / "schemas"
 
@@ -25,6 +33,9 @@ def generate() -> dict[str, dict[str, Any]]:
         f"context.v{SCHEMA_VERSION}.json": Context.model_json_schema(),
         f"request.v{SCHEMA_VERSION}.json": Request.model_json_schema(),
         f"response.v{SCHEMA_VERSION}.json": Response.model_json_schema(),
+        f"manifest.v{MANIFEST_VERSION}.json": Manifest.model_json_schema(),
+        f"chassis-config.v{CONFIG_SCHEMA_VERSION}.json": ChassisConfig.model_json_schema(),
+        f"task-result.v{TASK_RESULT_SCHEMA_VERSION}.json": TaskResult.model_json_schema(),
     }
 
 

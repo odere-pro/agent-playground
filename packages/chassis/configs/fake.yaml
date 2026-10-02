@@ -6,12 +6,14 @@ agent:
   name: echo
   version: 0.0.1
 spec:
+  # Merged over the `fake` profile defaults per field; these are the defaults, named for clarity.
+  # The lane is not here: it is `spec.engine.connector` (contract v1, decision 2).
   adapters:
     model: fake
-    engine: inprocess
     config: memory
     telemetry: memory
   engine:
+    # Named on purpose: `connector` defaults to `sidecar` (ADR-001 item 4).
     connector: inprocess
     handle: echo_python:handle
   model:

@@ -1,0 +1,212 @@
+interactions:
+- request:
+    body: '{"model":"fake-route","messages":[{"role":"user","content":"hello world"}],"temperature":0.0}'
+    headers:
+      content-type:
+      - application/json
+    method: POST
+    uri: http://model.invalid/v1/chat/completions
+  response:
+    body:
+      string: '{"id":"chatcmpl-c7fc1017178a","object":"chat.completion","created":1790840383,"model":"fake-route","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}'
+    headers:
+      content-type:
+      - application/json
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"model":"fake-route","messages":[{"role":"user","content":"hello world"}],"temperature":0.0,"stream":true,"stream_options":{"include_usage":true}}'
+    headers:
+      content-type:
+      - application/json
+    method: POST
+    uri: http://model.invalid/v1/chat/completions
+  response:
+    body:
+      string: 'data: {"id": "chatcmpl-f99346071d74", "object": "chat.completion.chunk",
+        "created": 1790840383, "model": "fake-route", "choices": [{"index": 0, "delta":
+        {"role": "assistant", "content": ""}, "finish_reason": null}]}
+
+
+        data: {"id": "chatcmpl-f99346071d74", "object": "chat.completion.chunk", "created":
+        1790840383, "model": "fake-route", "choices": [{"index": 0, "delta": {"content":
+        "ok"}, "finish_reason": null}]}
+
+
+        data: {"id": "chatcmpl-f99346071d74", "object": "chat.completion.chunk", "created":
+        1790840383, "model": "fake-route", "choices": [{"index": 0, "delta": {}, "finish_reason":
+        "stop"}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens":
+        15}}
+
+
+        data: [DONE]
+
+
+        '
+    headers:
+      content-type:
+      - text/event-stream; charset=utf-8
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"model":"fake-route","messages":[{"role":"user","content":"glossary SLM"}],"temperature":0.0,"tools":[{"type":"function","function":{"name":"glossary_lookup","description":"","parameters":{}}}]}'
+    headers:
+      content-type:
+      - application/json
+    method: POST
+    uri: http://model.invalid/v1/chat/completions
+  response:
+    body:
+      string: '{"id":"chatcmpl-118e1c656f40","object":"chat.completion","created":1790840383,"model":"fake-route","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_79a9df1a","type":"function","function":{"name":"glossary_lookup","arguments":"{\"term\":
+        \"SLM\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}'
+    headers:
+      content-type:
+      - application/json
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"model":"fake-route","messages":[{"role":"user","content":"glossary SLM"}],"temperature":0.0,"tools":[{"type":"function","function":{"name":"glossary_lookup","description":"","parameters":{}}}],"stream":true,"stream_options":{"include_usage":true}}'
+    headers:
+      content-type:
+      - application/json
+    method: POST
+    uri: http://model.invalid/v1/chat/completions
+  response:
+    body:
+      string: 'data: {"id": "chatcmpl-e2b84b6a9707", "object": "chat.completion.chunk",
+        "created": 1790840383, "model": "fake-route", "choices": [{"index": 0, "delta":
+        {"role": "assistant", "content": ""}, "finish_reason": null}]}
+
+
+        data: {"id": "chatcmpl-e2b84b6a9707", "object": "chat.completion.chunk", "created":
+        1790840383, "model": "fake-route", "choices": [{"index": 0, "delta": {"tool_calls":
+        [{"index": 0, "id": "call_4b589d92", "type": "function", "function": {"name":
+        "glossary_lookup", "arguments": "{\"term\": \"SLM\"}"}}]}, "finish_reason":
+        null}]}
+
+
+        data: {"id": "chatcmpl-e2b84b6a9707", "object": "chat.completion.chunk", "created":
+        1790840383, "model": "fake-route", "choices": [{"index": 0, "delta": {}, "finish_reason":
+        "tool_calls"}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens":
+        15}}
+
+
+        data: [DONE]
+
+
+        '
+    headers:
+      content-type:
+      - text/event-stream; charset=utf-8
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"model":"fake-route","messages":[{"role":"user","content":"fail"}],"temperature":0.0}'
+    headers:
+      content-type:
+      - application/json
+    method: POST
+    uri: http://model.invalid/v1/chat/completions
+  response:
+    body:
+      string: '{"detail":"scripted failure"}'
+    headers:
+      content-type:
+      - application/json
+    status:
+      code: 500
+      message: Internal Server Error
+- request:
+    body: '{"model":"fake-route","messages":[{"role":"user","content":"look up SLM"},{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"glossary_lookup","arguments":"{\"n\":
+      3}"}}]},{"role":"tool","content":"SLM: small language model","name":"glossary_lookup","tool_call_id":"c1"}],"temperature":0.0,"tools":[{"type":"function","function":{"name":"glossary_lookup","description":"","parameters":{}}}]}'
+    headers:
+      content-type:
+      - application/json
+    method: POST
+    uri: http://model.invalid/v1/chat/completions
+  response:
+    body:
+      string: '{"id":"chatcmpl-992ec26a6f4b","object":"chat.completion","created":1790840383,"model":"fake-route","choices":[{"index":0,"message":{"role":"assistant","content":"From
+        the glossary: SLM means small language model."},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}'
+    headers:
+      content-type:
+      - application/json
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"model":"fake-route","messages":[{"role":"user","content":"look up SLM"},{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"glossary_lookup","arguments":"{\"n\":
+      3}"}}]},{"role":"tool","content":"SLM: small language model","name":"glossary_lookup","tool_call_id":"c1"}],"temperature":0.0,"tools":[{"type":"function","function":{"name":"glossary_lookup","description":"","parameters":{}}}],"stream":true,"stream_options":{"include_usage":true}}'
+    headers:
+      content-type:
+      - application/json
+    method: POST
+    uri: http://model.invalid/v1/chat/completions
+  response:
+    body:
+      string: 'data: {"id": "chatcmpl-419756c96323", "object": "chat.completion.chunk",
+        "created": 1790840383, "model": "fake-route", "choices": [{"index": 0, "delta":
+        {"role": "assistant", "content": ""}, "finish_reason": null}]}
+
+
+        data: {"id": "chatcmpl-419756c96323", "object": "chat.completion.chunk", "created":
+        1790840383, "model": "fake-route", "choices": [{"index": 0, "delta": {"content":
+        "From "}, "finish_reason": null}]}
+
+
+        data: {"id": "chatcmpl-419756c96323", "object": "chat.completion.chunk", "created":
+        1790840383, "model": "fake-route", "choices": [{"index": 0, "delta": {"content":
+        "the "}, "finish_reason": null}]}
+
+
+        data: {"id": "chatcmpl-419756c96323", "object": "chat.completion.chunk", "created":
+        1790840383, "model": "fake-route", "choices": [{"index": 0, "delta": {"content":
+        "glossary: "}, "finish_reason": null}]}
+
+
+        data: {"id": "chatcmpl-419756c96323", "object": "chat.completion.chunk", "created":
+        1790840383, "model": "fake-route", "choices": [{"index": 0, "delta": {"content":
+        "SLM "}, "finish_reason": null}]}
+
+
+        data: {"id": "chatcmpl-419756c96323", "object": "chat.completion.chunk", "created":
+        1790840383, "model": "fake-route", "choices": [{"index": 0, "delta": {"content":
+        "means "}, "finish_reason": null}]}
+
+
+        data: {"id": "chatcmpl-419756c96323", "object": "chat.completion.chunk", "created":
+        1790840383, "model": "fake-route", "choices": [{"index": 0, "delta": {"content":
+        "small "}, "finish_reason": null}]}
+
+
+        data: {"id": "chatcmpl-419756c96323", "object": "chat.completion.chunk", "created":
+        1790840383, "model": "fake-route", "choices": [{"index": 0, "delta": {"content":
+        "language "}, "finish_reason": null}]}
+
+
+        data: {"id": "chatcmpl-419756c96323", "object": "chat.completion.chunk", "created":
+        1790840383, "model": "fake-route", "choices": [{"index": 0, "delta": {"content":
+        "model."}, "finish_reason": null}]}
+
+
+        data: {"id": "chatcmpl-419756c96323", "object": "chat.completion.chunk", "created":
+        1790840383, "model": "fake-route", "choices": [{"index": 0, "delta": {}, "finish_reason":
+        "stop"}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens":
+        15}}
+
+
+        data: [DONE]
+
+
+        '
+    headers:
+      content-type:
+      - text/event-stream; charset=utf-8
+    status:
+      code: 200
+      message: OK
+version: 1

@@ -1,0 +1,100 @@
+# The PoC-5 namespaces (plan section 2.10, suggested names). Every one enforces the restricted Pod
+# Security Standard (plan section 2.11), with audit and warn at the same level.
+#
+# Labels:
+# - pod-security.kubernetes.io/*: restricted.
+# - agents.platform/poc: "05", so the static tests can find every PoC-5 namespace.
+# - agents.platform/admission: enforce, on the namespaces that run workloads (plan section 2.5,
+#   suggested). The ValidatingAdmissionPolicyBinding (admission/binding.yaml) selects on it.
+# - agents.platform/pod-shape: chassis | remote | tool, on the same three. Admission rule 7a
+#   (admission/policy.yaml) holds each pod to its namespace's shape: chassis-bearing pods in
+#   poc05-agents, the remote shape in poc05-remote, gVisor tool pods in poc05-tools (security
+#   review F3). Namespace labels are the platform's: no tenant role may edit a namespace.
+# - poc05-smoke has no admission label: `run.sh smoke` runs its busybox pods there, before or
+#   after admission is installed, with the same PSA level and default deny.
+# NetworkPolicy selectors use the built-in `kubernetes.io/metadata.name` label.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: poc05-platform
+  labels:
+    agents.platform/poc: "05"
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: poc05-agents
+  labels:
+    agents.platform/poc: "05"
+    agents.platform/admission: enforce
+    agents.platform/pod-shape: chassis
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: poc05-remote
+  labels:
+    agents.platform/poc: "05"
+    agents.platform/admission: enforce
+    agents.platform/pod-shape: remote
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: poc05-tools
+  labels:
+    agents.platform/poc: "05"
+    agents.platform/admission: enforce
+    agents.platform/pod-shape: tool
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# The trust params (T16). No pods.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agent-platform-system
+  labels:
+    agents.platform/poc: "05"
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# The submitter's service account (T16). No pods.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: poc05-tenant
+  labels:
+    agents.platform/poc: "05"
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# `run.sh smoke` only: throwaway pods, outside the admission binding.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: poc05-smoke
+  labels:
+    agents.platform/poc: "05"
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

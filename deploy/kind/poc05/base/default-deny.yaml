@@ -1,0 +1,78 @@
+# default-deny, ingress and egress, in every PoC-5 namespace (plan section 2.10). Anything a later
+# policy does not allow by pod and namespace label is refused. kindnet enforces it (it runs
+# kube-network-policies; spike, question 2), for runc and gVisor pods alike.
+#
+# Named deny list. These three destinations must never be reachable from a PoC-5 pod:
+#   - the cloud metadata service, 169.254.169.254 (and 169.254.0.0/16);
+#   - the Kubernetes API Service (on kind 10.96.0.1:443);
+#   - the API server's real endpoint, the node addresses on 6443.
+# No allow rule under deploy/kind/poc05/ may use an `ipBlock`, so no rule can reach them. Note that
+# a NetworkPolicy sees the API server by its endpoint (node IP, 6443) after the Service rewrite, not
+# by the ClusterIP (spike, question 2). The cluster-wide AdminNetworkPolicy that would name this
+# list in an object is not installed: the AdminNetworkPolicy API is absent on this kind (see
+# run.sh `status`), so the static no-ipBlock test is the control (plan section 2.10 fallback).
+#
+# agent-sandbox-system has no default deny: its controller must reach the API server, which would
+# need an ipBlock rule.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: poc05-platform
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: poc05-agents
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: poc05-remote
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: poc05-tools
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: agent-platform-system
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: poc05-tenant
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: poc05-smoke
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]

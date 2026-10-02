@@ -1,0 +1,80 @@
+# The scripted OpenAI-compatible model (packages/fake-model-server). The chassis calls it
+# directly (LITELLM_BASE_URL), with no LiteLLM in the path. It holds no key. The script is the one
+# baked into the image.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fake-model-server
+  labels:
+    app.kubernetes.io/name: fake-model-server
+    app.kubernetes.io/part-of: poc04
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fake-model-server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fake-model-server
+        app.kubernetes.io/part-of: poc04
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fake-model-server
+          image: agent-platform/fake-model-server:poc04
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              # The call log is bounded (last 1000 calls): 47.9 MB after about 146k calls in
+              # the 2026-10-01 drills, flat. So the old limit holds again.
+              memory: 256Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10002
+            runAsGroup: 10002
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fake-model-server
+  labels:
+    app.kubernetes.io/name: fake-model-server
+    app.kubernetes.io/part-of: poc04
+spec:
+  selector:
+    app.kubernetes.io/name: fake-model-server
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081

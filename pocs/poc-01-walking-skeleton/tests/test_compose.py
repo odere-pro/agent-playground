@@ -127,6 +127,8 @@ def test_chassis_waits_for_a_healthy_router() -> None:
     chassis = services["chassis"]
     assert chassis["depends_on"]["litellm"] == {"condition": "service_healthy"}
     assert "healthcheck" in chassis and "healthcheck" in services["litellm"]
+    probe = " ".join(chassis["healthcheck"]["test"])
+    assert "/ready" in probe and "/health'" not in probe, "healthy means the engine is set up"
     litellm = services["litellm"]
     assert litellm["depends_on"]["fake-model-server"] == {"condition": "service_healthy"}
 
@@ -186,8 +188,11 @@ def test_local_config_switches_model_adapter_to_litellm() -> None:
     assert config["profile"] == "local"
     assert config["spec"]["adapters"]["model"] == "litellm"
     assert config["spec"]["model"]["route"] == "big-default"
-    routes = {m["model_name"] for m in _load(COMPOSE_DIR / "litellm/config.yaml")["model_list"]}
-    assert routes == {"big-default", "local-small"}
+    assert "engine" not in config["spec"]["adapters"], "the lane is spec.engine.connector"
+    assert config["spec"]["engine"]["connector"] == "inprocess", "no sidecar service in Compose yet"
+    for name in ("litellm/config.yaml", "litellm/config.local.yaml"):
+        routes = {m["model_name"] for m in _load(COMPOSE_DIR / name)["model_list"]}
+        assert routes == {"big-default", "local-small"}, f"{name}: {routes}"
 
 
 def _compose(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:

@@ -1,0 +1,94 @@
+$ deploy/compose/scale.sh up echo-python 1 --events dapr
+ Container poc04-traefik-1 Healthy 
+ Container poc04-kafka-1 Healthy 
+ Container poc04-workload-1-1 Healthy 
+ Container poc04-chassis-1-1 Healthy 
+poc04-chassis-1-1	running	Up 5 seconds (healthy)
+poc04-daprd-1-1	running	Up 5 seconds
+poc04-fake-model-server-1	running	Up 11 seconds (healthy)
+poc04-kafka-1	running	Up 11 seconds (healthy)
+poc04-minio-1	running	Up 11 seconds
+poc04-traefik-1	running	Up 11 seconds
+poc04-valkey-1	running	Up 11 seconds (healthy)
+poc04-workload-1-1	running	Up 5 seconds (healthy)
+
+$ docker inspect poc04-workload-1-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1   # names only
+CHASSIS_MODEL_URL CHASSIS_TOOL_URL DRAIN_TIMEOUT_MS GPG_KEY HOST LANG PATH PORT PYTHONUNBUFFERED PYTHON_SHA256 PYTHON_VERSION 
+
+$ docker inspect poc04-chassis-1-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1   # names only
+APP_API_TOKEN CHASSIS_WAIT_FOR_WORKLOAD CONFIG_POLL_INTERVAL_S CONFIG_S3_ACCESS_KEY CONFIG_S3_BUCKET CONFIG_S3_ENDPOINT CONFIG_S3_PREFIX CONFIG_S3_SECRET_KEY CONFIG_S3_SECURE DAPR_API_TOKEN DAPR_HTTP_ENDPOINT DAPR_PUBSUB_NAME GPG_KEY KAFKA_BOOTSTRAP_SERVERS LANG LITELLM_BASE_URL PATH PYTHONUNBUFFERED PYTHON_SHA256 PYTHON_VERSION VALKEY_PASSWORD VALKEY_URL 
+
+$ docker inspect poc04-daprd-1-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | cut -d= -f1   # names only
+APP_API_TOKEN DAPR_API_TOKEN PATH SSL_CERT_FILE 
+
+$ docker inspect poc04-workload-1-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -c -E '^(DAPR_API_TOKEN|APP_API_TOKEN)='
+0
+
+$ docker exec poc04-workload-1-1 python -c 'import os; print(sorted(k for k in os.environ if "TOKEN" in k or "DAPR" in k))'
+[]
+
+$ docker exec -i poc04-workload-1-1 python - < pocs/poc-04-stateless-scalable/notes/dapr/probe_api.py
+daprd publish, no token                    POST 401  b'invalid api token\n'
+daprd publish, wrong token                 POST 401  b'invalid api token\n'
+daprd state get, no token                  GET  401  b'invalid api token\n'
+daprd invoke, no token                     POST 401  b'invalid api token\n'
+daprd bulk publish, no token               POST 401  b'invalid api token\n'
+daprd metadata, no token                   GET  401  b'invalid api token\n'
+daprd healthz, no token                    GET  204  b''
+daprd healthz/outbound, no token           GET  204  b''
+daprd shutdown, no token                   POST 401  b'invalid api token\n'
+daprd metrics :9090, no token              GET  200  b'# HELP dapr_http_client_completed_count Count of completed requests\n# TYPE dapr_http_client_completed_count counter\ndapr'
+chassis /dapr/subscribe :8090, no token    GET  401  b''
+chassis /dapr/events :8090, no token       POST 401  b''
+chassis /dapr/events :8090, wrong token    POST 401  b''
+tcp 127.0.0.1:3500  open
+tcp 127.0.0.1:50001 open
+tcp 127.0.0.1:50002 closed (111)
+tcp 127.0.0.1:9090  open
+tcp 127.0.0.1:8090  open
+tcp 127.0.0.1:9000  open
+tcp 127.0.0.1:8080  closed (111)
+
+$ docker exec poc04-workload-1-1 python -c '<listening TCP sockets from /proc/net/tcp and tcp6>'
+tcp 127.0.0.1 9000
+tcp 127.0.0.1 50001
+tcp 172.26.0.7 8080
+tcp 127.0.0.1 8090
+tcp 127.0.0.1 3500
+tcp 127.0.0.11 46541
+tcp6 :: 9090
+tcp6 :: 47901
+
+$ docker exec poc04-kafka-1 bash -c 'for p in 3500 50001 9090 8090 9000 8080; do timeout 2 bash -c "</dev/tcp/chassis-1/$p" && echo open || echo closed; done'   # from another container on the poc04 network
+chassis-1:3500 closed
+chassis-1:50001 closed
+chassis-1:9090 open
+chassis-1:8090 closed
+chassis-1:9000 closed
+chassis-1:8080 open
+
+$ docker logs poc04-daprd-1-1 2>&1 | grep -c -i -E 'level=(error|fatal)'
+0
+time="2026-10-01T20:17:53.638001138Z" level=warning msg="mTLS is disabled. Skipping certificate request and tls validation" app_id=echo instance=a41b690af0ae scope=dapr.runtime.security type=log ver=1.16.0
+time="2026-10-01T20:17:53.643906055Z" level=warning msg="The default value for 'spec.metric.http.increasedCardinality' will change to 'false' in Dapr 1.15 or later" app_id=echo instance=a41b690af0ae scope=dapr.runtime.di
+time="2026-10-01T20:17:53.645545847Z" level=warning msg="Actor runtime disabled: api error: code = Unavailable desc = placement service is not configured. Actors and Workflow APIs will be unavailable" app_id=echo instanc
+time="2026-10-01T20:17:53.64763943Z" level=warning msg="No scheduler host addresses provided. Scheduler disabled" app_id=echo instance=a41b690af0ae scope=dapr.runtime.scheduler.watchhosts type=log ver=1.16.0
+time="2026-10-01T20:17:53.654125222Z" level=warning msg="The default value for 'spec.metric.http.increasedCardinality' will change to 'false' in Dapr 1.15 or later" app_id=echo instance=a41b690af0ae scope=dapr.runtime.ht
+
+$ docker logs poc04-daprd-1-1 2>&1 | grep -i -E 'grpc server|listening|metrics server|healthz|internal' | cut -c1-200
+
+$ docker exec poc04-kafka-1 bash -c '</dev/tcp/chassis-1/47901'   # internal gRPC from another container
+chassis-1:47901 open
+
+$ docker exec poc04-kafka-1 bash -c 'exec 3<>/dev/tcp/chassis-1/9090; printf "GET /metrics HTTP/1.0
+
+" >&3; head -c 300 <&3'
+HTTP/1.0 200 OK
+463
+
+$ docker stop poc04-daprd-1-1; docker exec poc04-workload-1-1 python -c '<listening TCP sockets>'   # which ports were daprd's
+poc04-daprd-1-1
+tcp 127.0.0.1 9000
+tcp 172.26.0.7 8080
+tcp 127.0.0.1 8090
+tcp 127.0.0.11 46541

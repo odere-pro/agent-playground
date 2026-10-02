@@ -1,0 +1,27 @@
+# The trust rule's params (plan section 2.5): platform-owned, read by the policy through the
+# binding's paramRef. Only the group agents.platform:platform-admins may edit it (rbac.yaml); the
+# submitter and the deployer cannot. A ConfigMap holds strings only, so the list is
+# comma-separated.
+#
+# - registryPrefix: every image outside the remote lane starts with it. kind.local is a registry
+#   host no public registry serves (security review F1: the old prefix agent-platform/ was short
+#   for docker.io/agent-platform/, a namespace anyone may own). run.sh builds and `kind load`s the
+#   images under this name. In a cloud: the private registry host.
+# - imageSource: pull-never on kind (rule 8: every container outside the remote lane sets
+#   imagePullPolicy: Never, so only images loaded into the node can run, and a tag that was never
+#   loaded fails to start instead of being pulled). digest on a cloud cluster (rule 8: every image
+#   is pinned by @sha256).
+# - trustedRepositories: the repositories CI builds from this repo, without a tag. A trusted
+#   sidecar pod may run only these. kind.local/agent-platform/hostile (the probe workload) is not
+#   on it on purpose. Hand-kept in PoC-5; from registry metadata or signatures later (H-10).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-trust-params
+  namespace: agent-platform-system
+  labels:
+    agents.platform/poc: "05"
+data:
+  registryPrefix: kind.local/agent-platform/
+  imageSource: pull-never
+  trustedRepositories: kind.local/agent-platform/echo-python,kind.local/agent-platform/echo-typescript

@@ -1,0 +1,21 @@
+[project]
+name = "workload-a2a"
+version = "0.1.0"
+description = "The template A2A server a Python workload ships with: wraps handle(input, ctx) in the wire form, validates events against the vendored JSON Schema, never imports the chassis (ADR-002)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "a2a-sdk[http-server]>=1.2,<2",
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "jsonschema>=4.26",
+]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "workload_a2a"
+
+[project.scripts]
+workload-a2a = "workload_a2a.cli:main"

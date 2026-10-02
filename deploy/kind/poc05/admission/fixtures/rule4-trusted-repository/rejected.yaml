@@ -1,0 +1,42 @@
+# Rule 4, trusted repositories: the probe workload labeled trusted; its repository is not in trustedRepositories.
+# expect: rejected
+# rule: 4
+# message: trust rule 4: a trusted sidecar-lane pod may run only workload images from the trustedRepositories in agent-trust-params
+# differs: .spec.containers[0].image
+apiVersion: v1
+kind: Pod
+metadata:
+  name: admission-rule4
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/name: admission-rule4
+    agents.platform/trust: trusted
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  initContainers:
+  - name: chassis
+    image: kind.local/agent-platform/chassis:poc05
+    imagePullPolicy: Never
+    restartPolicy: Always
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: &id001
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 10001
+      runAsGroup: 10001
+  containers:
+  - name: workload
+    image: kind.local/agent-platform/hostile:poc05
+    imagePullPolicy: Never
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: *id001
+      readOnlyRootFilesystem: true
+      runAsUser: 10002
+      runAsGroup: 10002

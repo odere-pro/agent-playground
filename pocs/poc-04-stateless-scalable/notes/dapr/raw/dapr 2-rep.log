@@ -1,0 +1,3 @@
+usage: measure.py [-h] --events {none,kafka,dapr} --rep REP
+                  [--duration-s DURATION_S] [--warmup-s WARMUP_S] [--keep]
+measure.py: error: argument --events: invalid choice: 'dapr 2' (choose from none, kafka, dapr)
