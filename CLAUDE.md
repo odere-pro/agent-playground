@@ -10,7 +10,7 @@ The service chassis for the SLM agent platform and the nine PoC iterations that 
 - `packages/workloads` what runs behind the chassis, one folder per workload.
 - `packages/workload-a2a` the template A2A server a Python workload ships with; never imports `chassis` (ADR-002).
 - `pocs/poc-NN-<slug>` one iteration: README (checklist), CLAUDE.md, `tests/`, `demo/`, `notes/`. `pocs/CURRENT` names the one in progress.
-- `deploy/` compose (PoC-4 scale stack: `compose/scale.sh`), kind (`kind/run.sh`), helm. `docs/` planning, contracts, guides (PoC-4: `guides/poc-04-how-it-works.md`), templates, `plans/`.
+- `deploy/` compose (PoC-4 scale stack: `compose/scale.sh`), kind (`kind/run.sh`), helm. `docs/` planning, contracts, guides (PoC-4: `guides/poc-04-how-it-works.md`, PoC-5: `guides/poc-05-how-it-works.md`), templates, `plans/`.
 
 ## Commands
 
