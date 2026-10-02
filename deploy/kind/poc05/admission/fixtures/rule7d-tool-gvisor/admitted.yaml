@@ -1,0 +1,30 @@
+# Rule 7d, tool pods on gVisor (review F3, F15): the admitted twin.
+# expect: admitted
+# rule: 7d
+apiVersion: v1
+kind: Pod
+metadata:
+  name: admission-rule7d
+  namespace: poc05-tools
+  labels:
+    app.kubernetes.io/name: admission-rule7d
+    agents.platform/trust: trusted
+spec:
+  runtimeClassName: gvisor
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: code-runner
+    image: kind.local/agent-platform/code-runner:poc05
+    imagePullPolicy: Never
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 10003
+      runAsGroup: 10003

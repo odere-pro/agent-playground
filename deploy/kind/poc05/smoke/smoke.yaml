@@ -1,0 +1,204 @@
+# `run.sh smoke`: throwaway objects that prove the cluster base. Every object is labeled
+# `agents.platform/smoke: "true"`, and run.sh deletes them by that label when it is done.
+# Every pod passes the restricted Pod Security Standard (the positive control for the root-pod
+# rejection in root-pod.yaml). The image is a full name, pinned by digest (the index digest
+# of busybox:1.37, so it resolves on arm64 and amd64).
+#
+# All of it runs in poc05-smoke, which has PSA restricted and default deny but no admission
+# binding, so `run.sh smoke` works before and after `run.sh admission`.
+# - smoke-runc and smoke-gvisor: /proc/version marker.
+# - smoke-server, smoke-client, smoke-other: default deny blocks smoke-other;
+#   the two smoke-allow-* policies let smoke-client reach smoke-server on 8080 (positive control).
+#   Traffic goes to the pod IP: there is no DNS under default deny.
+# - smoke-sandbox: an agent-sandbox Sandbox on gVisor.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: smoke-runc
+  namespace: poc05-smoke
+  labels: {agents.platform/smoke: "true"}
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    seccompProfile: {type: RuntimeDefault}
+  containers:
+    - name: c
+      image: docker.io/library/busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+      command: ["sleep", "600"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: {drop: ["ALL"]}
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+        limits: {cpu: 100m, memory: 32Mi}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: smoke-gvisor
+  namespace: poc05-smoke
+  labels: {agents.platform/smoke: "true"}
+spec:
+  restartPolicy: Never
+  runtimeClassName: gvisor
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    seccompProfile: {type: RuntimeDefault}
+  containers:
+    - name: c
+      image: docker.io/library/busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+      command: ["sleep", "600"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: {drop: ["ALL"]}
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+        limits: {cpu: 100m, memory: 32Mi}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: smoke-client
+  namespace: poc05-smoke
+  labels: {agents.platform/smoke: "true", agents.platform/smoke-role: client}
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    seccompProfile: {type: RuntimeDefault}
+  containers:
+    - name: c
+      image: docker.io/library/busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+      command: ["sleep", "600"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: {drop: ["ALL"]}
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+        limits: {cpu: 100m, memory: 32Mi}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: smoke-other
+  namespace: poc05-smoke
+  labels: {agents.platform/smoke: "true", agents.platform/smoke-role: other}
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    seccompProfile: {type: RuntimeDefault}
+  containers:
+    - name: c
+      image: docker.io/library/busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+      command: ["sleep", "600"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: {drop: ["ALL"]}
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+        limits: {cpu: 100m, memory: 32Mi}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: smoke-server
+  namespace: poc05-smoke
+  labels: {agents.platform/smoke: "true", agents.platform/smoke-role: server}
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    runAsGroup: 65534
+    seccompProfile: {type: RuntimeDefault}
+  containers:
+    - name: c
+      image: docker.io/library/busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+      command: ["sh", "-c", "echo ok > /www/index.html && exec httpd -f -p 8080 -h /www"]
+      ports: [{containerPort: 8080}]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: {drop: ["ALL"]}
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+        limits: {cpu: 100m, memory: 32Mi}
+      volumeMounts: [{name: www, mountPath: /www}]
+  volumes:
+    - name: www
+      emptyDir: {medium: Memory, sizeLimit: 1Mi}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: smoke-allow-client-to-server
+  namespace: poc05-smoke
+  labels: {agents.platform/smoke: "true"}
+spec:
+  podSelector: {matchLabels: {agents.platform/smoke-role: server}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {agents.platform/smoke-role: client}}}]
+      ports: [{port: 8080, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: smoke-allow-client-egress
+  namespace: poc05-smoke
+  labels: {agents.platform/smoke: "true"}
+spec:
+  podSelector: {matchLabels: {agents.platform/smoke-role: client}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{podSelector: {matchLabels: {agents.platform/smoke-role: server}}}]
+      ports: [{port: 8080, protocol: TCP}]
+---
+apiVersion: agents.x-k8s.io/v1beta1
+kind: Sandbox
+metadata:
+  name: smoke-sandbox
+  namespace: poc05-smoke
+  labels: {agents.platform/smoke: "true"}
+spec:
+  podTemplate:
+    metadata:
+      labels: {agents.platform/smoke: "true"}
+    spec:
+      runtimeClassName: gvisor
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: c
+          image: docker.io/library/busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+          command: ["sleep", "600"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 32Mi}

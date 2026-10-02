@@ -106,6 +106,8 @@ The chassis has four layers. Only the inbound adapters and the connectors know a
 
 Each adapter only translates. The inbound contract suite sends the same logical request through every adapter. It checks that the pipeline sees the same canonical request, and that the answer maps back correctly in each format. FastAPI hosts the HTTP adapters, but the pipeline and the connectors import no web framework, so the same core can run behind another server.
 
+How the chat formats map onto the canonical request is proposed in [ADR-003](../adr/003-chat-formats-onto-the-canonical-request.md), from PoC-3: carry, refuse, or ignore each field by one rule; `input.data.system` and `input.data.history`; `model` is the agent's name; one id rule, with a re-minted trace id instead of 409 on the non-native interfaces; MCP as complete only, generated from the OpenAPI spec; and errors as HTTP with `x-should-retry`. The public interface contract is [contract v2](../../contracts/contract-v2.md).
+
 LiteLLM is no longer needed in front of the chassis to serve the Anthropic format. It can still be added as an optional front door, for example for per-caller virtual keys, but the chassis does not depend on it.
 
 ### Pipeline: every functional requirement, once
@@ -145,11 +147,11 @@ The connector is the lane, picked by `spec.engine.connector`.
 - **Source:** the owning team wrote and reviewed it, and its image is built in our registry.
 - **Behavior:** it does not run code, shell commands, or file writes itself.
 
-Everything else is untrusted. The agent config declares `spec.trust: trusted | untrusted`, and an admission check blocks an untrusted workload in the `sidecar` lane. Generated code that runs through the code-execution tool behind `ToolPort` does not make an agent untrusted.
+Everything else is untrusted. The agent config declares `spec.trust: trusted | untrusted`, and an admission check blocks an untrusted workload in the `sidecar` lane. Generated code that runs through the code-execution tool behind `ToolPort` does not make an agent untrusted. How a remote proves itself to the chassis (one bearer token per remote, a separate listener on the pod IP) and how admission checks the rule (a ValidatingAdmissionPolicy, not Kyverno) are proposed in [ADR-005](../adr/005-remote-lane-auth-and-trust-admission.md), from PoC-5.
 
 ### Outbound proxies: the same controls for every engine
 
-The chassis gives every workload an OpenAI- and Anthropic-compatible model endpoint and an MCP tool endpoint. The workload points its model base URL and its MCP client at them, and holds no key. The proxies are thin: they count, trace, and apply per-call budgets. They key each outbound call to its inbound request by `traceparent`, which the workload's HTTP client propagates (suggested: OpenTelemetry httpx instrumentation in the workload), so concurrent requests in one replica keep separate budgets and routes. Then they add the service's scoped key and send the call on through its port: to LiteLLM for models, and to the MCP gateway for tools. Result events go out through the chassis's `EventPort` to the broker.
+The chassis gives every workload an OpenAI- and Anthropic-compatible model endpoint and an MCP tool endpoint. The workload points its model base URL and its MCP client at them, and holds no key. The proxies are thin: they count, trace, and apply per-call budgets. They key each outbound call to its inbound request by `traceparent`, which the workload's HTTP client propagates (suggested: OpenTelemetry httpx instrumentation in the workload), so concurrent requests in one replica keep separate budgets and routes. Then they add the service's scoped key and send the call on through its port: to LiteLLM for models, and to the MCP gateway for tools. Result events go out through the chassis's `EventPort` to the broker; that this is a broker client in the chassis, not Dapr, is proposed in [ADR-004](../adr/004-events-through-a-broker-client.md), from PoC-4.
 
 The hard limits live in those shared services, not in the chassis. Each service has one scoped LiteLLM key (models, budgets, rate limits), and the MCP gateway holds a tool allow-list per key. So the limits hold even if the chassis's pipeline is bypassed. That is how an agent written in TypeScript gets the same controls as one in Python.
 
@@ -177,7 +179,7 @@ class EngineConnector(Protocol):
     async def close(self) -> None: ...
 ```
 
-`handle` is always served by the template A2A server, so there is one wire contract. Only the transport differs: A2A on localhost in `sidecar`, over the network in `remote`, and in memory in `inprocess`. The mapping of chassis events to A2A task updates is written in [contract v0](../../contracts/contract-v0.md#chassis-events-over-a2a); where the template server lives, and that a workload sees `input`, `ctx`, and events as plain dicts, is decided in [ADR-002](../adr/002-template-a2a-server-placement.md). The framework event mapping lives in the workload, next to `handle`, not in the chassis. It turns the framework's token deltas, tool calls, and usage into chassis events. The chassis imports no framework. The service template ships one mapping per supported framework, and a contract test checks each one.
+`handle` is always served by the template A2A server, so there is one wire contract. Only the transport differs: A2A on localhost in `sidecar`, over the network in `remote`, and in memory in `inprocess`. The mapping of chassis events to A2A task updates is written in [contract v0](../../contracts/contract-v0.md#chassis-events-over-a2a) and, current since PoC-2, [contract v1](../../contracts/contract-v1.md#chassis-events-over-a2a); where the template server lives, and that a workload sees `input`, `ctx`, and events as plain dicts, is decided in [ADR-002](../adr/002-template-a2a-server-placement.md). The framework event mapping lives in the workload, next to `handle`, not in the chassis. It turns the framework's token deltas, tool calls, and usage into chassis events. The chassis imports no framework. The service template ships one mapping per supported framework, and a contract test checks each one.
 
 ## Swappable and testable from day 0
 
@@ -324,7 +326,7 @@ Security follows [ADR-001](../adr/001-chassis-delivery-model.md). The trust rule
 - Final framework shortlist for PoC-6.
 - How many untrusted workloads the MVP must run in the `remote` lane, beyond the fake one.
 - Whether PoC-9 also runs on Kubernetes (kind or k3d), or stays on Docker Compose. PoC-5 already needs a kind cluster.
-- Dapr, or a broker client in the chassis behind `EventPort`. PoC-4 tries both and recommends one. suggested: the broker client, because Dapr is a third container in every pod, with its own localhost API to close and its own release train.
+- Dapr, or a broker client in the chassis behind `EventPort`: proposed in [ADR-004](../adr/004-events-through-a-broker-client.md), from PoC-4. The broker client; the Dapr adapter stays as a tested alternative, the default in no profile. The broker product (NATS JetStream or Kafka) stays open in [001 DEC-1](../issues/001-DEC-1-resolve-open-decisions.md).
 - The evaluator gate's cost: a big-model judge on every call until the encoder SLM lands. A sample rate, asynchronous scoring, or both. Open until PoC-7 reports numbers (marked as an open concern in 017 H-4, 042 A-2, 031 G-5, 073 E-1, and 075 E-3).
 
 ## After the MVP

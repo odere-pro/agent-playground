@@ -45,6 +45,9 @@ class Context(BaseModel):
     budget: Budget = Field(default_factory=Budget)
     versions: Versions
     model_route: str | None = None
+    traceparent: str | None = None
+    """The run's W3C `traceparent`, set by the connector per run; `handle` forwards it as the
+    `traceparent` header on its model proxy and MCP calls. Not a credential."""
 
 
 class Request(BaseModel):

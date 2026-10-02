@@ -1,0 +1,28 @@
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: gvisor
+handler: runsc
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gv-hello
+spec:
+  runtimeClassName: gvisor
+  restartPolicy: Never
+  containers:
+    - name: c
+      image: busybox:1.37
+      command: ["sh", "-c", "cat /proc/version; dmesg | head -5; sleep 3600"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: runc-hello
+spec:
+  restartPolicy: Never
+  containers:
+    - name: c
+      image: busybox:1.37
+      command: ["sh", "-c", "cat /proc/version; sleep 3600"]

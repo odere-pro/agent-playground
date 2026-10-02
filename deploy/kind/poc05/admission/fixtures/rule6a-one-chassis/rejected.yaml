@@ -1,0 +1,42 @@
+# Rule 6a, one chassis container (review F2): a second container runs the chassis image.
+# expect: rejected
+# rule: 6a
+# message: trust rule 6a: a pod may run at most one chassis container
+# differs: .spec.containers[0].image
+apiVersion: v1
+kind: Pod
+metadata:
+  name: admission-rule6a
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/name: admission-rule6a
+    agents.platform/trust: trusted
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  initContainers:
+  - name: chassis
+    image: kind.local/agent-platform/chassis:poc05
+    imagePullPolicy: Never
+    restartPolicy: Always
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: &id001
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 10001
+      runAsGroup: 10001
+  containers:
+  - name: workload
+    image: kind.local/agent-platform/chassis:poc05
+    imagePullPolicy: Never
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: *id001
+      readOnlyRootFilesystem: true
+      runAsUser: 10002
+      runAsGroup: 10002

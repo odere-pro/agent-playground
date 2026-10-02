@@ -1,0 +1,53 @@
+# LiteLLM on kind (PoC-5): the model router and the MCP gateway in one process, auth on.
+# Plan docs/plans/2026-10-02-poc-05-sandboxed.md, sections 2.7, 2.9, 2.12. Mounted from the
+# ConfigMap `litellm-config` (kustomization.yaml). No credential in this file: the master key and
+# the database URL come from the environment, which the Deployment fills from the Secrets
+# `litellm-master` and `litellm-db` that seed.sh makes.
+
+model_list:
+  # suggested: one route, `fake-chat`, on every virtual key (section 2.9). The chassis configs on
+  # kind (T13) use `spec.model.route: fake-chat`.
+  - model_name: fake-chat
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://fake-model-server.poc05-platform.svc.cluster.local:8081/v1
+      # The fake model server takes no key (section 2.12: it is closed by network, H09).
+      api_key: fake
+
+# The MCP gateway. Each key sees only the servers and tools its permission names (seed.sh); no
+# entry has `allow_all_keys` (H07), so a caller with no key is granted nothing.
+# Verified on kind (T19, notes/2026-10-02-bring-up.md): the gateway reads the virtual key from
+# `Authorization: Bearer` and from `x-litellm-api-key`; no key or an unknown key is 401. A key sees
+# tools as `<server>-<tool>` (fake_tools-glossary_lookup), `readOnlyHint` intact. It does NOT
+# forward `_meta.idempotency_key` to the server: the `idempotency_key` argument (the chassis
+# adapter sends both) is what reaches it. A tool not on the key's list is an MCP error result
+# ("not allowed for your key"), not an HTTP error.
+mcp_servers:
+  fake_tools:
+    url: http://fake-mcp-server.poc05-platform.svc.cluster.local:8082/mcp/
+    transport: http
+    description: Three harmless tools (packages/fake-mcp-server); no auth of its own.
+  code_runner:
+    # The Service is T15's (deploy/kind/poc05/tools/): `code-runner` in poc05-tools, port 8000.
+    url: http://code-runner.poc05-tools.svc.cluster.local:8000/mcp/
+    transport: http
+    description: run_python in a gVisor sandbox with no egress (packages/code-runner).
+
+# Fallback if the per-key tool permission field does not exist in the pinned release (section 2.9):
+# one server entry per allow-list, each with `allowed_tools` and an `access_groups` name, and the
+# key names the group in `object_permission.mcp_access_groups`. For example:
+#   fake_tools_probe:
+#     url: http://fake-mcp-server.poc05-platform.svc.cluster.local:8082/mcp/
+#     transport: http
+#     allowed_tools: [glossary_lookup, note_write]
+#     access_groups: [allow-probe]
+
+litellm_settings:
+  # Keep token counts, drop request and response content from the logs.
+  turn_off_message_logging: true
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # Virtual keys and their budgets live in Postgres (`postgres` in poc05-platform).
+  database_url: os.environ/DATABASE_URL

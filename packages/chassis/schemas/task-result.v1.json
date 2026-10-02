@@ -1,0 +1,137 @@
+{
+  "$defs": {
+    "TaskInput": {
+      "additionalProperties": false,
+      "description": "What the caller asks for. `text` for transformers; `data` for structured input.",
+      "properties": {
+        "data": {
+          "additionalProperties": true,
+          "title": "Data",
+          "type": "object"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        }
+      },
+      "title": "TaskInput",
+      "type": "object"
+    },
+    "Versions": {
+      "additionalProperties": false,
+      "description": "Every response reports the versions it ran with (epic B.2, \"pinned versions\").",
+      "properties": {
+        "chassis": {
+          "title": "Chassis",
+          "type": "string"
+        },
+        "config": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Config"
+        },
+        "model_route": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Route"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt"
+        }
+      },
+      "required": [
+        "chassis"
+      ],
+      "title": "Versions",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One finished run, as the chassis reports it outside the request.",
+  "properties": {
+    "agent": {
+      "title": "Agent",
+      "type": "string"
+    },
+    "agent_version": {
+      "title": "Agent Version",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "input": {
+      "$ref": "#/$defs/TaskInput"
+    },
+    "output": {
+      "additionalProperties": true,
+      "title": "Output",
+      "type": "object"
+    },
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "retry",
+        "fallback",
+        "error"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "usage": {
+      "additionalProperties": true,
+      "title": "Usage",
+      "type": "object"
+    },
+    "versions": {
+      "$ref": "#/$defs/Versions"
+    }
+  },
+  "required": [
+    "agent",
+    "agent_version",
+    "request_id",
+    "idempotency_key",
+    "status",
+    "input",
+    "versions"
+  ],
+  "title": "TaskResult",
+  "type": "object"
+}

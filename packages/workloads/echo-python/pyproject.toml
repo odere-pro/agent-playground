@@ -3,10 +3,10 @@ name = "echo-python"
 version = "0.1.0"
 description = "The plain-Python simplifier workload: handle(input, ctx) in the wire form, no chassis dependency"
 requires-python = ">=3.12,<3.13"
-dependencies = ["httpx>=0.28"]
+dependencies = ["httpx>=0.28", "httpx2", "mcp"]
 
 [dependency-groups]
-dev = ["fake-model-server"]
+dev = ["fake-model-server", "fastmcp"]
 
 [build-system]
 requires = ["uv_build>=0.8,<0.12"]

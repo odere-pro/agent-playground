@@ -1,0 +1,36 @@
+# Rule 7c, a remote takes only its own token (review F3): the admitted twin.
+# expect: admitted
+# rule: 7c
+apiVersion: v1
+kind: Pod
+metadata:
+  name: admission-rule7c
+  namespace: poc05-remote
+  labels:
+    app.kubernetes.io/name: remote-echo
+    agents.platform/lane: remote
+    agents.platform/trust: untrusted
+spec:
+  runtimeClassName: gvisor
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: workload
+    image: ghcr.io/example/third-party-agent:1.0
+    env:
+    - name: CHASSIS_API_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: remote-echo-token
+          key: token
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 10002
+      runAsGroup: 10002

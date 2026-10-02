@@ -1,4 +1,7 @@
-# The first rule whose `match` is in the last user message wins. A rule with no `match` catches all.
+# The first matching rule wins; when none matches, `default_reply`. A rule matches the last user
+# message, and only when the last message is not a tool result. An `after_tool: true` rule matches
+# only when the last message is a tool result, against that result. No `match` matches any text.
+# So "glossary" calls the tool once, and the tool result gets the `after_tool` answer.
 model: fake-model
 rules:
   - match: "glossary"
@@ -6,6 +9,8 @@ rules:
     tool_call:
       name: glossary_lookup
       arguments: { term: "SLM" }
+  - after_tool: true
+    reply: "From the glossary: SLM means small language model."
   - match: "fail"
     error: { status: 500, message: "scripted failure" }
   - match: "simplify"

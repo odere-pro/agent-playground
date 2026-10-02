@@ -5,16 +5,19 @@ from __future__ import annotations
 import pytest
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel, ScriptRule
+from chassis.fakes.tool import InMemoryTools, default_tools
 from chassis.ports.model import ModelMessage, ToolCallRequest, ToolSpec
 from chassis_contracts import (
     ConfigPortContract,
     EngineConnectorContract,
     ModelPortContract,
     TelemetryPortContract,
+    ToolPortContract,
 )
 from chassis_contracts.config import Bump
-from chassis_contracts.model import ToolCallCase
+from chassis_contracts.model import ReceivedMessages, ToolCallCase
 from chassis_contracts.telemetry import ReadCounter, ReadSpans
+from chassis_contracts.tool import KnownCall
 
 
 class TestScriptedModel(ModelPortContract):
@@ -31,16 +34,20 @@ class TestScriptedModel(ModelPortContract):
         )
 
     @pytest.fixture
+    def received_messages(self, model_port: ScriptedModel) -> ReceivedMessages:
+        return lambda: model_port.calls[-1]
+
+    @pytest.fixture
     def tool_call_case(self) -> ToolCallCase:
         return ToolCallCase(
-            [{"role": "user", "content": "look up SLM"}],
+            [ModelMessage(role="user", content="look up SLM")],
             [ToolSpec(name="glossary_lookup")],
             "glossary_lookup",
         )
 
     @pytest.fixture
     def error_messages(self) -> list[ModelMessage]:
-        return [{"role": "user", "content": "boom"}]
+        return [ModelMessage(role="user", content="boom")]
 
 
 class TestFakeEngineWithHandle(EngineConnectorContract):
@@ -74,3 +81,13 @@ class TestInMemoryTelemetry(TelemetryPortContract):
     @pytest.fixture
     def read_counter(self, telemetry: InMemoryTelemetry) -> ReadCounter:
         return lambda name: telemetry.counter_value(name)
+
+
+class TestInMemoryTools(ToolPortContract):
+    @pytest.fixture
+    def tool_port(self) -> InMemoryTools:
+        return default_tools()
+
+    @pytest.fixture
+    def known_call(self) -> KnownCall:
+        return KnownCall("glossary_lookup", {"term": "SLM"})

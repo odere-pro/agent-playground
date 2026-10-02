@@ -11,6 +11,13 @@ COPY pyproject.toml uv.lock ./
 COPY packages/chassis/pyproject.toml packages/chassis/
 COPY packages/contract-suites/pyproject.toml packages/contract-suites/
 COPY packages/fake-model-server/pyproject.toml packages/fake-model-server/
+COPY packages/workloads/echo-python/pyproject.toml packages/workloads/echo-python/
+COPY packages/workload-a2a/pyproject.toml packages/workload-a2a/
+COPY packages/workloads/echo-pydanticai/pyproject.toml packages/workloads/echo-pydanticai/
+COPY packages/workloads/echo-langgraph/pyproject.toml packages/workloads/echo-langgraph/
+COPY packages/fake-mcp-server/pyproject.toml packages/fake-mcp-server/
+COPY packages/code-runner/pyproject.toml packages/code-runner/
+COPY packages/workloads/hostile/pyproject.toml packages/workloads/hostile/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package fake-model-server --no-install-workspace
 COPY packages/fake-model-server packages/fake-model-server

@@ -1,0 +1,19 @@
+# The chassis public port only. The workload listens on 127.0.0.1 and is never in a Service
+# (deploy/CLAUDE.md). nodePort 30080 is mapped to 127.0.0.1:18081 on the host (cluster.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent
+  labels:
+    app.kubernetes.io/name: agent
+    app.kubernetes.io/part-of: poc04
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: agent
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30080
+      protocol: TCP

@@ -30,6 +30,7 @@ These chassis pipeline stages make every call safe and bounded: bad output is ca
   - Fallback. suggested: retry with `ctx.model.route` set to `fallback_route`, which the model proxy enforces for that request.
 - A `metrics` event per attempt (attempt number, score, route, and reason), so the fallback rate can be measured.
 - Every setting read from config, with safe defaults.
+- Status after PoC-4: timeout and budget per call are built and tested on all four engines in the `sidecar` lane (`pocs/poc-04-stateless-scalable/tests/test_timeout_budget_per_engine.py`). Past `budget.timeout_ms` the run ends with one retryable `a2a.timeout` error and the workload's task is cancelled. The model proxy charges each call's usage to the run and refuses a call when nothing is left (429 `budget_exhausted`, counted as `chassis.model_calls_refused`). Finding: the Python workloads report that refusal as the error code `http_429`, with `budget_exhausted` only in the message, so a client cannot tell a spent budget from a rate limit by its code (suggested: the template A2A server maps the proxy's `budget_exhausted` to its own code). The TypeScript echo has no tool loop, so its budget refusal is a strict xfail. Both stay open here and in PoC-8. Retry, fallback, the schema check, and the evaluator gate are not built.
 
 ## Out of scope
 

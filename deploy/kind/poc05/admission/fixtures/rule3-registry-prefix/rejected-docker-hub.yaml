@@ -1,0 +1,42 @@
+# Rule 3, registry prefix: the same name on Docker Hub, spelled out (review F1).
+# expect: rejected
+# rule: 3
+# message: trust rule 3: outside the remote lane every image must come from the platform registry prefix
+# differs: .spec.containers[0].image
+apiVersion: v1
+kind: Pod
+metadata:
+  name: admission-rule3
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/name: admission-rule3
+    agents.platform/trust: trusted
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  initContainers:
+  - name: chassis
+    image: kind.local/agent-platform/chassis:poc05
+    imagePullPolicy: Never
+    restartPolicy: Always
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: &id001
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 10001
+      runAsGroup: 10001
+  containers:
+  - name: workload
+    image: docker.io/agent-platform/echo-python:poc05
+    imagePullPolicy: Never
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: *id001
+      readOnlyRootFilesystem: true
+      runAsUser: 10002
+      runAsGroup: 10002

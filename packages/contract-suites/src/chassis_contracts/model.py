@@ -1,13 +1,16 @@
 """ModelPortContract: streaming and complete agree, usage is reported, tool calls and errors
-surface.
+surface, and a tool conversation reaches the model intact.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import pytest
-from chassis.ports.model import ModelError, ModelMessage, ModelPort, ToolSpec
+from chassis.ports.model import ModelError, ModelMessage, ModelPort, ToolCallRequest, ToolSpec
+
+ReceivedMessages = Callable[[], list[ModelMessage]]
+"""The messages the model behind the adapter received on its last call, as `ModelMessage`."""
 
 
 class ToolCallCase:
@@ -30,8 +33,34 @@ class ModelPortContract:
         raise NotImplementedError("provide a model_port fixture")
 
     @pytest.fixture
+    def received_messages(self) -> ReceivedMessages:
+        raise NotImplementedError(
+            "provide a received_messages fixture: what the model behind model_port last received"
+        )
+
+    @pytest.fixture
     def plain_messages(self) -> list[ModelMessage]:
-        return [{"role": "user", "content": "hello world"}]
+        return [ModelMessage(role="user", content="hello world")]
+
+    @pytest.fixture
+    def tool_conversation(self) -> list[ModelMessage]:
+        """Two turns: the model asked for a tool, and the tool answered."""
+        return [
+            ModelMessage(role="user", content="look up SLM"),
+            ModelMessage(
+                role="assistant",
+                content=None,
+                tool_calls=[
+                    ToolCallRequest(call_id="c1", name="glossary_lookup", arguments={"n": 3})
+                ],
+            ),
+            ModelMessage(
+                role="tool",
+                tool_call_id="c1",
+                name="glossary_lookup",
+                content="SLM: small language model",
+            ),
+        ]
 
     @pytest.fixture
     def tool_call_case(self) -> ToolCallCase:
@@ -85,3 +114,33 @@ class ModelPortContract:
         with pytest.raises(ModelError) as exc:
             await model_port.complete(error_messages, route=self.route)
         assert exc.value.code
+
+    async def test_two_turn_tool_conversation_reaches_the_model_intact(
+        self,
+        model_port: ModelPort,
+        received_messages: ReceivedMessages,
+        tool_conversation: list[ModelMessage],
+    ) -> None:
+        tools = [ToolSpec(name="glossary_lookup")]
+        result = await model_port.complete(tool_conversation, route=self.route, tools=tools)
+        self._assert_intact(received_messages(), tool_conversation)
+        assert not result.tool_calls, "after a tool result the scripted loop must end"
+        assert result.text, "after a tool result the model answers"
+
+        streamed = [
+            c async for c in model_port.stream(tool_conversation, route=self.route, tools=tools)
+        ]
+        self._assert_intact(received_messages(), tool_conversation)
+        assert not [c for c in streamed if c.tool_call], "after a tool result the loop must end"
+        assert "".join(c.text for c in streamed) == result.text
+
+    @staticmethod
+    def _assert_intact(received: list[ModelMessage], sent: list[ModelMessage]) -> None:
+        assert received == sent
+        assistant, tool = received[1], received[2]
+        assert assistant.content is None
+        assert assistant.tool_calls is not None
+        call = assistant.tool_calls[0]
+        assert (call.call_id, call.name) == ("c1", "glossary_lookup")
+        assert type(call.arguments["n"]) is int and call.arguments["n"] == 3
+        assert tool.tool_call_id == "c1"

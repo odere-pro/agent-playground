@@ -1,0 +1,137 @@
+# LiteLLM (models and the MCP gateway), auth on (plan section 2.12, H05 to H08). Only chassis pods
+# reach port 4000 (network-policy.yaml); the master key and the database password come from the
+# Secrets `litellm-master` and `litellm-db`, which seed.sh makes. The config is the ConfigMap
+# `litellm-config` (litellm/config.yaml).
+# Image: the one Compose pins (deploy/compose/docker-compose.yaml), LiteLLM 1.103.0 by digest.
+# Verified on kind (T19): the image's user is root, and it runs as uid 10010 with a read-only root;
+# its start (Prisma migrations against DATABASE_URL, 184 on an empty database) writes only under
+# /tmp. Ready about 50 s after the pod starts, with Postgres already up.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: litellm
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  labels:
+    app.kubernetes.io/name: litellm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: litellm
+    spec:
+      serviceAccountName: litellm
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: litellm
+          image: ghcr.io/berriai/litellm:v1.103.0@sha256:bd089afdcd35b894b14a93f9743cdc8b591f82da1a38dd43a010a7b0c9de5fd7
+          args: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
+          env:
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-master
+                  key: LITELLM_MASTER_KEY
+            - name: LITELLM_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-db
+                  key: password
+            # Kubernetes expands $(LITELLM_DB_PASSWORD) into the env value; it is never in argv.
+            - name: DATABASE_URL
+              value: postgresql://litellm:$(LITELLM_DB_PASSWORD)@postgres.poc05-platform.svc.cluster.local:5432/litellm
+            - name: LITELLM_LOG
+              value: INFO
+            # The cost map bundled in the pinned image; nothing is downloaded at run time.
+            - name: LITELLM_LOCAL_MODEL_COST_MAP
+              value: "True"
+            - name: DISABLE_ADMIN_UI
+              value: "True"
+            - name: HOME
+              value: /tmp
+            - name: XDG_CACHE_HOME
+              value: /tmp/.cache
+            # Prisma: the image sets PRISMA_OFFLINE_MODE=true, PRISMA_CLI_PATH, and its engines under
+            # /opt/prisma (root-owned, world-readable). Verified on kind (T19): uid 10010 reads
+            # them, migrations run, nothing is downloaded, and /tmp/.cache holds 28K. The value
+            # below is the image's own; it is repeated so HOME=/tmp can never move it to a path
+            # that would need egress (never open egress for this).
+            - name: PRISMA_BINARY_CACHE_DIR
+              value: /opt/prisma/binaries
+          ports:
+            - name: http
+              containerPort: 4000
+          # LiteLLM runs its migrations on start (plan section 8: up to 180 s).
+          startupProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: 4000
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 200m
+              memory: 384Mi
+            # Measured on kind (T19): 567 MiB working set at idle after migrations; at 640Mi one
+            # extra Python process in the container was OOM-killed. 768Mi leaves room for load.
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10010
+            runAsGroup: 10010
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/litellm
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: litellm-config
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  labels:
+    app.kubernetes.io/name: litellm
+spec:
+  selector:
+    app.kubernetes.io/name: litellm
+  ports:
+    - name: http
+      port: 4000
+      targetPort: 4000

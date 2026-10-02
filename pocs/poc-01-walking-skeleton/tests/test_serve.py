@@ -21,6 +21,7 @@ import httpx
 import pytest
 from chassis.core.envelope import Response
 from chassis.server import create_app, load_config
+from chassis.server.proxy_app import create_proxy_app
 
 ROOT = Path(__file__).resolve().parents[3]
 FAKE_CONFIG = ROOT / "packages/chassis/configs/fake.yaml"
@@ -29,12 +30,13 @@ CHASSIS_SRC = ROOT / "packages/chassis/src/chassis"
 
 @pytest.fixture
 def app_with_workload_routed_back() -> Iterator[Any]:
-    """The fake profile's app, with the workload's model call routed to the app itself over an
-    ASGI transport (the workload's test-only hook), so it reaches the proxy and the fake model.
+    """The fake profile's app, with the workload's model call routed to the chassis's proxy app
+    over an ASGI transport (the workload's test-only hook), so it reaches the fake model. The
+    proxy app shares the public app's state; the public port has no model route (PoC-2 split).
     """
     app = create_app(load_config(FAKE_CONFIG))
     workload: Any = importlib.import_module("echo_python.handle")
-    workload.transport = httpx.ASGITransport(app=app)
+    workload.transport = httpx.ASGITransport(app=create_proxy_app(app))
     try:
         yield app
     finally:
@@ -133,11 +135,13 @@ def _free_port() -> int:
 @pytest.mark.slow
 def test_chassis_serve_subprocess_answers_health(request: pytest.FixtureRequest) -> None:
     """Exit criterion: `chassis serve` starts the chassis from config. Runs the real console
-    script on a free localhost port; needs a socket, so it stays out of `make test`.
+    script on two free localhost ports, the public one and the model proxy's; the model route
+    answers on the proxy port only. Needs a socket, so it stays out of `make test`.
     """
     if request.config.getoption("--disable-socket", default=False):
         pytest.skip("sockets are disabled; run without --disable-socket to cover the launcher")
     port = _free_port()
+    proxy_port = _free_port()
     proc = subprocess.Popen(
         [
             sys.executable,
@@ -148,6 +152,8 @@ def test_chassis_serve_subprocess_answers_health(request: pytest.FixtureRequest)
             str(FAKE_CONFIG),
             "--port",
             str(port),
+            "--proxy-port",
+            str(proxy_port),
         ],
         cwd=ROOT,
         env={**os.environ, "PYTHONUNBUFFERED": "1"},
@@ -172,6 +178,11 @@ def test_chassis_serve_subprocess_answers_health(request: pytest.FixtureRequest)
             pytest.fail(f"chassis serve did not become ready: {last!r}\n{out}")
         health = httpx.get(f"http://127.0.0.1:{port}/health", timeout=1.0)
         assert health.json() == {"status": "ok"}
+        chat = {"model": "fake-route", "messages": [{"role": "user", "content": "hi"}]}
+        public = httpx.post(f"http://127.0.0.1:{port}/v1/chat/completions", json=chat)
+        assert public.status_code == 404
+        proxied = httpx.post(f"http://127.0.0.1:{proxy_port}/v1/chat/completions", json=chat)
+        assert proxied.status_code == 200, proxied.text
     finally:
         proc.terminate()
         proc.wait(timeout=10)

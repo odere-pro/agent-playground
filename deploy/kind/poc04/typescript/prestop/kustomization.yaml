@@ -1,0 +1,36 @@
+# The prestop variant with the echo-typescript workload. Only the workload container changes: the
+# image, the exec probes (node's fetch, no python in this image), and the drain timeout, which the
+# TypeScript image reads from DRAIN_TIMEOUT_MS instead of a flag. The JSON patch path names the
+# workload's index in the variant (the test checks the rendered result by container name).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: poc04
+resources:
+  - ../../prestop
+patches:
+  - target:
+      kind: Deployment
+      name: agent
+    patch: |-
+      - op: test
+        path: /spec/template/spec/containers/0/name
+        value: workload
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: agent-platform/echo-typescript:poc04
+      - op: remove
+        path: /spec/template/spec/containers/0/args
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: DRAIN_TIMEOUT_MS
+          value: "30000"
+      - op: replace
+        path: /spec/template/spec/containers/0/startupProbe/exec/command
+        value: &card
+          - node
+          - -e
+          - "fetch('http://127.0.0.1:9000/.well-known/agent-card.json', {signal: AbortSignal.timeout(2000)}).then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      - op: replace
+        path: /spec/template/spec/containers/0/livenessProbe/exec/command
+        value: *card

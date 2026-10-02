@@ -1,0 +1,12 @@
+# packages/workload-a2a
+
+The template A2A server a Python workload ships with. `packages/workloads/CLAUDE.md` still applies to every workload that uses it.
+
+- Layout: `src/workload_a2a/mapping.py` (the A2A mapping), `server.py` (executor, card, app, pruning handler, `DrainingServer`, `build_server`, `serve`), `cli.py` (`workload-a2a serve`), `schemas/events.v0.json` (vendored), `tests/`.
+- Never import `chassis` or `chassis_contracts`. Dependencies: a2a-sdk, fastapi, uvicorn, jsonschema. `make lint` (import-linter) enforces it. Tests may import `echo_python` and `fake_model_server`; the one chassis comparison uses `pytest.importorskip`.
+- `mapping.py` must equal `packages/chassis/src/chassis/adapters/a2a/mapping.py` byte for byte, and `schemas/events.v0.json` must equal `packages/chassis/schemas/events.v0.json`. Change the chassis copy first, then copy the file here. `tests/test_workload_a2a_copies.py` checks both.
+- `server.py` mirrors `chassis.adapters.a2a.server`. Keep the error codes and the event order rules the same in both; the difference is validation (`jsonschema` here, `parse_event` there).
+- Localhost only by default. Do not relax the loopback check in `build_server` or the CLI; `--allow-any-host` is the one explicit way out (ADR-001).
+- Drain (PoC-4): `DrainingServer` handles SIGTERM with a plain closure that sets only uvicorn's own flags, so sse-starlette does not cut open A2A streams. In-flight `handle` calls finish within `--drain-timeout-s` (suggested 30, `timeout_graceful_shutdown`), then the process exits 0; a second signal forces the exit. Do not install a handler that is a server's bound method, and do not call `handle_exit`. `build_server` exists only here, so the chassis's `server.py` stays the mirror (ADR-002).
+- `--require-token-env NAME` (PoC-5 section 2.4): `auth.py` is a pure ASGI bearer check on every request, constant-time, one fixed 401, and it strips the `authorization` header before the a2a app (the SDK logs headers at DEBUG). It is the only way to bind a non-loopback host besides `--allow-any-host`. `--previous-token-env NAME` (rotation) also accepts that token, compared against both with no early exit; unset or empty is ignored, and the flag alone is a start-up error. The rotation order is in the README.
+- Test: `uv run pytest packages/workload-a2a`; the SIGTERM case is `pocs/poc-04-stateless-scalable/tests/test_workload_drain.py`. Servers run over a Unix socket; the offline gate refuses TCP.

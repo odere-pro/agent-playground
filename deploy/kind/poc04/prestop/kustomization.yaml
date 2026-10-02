@@ -1,0 +1,8 @@
+# Variant 2: two plain containers, ordered on shutdown by preStop sleeps. The comparison for the
+# native sidecar. Engine: echo-python; the TypeScript engine is ../typescript/prestop.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: poc04
+resources:
+  - ../base
+  - deployment.yaml

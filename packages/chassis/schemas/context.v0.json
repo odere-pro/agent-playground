@@ -107,6 +107,18 @@
       "title": "Trace Id",
       "type": "string"
     },
+    "traceparent": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Traceparent"
+    },
     "versions": {
       "$ref": "#/$defs/Versions"
     }

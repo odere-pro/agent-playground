@@ -1,0 +1,24 @@
+# The PoC-5 agent pods in poc05-agents (plan sections 2.10, 2.11; T13): `agent-echo` (sidecar
+# lane) and `chassis-echo-remote` (remote lane, chassis only), their chassis configs, Services, and
+# NetworkPolicies. Apply after platform/ and after `seed.sh keys`: the Secrets chassis-echo-litellm,
+# chassis-echo-remote-litellm, valkey-auth, and remote-echo-token come from seed.sh, none is here.
+# Apply remote/ first: chassis-echo-remote waits (/ready 503) until remote-echo answers.
+# Applied by `run.sh workloads` as the platform deployer (admission/rbac.yaml), never as a
+# tenant: a pod creator here could read every chassis Secret (security review F2).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: poc05-agents
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: poc05
+resources:
+  - agent-echo.yaml
+  - chassis-echo-remote.yaml
+  - network-policy.yaml
+configMapGenerator:
+  - name: chassis-echo-config
+    files:
+      - config.yaml=chassis/echo.yaml
+  - name: chassis-echo-remote-config
+    files:
+      - config.yaml=chassis/echo-remote.yaml

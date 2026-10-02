@@ -1,0 +1,83 @@
+{
+  "name": "none-rep1",
+  "events": "none",
+  "warmup": {
+    "requests": 100,
+    "failures": 0,
+    "rps": 10.9,
+    "p50_ms": 110.0,
+    "p95_ms": 290.0,
+    "ok_rps": 10.9
+  },
+  "load": {
+    "requests": 610,
+    "failures": 0,
+    "rps": 10.14,
+    "p50_ms": 110.0,
+    "p95_ms": 170.0,
+    "ok_rps": 10.14
+  },
+  "containers": {
+    "chassis": {
+      "replicas": 1,
+      "vcpu_mean": 0.1403,
+      "vcpu_max": 0.2528,
+      "mib_mean": 162.07,
+      "mib_max": 173.7,
+      "idle_vcpu": 0.0692,
+      "idle_mib": 150.24
+    },
+    "fake-model-server": {
+      "replicas": 1,
+      "vcpu_mean": 0.0611,
+      "vcpu_max": 0.1357,
+      "mib_mean": 40.31,
+      "mib_max": 41.95,
+      "idle_vcpu": 0.0271,
+      "idle_mib": 36.07
+    },
+    "minio": {
+      "replicas": 1,
+      "vcpu_mean": 0.0008,
+      "vcpu_max": 0.0031,
+      "mib_mean": 202.18,
+      "mib_max": 202.6,
+      "idle_vcpu": 0.0008,
+      "idle_mib": 201.1
+    },
+    "traefik": {
+      "replicas": 1,
+      "vcpu_mean": 0.0043,
+      "vcpu_max": 0.0105,
+      "mib_mean": 27.0,
+      "mib_max": 28.26,
+      "idle_vcpu": 0.0026,
+      "idle_mib": 18.8
+    },
+    "valkey": {
+      "replicas": 1,
+      "vcpu_mean": 0.0073,
+      "vcpu_max": 0.0138,
+      "mib_mean": 11.84,
+      "mib_max": 13.66,
+      "idle_vcpu": 0.0031,
+      "idle_mib": 11.01
+    },
+    "workload": {
+      "replicas": 1,
+      "vcpu_mean": 0.0969,
+      "vcpu_max": 0.2158,
+      "mib_mean": 80.65,
+      "mib_max": 89.23,
+      "idle_vcpu": 0.002,
+      "idle_mib": 65.64
+    }
+  },
+  "host": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "cpus": 14,
+    "docker_cpus": 14,
+    "docker_mem_mib": 7935,
+    "other_running_containers": 17
+  }
+}

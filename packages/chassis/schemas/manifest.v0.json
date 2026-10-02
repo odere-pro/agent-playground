@@ -1,0 +1,255 @@
+{
+  "$defs": {
+    "HttpInterface": {
+      "additionalProperties": false,
+      "description": "One interface operation in the OpenAPI spec (`x-chassis-interface`).",
+      "properties": {
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "operation_id": {
+          "title": "Operation Id",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "streaming": {
+          "title": "Streaming",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "method",
+        "path",
+        "operation_id",
+        "streaming"
+      ],
+      "title": "HttpInterface",
+      "type": "object"
+    },
+    "ManifestAgent": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "trust": {
+          "default": "trusted",
+          "enum": [
+            "trusted",
+            "untrusted"
+          ],
+          "title": "Trust",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "title": "ManifestAgent",
+      "type": "object"
+    },
+    "McpInterface": {
+      "additionalProperties": false,
+      "description": "The agent as MCP tools; not in the OpenAPI spec.",
+      "properties": {
+        "name": {
+          "const": "mcp",
+          "default": "mcp",
+          "title": "Name",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "streaming": {
+          "const": false,
+          "default": false,
+          "title": "Streaming",
+          "type": "boolean"
+        },
+        "tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tools",
+          "type": "array"
+        },
+        "transport": {
+          "const": "streamable-http",
+          "default": "streamable-http",
+          "title": "Transport",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "tools"
+      ],
+      "title": "McpInterface",
+      "type": "object"
+    },
+    "OpenAPIRef": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Path"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "version",
+        "sha256"
+      ],
+      "title": "OpenAPIRef",
+      "type": "object"
+    },
+    "Versions": {
+      "additionalProperties": false,
+      "description": "Every response reports the versions it ran with (epic B.2, \"pinned versions\").",
+      "properties": {
+        "chassis": {
+          "title": "Chassis",
+          "type": "string"
+        },
+        "config": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Config"
+        },
+        "model_route": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Route"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt"
+        }
+      },
+      "required": [
+        "chassis"
+      ],
+      "title": "Versions",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "$ref": "#/$defs/ManifestAgent"
+    },
+    "event_schema_versions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Event Schema Versions",
+      "type": "array"
+    },
+    "interfaces": {
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/HttpInterface"
+          },
+          {
+            "$ref": "#/$defs/McpInterface"
+          }
+        ]
+      },
+      "title": "Interfaces",
+      "type": "array"
+    },
+    "lane": {
+      "title": "Lane",
+      "type": "string"
+    },
+    "manifest_version": {
+      "const": "0",
+      "default": "0",
+      "title": "Manifest Version",
+      "type": "string"
+    },
+    "openapi": {
+      "$ref": "#/$defs/OpenAPIRef"
+    },
+    "versions": {
+      "$ref": "#/$defs/Versions"
+    }
+  },
+  "required": [
+    "agent",
+    "versions",
+    "lane",
+    "event_schema_versions",
+    "interfaces",
+    "openapi"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}

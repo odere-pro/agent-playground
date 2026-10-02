@@ -29,6 +29,7 @@ Contract tests are part of the Phase 0 done-when, and every agent needs the same
 - A determinism check: the same input and config version give the same output on replay.
 - Packaged with the chassis, so the template CI (025 H-10) runs it against the workload image.
 - Built so later adapters can add their own contract tests.
+- Status after PoC-3: Schemathesis property tests run from the OpenAPI spec (`pocs/poc-03-one-interface-every-client/tests/test_openapi_props.py`). The inbound contract suite (`chassis_contracts.inbound`) is bound for native, OpenAI, and Anthropic. The interface contract suite (`chassis_contracts.interface`) runs four interfaces, four engines, stream and complete, in both lanes: 49 of 64 cells run, 15 skip with a reason. Model calls replay from cassettes through `chassis_contracts.recording.CassetteTransport`; `make record-cassettes` re-records offline, and a test scans the cassettes for keys. Still open: refuse to record unless the host ends in `.invalid` or the inner transport is ASGI; filter query strings; scan for key shapes other than `sk-`; vcrpy is pinned to 8.3.0 because of the private `Cassette._save`; one Unix-socket test runner instead of three; the gate grew from about 35 s to about 100-130 s. See [the PoC-3 debt note](../../../pocs/poc-03-one-interface-every-client/notes/2026-10-01-debt.md).
 
 ## Out of scope
 

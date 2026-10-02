@@ -1,0 +1,30 @@
+# PoC-4 scale stack with result events through the broker client in the chassis (aiokafka).
+# Used with `--profile events` (scale.sh: `up <engine> <pairs> --events kafka`). The same as
+# scale.yaml plus `events: kafka` and `result_events: true`; KAFKA_BOOTSTRAP_SERVERS comes from
+# the container env. The other side of the Dapr comparison is scale-dapr.yaml (plan, 8a and P18).
+profile: local
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  adapters:
+    # Straight to the fake model server, no LiteLLM in the measured path (plan, 8a).
+    model: litellm
+    config: minio
+    # Shared by every replica: the idempotency cache and its claims (plan, sections 1 and 4).
+    state: valkey
+    telemetry: memory
+    tools: fake
+    events: kafka
+  engine:
+    connector: sidecar
+    # The workload in the same network namespace (`network_mode: service:chassis-N`).
+    url: http://127.0.0.1:9000
+  model:
+    # The fake model server answers any model name.
+    route: big-default
+  prompt:
+    version: simplifier-v1
+  events:
+    # Publish agents.task.completed.v1 or agents.task.failed.v1 after every run (plan, 2).
+    result_events: true

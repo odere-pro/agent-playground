@@ -73,6 +73,7 @@ The same request goes to four engines by swapping the workload container next to
 ## Links
 
 - Plan: [000-plan.md](000-plan.md) · Previous: [PoC-1](001-PoC-1-walking-skeleton.md) · Next: [PoC-3](003-PoC-3-one-interface-every-client.md)
-- Decision: [ADR-001](../adr/001-chassis-delivery-model.md)
+- Decision: [ADR-001](../adr/001-chassis-delivery-model.md), [ADR-002](../adr/002-template-a2a-server-placement.md)
+- Contract: [contract v1](../../contracts/contract-v1.md) (current), [contract v0](../../contracts/contract-v0.md) (PoC-1)
 - Backlog issues this previews: [008 H-14](../issues/008-H-14-one-agent-interface.md), [009 CH-1](../issues/009-CH-1-engine-connectors-a2a.md), [013 CH-2](../issues/013-CH-2-outbound-model-proxy.md) (OpenAI-compatible only), [054 H-16](../issues/054-H-16-tool-port.md) (tool definition and the tool endpoint only)
 - Epic: [B.1](../slm-agent-platform-epic-v3.md#b1), [B.3](../slm-agent-platform-epic-v3.md#b3), [B.5](../slm-agent-platform-epic-v3.md#b5)

@@ -1,0 +1,284 @@
+{
+  "$defs": {
+    "Delta": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "0",
+          "default": "0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "const": "delta",
+          "default": "delta",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "Delta",
+      "type": "object"
+    },
+    "End": {
+      "additionalProperties": false,
+      "properties": {
+        "output": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output"
+        },
+        "schema_version": {
+          "const": "0",
+          "default": "0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "status": {
+          "default": "ok",
+          "enum": [
+            "ok",
+            "retry",
+            "fallback"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "type": {
+          "const": "end",
+          "default": "end",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "title": "End",
+      "type": "object"
+    },
+    "Error": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "retryable": {
+          "default": false,
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "0",
+          "default": "0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "type": {
+          "const": "error",
+          "default": "error",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "Error",
+      "type": "object"
+    },
+    "Metrics": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "default": 1,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "cost_usd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Usd"
+        },
+        "input_tokens": {
+          "default": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "latency_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Latency Ms"
+        },
+        "model_route": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Route"
+        },
+        "output_tokens": {
+          "default": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "0",
+          "default": "0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "type": {
+          "const": "metrics",
+          "default": "metrics",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "title": "Metrics",
+      "type": "object"
+    },
+    "Start": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "title": "Request Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "0",
+          "default": "0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "type": {
+          "const": "start",
+          "default": "start",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id"
+      ],
+      "title": "Start",
+      "type": "object"
+    },
+    "ToolCall": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "additionalProperties": true,
+          "title": "Arguments",
+          "type": "object"
+        },
+        "call_id": {
+          "title": "Call Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Result"
+        },
+        "schema_version": {
+          "const": "0",
+          "default": "0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "type": {
+          "const": "tool_call",
+          "default": "tool_call",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "call_id",
+        "name"
+      ],
+      "title": "ToolCall",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "delta": "#/$defs/Delta",
+      "end": "#/$defs/End",
+      "error": "#/$defs/Error",
+      "metrics": "#/$defs/Metrics",
+      "start": "#/$defs/Start",
+      "tool_call": "#/$defs/ToolCall"
+    },
+    "propertyName": "type"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Start"
+    },
+    {
+      "$ref": "#/$defs/Delta"
+    },
+    {
+      "$ref": "#/$defs/ToolCall"
+    },
+    {
+      "$ref": "#/$defs/Metrics"
+    },
+    {
+      "$ref": "#/$defs/End"
+    },
+    {
+      "$ref": "#/$defs/Error"
+    }
+  ]
+}

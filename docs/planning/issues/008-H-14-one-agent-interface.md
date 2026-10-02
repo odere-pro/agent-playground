@@ -25,6 +25,7 @@ All agent classes (stateless, orchestrator, data) must share one interface and o
 - The same check also refuses `untrusted` together with `sidecar` or `inprocess`, and `inprocess` outside the `fake` and `local` profiles. It backs up the admission check at deploy time, and does not replace it.
 - One echo agent per class, from the same template, used as test fixtures by later issues. Each is a workload that can run in every lane the tests use. In this issue, they run through the fake engine's direct call from 007 H-1. The lanes come in 009 CH-1.
 - The class, kind, loaded modules, lane, trust value, and chassis version available at run time, so the manifest can report them later.
+- Status after PoC-2: four workloads (plain Python, PydanticAI, LangGraph, TypeScript) run behind one `handle` contract and pass the same `EnginePort` suite and the same response-shape tests ([PoC-2](../../../pocs/poc-02-two-engines-one-contract/README.md)). `spec.engine.connector` is a typed field with default `sidecar`, and `inprocess` is refused outside `fake` and `local`. Open: `class`, `kind`, `spec.trust`, modules, and the B.5 table.
 
 ## Out of scope
 
@@ -37,9 +38,9 @@ All agent classes (stateless, orchestrator, data) must share one interface and o
 ## Acceptance criteria
 
 - [ ] An echo agent for each class starts from the same template and returns the same envelope shape through the fake engine's direct call.
-- [ ] `spec.engine.connector` is `sidecar` when the config does not set it.
+- [x] `spec.engine.connector` is `sidecar` when the config does not set it. Delivered in PoC-2: `packages/chassis/tests/test_profiles.py::test_the_engine_is_spec_engine_connector_and_defaults_to_sidecar`.
 - [ ] `spec.trust: untrusted` with `spec.engine.connector` set to `sidecar` or `inprocess` fails at start with a clear error.
-- [ ] `spec.engine.connector: inprocess` fails at start in any profile other than `fake` or `local`.
+- [x] `spec.engine.connector: inprocess` fails at start in any profile other than `fake` or `local`. Delivered in PoC-2: `packages/chassis/tests/test_profiles.py::test_inprocess_refused_in_cloud`, `::test_inprocess_allowed_in_fake_and_local`; `packages/chassis/tests/test_server.py::test_config_refuses_the_lane_the_profile_forbids`.
 - [ ] A kind that does not match its class (for example `class: data`, `kind: tool`) fails at start with a clear error.
 - [ ] A module that the B.5 table marks "No" or "Never" for a class fails at start.
 - [ ] An optional module not listed in `spec.modules` is not loaded (tested with a fake module).

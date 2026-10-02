@@ -1,0 +1,214 @@
+# MinIO, the agent config store (plan sections 2.11, 2.12, H12). Root credentials from the Secret
+# `minio-root` (seed.sh). The chassis gets a separate key pair, `minio-chassis`, read-only on the
+# bucket `agent-configs` (minio-init below). Data is an emptyDir: after a MinIO restart, rerun the
+# Job (delete it and apply again).
+# Image: the one the PoC-4 scale stack pins by digest (deploy/compose/docker-compose.scale.yaml).
+# Exception, owner platform-security: a community build, fake data only; build from source and
+# sign before any real data (deploy/compose/SECURITY.md, section 7).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: minio
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  labels:
+    app.kubernetes.io/name: minio
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: minio
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio
+    spec:
+      serviceAccountName: minio
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: minio
+          image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
+          args: [server, /data, --address, ":9000", --certs-dir, /tmp/certs]
+          envFrom:
+            - secretRef:
+                name: minio-root
+          env:
+            - name: MINIO_BROWSER
+              value: "off"
+          ports:
+            - name: s3
+              containerPort: 9000
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            periodSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: 128Mi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  labels:
+    app.kubernetes.io/name: minio
+spec:
+  selector:
+    app.kubernetes.io/name: minio
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: 9000
+---
+# One shot, as in the PoC-4 scale stack: the bucket `agent-configs` with versioning, the policy
+# `chassis-read` (get and list on that bucket only), and the chassis's user with that policy.
+# Agent config documents: every file in the optional ConfigMap `agent-configs-seed` (T13 owns it)
+# is copied to agents/<file>. Credentials reach mc only through MC_HOST_local, built inside the
+# shell from env, never in argv.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: minio-init
+automountServiceAccountToken: false
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init
+  labels:
+    app.kubernetes.io/name: minio-init
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio-init
+    spec:
+      serviceAccountName: minio-init
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mc
+          image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z@sha256:cfc83108c3abb371f8fb84d99c1fdc88f8c237e022409b0081fb7c0a3be634dd
+          envFrom:
+            - secretRef:
+                name: minio-root
+            - secretRef:
+                name: minio-chassis
+          env:
+            - name: MC_CONFIG_DIR
+              value: /tmp/mc
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              export MC_HOST_local="http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio.poc05-platform.svc.cluster.local:9000"
+              i=0
+              until mc ready local >/dev/null 2>&1; do
+                i=$((i + 1))
+                [ "$i" -lt 60 ] || { echo "minio-init: MinIO not ready after 60 s" >&2; exit 1; }
+                sleep 1
+              done
+              mc mb --ignore-existing local/agent-configs
+              mc version enable local/agent-configs
+              for f in /seed/configs/*; do
+                [ -f "$f" ] || continue
+                mc cp "$f" "local/agent-configs/agents/$(basename "$f")"
+              done
+              cat > /tmp/chassis-read.json <<'POLICY'
+              {"Version": "2012-10-17", "Statement": [
+                {"Effect": "Allow", "Action": ["s3:GetObject", "s3:GetObjectVersion"],
+                 "Resource": ["arn:aws:s3:::agent-configs/*"]},
+                {"Effect": "Allow",
+                 "Action": ["s3:ListBucket", "s3:ListBucketVersions", "s3:GetBucketLocation"],
+                 "Resource": ["arn:aws:s3:::agent-configs"]}]}
+              POLICY
+              mc admin policy create local chassis-read /tmp/chassis-read.json
+              # Recorded exception (security review F11, accepted): `mc admin user add` takes the
+              # pair as arguments. That argv lives in this one-shot pod only, which holds the root
+              # key anyway, for a read-only user on one bucket of fake data; the Job is deleted
+              # after 600 s. To be listed in deploy/compose/SECURITY.md section 7 (T30). Revisit:
+              # create the user through the admin API from a script that reads the pair from env.
+              mc admin user add local "$CONFIG_S3_ACCESS_KEY" "$CONFIG_S3_SECRET_KEY" >/dev/null
+              mc admin policy attach local chassis-read --user "$CONFIG_S3_ACCESS_KEY" >/dev/null 2>&1 || true
+              echo "minio-init: bucket, policy, and the chassis user are ready"
+          # 64Mi was OOM-killed at `mc admin user add` on kind (T19); one shot, so the peak is brief.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: seed
+              mountPath: /seed/configs
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: seed
+          configMap:
+            name: agent-configs-seed
+            optional: true
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Mi

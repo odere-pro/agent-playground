@@ -1,0 +1,13 @@
+# Invalid: a string where spec.limits wants an integer.
+profile: fake
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  adapters:
+    config: memory
+  engine:
+    connector: inprocess
+    handle: chassis.core.handle:echo_wire
+  limits:
+    max_tokens_max: lots

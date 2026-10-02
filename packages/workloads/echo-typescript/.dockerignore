@@ -1,0 +1,11 @@
+node_modules
+dist
+test
+tests
+scripts
+*.md
+# No `.env` file ever enters the image's build context.
+.env
+.env.*
+**/.env
+**/.env.*

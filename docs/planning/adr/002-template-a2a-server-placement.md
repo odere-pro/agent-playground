@@ -70,3 +70,7 @@ Cons:
 
 - If the two copies of `mapping.py` drift more than once, or a third language needs the server, replace the copy with a generated file from one source, or reopen option B.
 - If PoC-2's per-delta measurement makes the A2A wrapper too costly (ADR-001, Revisit), the mapping module is the only thing that changes.
+
+## Amendment (2026-10-01)
+
+The status stays Accepted. Decision item 4 said the service template ships `mapping.py` and `server.py` into each workload as `a2a_server.py`. PoC-2 ships them instead as one shared workspace package, `packages/workload-a2a` (module `workload_a2a`), which every Python workload uses through `workload-a2a serve --handle module:attribute`. The rules of option A hold: the package never imports `chassis` (an import-linter contract), its `mapping.py` is a byte-for-byte copy of the chassis's, its `events.v0.json` is a copy too (`packages/workload-a2a/tests/test_workload_a2a_copies.py` fails when either differs), and it validates with `jsonschema` instead of `parse_event`. Why: three Python workloads would otherwise hold three copies to keep equal. The TypeScript workload keeps its own port (`packages/workloads/echo-typescript/src/a2a_server.ts`). Recorded in [contract v1](../../contracts/contract-v1.md#where-the-template-a2a-server-lives), change 9; 025 H-10 ships the package in the template.

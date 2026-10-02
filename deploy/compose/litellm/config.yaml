@@ -15,6 +15,24 @@ model_list:
       api_base: http://fake-model-server:8081/v1
       api_key: fake
 
+# PoC-3: LiteLLM's MCP gateway in front of the chassis's agent MCP endpoint. A client calls
+# http://127.0.0.1:4000/mcp/ and LiteLLM forwards to the chassis over the internal Compose network
+# only: the public port 8080 (`/v1/mcp`), never the proxy port 8090. No static auth header: the
+# chassis's public port takes none in PoC-3, and no key belongs in this file. Key names
+# (`mcp_servers.<name>.url`, `transport: http`, `description`) checked on 2026-10-01 against
+# `load_servers_from_config` in the pinned image (proxy/_experimental/mcp_server/
+# mcp_server_manager.py). The gateway lists the tool as `<name>-<agent>`.
+mcp_servers:
+  chassis_agent:
+    url: http://chassis:8080/v1/mcp
+    transport: http
+    description: The chassis's agent as one MCP tool (PoC-3).
+    # PoC-5 (H07): no `allow_all_keys`. It granted this server to every caller, keyed or not, and
+    # a config that grants a tool to every key must not exist in any variant. The cost: in this
+    # open fake variant a caller with no virtual key is granted no server and lists 0 tools (seen
+    # 2026-10-01), so the PoC-3 Compose MCP demo through the gateway lists nothing. A variant with
+    # auth on grants the server per key or team (kind: deploy/kind/poc05/platform/seed.sh).
+
 litellm_settings:
   # Keep token counts, drop request and response content from the logs (SECURITY.md, 5).
   turn_off_message_logging: true
@@ -27,5 +45,6 @@ litellm_settings:
 # No `general_settings.master_key` in the fake variant, on purpose: LiteLLM 1.103.0 treats an
 # empty master key (from the config or the `LITELLM_MASTER_KEY` env) as "auth on" and answers 401
 # to every call, which breaks `docker compose up` with an empty `.env` (verified 2026-09-29). The
-# proxy is then open, but it listens on 127.0.0.1 only and fronts a scripted fake.
+# proxy is then open: published on the host's loopback only, but open to every service on the
+# Compose network (and to a sidecar workload in the chassis's namespace). It fronts a scripted fake.
 # config.local.yaml sets `master_key: os.environ/LITELLM_MASTER_KEY`.

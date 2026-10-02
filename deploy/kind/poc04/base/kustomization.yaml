@@ -1,0 +1,14 @@
+# What both variants share: the namespace, the fake model server, Valkey, the agent Service, the
+# bootstrap ConfigMap, and the network policies. The `agent` Deployment lives in each variant.
+# No Secret here: run.sh creates `poc04-secrets` (VALKEY_PASSWORD) with kubectl, so no value is
+# in any file.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: poc04
+resources:
+  - namespace.yaml
+  - chassis-bootstrap.yaml
+  - agent-service.yaml
+  - fake-model-server.yaml
+  - valkey.yaml
+  - network-policy.yaml

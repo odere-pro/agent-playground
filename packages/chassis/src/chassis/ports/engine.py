@@ -24,4 +24,10 @@ class EngineConnector(Protocol):
 
     def run(self, request: Request, ctx: Context) -> AsyncIterator[Event]: ...
 
+    async def probe(self) -> bool:
+        """Is the workload answering? `True` or `False`, never an exception. Cheap and bounded in
+        time: the readiness monitor calls it every few seconds (contract v3, PoC-4).
+        """
+        ...
+
     async def close(self) -> None: ...

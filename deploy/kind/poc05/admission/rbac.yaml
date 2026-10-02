@@ -1,0 +1,170 @@
+# Who may do what around the trust rule (plan section 2.5, security review F2).
+#
+# - The submitter: a test ServiceAccount poc05-tenant/submitter, used through
+#   `kubectl --as=system:serviceaccount:poc05-tenant:submitter`. It may submit workloads in
+#   poc05-remote and poc05-tools only. It has nothing in poc05-agents: any principal that may
+#   create a pod in a namespace can read every Secret there through the pod (env or volume), and
+#   the chassis Secrets live in poc05-agents. It has no access to Secrets, Services,
+#   NetworkPolicies, namespaces, RBAC, or admission objects anywhere, and nothing in
+#   agent-platform-system, so it cannot write agent-trust-params.
+# - The deployer: agent-platform-system/deployer stands in for the platform's chart or pipeline
+#   (CH-3). It deploys agents/, remote/, and tools/ (`run.sh workloads` applies them with
+#   `--as=system:serviceaccount:agent-platform-system:deployer`), and it is the identity the kind
+#   admission test uses for fixtures in poc05-agents, so the policy, not RBAC, refuses them. It
+#   cannot read or write Secrets (seed.sh, run as cluster admin, makes them) and cannot edit the
+#   params.
+# - The platform: the group agents.platform:platform-admins (suggested) may edit the params
+#   ConfigMap by name. On kind the cluster admin applies it; the group shows who else may.
+#
+# Recorded exception (ADR-005, blind-spots note): separation between agents needs a namespace per
+# agent in production (CH-3). In PoC-5 every chassis shares poc05-agents and every remote shares
+# poc05-remote.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: submitter
+  namespace: poc05-tenant
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agent-submitter
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["agents.x-k8s.io"]
+    resources: ["sandboxes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-submitter
+  namespace: poc05-remote
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agent-submitter
+subjects:
+  - kind: ServiceAccount
+    name: submitter
+    namespace: poc05-tenant
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-submitter
+  namespace: poc05-tools
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agent-submitter
+subjects:
+  - kind: ServiceAccount
+    name: submitter
+    namespace: poc05-tenant
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deployer
+  namespace: agent-platform-system
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agent-deployer
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "configmaps", "services", "serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["agents.x-k8s.io"]
+    resources: ["sandboxes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-deployer
+  namespace: poc05-agents
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agent-deployer
+subjects:
+  - kind: ServiceAccount
+    name: deployer
+    namespace: agent-platform-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-deployer
+  namespace: poc05-remote
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agent-deployer
+subjects:
+  - kind: ServiceAccount
+    name: deployer
+    namespace: agent-platform-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-deployer
+  namespace: poc05-tools
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agent-deployer
+subjects:
+  - kind: ServiceAccount
+    name: deployer
+    namespace: agent-platform-system
+---
+# The platform's role: read and edit the one params ConfigMap. `create` cannot be limited by name,
+# so it is not granted; the cluster admin creates the ConfigMap once from params.yaml.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agent-trust-params-editor
+  namespace: agent-platform-system
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["agent-trust-params"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-trust-params-editor
+  namespace: agent-platform-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agent-trust-params-editor
+subjects:
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: agents.platform:platform-admins

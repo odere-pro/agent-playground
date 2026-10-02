@@ -1,0 +1,202 @@
+# poc05-platform: what each platform pod may send and receive (plan section 2.10). The namespace's
+# `default-deny` (base/default-deny.yaml) refuses everything else, both ways. Peers are pod labels,
+# plus `kubernetes.io/metadata.name` for another namespace; no rule uses an `ipBlock`, so none can
+# reach the metadata service, the Kubernetes API, or a node.
+#
+# Label scheme. Platform pods: `app.kubernetes.io/name: <service>`. Chassis pods (T13), in
+# `poc05-agents`: `agents.platform/role: chassis`; only they reach LiteLLM and Valkey.
+# The code-runner pod (T15), in `poc05-tools`: `app.kubernetes.io/name: code-runner`; its ingress
+# policy must admit `app.kubernetes.io/name: litellm` from `poc05-platform` on 8000.
+# `kubectl port-forward` (seed.sh, the tests) enters through the kubelet and needs no rule here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: litellm
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: litellm
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              agents.platform/role: chassis
+      ports:
+        - port: 4000
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: fake-model-server
+      ports:
+        - port: 8081
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: fake-mcp-server
+      ports:
+        - port: 8082
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-tools
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: code-runner
+      ports:
+        - port: 8000
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
+      ports:
+        - port: 5432
+          protocol: TCP
+---
+# The H09 fix: an agent pod has no route to the model server; LiteLLM holds the upstream.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fake-model-server
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: fake-model-server
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
+      ports:
+        - port: 8081
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fake-mcp-server
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: fake-mcp-server
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
+      ports:
+        - port: 8082
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: valkey
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: valkey
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              agents.platform/role: chassis
+      ports:
+        - port: 6379
+          protocol: TCP
+---
+# MinIO: only the one-shot minio-init Job (not in the section 2.10 table: it exists only to set up
+# the bucket and the chassis's user). No chassis reads its config from S3 in PoC-5 (`config:
+# memory`), so no chassis edge (security review F10). Add the poc05-agents chassis edge back with
+# the first chassis that uses `config: s3`, and seed minio-chassis into poc05-agents then.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: minio
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: minio
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: minio-init
+      ports:
+        - port: 9000
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: minio-init
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: minio-init
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: minio
+      ports:
+        - port: 9000
+          protocol: TCP

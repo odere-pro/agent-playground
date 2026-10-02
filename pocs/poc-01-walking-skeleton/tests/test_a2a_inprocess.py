@@ -24,6 +24,7 @@ from chassis.core.events import parse_event
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel, ScriptRule
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
+from chassis.server.proxy_app import create_proxy_app
 from google.protobuf import json_format
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -36,7 +37,7 @@ CONFIG: dict[str, Any] = {
     "profile": "fake",
     "agent": {"name": "simplifier", "version": "0.0.1"},
     "spec": {
-        "adapters": {"model": "fake", "engine": "inprocess"},
+        "adapters": {"model": "fake"},
         "engine": {"connector": "inprocess", "handle": "echo_python:handle"},
         "model": {"route": "big-default"},
         "prompt": {"version": "simplifier-v1"},
@@ -55,12 +56,12 @@ def _ports() -> PortBundle:
 
 @pytest.fixture
 def app() -> Iterator[Any]:
-    """The chassis app with `engine: inprocess`, and the workload's model call routed back into
-    it over an ASGI transport, so it goes through the chassis proxy to `ScriptedModel`.
+    """The chassis app with `engine: inprocess`, and the workload's model call routed into its
+    proxy app over an ASGI transport, so it goes through the chassis proxy to `ScriptedModel`.
     """
     app = create_app(ChassisConfig.model_validate(CONFIG), _ports())
     workload: Any = importlib.import_module("echo_python.handle")
-    workload.transport = httpx.ASGITransport(app=app)
+    workload.transport = httpx.ASGITransport(app=create_proxy_app(app))
     try:
         yield app
     finally:
@@ -170,6 +171,6 @@ def test_contract_v0_is_written_down() -> None:
     for name in ("`start`", "`delta`", "`tool_call`", "`metrics`", "`end`", "`error`"):
         assert name in text
     config = yaml.safe_load(FAKE_CONFIG.read_text())
-    assert config["spec"]["adapters"]["engine"] == "inprocess"
+    assert "engine" not in config["spec"]["adapters"], "the lane is named once (v1 decision 2)"
     assert config["spec"]["engine"]["connector"] == "inprocess"
     assert config["spec"]["engine"]["handle"] == "echo_python:handle"

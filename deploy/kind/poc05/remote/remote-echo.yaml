@@ -1,0 +1,143 @@
+# remote-echo: the remote lane's workload (plan sections 2.2, 2.4, 2.10, 2.11; T14). An
+# agent-sandbox Sandbox on gVisor running echo-python on the workload-a2a template, with the token
+# required on every path (`--require-token-env CHASSIS_API_TOKEN`), the agent card included. The
+# pod takes the Sandbox's name. Its chassis is `chassis-echo-remote` in poc05-agents.
+#
+# - Admission (admission/policy.yaml, rule 5): labels `agents.platform/lane: remote` and
+#   `agents.platform/trust: untrusted`, `runtimeClassName: gvisor`,
+#   `automountServiceAccountToken: false`, and no Secret but `remote-echo-token`, which rule 7c
+#   ties to the label `app.kubernetes.io/name: remote-echo` (its own name plus `-token`). Every
+#   remote shares poc05-remote in PoC-5, so a tenant there could still label a pod remote-echo:
+#   per-remote separation needs a namespace per remote (recorded exception, review F3).
+# - The token crosses the pod network in plain HTTP both ways (review F14, recorded): mTLS is the
+#   next step (ADR-005); on single-node kind the exposure is the node.
+# - The one secret: CHASSIS_API_TOKEN from `remote-echo-token` (seed.sh), as env in the workload
+#   container only (section 2.2).
+# - No DNS (section 2.10): the chassis's remote proxy is the fixed ClusterIP of
+#   `chassis-echo-remote-proxy` (agents/chassis-echo-remote.yaml), given here as plain env.
+#   `enableServiceLinks: false`, so no Service variables leak in either.
+# - Probes are TCP: the bearer check covers every HTTP path, and the kubelet has no token.
+# - `spec.service: false`: the Service `remote-echo` below is ours, with a port; the controller
+#   makes none.
+# - PIDs: the kubelet's podPidsLimit (256, cluster.yaml) applies. Under gVisor each guest process
+#   costs about three host pids, so the guest gets roughly 85.
+# - gVisor gives the sandbox its own writable /tmp even with a read-only root; the explicit
+#   memory-backed /tmp with a sizeLimit is mounted anyway, so the cap holds (H22).
+#
+# Not here: `remote-probe` (the probe workload is out of scope for this pass), and the plain-Pod
+# fallback (not needed: the spike ran a Sandbox on gVisor).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: remote-echo
+  labels:
+    app.kubernetes.io/name: remote-echo
+automountServiceAccountToken: false
+---
+apiVersion: agents.x-k8s.io/v1beta1
+kind: Sandbox
+metadata:
+  name: remote-echo
+  labels:
+    app.kubernetes.io/name: remote-echo
+spec:
+  service: false
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: remote-echo
+        app.kubernetes.io/part-of: poc05
+        agents.platform/lane: remote
+        agents.platform/trust: untrusted
+    spec:
+      serviceAccountName: remote-echo
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      runtimeClassName: gvisor
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workload
+          image: kind.local/agent-platform/echo-python:poc05
+          imagePullPolicy: Never
+          # Appended to the image's `workload-a2a serve ... --host $HOST --port $PORT`. With
+          # --require-token-env a host that is not loopback is allowed.
+          args: ["--require-token-env", "CHASSIS_API_TOKEN", "--drain-timeout-s", "30"]
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: HOST
+              value: $(POD_IP)
+            - name: PORT
+              value: "9000"
+            - name: CHASSIS_MODEL_URL
+              value: http://10.96.85.91:8091/v1
+            - name: CHASSIS_TOOL_URL
+              value: http://10.96.85.91:8091/mcp
+            - name: CHASSIS_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: remote-echo-token
+                  key: token
+          ports:
+            - name: a2a
+              containerPort: 9000
+          startupProbe:
+            tcpSocket:
+              port: 9000
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: 9000
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 9000
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10002
+            runAsGroup: 10002
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: workload-tmp
+              mountPath: /tmp
+      volumes:
+        - name: workload-tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi
+---
+# The chassis reaches the remote by name (it has DNS): remote-echo.poc05-remote.svc.cluster.local.
+apiVersion: v1
+kind: Service
+metadata:
+  name: remote-echo
+  labels:
+    app.kubernetes.io/name: remote-echo
+spec:
+  selector:
+    app.kubernetes.io/name: remote-echo
+  ports:
+    - name: a2a
+      port: 9000
+      targetPort: 9000

@@ -1,0 +1,21 @@
+# PoC-4 Dapr resiliency policy for inbound events: 2 retries after the first delivery, so 3
+# deliveries in total, the `max_attempts=3` default of `EventPort.subscribe`. Then Dapr sends the
+# event to the subscription's `deadLetterTopic` (`<topic>.dlq`). The chassis checks
+# `max_attempts` against this file at startup and logs a mismatch (plan, section 2).
+apiVersion: dapr.io/v1alpha1
+kind: Resiliency
+metadata:
+  name: poc04
+spec:
+  policies:
+    retries:
+      eventRetry:
+        # suggested: a short constant back-off, close to the adapter's 0.1 s and 0.5 s.
+        policy: constant
+        duration: 200ms
+        maxRetries: 2
+  targets:
+    components:
+      pubsub:
+        inbound:
+          retry: eventRetry

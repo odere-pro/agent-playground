@@ -1,0 +1,117 @@
+{
+  "name": "dapr-rep1",
+  "events": "dapr",
+  "offsets_before": {
+    "agents.task.completed.v1": 100,
+    "agents.task.failed.v1": 0
+  },
+  "offsets_after": {
+    "agents.task.completed.v1": 700,
+    "agents.task.failed.v1": 0
+  },
+  "events_in_window": {
+    "agents.task.completed.v1": 600,
+    "agents.task.failed.v1": 0
+  },
+  "consumed_total": {
+    "agents.task.completed.v1": 700,
+    "agents.task.failed.v1": 0
+  },
+  "warmup": {
+    "requests": 100,
+    "failures": 0,
+    "rps": 10.92,
+    "p50_ms": 120.0,
+    "p95_ms": 280.0,
+    "ok_rps": 10.92
+  },
+  "load": {
+    "requests": 600,
+    "failures": 0,
+    "rps": 10.14,
+    "p50_ms": 110.0,
+    "p95_ms": 200.0,
+    "ok_rps": 10.14
+  },
+  "containers": {
+    "chassis": {
+      "replicas": 1,
+      "vcpu_mean": 0.1462,
+      "vcpu_max": 0.3143,
+      "mib_mean": 162.64,
+      "mib_max": 173.5,
+      "idle_vcpu": 0.1099,
+      "idle_mib": 150.38
+    },
+    "daprd-1": {
+      "replicas": 1,
+      "vcpu_mean": 0.0024,
+      "vcpu_max": 0.0064,
+      "mib_mean": 151.06,
+      "mib_max": 153.9,
+      "idle_vcpu": 0.0002,
+      "idle_mib": 138.9
+    },
+    "fake-model-server": {
+      "replicas": 1,
+      "vcpu_mean": 0.0655,
+      "vcpu_max": 0.1455,
+      "mib_mean": 41.71,
+      "mib_max": 52.07,
+      "idle_vcpu": 0.0513,
+      "idle_mib": 36.14
+    },
+    "kafka": {
+      "replicas": 1,
+      "vcpu_mean": 0.2511,
+      "vcpu_max": 1.1426,
+      "mib_mean": 427.91,
+      "mib_max": 529.6,
+      "idle_vcpu": 0.223,
+      "idle_mib": 430.66
+    },
+    "minio": {
+      "replicas": 1,
+      "vcpu_mean": 0.0004,
+      "vcpu_max": 0.0012,
+      "mib_mean": 204.27,
+      "mib_max": 205.1,
+      "idle_vcpu": 0.0005,
+      "idle_mib": 203.16
+    },
+    "traefik": {
+      "replicas": 1,
+      "vcpu_mean": 0.0041,
+      "vcpu_max": 0.0092,
+      "mib_mean": 23.48,
+      "mib_max": 24.61,
+      "idle_vcpu": 0.0032,
+      "idle_mib": 17.85
+    },
+    "valkey": {
+      "replicas": 1,
+      "vcpu_mean": 0.0073,
+      "vcpu_max": 0.0139,
+      "mib_mean": 11.86,
+      "mib_max": 13.83,
+      "idle_vcpu": 0.0057,
+      "idle_mib": 11.06
+    },
+    "workload": {
+      "replicas": 1,
+      "vcpu_mean": 0.12,
+      "vcpu_max": 0.2593,
+      "mib_mean": 80.48,
+      "mib_max": 81.24,
+      "idle_vcpu": 0.0124,
+      "idle_mib": 65.67
+    }
+  },
+  "host": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "cpus": 14,
+    "docker_cpus": 14,
+    "docker_mem_mib": 7935,
+    "other_running_containers": 17
+  }
+}

@@ -1,0 +1,92 @@
+# Default deny, in and out, for every pod in poc04 (deploy/CLAUDE.md). Then only what each pod
+# needs. The agent pod (chassis plus workload) may call the fake model server, Valkey, and DNS;
+# nothing else, so the cloud metadata service (169.254.169.254) and the Kubernetes API are denied
+# by default. The workload's own egress is the same pod's, so in this PoC a NetworkPolicy cannot
+# tell the two containers apart: the workload reaches the chassis on 127.0.0.1, which no policy
+# sees. Separating them is PoC-5's job (gVisor, the remote lane). kind's default CNI (kindnet)
+# enforces NetworkPolicy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agent
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: agent
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # The chassis public port, from anywhere: the NodePort and the kubelet's probes.
+    - ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: fake-model-server
+      ports:
+        - port: 8081
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: valkey
+      ports:
+        - port: 6379
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fake-model-server
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: fake-model-server
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: agent
+      ports:
+        - port: 8081
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: valkey
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: valkey
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: agent
+      ports:
+        - port: 6379
+          protocol: TCP

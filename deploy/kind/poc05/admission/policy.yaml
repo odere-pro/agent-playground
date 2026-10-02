@@ -1,0 +1,303 @@
+# The trust rule at admission (plan section 2.5, ADR-005 decisions 4 and 5, security review
+# pocs/poc-05-sandboxed/notes/2026-10-02-review-security.md F1 to F3). Built-in
+# ValidatingAdmissionPolicy: no controller, no memory. Checked offline by
+# pocs/poc-05-sandboxed/tests/test_poc05_admission_static.py, on kind by test_poc05_kind_admission.py.
+#
+# Apply order (`run.sh admission`): base/ (namespaces) first, then
+#   1. params.yaml   the binding denies everything while its params are missing
+#   2. rbac.yaml     the submitter, the platform deployer, and the params editor
+#   3. policy.yaml   the API server refuses an expression that does not compile; then read
+#                    status.typeChecking (warnings only) before going on
+#   4. binding.yaml  last, so nothing is enforced by a half-built policy
+# Never apply fixtures/: the kind test sends them with --dry-run=server only.
+#
+# Pod shape, read from the pod, never from a label the submitter writes:
+# - chassis: at least one chassis image (registryPrefix + "chassis"). With another image next to
+#   it, the pod is in the sidecar lane. Allowed only in a namespace labeled
+#   agents.platform/pod-shape: chassis (poc05-agents).
+# - remote:  no chassis image, and agents.platform/lane: remote or agents.platform/trust: untrusted
+#            (suggested: untrusted code without a chassis is always held to the remote shape).
+#            Only in agents.platform/pod-shape: remote (poc05-remote).
+# - tool:    anything else. Only in agents.platform/pod-shape: tool (poc05-tools), on gVisor.
+#
+# Rules, each with its own message (the kind test matches the message text):
+#   0.  the params are complete; fail closed otherwise.
+#   1.  every pod carries agents.platform/trust: trusted | untrusted.
+#   2.  no untrusted pod in the sidecar lane.
+#   3.  outside the remote lane, every image starts with registryPrefix (suggested: tightened from
+#       "in the sidecar lane", so a pod without a chassis cannot run a third-party image either).
+#   4.  a trusted sidecar pod runs only workload images whose repository is in
+#       trustedRepositories. Images outside the prefix are rule 3's, so each rejected fixture
+#       breaks one rule only.
+#   5.  a remote pod sets runtimeClassName gvisor and automountServiceAccountToken false, mounts
+#       no projected service account token, and takes no Secret but a remote-<name>-token.
+#   6a. at most one container per pod runs the chassis image (F2).
+#   6b. the chassis container sets no `command`: the image's entrypoint is `chassis serve` (F2).
+#   6c. outside the remote lane, only the chassis container references a Secret: env, envFrom,
+#       or a mount of a secret or projected-secret volume (F2).
+#   7a. the pod's shape matches its namespace's agents.platform/pod-shape label (F3).
+#   7b. agents.platform/role: chassis only on a pod that runs the chassis image (F3).
+#   7c. a remote pod's remote-*-token is its own: <app.kubernetes.io/name>-token (F3).
+#   7d. a tool pod runs on gVisor with no service account token (F3, F15).
+#   8.  outside the remote lane, every image comes from the cluster's own store (F1). On kind
+#       (imageSource: pull-never) every container sets imagePullPolicy: Never, so a name that
+#       also exists on a public registry is never pulled. On a cloud cluster set
+#       imageSource: digest: every image is pinned by @sha256, and the trusted list is read with
+#       the digest (H-10 signatures later).
+#
+# CEL notes from the spike (question 5): a label key with a slash is read as
+# labels[?'key/with-slash'].orValue(''); the form labels.?'key' does not compile. Every optional
+# field is guarded with has(), because with failurePolicy Fail a "no such key" error rejects the
+# object for the wrong reason.
+#
+# Only the cluster can prove (none of this CEL has run yet; the offline test checks a Python
+# model of it and the syntax it can see):
+#   - that every expression compiles on v1.37 (the CEL string helpers split, trim, join, matches,
+#     startsWith, contains; optional index; namespaceObject);
+#   - that request.kind.kind is 'Pod' for pods/ephemeralcontainers, and that `object` carries the
+#     Sandbox's spec.podTemplate as written;
+#   - that agent-sandbox copies the podTemplate labels and runtimeClassName onto the pod (else
+#     rule 1 or 7a rejects every Sandbox pod);
+#   - that imagePullPolicy is defaulted before validation on Pods and pod templates (a Sandbox's
+#     podTemplate is not defaulted, so it must set the field);
+#   - that each rejected fixture fails with its own message, its twin is admitted, and removing the
+#     params denies everything (test_poc05_kind_admission.py, review verification item 3);
+#   - an ephemeral container added with `kubectl debug` (as admin) is refused by rule 3 or 8.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agent-trust-rule
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    # Pods are the last hop for every controller; the workload kinds are matched too, so a bad
+    # Deployment or Sandbox is refused at apply time instead of failing to make pods later.
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "pods/ephemeralcontainers", "replicationcontrollers"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+      - apiGroups: ["agents.x-k8s.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["sandboxes"]
+  variables:
+    # The pod (or pod template) the object describes.
+    - name: template
+      expression: >-
+        request.kind.kind == 'Pod' ? object :
+        request.kind.kind == 'CronJob' ? object.spec.jobTemplate.spec.template :
+        request.kind.kind == 'Sandbox' ? object.spec.podTemplate :
+        object.spec.template
+    - name: labels
+      expression: >-
+        has(variables.template.metadata) && has(variables.template.metadata.labels)
+        ? variables.template.metadata.labels : {}
+    - name: spec
+      expression: "variables.template.spec"
+    - name: containers
+      expression: >-
+        variables.spec.containers +
+        (has(variables.spec.initContainers) ? variables.spec.initContainers : []) +
+        (has(variables.spec.ephemeralContainers) ? variables.spec.ephemeralContainers : [])
+    - name: images
+      expression: "variables.containers.map(c, has(c.image) ? c.image : '')"
+    - name: data
+      expression: "has(params.data) ? params.data : {}"
+    - name: prefix
+      expression: "variables.data[?'registryPrefix'].orValue('')"
+    - name: imageSource
+      expression: "variables.data[?'imageSource'].orValue('')"
+    - name: trustedRepositories
+      expression: >-
+        variables.data[?'trustedRepositories'].orValue('').split(',')
+        .map(r, r.trim()).filter(r, r != '')
+    - name: chassisRepository
+      expression: "variables.prefix + 'chassis'"
+    - name: chassisImages
+      expression: >-
+        variables.images.filter(i, i == variables.chassisRepository ||
+          i.startsWith(variables.chassisRepository + ':') ||
+          i.startsWith(variables.chassisRepository + '@'))
+    - name: workloadImages
+      expression: "variables.images.filter(i, !(i in variables.chassisImages))"
+    - name: trust
+      expression: "variables.labels[?'agents.platform/trust'].orValue('')"
+    - name: isSidecar
+      expression: "size(variables.chassisImages) > 0 && size(variables.workloadImages) > 0"
+    - name: isRemote
+      expression: >-
+        size(variables.chassisImages) == 0 &&
+        (variables.labels[?'agents.platform/lane'].orValue('') == 'remote' ||
+         variables.trust == 'untrusted')
+    - name: shape
+      expression: >-
+        size(variables.chassisImages) > 0 ? 'chassis' :
+        (variables.isRemote ? 'remote' : 'tool')
+    - name: namespaceShape
+      expression: >-
+        has(namespaceObject.metadata) && has(namespaceObject.metadata.labels)
+        ? namespaceObject.metadata.labels[?'agents.platform/pod-shape'].orValue('') : ''
+    - name: tokenSecret
+      expression: "'^remote-[a-z0-9]([-a-z0-9]*[a-z0-9])?-token$'"
+    - name: ownToken
+      expression: "variables.labels[?'app.kubernetes.io/name'].orValue('') + '-token'"
+    # Every Secret name the pod references, as a list of lists (no flatten needed): env per
+    # container, envFrom per container, secret volumes, projected secret sources per volume.
+    - name: secretNames
+      expression: >-
+        variables.containers.map(c, has(c.env)
+          ? c.env.filter(e, has(e.valueFrom) && has(e.valueFrom.secretKeyRef))
+            .map(e, has(e.valueFrom.secretKeyRef.name) ? e.valueFrom.secretKeyRef.name : '')
+          : []) +
+        variables.containers.map(c, has(c.envFrom)
+          ? c.envFrom.filter(f, has(f.secretRef))
+            .map(f, has(f.secretRef.name) ? f.secretRef.name : '')
+          : []) +
+        [has(variables.spec.volumes)
+          ? variables.spec.volumes.filter(v, has(v.secret))
+            .map(v, has(v.secret.secretName) ? v.secret.secretName : '')
+          : []] +
+        (has(variables.spec.volumes)
+          ? variables.spec.volumes.filter(v, has(v.projected) && has(v.projected.sources))
+            .map(v, v.projected.sources.filter(s, has(s.secret))
+              .map(s, has(s.secret.name) ? s.secret.name : ''))
+          : [])
+    - name: projectedToken
+      expression: >-
+        has(variables.spec.volumes) && variables.spec.volumes.exists(v,
+          has(v.projected) && has(v.projected.sources) &&
+          v.projected.sources.exists(s, has(s.serviceAccountToken)))
+    - name: secretVolumes
+      expression: >-
+        has(variables.spec.volumes)
+        ? variables.spec.volumes.filter(v, has(v.secret) ||
+            (has(v.projected) && has(v.projected.sources) &&
+             v.projected.sources.exists(s, has(s.secret)))).map(v, v.name)
+        : []
+    # The image of every container that references a Secret.
+    - name: secretUsers
+      expression: >-
+        variables.containers.filter(c,
+          (has(c.env) && c.env.exists(e, has(e.valueFrom) && has(e.valueFrom.secretKeyRef))) ||
+          (has(c.envFrom) && c.envFrom.exists(f, has(f.secretRef))) ||
+          (has(c.volumeMounts) && c.volumeMounts.exists(m, m.name in variables.secretVolumes)))
+        .map(c, has(c.image) ? c.image : '')
+    - name: fromOwnStore
+      expression: >-
+        variables.imageSource == 'pull-never'
+        ? variables.containers.all(c, has(c.imagePullPolicy) && c.imagePullPolicy == 'Never')
+        : variables.images.all(i, i.contains('@sha256:'))
+  validations:
+    - expression: >-
+        variables.prefix != '' && size(variables.trustedRepositories) > 0 &&
+        variables.imageSource in ['pull-never', 'digest']
+      message: >-
+        trust rule 0: the params agent-platform-system/agent-trust-params must set registryPrefix,
+        trustedRepositories, and imageSource
+      reason: Forbidden
+    - expression: "variables.trust in ['trusted', 'untrusted']"
+      message: >-
+        trust rule 1: every pod must carry the label agents.platform/trust with trusted or
+        untrusted
+      reason: Forbidden
+    - expression: "!(variables.isSidecar && variables.trust == 'untrusted')"
+      message: >-
+        trust rule 2: an untrusted workload may not run in the sidecar lane; use the remote lane
+      reason: Forbidden
+    - expression: "variables.isRemote || variables.images.all(i, i.startsWith(variables.prefix))"
+      message: >-
+        trust rule 3: outside the remote lane every image must come from the platform registry
+        prefix
+      messageExpression: >-
+        'trust rule 3: outside the remote lane every image must come from the platform registry
+        prefix: ' + variables.images.filter(i, !i.startsWith(variables.prefix)).join(', ')
+      reason: Forbidden
+    - expression: >-
+        !(variables.isSidecar && variables.trust == 'trusted') ||
+        variables.workloadImages.filter(i, i.startsWith(variables.prefix)).all(i,
+          variables.trustedRepositories.exists(r,
+            i == r || i.startsWith(r + ':') || i.startsWith(r + '@')))
+      message: >-
+        trust rule 4: a trusted sidecar-lane pod may run only workload images from the
+        trustedRepositories in agent-trust-params
+      messageExpression: >-
+        'trust rule 4: a trusted sidecar-lane pod may run only workload images from the
+        trustedRepositories in agent-trust-params: ' +
+        variables.workloadImages.filter(i, i.startsWith(variables.prefix) &&
+          !variables.trustedRepositories.exists(r,
+            i == r || i.startsWith(r + ':') || i.startsWith(r + '@'))).join(', ')
+      reason: Forbidden
+    - expression: >-
+        !variables.isRemote ||
+        (has(variables.spec.runtimeClassName) && variables.spec.runtimeClassName == 'gvisor' &&
+         has(variables.spec.automountServiceAccountToken) &&
+         variables.spec.automountServiceAccountToken == false &&
+         !variables.projectedToken &&
+         variables.secretNames.all(l, l.all(n, n.matches(variables.tokenSecret))))
+      message: >-
+        trust rule 5: a remote workload pod must set runtimeClassName gvisor and
+        automountServiceAccountToken false, and take no Secret but remote-<name>-token
+      reason: Forbidden
+    - expression: "size(variables.chassisImages) <= 1"
+      message: "trust rule 6a: a pod may run at most one chassis container"
+      reason: Forbidden
+    - expression: >-
+        variables.containers.all(c, !has(c.image) || !(c.image in variables.chassisImages) ||
+          !has(c.command) || size(c.command) == 0)
+      message: >-
+        trust rule 6b: the chassis container may not override the image command
+      reason: Forbidden
+    - expression: >-
+        variables.isRemote || variables.secretUsers.all(i, i in variables.chassisImages)
+      message: >-
+        trust rule 6c: outside the remote lane only the chassis container may reference a Secret
+      reason: Forbidden
+    - expression: "variables.shape == variables.namespaceShape"
+      message: >-
+        trust rule 7a: the pod shape (chassis, remote, or tool) must match the
+        agents.platform/pod-shape label of its namespace
+      messageExpression: >-
+        'trust rule 7a: the pod shape (chassis, remote, or tool) must match the
+        agents.platform/pod-shape label of its namespace: ' + variables.shape + ' in ' +
+        (variables.namespaceShape == '' ? 'none' : variables.namespaceShape)
+      reason: Forbidden
+    - expression: >-
+        variables.labels[?'agents.platform/role'].orValue('') != 'chassis' ||
+        size(variables.chassisImages) > 0
+      message: >-
+        trust rule 7b: only a pod that runs the chassis image may carry agents.platform/role:
+        chassis
+      reason: Forbidden
+    - expression: >-
+        !variables.isRemote || variables.secretNames.all(l, l.all(n,
+          !n.matches(variables.tokenSecret) || n == variables.ownToken))
+      message: >-
+        trust rule 7c: a remote pod may take only its own token, the Secret named after its
+        app.kubernetes.io/name label plus -token
+      reason: Forbidden
+    - expression: >-
+        variables.shape != 'tool' ||
+        (has(variables.spec.runtimeClassName) && variables.spec.runtimeClassName == 'gvisor' &&
+         has(variables.spec.automountServiceAccountToken) &&
+         variables.spec.automountServiceAccountToken == false)
+      message: >-
+        trust rule 7d: a tool pod must set runtimeClassName gvisor and
+        automountServiceAccountToken false
+      reason: Forbidden
+    - expression: "variables.isRemote || variables.fromOwnStore"
+      message: >-
+        trust rule 8: outside the remote lane every image must come from the cluster image store:
+        imagePullPolicy Never, or an @sha256 digest when imageSource is digest
+      reason: Forbidden
