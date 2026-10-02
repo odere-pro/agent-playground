@@ -14,6 +14,7 @@
 #   deploy/kind/poc05/run.sh up       all of it from nothing, in the plan's section 8 order; a
 #                                     second `up` on a running cluster converges
 #   deploy/kind/poc05/run.sh test     the kind tier: POC05_KIND=1 pytest -m network (PoC-5 tests)
+#   deploy/kind/poc05/run.sh test-remote  the kind tier, remote lane and code-runner only (CI job)
 #   deploy/kind/poc05/run.sh pods     every pod and Sandbox in the PoC-5 namespaces
 #   deploy/kind/poc05/run.sh delete   delete the cluster (`down` is the same)
 #   Several verbs run in order: run.sh create smoke
@@ -333,6 +334,12 @@ run_tests() {
   (cd "$ROOT" && POC05_KIND=1 uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs)
 }
 
+# The remote-lane CI job (.github/workflows/remote-lane.yml) runs this after `up`.
+run_tests_remote() {
+  (cd "$ROOT" && POC05_KIND=1 uv run pytest -m network pocs/poc-05-sandboxed/tests \
+    -k "remote or code_runner" -q -rs)
+}
+
 anp_api() {
   # The AdminNetworkPolicy API (policy.networking.k8s.io). kind ships no CRD for it.
   if kctl api-resources --api-group=policy.networking.k8s.io -o name 2>/dev/null |
@@ -484,7 +491,7 @@ smoke() {
   log "smoke: all checks passed"
 }
 
-usage() { sed -n '2,25p' "$0"; }
+usage() { sed -n '2,26p' "$0"; }
 
 (($# > 0)) || { usage; exit 0; }
 for cmd in "$@"; do
@@ -501,6 +508,7 @@ for cmd in "$@"; do
     request) request ;;
     up) up ;;
     test) run_tests ;;
+    test-remote) run_tests_remote ;;
     pods) pods ;;
     delete | down) kind delete cluster --name "$CLUSTER" ;;
     *) usage; exit 2 ;;
