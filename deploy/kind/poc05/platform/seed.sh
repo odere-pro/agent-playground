@@ -34,12 +34,11 @@ MODEL="fake-chat"
 # gateway server (suggested, section 2.9): "<svc>|<fake_tools tools>|<code_runner tools>".
 SERVICES=(
   "echo|glossary_lookup,note_write|run_python"
-  "probe-sidecar|glossary_lookup,note_write|"
   "echo-remote|glossary_lookup,note_write|run_python"
-  "probe-remote|glossary_lookup,note_write|"
 )
 # One token per remote (section 2.2), in poc05-agents (the chassis) and poc05-remote (T14).
-REMOTES=(echo probe)
+# No probe entries: T10 is dropped (2026-10-02), so no pod would mount them (security review, 8).
+REMOTES=(echo)
 
 kctl() { kubectl --context "$CONTEXT" "$@"; }
 log() { printf '[seed] %s\n' "$*" >&2; }

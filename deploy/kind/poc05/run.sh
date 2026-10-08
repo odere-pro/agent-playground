@@ -14,7 +14,11 @@
 #   deploy/kind/poc05/run.sh up       all of it from nothing, in the plan's section 8 order; a
 #                                     second `up` on a running cluster converges
 #   deploy/kind/poc05/run.sh test     the kind tier: POC05_KIND=1 pytest -m network (PoC-5 tests)
+#   deploy/kind/poc05/run.sh test-remote  the kind remote-lane and code-runner files (CI job); fails
+#                                     naming any file in REMOTE_TESTS that does not exist yet
 #   deploy/kind/poc05/run.sh pods     every pod and Sandbox in the PoC-5 namespaces
+#   deploy/kind/poc05/run.sh logs     every PoC-5 pod's last log lines, through redact_logs
+#   deploy/kind/poc05/run.sh redact   redact_logs as a filter: stdin to stdout, no cluster call
 #   deploy/kind/poc05/run.sh delete   delete the cluster (`down` is the same)
 #   Several verbs run in order: run.sh create smoke
 #
@@ -45,6 +49,18 @@ IMAGES=(
 )
 
 kctl() { kubectl --context "$CONTEXT" "$@"; }
+
+# The one redaction filter for every `kubectl logs` output, here and in the CI failure step
+# (security review 2026-10-02, item 2). LiteLLM's 401 line quotes the refused key's suffix and
+# hash. Strips the value after `Bearer `, `Received API Key = `, `Key Hash (Token) = `, and any
+# `sk-` token; keeps the text around it. sed -E only, so it runs on GNU and BSD sed.
+redact_logs() {
+  sed -E \
+    -e 's/([Bb]earer )[^[:space:],;"]+/\1[redacted]/g' \
+    -e 's/(Received API Key = )[^[:space:],;"]+/\1[redacted]/g' \
+    -e 's/(Key Hash \(Token\) = )[^[:space:],;"]+/\1[redacted]/g' \
+    -e 's/(^|[^[:alnum:]_-])sk-[^[:space:],;"]+/\1[redacted]/g'
+}
 log() { printf '[kind-poc05] %s\n' "$*" >&2; }
 die() { log "$*"; exit 1; }
 
@@ -165,7 +181,7 @@ explain() {
   log "not ready: -n $ns -l $sel; events and logs follow"
   kctl -n "$ns" get pods -l "$sel" -o wide || true
   kctl -n "$ns" get events --sort-by=.lastTimestamp | tail -n 15 || true
-  kctl -n "$ns" logs -l "$sel" --all-containers --tail=30 || true
+  kctl -n "$ns" logs -l "$sel" --all-containers --tail=30 2>&1 | redact_logs || true
 }
 
 wait_rollout() {
@@ -333,6 +349,26 @@ run_tests() {
   (cd "$ROOT" && POC05_KIND=1 uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs)
 }
 
+# The kind remote-lane and code-runner tests, selected by file path (review B1: a `-k` match
+# picked only admission fixture ids). No admission file belongs here.
+REMOTE_TESTS=(
+  pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_lane.py
+  pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py
+  pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py
+)
+
+# The remote-lane CI job (.github/workflows/remote-lane.yml) runs this after `up`. A missing file
+# fails the verb by name, so the job never goes green on an empty selection.
+run_tests_remote() {
+  local f missing=()
+  for f in "${REMOTE_TESTS[@]}"; do
+    [[ -f $ROOT/$f ]] || missing+=("$f")
+  done
+  ((${#missing[@]} == 0)) ||
+    die "test-remote: kind remote tests not written yet, nothing run: ${missing[*]}"
+  (cd "$ROOT" && POC05_KIND=1 uv run pytest -m network "${REMOTE_TESTS[@]}" -q -rs)
+}
+
 anp_api() {
   # The AdminNetworkPolicy API (policy.networking.k8s.io). kind ships no CRD for it.
   if kctl api-resources --api-group=policy.networking.k8s.io -o name 2>/dev/null |
@@ -484,7 +520,20 @@ smoke() {
   log "smoke: all checks passed"
 }
 
-usage() { sed -n '2,25p' "$0"; }
+# Every PoC-5 pod's last 200 log lines, each through redact_logs (the CI failure step).
+pod_logs() {
+  local ns pod
+  for ns in $(kctl get namespaces -o name 2>/dev/null | sed 's|^namespace/||' | grep '^poc05-'); do
+    kctl -n "$ns" get pods -o wide 2>&1 || true
+    for pod in $(kctl -n "$ns" get pods -o name 2>/dev/null); do
+      printf '::group::%s/%s\n' "$ns" "${pod#pod/}"
+      kctl -n "$ns" logs "$pod" --all-containers --tail=200 2>&1 | redact_logs || true
+      printf '::endgroup::\n'
+    done
+  done
+}
+
+usage() { sed -n '2,29p' "$0"; }
 
 (($# > 0)) || { usage; exit 0; }
 for cmd in "$@"; do
@@ -501,7 +550,10 @@ for cmd in "$@"; do
     request) request ;;
     up) up ;;
     test) run_tests ;;
+    test-remote) run_tests_remote ;;
     pods) pods ;;
+    logs) pod_logs ;;
+    redact) redact_logs ;;
     delete | down) kind delete cluster --name "$CLUSTER" ;;
     *) usage; exit 2 ;;
   esac

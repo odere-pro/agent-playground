@@ -82,6 +82,12 @@ Contracts touched: additive only. `spec.trust`, `spec.engine.url`, `spec.engine.
 
 Costs across lanes: `inprocess` none (`untrusted` is refused). `sidecar` none beyond the PoC-5 bind-order change. `remote` one hop each way, one constant-time compare per request, gVisor's overhead (measured in PoC-5), and one Secret per remote.
 
+Found while building PoC-5 (2026-10-02; this does not accept the ADR):
+
+- **Pod create reads Secrets.** Any principal that may create a pod in a namespace can read every Secret there through that pod (env or volume). PoC-5 removed pod create from the submitter in `poc05-agents`, where the chassis Secrets live (`deploy/kind/poc05/admission/rbac.yaml`, header; PoC-5 handoff note). The submitter may submit only in `poc05-remote` and `poc05-tools`.
+- **The deployer is inside the credential boundary.** The deployer (`agent-platform-system/deployer`, the stand-in for the chart or pipeline) keeps pod create and NetworkPolicy write in `poc05-agents` (`admission/rbac.yaml`). So it can read the chassis Secrets through a pod, even though RBAC gives it no access to Secrets. It must be trusted like the cluster admin for that namespace.
+- **The control on the deployer is admission rules 6a to 6c.** 6a: at most one chassis container per pod. 6b: the chassis container sets no `command`. 6c: outside the remote lane, only the chassis container references a Secret. Rule 6b forbids `command`, not `args`, so the deployer can still pass the chassis any CLI flag. Fixtures: `deploy/kind/poc05/admission/fixtures/rule6b-chassis-command` and `rule6c-secret-in-workload`. The per-rule kind test has not run yet.
+
 ## Revisit
 
 Reopen decision 1 when a cloud mesh gives mTLS with no added controller (then replace the token), or a managed runtime needs another auth scheme (PoC-6b, `auth.scheme`).

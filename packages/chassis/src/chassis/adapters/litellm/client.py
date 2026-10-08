@@ -87,14 +87,18 @@ def _usage(data: dict[str, Any] | None) -> Usage:
 # event and a log line. The epic gives no limit.
 MESSAGE_CAP = 300
 _KEY_SHAPE = re.compile(r"sk-[A-Za-z0-9_-]{8,}")
+# LiteLLM's 401 echo: `Received API Key = sk-...abcd, Key Hash (Token) = <hash>`. The value runs
+# to the next space, comma, or semicolon; a trailing period stays as text.
+_LITELLM_ECHO = re.compile(r"(Received API Key = |Key Hash \(Token\) = )[^\s,;]*[^\s,;.]")
 
 
 def _redact(text: str, api_key: str | None) -> str:
-    """Strip the configured key and anything shaped like one. LiteLLM's 401 text quotes the key
-    it received, and this message travels into events, the proxy body, and `/v1/run` output.
+    """Strip the configured key, anything shaped like one, and LiteLLM's 401 echo of the key
+    suffix and hash. This message travels into events, the proxy body, and `/v1/run` output.
     """
     if api_key:
         text = text.replace(api_key, "[redacted]")
+    text = _LITELLM_ECHO.sub(r"\1[redacted]", text)
     return _KEY_SHAPE.sub("[redacted]", text)
 
 

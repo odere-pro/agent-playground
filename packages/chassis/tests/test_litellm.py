@@ -204,6 +204,50 @@ async def test_401_body_that_echoes_the_key_is_redacted() -> None:
     assert exc.value.message == "Authentication Error, received key [redacted]; not [redacted]"
 
 
+# Made-up values in LiteLLM's 401 echo shape (bring-up note item 2). Not a real key or hash.
+_FAKE_SUFFIX = "sk-...q9z7"
+_FAKE_HASH = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
+
+
+async def test_401_litellm_echo_of_key_suffix_and_hash_is_redacted() -> None:
+    """Security 1: LiteLLM's 401 quotes `Received API Key = <suffix>` and
+    `Key Hash (Token) = <hash>`. Neither may reach `ModelError.message`.
+    """
+    text = (
+        "Authentication Error, Invalid proxy server token passed. "
+        f"Received API Key = {_FAKE_SUFFIX}, Key Hash (Token) = {_FAKE_HASH}. "
+        "Unable to find token in cache or `LiteLLM_VerificationTokenTable`"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"error": {"message": text}})
+
+    model = LiteLLMModel("http://router/v1", transport=httpx.MockTransport(handler))
+    with pytest.raises(ModelError) as exc:
+        await model.complete(MESSAGES, route="big-default")
+    message = exc.value.message
+    assert exc.value.code == "http_401"
+    assert _FAKE_SUFFIX not in message and "q9z7" not in message
+    assert _FAKE_HASH not in message and _FAKE_HASH[:12] not in message
+    assert "Invalid proxy server token passed." in message
+    assert "Received API Key = [redacted]" in message
+    assert "Key Hash (Token) = [redacted]" in message
+
+
+async def test_401_without_the_echo_keeps_its_message() -> None:
+    """Paired control for security 1: a 401 with no key echo keeps its text as sent."""
+    text = "Authentication Error, No api key passed in."
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"error": {"message": text}})
+
+    model = LiteLLMModel("http://router/v1", transport=httpx.MockTransport(handler))
+    with pytest.raises(ModelError) as exc:
+        await model.complete(MESSAGES, route="big-default")
+    assert exc.value.code == "http_401"
+    assert exc.value.message == text
+
+
 async def test_error_message_is_capped() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, json={"error": {"message": "x" * 1000}})
