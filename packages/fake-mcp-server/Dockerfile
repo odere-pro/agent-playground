@@ -19,16 +19,19 @@ COPY packages/fake-model-server/pyproject.toml packages/fake-model-server/
 COPY packages/fake-mcp-server/pyproject.toml packages/fake-mcp-server/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package fake-mcp-server --no-install-workspace
-COPY packages/fake-mcp-server packages/fake-mcp-server
+COPY packages/fake-mcp-server/src packages/fake-mcp-server/src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package fake-mcp-server
 
 FROM ${PYTHON_IMAGE} AS runtime
-RUN groupadd --gid 10003 fake && useradd --uid 10003 --gid fake --create-home fake
+# uid 10005: the one uid table in deploy/README.md. No home directory: HOME points at /tmp.
+RUN groupadd --gid 10005 fake && useradd --uid 10005 --gid fake --no-create-home \
+    --home-dir /tmp --shell /usr/sbin/nologin fake
 WORKDIR /app
-COPY --from=build --chown=fake:fake /app /app
-ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1
-USER fake
+# Owned by root and read-only to the app user: the process cannot change its own code.
+COPY --from=build /app /app
+ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOME=/tmp
+USER 10005:10005
 EXPOSE 8082
 HEALTHCHECK --interval=5s --timeout=3s --retries=12 \
     CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8082/health', timeout=2).status == 200 else 1)"]

@@ -23,6 +23,6 @@ A client sends it as `_meta.idempotency_key` of the `tools/call` request. If the
 ## Rules
 
 - Never imports `chassis` or `chassis_contracts`; `make lint` (import-linter) enforces it.
-- No secret anywhere. The image runs as a non-root user (uid 10003).
+- No secret anywhere. The image runs as a non-root user (uid 10005; the uid table in `deploy/README.md`), with `/app` owned by root.
 - Tests start with the package name (`test_fake_mcp_*`), run in process over an ASGI transport, and open no socket. A client factory must take `**kwargs` (FastMCP passes `follow_redirects` and others).
 - `pyproject.toml` and `uv.lock` belong to T01 in PoC-5: ask the orchestrator for a dependency change.

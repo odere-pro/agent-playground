@@ -58,8 +58,8 @@ spec:
           securityContext:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-            runAsUser: 10002
-            runAsGroup: 10002
+            runAsUser: 10004
+            runAsGroup: 10004
             allowPrivilegeEscalation: false
             capabilities:
               drop: [ALL]
@@ -144,8 +144,8 @@ spec:
           securityContext:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-            runAsUser: 10003
-            runAsGroup: 10003
+            runAsUser: 10005
+            runAsGroup: 10005
             allowPrivilegeEscalation: false
             capabilities:
               drop: [ALL]
