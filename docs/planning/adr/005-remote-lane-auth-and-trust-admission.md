@@ -7,7 +7,7 @@
 
 ## Status
 
-Proposed, 2026-10-02. Written before PoC-5 is built, from the design. Nothing below is measured yet. The cluster work (task T30) updates it with what the spike and the run showed, and the epic owner accepts it. Decision 6 is open until then. On 2026-10-08 the user kept it Proposed until T21 and T22 have run on kind, and confirmed the remote pod's own token, one env var, as its only secret: "no secrets mounted" means no provider key and no internal credential.
+Proposed, 2026-10-02. Written before PoC-5 is built, from the design. Nothing below is measured yet. The cluster work (task T30) updates it with what the spike and the run showed, and the epic owner accepts it. Decision 6 is open until then. On 2026-10-08 the user kept it Proposed until T21 and T22 have run on kind, and confirmed the remote pod's own token, one env var, as its only secret: "no secrets mounted" means no provider key and no internal credential. <!-- pragma: allowlist secret (prose, no value) -->
 
 ## Context
 
