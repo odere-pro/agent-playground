@@ -1,0 +1,30 @@
+# PoC-4 Traefik dynamic config (file provider; no Docker socket). One router, one service, the
+# four chassis by name. A pair that is not running fails the DNS lookup and the health check, so
+# it gets no traffic; a chassis whose `/ready` is 503 (starting, draining, or a hung workload) is
+# taken out within about a second. No retry middleware, on purpose: the client's own retry is
+# what the drills test (plan, 8a and section 13). Static config: the `command` of the `traefik`
+# service in docker-compose.scale.yaml.
+http:
+  routers:
+    agent:
+      entryPoints: [web]
+      rule: PathPrefix(`/`)
+      service: agent
+  services:
+    agent:
+      loadBalancer:
+        servers:
+          - url: http://chassis-1:8080
+          - url: http://chassis-2:8080
+          - url: http://chassis-3:8080
+          - url: http://chassis-4:8080
+        healthCheck:
+          # suggested: every 2 s with a 3 s timeout. A 1 s timeout (plan, 8a) is suspected of taking
+          # a CPU-capped chassis out of rotation under load: bursts of 503 "no available server" on
+          # 2026-10-01 (pocs/poc-04-stateless-scalable/notes/2026-10-01-load-results.md).
+          path: /ready
+          interval: 2s
+          timeout: 3s
+        # Streams (SSE) pass through as they come.
+        responseForwarding:
+          flushInterval: 10ms

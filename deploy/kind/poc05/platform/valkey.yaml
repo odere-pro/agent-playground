@@ -1,0 +1,120 @@
+# Valkey for the chassis's `StatePort` (plan sections 2.11, 2.12, H10). The CH-3 debt paid for
+# kind: no password on the command line or in the environment. valkey.conf (this ConfigMap)
+# includes auth.conf from the Secret `valkey-auth` (seed.sh), which turns the `default` user off
+# and defines the ACL user `chassis` by the SHA-256 of its password, so not even the file holds
+# the password. A call with no login gets NOAUTH, a guessed one WRONGPASS. The chassis logs in
+# with VALKEY_USERNAME=chassis and VALKEY_PASSWORD from its own copy of `valkey-auth`.
+# Image: the one the PoC-4 scale stack pins (deploy/compose/docker-compose.scale.yaml). The alpine
+# image's `valkey` user is uid 999, gid 1000.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: valkey-config
+  labels:
+    app.kubernetes.io/name: valkey
+data:
+  valkey.conf: |
+    port 6379
+    save ""
+    appendonly no
+    maxmemory 48mb
+    maxmemory-policy noeviction
+    protected-mode yes
+    include /etc/valkey/auth/auth.conf
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: valkey
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valkey
+  labels:
+    app.kubernetes.io/name: valkey
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: valkey
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: valkey
+    spec:
+      serviceAccountName: valkey
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: valkey
+          image: valkey/valkey:8.1.4-alpine@sha256:e706d1213aaba6896c162bb6a3a9e1894e1a435f28f8f856d14fab2e10aa098b
+          command: [valkey-server, /etc/valkey/valkey.conf]
+          ports:
+            - name: valkey
+              containerPort: 6379
+          readinessProbe:
+            tcpSocket:
+              port: 6379
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 64Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          workingDir: /data
+          volumeMounts:
+            - name: config
+              mountPath: /etc/valkey/valkey.conf
+              subPath: valkey.conf
+              readOnly: true
+            - name: auth
+              mountPath: /etc/valkey/auth
+              readOnly: true
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: config
+          configMap:
+            name: valkey-config
+        - name: auth
+          secret:
+            secretName: valkey-auth
+            defaultMode: 0440
+            items:
+              - key: auth.conf
+                path: auth.conf
+        - name: data
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: valkey
+  labels:
+    app.kubernetes.io/name: valkey
+spec:
+  selector:
+    app.kubernetes.io/name: valkey
+  ports:
+    - name: valkey
+      port: 6379
+      targetPort: 6379

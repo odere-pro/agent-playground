@@ -1,0 +1,30 @@
+# PoC-5 kind cluster: one node, named `poc05`, so every command can say `--context kind-poc05` and
+# never touch another cluster. run.sh creates and deletes it. Lifted from the spike
+# (pocs/poc-05-sandboxed/notes/spike/cluster.yaml).
+#
+# - Node image: kind v0.33.0's default, pinned by digest, the same as deploy/kind/cluster.yaml.
+# - containerdConfigPatches: the `runsc` runtime handler (gVisor). The node's config.toml is
+#   `version = 2` (containerd 2.3.4 migrates it on load), so the patch uses the v2 plugin path.
+#   ConfigPath points the shim at /etc/containerd/runsc.toml, which install-gvisor.sh writes
+#   (platform systrap, oci-seccomp on). install-gvisor.sh then restarts containerd.
+# - kubeadmConfigPatches: kubelet podPidsLimit, the per-pod pids cap. suggested: 256 (spike). Under
+#   gVisor systrap each guest process costs about three host pids, so a gVisor pod gets roughly a
+#   third of it, and hitting it kills the whole sandbox (spike, question 6).
+# - No host port. The plan reaches pods with `kubectl port-forward` only.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: poc05
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+    kubeadmConfigPatches:
+      - |
+        kind: KubeletConfiguration
+        podPidsLimit: 256
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
+      runtime_type = "io.containerd.runsc.v1"
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc.options]
+      TypeUrl = "io.containerd.runsc.v1.options"
+      ConfigPath = "/etc/containerd/runsc.toml"

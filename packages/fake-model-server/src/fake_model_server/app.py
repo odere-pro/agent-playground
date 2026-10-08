@@ -1,5 +1,8 @@
 """`POST /v1/chat/completions`, streaming and complete, with tool calls and usage. `GET /health`,
-`GET /v1/models`.
+`GET /v1/models`. Chat request bodies are recorded, in order, in `app.state.calls`, so a test
+can check the messages a client sent, tool loop included. The log keeps the last `max_calls`
+(suggested: 1000) in a `deque`, so a load run cannot grow it without bound (it got the server
+OOM-killed); `app.state.calls_total` counts every call.
 """
 
 from __future__ import annotations
@@ -7,6 +10,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from collections import deque
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -44,10 +48,15 @@ def _tool_calls(rule: Rule) -> list[dict[str, Any]] | None:
     ]
 
 
-def create_app(script: Script) -> FastAPI:
+MAX_CALLS = 1000
+"""suggested: how many request bodies `app.state.calls` keeps."""
+
+
+def create_app(script: Script, *, max_calls: int = MAX_CALLS) -> FastAPI:
     app = FastAPI(title="fake-model-server", version="0.1.0")
     app.state.script = script
-    app.state.calls = []
+    app.state.calls = deque[dict[str, Any]](maxlen=max_calls)  # the last `max_calls`, oldest first
+    app.state.calls_total = 0
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -66,6 +75,7 @@ def create_app(script: Script) -> FastAPI:
         messages: list[dict[str, Any]] = body.get("messages", [])
         model = body.get("model") or script.model
         app.state.calls.append(body)
+        app.state.calls_total += 1
         rule = script.pick(messages)
         if rule.error is not None:
             raise HTTPException(status_code=rule.error.status, detail=rule.error.message)

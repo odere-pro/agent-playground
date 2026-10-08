@@ -30,6 +30,9 @@ class FakeEngine:
         self.setup_config: Mapping[str, Any] | None = None
         self.closed = False
         self.runs = 0
+        self.healthy = True
+        """What `probe()` answers; a test sets it to `False` to play a hung workload."""
+        self.probes = 0
 
     async def setup(self, config: Mapping[str, Any], ports: PortBundle) -> None:
         self.setup_config = config
@@ -42,6 +45,10 @@ class FakeEngine:
             return
         for event in self._events:
             yield event
+
+    async def probe(self) -> bool:
+        self.probes += 1
+        return self.healthy
 
     async def close(self) -> None:
         self.closed = True

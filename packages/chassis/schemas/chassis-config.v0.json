@@ -1,0 +1,472 @@
+{
+  "$defs": {
+    "AdapterSpec": {
+      "additionalProperties": false,
+      "description": "The `spec.adapters` block: the adapter per port. An unset field takes the profile default.",
+      "properties": {
+        "config": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Config"
+        },
+        "events": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Events"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "State"
+        },
+        "telemetry": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Telemetry"
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tools"
+        }
+      },
+      "title": "AdapterSpec",
+      "type": "object"
+    },
+    "AgentSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "title": "AgentSpec",
+      "type": "object"
+    },
+    "EngineAuthSpec": {
+      "additionalProperties": false,
+      "description": "`spec.engine.auth` (PoC-5, plan section 2.2): the per-remote credential, by reference.\n\nThe token is read from `os.environ[token_env]` at connector setup; the config never holds it.\n`previous_token_env` is the token being rotated out: the chassis's remote listener accepts\neither, the connector sends `token_env`. suggested: every name; `scheme` leaves room for\n`sigv4` and `google` (PoC-6), only `bearer` now.",
+      "properties": {
+        "previous_token_env": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z_][A-Z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Previous Token Env"
+        },
+        "scheme": {
+          "const": "bearer",
+          "default": "bearer",
+          "title": "Scheme",
+          "type": "string"
+        },
+        "token_env": {
+          "pattern": "^[A-Z_][A-Z0-9_]*$",
+          "title": "Token Env",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token_env"
+      ],
+      "title": "EngineAuthSpec",
+      "type": "object"
+    },
+    "EngineSpec": {
+      "additionalProperties": true,
+      "description": "`spec.engine`: the lane and whatever the connector needs, passed as is to `setup`.\n\n`connector` is the lane, named once (contract v1, decision 2); it defaults to `sidecar`\n(ADR-001 item 4), so an `inprocess` config names it. Restart-only.",
+      "properties": {
+        "auth": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EngineAuthSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "connector": {
+          "default": "sidecar",
+          "enum": [
+            "inprocess",
+            "sidecar",
+            "remote"
+          ],
+          "title": "Connector",
+          "type": "string"
+        },
+        "handle": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Handle"
+        },
+        "probe_timeout_s": {
+          "default": 2.0,
+          "exclusiveMinimum": 0,
+          "title": "Probe Timeout S",
+          "type": "number"
+        },
+        "uds": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Uds"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "title": "EngineSpec",
+      "type": "object"
+    },
+    "EventsConsumeSpec": {
+      "additionalProperties": false,
+      "description": "`spec.events.consume`: event-triggered runs (PoC-4 P9, optional). suggested: the names.",
+      "properties": {
+        "group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Group"
+        },
+        "topic": {
+          "default": "agents.task.requested.v1",
+          "title": "Topic",
+          "type": "string"
+        }
+      },
+      "title": "EventsConsumeSpec",
+      "type": "object"
+    },
+    "EventsSpec": {
+      "additionalProperties": false,
+      "description": "`spec.events` (PoC-4, 019 H-17). Restart-only. The adapter is `spec.adapters.events`.\n- `result_events: false`: publish `agents.task.completed.v1` or `agents.task.failed.v1` after\n  each run.\n- `consume`: run each event from a topic. Not built yet (PoC-4 P9 was optional and was not\n  done): a non-null value is refused, never ignored. The type stays so the published schema\n  does not change when the consumer arrives (019 H-17).",
+      "properties": {
+        "consume": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EventsConsumeSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "result_events": {
+          "default": false,
+          "title": "Result Events",
+          "type": "boolean"
+        }
+      },
+      "title": "EventsSpec",
+      "type": "object"
+    },
+    "IdempotencySpec": {
+      "additionalProperties": false,
+      "description": "`spec.idempotency` (PoC-4, 018 H-18): the cache of a finished run under a key the client\nsent, in `StatePort`. suggested: every name and default.\n- `enabled: true`. Restart-only.\n- `ttl_s: 86400`: a cached result lives one day. Reloadable.\n- `lease_s: 5`: a claim expires 5 s after its owner stops renewing it. Restart-only.\n- `wait_poll_ms: 100`: how often a duplicate in flight checks for the first result.\n- `max_entry_bytes: 1048576`: a bigger result is not cached.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "lease_s": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "title": "Lease S",
+          "type": "number"
+        },
+        "max_entry_bytes": {
+          "default": 1048576,
+          "minimum": 1,
+          "title": "Max Entry Bytes",
+          "type": "integer"
+        },
+        "ttl_s": {
+          "default": 86400,
+          "exclusiveMinimum": 0,
+          "title": "Ttl S",
+          "type": "number"
+        },
+        "wait_poll_ms": {
+          "default": 100,
+          "minimum": 1,
+          "title": "Wait Poll Ms",
+          "type": "integer"
+        }
+      },
+      "title": "IdempotencySpec",
+      "type": "object"
+    },
+    "InterfacesSpec": {
+      "additionalProperties": false,
+      "description": "`spec.interfaces`: which public interfaces are mounted besides native `/v1/run`, which is\nalways on. suggested: each on by default (PoC-3 open note, section 8). One that is off is not\nmounted and not listed.",
+      "properties": {
+        "anthropic": {
+          "default": true,
+          "title": "Anthropic",
+          "type": "boolean"
+        },
+        "mcp": {
+          "default": true,
+          "title": "Mcp",
+          "type": "boolean"
+        },
+        "openai": {
+          "default": true,
+          "title": "Openai",
+          "type": "boolean"
+        }
+      },
+      "title": "InterfacesSpec",
+      "type": "object"
+    },
+    "LimitsSpec": {
+      "additionalProperties": false,
+      "description": "`spec.limits`: what one call on a public interface may ask for. The interfaces have no auth\nyet (PoC-8), so the caller sets the run budget; these bound it. A value above a ceiling\nis refused (400 `limit_exceeded` in the format's shape), never clamped; a budget below 1 is\nrefused earlier (422 on native, 400 `invalid_body` on the chat formats); a body over\n`body_bytes_max` is 413 before it is read (`chassis.server.interfaces.limits`).\n\nsuggested: every name and default.\n- `max_tokens_max: 8000`: the most `budget.max_tokens` (OpenAI `max_completion_tokens` or\n  `max_tokens`, Anthropic `max_tokens`) one run may ask for.\n- `timeout_ms_max: 120000`: the most `budget.timeout_ms`.\n- `body_bytes_max: 1048576`: the largest request body, 1 MiB.\n- `messages_max: 256`: the most chat `messages`, and on native the most turns\n  (`input.data.history` plus the input), per call.\n- `uncorrelated_tokens_per_minute: 20000` (PoC-5, plan section 2.12, H16): the per-replica\n  token bucket for model calls on the loopback model proxy that name no run in flight; past\n  it, 429 `budget_exhausted`. `0` refuses every uncorrelated call. Reloadable.",
+      "properties": {
+        "body_bytes_max": {
+          "default": 1048576,
+          "minimum": 1,
+          "title": "Body Bytes Max",
+          "type": "integer"
+        },
+        "max_tokens_max": {
+          "default": 8000,
+          "minimum": 1,
+          "title": "Max Tokens Max",
+          "type": "integer"
+        },
+        "messages_max": {
+          "default": 256,
+          "minimum": 1,
+          "title": "Messages Max",
+          "type": "integer"
+        },
+        "timeout_ms_max": {
+          "default": 120000,
+          "minimum": 1,
+          "title": "Timeout Ms Max",
+          "type": "integer"
+        },
+        "uncorrelated_tokens_per_minute": {
+          "default": 20000,
+          "minimum": 0,
+          "title": "Uncorrelated Tokens Per Minute",
+          "type": "integer"
+        }
+      },
+      "title": "LimitsSpec",
+      "type": "object"
+    },
+    "ModelSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "route": {
+          "default": "fake-route",
+          "title": "Route",
+          "type": "string"
+        }
+      },
+      "title": "ModelSpec",
+      "type": "object"
+    },
+    "PromptSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "title": "PromptSpec",
+      "type": "object"
+    },
+    "Spec": {
+      "additionalProperties": false,
+      "properties": {
+        "adapters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdapterSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "engine": {
+          "$ref": "#/$defs/EngineSpec"
+        },
+        "events": {
+          "$ref": "#/$defs/EventsSpec"
+        },
+        "idempotency": {
+          "$ref": "#/$defs/IdempotencySpec"
+        },
+        "interfaces": {
+          "$ref": "#/$defs/InterfacesSpec"
+        },
+        "limits": {
+          "$ref": "#/$defs/LimitsSpec"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelSpec"
+        },
+        "prompt": {
+          "$ref": "#/$defs/PromptSpec"
+        },
+        "trust": {
+          "default": "trusted",
+          "enum": [
+            "trusted",
+            "untrusted"
+          ],
+          "title": "Trust",
+          "type": "string"
+        }
+      },
+      "title": "Spec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The whole config. `version` is the file's content hash when the file does not name one.",
+  "properties": {
+    "agent": {
+      "$ref": "#/$defs/AgentSpec"
+    },
+    "profile": {
+      "enum": [
+        "fake",
+        "local",
+        "cloud"
+      ],
+      "title": "Profile",
+      "type": "string"
+    },
+    "spec": {
+      "$ref": "#/$defs/Spec"
+    },
+    "version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Version"
+    }
+  },
+  "required": [
+    "profile",
+    "agent"
+  ],
+  "title": "ChassisConfig",
+  "type": "object"
+}

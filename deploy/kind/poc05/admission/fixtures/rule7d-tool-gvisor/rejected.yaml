@@ -1,0 +1,31 @@
+# Rule 7d, tool pods on gVisor (review F3, F15): a tool pod without gVisor.
+# expect: rejected
+# rule: 7d
+# message: trust rule 7d: a tool pod must set runtimeClassName gvisor and automountServiceAccountToken false
+# differs: .spec.runtimeClassName
+apiVersion: v1
+kind: Pod
+metadata:
+  name: admission-rule7d
+  namespace: poc05-tools
+  labels:
+    app.kubernetes.io/name: admission-rule7d
+    agents.platform/trust: trusted
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: code-runner
+    image: kind.local/agent-platform/code-runner:poc05
+    imagePullPolicy: Never
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 10003
+      runAsGroup: 10003

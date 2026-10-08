@@ -1,0 +1,21 @@
+# PoC-4 kind cluster: one node, named `poc04`, so every command can say `--context kind-poc04`
+# and never touch another cluster. run.sh creates and deletes it.
+#
+# The node image is kind v0.33.0's own default (from the kind binary), pinned by digest. The plan
+# named v1.33.x; native sidecars are GA from 1.33, so 1.37 has them too, and the default image is
+# the one this kind release is tested with. Bump it with kind, in its own commit.
+#
+# One host port: 127.0.0.1:18081 -> the agent Service's nodePort 30080 (the chassis public port).
+# Loopback only. suggested: 18081 (18080 is the Compose scale stack's Traefik, 8080 the PoC-1
+# stack's).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: poc04
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 18081
+        listenAddress: 127.0.0.1
+        protocol: TCP

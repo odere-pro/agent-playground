@@ -1,0 +1,18 @@
+# packages/workloads/echo-typescript
+
+The TypeScript echo simplifier over `@a2a-js/sdk`. `packages/workloads/CLAUDE.md` still applies.
+
+- Map: `src/handle.ts` (the business logic), `src/a2a_server.ts` (the contract v0 A2A mapping and the executor), `src/schema.ts` (the event check), `src/main.ts` (the entry point), `src/drain.ts` (SIGTERM drain), `schemas/events.v0.json` (vendored).
+- No model key, ever. `CHASSIS_API_TOKEN` (remote lane), when set and not empty, is the `Authorization: Bearer` header on the model call; unset, no header. Never log it or put it in an event. The model URL is `CHASSIS_MODEL_URL`, the chassis proxy. `CHASSIS_MODEL_UDS` sends that call over a Unix socket (`udsFetch`, `http.request` with `socketPath`: plain `fetch` cannot).
+- `UDS=<path>` makes `main.ts` listen on a Unix socket, no TCP, after removing a stale socket file; the loopback guard applies to TCP only. The PoC-2 gate runs the workload this way, so keep it working.
+- `traceparent` comes from `ctx.traceparent` only, and goes out only on the model call. The server never reads the HTTP header. `deps` holds `fetch`, `modelUrl`, and `signal`, nothing else.
+- Chassis JSON on A2A is a string: write `chassis.event` with `toJson` (it refuses `NaN` and `Infinity`); read `chassis.ctx` and `chassis.input` with `JSON.parse`, and keep reading the v0 object form until v2. Tests check integers survive both ways.
+- The input text is its own user message, never in the system prompt. `test/handle.test.ts` checks it.
+- Keep the mapping in step with `packages/chassis/src/chassis/adapters/a2a/mapping.py`. A mapping change is a contract change: ask `chassis-architect` first.
+- `schemas/events.v0.json` is a copy. When the chassis schema changes, copy it again and run `npm test`.
+- Tests open no TCP socket: stub `fetch` through `deps`, drive the executor on `DefaultExecutionEventBus`, and the wire through `JsonRpcTransportHandler`. `test/uds.test.ts` (for `udsFetch`) and `test/drain.test.ts` (a real HTTP server for the drain) serve a Unix socket, in a temp folder; nothing else does.
+- Drain (PoC-4): the first SIGTERM or SIGINT stops accepting, closes idle keep-alive connections (the chassis holds one open), and exits 0 when the last call ends. A call that outlives `DRAIN_TIMEOUT_MS` (suggested 30000) exits 1; a second signal exits 1 at once. A bad `DRAIN_TIMEOUT_MS` is refused at start. Do not go back to a bare `server.close()`: it waits forever on the chassis's keep-alive connection.
+- Task store (PoC-4): `PruningTaskStore` in `src/a2a_server.ts` forgets a task `PRUNE_DELAY_MS` (3 s, suggested) after it is saved in a final state, so a reused workload keeps no finished task; `test/prune.test.ts` checks it. The SDK's `TaskStore` has no delete, so the prune reaches the SDK's internal bucket: recheck it on every `@a2a-js/sdk` bump.
+- `@a2a-js/sdk` is pinned exactly. Bump it on purpose and re-read its types under `node_modules/@a2a-js/sdk/dist/server`.
+- Bump `PROMPT_VERSION` with `echo-python` when the prompt changes.
+- Before a commit: `npm test`, `npm run typecheck`, `npm run build`, then `make quick` from the root.

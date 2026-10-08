@@ -1,0 +1,120 @@
+# PoC-4 Dapr variant of the scale stack: a daprd sidecar as the third container in each pair, the
+# other side of the Dapr comparison (plan, sections 2 and 8a; ADR-004 comes from P18). Used over
+# docker-compose.scale.yaml with `--profile events` (Kafka); scale.sh does it:
+#   ./scale.sh up echo-python 2 --events dapr
+# daprd joins the chassis's network namespace as the workload does, so the chassis publishes to
+# http://127.0.0.1:3500 and daprd calls the chassis back on its proxy port 127.0.0.1:8090 (never
+# the public port). Components: dapr/pubsub.yaml (Kafka) and dapr/resiliency.yaml (2 retries).
+#
+# Closing Dapr's API to the workload (plan, section 2): DAPR_API_TOKEN (the chassis calls daprd)
+# and APP_API_TOKEN (daprd calls the chassis) go to the chassis and daprd only, never to a
+# workload. Both are `${NAME:?set by scale.sh}`. daprd publishes no port.
+#
+# The daprd image is distroless (no shell) and runs as its nonroot user; read-only root, no
+# capability, no privilege gain. Pinned by digest, resolved 2026-10-01.
+
+x-daprd: &daprd
+  image: daprio/daprd:1.16.0@sha256:e5c959c05d406c8dd5b0cb8132b3f1aacf6f81fbd64efc0adb430dd533d32c05
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  tmpfs: [/tmp]
+  # suggested: a ceiling for the measurement, as the chassis's.
+  cpus: 1.0
+  mem_limit: 256m
+  stop_grace_period: 45s
+  command:
+    - ./daprd
+    - --app-id
+    - echo
+    - --app-port
+    - "8090"
+    - --app-channel-address
+    - 127.0.0.1
+    - --dapr-http-port
+    - "3500"
+    - --dapr-listen-addresses
+    - 127.0.0.1
+    - --resources-path
+    - /components
+    - --log-level
+    - warn
+  volumes:
+    - ./dapr:/components:ro
+  environment:
+    DAPR_API_TOKEN: ${DAPR_API_TOKEN:?set by scale.sh}
+    APP_API_TOKEN: ${APP_API_TOKEN:?set by scale.sh}
+
+x-chassis-dapr-env: &chassis-dapr-env
+  DAPR_HTTP_ENDPOINT: http://127.0.0.1:3500
+  DAPR_PUBSUB_NAME: pubsub
+  DAPR_API_TOKEN: ${DAPR_API_TOKEN:?set by scale.sh}
+  APP_API_TOKEN: ${APP_API_TOKEN:?set by scale.sh}
+
+x-chassis-dapr-command: &chassis-dapr-command
+  # The base command with scale-dapr.yaml (`events: dapr`, `result_events: true`).
+  - --config
+  - /etc/chassis/scale-dapr.yaml
+  - --port
+  - "8080"
+  - --drain-delay-s
+  - "3"
+  - --drain-timeout-s
+  - "30"
+
+services:
+  minio-init:
+    environment:
+      # The store document matches the bootstrap file on every restart-only field.
+      SEED_CONFIG: scale-dapr.yaml
+
+  chassis-1:
+    environment: *chassis-dapr-env
+    command: *chassis-dapr-command
+  daprd-1:
+    <<: *daprd
+    network_mode: "service:chassis-1"
+    depends_on:
+      chassis-1:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+
+  chassis-2:
+    environment: *chassis-dapr-env
+    command: *chassis-dapr-command
+  daprd-2:
+    <<: *daprd
+    profiles: [pairs2, pairs4]
+    network_mode: "service:chassis-2"
+    depends_on:
+      chassis-2:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+
+  chassis-3:
+    environment: *chassis-dapr-env
+    command: *chassis-dapr-command
+  daprd-3:
+    <<: *daprd
+    profiles: [pairs4]
+    network_mode: "service:chassis-3"
+    depends_on:
+      chassis-3:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+
+  chassis-4:
+    environment: *chassis-dapr-env
+    command: *chassis-dapr-command
+  daprd-4:
+    <<: *daprd
+    profiles: [pairs4]
+    network_mode: "service:chassis-4"
+    depends_on:
+      chassis-4:
+        condition: service_started
+      kafka:
+        condition: service_healthy

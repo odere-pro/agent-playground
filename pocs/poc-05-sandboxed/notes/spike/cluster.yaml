@@ -1,0 +1,23 @@
+# PoC-5 spike cluster: one node, named poc05-spike. Every kubectl call says --context kind-poc05-spike.
+# Same node image as deploy/kind/cluster.yaml (kind v0.33.0 default), pinned by digest.
+# - containerdConfigPatches: adds the `runsc` runtime handler (gVisor). The node's config.toml is
+#   `version = 2` (containerd 2.3.4 migrates it), so the patch uses the v2 plugin path.
+#   install-gvisor.sh puts the runsc binaries into the node after creation, then restarts containerd.
+# - kubeadmConfigPatches: kubelet podPidsLimit, the per-pod pids cap. suggested: 256.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: poc05-spike
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+    kubeadmConfigPatches:
+      - |
+        kind: KubeletConfiguration
+        podPidsLimit: 256
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
+      runtime_type = "io.containerd.runsc.v1"
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc.options]
+      TypeUrl = "io.containerd.runsc.v1.options"
+      ConfigPath = "/etc/containerd/runsc.toml"

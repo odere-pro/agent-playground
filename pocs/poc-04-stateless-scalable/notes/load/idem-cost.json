@@ -1,0 +1,498 @@
+{
+  "points": {
+    "rate10": {
+      "duration_s": 60,
+      "rate_per_user": "1",
+      "runs": [
+        {
+          "chassis_cpu_ms_per_call": 10.7,
+          "chassis_vcpu_mean": 0.1086,
+          "failures": 0,
+          "keyed": true,
+          "name": "rate10-1-key",
+          "ok_rps": 10.15,
+          "p50_ms": 110.0,
+          "p95_ms": 170.0,
+          "requests": 600,
+          "rps": 10.15,
+          "valkey_commands_per_call": 4.16,
+          "valkey_vcpu_mean": 0.0083
+        },
+        {
+          "chassis_cpu_ms_per_call": 13.54,
+          "chassis_vcpu_mean": 0.1375,
+          "failures": 0,
+          "keyed": false,
+          "name": "rate10-1-nokey",
+          "ok_rps": 10.15,
+          "p50_ms": 110.0,
+          "p95_ms": 150.0,
+          "requests": 600,
+          "rps": 10.15,
+          "valkey_commands_per_call": 0.1,
+          "valkey_vcpu_mean": 0.0072
+        },
+        {
+          "chassis_cpu_ms_per_call": 13.9,
+          "chassis_vcpu_mean": 0.141,
+          "failures": 0,
+          "keyed": true,
+          "name": "rate10-2-key",
+          "ok_rps": 10.14,
+          "p50_ms": 110.0,
+          "p95_ms": 170.0,
+          "requests": 600,
+          "rps": 10.14,
+          "valkey_commands_per_call": 4.12,
+          "valkey_vcpu_mean": 0.0069
+        },
+        {
+          "chassis_cpu_ms_per_call": 8.83,
+          "chassis_vcpu_mean": 0.0895,
+          "failures": 0,
+          "keyed": false,
+          "name": "rate10-2-nokey",
+          "ok_rps": 10.14,
+          "p50_ms": 110.0,
+          "p95_ms": 160.0,
+          "requests": 600,
+          "rps": 10.14,
+          "valkey_commands_per_call": 0.1,
+          "valkey_vcpu_mean": 0.0068
+        },
+        {
+          "chassis_cpu_ms_per_call": 13.63,
+          "chassis_vcpu_mean": 0.1384,
+          "failures": 0,
+          "keyed": true,
+          "name": "rate10-3-key",
+          "ok_rps": 10.15,
+          "p50_ms": 110.0,
+          "p95_ms": 170.0,
+          "requests": 600,
+          "rps": 10.15,
+          "valkey_commands_per_call": 4.12,
+          "valkey_vcpu_mean": 0.0073
+        },
+        {
+          "chassis_cpu_ms_per_call": 13.65,
+          "chassis_vcpu_mean": 0.1385,
+          "failures": 0,
+          "keyed": false,
+          "name": "rate10-3-nokey",
+          "ok_rps": 10.15,
+          "p50_ms": 110.0,
+          "p95_ms": 180.0,
+          "requests": 600,
+          "rps": 10.15,
+          "valkey_commands_per_call": 0.1,
+          "valkey_vcpu_mean": 0.0058
+        }
+      ],
+      "summary": {
+        "keyed": {
+          "chassis_cpu_ms_per_call": {
+            "median": 13.63,
+            "values": [
+              10.7,
+              13.9,
+              13.63
+            ]
+          },
+          "ok_rps": {
+            "median": 10.15,
+            "values": [
+              10.15,
+              10.14,
+              10.15
+            ]
+          },
+          "p50_ms": {
+            "median": 110.0,
+            "values": [
+              110.0,
+              110.0,
+              110.0
+            ]
+          },
+          "p95_ms": {
+            "median": 170.0,
+            "values": [
+              170.0,
+              170.0,
+              170.0
+            ]
+          },
+          "valkey_commands_per_call": {
+            "median": 4.12,
+            "values": [
+              4.16,
+              4.12,
+              4.12
+            ]
+          }
+        },
+        "unkeyed": {
+          "chassis_cpu_ms_per_call": {
+            "median": 13.54,
+            "values": [
+              13.54,
+              8.83,
+              13.65
+            ]
+          },
+          "ok_rps": {
+            "median": 10.15,
+            "values": [
+              10.15,
+              10.14,
+              10.15
+            ]
+          },
+          "p50_ms": {
+            "median": 110.0,
+            "values": [
+              110.0,
+              110.0,
+              110.0
+            ]
+          },
+          "p95_ms": {
+            "median": 160.0,
+            "values": [
+              150.0,
+              160.0,
+              180.0
+            ]
+          },
+          "valkey_commands_per_call": {
+            "median": 0.1,
+            "values": [
+              0.1,
+              0.1,
+              0.1
+            ]
+          }
+        }
+      },
+      "users": 10
+    },
+    "rate30": {
+      "duration_s": 60,
+      "rate_per_user": "1",
+      "runs": [
+        {
+          "chassis_cpu_ms_per_call": 9.01,
+          "chassis_vcpu_mean": 0.2701,
+          "failures": 0,
+          "keyed": true,
+          "name": "rate30-1-key",
+          "ok_rps": 29.99,
+          "p50_ms": 320.0,
+          "p95_ms": 390.0,
+          "requests": 1780,
+          "rps": 29.99,
+          "valkey_commands_per_call": 4.12,
+          "valkey_vcpu_mean": 0.0073
+        },
+        {
+          "chassis_cpu_ms_per_call": 7.73,
+          "chassis_vcpu_mean": 0.2308,
+          "failures": 0,
+          "keyed": false,
+          "name": "rate30-1-nokey",
+          "ok_rps": 29.84,
+          "p50_ms": 320.0,
+          "p95_ms": 420.0,
+          "requests": 1771,
+          "rps": 29.84,
+          "valkey_commands_per_call": 0.04,
+          "valkey_vcpu_mean": 0.0057
+        },
+        {
+          "chassis_cpu_ms_per_call": 14.97,
+          "chassis_vcpu_mean": 0.4491,
+          "failures": 0,
+          "keyed": true,
+          "name": "rate30-2-key",
+          "ok_rps": 29.99,
+          "p50_ms": 380.0,
+          "p95_ms": 700.0,
+          "requests": 1778,
+          "rps": 29.99,
+          "valkey_commands_per_call": 4.11,
+          "valkey_vcpu_mean": 0.0114
+        },
+        {
+          "chassis_cpu_ms_per_call": 10.13,
+          "chassis_vcpu_mean": 0.3032,
+          "failures": 0,
+          "keyed": false,
+          "name": "rate30-2-nokey",
+          "ok_rps": 29.92,
+          "p50_ms": 380.0,
+          "p95_ms": 630.0,
+          "requests": 1776,
+          "rps": 29.92,
+          "valkey_commands_per_call": 0.03,
+          "valkey_vcpu_mean": 0.006
+        },
+        {
+          "chassis_cpu_ms_per_call": 9.21,
+          "chassis_vcpu_mean": 0.2796,
+          "failures": 0,
+          "keyed": true,
+          "name": "rate30-3-key",
+          "ok_rps": 30.35,
+          "p50_ms": 340.0,
+          "p95_ms": 630.0,
+          "requests": 1770,
+          "rps": 30.35,
+          "valkey_commands_per_call": 4.12,
+          "valkey_vcpu_mean": 0.0073
+        },
+        {
+          "chassis_cpu_ms_per_call": 8.74,
+          "chassis_vcpu_mean": 0.2655,
+          "failures": 0,
+          "keyed": false,
+          "name": "rate30-3-nokey",
+          "ok_rps": 30.36,
+          "p50_ms": 340.0,
+          "p95_ms": 520.0,
+          "requests": 1800,
+          "rps": 30.36,
+          "valkey_commands_per_call": 0.03,
+          "valkey_vcpu_mean": 0.0036
+        }
+      ],
+      "summary": {
+        "keyed": {
+          "chassis_cpu_ms_per_call": {
+            "median": 9.21,
+            "values": [
+              9.01,
+              14.97,
+              9.21
+            ]
+          },
+          "ok_rps": {
+            "median": 29.99,
+            "values": [
+              29.99,
+              29.99,
+              30.35
+            ]
+          },
+          "p50_ms": {
+            "median": 340.0,
+            "values": [
+              320.0,
+              380.0,
+              340.0
+            ]
+          },
+          "p95_ms": {
+            "median": 630.0,
+            "values": [
+              390.0,
+              700.0,
+              630.0
+            ]
+          },
+          "valkey_commands_per_call": {
+            "median": 4.12,
+            "values": [
+              4.12,
+              4.11,
+              4.12
+            ]
+          }
+        },
+        "unkeyed": {
+          "chassis_cpu_ms_per_call": {
+            "median": 8.74,
+            "values": [
+              7.73,
+              10.13,
+              8.74
+            ]
+          },
+          "ok_rps": {
+            "median": 29.92,
+            "values": [
+              29.84,
+              29.92,
+              30.36
+            ]
+          },
+          "p50_ms": {
+            "median": 340.0,
+            "values": [
+              320.0,
+              380.0,
+              340.0
+            ]
+          },
+          "p95_ms": {
+            "median": 520.0,
+            "values": [
+              420.0,
+              630.0,
+              520.0
+            ]
+          },
+          "valkey_commands_per_call": {
+            "median": 0.03,
+            "values": [
+              0.04,
+              0.03,
+              0.03
+            ]
+          }
+        }
+      },
+      "users": 30
+    },
+    "sat": {
+      "duration_s": 60,
+      "rate_per_user": "none",
+      "runs": [
+        {
+          "chassis_cpu_ms_per_call": 13.4,
+          "chassis_vcpu_mean": 0.7041,
+          "failures": 0,
+          "keyed": true,
+          "name": "sat-1-key",
+          "ok_rps": 52.53,
+          "p50_ms": 1200.0,
+          "p95_ms": 1600.0,
+          "requests": 3098,
+          "rps": 52.53,
+          "valkey_commands_per_call": 4.25,
+          "valkey_vcpu_mean": 0.0115
+        },
+        {
+          "chassis_cpu_ms_per_call": 11.17,
+          "chassis_vcpu_mean": 0.6195,
+          "failures": 0,
+          "keyed": false,
+          "name": "sat-1-nokey",
+          "ok_rps": 55.47,
+          "p50_ms": 1100.0,
+          "p95_ms": 1400.0,
+          "requests": 3349,
+          "rps": 55.47,
+          "valkey_commands_per_call": 0.02,
+          "valkey_vcpu_mean": 0.0056
+        },
+        {
+          "chassis_cpu_ms_per_call": 11.8,
+          "chassis_vcpu_mean": 0.6592,
+          "failures": 0,
+          "keyed": true,
+          "name": "sat-2-key",
+          "ok_rps": 55.86,
+          "p50_ms": 1100.0,
+          "p95_ms": 1500.0,
+          "requests": 3378,
+          "rps": 55.86,
+          "valkey_commands_per_call": 4.05,
+          "valkey_vcpu_mean": 0.009
+        },
+        {
+          "chassis_cpu_ms_per_call": 11.76,
+          "chassis_vcpu_mean": 0.6577,
+          "failures": 0,
+          "keyed": false,
+          "name": "sat-2-nokey",
+          "ok_rps": 55.95,
+          "p50_ms": 1100.0,
+          "p95_ms": 1400.0,
+          "requests": 3286,
+          "rps": 55.95,
+          "valkey_commands_per_call": 0.02,
+          "valkey_vcpu_mean": 0.0064
+        }
+      ],
+      "summary": {
+        "keyed": {
+          "chassis_cpu_ms_per_call": {
+            "median": 12.600000000000001,
+            "values": [
+              13.4,
+              11.8
+            ]
+          },
+          "ok_rps": {
+            "median": 54.195,
+            "values": [
+              52.53,
+              55.86
+            ]
+          },
+          "p50_ms": {
+            "median": 1150.0,
+            "values": [
+              1200.0,
+              1100.0
+            ]
+          },
+          "p95_ms": {
+            "median": 1550.0,
+            "values": [
+              1600.0,
+              1500.0
+            ]
+          },
+          "valkey_commands_per_call": {
+            "median": 4.15,
+            "values": [
+              4.25,
+              4.05
+            ]
+          }
+        },
+        "unkeyed": {
+          "chassis_cpu_ms_per_call": {
+            "median": 11.465,
+            "values": [
+              11.17,
+              11.76
+            ]
+          },
+          "ok_rps": {
+            "median": 55.71,
+            "values": [
+              55.47,
+              55.95
+            ]
+          },
+          "p50_ms": {
+            "median": 1100.0,
+            "values": [
+              1100.0,
+              1100.0
+            ]
+          },
+          "p95_ms": {
+            "median": 1400.0,
+            "values": [
+              1400.0,
+              1400.0
+            ]
+          },
+          "valkey_commands_per_call": {
+            "median": 0.02,
+            "values": [
+              0.02,
+              0.02
+            ]
+          }
+        }
+      },
+      "users": 64
+    }
+  },
+  "updated": "2026-10-01T21:27:02+00:00"
+}

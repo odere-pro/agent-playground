@@ -1,0 +1,16 @@
+# Q4: minimal agent-sandbox Sandbox (agents.x-k8s.io/v1beta1, controller v1.0.5) on gVisor.
+apiVersion: agents.x-k8s.io/v1beta1
+kind: Sandbox
+metadata:
+  name: sb-gvisor
+spec:
+  podTemplate:
+    metadata:
+      labels: {platform/trust: untrusted}
+    spec:
+      runtimeClassName: gvisor
+      automountServiceAccountToken: false
+      containers:
+        - name: c
+          image: busybox:1.37
+          command: ["sh", "-c", "cat /proc/version; sleep 3600"]

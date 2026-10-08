@@ -53,7 +53,7 @@ async def test_real_adapter_streams_and_completes_the_same_text() -> None:
     One representative case run here: streaming and complete agree through the litellm adapter.
     """
     model = _litellm_over_fake_server()
-    messages: list[ModelMessage] = [{"role": "user", "content": "simplify: the quick brown fox"}]
+    messages = [ModelMessage(role="user", content="simplify: the quick brown fox")]
     complete = await model.complete(messages, route="big-default")
     streamed = [c async for c in model.stream(messages, route="big-default")]
     expected = "Plain words. Short sentences. Same facts."

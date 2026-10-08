@@ -1,0 +1,14 @@
+# Valid, but spec.idempotency.lease_s is restart-only.
+profile: fake
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  adapters:
+    config: memory
+  engine:
+    connector: inprocess
+    handle: chassis.core.handle:echo_wire
+  idempotency:
+    lease_s: 9
+    ttl_s: 60

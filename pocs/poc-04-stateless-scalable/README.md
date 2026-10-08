@@ -1,56 +1,96 @@
 # PoC-4: Stateless and scalable: config from the store, idempotency, more replicas
 
-Status: not started
+Status: in progress
 Planning doc: [004-PoC-4-stateless-scalable.md](../../docs/planning/poc/004-PoC-4-stateless-scalable.md)
 Time box: 1 week
+
+10 of 11 exit criteria have evidence; criterion 4 is partly shown (see below). The iteration is built, measured, and reviewed. It does not close until the three decisions under "Open for the user" are made.
 
 ## Question
 
 Does the agent scale by adding replicas, with no state in the process and safe retries, on every engine? What does the chassis sidecar cost per replica? Do events go through Dapr or through a broker client in the chassis?
 
+## Answer so far
+
+No state in the process and safe retries: yes, with evidence. A replica keeps nothing a retry needs. A killed replica lost no retried request, a drained one failed none, and a repeated key replays the same result on any replica. Scaling by adding replicas: shown only in part on this host. 4 of 8 growth steps grow; the other 4 are strict xfails, because CPU per call on this Docker Desktop VM swings up to 2x between identical runs and 4 pairs do not fit the VM. The sidecar costs 150 to 182 MiB, inside ADR-001's range, and 0.105 to 0.129 vCPU at 10 RPS, at or just above the top of ADR-001's range. The hop is below the method's 1 ms resolution and not isolated. Events: a broker client in the chassis behind `EventPort`, not Dapr. [ADR-004](../../docs/planning/adr/004-events-through-a-broker-client.md) records it and is Proposed.
+
 ## Scope
 
-- [ ] `StatePort` and `EventPort` are defined here, in the same shape as the PoC-1 ports, each with a fake and a contract suite.
-- [ ] Real adapters behind their ports, each passing the same contract suite as its fake: `ConfigPort` (MinIO), `StatePort` (Valkey), and `EventPort` (see the Dapr decision below), next to the in-memory bus.
-- [ ] The Dapr decision: Dapr pub/sub, or a broker client in the chassis behind `EventPort`. Both are tried behind the same port and suite. Measured: a third container's CPU and memory per replica, the work to close Dapr's localhost API to the workload, and the lines of code for CloudEvents, retries, and a dead-letter topic. suggested: the broker client. The result goes to [001 DEC-1](../../docs/planning/issues/001-DEC-1-resolve-open-decisions.md) and [019 H-17](../../docs/planning/issues/019-H-17-event-port.md).
-- [ ] A liveness probe on the workload container (the A2A agent card GET), so a hung workload restarts the pod instead of leaving `/ready` false forever.
-- [ ] Container roles, tried on a kind cluster: the workload as the Kubernetes native sidecar and the chassis as the main container. Native sidecars start first and stop last, so SIGTERM reaches the chassis first and it drains before the workload stops. Compared with the preStop delay below. The better one goes to [024 CH-3](../../docs/planning/issues/024-CH-3-helm-library-chart.md).
-- [ ] Integration tests with testcontainers (MinIO, Valkey, and Kafka if Dapr is used).
-- [ ] Config loader: the agent config comes from MinIO, is checked against a JSON Schema, and reloads without a restart.
-- [ ] Idempotency: `idempotency_key` check, with an optional result cache in Valkey.
-- [ ] Timeout and budget per call (`budget.max_tokens`, `timeout_ms`).
-- [ ] Graceful shutdown with two containers: stop taking new requests, finish the ones in flight, then exit; `/ready` goes false first. suggested: on SIGTERM the workload finishes its in-flight `handle` calls before it exits, and both containers get a short preStop delay (gap (g) in the [backlog plan](../../docs/planning/issues/000-plan.md#adr-001-follow-ups)).
-- [ ] Read-only root file system on both containers: the chassis and the workload.
-- [ ] suggested: Traefik or nginx in front of N chassis-and-workload pairs in Docker Compose. Each pair scales as one unit, as a pod does.
-- [ ] suggested: a Locust or k6 load test, run on plain Python and on each PoC-2 engine.
-- [ ] The sidecar's cost per replica, measured under load: the local hop's extra latency (p50 and p95), and the chassis container's CPU and memory. They are compared with ADR-001's suggested figures (0.05–0.1 vCPU, 128–256 MiB, a 1–3 ms hop), as input to CPU right-sizing and to the ADR's Revisit rule.
+All 14 items were built or run. Event-triggered runs (the optional package) were not built: a non-null `spec.events.consume` is refused at load (`packages/chassis/tests/test_server.py::test_events_consume_is_refused_until_event_triggered_runs_exist`).
+
+- [x] `StatePort` and `EventPort` are defined here, in the same shape as the PoC-1 ports, each with a fake and a contract suite. · evidence: `packages/chassis/src/chassis/ports/state.py` (`InMemoryState`), `ports/events.py`, `fakes/events.py` (`InMemoryBus`); suites `packages/contract-suites/src/chassis_contracts/state.py` (`StatePortContract`, 13 cases) and `events.py` (`EventPortContract`, 8 cases); fake bindings `packages/chassis/tests/test_state_contract.py`, `test_events_contract.py`
+- [x] Real adapters behind their ports, each passing the same contract suite as its fake: `ConfigPort` (MinIO), `StatePort` (Valkey), and `EventPort` (see the Dapr decision below), next to the in-memory bus. · evidence: `packages/chassis/tests/integration/test_valkey_state_contract.py` (`TestValkeyState`), `test_s3_config_contract.py` (`TestS3Config`), `test_kafka_events_contract.py` (`TestKafkaEvents`), `test_dapr_events_contract.py` (`TestDaprEvents`, two strict xfails, below). `make test-integration` on 2026-10-01: `48 passed, 11 skipped, 104 deselected, 2 xfailed in 49.87s`. The 2 xfails are the Dapr cases `test_after_max_attempts_the_event_goes_to_the_dead_letter_topic` and `test_two_groups_each_get_every_event`. The 11 skips are the stack and kind drills, which need `POC04_STACK=1` or `POC04_KIND=1`.
+- [x] The Dapr decision: Dapr pub/sub, or a broker client in the chassis behind `EventPort`. Both tried behind the same port and suite, and measured. · evidence: [notes/2026-10-01-dapr-vs-broker.md](notes/2026-10-01-dapr-vs-broker.md) (three runs per path at 10 RPS; daprd 34 to 151 MiB and at most 0.0037 vCPU per replica; 9 settings across 4 files to close daprd's API, with two daprd ports still open; 101 lines in the marked sections for Dapr against 78 for Kafka, plus 46 lines of YAML); [ADR-004](../../docs/planning/adr/004-events-through-a-broker-client.md), Proposed; 001 DEC-1 and 019 H-17 updated (`notes/backlog-changes.md`, "Applied")
+- [x] A liveness probe on the workload container (the A2A agent card GET), so a hung workload restarts the pod. · evidence: `tests/test_read_only_kind.py` (the exec `livenessProbe` on the agent card, `periodSeconds` 10, `failureThreshold` 3, its own `terminationGracePeriodSeconds` 10); `tests/test_liveness.py::test_ready_goes_false_when_the_workload_hangs_and_health_stays_ok`, `::test_ready_comes_back_when_the_workload_answers`; the kind hung drill restarted the workload and the pod was Ready again in every run, both variants ([notes/2026-10-01-container-roles.md](notes/2026-10-01-container-roles.md), "Results")
+- [x] Container roles, tried on a kind cluster: the workload as the native sidecar and the chassis as the main container, compared with the preStop delay. · evidence: [notes/2026-10-01-container-roles.md](notes/2026-10-01-container-roles.md); the native sidecar is chosen and sent to 024 CH-3; `tests/test_kind.py` (`POC04_KIND=1`)
+- [x] Integration tests with testcontainers (MinIO, Valkey, and Kafka). · evidence: `packages/chassis/tests/integration/` (above); `tests/test_idempotency_valkey.py`, `tests/test_config_minio.py`, the `network` cases of `tests/test_swap_drill.py`; helpers in `packages/contract-suites/src/chassis_contracts/containers/`
+- [x] Config loader: the agent config comes from MinIO, is checked against a JSON Schema, and reloads without a restart. · evidence: `packages/chassis/src/chassis/server/config_loader.py`, `adapters/s3/config.py`, `schemas/chassis-config.v0.json`; criterion 7 below
+- [x] Idempotency: `idempotency_key` check, with an optional result cache in Valkey. · evidence: `packages/chassis/src/chassis/server/idempotency.py`; criteria 2 and 3 below; contract v3, "Idempotency"
+- [x] Timeout and budget per call (`budget.max_tokens`, `timeout_ms`). · evidence: `tests/test_timeout_budget_per_engine.py::test_past_timeout_ms_the_run_ends_with_a2a_timeout_and_the_task_is_cancelled` (all four engines), `::test_a_spent_budget_refuses_the_next_model_call_with_budget_exhausted` (the three Python engines). Caveats: the TypeScript echo has no tool loop, so its budget case is a strict xfail with that reason; the Python workloads report the refusal as `http_429`, with `budget_exhausted` only in the message (contract v3, "Known gaps").
+- [x] Graceful shutdown with two containers: stop taking new requests, finish the ones in flight, then exit; `/ready` goes false first. · evidence: criterion 6 below
+- [x] Read-only root file system on both containers: the chassis and the workload. · evidence: criterion 5 below
+- [x] Traefik in front of N chassis-and-workload pairs in Docker Compose, each pair scaling as one unit. · evidence: `deploy/compose/docker-compose.scale.yaml`, `deploy/compose/traefik/poc04.yaml`, `deploy/compose/scale.sh`; `tests/test_read_only_compose.py::test_traefik_balances_all_four_chassis_on_ready`, `::test_pairs_are_explicit_and_chosen_by_profile`; the drills in [notes/2026-10-01-drills.md](notes/2026-10-01-drills.md)
+- [x] A Locust load test, run on plain Python and on each PoC-2 engine. · evidence: `load/locustfile.py`, `load/run_matrix.py` (`make load-test`), `load/run_quiet.sh`; [notes/2026-10-01-load-results.md](notes/2026-10-01-load-results.md), quiet pass, all four engines at 1, 2, and 4 pairs
+- [x] The sidecar's cost per replica, measured under load, next to ADR-001's figures. · evidence: [notes/2026-10-01-load-results.md](notes/2026-10-01-load-results.md), "the sidecar hop" and "the chassis's cost at idle and at 10 RPS"; criterion 11 below. Caveat: the hop is below the method's 1 ms resolution and not isolated.
 
 ## Exit criteria
 
 Each one has a scenario test in `tests/` or a recorded reason it cannot have one yet.
 
-- [ ] Swap drill: `StatePort` (in-memory ↔ Valkey) and, if used, `EventPort` (in-memory ↔ Dapr) switch by config only, with the same tests passing.
-- [ ] A repeated call with the same key returns the same result on any replica.
-- [ ] A killed replica loses no request that the client retries.
-- [ ] Throughput grows with replicas for every engine (numbers recorded).
-- [ ] Both containers run with a read-only root file system on every engine, or the engine is flagged.
-- [ ] Stopping a pair under load fails no request in flight: the workload finishes its `handle` calls before it exits.
-- [ ] A bad config is rejected by the schema, and the agent keeps the last good one.
-- [ ] Engines that keep hidden state are listed, with a way to move the state out or a note to reject them.
-- [ ] A hung workload restarts the pod, and the chosen container roles fail no request under a rolling restart.
-- [ ] The Dapr decision is written down with the measurements, and 001 DEC-1 and 019 H-17 are updated.
-- [ ] The sidecar's hop latency, CPU, and memory per replica are recorded next to ADR-001's figures. If they are far above, the ADR's Revisit rule goes to the epic owner.
+- [x] 1. Swap drill: `StatePort` (in-memory ↔ Valkey) and `EventPort` (in-memory ↔ a broker) switch by config only, with the same tests passing. · evidence: `tests/test_swap_drill.py::test_state_port_swaps_by_config_only` and `::test_event_port_swaps_by_config_only`: the `memory` cases run offline, the `valkey` and `kafka` cases are `network`. Dapr is swapped through its own binding of the same suite, `packages/chassis/tests/integration/test_dapr_events_contract.py`, with two strict xfails (the dead-letter extensions and `max_attempts`, a second consumer group).
+- [x] 2. A repeated call with the same key returns the same result on any replica. · evidence: `tests/test_idempotency_replicas.py::test_a_repeated_key_returns_the_same_result_on_any_replica`, `::test_a_repeated_key_makes_no_second_model_call`, `::test_every_interface_replays_the_same_result`, `::test_concurrent_duplicates_run_once`; `tests/test_idempotency_valkey.py::test_two_replicas_share_one_result_through_valkey` (`network`). Live: in the demo kill drill, 24 of 24 retried keys replayed the same envelope with `Idempotent-Replayed: true`, from the other replica.
+- [x] 3. A killed replica loses no request that the client retries. · evidence: `tests/test_killed_replica.py::test_a_retry_after_a_dead_owner_runs_once_after_the_lease`, `::test_a_retry_after_a_completed_run_on_a_dead_replica_replays`, `::test_a_replica_cut_off_from_the_store_mid_run_is_fenced` (a replica that cannot renew is fenced at 80% of the lease and answers a retryable 409; one result is kept). Live: the demo kill drill, `sent 3284, ok 3284`, `"lost": 0`; `tests/test_compose_scale.py::test_kill_drill_loses_nothing_and_replays_retried_keys` passed after the review fixes (`3 passed in 134.64s`).
+- [ ] 4. Throughput grows with replicas for every engine (numbers recorded). · **flagged.** Numbers are recorded for every engine at 1, 2, and 4 pairs ([notes/2026-10-01-load-results.md](notes/2026-10-01-load-results.md), quiet pass). What holds: 4 of 8 steps grow by the test's rule (more than 5%, suggested): echo-pydanticai 1→2 and 2→4, echo-langgraph 1→2, echo-typescript 1→2. What does not: 4 steps are strict xfails in `tests/test_load_results.py::test_throughput_grows_with_pairs` (echo-python 1→2 and 2→4, echo-langgraph 2→4, echo-typescript 2→4). 4 pairs do not fit the 7.9 GiB Docker Desktop VM without starving it. CPU per call on this VM swings up to 2x between identical runs, and a second model server did not help (the shared bottleneck check). Needs a Linux host or pinned CPUs.
+- [x] 5. Both containers run with a read-only root file system on every engine. · evidence: `tests/test_read_only_compose.py::test_compose_sets_read_only_on_every_chassis_and_workload`, `::test_daprd_sidecars_are_hardened_and_follow_their_pair`; `tests/test_read_only_kind.py::test_raw_variant_deployment`, `::test_rendered_variant`. Live: `docker inspect` gives `ReadOnlyRootfs=true` and `touch /probe` fails with `Read-only file system` in all eight containers, four engines ([notes/2026-10-01-drills.md](notes/2026-10-01-drills.md), section 5); on kind, a write to `/` fails in both containers, both variants, both engines ([notes/2026-10-01-container-roles.md](notes/2026-10-01-container-roles.md), "Results").
+- [x] 6. Stopping a pair under load fails no request in flight: the workload finishes its `handle` calls before it exits. · evidence: `tests/test_graceful_shutdown.py::test_the_chassis_drains_in_flight_runs_and_ready_goes_false_first`, `::test_the_proxy_listener_outlives_the_public_one`; `tests/test_workload_drain.py::test_workload_a2a_finishes_in_flight_handle_on_sigterm`, `::test_typescript_workload_finishes_in_flight_handle_on_sigterm`, `::test_typescript_workload_exits_1_when_a_call_outlives_the_drain_timeout`; `packages/chassis/tests/test_shutdown.py::test_while_draining_every_public_response_closes_its_connection` (`Connection: close` while draining). Live: the demo graceful drill, 1,997 of 1,997 ok with no retry, chassis exit 0 in 4.0 s; `tests/test_compose_scale.py::test_graceful_drill_fails_nothing_without_retry` passed.
+- [x] 7. A bad config is rejected by the schema, and the agent keeps the last good one. · evidence: `tests/test_config_reload.py::test_a_change_takes_effect_on_the_next_request_with_no_restart`, `::test_a_bad_config_is_refused_and_the_last_good_one_stays`, `::test_every_invalid_fixture_fails_the_model_and_the_published_schema`; `tests/test_config_minio.py::test_reload_and_refusal_through_s3`, `::test_a_bad_store_document_fails_startup` (`network`). Live: `load/reload_drill.py` on two replicas, `config refused, keeping version=4a3a45d84b38` on both, no restart, `reload drill: passed` ([notes/2026-10-01-drills.md](notes/2026-10-01-drills.md), "Rerun after the review fixes"; the demo, section 4).
+- [x] 8. Engines that keep hidden state are listed, with a way to move the state out or a note to reject them. · evidence: [notes/2026-10-01-hidden-state.md](notes/2026-10-01-hidden-state.md); `tests/test_hidden_state.py::test_run_b_sees_nothing_of_run_a_on_a_reused_workload`, `::test_langgraph_compiles_its_graph_without_a_checkpointer_or_store`, `::test_pydanticai_builds_its_agent_per_call_and_passes_no_history`
+- [x] 9. A hung workload restarts the pod, and the chosen container roles fail no request under a rolling restart. · evidence: met for the chosen variant, the native sidecar. Hung: the kind drill restarted the workload and the pod was Ready again in every run, on both variants and both engines ([notes/2026-10-01-container-roles.md](notes/2026-10-01-container-roles.md), "Results"); `tests/test_kind.py::test_hung_workload_restarts_and_pod_is_ready_again`. Rolling: 0 failed in six rolling restarts of the native sidecar after the drain fix (echo-python 3 runs, 17,664 calls, plus 1 through pytest; echo-typescript 2 runs, 28,386 calls); `tests/test_kind.py::test_rolling_restart_fails_no_request` passed for native sidecar and echo-python (`1 passed, 7 deselected in 99.49s`), and fails with `--drain-delay-s` set to 0. The first run, before the fix, failed: both variants lost calls (native sidecar 28 of 51,848, preStop 28 of 72,338), all transport errors on keep-alive connections at the moment a chassis closed its listener. The fix: `Connection: close` on every public response while draining, and `--drain-delay-s 10` in the native-sidecar manifests. The preStop variant still loses calls on echo-typescript (5 of 51,734 over 4 host runs), because during its sleep the chassis does not know it is draining; it is `xfail(strict=False)` in `tests/test_kind.py`.
+- [x] 10. The Dapr decision is written down with the measurements, and 001 DEC-1 and 019 H-17 are updated. · evidence: [notes/2026-10-01-dapr-vs-broker.md](notes/2026-10-01-dapr-vs-broker.md); [ADR-004](../../docs/planning/adr/004-events-through-a-broker-client.md), status Proposed (not yet accepted by the user); [001 DEC-1](../../docs/planning/issues/001-DEC-1-resolve-open-decisions.md) and [019 H-17](../../docs/planning/issues/019-H-17-event-port.md), "Status after PoC-4" ([notes/backlog-changes.md](notes/backlog-changes.md))
+- [x] 11. The sidecar's hop latency, CPU, and memory per replica are recorded next to ADR-001's figures. · evidence: recorded in [notes/2026-10-01-load-results.md](notes/2026-10-01-load-results.md), "ADR-001 Revisit input". Memory: 150 to 182 MiB, inside 128 to 256 MiB. CPU: 0.08 to 0.14 vCPU idle and 0.105 to 0.129 at 10 RPS, at or just above the top of 0.05 to 0.1; about 0.6 to 1.3 vCPU per 100 RPS at saturation. Hop: below the method's 1 ms resolution and not isolated (sidecar minus inprocess: 1.0 ms at p50, 0.0 ms at p95); a direct figure needs a chassis-side timer. `tests/test_load_results.py::test_the_sidecar_hop_is_recorded`. Sent to the epic owner as a Revisit input through [122 X-5](../../docs/planning/issues/122-X-5-load-tests.md).
+
+**Gate runs on 2026-10-01** (`make check` rerun after the close-out edits):
+
+- `PATH=/opt/homebrew/bin:$PATH make test-poc POC=04` → `99 passed, 17 skipped, 5 xfailed in 28.66s`. The 5 xfails: the 4 load steps above and the TypeScript budget case.
+- `PATH=/opt/homebrew/bin:$PATH make check` → `1780 passed, 119 skipped, 5 xfailed, 14 warnings in 143.35s (0:02:23)`, planning check `OK`, `harness-lint: ok`.
+- `make test-integration` → `48 passed, 11 skipped, 104 deselected, 2 xfailed in 49.87s`.
 
 ## How to run
 
 ```bash
-make test-poc POC=04
+make test-poc POC=04                    # the offline gate: no Docker, no keys, sockets off
+make test-integration                   # real adapters in testcontainers; needs Docker
+POC04_STACK=1 uv run pytest pocs/poc-04-stateless-scalable/tests/test_compose_scale.py -v -p no:randomly
+POC04_KIND=1 uv run pytest pocs/poc-04-stateless-scalable/tests/test_kind.py -q
+make kind-poc04 ARGS="up native-sidecar"   # the kind cluster; then drill-rolling, drill-hung, delete
+make load-test ARGS="--dry-run"          # the load matrix plan; drop --dry-run to run it
+pocs/poc-04-stateless-scalable/demo/demo.sh
 ```
+
+The Compose stack is `deploy/compose/scale.sh` (project `poc04`). The load scripts are described in `load/README.md`. The Docker VM is shared: one stack at a time.
 
 ## Demo
 
-Not recorded yet. The script and its output go to `demo/`.
+- [x] Recorded: [demo/2026-10-01-demo-scale.md](demo/2026-10-01-demo-scale.md). Command: `pocs/poc-04-stateless-scalable/demo/demo.sh` on the images of 21:04:47 to 21:05:22 UTC, Docker 29.7.2, exit 0, last line `result: every step ok`. It shows, on two pairs of echo-python: a killed pair loses nothing (3,284 sent, 3,284 ok, 24 retried, 24 of 24 replayed); a drained pair fails nothing with no retry (1,997 of 1,997); a config change in MinIO takes effect with no restart, and a bad document is refused on both replicas. Not shown: the load matrix (about 40 minutes; the load note is the record), the other engines' kill and drain, a node loss, and the fenced claim's 409.
 
 ## Notes and decisions
 
-Dated files in `notes/`. `notes/backlog-changes.md` lists what the backlog should change when this iteration closes.
+- [notes/2026-10-01-drills.md](notes/2026-10-01-drills.md): the Compose drills (smoke, kill, graceful, config reload, read-only, hung), and their rerun after the review fixes.
+- [notes/2026-10-01-load-results.md](notes/2026-10-01-load-results.md): throughput per engine and pair count, the sidecar hop and cost, the idempotency cost, the shared bottleneck check.
+- [notes/2026-10-01-container-roles.md](notes/2026-10-01-container-roles.md): native sidecar against preStop on kind, before and after the drain fix.
+- [notes/2026-10-01-dapr-vs-broker.md](notes/2026-10-01-dapr-vs-broker.md): Dapr against the broker client, measured.
+- [notes/2026-10-01-hidden-state.md](notes/2026-10-01-hidden-state.md): what each engine and the chassis could keep, and the way out.
+- [notes/2026-10-01-debt.md](notes/2026-10-01-debt.md): the carried debt and open items, each with its owner.
+- [notes/backlog-changes.md](notes/backlog-changes.md): what the backlog issues change, applied and not applied.
+- [docs/contracts/contract-v3.md](../../docs/contracts/contract-v3.md): the additive contract changes and the known gaps.
+- [ADR-004](../../docs/planning/adr/004-events-through-a-broker-client.md) (proposed): result events through a broker client in the chassis, not Dapr.
+- [The PoC-4 plan](../../docs/plans/2026-10-01-poc-04-stateless-scalable.md): the design.
+- [How PoC-4 works](../../docs/guides/poc-04-how-it-works.md): the guide with the diagrams.
+
+## Open for the user
+
+1. **Accept ADR-004**, or not. It is Proposed. The 019 H-17 body and reuse changes in `notes/backlog-changes.md`, "Not applied", wait for it.
+2. **Criterion 4**: accept it as flagged, or rerun the load matrix on a Linux host or with pinned CPUs.
+3. **The commit**: the work is uncommitted on `poc-01/walking-skeleton`.
+4. Two leftover containers from a test run, `poc01-test-litellm-1` and `poc01-test-fake-model-server-1`, still hold port 4000. Remove them with `docker compose -p poc01-test -f deploy/compose/docker-compose.yaml down --remove-orphans`.
+5. kind was installed with Homebrew for this iteration.

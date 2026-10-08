@@ -1,0 +1,48 @@
+# Rule 6c, Secrets in the chassis container only (review F2): the workload container takes a Secret.
+# expect: rejected
+# rule: 6c
+# message: trust rule 6c: outside the remote lane only the chassis container may reference a Secret
+# differs: .spec.containers[0].env[0].value, .spec.containers[0].env[0].valueFrom
+apiVersion: v1
+kind: Pod
+metadata:
+  name: admission-rule6c
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/name: admission-rule6c
+    agents.platform/trust: trusted
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  initContainers:
+  - name: chassis
+    image: kind.local/agent-platform/chassis:poc05
+    imagePullPolicy: Never
+    restartPolicy: Always
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: &id001
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 10001
+      runAsGroup: 10001
+  containers:
+  - name: workload
+    image: kind.local/agent-platform/echo-python:poc05
+    imagePullPolicy: Never
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: *id001
+      readOnlyRootFilesystem: true
+      runAsUser: 10002
+      runAsGroup: 10002
+    env:
+    - name: GREETING
+      valueFrom:
+        secretKeyRef:
+          name: valkey-auth
+          key: VALKEY_PASSWORD

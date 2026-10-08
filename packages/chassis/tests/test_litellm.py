@@ -10,9 +10,16 @@ from typing import Any
 import httpx
 import pytest
 from chassis.adapters.litellm import LiteLLMModel
-from chassis.ports.model import ModelChunk, ModelError, ModelMessage, ToolSpec, Usage
+from chassis.ports.model import (
+    ModelChunk,
+    ModelError,
+    ModelMessage,
+    ToolCallRequest,
+    ToolSpec,
+    Usage,
+)
 
-MESSAGES: list[ModelMessage] = [{"role": "user", "content": "hello"}]
+MESSAGES: list[ModelMessage] = [ModelMessage(role="user", content="hello")]
 
 
 def _completion(text: str = "hi", **extra: Any) -> dict[str, Any]:
@@ -66,7 +73,7 @@ async def test_request_carries_route_messages_and_options() -> None:
     body = json.loads(seen[0].content)
     assert str(seen[0].url) == "http://router/v1/chat/completions"
     assert body["model"] == "big-default"
-    assert body["messages"] == MESSAGES
+    assert body["messages"] == [{"role": "user", "content": "hello"}]
     assert body["temperature"] == 0.2
     assert body["max_tokens"] == 64
     assert body["tools"] == [
@@ -102,6 +109,32 @@ def test_from_env_reads_url_key_and_agent(monkeypatch: pytest.MonkeyPatch) -> No
     assert model.base_url == "http://router:4000/v1"
     assert model.agent == "echo"
     assert model._api_key == "sk-env"
+
+
+PROXY_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
+
+
+def test_the_client_ignores_proxy_variables_so_the_key_cannot_be_routed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """`trust_env=False`: a proxy variable or `.netrc` in the chassis environment never sees the
+    bearer key. httpx 0.28 builds a proxy mount per env variable when `trust_env` is on.
+    """
+    monkeypatch.setenv("LITELLM_BASE_URL", "https://router:4000/v1")
+    monkeypatch.setenv("LITELLM_API_KEY", "sk-env-secret")
+    for var in PROXY_VARS:
+        monkeypatch.setenv(var, "http://proxy.invalid:3128")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    netrc = tmp_path / ".netrc"
+    netrc.write_text("machine router login someone password other\n")
+    monkeypatch.setenv("NETRC", str(netrc))
+    client = LiteLLMModel.from_env()._client
+    assert client.trust_env is False
+    assert client._mounts == {}, "no proxy mount from the environment"
+    target = client._transport_for_url(httpx.URL("https://router:4000/v1/chat/completions"))
+    assert target is client._transport
+    assert client.auth is None
 
 
 def test_from_env_works_without_a_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -265,3 +298,34 @@ async def test_close_is_idempotent() -> None:
     model = LiteLLMModel("http://router/v1", transport=transport)
     await model.aclose()
     await model.aclose()
+
+
+async def test_a_tool_conversation_goes_out_in_the_openai_shape() -> None:
+    seen, transport = _capture()
+    model = LiteLLMModel("http://router/v1", transport=transport)
+    messages = [
+        ModelMessage(role="user", name="sam", content="look up SLM"),
+        ModelMessage(
+            role="assistant",
+            tool_calls=[ToolCallRequest(call_id="c1", name="glossary_lookup", arguments={"n": 3})],
+        ),
+        ModelMessage(role="tool", tool_call_id="c1", content="SLM: small language model"),
+    ]
+    await model.complete(messages, route="big-default")
+    [c async for c in model.stream(messages, route="big-default")]
+    expected = [
+        {"role": "user", "content": "look up SLM", "name": "sam"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "glossary_lookup", "arguments": '{"n": 3}'},
+                }
+            ],
+        },
+        {"role": "tool", "content": "SLM: small language model", "tool_call_id": "c1"},
+    ]
+    assert [json.loads(r.content)["messages"] for r in seen] == [expected, expected]

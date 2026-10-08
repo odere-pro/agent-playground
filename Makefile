@@ -5,10 +5,10 @@ POC ?= 01
 PY := uv run python
 PYTEST := scripts/check_offline.sh
 
-.PHONY: help setup fmt fmt-check lint type test test-poc quick check planning-sync planning-check schemas harness-lint fake-model-server clean
+.PHONY: help setup fmt fmt-check lint type test test-poc test-integration load-test kind-poc04 kind-poc05 record-cassettes quick check planning-sync planning-check schemas harness-lint fake-model-server clean
 
 help: ## Show this help
-	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 setup: ## Install Python 3.12, the workspace, and the git pre-commit hook
 	uv sync --all-packages
@@ -34,6 +34,27 @@ test: ## Every test, offline: sockets disabled, API keys stripped from the envir
 
 test-poc: ## Scenario tests of one PoC: make test-poc POC=01
 	$(PYTEST) pocs/poc-$(POC)-*/tests
+
+test-integration: ## Network tests: real adapters in testcontainers, sockets on, keys stripped; needs Docker
+	scripts/check_integration.sh $(ARGS)
+
+POC04 := pocs/poc-04-stateless-scalable
+
+load-test: ## PoC-4 load matrix (Locust via uv run --with, Compose): make load-test ARGS="--engine echo-python"
+	$(PY) $(POC04)/load/run_matrix.py $(ARGS)
+
+kind-poc04: ## PoC-4 kind cluster and drills: make kind-poc04 ARGS="up native-sidecar"
+	deploy/kind/run.sh $(ARGS)
+
+kind-poc05: ## PoC-5 kind cluster (gVisor, NetworkPolicy, admission): make kind-poc05 ARGS="up"
+	deploy/kind/poc05/run.sh $(ARGS)
+
+# The tests that own model cassettes. Add a file here when it records through `CassetteTransport`.
+CASSETTE_TESTS ?= packages/chassis/tests/test_recorded_model.py \
+	pocs/poc-03-one-interface-every-client/tests/test_interface_contract.py
+
+record-cassettes: ## Re-record model cassettes offline, against the fake model server
+	$(PYTEST) --record-mode=rewrite $(CASSETTE_TESTS)
 
 quick: ## Iteration gate: format check, lint, and the tests of the packages you changed
 	$(MAKE) fmt-check lint

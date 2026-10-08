@@ -1,0 +1,29 @@
+# The local profile in the `sidecar` lane: the workload runs in its own process (its own container
+# in Compose), serving A2A on loopback, and the chassis reaches it at `spec.engine.url`. Start the
+# workload first: `workload-a2a serve --handle echo_python:handle --port 9000`, then
+# `chassis serve --config packages/chassis/configs/sidecar.yaml`. LITELLM_BASE_URL and
+# LITELLM_API_KEY come from the chassis's env; the workload holds no key.
+profile: local
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  # Merged over the `local` profile defaults per field. Those name `minio`, `otel`, `mcp`, and
+  # `valkey`, which need services this stack does not run, so the overrides below are required.
+  adapters:
+    model: litellm
+    config: memory
+    telemetry: memory
+    tools: fake
+    # PoC-4: `local` defaults to `valkey`; this stack has no Valkey, so one store per process.
+    state: memory
+  engine:
+    # The lane, named once (contract v1, decision 2). `sidecar` is also the default.
+    connector: sidecar
+    # Loopback only (ADR-001); the connector refuses any other host. `uds: <path>` serves the
+    # same over a Unix socket instead of TCP.
+    url: http://127.0.0.1:9000
+  model:
+    route: big-default
+  prompt:
+    version: simplifier-v1

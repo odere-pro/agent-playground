@@ -6,14 +6,19 @@ agent:
   name: echo
   version: 0.0.1
 spec:
-  # The profile defaults name `sidecar`, `minio`, and `otel`, which arrive in later PoCs, so the
-  # overrides below are required.
+  # Merged over the `local` profile defaults per field. Those name `minio`, `otel`, `mcp`, and
+  # `valkey`, which need services this stack does not run, so the overrides below are required.
   adapters:
     model: litellm
-    engine: inprocess
     config: memory
     telemetry: memory
+    tools: fake
+    # PoC-4: `local` defaults to `valkey`; this stack has no Valkey, so one store per process.
+    state: memory
   engine:
+    # The PoC-1 Compose config: the workload runs in the chassis process, `inprocess`, named
+    # because `connector` defaults to `sidecar`. The PoC-2 Compose config is configs/sidecar.yaml,
+    # used with the overlay deploy/compose/docker-compose.sidecar.yaml.
     connector: inprocess
     handle: echo_python:handle
   model:

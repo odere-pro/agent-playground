@@ -30,7 +30,7 @@ If any business logic can go in, the chassis must assume some of it is buggy or 
 - [ ] `spec.trust: trusted | untrusted` in the agent config, and an admission check (Kyverno or ValidatingAdmissionPolicy). It blocks an `untrusted` workload, or an image not from our registry, in the `sidecar` lane.
 - [ ] `ToolPort` is defined here, in the same shape as the PoC-1 ports, with its fake and contract suite. Then the real adapter (MCP through LiteLLM's MCP gateway), passing the same suite as the fake tools. `mode: write` tools need the `idempotency_key`.
 - [ ] Generated code runs through the code-execution tool behind `ToolPort` (agent-sandbox, or E2B if needed), so it does not make an agent untrusted.
-- [ ] A hostile suite for the `sidecar` lane: the workload cannot reach LiteLLM, the MCP gateway, the broker, Valkey, the config store, or the internet on its own. It holds no service account token, and cannot reach the cloud metadata service, the Kubernetes API, or the chassis's public port on localhost.
+- [ ] A hostile suite for the `sidecar` lane: the workload cannot reach LiteLLM, the MCP gateway, the broker, Valkey, the config store, or the internet on its own. It holds no service account token, and cannot reach the cloud metadata service, the Kubernetes API, or the chassis's public port on localhost. From PoC-2 (`deploy/compose/SECURITY.md`, section 6): it cannot reach a model server directly (in the Compose `local` variant, `llama-cpp` has no key), and it cannot bind the chassis's ports (it shares the namespace, and the chassis waits for the sidecar before it binds `127.0.0.1:8090`).
 - [ ] A hostile suite for the `remote` lane: the workload cannot read secrets, reach the internet, write to disk, fork-bomb, call a tool that is not allow-listed, or use the chassis's proxies without its own credential.
 - [ ] CI runs a fake workload through the `remote` lane on every commit.
 - [ ] Optional: Envoy as an egress proxy for other allow-listed hosts. The chassis proxies already add the credentials for models and tools, so Envoy is not needed for them.
@@ -70,6 +70,6 @@ On the kind cluster, a hostile workload in the `remote` lane tries to read secre
 ## Links
 
 - Plan: [000-plan.md](000-plan.md) · Previous: [PoC-4](004-PoC-4-stateless-scalable.md) (can run in parallel) · Next: [PoC-6](006-PoC-6-framework-bake-off.md)
-- Decision: [ADR-001](../adr/001-chassis-delivery-model.md) (items 4 to 6, hard requirements 1 and 2)
+- Decision: [ADR-001](../adr/001-chassis-delivery-model.md) (items 4 to 6, hard requirements 1 and 2) · [ADR-005](../adr/005-remote-lane-auth-and-trust-admission.md), the remote lane's credential and the trust rule's admission check (proposed)
 - Backlog issues this previews: [022 H-6](../issues/022-H-6-security-middleware.md) (in part), [054 H-16](../issues/054-H-16-tool-port.md) (allow-list and write mode), [026 CH-4](../issues/026-CH-4-chassis-only-credentials-egress.md), [055 CH-6](../issues/055-CH-6-remote-lane-trust-rule.md) (without the cloud auth adapter)
 - Epic: [B.3](../slm-agent-platform-epic-v3.md#b3), [G.3](../slm-agent-platform-epic-v3.md#g3), [R5](../slm-agent-platform-epic-v3.md#r5)

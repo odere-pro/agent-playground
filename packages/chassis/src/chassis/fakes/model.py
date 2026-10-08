@@ -1,5 +1,5 @@
-"""ScriptedModel: a ModelPort that answers from a script. Streaming, tool calls, and scripted
-errors.
+"""ScriptedModel: a ModelPort that answers from a script. Streaming, tool calls, scripted errors,
+and a tool loop that ends. It records the messages of every call in `.calls`.
 """
 
 from __future__ import annotations
@@ -20,11 +20,17 @@ from chassis.ports.model import (
 
 
 class ScriptRule(BaseModel):
-    """`match` is a substring of the last user message; the first matching rule wins. `None`
-    matches all.
+    """The first matching rule wins; when none matches, the model answers `default_reply`.
+
+    A rule without `after_tool` matches only when the last message is not a `tool` message, and
+    `match` is a substring of the last user message. A rule with `after_tool=True` (suggested)
+    matches only when the last message is a `tool` message, and `match` is tested against that
+    tool content. `match=None` matches any text. So a rule that calls a tool is never picked again
+    on the tool's result, and a scripted tool loop ends.
     """
 
     match: str | None = None
+    after_tool: bool = False
     reply: str = ""
     tool_call: ToolCallRequest | None = None
     usage: Usage = Field(default_factory=lambda: Usage(input_tokens=10, output_tokens=5))
@@ -35,9 +41,19 @@ class ScriptRule(BaseModel):
 
 def _last_user(messages: Sequence[ModelMessage]) -> str:
     for m in reversed(messages):
-        if m["role"] == "user":
-            return m["content"]
+        if m.role == "user":
+            return m.content or ""
     return ""
+
+
+def _pick_rule(rules: Sequence[ScriptRule], messages: Sequence[ModelMessage]) -> ScriptRule | None:
+    """The first rule that matches `messages`, or `None`. See `ScriptRule`."""
+    after_tool = bool(messages) and messages[-1].role == "tool"
+    text = (messages[-1].content or "") if after_tool else _last_user(messages)
+    for rule in rules:
+        if rule.after_tool == after_tool and (rule.match is None or rule.match in text):
+            return rule
+    return None
 
 
 def _tokens(text: str) -> list[str]:
@@ -65,11 +81,7 @@ class ScriptedModel:
         self.calls: list[list[ModelMessage]] = []
 
     def _pick(self, messages: Sequence[ModelMessage]) -> ScriptRule:
-        prompt = _last_user(messages)
-        for rule in self.rules:
-            if rule.match is None or rule.match in prompt:
-                return rule
-        return ScriptRule(reply=self.default_reply)
+        return _pick_rule(self.rules, messages) or ScriptRule(reply=self.default_reply)
 
     async def complete(
         self,

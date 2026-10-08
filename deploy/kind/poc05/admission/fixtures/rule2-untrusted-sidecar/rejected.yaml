@@ -1,0 +1,42 @@
+# Rule 2, untrusted in the sidecar lane: the sidecar pod is labeled untrusted.
+# expect: rejected
+# rule: 2
+# message: trust rule 2: an untrusted workload may not run in the sidecar lane; use the remote lane
+# differs: .metadata.labels[agents.platform/trust]
+apiVersion: v1
+kind: Pod
+metadata:
+  name: admission-rule2
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/name: admission-rule2
+    agents.platform/trust: untrusted
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  initContainers:
+  - name: chassis
+    image: kind.local/agent-platform/chassis:poc05
+    imagePullPolicy: Never
+    restartPolicy: Always
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: &id001
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 10001
+      runAsGroup: 10001
+  containers:
+  - name: workload
+    image: kind.local/agent-platform/echo-python:poc05
+    imagePullPolicy: Never
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: *id001
+      readOnlyRootFilesystem: true
+      runAsUser: 10002
+      runAsGroup: 10002

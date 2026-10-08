@@ -1,0 +1,24 @@
+{
+  "mode": "graceful",
+  "pair": 2,
+  "actions": [
+    "$ docker kill -s TERM poc04-chassis-2-1 -> exit 0 (0.6 s)",
+    "$ docker wait poc04-chassis-2-1 -> exit 0 (5.0 s)",
+    "$ docker stop poc04-workload-2-1 -> exit 0 (0.9 s)"
+  ],
+  "load": {
+    "url": "http://127.0.0.1:18080",
+    "mode": "no-retry",
+    "concurrency": 20,
+    "duration_s": 40.0,
+    "sent": 691,
+    "ok": 691,
+    "failed": 0,
+    "attempts": 691,
+    "retried": 0,
+    "p50_ms": 1032.26,
+    "p95_ms": 2327.27,
+    "failures": []
+  },
+  "passed": true
+}

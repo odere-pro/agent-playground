@@ -23,6 +23,7 @@ Pulled forward from Phase 8: the event port, the recorder (040 D-0), and the aud
 - Consumer-lag metrics in Prometheus, with an alert rule per consumer.
 - Each service's chassis, or its Dapr component, connects with the service's own broker credential, from secret references. Topic ACLs limit each service to the topics in its `spec.events`. Workload containers and `remote` pods get no broker credential ([ADR-001](../adr/001-chassis-delivery-model.md) hard requirement 1).
 - The broker refuses a client that carries no credential.
+- Status after PoC-4: Kafka runs in the PoC-4 scale stack only, with a PLAINTEXT listener and no auth. Any container on the network, a workload included, can publish to and read the result topics directly, around the chassis. Its controller listener (9093) binds every interface, topics are created automatically, and its root is writable. This issue owns, before production: SASL and topic ACLs per service, TLS, topics created from config with auto-create off, and the controller listener closed (`deploy/compose/SECURITY.md`, section 7). Which broker runs is still 001 DEC-1's: [ADR-004](../adr/004-events-through-a-broker-client.md) proposes a broker client in the chassis and leaves NATS JetStream or Kafka open.
 
 ## Reuse
 

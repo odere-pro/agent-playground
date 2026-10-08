@@ -23,6 +23,7 @@ Agents call models only through the LLM router, so any model is swapped by route
 - Request metadata carries the trace and request IDs only.
 - The route version reported in the response `versions` field.
 - The route's native tool-call flag read and kept on `Context`, for the tool port later.
+- Status after PoC-1: `LiteLLMModel` (`chassis.adapters.litellm`) exists, is picked by `spec.adapters.model: litellm`, and binds `ModelPortContract` next to the fake (`packages/chassis/tests/test_contracts.py::TestLiteLLMModel`). Offline it runs against the fake model server over an ASGI transport. Delivered: route switch by config, tokens in the `metrics` event, route in `versions`. Open: direct vLLM and llama.cpp adapters, `latency_ms` in the `metrics` event, the virtual-key spend test, the temperature default, and the `cloud` profile refusal.
 
 ## Reuse
 
@@ -40,13 +41,13 @@ Agents call models only through the LLM router, so any model is swapped by route
 ## Acceptance criteria
 
 - [ ] The echo agent with a model step gets a streamed answer from `big-default` through the router.
-- [ ] Changing `spec.model.route` in config changes the model with no code change.
+- [x] Changing `spec.model.route` in config changes the model with no code change. Delivered in PoC-1: `pocs/poc-01-walking-skeleton/tests/test_model_adapter.py::test_switching_the_model_adapter_is_a_config_change`; the route switch in `pocs/poc-01-walking-skeleton/demo/2026-09-29-demo-fake-variant.md`.
 - [ ] The same agent runs against a local vLLM server and a local llama.cpp server with only a config change.
-- [ ] Token counts and latency arrive as a `metrics` event.
+- [ ] Token counts and latency arrive as a `metrics` event. PoC-1 delivered the token counts (the `metrics` frame in `pocs/poc-01-walking-skeleton/demo/2026-09-29-demo-fake-variant.md`); `latency_ms` is still `null` there, so this stays open.
 - [ ] The router's usage records put the spend on the calling service's virtual key, even when the request metadata names another agent (tested with two virtual keys created by the test).
 - [ ] Request metadata carries the trace and request IDs, and nothing that picks whose spend it is.
 - [ ] The direct vLLM and llama.cpp adapters fail at start in the `cloud` profile.
-- [ ] The route version appears in the response `versions` field.
+- [x] The route version appears in the response `versions` field. Delivered in PoC-1: `pocs/poc-01-walking-skeleton/tests/test_serve.py::test_stream_and_complete_carry_the_same_output`.
 - [ ] Temperature is 0 when the config does not set it.
 - [ ] Each model adapter (router, direct vLLM, llama.cpp) sits behind `ModelPort`, is picked by `spec.adapters.model`, and passes the same contract suite as the fake.
 

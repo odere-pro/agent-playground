@@ -12,3 +12,10 @@ pocs
 .claude
 .env
 .env.*
+# A `.env` anywhere in the tree (deploy/compose/.env holds the real keys) never enters a context.
+**/.env
+**/.env.*
+# echo-typescript builds from its own folder with its own .dockerignore; the Python images never
+# copy it, so its node_modules and build output stay out of the repo-root context.
+**/node_modules
+packages/workloads/echo-typescript/dist

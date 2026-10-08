@@ -1,0 +1,17 @@
+poc01-test-litellm-1	0.18%	464.3MiB / 7.749GiB
+poc01-test-fake-model-server-1	6.10%	102.2MiB / 7.749GiB
+paligo-paligo.app-1	0.02%	172.5MiB / 7.749GiB
+paligo-debezium-1	0.15%	271.4MiB / 7.749GiB
+paligo-paligo.node-1	1.04%	167.8MiB / 7.749GiB
+paligo-eu-west-1.mysql.writer.intern-1	0.47%	190.3MiB / 7.749GiB
+paligo-eu-west-1.contentoutput.intern-1	0.20%	152.2MiB / 7.749GiB
+paligo-eu-west-1.imageconvert.intern-1	0.01%	30.86MiB / 7.749GiB
+paligo-eu-west-1.imageconvert.intern-2	0.01%	29.73MiB / 7.749GiB
+opensearch-node1	0.63%	1.202GiB / 7.749GiB
+paligo-log.application-1	0.00%	752KiB / 7.749GiB
+paligo-log.error-1	0.01%	700KiB / 7.749GiB
+paligo-eu-west-1.nxd.intern-1	0.00%	11.81MiB / 7.749GiB
+paligo-eu-west-1.compare.intern-1	0.10%	113.7MiB / 7.749GiB
+paligo-eu-west-1.spellcheck.intern-1	0.00%	10.51MiB / 7.749GiB
+paligo-eu-west-1.validator.intern-1	0.17%	74.89MiB / 7.749GiB
+paligo-eu-west-1.memcached.intern-1	0.07%	18.02MiB / 7.749GiB

@@ -1,0 +1,13 @@
+# Valid, but agent.version is restart-only.
+profile: fake
+agent:
+  name: echo
+  version: 0.0.2
+spec:
+  adapters:
+    config: memory
+  engine:
+    connector: inprocess
+    handle: chassis.core.handle:echo_wire
+  model:
+    route: other

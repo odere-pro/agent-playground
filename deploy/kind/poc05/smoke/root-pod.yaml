@@ -1,0 +1,18 @@
+# `run.sh smoke` sends this with `--dry-run=server` only: a pod that runs as root with no
+# securityContext. Pod Security Admission `restricted` must reject it. Its admitted twin is any
+# pod in smoke.yaml.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: smoke-root
+  namespace: poc05-smoke
+  labels: {agents.platform/smoke: "true"}
+spec:
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  containers:
+    - name: c
+      image: docker.io/library/busybox:1.37@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+      command: ["sleep", "600"]
+      securityContext:
+        runAsUser: 0

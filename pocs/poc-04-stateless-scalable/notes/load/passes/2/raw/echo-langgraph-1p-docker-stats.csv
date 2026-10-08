@@ -1,0 +1,7 @@
+phase,t,name,vcpu,mib
+idle,1790876903.46,poc04-chassis-1-1,0.1249,152.6
+idle,1790876903.46,poc04-fake-model-server-1,0.1324,37.06
+idle,1790876903.46,poc04-minio-1,0.0,183.5
+idle,1790876903.46,poc04-traefik-1,0.002,17.8
+idle,1790876903.46,poc04-valkey-1,0.0013,11.7
+idle,1790876903.46,poc04-workload-1-1,0.0017000000000000001,113.3

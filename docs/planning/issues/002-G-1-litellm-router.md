@@ -23,6 +23,7 @@ Every model call must go through one LLM router, so models can be swapped by con
 - The router config as a versioned file, reviewed like code.
 - A container that runs in Docker Compose, and on a host the current services can reach (suggested: the existing infrastructure, until 038 X-1a is up).
 - The existing services that call big models listed and pointed at the router, so the baseline counts real traffic.
+- Status after PoC-1: LiteLLM runs in Compose, pinned by digest, with two routes. It starts with `docker compose up --wait` and a health check. The `fake` variant runs with no master key at all, because an empty `master_key` in LiteLLM 1.103.0 turns auth on and 401s every call. Only the OpenAI format is served today; `/v1/messages`, Claude, and Gemini are untested. See `pocs/poc-01-walking-skeleton/notes/2026-09-29-compose-key-debt.md`.
 
 ## Reuse
 
@@ -37,10 +38,11 @@ Every model call must go through one LLM router, so models can be swapped by con
 - The routes each key may use (003 G-1b).
 - The chassis model port that calls the router (012 H-3).
 - Serving an SLM behind the router (036 S-7).
+- Debt from PoC-1: in the `local` Compose variant `LITELLM_API_KEY` equals `LITELLM_MASTER_KEY`, which fails the criterion "no service config holds the master key". Deadline: PoC-5 (one scoped key per service). It blocks PoC-7 budgets. See `pocs/poc-01-walking-skeleton/notes/2026-09-29-compose-key-debt.md`.
 
 ## Acceptance criteria
 
-- [ ] The router starts with `docker compose up` and passes its health check.
+- [x] The router starts with `docker compose up` and passes its health check. Delivered in PoC-1: `pocs/poc-01-walking-skeleton/tests/test_compose.py::test_chassis_waits_for_a_healthy_router`; live run in `pocs/poc-01-walking-skeleton/demo/2026-09-29-demo-fake-variant.md`.
 - [ ] A call in OpenAI format to `/v1/chat/completions` and a call in Anthropic format to `/v1/messages` both reach a big model, streaming and complete.
 - [ ] Claude, Gemini, and OpenAI each answer a test call through the router.
 - [ ] No provider API key appears in the router config, the repo, or the logs.

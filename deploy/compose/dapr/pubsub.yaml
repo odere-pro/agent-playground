@@ -1,0 +1,25 @@
+# PoC-4 Dapr pub/sub component: Kafka, the same broker the chassis's own client uses
+# (docker-compose.scale.yaml, profile `events`). Loaded by every daprd-N from /components
+# (docker-compose.scale-dapr.yaml). PLAINTEXT with no auth, as the PoC broker is: broker auth is
+# 020 X-8 (SECURITY.md, section 7). Subscriptions are programmatic: the chassis answers
+# `GET /dapr/subscribe` on its proxy port 8090 (plan, section 2).
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: pubsub
+spec:
+  type: pubsub.kafka
+  version: v1
+  metadata:
+    - name: brokers
+      value: kafka:9092
+    - name: authType
+      value: none
+    # suggested: the consumer group is the app id (`echo`, the agent name), Dapr's default.
+    - name: consumerGroup
+      value: echo
+    - name: initialOffset
+      value: oldest
+# Only the agent's daprd loads it.
+scopes:
+  - echo

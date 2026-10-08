@@ -1,0 +1,24 @@
+== packages/chassis/src/chassis/adapters/kafka/events.py
+     241 packages/chassis/src/chassis/adapters/kafka/events.py
+CloudEvents wire form      22 lines (between markers, 45-68)
+retries: publish           27 lines (between markers, 136-164)
+retries: delivery          15 lines (between markers, 208-224)
+dead-letter topic          14 lines (between markers, 226-241)
+== packages/chassis/src/chassis/adapters/dapr/events.py
+     271 packages/chassis/src/chassis/adapters/dapr/events.py
+CloudEvents wire form      34 lines (between markers, 60-95)
+retries: publish           26 lines (between markers, 162-189)
+dead-letter topic          17 lines (between markers, 226-244)
+retries: delivery          24 lines (between markers, 246-271)
+== other files
+       5 packages/chassis/src/chassis/adapters/kafka/__init__.py
+     241 packages/chassis/src/chassis/adapters/kafka/events.py
+       5 packages/chassis/src/chassis/adapters/dapr/__init__.py
+     271 packages/chassis/src/chassis/adapters/dapr/events.py
+      25 deploy/compose/dapr/pubsub.yaml
+      21 deploy/compose/dapr/resiliency.yaml
+     120 deploy/compose/docker-compose.scale-dapr.yaml
+     688 total
+== component YAML non-comment non-blank
+deploy/compose/dapr/pubsub.yaml 18
+deploy/compose/dapr/resiliency.yaml 16

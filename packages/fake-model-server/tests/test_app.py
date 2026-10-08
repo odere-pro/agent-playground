@@ -78,3 +78,80 @@ async def test_default_reply(client: httpx.AsyncClient) -> None:
     assert (await client.post("/v1/chat/completions", json=body)).json()["choices"][0]["message"][
         "content"
     ] == "ok"
+
+
+TOOL_LOOP: list[dict[str, Any]] = [
+    {"role": "user", "content": "glossary: SLM"},
+    {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "c1",
+                "type": "function",
+                "function": {"name": "glossary_lookup", "arguments": '{"term": "SLM"}'},
+            }
+        ],
+    },
+    {"role": "tool", "tool_call_id": "c1", "content": "SLM: small language model"},
+]
+
+
+async def test_a_scripted_tool_loop_ends(client: httpx.AsyncClient) -> None:
+    """The example script calls the tool on "glossary"; after the tool result its `after_tool`
+    rule answers instead of calling the tool again.
+    """
+    complete = (await client.post("/v1/chat/completions", json={"messages": TOOL_LOOP})).json()
+    message = complete["choices"][0]["message"]
+    assert "tool_calls" not in message and complete["choices"][0]["finish_reason"] == "stop"
+    assert message["content"] == "From the glossary: SLM means small language model."
+    chunks = _sse_chunks(
+        (
+            await client.post("/v1/chat/completions", json={"messages": TOOL_LOOP, "stream": True})
+        ).text
+    )
+    assert not [c for c in chunks if c["choices"][0]["delta"].get("tool_calls")]
+
+
+def test_after_tool_rules_match_only_after_a_tool() -> None:
+    script = Script.model_validate(
+        {
+            "rules": [
+                {"match": "glossary", "tool_call": {"name": "glossary_lookup"}},
+                {"after_tool": True, "match": "nothing here", "reply": "wrong"},
+                {"after_tool": True, "match": "small language", "reply": "An SLM is small."},
+                {"reply": "catch-all"},
+            ],
+            "default_reply": "done",
+        }
+    )
+    assert script.pick(TOOL_LOOP).reply == "An SLM is small."
+    assert script.pick(TOOL_LOOP[:1]).tool_call is not None
+    no_match = [*TOOL_LOOP[:2], {**TOOL_LOOP[2], "content": "unrelated"}]
+    assert script.pick(no_match).reply == "done"
+
+
+async def test_the_server_records_each_request_body() -> None:
+    app = create_app(Script.from_yaml(SCRIPT))
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://fake"
+    ) as client:
+        await client.post("/v1/chat/completions", json={"model": "m", "messages": TOOL_LOOP})
+    assert [call["messages"] for call in app.state.calls] == [TOOL_LOOP]
+
+
+async def test_the_call_log_is_bounded_and_counts_every_call() -> None:
+    app = create_app(Script.from_yaml(SCRIPT), max_calls=3)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://fake"
+    ) as client:
+        for n in range(5):
+            body = {"model": f"m{n}", "messages": [{"role": "user", "content": "hi"}]}
+            await client.post("/v1/chat/completions", json=body)
+    assert [call["model"] for call in app.state.calls] == ["m2", "m3", "m4"], "the last 3, in order"
+    assert app.state.calls[-1]["model"] == "m4"
+    assert app.state.calls_total == 5
+
+
+def test_the_call_log_keeps_1000_by_default() -> None:
+    assert create_app(Script.from_yaml(SCRIPT)).state.calls.maxlen == 1000

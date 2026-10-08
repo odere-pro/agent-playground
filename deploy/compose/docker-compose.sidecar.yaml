@@ -1,0 +1,162 @@
+# PoC-2 Compose overlay, `sidecar` lane: the workload runs in its own container next to the
+# chassis and serves A2A on the chassis's localhost. One workload profile at a time:
+#   docker compose -f docker-compose.yaml -f docker-compose.sidecar.yaml --profile python up -d --wait
+# Profiles: python (echo-python), pydanticai (echo-pydanticai), langgraph (echo-langgraph),
+# typescript (echo-typescript). Real models: add -f docker-compose.local.yaml after this file.
+# demo-sidecar.sh swaps all four. Rules: SECURITY.md, sections 1 to 3 and 6.
+#
+# The shared network namespace. Each workload has `network_mode: "service:chassis"`: it joins the
+# chassis container's namespace, as a sidecar joins a Kubernetes pod. So, from the chassis,
+# 127.0.0.1:9000 is the workload's A2A server; from the workload, 127.0.0.1:8090 is the chassis's
+# model proxy (/v1) and MCP tool endpoint (/mcp). The workload binds 127.0.0.1 only, publishes no
+# port, holds no key, and runs hardened (x-workload-hardening). The chassis's public port binds the container's own address, not
+# 0.0.0.0, so localhost carries only the proxies (deploy/CLAUDE.md, ADR-001 hard requirement 1).
+#
+# Start order. The chassis container must exist before the workload can join its namespace, so
+# Compose starts the chassis first; a chassis `depends_on` the workload is impossible (it is a
+# cycle, and a profiled service cannot be depended on from every profile). `chassis serve` binds
+# its proxies on 127.0.0.1:8090 first, then the public port; while the sidecar is not up yet its
+# `/ready` is 503 `starting` and it retries the agent card on 127.0.0.1:9000 (`--startup-wait-s`,
+# suggested: 120 s). If the card never comes, the connector's RuntimeError names the url and the
+# container exits (PoC-5 H14: no wait before the bind, so a workload can never take 8090 first).
+# No restart policy, on purpose: a restarted container gets a new network
+# namespace and the workload stays on the old one, cut off from the chassis. To swap the workload,
+# remove it and recreate both: demo-sidecar.sh does
+#   docker compose ... rm -sf workload-<old>
+#   docker compose ... --profile <new> up -d --wait --no-deps --force-recreate chassis workload-<new>
+
+name: poc02
+
+x-workload-env: &workload-env
+  # The only four variables a workload gets. No key, no `env_file` (SECURITY.md, 6).
+  CHASSIS_MODEL_URL: http://127.0.0.1:8090/v1
+  CHASSIS_TOOL_URL: http://127.0.0.1:8090/mcp
+  HOST: 127.0.0.1
+  PORT: "9000"
+
+x-workload-hardening: &workload-hardening
+  # Every workload container (SECURITY.md, 6): no Linux capability, no privilege gain through
+  # setuid, a read-only root file system with a small tmpfs for /tmp (Python's tempfile and Node's
+  # os.tmpdir() write there; the images write nothing else at run time), and the non-root user
+  # every workload image creates (`useradd --uid 10001`, group 10001).
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  tmpfs: [/tmp]
+  user: "10001:10001"
+
+x-python-card-check: &python-card-check
+  test:
+    - CMD
+    - python
+    - -c
+    - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9000/.well-known/agent-card.json', timeout=2).status == 200 else 1)"
+  interval: 5s
+  timeout: 3s
+  retries: 24
+  start_period: 10s
+
+services:
+  chassis:
+    volumes:
+      # Replaces the base's local.yaml at the same path: `connector: sidecar`,
+      # `url: http://127.0.0.1:9000`, model `litellm`, tools `fake` (served over /mcp).
+      - ../../packages/chassis/configs/sidecar.yaml:/etc/chassis/config.yaml:ro
+    # The base keeps LITELLM_BASE_URL and LITELLM_API_KEY and the one published port,
+    # 127.0.0.1:8080:8080; this file adds no key and no port to any service.
+    entrypoint:
+      - sh
+      - -c
+      # `$$` is a literal `$` for the shell: Compose interpolates a single `$`.
+      - |
+        set -eu
+        addr=$$(python -c 'import socket; print(socket.gethostbyname(socket.gethostname()))')
+        exec chassis serve --host "$$addr" "$$@"
+      - "--"
+    # The image's CMD without `--host 0.0.0.0` (an entrypoint override drops the image CMD).
+    # The proxies keep their loopback default: --proxy-host 127.0.0.1 --proxy-port 8090.
+    command: ["--config", "/etc/chassis/config.yaml", "--port", "8080"]
+    healthcheck:
+      # `/ready` on the container's own address: the public port is not on localhost here.
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket,urllib.request,sys; a=socket.gethostbyname(socket.gethostname()); sys.exit(0 if urllib.request.urlopen(f'http://{a}:8080/ready', timeout=2).status == 200 else 1)"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      # `/ready` stays 503 `starting` up to 120 s (--startup-wait-s) while the sidecar comes up.
+      start_period: 150s
+
+  workload-python:
+    # The plain-Python simplifier, now in its own image (PoC-1 ran it in the chassis process).
+    profiles: [python]
+    build:
+      context: ../..
+      dockerfile: packages/workloads/echo-python/Dockerfile
+    image: agent-platform/echo-python:poc02
+    network_mode: "service:chassis"
+    <<: *workload-hardening
+    depends_on:
+      chassis:
+        condition: service_started
+    environment: *workload-env
+    healthcheck: *python-card-check
+
+  workload-pydanticai:
+    profiles: [pydanticai]
+    build:
+      context: ../..
+      dockerfile: packages/workloads/echo-pydanticai/Dockerfile
+    image: agent-platform/echo-pydanticai:poc02
+    network_mode: "service:chassis"
+    <<: *workload-hardening
+    depends_on:
+      chassis:
+        condition: service_started
+    environment: *workload-env
+    healthcheck: *python-card-check
+
+  workload-langgraph:
+    profiles: [langgraph]
+    build:
+      context: ../..
+      dockerfile: packages/workloads/echo-langgraph/Dockerfile
+    image: agent-platform/echo-langgraph:poc02
+    network_mode: "service:chassis"
+    <<: *workload-hardening
+    depends_on:
+      chassis:
+        condition: service_started
+    environment: *workload-env
+    healthcheck: *python-card-check
+
+  workload-typescript:
+    # Self-contained build context (its own .dockerignore). It makes no tool call, so
+    # CHASSIS_TOOL_URL is unused there.
+    profiles: [typescript]
+    build:
+      context: ../../packages/workloads/echo-typescript
+    image: agent-platform/echo-typescript:poc02
+    network_mode: "service:chassis"
+    <<: *workload-hardening
+    depends_on:
+      chassis:
+        condition: service_started
+    environment: *workload-env
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:9000/.well-known/agent-card.json').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+
+# The PoC-2 project and network names, so this stack never collides with a running PoC-1 stack.
+networks:
+  default:
+    name: poc02

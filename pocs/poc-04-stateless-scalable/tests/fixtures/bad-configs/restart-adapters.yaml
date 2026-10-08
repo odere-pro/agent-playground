@@ -1,0 +1,14 @@
+# Valid, but spec.adapters is restart-only.
+profile: fake
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  adapters:
+    config: memory
+    model: litellm
+  engine:
+    connector: inprocess
+    handle: chassis.core.handle:echo_wire
+  model:
+    route: other

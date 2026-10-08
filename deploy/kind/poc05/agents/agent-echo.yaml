@@ -1,0 +1,244 @@
+# agent-echo: the sidecar lane (plan sections 2.10, 2.11). The chassis and echo-python share the
+# pod's network namespace; the workload reaches the chassis's proxies on 127.0.0.1:8090.
+#
+# The chassis is the native sidecar (an init container with `restartPolicy: Always`) and the
+# workload is the main container, the reverse of PoC-4. The kubelet starts the main container only
+# after the chassis's startupProbe passes, and `/health` answers only after the chassis has bound
+# its proxies (it exits 3 if one is taken), so the workload can never squat 127.0.0.1:8090 first.
+# The cost: on delete the workload gets SIGTERM before the chassis, so PoC-4's drain order does not
+# hold here; PoC-5 does not measure drain.
+#
+# Hardening (section 2.11): chassis uid 10001, workload uid 10002, so neither can read the other's
+# files; read-only root, drop ALL, no privilege escalation, seccomp RuntimeDefault; cpu and memory
+# limits; one memory-backed, size-capped /tmp per container. Secrets go to the chassis container
+# only: its LiteLLM virtual key and the Valkey password. The workload gets four plain variables.
+# No MinIO key: the config is the mounted file (`config: memory`, chassis/echo.yaml).
+#
+# Accepted risks of the sidecar lane (trusted code only; security review F6, F12; to be recorded in
+# ADR-005 and the blind-spots note by T29 and T30):
+# - Restart window (F6): the native-sidecar order holds at first start only. If the chassis
+#   crashes or is OOM-killed, the kubelet restarts it while the workload keeps running, and the
+#   workload can bind POD_IP:8080 and 127.0.0.1:8090 first; the new chassis exits 3 and the
+#   workload answers callers. It gains no internal credential. A kind case records who owns the
+#   ports after a chassis kill (review verification item 12); B7 is not claimed for restarts.
+# - The public port at the pod IP (F12): in the shared network namespace POD_IP:8080 is local, so
+#   the workload can open runs on its own chassis like any in-cluster caller. H13 tests
+#   127.0.0.1:8080 refused and POD_IP:8080 served, by design.
+#
+# Admission (admission/policy.yaml): one chassis container with no `command`, the only container
+# that references a Secret; images under kind.local/agent-platform/ with imagePullPolicy: Never;
+# the workload repository on the trusted list. Applied by the platform deployer, never a tenant.
+#
+# Not here: `agent-probe-sidecar` (the plan's probe workload, packages/workloads/hostile, is out of
+# scope for this pass).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent-echo
+  labels:
+    app.kubernetes.io/name: agent-echo
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-echo
+  labels:
+    app.kubernetes.io/name: agent-echo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agent-echo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agent-echo
+        agents.platform/role: chassis
+        agents.platform/lane: sidecar
+        agents.platform/trust: trusted
+    spec:
+      serviceAccountName: agent-echo
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 50
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: chassis
+          image: kind.local/agent-platform/chassis:poc05
+          imagePullPolicy: Never
+          # The native sidecar: an init container that keeps running.
+          restartPolicy: Always
+          # The image's ENTRYPOINT is `chassis serve`. The public port binds the pod IP, never
+          # 0.0.0.0, so loopback carries only the proxies (127.0.0.1:8090, the default).
+          args:
+            - --config
+            - /etc/chassis/config.yaml
+            - --host
+            - $(POD_IP)
+            - --port
+            - "8080"
+            - --startup-wait-s
+            - "120"
+            - --drain-delay-s
+            - "10"
+            - --drain-timeout-s
+            - "30"
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: LITELLM_BASE_URL
+              value: http://litellm.poc05-platform.svc.cluster.local:4000/v1
+            - name: LITELLM_MCP_URL
+              value: http://litellm.poc05-platform.svc.cluster.local:4000/mcp/
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: chassis-echo-litellm
+                  key: LITELLM_API_KEY
+            - name: VALKEY_URL
+              value: valkey://valkey.poc05-platform.svc.cluster.local:6379/0
+            - name: VALKEY_USERNAME
+              value: chassis
+            - name: VALKEY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: valkey-auth
+                  key: VALKEY_PASSWORD
+          ports:
+            - name: http
+              containerPort: 8080
+          # `/health` is 200 as soon as the proxies are bound; `/ready` is 503 `starting` until
+          # the workload answers (up to --startup-wait-s).
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 1
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: chassis-tmp
+              mountPath: /tmp
+            - name: chassis-config
+              mountPath: /etc/chassis
+              readOnly: true
+      containers:
+        - name: workload
+          image: kind.local/agent-platform/echo-python:poc05
+          imagePullPolicy: Never
+          # Appended to the image's `workload-a2a serve ... --host $HOST --port $PORT`.
+          args: ["--drain-timeout-s", "30"]
+          env:
+            # The only four variables the workload gets: no key, no Secret.
+            - name: HOST
+              value: 127.0.0.1
+            - name: PORT
+              value: "9000"
+            - name: CHASSIS_MODEL_URL
+              value: http://127.0.0.1:8090/v1
+            - name: CHASSIS_TOOL_URL
+              value: http://127.0.0.1:8090/mcp
+          # The workload listens on 127.0.0.1 only and the kubelet's httpGet goes to the pod IP,
+          # so both probes exec a GET on the agent card inside the container.
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9000/.well-known/agent-card.json', timeout=2).status == 200 else 1)"
+            periodSeconds: 2
+            timeoutSeconds: 3
+            failureThreshold: 30
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9000/.well-known/agent-card.json', timeout=2).status == 200 else 1)"
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10002
+            runAsGroup: 10002
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: workload-tmp
+              mountPath: /tmp
+      volumes:
+        # One /tmp per container, memory-backed and capped: a shared writable volume would be a
+        # side channel, and a write over the cap fails at the cap (H22).
+        - name: chassis-tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+        - name: workload-tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi
+        - name: chassis-config
+          configMap:
+            name: chassis-echo-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-echo
+  labels:
+    app.kubernetes.io/name: agent-echo
+spec:
+  selector:
+    app.kubernetes.io/name: agent-echo
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

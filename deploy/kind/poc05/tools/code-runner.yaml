@@ -1,0 +1,107 @@
+# code-runner: the code-execution tool (plan sections 2.8, 2.10, 2.11; T15). An MCP server in an
+# agent-sandbox Sandbox on gVisor, behind LiteLLM's MCP gateway, so it is allow-listed per virtual
+# key like every other tool. LiteLLM reaches it at
+# http://code-runner.poc05-tools.svc.cluster.local:8000/mcp/ (platform/litellm/config.yaml).
+#
+# - The image's entrypoint is `code-runner --host 0.0.0.0 --port 8000 --tmp-root /tmp`; uid:gid
+#   10003:10003. It needs no Secret and gets none, and no egress at all (network-policy.yaml).
+# - Trust label `trusted`: the image is ours, built from this repo, so admission holds it to the
+#   registry prefix (rule 3). The code it runs is not trusted; that is why it runs on gVisor, with
+#   no egress, no service account token, and a capped memory-backed /tmp for the scratch dirs.
+# - PIDs: the kubelet's podPidsLimit (256, cluster.yaml). Under gVisor each guest process costs
+#   about three host pids, so a fork bomb in a snippet ends the sandbox, not the node (spike, q6).
+# - `spec.service: false`: the Service `code-runner` below is ours, with a port.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: code-runner
+  labels:
+    app.kubernetes.io/name: code-runner
+automountServiceAccountToken: false
+---
+apiVersion: agents.x-k8s.io/v1beta1
+kind: Sandbox
+metadata:
+  name: code-runner
+  labels:
+    app.kubernetes.io/name: code-runner
+spec:
+  service: false
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: code-runner
+        app.kubernetes.io/part-of: poc05
+        agents.platform/trust: trusted
+    spec:
+      serviceAccountName: code-runner
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      runtimeClassName: gvisor
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: code-runner
+          image: kind.local/agent-platform/code-runner:poc05
+          imagePullPolicy: Never
+          ports:
+            - name: mcp
+              containerPort: 8000
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10003
+            runAsGroup: 10003
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: code-runner
+  labels:
+    app.kubernetes.io/name: code-runner
+spec:
+  selector:
+    app.kubernetes.io/name: code-runner
+  ports:
+    - name: mcp
+      port: 8000
+      targetPort: 8000

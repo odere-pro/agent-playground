@@ -1,0 +1,50 @@
+# A CronJob, rule 2: the job template is untrusted in the sidecar lane.
+# expect: rejected
+# rule: 2
+# message: trust rule 2: an untrusted workload may not run in the sidecar lane; use the remote lane
+# differs: .spec.jobTemplate.spec.template.metadata.labels[agents.platform/trust]
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: admission-cronjob
+  namespace: poc05-agents
+spec:
+  schedule: 0 0 1 1 *
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: admission-cronjob
+            agents.platform/trust: untrusted
+        spec:
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+          - name: chassis
+            image: kind.local/agent-platform/chassis:poc05
+            imagePullPolicy: Never
+            restartPolicy: Always
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: &id001
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+              runAsUser: 10001
+              runAsGroup: 10001
+          containers:
+          - name: workload
+            image: kind.local/agent-platform/echo-python:poc05
+            imagePullPolicy: Never
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: *id001
+              readOnlyRootFilesystem: true
+              runAsUser: 10002
+              runAsGroup: 10002
+          restartPolicy: Never

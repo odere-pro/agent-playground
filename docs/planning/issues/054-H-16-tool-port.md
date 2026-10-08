@@ -25,6 +25,7 @@ Tool agents answer by calling tools. Small models call tools less reliably than 
 - A failed or malformed tool call is retried, then goes to `fallback_route` (017 H-4).
 - The code-execution tool behind `ToolPort` (suggested: agent-sandbox or E2B). Generated code that runs through it does not make an agent untrusted (ADR-001 item 5).
 - Suggested: first tool adapters for MCP tools (MCP Python SDK) and plain HTTP APIs, with endpoints set in config.
+- Status after PoC-2: `ToolPort` (`chassis.ports.tool`), the fake `InMemoryTools` with one read-only tool, `glossary_lookup`, defined once (`chassis.fakes.tool`), `ToolPortContract`, and the MCP endpoint `/mcp` on the chassis's localhost-only proxy listener (FastMCP 4, stateless). Every Python workload gets the tool from it, and no workload defines its own (`pocs/poc-02-two-engines-one-contract/tests/test_tools.py`). Each call is one `chassis.tool.call` span with the parsed trace id and, for an in-flight run, its `request_id`. Open: the real adapter (`tools: mcp`, named for PoC-5 in `profiles.REGISTRY`), the MCP gateway behind it, and charging tool calls to the run: the endpoint names the run but does not charge it or count uncorrelated tool calls. See [the PoC-2 debt note](../../../pocs/poc-02-two-engines-one-contract/notes/2026-10-01-debt.md).
 
 ## Reuse
 
@@ -46,7 +47,7 @@ Tool agents answer by calling tools. Small models call tools less reliably than 
 - [ ] A tool that is not on the key's allow-list is refused by the gateway, even with the chassis config check switched off. A direct call from the workload to the gateway fails, because the workload has no key.
 - [ ] A tool with side effects is refused unless its config says `mode: write`.
 - [ ] Retrying a request that used a fake write tool performs the side effect once, because the tool proxy passes the same `idempotency_key`.
-- [ ] Every tool call through the proxy shows in the trace and as a `tool_call` event.
+- [x] Every tool call through the proxy shows in the trace and as a `tool_call` event. Delivered in PoC-2 with the fake tools: `packages/chassis/tests/test_tool_endpoint.py::test_one_span_per_call_with_the_tool_and_the_inbound_trace_id`; `pocs/poc-02-two-engines-one-contract/tests/test_tools.py::test_the_tool_works_on_each_engine[*]`; the `tool_call` event in each Python engine's stream in [the demo](../../../pocs/poc-02-two-engines-one-contract/demo/2026-10-01-demo-sidecar.md).
 - [ ] Malformed tool-call output is retried, then answered by the fallback route.
 - [ ] In a prompt injection test, a tool output with injected instructions adds no tool calls and does not change the allow-list.
 - [ ] Tool calls count toward the call's budget (suggested: a `max_tool_calls` limit).

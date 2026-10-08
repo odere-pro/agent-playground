@@ -51,8 +51,9 @@ Today it does one small thing: it simplifies a sentence. The point is the shape,
 
 ### What it is not yet
 
-- Streaming in the in-memory lane is batched: the events arrive after `handle` returns. The `sidecar` lane in PoC-2 streams over a socket.
-- The model proxy sits on the chassis's public port. PoC-2 moves it to a localhost-only listener.
+- Streaming in the in-memory lane is batched: the events arrive after `handle` returns. Paid in PoC-2 for the `sidecar` lane, which streams each event over a socket; `inprocess` still batches. See [PoC-2](../poc-02-two-engines-one-contract/README.md).
+- The model proxy sat on the chassis's public port. Paid in PoC-2: the proxies are on a localhost-only listener, `127.0.0.1:8090` (suggested). See [PoC-2](../poc-02-two-engines-one-contract/README.md).
+- The `inprocess` connector set no `traceparent`. Paid in PoC-2: every lane sets the header and `ctx.traceparent`, and the model proxy charges each call to its run. See [PoC-2](../poc-02-two-engines-one-contract/README.md).
 - The router keys are the master key, and the agent tag can be faked by a caller. PoC-5 gives each service its own scoped key.
 - The real-model variant of the Compose stack has never been run. It needs a provider key.
 
@@ -100,6 +101,8 @@ Each one has a scenario test in `tests/` or a recorded reason it cannot have one
 - [x] Contract v0 is written down: the envelope, the events, `handle`, the mapping of chassis events to A2A, the ports, and a first draft of `EngineConnector`. · evidence: `tests/test_a2a_inprocess.py::test_contract_v0_is_written_down`; the document is `docs/contracts/contract-v0.md`
 
 Gate runs on 2026-09-29: `make test-poc POC=01` → `32 passed, 2 skipped` (the two skips are the `network` tests: the console-script launcher and the live Compose run). `make check` → `170 passed, 2 skipped`, mypy `Success: no issues found in 63 source files`, `lint-imports` 5 kept 0 broken.
+
+Gate runs on 2026-10-01, after PoC-2's fix round: `PATH=/opt/homebrew/bin:$PATH make test-poc POC=01` → `34 passed, 2 skipped, 6 warnings in 0.84s` (the same two `network` skips: the console-script launcher and the live Compose run). `PATH=/opt/homebrew/bin:$PATH make check` → `673 passed, 18 skipped, 14 warnings in 33.22s`, mypy `Success: no issues found in 112 source files`, `Contracts: 7 kept, 0 broken.`, `planning-check OK`, `harness-lint: ok`.
 
 ## How to run
 

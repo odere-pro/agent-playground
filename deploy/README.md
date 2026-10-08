@@ -4,11 +4,13 @@ How the chassis and its workloads run.
 
 | Folder | Arrives in | What |
 | ------ | ---------- | ---- |
-| `compose/` | PoC-1 walking skeleton | Docker Compose: the chassis, LiteLLM, and the fake model server or llama.cpp; later the workload container, MinIO, and the observability stack |
-| `kind/` | PoC-5 | A local kind cluster with native sidecars, a CNI that enforces NetworkPolicy, a gVisor RuntimeClass, and the admission policies |
+| `compose/` | PoC-1 walking skeleton | Docker Compose: the chassis, LiteLLM, and the fake model server or llama.cpp; since PoC-2 one workload container next to the chassis (the sidecar variant); later MinIO and the observability stack. Files and variants: [`compose/README.md`](compose/README.md) |
+| `kind/` | PoC-4, then PoC-5 | PoC-4: a local kind cluster `poc04` with the two container-role variants (native sidecar, preStop) and their drills; see [kind (PoC-4)](#kind-poc-4). PoC-5 adds a gVisor RuntimeClass and the admission policies |
 | `helm/` | PoC-9 | The shared library chart that adds the chassis container with a pinned tag (024 CH-3) |
 
 ## Compose (PoC-1)
+
+The PoC-2 sidecar variant (one workload container in the chassis's network namespace, `demo-sidecar.sh`) is in [`compose/README.md`](compose/README.md#sidecar-variant-poc-2).
 
 Two variants, one file each. The rules for keys, images, ports, and health are in [`compose/SECURITY.md`](compose/SECURITY.md).
 
@@ -46,3 +48,31 @@ Routes: `big-default` and `local-small`. The chassis picks one in `spec.model.ro
 The fake variant runs LiteLLM without a master key and passes it no key env at all: LiteLLM treats an empty `LITELLM_MASTER_KEY` as "auth on" and rejects every call, which would break `docker compose up` with an empty `.env`. The `local` variant needs `LITELLM_MASTER_KEY` and, for PoC-1, `LITELLM_API_KEY` set to the same value (debt: `pocs/poc-01-walking-skeleton/notes/2026-09-29-compose-key-debt.md`).
 
 Bump an image on purpose, in its own commit, with the output of `docker buildx imagetools inspect <image:tag>` in the PR.
+
+## kind (PoC-4)
+
+Which container roles drain without losing a request: the workload as a Kubernetes native sidecar, or two plain containers ordered by preStop sleeps. Plan: `docs/plans/2026-10-01-poc-04-stateless-scalable.md`, section 8b. Plain manifests with kustomize, no Helm.
+
+```bash
+make kind-poc04 ARGS="up native-sidecar"            # create, build, kind load, apply (echo-python)
+make kind-poc04 ARGS="apply prestop typescript"     # switch variant or engine
+make kind-poc04 ARGS="drill-rolling"                # rollout restart under 20 clients, no retry
+make kind-poc04 ARGS="drill-hung"                   # SIGSTOP one workload from the node
+make kind-poc04 ARGS="delete"                       # kind delete cluster --name poc04
+```
+
+`run.sh` touches only the kind cluster `poc04`: every kubectl call passes `--context kind-poc04`, every kind call `--name poc04`. The agent Service's nodePort 30080 is on `127.0.0.1:18081` (suggested). Images are built with the tag `poc04` and loaded with `kind load`; nothing is pulled for them (`imagePullPolicy: Never`).
+
+What runs, in namespace `poc04` (Pod Security Standard `restricted`, enforced):
+
+| Folder | What |
+| ------ | ---- |
+| `kind/cluster.yaml` | One node, kind v0.33.0's default image `kindest/node:v1.37.0`, pinned by digest |
+| `kind/poc04/base/` | The fake model server, Valkey (no persistence), the agent Service (chassis port only), the bootstrap ConfigMap (`config: memory`, `state: valkey`), and NetworkPolicies: default deny in and out, then the agent pod may reach only the fake model server, Valkey, and DNS |
+| `kind/poc04/native-sidecar/` | The workload in `initContainers` with `restartPolicy: Always`, the chassis the main container. Chassis `--drain-delay-s 10 --drain-timeout-s 30` (`Connection: close` while draining), grace 50 s |
+| `kind/poc04/prestop/` | Two plain containers. Chassis `preStop` sleep 5 and `--drain-delay-s 0`; workload `preStop` sleep 35; grace 50 s. The chassis waits for the agent card before it starts |
+| `kind/poc04/typescript/<variant>/` | The same variant with `echo-typescript`: its image, `node` probes, and `DRAIN_TIMEOUT_MS=30000` |
+
+Both variants: 3 replicas, `maxUnavailable: 0`, `maxSurge: 1`, no service account token. Every container has a read-only root file system, its own `emptyDir` at `/tmp`, a non-root user, no privilege escalation, and no capability. The chassis is ready on `/ready` (every 2 s) and live on `/health`. The workload listens on 127.0.0.1 only, so the kubelet's `httpGet` cannot reach it: its startup and liveness probes `exec` a GET on the agent card. Its liveness probe has its own `terminationGracePeriodSeconds: 10` (suggested): a hung, stopped process ignores SIGTERM, and without it the restart waits for the preStop sleep and the pod's grace.
+
+Secrets: `run.sh` generates `VALKEY_PASSWORD` with `openssl rand` into the Secret `poc04-secrets`, through a pipe. Only the chassis and Valkey read it; the workload gets four plain variables and no Secret. Known PoC gap: Valkey gets the password as a command-line argument inside its own pod.

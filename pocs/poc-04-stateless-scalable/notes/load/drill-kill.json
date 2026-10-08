@@ -1,0 +1,39 @@
+{
+  "mode": "kill",
+  "pair": 2,
+  "actions": [
+    "$ docker kill poc04-chassis-2-1 poc04-workload-2-1 -> exit 0 (1.7 s)"
+  ],
+  "load": {
+    "url": "http://127.0.0.1:18080",
+    "mode": "retry",
+    "concurrency": 20,
+    "duration_s": 40.0,
+    "sent": 582,
+    "ok": 582,
+    "failed": 0,
+    "attempts": 589,
+    "retried": 7,
+    "p50_ms": 1163.87,
+    "p95_ms": 3063.82,
+    "failures": []
+  },
+  "replay_retried": {
+    "checked": 7,
+    "same": 7,
+    "differs": 0,
+    "not_marked_replayed": 0,
+    "failed": 0,
+    "mismatches": []
+  },
+  "replay_control": {
+    "checked": 20,
+    "same": 20,
+    "differs": 0,
+    "not_marked_replayed": 0,
+    "failed": 0,
+    "mismatches": []
+  },
+  "lost": 0,
+  "passed": true
+}

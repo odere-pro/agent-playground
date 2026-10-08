@@ -1,0 +1,16 @@
+[project]
+name = "code-runner"
+version = "0.1.0"
+description = "The code-execution tool: an MCP server with one write tool, run_python, in a gVisor sandbox behind LiteLLM's MCP gateway; never imported by the chassis (PoC-5)"
+requires-python = ">=3.12,<3.13"
+dependencies = ["fastmcp>=4.0.10,<5", "uvicorn>=0.30"]
+
+[project.scripts]
+code-runner = "code_runner.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "code_runner"

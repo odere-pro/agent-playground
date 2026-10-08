@@ -150,6 +150,8 @@ Managed runtimes are reached, not hosted ([ADR-001](../adr/001-chassis-delivery-
 - **OpenTelemetry GenAI conventions:** still in "Development" status, so attribute names may change. OpenInference uses its own names, and Langfuse reads both.
 - **Langfuse:** confirm which role and audit controls the MIT self-hosted edition includes before relying on it for review access control. The two research sources disagree.
 - **New major versions to pin:** FastMCP 4, Langfuse v4, a2a-sdk 1.x, agent-sandbox 1.0.
+- **`langchain-mcp-adapters`:** 0.3.1 imports `mcp` 1.x modules that `mcp` 2.2.0 removed, so it does not work with `mcp` 2. In PoC-2, `echo-langgraph` uses an 86-line stand-in over the `mcp` 2 client (`packages/workloads/echo-langgraph/src/echo_langgraph/tools.py`). Re-check at PoC-6a.
+- **Versions verified in PoC-2 (2026-10-01):** a2a-sdk 1.2.0, `@a2a-js/sdk` 1.3.0, FastMCP 4.0.10, mcp 2.2.0, pydantic-ai-slim 2.52.0, langgraph 1.2.12, langchain-openai 1.6.7.
 
 ## What this changes
 

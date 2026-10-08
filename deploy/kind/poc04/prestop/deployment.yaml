@@ -1,0 +1,207 @@
+# Shutdown order by timing: on delete both containers get their preStop at once. The chassis
+# sleeps 5 s (preStop), then gets SIGTERM with --drain-delay-s 0 (the preStop already was the
+# delay), and drains for up to --drain-timeout-s 30. The workload sleeps 35 s (the chassis's
+# preStop plus its drain timeout), so it gets SIGTERM after the chassis is done. Both use the
+# built-in `sleep` action: no `sleep` binary needed in a read-only image.
+# terminationGracePeriodSeconds 50 = 35 + 15 (suggested).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent
+  labels:
+    app.kubernetes.io/name: agent
+    app.kubernetes.io/part-of: poc04
+    poc04/variant: prestop
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agent
+        app.kubernetes.io/part-of: poc04
+        poc04/variant: prestop
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 50
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workload
+          image: agent-platform/echo-python:poc04
+          imagePullPolicy: Never
+          # Appended to the image's `workload-a2a serve ... --host $HOST --port $PORT`.
+          args: ["--drain-timeout-s", "30"]
+          env:
+            # The only four variables a workload gets: no key, no Secret (SECURITY.md, 6).
+            - name: HOST
+              value: 127.0.0.1
+            - name: PORT
+              value: "9000"
+            - name: CHASSIS_MODEL_URL
+              value: http://127.0.0.1:8090/v1
+            - name: CHASSIS_TOOL_URL
+              value: http://127.0.0.1:8090/mcp
+          # The workload listens on 127.0.0.1 only and the kubelet's httpGet goes to the pod IP,
+          # so both probes exec a GET on the agent card inside the container.
+          startupProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9000/.well-known/agent-card.json', timeout=2).status == 200 else 1)"
+            periodSeconds: 2
+            timeoutSeconds: 3
+            failureThreshold: 30
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9000/.well-known/agent-card.json', timeout=2).status == 200 else 1)"
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+            # suggested: a liveness kill skips the preStop sleep and the pod's grace. A hung
+            # (stopped) process ignores SIGTERM, so it is killed after 10 s, not 45 or 50.
+            terminationGracePeriodSeconds: 10
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 35
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: workload-tmp
+              mountPath: /tmp
+        - name: chassis
+          image: agent-platform/chassis:poc04
+          imagePullPolicy: Never
+          # Two plain containers start together, and the sidecar connector fails at once when
+          # the card is not there yet. So, as in Compose, wait for the card (suggested: up to
+          # 50 s, inside the startupProbe's 60 s), then `chassis serve`. The public port binds the
+          # pod IP, not 0.0.0.0, so loopback carries only the proxies (127.0.0.1:8090).
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              python -c 'import sys, time, urllib.request
+              card = "http://127.0.0.1:9000/.well-known/agent-card.json"
+              deadline = time.monotonic() + 50
+              while time.monotonic() < deadline:
+                  try:
+                      urllib.request.urlopen(card, timeout=2)
+                      sys.exit(0)
+                  except OSError:
+                      time.sleep(1)
+              print(f"no sidecar at {card} after 50 s; starting anyway", file=sys.stderr)'
+              exec chassis serve "$@"
+            - "--"
+          args:
+            - --config
+            - /etc/chassis/config.yaml
+            - --host
+            - $(POD_IP)
+            - --port
+            - "8080"
+            - --drain-delay-s
+            - "0"
+            - --drain-timeout-s
+            - "30"
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: LITELLM_BASE_URL
+              value: http://fake-model-server:8081/v1
+            - name: VALKEY_URL
+              value: valkey://valkey:6379/0
+            - name: VALKEY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: poc04-secrets
+                  key: VALKEY_PASSWORD
+          ports:
+            - name: http
+              containerPort: 8080
+          # suggested: up to 60 s to start before liveness counts.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          resources:
+            # ADR-001's upper estimate. No CPU limit (suggested): throttling would skew the
+            # sidecar cost measurement.
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: chassis-tmp
+              mountPath: /tmp
+            - name: chassis-config
+              mountPath: /etc/chassis
+              readOnly: true
+      volumes:
+        # One /tmp per container: a shared writable volume would be a side channel.
+        - name: chassis-tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: workload-tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: chassis-config
+          configMap:
+            name: chassis-bootstrap

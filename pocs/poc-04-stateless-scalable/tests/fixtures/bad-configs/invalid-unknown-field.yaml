@@ -1,0 +1,13 @@
+# Invalid: an unknown key under spec.limits.
+profile: fake
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  adapters:
+    config: memory
+  engine:
+    connector: inprocess
+    handle: chassis.core.handle:echo_wire
+  limits:
+    max_tokenz_max: 10

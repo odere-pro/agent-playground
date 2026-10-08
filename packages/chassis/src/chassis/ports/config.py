@@ -18,6 +18,12 @@ class ConfigNotFound(KeyError):
     """No config with that name in the store."""
 
 
+class ConfigUnavailable(RuntimeError):
+    """The store cannot be reached or answered with an error other than not found. The message
+    holds no credential.
+    """
+
+
 Unsubscribe = Callable[[], None]
 ConfigCallback = Callable[[LoadedConfig], Awaitable[None]]
 
