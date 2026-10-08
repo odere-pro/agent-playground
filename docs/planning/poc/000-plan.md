@@ -151,7 +151,7 @@ Everything else is untrusted. The agent config declares `spec.trust: trusted | u
 
 ### Outbound proxies: the same controls for every engine
 
-The chassis gives every workload an OpenAI- and Anthropic-compatible model endpoint and an MCP tool endpoint. The workload points its model base URL and its MCP client at them, and holds no key. The proxies are thin: they count, trace, and apply per-call budgets. They key each outbound call to its inbound request by `traceparent`, which the workload's HTTP client propagates (suggested: OpenTelemetry httpx instrumentation in the workload), so concurrent requests in one replica keep separate budgets and routes. Then they add the service's scoped key and send the call on through its port: to LiteLLM for models, and to the MCP gateway for tools. Result events go out through the chassis's `EventPort` to the broker; that this is a broker client in the chassis, not Dapr, is proposed in [ADR-004](../adr/004-events-through-a-broker-client.md), from PoC-4.
+The chassis gives every workload an OpenAI- and Anthropic-compatible model endpoint and an MCP tool endpoint. The workload points its model base URL and its MCP client at them, and holds no key. The proxies are thin: they count, trace, and apply per-call budgets. They key each outbound call to its inbound request by `traceparent`, which the workload's HTTP client propagates (suggested: OpenTelemetry httpx instrumentation in the workload), so concurrent requests in one replica keep separate budgets and routes. Then they add the service's scoped key and send the call on through its port: to LiteLLM for models, and to the MCP gateway for tools. Result events go out through the chassis's `EventPort` to the broker; that this is a broker client in the chassis, not Dapr, is decided in [ADR-004](../adr/004-events-through-a-broker-client.md), from PoC-4, accepted 2026-10-08.
 
 The hard limits live in those shared services, not in the chassis. Each service has one scoped LiteLLM key (models, budgets, rate limits), and the MCP gateway holds a tool allow-list per key. So the limits hold even if the chassis's pipeline is bypassed. That is how an agent written in TypeScript gets the same controls as one in Python.
 
@@ -196,7 +196,7 @@ Every pick in the reuse analysis must be replaceable at any time, and every depe
 | `ModelPort` | LiteLLM over OpenAI-compatible HTTP | A scripted fake model server (OpenAI-compatible, with streaming and tool calls), plus record and replay | Any OpenAI-compatible gateway, vLLM or llama.cpp directly, provider APIs |
 | `EnginePort` (engine connector) | `sidecar` (A2A on localhost, the default), `remote` (A2A with a cloud auth adapter; OpenAI-compatible only for a workload that cannot speak A2A), `inprocess` (A2A in memory, for the chassis's tests and local runs) | A scripted fake engine that emits a fixed event stream | Any framework, any language, any remote solution |
 | `ToolPort` | MCP through the LiteLLM MCP gateway | In-memory fake tools | Direct MCP, REST tools, agentgateway |
-| `EventPort` (in and out) | Dapr pub/sub | In-memory event bus | A direct Kafka or NATS client, SQS, Pub/Sub |
+| `EventPort` (in and out) | A broker client in the chassis ([ADR-004](../adr/004-events-through-a-broker-client.md)): `kafka` on aiokafka today; the broker is picked in [001 DEC-1](../issues/001-DEC-1-resolve-open-decisions.md) | In-memory event bus | A NATS client, the `dapr` adapter (kept as a tested alternative), SQS, Pub/Sub |
 | `StatePort` (idempotency, cache) | Valkey | In-memory store | Redis, Dapr state, Postgres |
 | `ConfigPort` | MinIO, S3, or GCS | A local file or in-memory config | Any S3-compatible store, Git |
 | `TelemetryPort` | OpenTelemetry SDK → OTel Collector → Langfuse, Tempo | In-memory span exporter (tests assert on spans) | Any OpenTelemetry backend, by exporter config |
@@ -326,7 +326,7 @@ Security follows [ADR-001](../adr/001-chassis-delivery-model.md). The trust rule
 - Final framework shortlist for PoC-6.
 - How many untrusted workloads the MVP must run in the `remote` lane, beyond the fake one.
 - Whether PoC-9 also runs on Kubernetes (kind or k3d), or stays on Docker Compose. PoC-5 already needs a kind cluster.
-- Dapr, or a broker client in the chassis behind `EventPort`: proposed in [ADR-004](../adr/004-events-through-a-broker-client.md), from PoC-4. The broker client; the Dapr adapter stays as a tested alternative, the default in no profile. The broker product (NATS JetStream or Kafka) stays open in [001 DEC-1](../issues/001-DEC-1-resolve-open-decisions.md).
+- Dapr, or a broker client in the chassis behind `EventPort`: decided in [ADR-004](../adr/004-events-through-a-broker-client.md), from PoC-4, accepted 2026-10-08. The broker client; the Dapr adapter stays as a tested alternative, the default in no profile. The broker product (NATS JetStream or Kafka) stays open in [001 DEC-1](../issues/001-DEC-1-resolve-open-decisions.md).
 - The evaluator gate's cost: a big-model judge on every call until the encoder SLM lands. A sample rate, asynchronous scoring, or both. Open until PoC-7 reports numbers (marked as an open concern in 017 H-4, 042 A-2, 031 G-5, 073 E-1, and 075 E-3).
 
 ## After the MVP

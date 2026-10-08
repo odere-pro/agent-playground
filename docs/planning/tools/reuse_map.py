@@ -95,10 +95,9 @@ R = {
         '**Build:** the tool port, the MCP tool proxy that workloads point their MCP client at, the JSON fallback mode, and passing `idempotency_key` to write tools.',
     ],
     'H-17': [
-        '**Use:** Dapr pub/sub. The chassis publishes through the pod\'s Dapr sidecar, and Dapr wraps the payload in a CloudEvents envelope. The CloudEvents Python SDK 2.x for the extensions (pin it; 2.x is new).',
-        '**Build:** the `EventPort` over the Dapr publish API, payload schemas, extensions, and the `run_id` partition key through Dapr metadata (check per broker).',
-        '**Scope change:** "the first broker adapter" becomes the Dapr pub/sub component for the broker chosen in DEC-1.',
-        "**Watch:** Dapr's NATS JetStream component is beta. Kafka is stable. Dapr is a third container in the pod, and its localhost API can be reached by the workload: turn on Dapr API-token auth with the token in the chassis container only, or use a broker client in the chassis (see the gaps in 000-plan.md).",
+        '**Use:** a broker client in the chassis, behind `EventPort` (ADR-004). The first one is the `kafka` adapter on aiokafka; the broker product is picked in DEC-1. The chassis builds the CloudEvents envelope itself; contract v3 uses no `cloudevents` SDK.',
+        '**Build:** the `EventPort` adapter for the broker chosen in DEC-1: publish with retries, consumer groups, `max_attempts`, the dead-letter topic, payload schemas, extensions, and the `run_id` partition key.',
+        "**Watch:** the chassis owns retries and dead-lettering and their bugs. Broker auth, TLS, ACLs, and topic creation are the chassis's and 020 X-8's job. The Dapr adapter stays in the tree as a tested alternative, the default in no profile.",
     ],
     'H-20': [
         '**Use:** Dapr subscriptions. Dapr delivers each CloudEvent to an HTTP route on the chassis port, never the workload\'s, and the HTTP status acknowledges or retries it.',

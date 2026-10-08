@@ -27,6 +27,7 @@ from chassis.ports.tool import ToolError
 from chassis_contracts.tool import KnownCall, ToolPortContract
 from fake_mcp_server import PROBE_MARKER, FakeMcpState, create_app
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError as FastMcpToolError
 from mcp.shared.exceptions import MCPError
 from starlette.applications import Starlette
 
@@ -317,6 +318,36 @@ async def test_a_tool_error_the_tool_reports_is_a_result_not_an_exception() -> N
     async for port in _open(gate):
         result = await port.call("flaky", {"term": "a"})
     assert result.is_error is True
+
+
+# LiteLLM v1.103.0's own texts, from the kind cluster (bring-up note, items 3 and "Requests").
+@pytest.mark.parametrize(
+    ("text", "code"),
+    [
+        ("Error: Tool 'no_such_tool_ever' not found", "unknown_tool"),
+        (
+            "Error: Tool 'unlisted_probe' is not allowed for your key/team on server "
+            "'fake_tools'. Contact proxy admin for access.",
+            "tool_denied",
+        ),
+        ("User not allowed to call this tool.", "tool_denied"),
+    ],
+)
+async def test_the_gateway_s_refusal_texts_map_to_their_codes(text: str, code: str) -> None:
+    mcp = FastMCP("litellm-like")
+
+    @mcp.tool(annotations={"readOnlyHint": True})
+    def refused() -> str:
+        """Answers the way the gateway refuses a call."""
+        raise FastMcpToolError(text)
+
+    gate = Gateway(mcp.http_app(path="/mcp/"))
+    async for port in _open(gate):
+        with pytest.raises(ToolError) as info:
+            await port.call("refused", {})
+    assert info.value.code == code
+    assert info.value.retryable is False
+    assert "fake_tools" not in str(info.value)  # fixed text, never the upstream body
 
 
 async def test_the_unlisted_probe_is_refused_and_its_marker_never_seen(

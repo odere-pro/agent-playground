@@ -1,6 +1,6 @@
 # pocs/poc-04-stateless-scalable
 
-Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still apply. Status: in progress; built and measured, `README.md` holds the evidence, criterion 4 is flagged, and three decisions wait for the user.
+Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still apply. Status: done on 2026-10-08, with criterion 4 flagged. `README.md` holds the evidence. ADR-004 is Accepted (2026-10-08).
 
 ## Read first
 

@@ -22,7 +22,9 @@ keeps looping. Each call opens one short MCP session.
 - the gateway's answer maps to: the call's own JSON-RPC error first (an unknown tool
   `unknown_tool`, invalid params `bad_arguments`), then 401 or 403 `tool_denied`, then a connect
   error, a timeout, or a 5xx `tool_unavailable` (retryable); the session-close `DELETE`'s status
-  is never read; a tool error that is not one of these stays `ToolResult(is_error=True)`.
+  is never read; a tool error result the gateway phrases as a refusal maps the same way (an
+  unknown tool `unknown_tool`, a tool off the key's allow-list `tool_denied`); a tool error that
+  is not one of these stays `ToolResult(is_error=True)`.
 
 A `ToolError.message` is fixed text, never an upstream body.
 """
@@ -60,7 +62,16 @@ log = logging.getLogger(__name__)
 
 ClientFactory = Callable[..., httpx2.AsyncClient]
 
-_UNKNOWN_TOOL = re.compile(r"^\s*(unknown tool|tool not found)\b", re.IGNORECASE)
+# LiteLLM v1.103.0 says "Error: Tool '<name>' not found" for an unknown tool, and "Error: Tool
+# '<name>' is not allowed for your key/team ..." or "User not allowed to call this tool." for a
+# tool outside the key's allow-list (pocs/poc-05-sandboxed/notes/2026-10-02-bring-up.md, item 3).
+_UNKNOWN_TOOL = re.compile(
+    r"^\s*(unknown tool|tool not found)\b|^\s*(error:\s*)?tool '[^']*' not found\b", re.IGNORECASE
+)
+_DENIED = re.compile(
+    r"^\s*(error:\s*)?tool '[^']*' is not allowed\b|^\s*user not allowed to call this tool\b",
+    re.IGNORECASE,
+)
 _KEY_REQUIRED = re.compile(r"^\s*idempotency_key_required\b")
 _BAD_ARGUMENTS = re.compile(
     r"\bvalidation errors? for\b|missing required argument|^\s*invalid arguments", re.IGNORECASE
@@ -344,6 +355,8 @@ class McpGatewayTools:
         text = _first_text(result)
         if _UNKNOWN_TOOL.match(text):
             raise ToolError("unknown_tool", f"no tool named {name!r} for this key")
+        if _DENIED.match(text):
+            raise ToolError("tool_denied", f"the gateway refused {name!r} for this key")
         if _KEY_REQUIRED.match(text):
             raise ToolError("idempotency_key_required", f"{name!r} needs an idempotency key")
         if _BAD_ARGUMENTS.search(text):
