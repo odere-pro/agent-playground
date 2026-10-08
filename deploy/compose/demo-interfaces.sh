@@ -32,7 +32,7 @@ for p in "${PROFILES[@]}"; do ALL_PROFILES+=(--profile "$p"); done
 CHASSIS=http://127.0.0.1:8080
 GATEWAY=http://127.0.0.1:4000/mcp/
 # The agent's name in packages/chassis/configs/sidecar.yaml; every client sends it as `model`.
-AGENT=echo
+AGENT="echo"
 CLIENTS_PY="$REPO/pocs/poc-03-one-interface-every-client/demo/clients.py"
 # The three Python engines get the tool-loop prompt. The TypeScript echo has no tool client
 # (PoC-2 scope), so it gets the simplify prompt.

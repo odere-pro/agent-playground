@@ -16,7 +16,7 @@ The service chassis for the SLM agent platform and the nine PoC iterations that 
 
 ## Commands
 
-`make setup` · `make quick` (before every commit) · `make check` (what CI runs) · `make test` · `make test-poc POC=01` · `make test-integration` (Docker) · `make load-test` · `make kind-poc04` · `make kind-poc05` · `make ts-check` (the TypeScript workload) · `make record-cassettes` · `make schemas` · `make planning-sync` · `make planning-check` · `make harness-lint` · `make fake-model-server`. Run `make help` for the rest.
+`make setup` · `make quick` (before every commit) · `make check` (what CI runs) · `make test` · `make test-poc POC=01` · `make test-integration` (Docker) · `make load-test` · `make kind-poc04` · `make kind-poc05` · `make ts-check` (the TypeScript workload) · `make record-cassettes` · `make schemas` · `make planning-sync` · `make planning-check` · `make harness-lint` · `make lint-extra` (shellcheck, actionlint, hadolint, codespell, yamllint, detect-secrets; its own CI job, not in `check`) · `make fake-model-server`. Run `make help` for the rest.
 
 ## Hard rules
 

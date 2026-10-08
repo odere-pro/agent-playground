@@ -1,0 +1,3 @@
+# `make lint-extra` runs hadolint on every tracked Dockerfile with this file.
+# No rule is ignored: no image uses apt, and base images are pinned by digest through build args.
+failure-threshold: info

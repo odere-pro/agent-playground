@@ -1,0 +1,23 @@
+# `make lint-extra` runs yamllint over .github, deploy, and pocs/*/tests/fixtures.
+# Relaxed for Kubernetes, Helm, and Compose files.
+extends: default
+
+ignore: |
+  # Helm templates are Go templates, not YAML, until rendered.
+  deploy/helm/*/templates/
+  # Vendored verbatim from the agent-sandbox v1.0.5 release; kept byte-identical to upstream.
+  deploy/kind/poc05/base/agent-sandbox/upstream-*.yaml
+
+rules:
+  # Off: the long lines are image digests (`image@sha256:...`), URLs, and base64 blobs.
+  line-length: disable
+  # Multi-document k8s manifests use `---` as a separator, not as a start marker.
+  document-start: disable
+  # GitHub Actions uses the bare key `on:`.
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  indentation:
+    indent-sequences: consistent

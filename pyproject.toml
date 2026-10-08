@@ -23,6 +23,13 @@ dev = [
   "pytest-recording==0.13.4",
   "vcrpy==8.3.0",
   "testcontainers[minio]==4.15.0",
+  # `make lint-extra`: linters shipped as wheels, so uv.lock pins each binary by hash.
+  "shellcheck-py==0.11.0.1",
+  "actionlint-py==1.7.12.25",
+  "hadolint-py==2.15.1.2",
+  "codespell==2.4.3",
+  "yamllint==1.38.0",
+  "detect-secrets==1.5.0",
 ]
 
 [tool.uv.workspace]
@@ -183,3 +190,11 @@ name = "no product SDK or web framework in core and ports"
 type = "forbidden"
 source_modules = ["chassis.core", "chassis.ports"]
 forbidden_modules = ["fastapi", "starlette", "httpx", "openai", "anthropic", "litellm", "a2a", "opentelemetry", "valkey", "aiokafka", "minio"]
+
+[tool.codespell]
+# `make lint-extra` runs codespell over docs packages pocs deploy scripts .github.
+# Skipped: lockfiles, images, recorded cassettes, raw measurement output under notes/*/raw, build output.
+skip = "uv.lock,package-lock.json,*.png,*.svg,*/cassettes/*,*/notes/*/raw/*,*/node_modules/*,*/dist/*,*/.venv/*"
+# te: the mermaid participant alias for "Tool endpoint" (docs/guides/poc-05-how-it-works.md).
+# hel: a streamed token in a test fixture ("Hel" + "lo", packages/chassis/tests/test_inbound.py).
+ignore-words-list = "te,hel"
