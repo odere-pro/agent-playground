@@ -7,7 +7,7 @@
 
 ## Status
 
-Proposed, 2026-10-01. Built and measured in PoC-4; waiting for the epic owner's acceptance. Decision 1 settles Dapr against a broker client. Decision 2 leaves the broker product open in 001 DEC-1, on purpose.
+Accepted, 2026-10-08, by Oleksandr (epic owner). Proposed 2026-10-01; built and measured in PoC-4. Decision 1 settles Dapr against a broker client. Decision 2 leaves the broker product open in 001 DEC-1, on purpose.
 
 ## Context
 

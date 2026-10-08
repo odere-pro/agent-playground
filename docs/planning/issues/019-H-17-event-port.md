@@ -23,16 +23,15 @@ Stateless agents never store records: they send a one-way result event, and a da
 - Payload JSON Schema files kept in the config store.
 - `run_id` as the partition key when present, so events for one run keep their order.
 - Switched on by the `result_events` module. Publishing never changes the response; a failed publish is retried and counted in metrics.
-- The Dapr pub/sub component for the broker chosen in DEC-1 (see Reuse), plus an in-memory fake for tests.
-- Dapr or a broker client in the chassis: the PoC track's PoC-4 tries both behind this port and recommends one, recorded in 001 DEC-1 (gap (c) in the [backlog plan](000-plan.md#adr-001-follow-ups)). suggested: the broker client, because Dapr is a third container in every pod, with its own localhost API to close and its own release train. If Dapr is kept, its API needs a token mounted into the chassis container only.
-- Status after PoC-4: built ahead of this issue. `EventPort` (`ports/events.py`: `publish`, `subscribe` with a group and `max_attempts`, `aclose`), the in-memory bus, a `kafka` adapter on aiokafka 0.14.0, a `dapr` adapter, and the `EventPortContract` suite (8 cases) bound to all three, Dapr with two strict xfails. Result events (`server/results.py`) publish `TaskResult` v1 with the key's sha256 hex in place of the key, in the background, never in the request's path ([contract v3](../../contracts/contract-v3.md#result-events)). Proposed in [ADR-004](../adr/004-events-through-a-broker-client.md): this issue's adapter is the broker client, not Dapr; the Dapr adapter stays as a tested alternative, the default in no profile. The criterion "The Dapr adapter and the in-memory bus pass the same `EventPort` contract suite" cannot pass as written; its rewrite waits for the owner's acceptance of ADR-004 (measurements in 001 DEC-1). Open: a failed dead-letter publish ends that subscription's consumer task (`adapters/kafka/events.py`); result events carry the run's `input` and `output`, readable by any container on a PLAINTEXT broker, so `input` should be opt-in (`deploy/compose/SECURITY.md`, section 7); `spec.events.consume` is refused until event-triggered runs exist.
+- The broker client adapter for the broker chosen in DEC-1 (see Reuse), plus an in-memory fake for tests.
+- Dapr or a broker client in the chassis (gap (c) in the [backlog plan](000-plan.md#adr-001-follow-ups)): the broker client, decided in [ADR-004](../adr/004-events-through-a-broker-client.md), accepted 2026-10-08. Dapr would be a third container in every pod, with its own localhost API to close and its own release train. If Dapr is ever deployed, its API needs a token mounted into the chassis container only (ADR-004, item 4).
+- Status after PoC-4: built ahead of this issue. `EventPort` (`ports/events.py`: `publish`, `subscribe` with a group and `max_attempts`, `aclose`), the in-memory bus, a `kafka` adapter on aiokafka 0.14.0, a `dapr` adapter, and the `EventPortContract` suite (8 cases) bound to all three, Dapr with two strict xfails. Result events (`server/results.py`) publish `TaskResult` v1 with the key's sha256 hex in place of the key, in the background, never in the request's path ([contract v3](../../contracts/contract-v3.md#result-events)). Accepted in [ADR-004](../adr/004-events-through-a-broker-client.md) on 2026-10-08: this issue's adapter is the broker client, not Dapr; the Dapr adapter stays as a tested alternative, the default in no profile. The contract criterion now names the broker client adapter, and the Dapr token check was dropped (measurements in 001 DEC-1). Open: a failed dead-letter publish ends that subscription's consumer task (`adapters/kafka/events.py`); result events carry the run's `input` and `output`, readable by any container on a PLAINTEXT broker, so `input` should be opt-in (`deploy/compose/SECURITY.md`, section 7); `spec.events.consume` is refused until event-triggered runs exist.
 
 ## Reuse
 
-- **Use:** Dapr pub/sub. The chassis publishes through the pod's Dapr sidecar, and Dapr wraps the payload in a CloudEvents envelope. The CloudEvents Python SDK 2.x for the extensions (pin it; 2.x is new).
-- **Build:** the `EventPort` over the Dapr publish API, payload schemas, extensions, and the `run_id` partition key through Dapr metadata (check per broker).
-- **Scope change:** "the first broker adapter" becomes the Dapr pub/sub component for the broker chosen in DEC-1.
-- **Watch:** Dapr's NATS JetStream component is beta. Kafka is stable. Dapr is a third container in the pod, and its localhost API can be reached by the workload: turn on Dapr API-token auth with the token in the chassis container only, or use a broker client in the chassis (see the gaps in 000-plan.md).
+- **Use:** a broker client in the chassis, behind `EventPort` (ADR-004). The first one is the `kafka` adapter on aiokafka; the broker product is picked in DEC-1. The chassis builds the CloudEvents envelope itself; contract v3 uses no `cloudevents` SDK.
+- **Build:** the `EventPort` adapter for the broker chosen in DEC-1: publish with retries, consumer groups, `max_attempts`, the dead-letter topic, payload schemas, extensions, and the `run_id` partition key.
+- **Watch:** the chassis owns retries and dead-lettering and their bugs. Broker auth, TLS, ACLs, and topic creation are the chassis's and 020 X-8's job. The Dapr adapter stays in the tree as a tested alternative, the default in no profile.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
 
 ## Out of scope
@@ -51,8 +50,8 @@ Stateless agents never store records: they send a one-way result event, and a da
 - [ ] A broker outage does not fail the agent's response, and the failed publish shows in a metric.
 - [ ] The core has no broker client import; switching to the in-memory fake needs config only.
 - [ ] The DEC-1 adapter passes a publish test against a real broker started by the test.
-- [ ] The Dapr adapter and the in-memory bus pass the same `EventPort` contract suite, and are picked by `spec.adapters.events`.
-- [ ] The workload container is given no broker credential and no Dapr API token: neither is in its environment or file system. With Dapr, a publish call without the chassis's token is refused.
+- [ ] The broker client adapter and the in-memory bus pass the same `EventPort` contract suite, and are picked by `spec.adapters.events`.
+- [ ] The workload container is given no broker credential and no Dapr API token: neither is in its environment or file system.
 - [ ] A workload's events reach the broker only through the chassis, with the same payload in the `inprocess` and `sidecar` lanes.
 
 ## Dependencies

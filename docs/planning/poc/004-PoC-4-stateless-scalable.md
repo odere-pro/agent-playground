@@ -67,7 +67,7 @@ Under load, one replica is killed. The client retries with the same `idempotency
 ## Links
 
 - Plan: [000-plan.md](000-plan.md) · Previous: [PoC-3](003-PoC-3-one-interface-every-client.md) · Next: [PoC-5](005-PoC-5-sandboxed.md) (can run in parallel)
-- Decision: [ADR-001](../adr/001-chassis-delivery-model.md) (cost estimate and Revisit rule) · [ADR-004](../adr/004-events-through-a-broker-client.md), result events through a broker client in the chassis (proposed) · Contract: [contract v3](../../contracts/contract-v3.md)
+- Decision: [ADR-001](../adr/001-chassis-delivery-model.md) (cost estimate and Revisit rule) · [ADR-004](../adr/004-events-through-a-broker-client.md), result events through a broker client in the chassis (accepted 2026-10-08) · Contract: [contract v3](../../contracts/contract-v3.md)
 - Notes: [Dapr against the broker client](../../../pocs/poc-04-stateless-scalable/notes/2026-10-01-dapr-vs-broker.md) · [container roles](../../../pocs/poc-04-stateless-scalable/notes/2026-10-01-container-roles.md) · [load results](../../../pocs/poc-04-stateless-scalable/notes/2026-10-01-load-results.md) · [hidden state](../../../pocs/poc-04-stateless-scalable/notes/2026-10-01-hidden-state.md) · [drills](../../../pocs/poc-04-stateless-scalable/notes/2026-10-01-drills.md) · [backlog changes](../../../pocs/poc-04-stateless-scalable/notes/backlog-changes.md)
 - Backlog issues this previews: [010 H-12](../issues/010-H-12-config-loader.md), [018 H-18](../issues/018-H-18-idempotency.md), [057 H-19](../issues/057-H-19-stateless-check-ci.md), [017 H-4](../issues/017-H-4-harness-features.md) (timeout and budget only)
 - Epic: [B.2](../slm-agent-platform-epic-v3.md#b2), [C.1](../slm-agent-platform-epic-v3.md#c1), [G.4](../slm-agent-platform-epic-v3.md#g4)
