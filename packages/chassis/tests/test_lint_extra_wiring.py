@@ -27,7 +27,7 @@ TOOLS = {
     "hadolint-py": "hadolint",
     "codespell": "codespell",
     "yamllint": "yamllint",
-    "detect-secrets": "detect-secrets-hook",
+    "detect-secrets": "detect-secrets-hook",  # pragma: allowlist secret (a tool name)
 }
 FULL_SHA = re.compile(r"^[\w.-]+/[\w.-]+@[0-9a-f]{40}$")
 
