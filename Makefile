@@ -5,7 +5,7 @@ POC ?= 01
 PY := uv run python
 PYTEST := scripts/check_offline.sh
 
-.PHONY: help setup fmt fmt-check lint type test test-poc test-integration load-test kind-poc04 kind-poc05 record-cassettes quick check planning-sync planning-check schemas harness-lint fake-model-server ts-check clean
+.PHONY: help setup fmt fmt-check lint lint-extra type test test-poc test-integration load-test kind-poc04 kind-poc05 record-cassettes quick check planning-sync planning-check schemas harness-lint fake-model-server ts-check clean
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -25,6 +25,16 @@ fmt-check: ## Check formatting without changing files
 lint: ## Ruff rules and the import rules (import-linter)
 	uv run ruff check .
 	uv run lint-imports
+
+# Not in `quick` or `check`: CI runs it as its own job, so the pre-commit hook stays fast.
+# The tools are wheels in the root dev group; uv.lock pins each by hash.
+lint-extra: ## Extra linters: shellcheck, actionlint, hadolint, codespell, yamllint, detect-secrets
+	uv run shellcheck -x -S warning $$(git ls-files '*.sh') scripts/git-hooks/pre-commit
+	uv run actionlint .github/workflows/*.yml
+	uv run hadolint --config .hadolint.yaml $$(git ls-files '*Dockerfile')
+	uv run codespell docs packages pocs deploy scripts .github
+	uv run yamllint --strict -c .yamllint.yaml .github deploy pocs/*/tests/fixtures
+	git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline
 
 type: ## mypy, strict
 	uv run mypy

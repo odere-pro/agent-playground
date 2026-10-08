@@ -9,4 +9,3 @@ spec:
   engine:
     connector: inprocess
     handle: chassis.core.handle:echo_wire
-
