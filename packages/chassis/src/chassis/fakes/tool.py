@@ -51,9 +51,11 @@ def _check(value: Any, schema: Mapping[str, Any], path: str) -> list[str]:
         problems.append(f"{path}: {value!r} is not one of {schema['enum']!r}")
     if isinstance(value, dict):
         props: Mapping[str, Any] = schema.get("properties", {})
-        for key in schema.get("required", []):
-            if key not in value:
-                problems.append(f"{path}: missing required {key!r}")
+        problems.extend(
+            f"{path}: missing required {key!r}"
+            for key in schema.get("required", [])
+            if key not in value
+        )
         for key, item in value.items():
             if key in props:
                 problems.extend(_check(item, props[key], f"{path}.{key}"))

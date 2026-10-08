@@ -614,7 +614,7 @@ class _Params:
 
 
 def _is_repo(image: str, repo: str) -> bool:
-    return image == repo or image.startswith(repo + ":") or image.startswith(repo + "@")
+    return image == repo or image.startswith((repo + ":", repo + "@"))
 
 
 TOKEN_SECRET = re.compile(r"remote-[a-z0-9]([-a-z0-9]*[a-z0-9])?-token")

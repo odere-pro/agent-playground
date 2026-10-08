@@ -22,11 +22,11 @@ daprd must call back into the app (plan section 10).
 from __future__ import annotations
 
 import asyncio
-import os
 import tempfile
 import threading
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -193,7 +193,7 @@ async def test_event_port_swaps_by_config_only(
     received: list[CloudEvent] = []
     got = threading.Event()
     folder = tempfile.mkdtemp(prefix="poc04-l-")
-    listener = UnixApp(_listener(ports[1], received, got), os.path.join(folder, "l.sock"))
+    listener = UnixApp(_listener(ports[1], received, got), str(Path(folder, "l.sock")))
     with replicas_on_unix_sockets(
         2,
         "echo_python",

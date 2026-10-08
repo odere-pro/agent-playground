@@ -59,7 +59,7 @@ class Slow:
 @contextmanager
 def sockets() -> Iterator[tuple[str, str]]:
     with tempfile.TemporaryDirectory(prefix="p4-") as folder:  # short: macOS caps the path
-        yield os.path.join(folder, "public.sock"), os.path.join(folder, "proxy.sock")
+        yield str(Path(folder, "public.sock")), str(Path(folder, "proxy.sock"))
 
 
 def _pair(handle: Slow, public_uds: str, proxy_uds: str, settings: DrainSettings) -> Drain:

@@ -7,14 +7,16 @@ The service chassis for the SLM agent platform and the nine PoC iterations that 
 - `packages/chassis` the chassis: `core` (envelope, events, collector, `handle`), `ports` (Protocols), `fakes`, `adapters`, `profiles.py`, `schemas/`.
 - `packages/contract-suites` one pytest suite per port; fakes and real adapters bind the same class; `containers/` starts the real services for `make test-integration`.
 - `packages/fake-model-server` scripted OpenAI-compatible server for offline tests.
+- `packages/fake-mcp-server` test MCP server: in process for offline tests, behind the MCP gateway on kind (PoC-5).
+- `packages/code-runner` the PoC-5 code-execution tool: an MCP server with one tool, `run_python`, in a gVisor sandbox pod.
 - `packages/workloads` what runs behind the chassis, one folder per workload.
 - `packages/workload-a2a` the template A2A server a Python workload ships with; never imports `chassis` (ADR-002).
 - `pocs/poc-NN-<slug>` one iteration: README (checklist), CLAUDE.md, `tests/`, `demo/`, `notes/`. `pocs/CURRENT` names the one in progress.
-- `deploy/` compose (PoC-4 scale stack: `compose/scale.sh`), kind (`kind/run.sh`), helm. `docs/` planning, contracts, guides (PoC-4: `guides/poc-04-how-it-works.md`, PoC-5: `guides/poc-05-how-it-works.md`), templates, `plans/`.
+- `deploy/` compose (PoC-4 scale stack: `compose/scale.sh`), kind (PoC-4: `kind/run.sh`; PoC-5: `kind/poc05/`, `make kind-poc05`), helm (PoC-9, empty). `docs/` planning, contracts, guides (PoC-4: `guides/poc-04-how-it-works.md`, PoC-5: `guides/poc-05-how-it-works.md`), templates, `plans/`.
 
 ## Commands
 
-`make setup` · `make quick` (before every commit) · `make check` (what CI runs) · `make test` · `make test-poc POC=01` · `make test-integration` (Docker) · `make load-test` · `make kind-poc04` · `make record-cassettes` · `make schemas` · `make planning-sync` · `make planning-check` · `make harness-lint` · `make fake-model-server`. Run `make help` for the rest.
+`make setup` · `make quick` (before every commit) · `make check` (what CI runs) · `make test` · `make test-poc POC=01` · `make test-integration` (Docker) · `make load-test` · `make kind-poc04` · `make kind-poc05` · `make ts-check` (the TypeScript workload) · `make record-cassettes` · `make schemas` · `make planning-sync` · `make planning-check` · `make harness-lint` · `make fake-model-server`. Run `make help` for the rest.
 
 ## Hard rules
 

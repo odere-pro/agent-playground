@@ -33,6 +33,7 @@ Options: `--engine` and `--pairs` (repeatable) pick a subset. `--only main|hop|i
 Output, under `../notes/load/`:
 
 - `raw/<scenario>_stats.csv`, `_stats_history.csv`, `_failures.csv`, `_exceptions.csv`: Locust's CSVs.
+  The failures and exceptions CSVs that held only a header row were removed on 2026-10-08. A missing file means no failure and no exception.
 - `raw/<scenario>-docker-stats.csv`: `phase` (`idle` or `load`), time, container, vCPU, MiB.
 - `results.json`: each run merges into it, so partial runs add up. Its keys:
   - `engines.<engine>.<pairs>` holds `rps`, `requests`, `failures`, `p50_ms`, and `p95_ms`. It also holds `containers.<role>`, with `replicas`, `vcpu_mean`, `vcpu_max`, `mib_mean`, `mib_max`, `idle_vcpu`, and `idle_mib`. The chassis role also has `vcpu_per_100rps`.

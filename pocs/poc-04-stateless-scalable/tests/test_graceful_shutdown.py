@@ -23,6 +23,7 @@ import tempfile
 import threading
 from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -79,8 +80,8 @@ def pair_and_workload(
     from workload_a2a.server import build_app
 
     with tempfile.TemporaryDirectory(prefix="p4g-") as folder:  # short: macOS caps the path
-        public_uds = os.path.join(folder, "public.sock")
-        proxy_uds = os.path.join(folder, "proxy.sock")
+        public_uds = str(Path(folder, "public.sock"))
+        proxy_uds = str(Path(folder, "proxy.sock"))
         workload = SlowWorkload(proxy_uds)
         card = build_agent_card(name="slow", version="0.0.1", url=SIDECAR_URL)
         try:

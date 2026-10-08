@@ -28,6 +28,7 @@ import signal
 import sys
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 log = logging.getLogger("code_runner")
 
@@ -93,7 +94,7 @@ def mark_lost() -> None:
 def _read_stat(proc_root: str, name: str) -> tuple[int, str, str] | None:
     """(ppid, state, start time) from `/proc/<pid>/stat`, or None if the process is gone."""
     try:
-        with open(os.path.join(proc_root, name, "stat"), encoding="utf-8") as f:
+        with Path(proc_root, name, "stat").open(encoding="utf-8") as f:
             text = f.read()
     except OSError:
         return None
@@ -108,7 +109,7 @@ def descendants(root: int, *, proc_root: str = "/proc") -> frozenset[Process]:
     """Every process below `root`, alive or a zombie, from one pass over `proc_root`."""
     children: dict[int, list[Process]] = {}
     try:
-        names = os.listdir(proc_root)
+        names = [p.name for p in Path(proc_root).iterdir()]
     except OSError:
         return frozenset()
     for name in names:
@@ -177,11 +178,11 @@ def nproc_limit(*, proc_root: str = "/proc", allowance: int = NPROC_ALLOWANCE) -
         return 0
     uid = str(os.getuid())
     tasks = 0
-    for name in os.listdir(proc_root):
+    for name in (p.name for p in Path(proc_root).iterdir()):
         if not name.isdigit():
             continue
         try:
-            with open(os.path.join(proc_root, name, "status"), encoding="utf-8") as f:
+            with Path(proc_root, name, "status").open(encoding="utf-8") as f:
                 lines = dict(line.split(":", 1) for line in f if ":" in line)
         except OSError:
             continue

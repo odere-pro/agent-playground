@@ -307,7 +307,7 @@ async def test_probe_is_false_on_401_and_on_a_dead_server(token: str) -> None:
             server.should_exit = True
             server.force_exit = True
             await asyncio.sleep(0.2)
-            os.unlink(path)
+            os.unlink(path)  # noqa: PTH108 Path.unlink in async code trips ASYNC240
             assert await connector.probe() is False
         finally:
             await connector.close()

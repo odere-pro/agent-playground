@@ -21,7 +21,6 @@ COPY packages/workloads/echo-pydanticai/pyproject.toml packages/workloads/echo-p
 COPY packages/workloads/echo-langgraph/pyproject.toml packages/workloads/echo-langgraph/
 COPY packages/fake-mcp-server/pyproject.toml packages/fake-mcp-server/
 COPY packages/code-runner/pyproject.toml packages/code-runner/
-COPY packages/workloads/hostile/pyproject.toml packages/workloads/hostile/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package chassis --package echo-python --no-install-workspace
 # The echo-python workload rides in this image for the `inprocess` lane (PoC-1 only; PoC-2 moves

@@ -36,7 +36,7 @@ def rebuild(raw: Path, engine: str, pairs: str) -> dict[str, Any] | None:
         return None
     result = read_locust(prefix)
     rows: dict[str, list[dict[str, Any]]] = {"idle": [], "load": []}
-    with open(f"{prefix}-docker-stats.csv", newline="", encoding="utf-8") as fh:
+    with Path(f"{prefix}-docker-stats.csv").open(newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
             rows[row["phase"]].append(
                 {"name": row["name"], "vcpu": float(row["vcpu"]), "mib": float(row["mib"])}

@@ -18,11 +18,11 @@ def client() -> httpx.AsyncClient:
 
 
 def _sse_chunks(text: str) -> list[dict[str, Any]]:
-    out = []
-    for line in text.splitlines():
-        if line.startswith("data: ") and line != "data: [DONE]":
-            out.append(json.loads(line[6:]))
-    return out
+    return [
+        json.loads(line[6:])
+        for line in text.splitlines()
+        if line.startswith("data: ") and line != "data: [DONE]"
+    ]
 
 
 async def test_health_and_models(client: httpx.AsyncClient) -> None:

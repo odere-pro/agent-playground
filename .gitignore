@@ -14,3 +14,14 @@ build/
 .env.*
 !.env.example
 node_modules/
+.hypothesis/
+.coverage
+htmlcov/
+coverage.xml
+# Tracked logs under pocs/*/notes stay tracked; this only stops new ones.
+*.log
+*.kubeconfig
+**/kubeconfig*
+pocs/*/notes/hostile/*.jsonl
+.idea/
+.vscode/

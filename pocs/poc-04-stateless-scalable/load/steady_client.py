@@ -27,6 +27,7 @@ import time
 import uuid
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -244,7 +245,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     print_summary(summary)
     if args.json_path:
-        with open(args.json_path, "w", encoding="utf-8") as out:
+        with Path(args.json_path).open("w", encoding="utf-8") as out:
             json.dump(summary.as_dict(), out, indent=2)
     return 1 if summary.failed or not summary.sent else 0
 

@@ -242,7 +242,7 @@ async def test_sdk_an_error_mid_stream_is_raised_by_the_sdk() -> None:
                 model="echo", max_tokens=64, messages=[{"role": "user", "content": "fail-late"}]
             ) as stream:
                 async for text in stream.text_stream:
-                    texts.append(text)
+                    texts.append(text)  # noqa: PERF401 keeps the text before the error
         assert len(app.state.runs) == 0
     assert texts == ["you said fail-late"]
     body = ErrorResponse.model_validate(info.value.body)

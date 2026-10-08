@@ -92,8 +92,10 @@ def scenarios(args: argparse.Namespace) -> list[Scenario]:
     kinds = set(args.only or SCENARIO_KINDS)
     if "main" in kinds:
         for engine in args.engine or ENGINES:
-            for pairs in args.pairs or PAIRS:
-                out.append(Scenario(f"{engine}-{pairs}p", "main", engine, pairs, args.users))
+            out.extend(
+                Scenario(f"{engine}-{pairs}p", "main", engine, pairs, args.users)
+                for pairs in args.pairs or PAIRS
+            )
     wants_python_1p = (not args.engine or "echo-python" in args.engine) and (
         not args.pairs or 1 in args.pairs
     )
@@ -245,7 +247,7 @@ def _mean(samples: Sequence[dict[str, Any]], key: str) -> float:
 
 def read_locust(prefix: Path) -> dict[str, Any]:
     """The `Aggregated` row of Locust's `<prefix>_stats.csv`."""
-    with open(f"{prefix}_stats.csv", newline="", encoding="utf-8") as fh:
+    with Path(f"{prefix}_stats.csv").open(newline="", encoding="utf-8") as fh:
         rows = {row["Name"]: row for row in csv.DictReader(fh)}
     agg = rows["Aggregated"]
     return {

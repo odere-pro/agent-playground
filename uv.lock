@@ -13,7 +13,6 @@ members = [
     "echo-python",
     "fake-mcp-server",
     "fake-model-server",
-    "hostile",
     "workload-a2a",
 ]
 
@@ -940,17 +939,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/8a/0e/ffbb98cd1910f1f89
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/21/949c004d730d610dac63bcf5964f2585e98aa7bd44ff570ef8844472e76b/harfile-0.5.0-py3-none-any.whl", hash = "sha256:ab8a01d0d21d3b7f5ad57e7dc56b8b829f6a8855c1fa143aad464e7e8169f5e3", size = 7172, upload-time = "2026-05-29T11:50:02.206Z" },
 ]
-
-[[package]]
-name = "hostile"
-version = "0.1.0"
-source = { editable = "packages/workloads/hostile" }
-dependencies = [
-    { name = "workload-a2a" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "workload-a2a", editable = "packages/workload-a2a" }]
 
 [[package]]
 name = "httpcore"

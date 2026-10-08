@@ -41,10 +41,9 @@ def burst(label: str, n: int = 40) -> None:
 
 
 def calls(n: int) -> str:
-    out = subprocess.run(
+    return subprocess.run(
         ["docker", "logs", "--since", "0s", "poc04-chassis-1-1"], capture_output=True, text=True
     ).stdout
-    return out
 
 
 print("before: chassis-1 /ready ->", ready(1))

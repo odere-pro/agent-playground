@@ -10,11 +10,11 @@ so a failure is an `AssertionError` this test can expect.
 
 from __future__ import annotations
 
-import os
 import shutil
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -85,8 +85,8 @@ def _echo_chassis(*, broken: bool) -> Iterator[Chassis]:
         app.include_router(openai_router(app.state.pipeline, ChangedText()))
     folder = tempfile.mkdtemp(prefix="ifsuite-")
     try:
-        with serve_on_unix_sockets([UnixApp(app, os.path.join(folder, "public.sock"))]):
-            yield Chassis(os.path.join(folder, "public.sock"), telemetry, config)
+        with serve_on_unix_sockets([UnixApp(app, str(Path(folder, "public.sock")))]):
+            yield Chassis(str(Path(folder, "public.sock")), telemetry, config)
     finally:
         shutil.rmtree(folder, ignore_errors=True)
 

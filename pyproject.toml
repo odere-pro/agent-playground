@@ -36,7 +36,6 @@ members = [
   "packages/workloads/echo-langgraph",
   "packages/fake-mcp-server",
   "packages/code-runner",
-  "packages/workloads/hostile",
 ]
 
 [tool.uv.sources]
@@ -49,7 +48,6 @@ echo-pydanticai = { workspace = true }
 echo-langgraph = { workspace = true }
 fake-mcp-server = { workspace = true }
 code-runner = { workspace = true }
-hostile = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["packages", "pocs"]
@@ -68,7 +66,7 @@ line-length = 100
 extend-exclude = ["docs/planning"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "RUF"]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "RUF", "PTH", "PERF", "PIE", "RET", "C4", "TID"]
 
 [tool.ruff.format]
 exclude = ["*.md"]
@@ -99,14 +97,13 @@ root_packages = [
   "echo_langgraph",
   "fake_mcp_server",
   "code_runner",
-  "hostile",
 ]
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "a workload never imports the chassis (ADR-002)"
 type = "forbidden"
-source_modules = ["echo_python", "workload_a2a", "echo_pydanticai", "echo_langgraph", "hostile"]
+source_modules = ["echo_python", "workload_a2a", "echo_pydanticai", "echo_langgraph"]
 forbidden_modules = ["chassis", "chassis_contracts"]
 
 [[tool.importlinter.contracts]]
@@ -124,7 +121,6 @@ forbidden_modules = [
   "workload_a2a",
   "echo_pydanticai",
   "echo_langgraph",
-  "hostile",
   "fake_mcp_server",
   "code_runner",
 ]

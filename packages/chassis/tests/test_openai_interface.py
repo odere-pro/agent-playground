@@ -408,7 +408,7 @@ async def test_the_sdk_raises_on_a_mid_stream_error_frame() -> None:
         )
         with pytest.raises(openai.APIError, match=public_message("a2a.timeout")):
             async for chunk in stream:
-                got.append(chunk.choices[0].delta.content or "")
+                got.append(chunk.choices[0].delta.content or "")  # noqa: PERF401 partial kept
     assert "".join(got) == "one "
 
 
