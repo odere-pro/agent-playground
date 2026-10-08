@@ -9,7 +9,7 @@ Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still appl
 ## What the iteration touches
 
 - `packages/chassis`: the `remote` connector, `ToolPort` write mode, the remote proxy listener, `spec.trust`.
-- `packages/workload-a2a` (the bearer check), `packages/workloads/hostile`, and the new `packages/fake-mcp-server` and `packages/code-runner`.
+- `packages/workload-a2a` (the bearer check), and the new `packages/fake-mcp-server` and `packages/code-runner`. The probe workload `packages/workloads/hostile` (T10) was dropped on 2026-10-02 and its empty skeleton removed on 2026-10-08.
 - `deploy/kind/poc05/` (cluster, gVisor, NetworkPolicy, admission, seed script), `docs/contracts/contract-v4.md`, and ADR-005.
 - Here: `tests/`, `demo/`, and `notes/` (`spike/` holds the spike files). Code that outlives the iteration goes in `packages/` or `deploy/`.
 

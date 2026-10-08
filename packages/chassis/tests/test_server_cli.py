@@ -212,7 +212,7 @@ class WaitingEngine(FakeEngine):
 @contextmanager
 def _sockets() -> Iterator[tuple[str, str, str]]:
     with tempfile.TemporaryDirectory(prefix="p5-") as folder:  # short: macOS caps the path
-        yield tuple(os.path.join(folder, f"{n}.sock") for n in ("pub", "prx", "rem"))  # type: ignore[misc]
+        yield tuple(str(Path(folder, f"{n}.sock")) for n in ("pub", "prx", "rem"))  # type: ignore[misc]
 
 
 def _drain(

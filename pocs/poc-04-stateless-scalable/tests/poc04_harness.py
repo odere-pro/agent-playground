@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import shutil
 import tempfile
 import threading
@@ -33,6 +32,7 @@ import time
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import httpx2
@@ -344,14 +344,14 @@ def replicas_on_unix_sockets(
         publics: list[Any] = []
         workloads: list[Workload | None] = []
         for i in range(n):
-            public_uds = os.path.join(folder, f"p{i}.sock")
-            proxy_uds = os.path.join(folder, f"x{i}.sock")
+            public_uds = str(Path(folder, f"p{i}.sock"))
+            proxy_uds = str(Path(folder, f"x{i}.sock"))
             connector: EngineConnector
             workload: Workload | None = None
             if target == TYPESCRIPT:
                 if lane != "sidecar":
                     raise ValueError(f"{TYPESCRIPT} runs in the sidecar lane only")
-                ts_uds = os.path.join(folder, f"t{i}.sock")
+                ts_uds = str(Path(folder, f"t{i}.sock"))
                 env = {
                     "CHASSIS_MODEL_URL": f"{CHASSIS_PROXY_URL}/v1",
                     "CHASSIS_MODEL_UDS": proxy_uds,

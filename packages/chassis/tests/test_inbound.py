@@ -185,14 +185,16 @@ def test_rest_of_answer_is_what_the_deltas_left_out_else_nothing(
 
 
 def _openai_texts(frames: list[str]) -> list[str]:
-    texts = []
+    texts: list[str] = []
     for frame in frames:
         data = frame.removeprefix("data: ").strip()
         if data == "[DONE]":
             continue
-        for choice in json.loads(data)["choices"]:
-            if choice["delta"].get("content"):
-                texts.append(choice["delta"]["content"])
+        texts.extend(
+            choice["delta"]["content"]
+            for choice in json.loads(data)["choices"]
+            if choice["delta"].get("content")
+        )
     return texts
 
 

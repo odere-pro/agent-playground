@@ -23,7 +23,7 @@ Host: macOS arm64, Docker Desktop 29.7.2 (VM 7.75 GiB, 14 CPUs, aarch64, kernel 
 - `spike/install-gvisor.sh`: downloads, verifies, and installs gVisor into each node.
 - `spike/q1-gvisor.yaml` to `spike/q6-hardened.yaml`: one manifest per question.
 - `spike/q6-pids.sh`, `spike/q7-overhead.sh`: the pids test and the overhead measure.
-- `spike/agent-sandbox-v1.0.5.yaml`: the upstream release manifest, unmodified.
+- `deploy/kind/poc05/base/agent-sandbox/upstream-v1.0.5.yaml`: the upstream release manifest, unmodified. The spike copy was byte-identical and was removed on 2026-10-08.
 
 ## 1. gVisor on kind: works, platform systrap
 

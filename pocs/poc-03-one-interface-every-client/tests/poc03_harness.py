@@ -24,7 +24,6 @@ socket, the TypeScript echo, the outbound patch) and adds what PoC-3 needs on to
 
 from __future__ import annotations
 
-import os
 import shutil
 import sys
 import tempfile
@@ -170,15 +169,15 @@ def chassis_on_unix_sockets(
     tools, and in-memory telemetry. Registered with `router` while it runs.
     """
     folder = tempfile.mkdtemp(prefix="poc03-")
-    public_uds = os.path.join(folder, "public.sock")
-    proxy_uds = os.path.join(folder, "proxy.sock")
+    public_uds = str(Path(folder, "public.sock"))
+    proxy_uds = str(Path(folder, "proxy.sock"))
     with ExitStack() as stack:
         stack.callback(shutil.rmtree, folder, ignore_errors=True)
         connector: EngineConnector
         if target == TYPESCRIPT:
             if lane != "sidecar":
                 raise ValueError(f"{TYPESCRIPT} runs in the sidecar lane only, not {lane!r}")
-            ts_uds = os.path.join(folder, "ts.sock")
+            ts_uds = str(Path(folder, "ts.sock"))
             env = {"CHASSIS_MODEL_URL": f"{CHASSIS_PROXY_URL}/v1", "CHASSIS_MODEL_UDS": proxy_uds}
             url = stack.enter_context(typescript_echo(uds=ts_uds, env=env))
             spec: dict[str, Any] = {"connector": "sidecar", "url": url, "uds": ts_uds}

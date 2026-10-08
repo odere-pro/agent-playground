@@ -5,7 +5,6 @@ Each test starts at most one tiny child Python process, bounded by a short timeo
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -19,7 +18,7 @@ def _entries(path: Path) -> list[Path]:
 
 
 def _gone(path: str, parent: Path) -> bool:
-    return Path(path).resolve().parent == parent.resolve() and not os.path.exists(path)
+    return Path(path).resolve().parent == parent.resolve() and not Path(path).exists()
 
 
 async def test_code_runner_returns_stdout_and_exit_zero(tmp_path: Path) -> None:

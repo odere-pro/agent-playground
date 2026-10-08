@@ -5,7 +5,7 @@ POC ?= 01
 PY := uv run python
 PYTEST := scripts/check_offline.sh
 
-.PHONY: help setup fmt fmt-check lint type test test-poc test-integration load-test kind-poc04 kind-poc05 record-cassettes quick check planning-sync planning-check schemas harness-lint fake-model-server clean
+.PHONY: help setup fmt fmt-check lint type test test-poc test-integration load-test kind-poc04 kind-poc05 record-cassettes quick check planning-sync planning-check schemas harness-lint fake-model-server ts-check clean
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -77,9 +77,12 @@ schemas: ## Regenerate the JSON Schemas in packages/chassis/schemas from the mod
 harness-lint: ## Check the Claude layer, the PoC folders, and docs/plans are wired correctly
 	$(PY) scripts/harness_lint.py
 
+ts-check: ## The TypeScript workload gate, as CI runs it: npm ci, typecheck, test, build
+	cd packages/workloads/echo-typescript && npm ci && npm run typecheck && npm test && npm run build
+
 fake-model-server: ## Run the fake model server on port 8081 with the example script
 	uv run fake-model-server --script packages/fake-model-server/scripts/example.yaml --port 8081
 
 clean: ## Remove caches
-	rm -rf .pytest_cache .mypy_cache .ruff_cache
+	rm -rf .pytest_cache .mypy_cache .ruff_cache .import_linter_cache .hypothesis
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +

@@ -142,16 +142,16 @@ def _doc_namespace(path: Path, doc: Doc) -> str:
 def load_policies() -> list[Policy]:
     out: list[Policy] = []
     for path in _yaml_files(()):
-        for doc in _docs(path):
-            if doc.get("kind", "").endswith("NetworkPolicy"):
-                out.append(
-                    Policy(
-                        _doc_namespace(path, doc),
-                        str(doc["metadata"]["name"]),
-                        doc,
-                        path.relative_to(POC05).as_posix(),
-                    )
-                )
+        out.extend(
+            Policy(
+                _doc_namespace(path, doc),
+                str(doc["metadata"]["name"]),
+                doc,
+                path.relative_to(POC05).as_posix(),
+            )
+            for doc in _docs(path)
+            if doc.get("kind", "").endswith("NetworkPolicy")
+        )
     return out
 
 

@@ -15,7 +15,6 @@ COPY packages/workload-a2a/pyproject.toml packages/workload-a2a/
 COPY packages/workloads/echo-pydanticai/pyproject.toml packages/workloads/echo-pydanticai/
 COPY packages/workloads/echo-langgraph/pyproject.toml packages/workloads/echo-langgraph/
 COPY packages/code-runner/pyproject.toml packages/code-runner/
-COPY packages/workloads/hostile/pyproject.toml packages/workloads/hostile/
 COPY packages/fake-model-server/pyproject.toml packages/fake-model-server/
 COPY packages/fake-mcp-server/pyproject.toml packages/fake-mcp-server/
 RUN --mount=type=cache,target=/root/.cache/uv \

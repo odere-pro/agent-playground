@@ -99,9 +99,11 @@ def _without_created(value: Any) -> Any:
 def _frames(text: str) -> list[Any]:
     out: list[Any] = []
     for block in text.split("\n\n"):
-        for line in block.splitlines():
-            if line.startswith("data: ") and line != "data: [DONE]":
-                out.append(_without_created(json.loads(line.removeprefix("data: "))))
+        out.extend(
+            _without_created(json.loads(line.removeprefix("data: ")))
+            for line in block.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        )
     return out
 
 

@@ -11,11 +11,11 @@ twin tests rely on the second.
 from __future__ import annotations
 
 import asyncio
-import os
 import shutil
 import socket
 import stat
 import tempfile
+from pathlib import Path
 
 import httpx
 import httpx2
@@ -91,12 +91,12 @@ def test_typescript_echo_replaces_a_stale_unix_socket_and_serves_its_card_there(
     it: no TCP port is bound, so the loopback guard does not apply. No TCP.
     """
     folder = tempfile.mkdtemp(prefix="poc02-")
-    path = os.path.join(folder, "ts.sock")
+    path = str(Path(folder, "ts.sock"))
     try:
         stale = socket.socket(socket.AF_UNIX)
         stale.bind(path)
         stale.close()  # leaves the socket file behind, as a killed server does
-        assert stat.S_ISSOCK(os.stat(path).st_mode)
+        assert stat.S_ISSOCK(Path(path).stat().st_mode)
         with (
             typescript_echo(uds=path, env={"HOST": "10.0.0.1"}) as url,
             httpx.Client(transport=httpx.HTTPTransport(uds=path), base_url=url) as client,

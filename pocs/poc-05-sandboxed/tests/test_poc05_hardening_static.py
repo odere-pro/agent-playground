@@ -96,8 +96,10 @@ def _objects(folder: str) -> list[tuple[str, Doc]]:
     namespace = kust["namespace"]
     out: list[tuple[str, Doc]] = []
     for resource in kust["resources"]:
-        for doc in _load_all(POC05 / folder / resource):
-            out.append((doc.get("metadata", {}).get("namespace", namespace), doc))
+        out.extend(
+            (doc.get("metadata", {}).get("namespace", namespace), doc)
+            for doc in _load_all(POC05 / folder / resource)
+        )
     return out
 
 

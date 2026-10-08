@@ -19,3 +19,8 @@ pocs
 # copy it, so its node_modules and build output stay out of the repo-root context.
 **/node_modules
 packages/workloads/echo-typescript/dist
+# No image runs its tests, recorded cassettes, or logs.
+packages/**/tests
+**/.hypothesis
+**/cassettes
+**/*.log

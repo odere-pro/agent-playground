@@ -489,7 +489,7 @@ def on_unix_socket(app: Any, name: str = "app.sock") -> Iterator[str]:
     import uvicorn
 
     folder = tempfile.mkdtemp(prefix="poc02-")
-    uds = os.path.join(folder, name)
+    uds = str(Path(folder, name))
     server = uvicorn.Server(uvicorn.Config(app, uds=uds, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -661,7 +661,7 @@ def typescript_echo_on_unix_sockets(fake_model: Any) -> Iterator[tuple[str, str]
     """
     with on_unix_socket(fake_model, "model.sock") as model_uds:
         folder = tempfile.mkdtemp(prefix="poc02-")
-        uds = os.path.join(folder, "ts.sock")
+        uds = str(Path(folder, "ts.sock"))
         env = {"CHASSIS_MODEL_URL": f"{CHASSIS_PROXY_URL}/v1", "CHASSIS_MODEL_UDS": model_uds}
         try:
             with typescript_echo(uds=uds, env=env) as url:

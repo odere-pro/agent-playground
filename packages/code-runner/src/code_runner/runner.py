@@ -130,8 +130,8 @@ def _remove_tree(path: str) -> None:
     def force(func: Callable[..., Any], target: str, _exc: BaseException) -> None:
         # The code may have removed write or search permission; restore it and retry.
         with contextlib.suppress(OSError):
-            os.chmod(os.path.dirname(target), stat.S_IRWXU)
-            os.chmod(target, stat.S_IRWXU)
+            Path(target).parent.chmod(stat.S_IRWXU)
+            Path(target).chmod(stat.S_IRWXU)
             func(target)
 
     shutil.rmtree(path, onexc=force)

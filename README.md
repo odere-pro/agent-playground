@@ -16,9 +16,9 @@ make help      # every target
 
 | Folder | What it answers |
 | ------ | --------------- |
-| [packages/](packages/chassis/README.md) | What is the shared code? `chassis`, `contract-suites`, `fake-model-server`, and `workloads/` |
+| [packages/](packages/chassis/README.md) | What is the shared code? `chassis`, `contract-suites`, `fake-model-server`, `fake-mcp-server`, `code-runner`, `workload-a2a`, and `workloads/` |
 | [pocs/](pocs/README.md) | Which iteration is running, what its exit criteria are, and how it is tested |
-| [deploy/](deploy/README.md) | How it runs: Docker Compose, kind, Helm |
+| [deploy/](deploy/README.md) | How it runs: Docker Compose, kind (PoC-4, and PoC-5 in `kind/poc05/` with `make kind-poc05`), Helm (PoC-9, empty) |
 | [docs/](docs/README.md) | Planning, contracts, guides, templates, and versioned plans |
 | `scripts/` | The offline test wrapper, the harness lint, the git hook |
 | `.claude/` | Agents, skills, hooks, and the output style for Claude Code |

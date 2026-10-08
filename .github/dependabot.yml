@@ -1,0 +1,91 @@
+# Dependabot: weekly, one grouped pull request per ecosystem and directory.
+# Pins stay exact (SHA for actions, digest for images); a bump is reviewed on purpose.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      uv:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /packages/workloads/echo-typescript
+    schedule:
+      interval: weekly
+    groups:
+      npm:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /packages/chassis
+    schedule:
+      interval: weekly
+    groups:
+      docker-chassis:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /packages/code-runner
+    schedule:
+      interval: weekly
+    groups:
+      docker-code-runner:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /packages/fake-mcp-server
+    schedule:
+      interval: weekly
+    groups:
+      docker-fake-mcp-server:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /packages/fake-model-server
+    schedule:
+      interval: weekly
+    groups:
+      docker-fake-model-server:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /packages/workloads/echo-langgraph
+    schedule:
+      interval: weekly
+    groups:
+      docker-echo-langgraph:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /packages/workloads/echo-pydanticai
+    schedule:
+      interval: weekly
+    groups:
+      docker-echo-pydanticai:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /packages/workloads/echo-python
+    schedule:
+      interval: weekly
+    groups:
+      docker-echo-python:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /packages/workloads/echo-typescript
+    schedule:
+      interval: weekly
+    groups:
+      docker-echo-typescript:
+        patterns: ["*"]

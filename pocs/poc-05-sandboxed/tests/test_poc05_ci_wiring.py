@@ -297,8 +297,14 @@ def test_poc05_remote_lane_uses_no_secret() -> None:
 
 
 def test_poc05_ci_runs_make_check() -> None:
+    """The offline gate runs on every push on every branch and on every pull request, read-only
+    (PoC-3 exit criterion 1 needs every commit on every branch)."""
     ci = _workflow(CI)
-    assert {"push", "pull_request"} <= set(ci["on"])
+    triggers = ci["on"]
+    assert isinstance(triggers, dict)
+    assert set(triggers) == {"push", "pull_request"}
+    assert not triggers["push"], "push must not be narrowed by a branch filter (PoC-3 exit 1)"
+    assert ci.get("permissions") == {"contents": "read"}
     assert re.search(r"^\s*make check\s*$", _runs(ci), re.M)
 
 
