@@ -50,8 +50,9 @@ PROXY = ("127.0.0.1", 8090)
 SIDECAR_PORT = 9000
 KEY_NAME = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD)", re.IGNORECASE)
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}")
-WORKLOAD_UID = "10001"
-"""The non-root user and group every workload image creates (`useradd --uid 10001`)."""
+WORKLOAD_UID = "10002"
+"""The non-root user and group every workload image creates (`useradd --uid 10002`; the uid table
+in deploy/README.md)."""
 WORKLOAD_DOCKERFILES = {
     "workload-python": ROOT / "packages/workloads/echo-python/Dockerfile",
     "workload-pydanticai": ROOT / "packages/workloads/echo-pydanticai/Dockerfile",
@@ -127,7 +128,7 @@ def test_workload_shares_the_chassis_namespace_and_holds_no_key(name: str) -> No
 def test_workload_runs_hardened(name: str) -> None:
     """SECURITY.md section 6: a workload container drops every capability, cannot gain new
     privileges, has a read-only root file system (a `tmpfs` on `/tmp` only), and runs as the
-    images' non-root user `10001:10001`.
+    images' non-root user `10002:10002`.
     """
     service = _services(OVERLAY)[name]
     assert service.get("cap_drop") == ["ALL"], f"{name}: {service.get('cap_drop')}"
@@ -140,13 +141,13 @@ def test_workload_runs_hardened(name: str) -> None:
 
 @pytest.mark.parametrize("name", sorted(WORKLOADS))
 def test_compose_user_matches_the_image_user(name: str) -> None:
-    """SECURITY.md section 6: the overlay's `user:` is the uid and gid the image creates, so the
-    files the image `--chown`s stay readable and nothing runs as root.
+    """SECURITY.md section 6: the overlay's `user:` is the uid and gid the image creates and the
+    image's numeric `USER`, so nothing runs as root. The app code is root-owned and read-only.
     """
     text = WORKLOAD_DOCKERFILES[name].read_text()
     assert re.search(rf"groupadd --gid {WORKLOAD_UID} workload\b", text), name
     assert re.search(rf"useradd --uid {WORKLOAD_UID} --gid workload\b", text), name
-    assert re.search(r"^USER workload$", text, re.M), name
+    assert re.search(rf"^USER {WORKLOAD_UID}:{WORKLOAD_UID}$", text, re.M), name
 
 
 def test_litellm_uses_the_bundled_cost_map() -> None:
@@ -297,7 +298,7 @@ def test_echo_python_image_is_pinned_and_locked() -> None:
         assert ref in chassis, f"{ref} differs from the chassis's pin"
     assert "uv sync --locked --no-dev --package echo-python --package workload-a2a" in text
     assert "--package chassis" not in text
-    assert re.search(r"^USER workload$", text, re.M)
+    assert re.search(rf"^USER {WORKLOAD_UID}:{WORKLOAD_UID}$", text, re.M)
     assert "workload-a2a serve --handle echo_python:handle" in text
 
 

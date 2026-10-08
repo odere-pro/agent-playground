@@ -25,17 +25,20 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package chassis --package echo-python --no-install-workspace
 # The echo-python workload rides in this image for the `inprocess` lane (PoC-1 only; PoC-2 moves
 # it to its own container).
-COPY packages/chassis packages/chassis
-COPY packages/workloads/echo-python packages/workloads/echo-python
+COPY packages/chassis/src packages/chassis/src
+COPY packages/workloads/echo-python/src packages/workloads/echo-python/src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package chassis --package echo-python
 
 FROM ${PYTHON_IMAGE} AS runtime
-RUN groupadd --gid 10001 chassis && useradd --uid 10001 --gid chassis --create-home chassis
+# uid 10001: the one uid table in deploy/README.md. No home directory: HOME points at /tmp.
+RUN groupadd --gid 10001 chassis && useradd --uid 10001 --gid chassis --no-create-home \
+    --home-dir /tmp --shell /usr/sbin/nologin chassis
 WORKDIR /app
-COPY --from=build --chown=chassis:chassis /app /app
-ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1
-USER chassis
+# Owned by root and read-only to the app user: the process cannot change its own code.
+COPY --from=build /app /app
+ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOME=/tmp
+USER 10001:10001
 EXPOSE 8080
 # Healthy means ready: `/ready` is 200 once the lifespan has built the ports and set up the engine
 # (server/app.py); `/health` only says the process answers. uvicorn runs the lifespan before it

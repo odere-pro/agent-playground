@@ -8,6 +8,20 @@ How the chassis and its workloads run.
 | `kind/` | PoC-4, then PoC-5 | PoC-4: a local kind cluster `poc04` with the two container-role variants (native sidecar, preStop) and their drills; see [kind (PoC-4)](#kind-poc-4). PoC-5 adds a gVisor RuntimeClass and the admission policies |
 | `helm/` | PoC-9 | The shared library chart that adds the chassis container with a pinned tag (024 CH-3) |
 
+## Container uids
+
+suggested: one non-root uid per image role. The gid equals the uid. The Dockerfile creates it and sets a numeric `USER uid:gid`. Every Compose `user:` and every kind `runAsUser`/`runAsGroup` that runs the image uses the same value.
+
+| Image | uid:gid |
+| ----- | ------- |
+| `chassis` | 10001:10001 |
+| `echo-python`, `echo-pydanticai`, `echo-langgraph`, `echo-typescript` (every workload) | 10002:10002 |
+| `code-runner` | 10003:10003 |
+| `fake-model-server` | 10004:10004 |
+| `fake-mcp-server` | 10005:10005 |
+
+The chassis and its workload never share a uid (PoC-5 H26), and no fake server shares one with a workload or the code-runner. Every image copies `/app` owned by root, so the app user can read its code but not change it. No image has a home directory: `HOME=/tmp`, and Python images set `PYTHONDONTWRITEBYTECODE=1`. `packages/chassis/tests/test_image_uids.py` checks the table against every Dockerfile, Compose file, and kind manifest. Rejected admission fixtures are skipped: each differs from its admitted twin in one named path on purpose. Third-party images keep their own users (Valkey 999:1000, Postgres 70, LiteLLM 10010 in kind, MinIO and `mc` 10001 in Compose and kind, Traefik 65534).
+
 ## Compose (PoC-1)
 
 The PoC-2 sidecar variant (one workload container in the chassis's network namespace, `demo-sidecar.sh`) is in [`compose/README.md`](compose/README.md#sidecar-variant-poc-2).

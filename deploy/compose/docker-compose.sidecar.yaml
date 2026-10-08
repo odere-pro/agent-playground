@@ -38,12 +38,12 @@ x-workload-hardening: &workload-hardening
   # Every workload container (SECURITY.md, 6): no Linux capability, no privilege gain through
   # setuid, a read-only root file system with a small tmpfs for /tmp (Python's tempfile and Node's
   # os.tmpdir() write there; the images write nothing else at run time), and the non-root user
-  # every workload image creates (`useradd --uid 10001`, group 10001).
+  # every workload image creates (`useradd --uid 10002`, group 10002; deploy/README.md).
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
   read_only: true
   tmpfs: [/tmp]
-  user: "10001:10001"
+  user: "10002:10002"
 
 x-python-card-check: &python-card-check
   test:

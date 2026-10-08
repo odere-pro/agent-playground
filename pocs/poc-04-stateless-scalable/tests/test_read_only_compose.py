@@ -45,7 +45,9 @@ PAIR_PROFILES: dict[int, list[str] | None] = {
 }
 """Pair number to its Compose profiles. Pair 1 has none: it always starts."""
 UID = "10001:10001"
-"""The non-root user and group of the chassis image and every workload image."""
+"""The chassis image's non-root user and group (the uid table in deploy/README.md)."""
+WORKLOAD_UID = "10002:10002"
+"""Every workload image's non-root user and group: distinct from the chassis's."""
 WORKLOAD_ENV = {"CHASSIS_MODEL_URL", "CHASSIS_TOOL_URL", "HOST", "PORT", "DRAIN_TIMEOUT_MS"}
 """The four PoC-2 variables plus `DRAIN_TIMEOUT_MS` for the TypeScript image (plan, 8a)."""
 PUBLISHED = "127.0.0.1:18080:8000"
@@ -130,8 +132,8 @@ def test_compose_sets_read_only_on_every_chassis_and_workload() -> None:
     """
     services = _services(SCALE)
     for n in PAIRS:
-        for name in (f"chassis-{n}", f"workload-{n}"):
-            _hardened(name, services[name])
+        for name, uid in ((f"chassis-{n}", UID), (f"workload-{n}", WORKLOAD_UID)):
+            _hardened(name, services[name], user=uid)
             assert services[name].get("stop_grace_period") == "45s", name
             assert services[name].get("mem_limit") == "512m", name
 
