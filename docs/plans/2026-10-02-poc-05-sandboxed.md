@@ -91,7 +91,7 @@ Behavior:
 
 **Rejected:** a projected service account token with an audience (exit criterion 4 says the remote pod holds no service account token, and checking it needs the Kubernetes API, which is in the deny list); mTLS (above; revisit in ADR-005 when a cloud mesh gives it for free).
 
-**Interpretation to confirm (question 1):** the scope says the remote pod has "no secrets mounted". This plan reads it as "no provider key and no internal credential": the per-remote token is the remote's "own credential" that the same scope item names. It is mounted as one env var, not a volume.
+**Interpretation to confirm (question 1):** the scope says the remote pod has "no secrets mounted". This plan reads it as "no provider key and no internal credential": the per-remote token is the remote's "own credential" that the same scope item names. It is mounted as one env var, not a volume. Confirmed by the user on 2026-10-08.
 
 ### 2.3 The remote-lane proxy listener
 
@@ -661,7 +661,7 @@ T02 writes it from `docs/templates/adr.md` with the `adr` skill, as `docs/planni
 
 ## 10. Questions for the user
 
-1. **"No secrets mounted" in the remote pod.** This plan reads it as "no provider key and no internal credential": the per-remote token is the remote's own credential, one env var (section 2.2). Is that the intended reading? If not, the alternative is a projected service account token checked by the chassis, which needs the Kubernetes API from the chassis (it is in the deny list today).
+1. **"No secrets mounted" in the remote pod.** This plan reads it as "no provider key and no internal credential": the per-remote token is the remote's own credential, one env var (section 2.2). Confirmed by the user on 2026-10-08: yes. If it had not been, the alternative is a projected service account token checked by the chassis, which needs the Kubernetes API from the chassis (it is in the deny list today).
 2. **Kafka with SASL.** The plan runs it as a separate, last pass and records H11 as an exception (owner `platform-security`, closing in 020 X-8) if it does not fit in memory. Is the exception acceptable for PoC-5's exit, or must H11 pass on kind?
 3. **PoC-4 is built but not committed.** PoC-5 edits the same chassis files. Should PoC-4's commit split land first (recommended), and PoC-5 start on its own branch from there?
 4. **One ADR or two.** The plan records the token, the listener rule, admission, the trust signal, the code runner, and the CNI in one ADR-005. Split admission into its own ADR?

@@ -16,12 +16,12 @@ For: Oleksandr (epic owner) and the delivery team. Checked against primary sourc
 
 | Component | Mature tech to use | Maturity | How it connects |
 | --------- | ------------------ | -------- | --------------- |
-| Service chassis | Python 3.12, FastAPI, Pydantic. **Build** the thin chassis: one `chassis` package and one generic image (`chassis serve`), with the engine connectors (`inprocess`, `sidecar`, `remote`) and the outbound proxies | Mature stack | Receives every call: from clients, LiteLLM, MCP, A2A, and Dapr. Calls the workload through the connector. Its model and tool proxies send every call on to LiteLLM and the MCP gateway, with the service's scoped key |
+| Service chassis | Python 3.12, FastAPI, Pydantic. **Build** the thin chassis: one `chassis` package and one generic image (`chassis serve`), with the engine connectors (`inprocess`, `sidecar`, `remote`) and the outbound proxies | Mature stack | Receives every call: from clients, LiteLLM, MCP, A2A, and the broker. Calls the workload through the connector. Its model and tool proxies send every call on to LiteLLM and the MCP gateway, with the service's scoped key |
 | Business logic engines | Plain Python, PydanticAI, LangGraph, OpenAI Agents SDK, Claude Agent SDK (picked in the PoC-6 bake-off) | Mature, fast-moving | Run in the workload container next to the chassis, or in the `remote` lane, always behind the chassis. Each framework's model base URL points at the chassis model proxy |
 | Model gateway | LiteLLM proxy | Widely used. Pin by hash | The chassis's model proxy sends every model call to LiteLLM with the service's scoped virtual key, and LiteLLM routes it to vLLM or API models. Its MCP gateway enforces a tool allow-list per key, and its guardrails run Presidio and Prompt Guard. Optional front door for per-caller virtual keys; the chassis owns every input protocol itself |
 | MCP and A2A interfaces | FastMCP 4 (MCP tools from the OpenAPI spec) and the official a2a-sdk 1.x | Mature projects, new major versions | Mounted in the chassis. LiteLLM federates them behind one URL, with access control. The a2a-sdk is also the contract between the chassis and its workloads |
 | Model serving | vLLM (multi-LoRA, guided decoding); KServe on Kubernetes for canary rollout | Mature | Sits behind named LiteLLM routes. A new SLM goes live by changing the route |
-| Events | Dapr sidecar (pub/sub, CloudEvents envelope, retries, dead-letter topics) with Kafka, or NATS JetStream | Dapr CNCF graduated; its NATS component is beta | Producer → broker → Dapr → the chassis's event route. Result events → broker → recorder and audit log |
+| Events | A broker client in the chassis behind `EventPort` ([ADR-004](../adr/004-events-through-a-broker-client.md), accepted 2026-10-08): the chassis builds the CloudEvents envelope and owns retries and dead-letter topics. Kafka (aiokafka) today, or NATS JetStream; the broker is picked in [001 DEC-1](../issues/001-DEC-1-resolve-open-decisions.md) | Kafka and NATS JetStream mature; aiokafka pinned at 0.14.0 in PoC-4. Dapr pub/sub was tried in PoC-4 and kept only as a tested alternative | Producer → broker → the chassis's broker client. Result events: chassis → broker → recorder and audit log |
 | Durable runs (orchestrator) | Temporal, plus its integration for the chosen engine (OpenAI Agents SDK GA; PydanticAI and LangGraph supported) | Mature | Holds run state and checkpoints. Agent pools pull steps from Temporal task queues |
 | Autoscaling | KEDA (Kafka or NATS lag scalers, Temporal task-queue scaler) | CNCF graduated | Scales agent Deployments on queue depth, down to zero when idle |
 | Sandbox | gVisor through `kubernetes-sigs/agent-sandbox` on Kubernetes; hardened Docker with no network locally; E2B (Firecracker) only if agents run generated code | gVisor mature; agent-sandbox new (v1.0) | Wraps each `remote` workload pod, not every agent pod. The chassis pod stays outside the sandbox. Generated code runs through the code-execution tool behind `ToolPort` |
@@ -53,7 +53,6 @@ flowchart LR
 
   LLMGW["LiteLLM proxy<br/>model router · MCP gateway<br/>guardrails · one virtual key per service"]
   BROKER["Kafka or NATS"]
-  DAPR["Dapr sidecar<br/>CloudEvents · retries · DLQ"]
 
   subgraph POD["Service pod (sidecar lane, KEDA-scaled)"]
     subgraph CHC["Chassis container"]
@@ -81,7 +80,7 @@ flowchart LR
   APP --> CHS
   A2AC --> CHS
   MCPC --> CHS
-  EVP --> BROKER --> DAPR --> CHS
+  EVP --> BROKER --> CHS
   CHS -- "A2A on localhost" --> WKL
   CHS -- "A2A" --> RWL
   CHS -- "A2A + cloud auth" --> MANAGED
@@ -92,7 +91,7 @@ flowchart LR
   LLMGW --> VLLM
   LLMGW --> API
   LLMGW -- "allow-listed tools" --> TOOLS
-  CHS -- "result events" --> DAPR
+  CHS -- "result events" --> BROKER
   CHS --> STORE
   TEMP -- "task queues" --> CHS
   CHS -. "spans" .-> OBS
@@ -104,7 +103,7 @@ flowchart LR
 
 Read it as three paths:
 
-1. **Request path:** client → chassis (inbound adapter, then the pipeline: auth, limits, guardrails, idempotency, budget) → engine connector → workload. In the `sidecar` lane the workload is the second container in the pod, reached over A2A on localhost. In the `remote` lane it is a sandboxed pod or a managed runtime, reached over A2A. Events take the other door: broker → Dapr → chassis.
+1. **Request path:** client → chassis (inbound adapter, then the pipeline: auth, limits, guardrails, idempotency, budget) → engine connector → workload. In the `sidecar` lane the workload is the second container in the pod, reached over A2A on localhost. In the `remote` lane it is a sandboxed pod or a managed runtime, reached over A2A. Events take the other door: broker → the chassis's broker client.
 2. **Outbound path:** workload → chassis model and tool proxies → LiteLLM for models (vLLM or API) and the MCP gateway for allow-listed tools, with the service's scoped key. The workload holds no key. Nothing else is reachable from the pod: network policy allows only what the chassis needs, and each of those services refuses a call without the chassis's credential.
 3. **Learning path:** spans and feedback → Langfuse → golden set review → versioned export → training → MLflow gate → vLLM → a LiteLLM route switch.
 

@@ -4,7 +4,7 @@ What the backlog issues change once this iteration closes. Applied with skill `p
 
 Evidence: `docs/planning/adr/004-events-through-a-broker-client.md`, `docs/contracts/contract-v3.md` (Known gaps), `deploy/compose/SECURITY.md` section 7, and the notes in this folder: `2026-10-01-dapr-vs-broker.md`, `2026-10-01-container-roles.md`, `2026-10-01-load-results.md`, `2026-10-01-hidden-state.md`, `2026-10-01-drills.md`.
 
-Applied on 2026-10-01 as a "Status after PoC-4" bullet at the end of `## What` in each issue below. No acceptance box was ticked: the gate run that proves them goes in the PoC-4 README, and ADR-004 is still Proposed. The items under "Not applied" need the owner.
+Applied on 2026-10-01 as a "Status after PoC-4" bullet at the end of `## What` in each issue below. No acceptance box was ticked: the gate run that proves them goes in the PoC-4 README. ADR-004 was Proposed then; it was accepted on 2026-10-08 (see below). The items under "Not applied" need the owner.
 
 ## Applied
 
@@ -21,12 +21,21 @@ Applied on 2026-10-01 as a "Status after PoC-4" bullet at the end of `## What` i
 - **026 CH-4**: the scale stack's secrets stay on the chassis; open: Kafka with no credential, one shared Valkey password with no TLS, open Compose egress, and the daprd ports if Dapr is ever kept. Why: SECURITY.md section 7 names this issue as owner.
 - **Links**: ADR-004 from `docs/planning/poc/000-plan.md` (the outbound proxies paragraph and "Decisions for the epic owner"), from `docs/planning/poc/004-PoC-4-stateless-scalable.md` (Links, with contract v3 and the notes), and from `docs/planning/issues/000-plan.md` through `tools/plan-template.md` (after ADR-003's line, and in gap (c)). Why: skill `adr`, step 3.
 
+## Applied at the close, 2026-10-08
+
+- **122 X-5** (exit criterion 4): PoC-4 closed with criterion 4 flagged, so the throughput rerun on a Linux host or with pinned CPUs belongs to this issue. Why: the Docker Desktop VM cannot show growth for every engine.
+
+## Applied after ADR-004 acceptance, 2026-10-08
+
+The user accepted ADR-004 on 2026-10-08. No acceptance box was ticked.
+
+- **ADR-004 status.** Proposed to Accepted, 2026-10-08, by the user.
+- **019 H-17 body.** The `## What` bullet "The Dapr pub/sub component for the broker chosen in DEC-1" became "the broker client adapter for the broker chosen in DEC-1"; the criterion "The Dapr adapter and the in-memory bus pass the same `EventPort` contract suite" became "the broker client adapter and the in-memory bus ..."; "With Dapr, a publish call without the chassis's token is refused" was dropped. Why: Dapr fails two cases of that suite by design. The "Status after PoC-4" bullet and the Dapr-or-broker-client bullet now say accepted.
+- **019 H-17 `## Reuse`.** In `docs/planning/tools/reuse_map.py`: "Use: Dapr pub/sub" became a broker client in the chassis; the Dapr "Scope change" bullet went; the CloudEvents SDK line went too, since contract v3 uses no `cloudevents` SDK. The Dapr "Watch" bullet became the broker client's costs (retries, dead-lettering, broker auth with 020 X-8). Why: `## Reuse` is generated, so the source is `reuse_map.py`. Regenerated with `make planning-sync`.
+- **Reuse picks.** Replaced with the broker client: "Dapr for events" in `docs/planning/poc/010-reuse-analysis.md`, in the `EventPort` row of the real-adapter table in `docs/planning/poc/000-plan.md` ("Swappable and testable from day 0"), and in "Tech beyond Appendix H" in `tools/plan-template.md`. And in 001 DEC-1's "Reuse stack" bullet, the clause "Dapr for events (which makes Kafka the stable broker choice)": without Dapr, Kafka's stable Dapr component no longer favors Kafka. Why: these name Dapr as the pick. The "proposed" mentions of ADR-004 in these files now say accepted.
+
 ## Not applied: for the owner
 
-- **ADR-004 acceptance.** Proposed. Until it is accepted, the items below stay as they are.
-- **019 H-17 body, after acceptance.** The `## What` bullet "The Dapr pub/sub component for the broker chosen in DEC-1" becomes "the broker client adapter for the broker chosen in DEC-1"; the criterion "The Dapr adapter and the in-memory bus pass the same `EventPort` contract suite" becomes "the broker client adapter and the in-memory bus ..."; "With Dapr, a publish call without the chassis's token is refused" is dropped. Why: Dapr fails two cases of that suite by design.
-- **019 H-17 `## Reuse`, after acceptance.** In `docs/planning/tools/reuse_map.py`: "Use: Dapr pub/sub" becomes a broker client in the chassis; the Dapr "Scope change" bullet goes; the CloudEvents SDK line goes too, since contract v3 uses no `cloudevents` SDK. Why: `## Reuse` is generated, so the source is `reuse_map.py`.
-- **Reuse picks, after acceptance.** "Dapr for events" in `docs/planning/poc/010-reuse-analysis.md`, in the `EventPort` row of the real-adapter table in `docs/planning/poc/000-plan.md` ("Swappable and testable from day 0"), and in "Tech beyond Appendix H" in `tools/plan-template.md`. And in 001 DEC-1's "Reuse stack" bullet, the clause "Dapr for events (which makes Kafka the stable broker choice)": without Dapr, Kafka's stable Dapr component no longer favors Kafka. Why: these name Dapr as the pick.
 - **060 H-23.** Add the bar ADR-004 item 8 sets: a NATS (or any other) adapter passes the whole `EventPortContract` against a real broker, with no xfail. Why: not named in this close's list, and its scope is the owner's.
 - **024 CH-3 `## What`.** Turn "suggested: the workload is the native sidecar" and the shutdown-order bullet into the PoC-4 result, and add `--drain-delay-s` and the grace rule to the criterion "A rolling restart under load fails no request". Why: the container-roles note says no ADR is needed; the wording change is the owner's call.
 - **ADR-001's Revisit rule.** The chassis CPU at 10 RPS (0.105 to 0.129 vCPU) is at or above the top of the suggested 0.05–0.1 vCPU. For the epic owner as a Revisit input; the hop is not isolated yet. ADR-001's cost table also says Dapr "is decided in PoC-4": an amendment line pointing to ADR-004 is the owner's.

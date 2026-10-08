@@ -181,14 +181,15 @@ spec:
               mc admin user add local "$CONFIG_S3_ACCESS_KEY" "$CONFIG_S3_SECRET_KEY" >/dev/null
               mc admin policy attach local chassis-read --user "$CONFIG_S3_ACCESS_KEY" >/dev/null 2>&1 || true
               echo "minio-init: bucket, policy, and the chassis user are ready"
-          # 64Mi was OOM-killed at `mc admin user add` on kind (T19); one shot, so the peak is brief.
+          # 64Mi was OOM-killed at `mc admin user add` on kind (T19); 128Mi once more within one
+          # second of start, on the 10-CPU VM (2026-10-08). One shot, so the peak is brief.
           resources:
             requests:
               cpu: 50m
               memory: 32Mi
             limits:
               cpu: 500m
-              memory: 128Mi
+              memory: 192Mi
           securityContext:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
