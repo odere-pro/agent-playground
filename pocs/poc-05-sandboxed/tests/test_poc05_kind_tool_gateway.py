@@ -16,6 +16,9 @@ Marked `network` and skipped unless `POC05_KIND=1` (`poc05_conftest.py`). The cl
 - `POC05_GATEWAY_AUTH_HEADER` (optional): the header the gateway reads the key from, if not
   `Authorization` (the plan's fallback is `x-litellm-api-key`).
 
+`deploy/kind/poc05/run.sh with-gateway CMD...` sets both for CMD (a port-forward to LiteLLM
+and the key from its Secret, never in argv or output).
+
 The gateway's real behavior to record on the first run (plan section 2.6, spike items): which of
 `unknown_tool` or `tool_denied` an unlisted tool gives (then pin it in
 `test_unlisted_probe_is_refused_with_its_control`), and that `_meta.idempotency_key` reaches the
@@ -35,8 +38,9 @@ from chassis_contracts.tool import DENIED_CODES, KnownCall, ToolPortContract
 URL_VAR = "POC05_GATEWAY_MCP_URL"
 KEY_VAR = "POC05_CHASSIS_VIRTUAL_KEY"
 HEADER_VAR = "POC05_GATEWAY_AUTH_HEADER"
-ALLOWED = KnownCall("glossary_lookup", {"term": "SLM"})
-PROBE = "unlisted_probe"
+# The gateway lists a tool as `<server>-<tool>` (bring-up note, item 3), so these are its names.
+ALLOWED = KnownCall("fake_tools-glossary_lookup", {"term": "SLM"})
+PROBE = "fake_tools-unlisted_probe"
 PROBE_MARKER = "UNLISTED-PROBE-MARKER-7f3a"  # `fake_mcp_server.PROBE_MARKER`
 NOT_A_KEY = "sk-poc05-not-a-real-key-0000"
 
@@ -77,7 +81,7 @@ class TestPoc05KindGatewayContract(ToolPortContract):
 
     @pytest.fixture
     def write_call(self) -> KnownCall:
-        return KnownCall("note_write", {"text": "poc05 kind contract"})
+        return KnownCall("fake_tools-note_write", {"text": "poc05 kind contract"})
 
     @pytest.fixture
     def denied_name(self) -> str:
@@ -96,7 +100,7 @@ async def test_unlisted_probe_is_refused_with_its_control(
     assert PROBE not in [d.name for d in chassis_tools.list_tools()]
     with pytest.raises(ToolError) as info:
         await chassis_tools.call(PROBE, {})
-    assert info.value.code in DENIED_CODES
+    assert info.value.code == "tool_denied"  # pinned on kind, 2026-10-08
     assert info.value.retryable is False
     assert PROBE_MARKER not in str(info.value)
 

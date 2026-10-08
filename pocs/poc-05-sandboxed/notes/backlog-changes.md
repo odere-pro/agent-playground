@@ -20,6 +20,8 @@ Decisions on 2026-10-02 that every bullet assumes: T10 (the in-pod probe workloa
 
 ## Also carry: findings with their issue
 
+- **054 H-16** (T19, 2026-10-08, for `chassis-architect`): the gateway lists tools as `<server>-<tool>`. A workload that calls a write tool by its bare name gets `idempotency_key_required`, because `McpGatewayTools` adds the key argument only for a tool it listed under that name; read tools work by bare name. T19 also mapped LiteLLM's refusal texts to `unknown_tool` and `tool_denied` (`packages/chassis/tests/test_tool_gateway_contract.py`). Why: tool naming and the write-mode key are this issue's.
+
 | Finding | Source | Issue |
 | ------- | ------ | ----- |
 | LiteLLM's 401 body echoes the last 4 characters of a refused key (`Received API Key = sk-...434e`) and its hash (`Key Hash (Token) = ...`). The chassis's own redaction let both through: `_redact` in `chassis/adapters/litellm/client.py` stripped only the configured key and `sk-` followed by 8 or more characters. So when the chassis's own key was refused (after `seed.sh rekey`, or a Postgres restart), the suffix and hash reached `ModelError.message`, the 500 body on 8091, the `error` event, and `/v1/run` output. Fixed in this pass in `_redact`, with a test and a paired control in `packages/chassis/tests/test_litellm.py`. LiteLLM logs the same line at INFO: the `kubectl logs` dumps in the CI failure step and in `run.sh` are filtered | bring-up, item 2; `2026-10-02-review-security-session.md`, findings 1 and 2 | 026 CH-4 (a key leak by a shared service), for `platform-security`. 022 H-6 (log hygiene): its key-leak canary should also look for the suffix and hash |

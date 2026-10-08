@@ -16,6 +16,9 @@
 #   deploy/kind/poc05/run.sh test     the kind tier: POC05_KIND=1 pytest -m network (PoC-5 tests)
 #   deploy/kind/poc05/run.sh test-remote  the kind remote-lane and code-runner files (CI job); fails
 #                                     naming any file in REMOTE_TESTS that does not exist yet
+#   deploy/kind/poc05/run.sh with-gateway CMD...  run CMD with a port-forward to LiteLLM and
+#                                     POC05_GATEWAY_MCP_URL, POC05_CHASSIS_VIRTUAL_KEY exported
+#                                     (the key from its Secret, never in argv or output); last verb
 #   deploy/kind/poc05/run.sh pods     every pod and Sandbox in the PoC-5 namespaces
 #   deploy/kind/poc05/run.sh logs     every PoC-5 pod's last log lines, through redact_logs
 #   deploy/kind/poc05/run.sh redact   redact_logs as a filter: stdin to stdout, no cluster call
@@ -201,6 +204,20 @@ litellm_ready() {
     -o jsonpath='{.status.readyReplicas}' 2>/dev/null) == 1 ]]
 }
 
+# replace_changed_job NAME: delete platform Job NAME only if it finished and its manifest no
+# longer applies (the template is immutable). A running Job is never touched.
+replace_changed_job() {
+  local name=$1 out finished
+  finished=$(kctl -n "$PLATFORM_NS" get job "$name" --ignore-not-found \
+    -o jsonpath='{.status.conditions[?(@.status=="True")].type}')
+  [[ $finished == *Complete* || $finished == *Failed* ]] || return 0
+  out=$(kctl apply -k "$HERE/platform" -l "app.kubernetes.io/name=$name" --dry-run=server 2>&1) &&
+    return 0
+  [[ $out == *"field is immutable"* ]] || die "job $name: dry run failed: ${out:0:300}"
+  log "job $name: finished and its manifest changed; deleting it so apply makes it again"
+  kctl -n "$PLATFORM_NS" delete job "$name" --wait=true --timeout=60s
+}
+
 seed() {
   "$SEED" base
   if litellm_ready; then
@@ -212,8 +229,10 @@ seed() {
 
 # Platform services in section 8 order: Postgres, then LiteLLM (it runs its migrations on start),
 # then the fake servers, Valkey, MinIO and its one-shot Job. A Job is immutable: a finished one is
-# left alone, a missing one (ttl after 600 s) is made again, and its steps are idempotent.
+# left alone, a missing one (ttl after 600 s) is made again, and its steps are idempotent. A
+# finished one whose manifest changed is deleted first, so a second `up` still converges.
 apply_platform() {
+  replace_changed_job minio-init
   kctl apply -k "$HERE/platform"
   wait_rollout "$PLATFORM_NS" postgres
   wait_rollout "$PLATFORM_NS" litellm 300s
@@ -358,7 +377,8 @@ REMOTE_TESTS=(
 )
 
 # The remote-lane CI job (.github/workflows/remote-lane.yml) runs this after `up`. A missing file
-# fails the verb by name, so the job never goes green on an empty selection.
+# fails the verb by name, so the job never goes green on an empty selection. The code-runner file
+# calls the tool through the gateway, so the run goes through with_gateway (it skips without it).
 run_tests_remote() {
   local f missing=()
   for f in "${REMOTE_TESTS[@]}"; do
@@ -366,7 +386,33 @@ run_tests_remote() {
   done
   ((${#missing[@]} == 0)) ||
     die "test-remote: kind remote tests not written yet, nothing run: ${missing[*]}"
-  (cd "$ROOT" && POC05_KIND=1 uv run pytest -m network "${REMOTE_TESTS[@]}" -q -rs)
+  (cd "$ROOT" && with_gateway env POC05_KIND=1 uv run pytest -m network "${REMOTE_TESTS[@]}" -q -rs)
+}
+
+# with_gateway CMD...: the kind tests that call the gateway from the host (test_poc05_kind_*.py)
+# need its URL and the chassis's virtual key. Port-forward LiteLLM on a free local port, export
+# both, run CMD, then stop the forward. The key goes from the Secret into this process's env only:
+# never into argv, a file, or the output.
+with_gateway() {
+  (($# > 0)) || die "with-gateway: no command given"
+  local pf_log pf port="" i
+  pf_log=$(mktemp)
+  kctl -n "$PLATFORM_NS" port-forward svc/litellm :4000 >"$pf_log" 2>&1 &
+  pf=$!
+  # shellcheck disable=SC2064 # expand now: the trap runs after the locals are gone
+  trap "kill $pf 2>/dev/null || true; rm -f '$pf_log'" EXIT
+  for i in $(seq 1 50); do
+    port=$(sed -nE 's/^Forwarding from 127\.0\.0\.1:([0-9]+).*/\1/p' "$pf_log" | head -n 1)
+    [[ -n $port ]] && break
+    sleep 0.2
+  done
+  [[ -n $port ]] || die "with-gateway: the port-forward to litellm did not start"
+  export POC05_GATEWAY_MCP_URL="http://127.0.0.1:$port/mcp/"
+  POC05_CHASSIS_VIRTUAL_KEY=$(kctl -n poc05-agents get secret chassis-echo-litellm \
+    -o 'jsonpath={.data.LITELLM_API_KEY}' | base64 -d)
+  [[ -n $POC05_CHASSIS_VIRTUAL_KEY ]] || die "with-gateway: secret chassis-echo-litellm is empty"
+  export POC05_CHASSIS_VIRTUAL_KEY
+  "$@"
 }
 
 anp_api() {
@@ -533,9 +579,15 @@ pod_logs() {
   done
 }
 
-usage() { sed -n '2,29p' "$0"; }
+usage() { sed -n '2,30p' "$0"; }
 
 (($# > 0)) || { usage; exit 0; }
+# `with-gateway` takes the rest of the line as its command, so it ends the verb list.
+if [[ $1 == with-gateway ]]; then
+  shift
+  with_gateway "$@"
+  exit
+fi
 for cmd in "$@"; do
   case $cmd in
     create) create ;;
