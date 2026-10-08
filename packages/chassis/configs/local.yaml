@@ -1,0 +1,22 @@
+# The local profile: the real model adapter against the LiteLLM router in deploy/compose.
+# Mounted at /etc/chassis/config.yaml by the Compose stack; LITELLM_BASE_URL and LITELLM_API_KEY
+# come from the container env. `chassis serve --config packages/chassis/configs/local.yaml`
+profile: local
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  # The profile defaults name `sidecar`, `minio`, and `otel`, which arrive in later PoCs, so the
+  # overrides below are required.
+  adapters:
+    model: litellm
+    engine: inprocess
+    config: memory
+    telemetry: memory
+  engine:
+    connector: inprocess
+    handle: echo_python:handle
+  model:
+    route: big-default
+  prompt:
+    version: simplifier-v1

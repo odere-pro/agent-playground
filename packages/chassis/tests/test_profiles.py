@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from chassis.adapters.litellm import LiteLLMModel
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.profiles import (
     PROFILES,
@@ -21,9 +22,26 @@ def test_fake_profile_builds_all_four_ports() -> None:
 
 
 @pytest.mark.parametrize("profile", [p for p in PROFILES if p != "fake"])
-def test_other_profiles_name_the_poc_that_adds_their_adapter(profile: str) -> None:
+def test_other_profiles_name_the_poc_that_adds_their_adapter(
+    profile: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LITELLM_BASE_URL", "http://router:4000/v1")
     with pytest.raises(AdapterNotAvailable, match="arrives in PoC"):
         build_ports(profile)  # type: ignore[arg-type]
+
+
+def test_litellm_needs_its_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LITELLM_BASE_URL", raising=False)
+    with pytest.raises(AdapterNotAvailable, match="model: litellm needs LITELLM_BASE_URL"):
+        build_ports("fake", AdapterSpec(model="litellm"))
+
+
+def test_litellm_carries_the_agent_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The registry hands the agent name to the model adapter, so the router call is tagged."""
+    monkeypatch.setenv("LITELLM_BASE_URL", "http://router:4000/v1")
+    ports = build_ports("fake", AdapterSpec(model="litellm"), agent="echo")
+    assert isinstance(ports.model, LiteLLMModel)
+    assert ports.model.agent == "echo"
 
 
 def test_overrides_pick_the_adapter_per_port() -> None:

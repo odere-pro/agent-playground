@@ -1,0 +1,40 @@
+# PoC-1 Compose override, `local` variant: real models behind the same two routes.
+#   docker compose -f docker-compose.yaml -f docker-compose.local.yaml up -d --wait
+# `big-default` goes to an API provider (BIG_DEFAULT_MODEL and OPENAI_API_KEY from `.env`);
+# `local-small` goes to llama.cpp serving the GGUF at LLAMA_MODEL_PATH. Rules: SECURITY.md.
+
+services:
+  litellm:
+    volumes:
+      - ./litellm/config.local.yaml:/etc/litellm/config.yaml:ro
+    environment:
+      # Read from `.env` by Compose interpolation; only this service sees them (SECURITY.md, 1).
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?set OPENAI_API_KEY in .env}
+      BIG_DEFAULT_MODEL: ${BIG_DEFAULT_MODEL:?set BIG_DEFAULT_MODEL in .env, e.g. openai/gpt-4o-mini}
+      # suggested: `OPENAI_API_BASE` lets `big-default` point at any OpenAI-compatible provider.
+      OPENAI_API_BASE: ${OPENAI_API_BASE:-https://api.openai.com/v1}
+    depends_on:
+      llama-cpp:
+        condition: service_healthy
+
+  chassis:
+    environment:
+      # Required here: LiteLLM has auth on in this variant, so a missing key fails fast instead
+      # of 401 on the first request. The `fake` variant keeps `:-` (no key needed).
+      LITELLM_API_KEY: ${LITELLM_API_KEY:?set LITELLM_API_KEY in .env (see notes/2026-09-29-compose-key-debt.md)}
+
+  llama-cpp:
+    # llama.cpp server build b11243, tag `server-b11243`, resolved on 2026-09-29. Not published.
+    image: ghcr.io/ggml-org/llama.cpp:server-b11243@sha256:f9115c95639e60abc09d4ea83b26fd4d56c66aa1174594393335a514da00c283
+    # The image's entrypoint is /app/llama-server and it sets LLAMA_ARG_HOST=0.0.0.0.
+    command: ["-m", "/models/model.gguf", "--port", "8080", "--alias", "local-small"]
+    volumes:
+      - ${LLAMA_MODEL_PATH:?set LLAMA_MODEL_PATH in .env to a GGUF file}:/models/model.gguf:ro
+    healthcheck:
+      # `/health` answers 503 while the model loads and 200 after. No curl in the image either.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || curl -fs http://127.0.0.1:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s

@@ -177,7 +177,7 @@ class EngineConnector(Protocol):
     async def close(self) -> None: ...
 ```
 
-`handle` is always served by the template A2A server, so there is one wire contract. Only the transport differs: A2A on localhost in `sidecar`, over the network in `remote`, and in memory in `inprocess`. The framework event mapping lives in the workload, next to `handle`, not in the chassis. It turns the framework's token deltas, tool calls, and usage into chassis events. The chassis imports no framework. The service template ships one mapping per supported framework, and a contract test checks each one.
+`handle` is always served by the template A2A server, so there is one wire contract. Only the transport differs: A2A on localhost in `sidecar`, over the network in `remote`, and in memory in `inprocess`. The mapping of chassis events to A2A task updates is written in [contract v0](../../contracts/contract-v0.md#chassis-events-over-a2a); where the template server lives, and that a workload sees `input`, `ctx`, and events as plain dicts, is decided in [ADR-002](../adr/002-template-a2a-server-placement.md). The framework event mapping lives in the workload, next to `handle`, not in the chassis. It turns the framework's token deltas, tool calls, and usage into chassis events. The chassis imports no framework. The service template ships one mapping per supported framework, and a contract test checks each one.
 
 ## Swappable and testable from day 0
 

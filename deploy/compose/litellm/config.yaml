@@ -1,0 +1,31 @@
+# LiteLLM proxy config, `fake` variant (the default). Both routes point at the fake model server,
+# so `docker compose up` needs no key and no internet. The `local` override mounts
+# config.local.yaml in its place. Rules: ../SECURITY.md.
+
+model_list:
+  - model_name: big-default
+    litellm_params:
+      # `openai/<name>` is LiteLLM's prefix for any OpenAI-compatible endpoint.
+      model: openai/fake-model
+      api_base: http://fake-model-server:8081/v1
+      api_key: fake
+  - model_name: local-small
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://fake-model-server:8081/v1
+      api_key: fake
+
+litellm_settings:
+  # Keep token counts, drop request and response content from the logs (SECURITY.md, 5).
+  turn_off_message_logging: true
+  # One line per call with route, tokens, cost, and the `agent:<name>` tag: token_log.py, next to
+  # this file. PoC-1 runs no database, so `/spend/logs` is not available.
+  callbacks: token_log.handler
+  # suggested: `enable_tag_budgets` stays off in PoC-1; no `set_verbose`, no `--detailed_debug`.
+  drop_params: true
+
+# No `general_settings.master_key` in the fake variant, on purpose: LiteLLM 1.103.0 treats an
+# empty master key (from the config or the `LITELLM_MASTER_KEY` env) as "auth on" and answers 401
+# to every call, which breaks `docker compose up` with an empty `.env` (verified 2026-09-29). The
+# proxy is then open, but it listens on 127.0.0.1 only and fronts a scripted fake.
+# config.local.yaml sets `master_key: os.environ/LITELLM_MASTER_KEY`.

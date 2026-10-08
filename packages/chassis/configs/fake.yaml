@@ -1,0 +1,20 @@
+# The fake profile: no network, no keys. `chassis serve --config packages/chassis/configs/fake.yaml`
+# The plain-Python simplifier runs in the `inprocess` lane over A2A in memory; its model call goes
+# through the chassis proxy to the scripted fake model.
+profile: fake
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  adapters:
+    model: fake
+    engine: inprocess
+    config: memory
+    telemetry: memory
+  engine:
+    connector: inprocess
+    handle: echo_python:handle
+  model:
+    route: fake-route
+  prompt:
+    version: simplifier-v1

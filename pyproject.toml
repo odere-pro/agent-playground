@@ -22,12 +22,18 @@ dev = [
 ]
 
 [tool.uv.workspace]
-members = ["packages/chassis", "packages/contract-suites", "packages/fake-model-server"]
+members = [
+  "packages/chassis",
+  "packages/contract-suites",
+  "packages/fake-model-server",
+  "packages/workloads/echo-python",
+]
 
 [tool.uv.sources]
 chassis = { workspace = true }
 chassis-contracts = { workspace = true }
 fake-model-server = { workspace = true }
+echo-python = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["packages", "pocs"]
@@ -57,12 +63,33 @@ exclude = ["docs/planning"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["pytest_socket.*"]
+module = ["pytest_socket.*", "google.protobuf.*"]
 ignore_missing_imports = true
 
 [tool.importlinter]
-root_packages = ["chassis"]
+root_packages = ["chassis", "echo_python"]
 include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "a workload never imports the chassis (ADR-002)"
+type = "forbidden"
+source_modules = ["echo_python"]
+forbidden_modules = ["chassis", "chassis_contracts"]
+
+[[tool.importlinter.contracts]]
+name = "the chassis never imports a workload (no business logic in the chassis)"
+type = "forbidden"
+source_modules = ["chassis"]
+forbidden_modules = ["echo_python"]
+# `allow_indirect_imports` stays unset so an indirect import counts too. The connector loads
+# `spec.engine.handle` by dotted path at runtime through `importlib`, which this does not see.
+
+[[tool.importlinter.contracts]]
+name = "a2a-sdk is imported only under chassis.adapters"
+type = "forbidden"
+source_modules = ["chassis.core", "chassis.ports", "chassis.fakes", "chassis.server", "chassis.profiles"]
+forbidden_modules = ["a2a"]
+allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 name = "chassis layers: core has no upward imports"

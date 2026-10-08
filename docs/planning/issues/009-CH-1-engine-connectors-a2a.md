@@ -18,8 +18,8 @@ epic_refs: [F.1, F.2, G.1]
 - The `EngineConnector` interface from 007 H-1: `setup`, `run` (a stream of chassis events), `close`, and `capabilities`. The lane is picked by `spec.engine.connector`.
 - `inprocess`: the chassis loads the template A2A server in its own process and calls it over A2A in memory (an ASGI transport, no socket). It is the same wire contract as `sidecar`, without the socket. It is allowed only in the `fake` and `local` profiles, for the chassis's own tests and local runs. A workload's own tests run the chassis as a separate process in the `fake` profile instead (015 H-8), so the workload never installs the chassis package.
 - `sidecar`: an A2A client (`a2a-sdk`) that sends the canonical request to the workload on localhost and streams its events back.
-- One written mapping between chassis events and A2A task status updates and artifacts, used by both sides.
-- The template A2A server: a small server that wraps `handle` and serves A2A on localhost only. It ships with the service template (025 H-10). The echo workloads from 008 H-14 use it.
+- One written mapping between chassis events and A2A task status updates and artifacts, used by both sides. PoC-1 wrote it: [contract v0](../../contracts/contract-v0.md#chassis-events-over-a2a).
+- The template A2A server: a small server that wraps `handle` and serves A2A on localhost only. It ships with the service template (025 H-10). The echo workloads from 008 H-14 use it. Where it lives, and how a workload sees `handle` without installing the chassis package, is decided in [ADR-002](../adr/002-template-a2a-server-placement.md).
 - `traceparent` and `ctx` (request ID, budget, idempotency key, config versions) passed over A2A.
 - A timeout or a client disconnect cancels the A2A task.
 - Open connections and events streamed straight through, so the local hop stays small. suggested: 1–3 ms, as in the ADR.
