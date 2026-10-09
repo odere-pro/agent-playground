@@ -20,3 +20,7 @@ for _tests in (
 ):
     if str(_tests) not in sys.path:
         sys.path.insert(0, str(_tests))
+
+from poc06b_conftest import pytest_collection_modifyitems  # noqa: E402
+
+__all__ = ["pytest_collection_modifyitems"]

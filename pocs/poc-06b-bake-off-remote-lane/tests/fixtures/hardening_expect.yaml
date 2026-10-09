@@ -1,0 +1,73 @@
+# The PoC-6 pods as data: the namespace, the kind, the runtime, and per container the uid, the
+# limits, and the size of its /tmp. test_poc06b_kind_static.py requires the manifests to match this
+# table both ways: a pod added without a row, or a number changed, fails until this file says so.
+# The shape is PoC-5's section 2.11 table (pocs/poc-05-sandboxed/tests/fixtures/hardening_expect.yaml):
+# chassis uid 10001, workload uid 10002, gVisor for every remote.
+chassis_container: &chassis {uid: 10001, cpu: 500m, memory: 256Mi, tmp: 16Mi}
+pods:
+  agent-openai-agents:
+    namespace: poc05-agents
+    kind: Deployment
+    runtime: runc
+    containers:
+      chassis: *chassis
+      workload: {uid: 10002, cpu: 500m, memory: 384Mi, tmp: 32Mi}
+  agent-typescript:
+    namespace: poc05-agents
+    kind: Deployment
+    runtime: runc
+    containers:
+      chassis: *chassis
+      workload: {uid: 10002, cpu: 500m, memory: 256Mi, tmp: 32Mi}
+  chassis-smolagents-remote:
+    namespace: poc05-agents
+    kind: Deployment
+    runtime: runc
+    containers: {chassis: *chassis}
+  chassis-claude-agent-remote:
+    namespace: poc05-agents
+    kind: Deployment
+    runtime: runc
+    containers: {chassis: *chassis}
+  chassis-typescript-remote:
+    namespace: poc05-agents
+    kind: Deployment
+    runtime: runc
+    containers: {chassis: *chassis}
+  chassis-kagent-adk-remote:
+    namespace: poc05-agents
+    kind: Deployment
+    runtime: runc
+    containers: {chassis: *chassis}
+  remote-smolagents:
+    namespace: poc05-remote
+    kind: Sandbox
+    runtime: gvisor
+    containers:
+      workload: {uid: 10002, cpu: 500m, memory: 512Mi, tmp: 32Mi}
+  remote-claude-agent:
+    namespace: poc05-remote
+    kind: Sandbox
+    runtime: gvisor
+    containers:
+      workload: {uid: 10002, cpu: 1000m, memory: 1Gi, tmp: 128Mi}
+  remote-typescript:
+    namespace: poc05-remote
+    kind: Sandbox
+    runtime: gvisor
+    containers:
+      workload: {uid: 10002, cpu: 500m, memory: 256Mi, tmp: 32Mi}
+  remote-kagent-adk:
+    namespace: poc05-remote
+    kind: Sandbox
+    runtime: gvisor
+    containers:
+      workload: {uid: 65532, cpu: 1000m, memory: 768Mi, tmp: 64Mi}
+
+# Each remote: its chassis, the fixed ClusterIP of the chassis's remote-proxy Service, and the
+# Secret it takes (none for kagent-adk: it uses its inbound bearer as its model key).
+remotes:
+  remote-smolagents: {chassis: chassis-smolagents-remote, ip: 10.96.85.92, secret: remote-smolagents-token}
+  remote-claude-agent: {chassis: chassis-claude-agent-remote, ip: 10.96.85.93, secret: remote-claude-agent-token}
+  remote-typescript: {chassis: chassis-typescript-remote, ip: 10.96.85.94, secret: remote-typescript-token}
+  remote-kagent-adk: {chassis: chassis-kagent-adk-remote, ip: 10.96.85.95, secret: null}
