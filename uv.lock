@@ -742,6 +742,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "fake-mcp-server" },
     { name = "fake-model-server" },
     { name = "fastmcp" },
 ]
@@ -757,6 +758,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "fake-mcp-server", editable = "packages/fake-mcp-server" },
     { name = "fake-model-server", editable = "packages/fake-model-server" },
     { name = "fastmcp" },
 ]
