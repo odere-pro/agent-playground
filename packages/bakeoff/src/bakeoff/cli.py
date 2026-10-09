@@ -40,6 +40,9 @@ run    the same matrix with the tasks; writes results.json and results.md to --o
 MODEL_FAKE = "fake model server (scripted)"
 MODEL_TARGET = "whatever the targets are configured with"
 HOSTED_LANES = ["inprocess", "sidecar"]
+RUN_KEY_ENV = "POC06_LITELLM_KEY"
+"""The one variable hosted mode reads: the per-run LiteLLM key. A provider key never comes here."""
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 
 def _hosted_label(hosted: Hosted) -> str:
@@ -86,8 +89,14 @@ def _hosted(args: argparse.Namespace) -> Hosted | None:
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https") or not parts.hostname:
         raise ValueError("--model-url must be an http or https URL")
+    if parts.hostname not in LOOPBACK_HOSTS:
+        raise ValueError("--model-url must point at this host (127.0.0.1, localhost, or ::1)")
+    if "remote" in (args.lane or ()):
+        raise ValueError("hosted mode does not run the remote lane (it needs a sandbox on kind)")
     if not key_env:
         raise ValueError("--model-url needs --model-key-env (the variable that holds the key)")
+    if key_env != RUN_KEY_ENV:
+        raise ValueError(f"--model-key-env must be {RUN_KEY_ENV}, the per-run LiteLLM key")
     key = os.environ.get(key_env)
     if not key:
         raise ValueError(f"the variable {key_env} is not set")

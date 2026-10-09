@@ -69,6 +69,8 @@ HOSTED_KEY_ENV=${POC06_HOSTED_KEY_ENV:-OPENAI_API_KEY}
 HOSTED_MODEL=${POC06_HOSTED_MODEL:-openai/gpt-4o-mini}
 GGUF_REPO=${POC06_GGUF_REPO:-Qwen/Qwen3-1.7B-GGUF}
 GGUF_FILE=${POC06_GGUF_FILE:-Qwen3-1.7B-Q8_0.gguf}
+# suggested: `main` is trust on first use; the sha256 pin (model.sha256) is what holds after.
+GGUF_REV=${POC06_GGUF_REV:-main}
 CACHE=${POC06_CACHE:-$HOME/.cache/poc06}
 REPEAT=${POC06_REPEAT:-5}
 SCALE_PAIRS=${POC06_SCALE_PAIRS:-"1 2 4"}
@@ -159,6 +161,9 @@ want() { case " $ONLY " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
   require_trusted $LOAD_ENGINES
 }
 [[ "$HOSTED_KEY_ENV" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "POC06_HOSTED_KEY_ENV is not a variable name"
+[[ "$GGUF_FILE" =~ ^[A-Za-z0-9._-]+$ ]] || die "POC06_GGUF_FILE must match [A-Za-z0-9._-]+"
+[[ "$GGUF_REPO" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die "POC06_GGUF_REPO must be owner/name"
+[[ "$GGUF_REV" =~ ^[A-Za-z0-9._-]+$ ]] || die "POC06_GGUF_REV must match [A-Za-z0-9._-]+"
 [[ "$REPEAT" =~ ^[0-9]+$ ]] || die "POC06_REPEAT must be a number"
 
 # ---- teardown --------------------------------------------------------------------------------
@@ -197,7 +202,8 @@ stop_llama() {
 
 cleanup() {
   local rc=$?
-  trap - EXIT INT TERM HUP
+  trap '' INT TERM HUP   # a second Ctrl-C must not abort the teardown
+  trap - EXIT
   stop_scale
   stop_litellm
   stop_llama
@@ -216,7 +222,11 @@ redact() {
   text=$(cat)
   if [[ -n "$HOSTED_KEY" ]]; then text=${text//"$HOSTED_KEY"/[redacted]}; fi
   if [[ -n "$LITELLM_KEY" ]]; then text=${text//"$LITELLM_KEY"/[redacted]}; fi
-  printf '%s\n' "$text" | sed -E 's/(sk-|Bearer )[A-Za-z0-9._-]{8,}/\1[redacted]/g'
+  if [[ -n "$HOME" ]]; then
+    local tilde='~'
+    text=${text//"$HOME"/$tilde}
+  fi
+  printf '%s\n' "$text" | sed -E -e 's/(sk-|Bearer )[A-Za-z0-9._-]{8,}/\1[redacted]/g' -e 's/sk-[A-Za-z0-9._-]*\*+[A-Za-z0-9]*/sk-[redacted]/g'
 }
 
 # Run a command, show it, and keep its output in a log. In a dry run, only show it.
@@ -319,14 +329,14 @@ ensure_gguf() {
   say "== model file"
   if [[ "$DRY" == 1 ]]; then
     say "  would use $GGUF_PATH; download it on first run:"
-    say "  \$ curl -fL --retry 3 -o $GGUF_PATH.part https://huggingface.co/$GGUF_REPO/resolve/main/$GGUF_FILE"
+    say "  \$ curl -fL --proto =https --proto-redir =https --retry 3 -o $GGUF_PATH.part https://huggingface.co/$GGUF_REPO/resolve/$GGUF_REV/$GGUF_FILE"
     say "  would record its sha256 in ${PIN_FILE#"$ROOT"/} on the first run, and refuse a different hash after"
     return 0
   fi
   mkdir -p "$CACHE"
   if [[ ! -f "$GGUF_PATH" ]]; then
     say "  downloading $GGUF_REPO/$GGUF_FILE (about 1.8 GB) to $CACHE"
-    curl -fL --retry 3 -o "$GGUF_PATH.part" "https://huggingface.co/$GGUF_REPO/resolve/main/$GGUF_FILE" \
+    curl -fL --proto =https --proto-redir =https --retry 3 -o "$GGUF_PATH.part" "https://huggingface.co/$GGUF_REPO/resolve/$GGUF_REV/$GGUF_FILE" \
       || die "download failed" 1
     mv "$GGUF_PATH.part" "$GGUF_PATH"
   fi
@@ -346,15 +356,20 @@ ensure_gguf() {
 
 # ---- services --------------------------------------------------------------------------------
 
-start_litellm() {  # LOG
-  local log=$1 rc=0
+start_litellm() {  # LOG [hosted]: only "hosted" gives the container the provider key
+  local log=$1 rc=0 key=""
+  [[ "${2:-}" == hosted ]] && key=$HOSTED_KEY
   say "== start LiteLLM (project $LITELLM_PROJECT, 127.0.0.1:$LITELLM_PORT)"
   if [[ "$DRY" == 1 ]]; then
-    say "  \$ docker compose -p $LITELLM_PROJECT -f ${LITELLM_COMPOSE#"$ROOT"/} up -d --wait   # POC06_HOSTED_API_KEY=<from .env, not shown>"
+    if [[ "${2:-}" == hosted ]]; then
+      say "  \$ docker compose -p $LITELLM_PROJECT -f ${LITELLM_COMPOSE#"$ROOT"/} up -d --wait   # provider key: from the env file, not shown"
+    else
+      say "  \$ docker compose -p $LITELLM_PROJECT -f ${LITELLM_COMPOSE#"$ROOT"/} up -d --wait   # no provider key"
+    fi
     return 0
   fi
   LITELLM_UP=1
-  POC06_HOSTED_API_KEY="$HOSTED_KEY" compose_litellm up -d --wait >>"$log" 2>&1 || rc=$?
+  POC06_HOSTED_API_KEY="$key" compose_litellm up -d --wait >>"$log" 2>&1 || rc=$?
   if [[ "$rc" != 0 ]]; then
     redact <"$log" | tail -n 20
     return "$rc"
@@ -410,7 +425,7 @@ env_block() {
 - uv $(uv --version 2>/dev/null | awk '{print $2}'), node $(node --version 2>/dev/null)
 - LiteLLM image: $(grep -o 'ghcr.io/berriai/litellm:[^ "]*' "$LITELLM_COMPOSE" | head -n 1)
 - Hosted model (\`big-default\`): $HOSTED_MODEL
-- Pre-trained SLM (\`local-small\`): $GGUF_REPO / $GGUF_FILE
+- Pre-trained SLM (\`local-small\`): $GGUF_REPO @ $GGUF_REV / $GGUF_FILE
 - GGUF sha256: $GGUF_SHA
 - llama.cpp: $LLAMA_VERSION
 - llama-server flags: \`$LLAMA_FLAGS\`
@@ -482,7 +497,7 @@ write_note() {
 # ---- steps -----------------------------------------------------------------------------------
 
 bakeoff_run() {  # LOG ROUTE OUTDIR
-  run_logged "$1" uv run python -m bakeoff run \
+  POC06_LITELLM_KEY="$LITELLM_KEY" run_logged "$1" uv run python -m bakeoff run \
     --model-url "http://127.0.0.1:$LITELLM_PORT/v1" --model-key-env POC06_LITELLM_KEY \
     --route "$2" --tasks smoke,simplifier,lookup --repeat "$REPEAT" \
     --engine "$ENGINES_CSV" --lane inprocess,sidecar --out "$3"
@@ -504,7 +519,7 @@ step_hosted() {
   say; say "== step hosted: big-default, $HOSTED_MODEL, engines $ENGINES_CSV"
   local log="$WORK/hosted.log" out="$WORK/hosted-out" rc=0
   [[ "$DRY" == 1 ]] || : >"$log"
-  if start_litellm "$log"; then
+  if start_litellm "$log" hosted; then
     bakeoff_run "$log" big-default "$out" || rc=$?
   else
     rc=1
@@ -592,6 +607,7 @@ step_load() {
 do_push() {
   say; say "== push the notes"
   if [[ "$DRY" == 1 ]]; then
+    say "  \$ git log @{u}..HEAD   # refused if any commit besides the notes is unpushed"
     say "  \$ git add -- <exactly the note files written above>"
     say "  \$ git commit -m 'docs(poc06): record the Mac runs' -- <the same files>"
     say "  \$ git push origin <current branch>   # refused on main and master"
@@ -601,6 +617,19 @@ do_push() {
   local branch
   branch=$(git -C "$ROOT" branch --show-current)
   case "$branch" in main | master | "") die "--push: refusing to push from '${branch:-detached HEAD}'" 1 ;; esac
+  # Only the notes commit may leave: refuse when any other commit is not on the remote yet.
+  local unpushed base
+  if git -C "$ROOT" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+    unpushed=$(git -C "$ROOT" log --format='%h %s' '@{u}..HEAD')
+  else
+    base=$(git -C "$ROOT" merge-base HEAD origin/main 2>/dev/null || true)
+    [[ -n "$base" ]] || die "--push: no upstream and no origin/main to compare with; push the branch by hand first" 1
+    unpushed=$(git -C "$ROOT" log --format='%h %s' "$base..HEAD")
+  fi
+  if [[ -n "$unpushed" ]]; then
+    printf 'poc06_mac: --push: these commits are not pushed and would leave with the notes:\n%s\n' "$unpushed" >&2
+    die "--push refused: push or drop them first" 1
+  fi
   git -C "$ROOT" add -- "${NOTE_FILES[@]}"
   git -C "$ROOT" commit -m "docs(poc06): record the Mac runs (${ONLY# })" -- "${NOTE_FILES[@]}"
   git -C "$ROOT" push origin "$branch"
@@ -633,7 +662,6 @@ if [[ "$DRY" == 1 ]]; then
 else
   preflight_real
   LITELLM_KEY="sk-poc06-$(openssl rand -hex 24)"
-  export POC06_LITELLM_KEY="$LITELLM_KEY"
 fi
 
 case ",$ENGINES_CSV,$(echo "$LOAD_ENGINES" | tr ' ' ',')," in

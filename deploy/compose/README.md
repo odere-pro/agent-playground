@@ -119,9 +119,9 @@ Render without a daemon, with dummy secrets: `VALKEY_PASSWORD=x MINIO_ROOT_PASSW
 
 `poc06/load_driver.py` loads the PoC-4 `run_matrix.py` unchanged and points it at `poc06/scale-slm.sh`, which wraps `scale.sh`. The wrapper adds the `echo-openai-agents` image (scale.sh does not list it) and, for `scale`, the LiteLLM overlay. The `slm` step changes only `--route`; `scale` changes only the route in the seeded chassis config (`poc06/chassis-configs/scale-slm.yaml`).
 
-**Keys.** The provider key goes from `.env` into one shell variable, then into the environment of the one `docker compose` command that starts LiteLLM. Only the LiteLLM container has it. The chassis gets a LiteLLM key generated for the run (`sk-poc06-` and 48 hex characters), and it is the proxy's master key for that run. The script prints neither, and scrubs both from the notes.
+**Keys.** The provider key goes from `.env` into one shell variable, then into the environment of the one `docker compose` command that starts LiteLLM. Only the LiteLLM container of the `hosted` step has it; the `slm` step's LiteLLM gets none. Set a spend limit at the provider before the run. The master-key-as-chassis-key shortcut is recorded in `SECURITY.md`, section 1. The chassis gets a LiteLLM key generated for the run (`sk-poc06-` and 48 hex characters), and it is the proxy's master key for that run. The script prints neither, and scrubs both from the notes.
 
-**The model file.** `llama-server` loads `~/.cache/poc06/Qwen3-1.7B-Q8_0.gguf` from `Qwen/Qwen3-1.7B-GGUF` (suggested). The first run downloads it (about 1.8 GB) and writes its sha256 to `deploy/compose/poc06/model.sha256`. Later runs refuse a file with another hash. `--push` does not commit that pin, because it commits only the notes; commit it once by hand.
+**The model file.** `llama-server` loads `~/.cache/poc06/Qwen3-1.7B-Q8_0.gguf` from `Qwen/Qwen3-1.7B-GGUF` (suggested). The first run downloads it (about 1.8 GB) and writes its sha256 to `deploy/compose/poc06/model.sha256`. The download is HTTPS only, from revision `main` (`POC06_GGUF_REV`, suggested); that is trust on first use, and the pin is what protects later runs. Later runs refuse a file with another hash. `--push` does not commit that pin, because it commits only the notes; commit it once by hand.
 
 **Time and memory.** Suggested: 60 to 90 minutes. The first run adds the image builds and the download. Memory: the Docker VM runs one stack at a time. The 4-pair scale and load runs are the tight ones: PoC-4 saw 4 pairs strain a 7.9 GiB VM (`pocs/poc-04-stateless-scalable/notes/2026-10-01-load-results.md`), and LiteLLM adds up to 768 MiB. The host runs `llama-server` (about 2.5 GiB with 4 slots at a 16384-token context, suggested) outside Docker. A failed scenario is kept in the note. Close other containers first.
 
@@ -131,6 +131,6 @@ Render without a daemon, with dummy secrets: `VALKEY_PASSWORD=x MINIO_ROOT_PASSW
 - `pocs/poc-06c-pretrained-slm/notes/<date>-slm-run.md` and `<date>-scale-run.md`
 - a `.results.json` next to each; the note holds `results.md`
 
-With `--push` it commits only those files by exact path, on the current branch (never `main` or `master`), and pushes it.
+With `--push` it commits only those files by exact path, on the current branch (never `main` or `master`), and pushes it. It refuses when any other commit on the branch is not pushed yet, and names it.
 
 **Cleanup.** On any exit, including Ctrl-C, a `trap` stops `llama-server`, the Compose projects `poc06mac` and `poc04`, and removes its temp files. It touches no other project and prunes nothing.

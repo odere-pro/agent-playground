@@ -13,7 +13,7 @@ from bakeoff.stack import running_stack
 from chassis.server.config import load_config
 
 URL = "http://127.0.0.1:14000/v1"
-KEY_ENV = "BAKEOFF_TEST_LITELLM_KEY"
+KEY_ENV = "POC06_LITELLM_KEY"
 KEY = "litellm-test-value-1"  # pragma: allowlist secret
 UNTRUSTED = ["echo-smolagents", "echo-claude-agent", "kagent-adk"]
 
@@ -129,3 +129,39 @@ def test_the_route_is_the_only_change_in_the_chassis_config() -> None:
     big["spec"]["model"] = small["spec"]["model"]
     assert big == small
     assert load_config(small).spec.model.route == "local-small"
+
+
+def _argv(*extra: str) -> list[str]:
+    return ["run", "--model-url", URL, "--model-key-env", KEY_ENV, *extra]
+
+
+@pytest.mark.parametrize(
+    "url", ["http://litellm.example.com/v1", "https://203.0.113.5:4000/v1", "http://10.0.0.2/v1"]
+)
+def test_the_cli_refuses_a_model_url_that_is_not_this_host(
+    url: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv(KEY_ENV, KEY)
+    assert cli.main(["run", "--model-url", url, "--model-key-env", KEY_ENV]) == 2
+    err = capsys.readouterr().err
+    assert "this host" in err
+    assert KEY not in err
+
+
+def test_the_cli_refuses_the_remote_lane_in_hosted_mode(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv(KEY_ENV, KEY)
+    assert cli.main(_argv("--lane", "sidecar,remote")) == 2
+    assert "remote lane" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("name", ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "MY_TOKEN", "OTHER"])
+def test_the_cli_reads_only_the_run_key_variable(
+    name: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv(name, "provider-value-123")
+    assert cli.main(["run", "--model-url", URL, "--model-key-env", name]) == 2
+    err = capsys.readouterr().err
+    assert KEY_ENV in err
+    assert "provider-value-123" not in err

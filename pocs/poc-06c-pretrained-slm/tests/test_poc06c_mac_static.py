@@ -298,7 +298,7 @@ def test_the_script_keeps_the_key_rules() -> None:
         if "HOSTED_KEY" in line.replace("HOSTED_KEY_ENV", ""):
             assert not re.search(r"\b(echo|printf|say|warn|die|tee)\b", line) or "redact" in line
     # the key is handed to one command only, as a prefix assignment
-    assert text.count('POC06_HOSTED_API_KEY="$HOSTED_KEY"') == 1
+    assert text.count('POC06_HOSTED_API_KEY="$key"') == 1
     # --push stages exact paths, on a branch that is not main
     assert 'git -C "$ROOT" add -- "${NOTE_FILES[@]}"' in text
     assert re.search(r"git [^\n]*\badd (-A|\.|--all|-u)", text) is None
@@ -384,15 +384,15 @@ def test_the_load_driver_plans_the_poc04_matrix_through_scale_slm(tmp_path: Path
 def test_bakeoff_refuses_an_untrusted_engine_with_a_non_fake_model_url(
     engine: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("POC06_TEST_LITELLM_KEY", "unit-test-value")
+    monkeypatch.setenv("POC06_LITELLM_KEY", "unit-test-value")
     argv = [
         "run",
         "--engine",
         engine,
         "--model-url",
-        "https://litellm.example.com/v1",
+        "http://127.0.0.1:14000/v1",
         "--model-key-env",
-        "POC06_TEST_LITELLM_KEY",
+        "POC06_LITELLM_KEY",
         "--out",
         str(tmp_path),
     ]
@@ -408,3 +408,106 @@ def test_the_notes_hold_no_key(tmp_path: Path) -> None:
     text = SCRIPT.read_text()
     assert "redact <" in text
     assert "[redacted]" in text
+
+
+# ---- security review fixes --------------------------------------------------------------------
+
+
+def _code() -> str:
+    lines = SCRIPT.read_text().splitlines()
+    return "\n".join(line for line in lines if not line.lstrip().startswith("#"))
+
+
+def test_the_run_key_is_never_exported(tmp_path: Path) -> None:
+    code = _code()
+    assert not re.search(r"\bexport\s+POC06_LITELLM_KEY", code)
+    assert not re.search(r"\b(export|declare -x)\b[^\n]*(LITELLM_KEY|HOSTED_KEY)", code)
+    # it reaches a command only as a prefix assignment
+    for line in code.splitlines():
+        if "POC06_LITELLM_KEY=" in line:
+            assert re.match(
+                r"\s*(POC06_SCALE_MODEL=\w+ )?POC06_LITELLM_KEY=\"\$LITELLM_KEY\"", line
+            )
+    done = run_script(tmp_path, "--dry-run", POC06_LITELLM_KEY="outside-value")
+    assert done.returncode == 0
+    assert "outside-value" not in done.stdout + done.stderr
+
+
+def test_only_the_hosted_steps_litellm_gets_the_provider_key() -> None:
+    code = _code()
+    assert code.count('start_litellm "$log" hosted') == 1
+    assert code.count('start_litellm "$log"') == 2
+    assert 'POC06_HOSTED_API_KEY="$key"' in code
+    assert "key=$HOSTED_KEY" in code
+
+
+def test_the_slm_dry_run_never_looks_at_the_env_file(tmp_path: Path) -> None:
+    done = run_script(tmp_path, "--dry-run", "--only", "slm")
+    assert done.returncode == 0
+    assert "env file" not in done.stdout and "deploy/compose/.env" not in done.stdout
+    assert "presence of" not in done.stdout
+    # slm needs no provider key in the code path either
+    start = _code().index("preflight_real()")
+    body = _code()[start : _code().index("ensure_gguf()")]
+    assert "if want hosted; then" in body
+    assert body.index("ENV_FILE") > body.index("if want hosted; then")
+
+
+def _redact(text: str, tmp_path: Path) -> str:
+    source = SCRIPT.read_text()
+    func = source[source.index("redact() {") : source.index("# Run a command, show it")]
+    done = subprocess.run(
+        ["bash", "-c", f"{func}\nHOSTED_KEY=provider-secret-9\nLITELLM_KEY=sk-poc06-abc\nredact"],
+        input=text,
+        env={"PATH": os.environ["PATH"], "HOME": "/Users/someone"},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return done.stdout
+
+
+def test_redact_scrubs_keys_masked_keys_and_the_home_path(tmp_path: Path) -> None:
+    text = (
+        "a provider-secret-9 b sk-proj-****abcd c Bearer abcdefghijkl1234 d sk-poc06-abc "
+        "e sk-abcdefghijklmnop f /Users/someone/.cache/poc06/x.gguf"
+    )
+    out = _redact(text, tmp_path)
+    for leaked in ("provider-secret-9", "abcd c", "abcdefghijkl1234", "ijklmnop", "/Users/someone"):
+        assert leaked not in out, out
+    assert "~/.cache/poc06/x.gguf" in out
+
+
+def test_the_model_download_is_https_only_and_the_names_are_validated(tmp_path: Path) -> None:
+    code = _code()
+    assert "--proto =https --proto-redir =https" in code
+    assert "GGUF_REV" in code
+    for var, value in (
+        ("POC06_GGUF_FILE", "../evil.gguf"),
+        ("POC06_GGUF_FILE", "a b.gguf"),
+        ("POC06_GGUF_REPO", "no-slash"),
+        ("POC06_GGUF_REV", "main;rm"),
+    ):
+        done = run_script(tmp_path, "--dry-run", **{var: value})
+        assert done.returncode == 2, (var, value)
+    done = run_script(tmp_path, "--dry-run", POC06_GGUF_REV="abc123")
+    assert done.returncode == 0
+    assert "resolve/abc123/" in done.stdout
+
+
+def test_push_refuses_other_unpushed_commits_and_the_teardown_ignores_signals() -> None:
+    code = _code()
+    assert "@{u}..HEAD" in code
+    assert "would leave with the notes" in code
+    assert "trap '' INT TERM HUP" in code
+    assert "trap - EXIT INT TERM HUP" not in code
+
+
+def test_security_md_records_the_poc06_exception_and_the_debt_note_exists() -> None:
+    text = (COMPOSE / "SECURITY.md").read_text()
+    assert "PoC-6 exception" in text
+    assert "provider budget" in text
+    debt = ROOT / "pocs" / "poc-06c-pretrained-slm" / "notes" / "2026-10-09-mac-command-debt.md"
+    body = debt.read_text()
+    assert "/key/generate" in body and "026" in body
+    assert not re.search(r"\bsk-[A-Za-z0-9]", body)

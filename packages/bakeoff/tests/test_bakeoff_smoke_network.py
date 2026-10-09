@@ -51,7 +51,7 @@ try:
     rc = main([
         "run", "--engine", "echo-python", "--lane", "sidecar", "--tasks", "smoke", "--repeat", "1",
         "--out", sys.argv[1], "--route", "local-small",
-        "--model-url", f"http://127.0.0.1:{fake.port}/v1", "--model-key-env", "BAKEOFF_TEST_KEY",
+        "--model-url", f"http://127.0.0.1:{fake.port}/v1", "--model-key-env", "POC06_LITELLM_KEY",
     ])
     seen = list(fake.app.state.calls)
     print(json.dumps({"rc": rc, "calls": len(seen), "models": sorted({c["model"] for c in seen})}))
@@ -67,7 +67,7 @@ def test_hosted_mode_reaches_the_model_url_on_the_chosen_route(tmp_path: Path) -
     """
     done = subprocess.run(
         [sys.executable, "-c", HOSTED_SCENARIO, str(tmp_path / "out")],
-        env=build_env(tmp_path, {"BAKEOFF_TEST_KEY": "hosted-test-value"}),
+        env=build_env(tmp_path, {"POC06_LITELLM_KEY": "hosted-test-value"}),
         cwd=ROOT,
         capture_output=True,
         text=True,
