@@ -97,6 +97,13 @@ data:
       printf 'security.protocol=SASL_PLAINTEXT\nsasl.mechanism=SCRAM-SHA-512\n'
       printf 'sasl.jaas.config=%s username="admin" password="%s";\n' "$jaas" "$admin"
     } >/tmp/admin-client.properties
+    # Accepted exception (owner: 020 X-8 and platform-security). The SCRAM passwords are in the
+    # argv of kafka-storage.sh format for one short process at pod start. Only the broker
+    # container and node root can see them. They are hex, so a parse error cannot print them.
+    # Fix: create the users with a credentialed admin step. SASL_PLAINTEXT is accepted on
+    # single-node kind only: SCRAM never sends the password, but event payloads cross in clear.
+    # There is no authorizer, so the chassis user can read, create, and delete any topic. TLS and
+    # per-service ACLs are 020 X-8.
     if [[ ! -f /var/lib/kafka/data/meta.properties ]]; then
       chassis=$(<"$auth/CHASSIS_PASSWORD")
       KAFKA_HEAP_OPTS=-Xmx64m /opt/kafka/bin/kafka-storage.sh format --config "$conf" \

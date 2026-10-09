@@ -325,3 +325,27 @@ def test_the_broker_pod_is_hardened_and_small() -> None:
     for v in spec["volumes"]:
         if "emptyDir" in v:
             assert v["emptyDir"].get("sizeLimit"), v["name"]
+
+
+def _assert_events_pod_hardened(doc: Doc) -> None:
+    spec = _pod_spec(doc)
+    assert spec["automountServiceAccountToken"] is False
+    assert spec["securityContext"]["runAsNonRoot"] is True
+    assert spec["securityContext"]["seccompProfile"] == {"type": "RuntimeDefault"}
+    for key in ("hostNetwork", "hostPID", "hostIPC", "shareProcessNamespace"):
+        assert not spec.get(key), key
+    for c in _containers(spec):
+        sc = c["securityContext"]
+        assert sc["runAsNonRoot"] is True, c["name"]
+        assert sc["readOnlyRootFilesystem"] is True, c["name"]
+        assert sc["allowPrivilegeEscalation"] is False, c["name"]
+        assert sc["capabilities"] == {"drop": ["ALL"]}, c["name"]
+        assert sc["seccompProfile"] == {"type": "RuntimeDefault"}, c["name"]
+        assert c["resources"]["limits"].keys() >= {"cpu", "memory"}, c["name"]
+
+
+def test_the_events_agent_pod_is_hardened() -> None:
+    """The H11 pod is not in kustomization.yaml, so the hardening table does not cover it."""
+    _assert_events_pod_hardened(_one(AGENT, "Deployment", "agent-echo-events"))
+    sa = _one(AGENT, "ServiceAccount", "agent-echo-events")
+    assert sa["automountServiceAccountToken"] is False

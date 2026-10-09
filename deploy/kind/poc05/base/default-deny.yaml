@@ -6,7 +6,8 @@
 #   - the cloud metadata service, 169.254.169.254 (and 169.254.0.0/16);
 #   - the Kubernetes API Service (on kind 10.96.0.1:443);
 #   - the API server's real endpoint, the node addresses on 6443.
-# No allow rule under deploy/kind/poc05/ may use an `ipBlock`, so no rule can reach them. Note that
+# No allow rule under deploy/kind/poc05/ may use an `ipBlock`, with one exception (B4): the
+# code-runner-dispatch rule to the API server's endpoint, which run.sh fills. Note that
 # a NetworkPolicy sees the API server by its endpoint (node IP, 6443) after the Service rewrite, not
 # by the ClusterIP (spike, question 2). The cluster-wide AdminNetworkPolicy that would name this
 # list in an object is not installed: the AdminNetworkPolicy API is absent on this kind (see

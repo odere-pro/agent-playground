@@ -60,6 +60,34 @@ metadata:
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: latest
 EOF
+# Default deny, ingress and egress, plus same-namespace traffic only: no pod here, the runc
+# code-runner included, has egress beyond the namespace. No DNS rule: the client addresses the
+# pods by IP, and the kubelet's probes and `kubectl exec` do not cross a NetworkPolicy.
+k apply -f - >/dev/null <<EOF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: $NS
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: same-namespace
+  namespace: $NS
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress: [{from: [{podSelector: {}}]}]
+  egress: [{to: [{podSelector: {}}]}]
+EOF
+# This script makes its own random token in a scratch namespace, an exception to "Secrets come
+# from the seed script only" (owner platform-security). It is piped through stdin, never in argv,
+# authenticates nothing real, and is deleted with the namespace. Using the seed's token would copy
+# a live credential.
 openssl rand -hex 24 | tr -d '\n' \
   | k create secret generic q9-token -n "$NS" --from-file=token=/dev/stdin >/dev/null
 
