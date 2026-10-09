@@ -16,7 +16,8 @@ Recorded exceptions (notes/2026-10-09-lanes-b-kind.md):
   kinds in Node. It does not cover the PoC-5 `procs` scan (H26 is a sidecar check, not run here).
 - `remote-kagent-adk`: its image may have no Python either; then `probe_python` marks the test
   `xfail` with the reason, and the Node fallback does not apply. Its other checks read the live
-  pod spec and the node. It runs only when `kagent/image.sha256` holds a digest.
+  pod spec and the node. Its image is built from source (`run.sh build_kagent`) and has the venv
+  Python at /.kagent/.venv/bin/python, so the probe is expected to run.
 
 A kind test: marked `kind` (and `network`), skipped unless `POC06_KIND=1` (`poc06b_conftest.py`).
 Run: `deploy/kind/poc06/run.sh test`.
@@ -51,10 +52,8 @@ from poc05_kind import (
     unpoliced_caller,
 )
 from poc06b_kind import (
-    KAGENT_XFAIL,
     REMOTES,
     KindEngine,
-    kagent_enabled,
     probe_in,
 )
 from test_poc05_kind_remote_controls import secret_sources, traceparent
@@ -70,8 +69,6 @@ CHASSIS_CREDENTIALS = {"LITELLM_API_KEY", "VALKEY_PASSWORD", "REMOTE_TOKEN"}
 
 
 def remote_pod(engine: KindEngine) -> dict[str, Any]:
-    if engine.name == "kagent-adk" and not kagent_enabled():
-        pytest.xfail(KAGENT_XFAIL)
     return pod(engine.namespace, engine.pod)
 
 
@@ -356,11 +353,8 @@ def test_remote_runs_on_gvisor_next_to_a_runc_pod(engine: KindEngine) -> None:
 
 
 def test_the_remote_pods_are_the_ones_the_manifests_name() -> None:
-    """A guard for the tests above: the live cluster has one Running pod per remote that was
-    applied (kagent-adk only with a digest), each with its own name label and no sibling."""
+    """A guard for the tests above: one pod per remote, each with its own name label."""
     for engine in REMOTES:
-        if engine.name == "kagent-adk" and not kagent_enabled():
-            continue
         items = get_json("pods", "-n", REMOTE_NS, "-l", f"app.kubernetes.io/name={engine.pod}")
         assert len(items["items"]) == 1, engine.pod
     got = kubectl("get", "sandbox", "-n", REMOTE_NS, "-o", "name")

@@ -1,4 +1,0 @@
-# The sha256 of ghcr.io/kagent-dev/kagent/kagent-adk (64 hex characters, no prefix). Empty on
-# purpose until someone with network access resolves and reviews it, for example:
-#   docker buildx imagetools inspect ghcr.io/kagent-dev/kagent/kagent-adk:<tag>
-# `run.sh` skips the kagent-adk remote while no digest line is here.

@@ -11,7 +11,7 @@ Task T-LANES-B. Command: `deploy/kind/poc06/run.sh up` then `run.sh test` (CI: `
 | echo-smolagents | remote | Sandbox `remote-smolagents` (gVisor) | `chassis-smolagents-remote` | `echo-smolagents:poc06` |
 | echo-claude-agent | remote | Sandbox `remote-claude-agent` (gVisor) | `chassis-claude-agent-remote` | `echo-claude-agent:poc06` |
 | echo-typescript | remote | Sandbox `remote-typescript` (gVisor) | `chassis-typescript-remote` | `echo-typescript:poc05` |
-| kagent-adk | remote, plain A2A | Sandbox `remote-kagent-adk` (gVisor) | `chassis-kagent-adk-remote` | `ghcr.io/kagent-dev/kagent/kagent-adk@sha256:...` |
+| kagent-adk | remote, plain A2A | Sandbox `remote-kagent-adk` (gVisor) | `chassis-kagent-adk-remote` | `kagent-adk:poc06`, built from kagent's source at a pinned commit |
 
 All in PoC-5's namespaces and cluster: chassis pods in `poc05-agents`, remotes in `poc05-remote`. PoC-5's LiteLLM and Valkey policies admit only `poc05-agents` pods with `agents.platform/role: chassis`, so a new namespace would need PoC-5 edits.
 
@@ -25,15 +25,17 @@ All in PoC-5's namespaces and cluster: chassis pods in `poc05-agents`, remotes i
 6. **Proxy addresses.** Each remote's chassis has a fixed-ClusterIP Service (`10.96.85.92` to `.95`; PoC-5 uses `.91`), because the remote lane has no DNS.
 7. **kagent-adk.**
    - It is the probe note's "cheaper alternative": the Python ADK runtime alone, not the controller, Substrate, or PostgreSQL. It is not "kagent on Kubernetes".
-   - Its image is third-party and must be pinned by digest. No digest could be resolved offline, so `deploy/kind/poc06/kagent/image.sha256` holds none. While it holds none, `run.sh up` skips the folder and says so, and the kagent kind tests are `xfail` with that reason. Put the 64-hex digest in the file to enable it.
+   - **Image: built from source, pinned by commit.** No ghcr digest could be resolved offline. `run.sh build_kagent` clones `kagent-dev/kagent`, checks out the commit in `deploy/kind/poc06/kagent/source.commit` (`e324f6d8...`, the probed one), fails closed unless `git rev-parse HEAD` equals it, builds `python/Dockerfile`, and `kind load`s it as `kagent-adk:poc06`. The pod uses `imagePullPolicy: Never`.
+   - **Supply-chain gap, accepted for a PoC remote.** kagent's `python/Dockerfile` does not pin its base images by digest: `debian:bookworm-slim` and `ghcr.io/astral-sh/uv:${UV_VERSION}` are by tag, and `apt-get install` is unpinned. Python dependencies come from the frozen `uv.lock` (`uv sync --frozen`), whose hashes uv checks. The pin is the git commit (SHA-1) only.
+   - **Launcher.** The image's `kagent-adk static` builds the app against a kagent API server for its task store; none exists here. The ConfigMap carries `run_kagent_adk.py`, the probe's launcher (same app, `local=True`, in-memory task store), started with the image's venv Python `/.kagent/.venv/bin/python`. The image supplies libraries only.
+   - OTEL exporters are set to `none` in the pod env (the probe saw 16.8 s with the defaults, 0.64 s with them off).
    - **Deviation from the task text:** the model `base_url` is the chassis's fixed ClusterIP, not a DNS name. The remote lane has no DNS (PoC-5 H20, tested), and giving kagent a kube-dns edge would weaken that. The DNS-name rule in the probe note comes from Substrate's credential proxy, which is not used here.
    - The runtime checks no inbound bearer (probe note, item 5). The control is the NetworkPolicy (9000 only from its chassis). It holds no Secret: the inbound bearer is its model key (`api_key_passthrough`).
-   - The container `command` and flags (`kagent-adk static --filepath /config`) follow the probed `cli.py`. The image's own entrypoint was not read. The first kind run decides.
 
 ## Recorded exceptions
 
 - **No Python in the Node image.** `remote-typescript` and `agent-typescript` cannot run the PoC-5 `kubectl exec ... python` probe. `tests/node_probe.js` implements the same check kinds in Node (`tcp`, `http`, `path`, `env_names`, `read`, `write`, `resolve`, `dns`). It does not implement `procs`. The PoC-5 H26 `/proc` scan is a sidecar check that the new sidecar tests do not repeat (they check `shareProcessNamespace` on the spec). The Node probe was run on this container only for `path`, `tcp`, `write`, `read`, and `env_names`; `dns` and `http` were not run.
-- **kagent-adk may have no Python.** `probe_python` tries `python`, `python3`, and two venv paths. With none found the test is marked `xfail` with `NO_PYTHON`, and the pod-spec and node checks still stand.
+- **kagent-adk Python.** The image has its venv Python at `/.kagent/.venv/bin/python` (on the image's PATH as `python`; `probe_python` also tries the full path). If none is found the test is marked `xfail` with `NO_PYTHON`, and the pod-spec and node checks still stand.
 - **Claude lookup.** `xfail(strict=False)`: the CLI offers MCP tools as `mcp__chassis__<name>`, so the scripted call names a tool it did not offer. A fix is coming separately.
 - **kagent-adk lookup** asserts the answer text only. In plain-A2A mode the chassis cannot see tool calls; the test asserts no `tool_call` event appears, so the limit is on record.
 
@@ -46,4 +48,4 @@ All in PoC-5's namespaces and cluster: chassis pods in `poc05-agents`, remotes i
 
 ## What CI will first show (expectation)
 
-Not run. Likely first failures, in order: (1) a gVisor start problem on the runner (as for `remote-lane.yml`); (2) the Claude pod's memory or startup time under gVisor; (3) smolagents or OpenAI Agents SDK tool names against the gateway; (4) the fake-model script's reach for the Claude smoke and simplifier (the CLI's trailing system turns); (5) kagent-adk's entrypoint, if a digest is set.
+Not run. Likely first failures, in order: (1) a gVisor start problem on the runner (as for `remote-lane.yml`); (2) the Claude pod's memory or startup time under gVisor; (3) smolagents or OpenAI Agents SDK tool names against the gateway; (4) the fake-model script's reach for the Claude smoke and simplifier (the CLI's trailing system turns); (5) the kagent source build (network clone, uv sync) and its launcher under gVisor. The kagent tests are real, not xfail.

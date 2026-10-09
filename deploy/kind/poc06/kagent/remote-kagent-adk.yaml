@@ -1,22 +1,25 @@
 # remote-kagent-adk: kagent's Python ADK runtime as a remote (PoC-6b, the remote solution; kagent
 # probe note pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-kagent-probe.md, "cheaper
-# alternative"). It is `kagent-adk` alone: a Google ADK A2A server, no controller, no Substrate, no
-# PostgreSQL. It is a third-party image, so it runs only in the remote lane (admission rules 3 and
-# 8 exempt that lane), pinned by digest: `__KAGENT_ADK_SHA256__` is filled by `run.sh` from
-# `kagent/image.sha256`. While that file holds no digest, `run.sh` does not apply this folder.
+# alternative"). It is the `kagent-adk` runtime alone: a Google ADK A2A server, no controller, no
+# Substrate, no PostgreSQL. It is a third-party program, so it runs only in the remote lane
+# (admission rules 3 and 8 exempt that lane). There is no pinned ghcr image: `run.sh build_kagent`
+# builds kagent's own python/Dockerfile at the commit in `kagent/source.commit` and loads it as
+# kind.local/agent-platform/kagent-adk:poc06 (supply-chain gaps: notes/2026-10-09-lanes-b-kind.md).
 #
+# - The launcher: the image's `kagent-adk static` builds the app against a kagent API server for
+#   its task store, and there is none here. The probe ran the same app with `local=True` (in-memory
+#   task store); `run_kagent_adk.py` below is that run, from this ConfigMap, started with the
+#   image's venv Python. It is our file, not the image's; the image only supplies the libraries.
 # - The model: an OpenAI-compatible config whose base_url is the chassis's remote proxy listener
-#   and key passthrough on, so the inbound bearer (the per-remote token) is the model key
-#   and the run's traceparent reaches the proxy (probe note, item 4). The pod holds no Secret.
+#   and key passthrough on, so the inbound bearer (the per-remote token) is the model key and the
+#   run's traceparent reaches the proxy (probe note, item 4). The pod holds no Secret.
 #   Recorded deviation: the URL is the fixed ClusterIP, not a DNS name, because the remote lane
 #   has no DNS (H20). The DNS-name rule in the probe note comes from Substrate's credential proxy,
 #   which is not used here.
 # - Inbound auth: the runtime checks no bearer (probe note, item 5). The control is the
 #   NetworkPolicy: 9000 only from its own chassis. What the chassis cannot control is listed in
-#   notes/2026-10-09-lanes-b-kagent-adk.md.
+#   notes/2026-10-09-lanes-b-kind.md.
 # - OTEL exporters are off: with defaults the last event waited 16 s on an unreachable collector.
-# - Command and flags (`kagent-adk static --filepath /config`) follow cli.py at the probed commit;
-#   the image's own entrypoint was not read. A run on kind is what shows them.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -35,6 +38,41 @@ metadata:
     app.kubernetes.io/name: remote-kagent-adk
 data:
   config.json: '{"model": {"type": "openai", "model": "fake-chat", "base_url": "http://10.96.85.95:8091/v1", "api_key_passthrough": true}, "description": "kagent-adk behind the chassis remote lane", "instruction": "Rewrite in plain words. Short sentences. Keep every fact.", "stream": true}'  # pragma: allowlist secret (a flag name, no value)
+  run_kagent_adk.py: |
+    """Run the kagent ADK runtime as `kagent-adk static` builds it, with local=True (in-memory
+    task store, no kagent API). Usage: run_kagent_adk.py CONFIG_DIR HOST PORT. After kagent's
+    cli.py at the pinned commit; the probe ran the same code."""
+
+    import json
+    import os
+    import sys
+
+    import uvicorn
+    from a2a.types import AgentCard
+    from google.protobuf.json_format import ParseDict
+    from kagent.adk import AgentConfig, KAgentApp
+    from kagent.adk._llm_passthrough_plugin import LLMPassthroughPlugin
+    from kagent.core import bootstrap, instrument_app
+    from kagent.core.telemetry import conv
+
+    cfg_dir, host, port = sys.argv[1], sys.argv[2], int(sys.argv[3])
+    os.environ.setdefault("KAGENT_PORT", str(port + 1000))
+    agent_config = AgentConfig.model_validate(json.load(open(os.path.join(cfg_dir, "config.json"))))
+    card = ParseDict(json.load(open(os.path.join(cfg_dir, "agent-card.json"))), AgentCard())
+    plugins = [LLMPassthroughPlugin()] if agent_config.model.api_key_passthrough else None
+    kapp = KAgentApp(
+        lambda: agent_config.to_agent("kagent_adk", None, False),
+        card,
+        "http://127.0.0.1:1",
+        "kagent__poc05-remote__kagent_adk",
+        plugins=plugins,
+        stream=bool(agent_config.stream),
+        agent_config=agent_config,
+    )
+    server = kapp.build(local=True)
+    bootstrap(conv.KagentRuntimeValues.ADK_PYTHON, fallback_name=card.name)
+    instrument_app(server)
+    uvicorn.run(server, host=host, port=port, log_level="info", log_config=None)
   agent-card.json: |
     {
       "name": "kagent_adk",
@@ -81,10 +119,10 @@ spec:
           type: RuntimeDefault
       containers:
         - name: workload
-          image: ghcr.io/kagent-dev/kagent/kagent-adk@sha256:__KAGENT_ADK_SHA256__
-          imagePullPolicy: IfNotPresent
-          command: ["kagent-adk"]
-          args: ["static", "--host", "$(POD_IP)", "--port", "9000", "--filepath", "/config"]
+          image: kind.local/agent-platform/kagent-adk:poc06
+          imagePullPolicy: Never
+          command: ["/.kagent/.venv/bin/python"]
+          args: ["/config/run_kagent_adk.py", "/config", "$(POD_IP)", "9000"]
           env:
             - name: POD_IP
               valueFrom:

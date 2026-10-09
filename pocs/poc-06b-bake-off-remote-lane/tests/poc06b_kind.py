@@ -25,7 +25,6 @@ from poc05_kind import AGENTS_NS, CHASSIS, PROBE, REMOTE_NS, WORKLOAD, kubectl
 from poc06_harness import LOOKUP, SIMPLIFIER, SMOKE, Task, Verdict, answer_text
 
 ROOT = Path(__file__).resolve().parents[3]
-KAGENT_DIGEST_FILE = ROOT / "deploy/kind/poc06/kagent/image.sha256"
 GATEWAY_PREFIX = "fake_tools-"
 """LiteLLM's MCP gateway lists a tool as `<server>-<tool>` (PoC-5 blind-spots note, B11)."""
 RUN_TIMEOUT_S = 240
@@ -113,17 +112,6 @@ REMOTES = tuple(e for e in ENGINES if e.lane == "remote")
 SIDECARS = tuple(e for e in ENGINES if e.lane == "sidecar")
 TASKS: tuple[Task, ...] = (SMOKE, SIMPLIFIER, LOOKUP)
 
-
-def kagent_enabled() -> bool:
-    """Whether `kagent/image.sha256` holds a digest (so `run.sh up` applied the kagent remote)."""
-    lines = KAGENT_DIGEST_FILE.read_text().splitlines()
-    return any(len(line) == 64 and set(line) <= set("0123456789abcdef") for line in lines)
-
-
-KAGENT_XFAIL = (
-    "kagent-adk is not applied: deploy/kind/poc06/kagent/image.sha256 holds no image digest "
-    "(a third-party image must be pinned by digest, and none could be resolved offline)"
-)
 
 # --- one run through a chassis --------------------------------------------------------------
 
@@ -249,7 +237,7 @@ NO_PYTHON = (
     "the image has no Python, so the PoC-5 in-pod probe cannot run; recorded as an exception in "
     "pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-lanes-b-kind.md"
 )
-PYTHONS = ("python", "python3", "/app/.venv/bin/python", "/usr/local/bin/python")
+PYTHONS = ("python", "python3", "/.kagent/.venv/bin/python", "/app/.venv/bin/python")
 
 
 def probe_python(
