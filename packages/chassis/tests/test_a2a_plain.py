@@ -14,6 +14,7 @@ from a2a.helpers import new_data_part
 from a2a.types import StreamResponse
 from chassis.adapters.a2a.plain import (
     INPUT_ALIASES,
+    MAX_ARTIFACTS,
     OUTPUT_ALIASES,
     REMOTE_TEXT_CAP,
     PlainOptions,
@@ -433,14 +434,40 @@ def test_another_key_is_not_read() -> None:
 
 
 def test_the_remote_text_in_the_log_is_redacted_and_capped() -> None:
-    text = "Bearer abc.def-123 failed; key sk-abcdefgh12345; " + "x" * 400
+    text = "Bearer abc.def-123 failed; key sk-abcdefgh12345; " + "word " * 200
     out = redact(text)
     assert "abc.def" not in out and "sk-abcdefgh" not in out
-    assert len(out) <= REMOTE_TEXT_CAP
+    assert len(out) == REMOTE_TEXT_CAP  # the text is longer than the cap, and not token-like
     assert redact("a\nb\x1b[31mc") == "a b [31mc"
-    r = run([status(S.TASK_STATE_FAILED, text="Bearer sekret-token-value " + "y" * 500)])
+    r = run([status(S.TASK_STATE_FAILED, text="Bearer sekret-token-value " + "word " * 200)])
     logged = next(e for e in r.logs if e["message"] == "plain a2a remote failed")
-    assert "sekret" not in logged["remote_text"] and len(logged["remote_text"]) <= REMOTE_TEXT_CAP
+    assert "sekret" not in logged["remote_text"]
+    assert len(logged["remote_text"]) == REMOTE_TEXT_CAP
+
+
+def test_redact_catches_a_colon_bearer_and_line_separators() -> None:
+    assert "tok123" not in redact("Authorization: Bearer: tok123 end")
+    assert "tok123" not in redact("bearer:tok123")
+    assert redact("a\u2028b\u0085c\u2029d") == "a b c d"
+
+
+def test_nothing_is_kept_for_the_output_once_a_delta_went_out() -> None:
+    r = run([artifact("early", last_chunk=True, artifact_id="E"), artifact("d")])
+    assert r.translator._snapshots == {}
+    r.feed([artifact("late", last_chunk=True, artifact_id="L")])
+    assert r.translator._snapshots == {}
+
+
+def test_the_number_of_kept_snapshots_is_capped_with_one_log_line() -> None:
+    items = [
+        artifact(f"t{i}", last_chunk=True, artifact_id=f"A{i}") for i in range(MAX_ARTIFACTS + 20)
+    ]
+    r = run(items)
+    assert len(r.translator._snapshots) == MAX_ARTIFACTS
+    assert [e["reason"] for e in r.logs] == ["too-many-artifacts"]
+    # An artifact already kept can still be replaced.
+    r.feed([artifact("again", last_chunk=True, artifact_id="A0")])
+    assert r.translator._snapshots["A0"] == "again"
 
 
 def test_plain_message_has_no_metadata_and_follows_the_options() -> None:

@@ -231,7 +231,11 @@ async def test_a_message_reply_is_the_answer(token: str) -> None:
 async def test_a_failed_task_has_fixed_text_and_the_remote_text_stays_in_the_log(
     token: str, state: int
 ) -> None:
-    stub = PlainStub(_script(task(S.TASK_STATE_SUBMITTED), status(state, text=REMOTE_FAILURE_TEXT)))
+    stub = PlainStub(
+        _script(
+            task(S.TASK_STATE_SUBMITTED), status(state, text=REMOTE_FAILURE_TEXT + " word" * 200)
+        )
+    )
     async with serve_uds(RequireBearer(stub_app(stub), token)) as path:
         connector, telemetry = await _remote(path)
         response = await _response(connector, make_request())
@@ -243,6 +247,93 @@ async def test_a_failed_task_has_fixed_text_and_the_remote_text_stays_in_the_log
     assert "internal.example" not in response.model_dump_json()
     logged = [e for e in telemetry.logs if e["message"] == "plain a2a remote failed"]
     assert len(logged) == 1 and "secret-path" in logged[0]["remote_text"]
+    assert len(logged[0]["remote_text"]) == 300  # the cap, on text that is not token-like
+
+
+# --- the remote's words never reach the Response on the transport path ---
+
+MARKER = "hostile-marker-payload"
+
+
+def _sse_error(stub_app_: Any, payload: bytes) -> ASGIApp:
+    """The card from the stub; any POST answered with one SSE event holding `payload`."""
+
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["method"] == "POST":
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [(b"content-type", b"text/event-stream")],
+                }
+            )
+            await send({"type": "http.response.body", "body": b"data: " + payload + b"\n\n"})
+            return
+        await stub_app_(scope, receive, send)
+
+    return app
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        json.dumps(
+            {"jsonrpc": "2.0", "id": "x", "error": {"code": -32000, "message": (MARKER + " ") * 30}}
+        ).encode(),
+        ((MARKER + " ") * 30).encode(),
+    ],
+    ids=["jsonrpc-error", "not-json"],
+)
+async def test_the_remote_words_in_a_transport_error_stay_in_the_log(
+    token: str, payload: bytes
+) -> None:
+    inner = RequireBearer(_sse_error(stub_app(PlainStub(kagent_script)), payload), token)
+    async with serve_uds(inner) as path:
+        connector, telemetry = await _remote(path)
+        response = await _response(connector, make_request())
+    assert response.status == "error"
+    assert response.output["error"]["code"] == "a2a.transport"
+    assert response.output["error"]["message"] == "the remote failed"
+    assert MARKER not in response.model_dump_json()
+    assert MARKER not in json.dumps([s.attributes for s in telemetry.spans], default=str)
+    logged = [e for e in telemetry.logs if e["message"] == "plain a2a remote failed in transit"]
+    assert len(logged) == 1
+    assert len(logged[0]["remote_text"]) <= 300
+    if payload.startswith(b"{"):  # the SDK quotes a JSON-RPC error message; not a parse failure
+        assert MARKER in logged[0]["remote_text"]
+    assert MARKER not in json.dumps([e for e in telemetry.logs if e not in logged], default=str)
+
+
+async def test_a_timeout_error_has_fixed_text_in_plain_mode(token: str) -> None:
+    connector, _ = _faked([])
+    text = connector._failure_text("a2a.timeout", TimeoutError(MARKER))
+    assert text == "the remote timed out"
+    assert MARKER in str(telemetry_logs(connector))
+
+
+def telemetry_logs(connector: RemoteConnector) -> list[dict[str, Any]]:
+    assert connector._ports is not None
+    telemetry = connector._ports.telemetry
+    assert isinstance(telemetry, InMemoryTelemetry)
+    return telemetry.logs
+
+
+async def test_chassis_mode_still_passes_the_exception_text_on() -> None:
+    """Reported, not changed: in chassis mode the SDK's exception text is the `Error` message."""
+    connector = RemoteConnector()
+    assert connector._failure_text("a2a.transport", RuntimeError(MARKER)) == MARKER
+
+
+async def test_a_long_remote_task_id_is_capped_in_the_span() -> None:
+    long_id = "t" * 1000
+    first = task(S.TASK_STATE_COMPLETED, text="x")
+    first.task.id = long_id
+    connector, _ = _faked([first])
+    await _events(connector, make_request())
+    assert connector._ports is not None
+    telemetry = connector._ports.telemetry
+    assert isinstance(telemetry, InMemoryTelemetry)
+    assert len(telemetry.spans[0].attributes["a2a.task_id"]) == 128
 
 
 # --- paused states: cancel ---

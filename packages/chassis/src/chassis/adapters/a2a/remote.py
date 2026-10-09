@@ -42,9 +42,10 @@ import httpx
 from a2a.types import AgentCard, AgentInterface, SendMessageRequest
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH, TransportProtocol
 from a2a.utils.errors import A2AError
+from google.protobuf import json_format
 
 from chassis.adapters.a2a.connector import A2AConnector, EventTranslator
-from chassis.adapters.a2a.plain import PlainOptions, PlainTranslator, plain_message
+from chassis.adapters.a2a.plain import PlainOptions, PlainTranslator, plain_message, redact
 from chassis.core.envelope import Context, Request
 from chassis.ports.engine import Lane
 
@@ -134,6 +135,22 @@ class RemoteConnector(A2AConnector):
             request.input.model_dump(mode="json"), ctx.model_dump(mode="json"), self._plain
         )
 
+    def _failure_text(self, code: str, exc: BaseException) -> str:
+        """In plain mode the SDK's exception text can hold the remote's own words (a JSON-RPC
+        error message, an SSE payload). It goes to the log, redacted and capped; the `Error` gets
+        fixed text."""
+        if self._plain is None:
+            return super()._failure_text(code, exc)
+        if self._ports is not None:
+            self._ports.telemetry.log(
+                "warning",
+                "plain a2a remote failed in transit",
+                code=code,
+                error_type=type(exc).__name__,
+                remote_text=redact(str(exc)),
+            )
+        return "the remote timed out" if code == "a2a.timeout" else "the remote failed"
+
     def _translator_for(self, request: Request) -> EventTranslator:
         if self._plain is None or self._ports is None:
             return super()._translator_for(request)
@@ -167,6 +184,7 @@ class RemoteConnector(A2AConnector):
         if protocol != "a2a" and config.get("a2a") is not None:
             raise ValueError("engine.a2a needs engine.protocol: a2a")
         self._plain = plain
+        self._malformed_stream = (ValueError, json_format.ParseError) if plain else ()
         self.url = url
         http = self._client_for(token, uds, None)
         try:

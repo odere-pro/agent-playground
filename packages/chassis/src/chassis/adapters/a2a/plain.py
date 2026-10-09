@@ -17,6 +17,10 @@ Rules the translator holds by construction, because no server-side check exists 
   FIXED text; the remote's own text is logged, redacted and capped, and goes nowhere else.
   `INPUT_REQUIRED` and `AUTH_REQUIRED` are `error {a2a.unsupported_state}` and leave the task open
   on the remote (`server_finished` is false), so the connector cancels it.
+- Nothing the remote says in words reaches a `Response`, a span, or an event: the failure states
+  have fixed text, and so do transport and timeout errors in this mode (the connector asks
+  `RemoteConnector` for the text; the SDK puts the remote's payload in its exceptions). The
+  remote's text goes to the log only, through `redact`.
 - Usage is read from one metadata key (`usage_key`), strictly: non-negative integers only, a float
   with no fractional part counts as an integer (protobuf `Struct` numbers are doubles), anything
   else counts as zero and is logged once per run. The last value wins; values are never summed.
@@ -48,6 +52,8 @@ from chassis.core.events import SCHEMA_VERSION
 
 REMOTE_TEXT_CAP = 300
 """suggested: characters of the remote's own failure text that reach the log."""
+MAX_ARTIFACTS = 64
+"""suggested: distinct artifacts whose snapshot is kept; more are ignored, with one log line."""
 MAX_COUNT = 2**53
 """suggested: the largest token count read. A double above it is not exact; it counts as zero."""
 
@@ -69,10 +75,10 @@ _TERMINAL = frozenset(
     }
 )
 
-_BEARER = re.compile(r"(?i)bearer\s+\S+")
+_BEARER = re.compile(r"(?i)bearer[\s:]+\S+")
 _KEY_SHAPE = re.compile(r"sk-[A-Za-z0-9_-]{8,}")
 _LONG_TOKEN = re.compile(r"[A-Za-z0-9_\-+/=.]{32,}")
-_CONTROL = re.compile(r"[\x00-\x1f\x7f]+")
+_CONTROL = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029]+")
 
 Log = Callable[..., None]
 """`TelemetryPort.log` shaped: `(level, message, **fields)`."""
@@ -241,15 +247,25 @@ class PlainTranslator:
         text = _text(update.artifact.parts)
         if update.last_chunk and not update.append:
             # A snapshot of the whole artifact (kagent repeats the full text): not a delta.
-            if text:
-                self._snapshots[update.artifact.artifact_id] = text
+            self._keep_snapshot(update.artifact.artifact_id, text)
             return []
         return self._delta(text)
+
+    def _keep_snapshot(self, artifact_id: str, text: str) -> None:
+        """Keep an artifact's whole text for `end.output`. Nothing is kept once a delta went out,
+        and at most `MAX_ARTIFACTS` artifacts are, so a remote cannot grow the translator."""
+        if not text or self._delta_sent:
+            return
+        if artifact_id not in self._snapshots and len(self._snapshots) >= MAX_ARTIFACTS:
+            self._log_once("too-many-artifacts", "plain a2a artifact snapshot ignored (too many)")
+            return
+        self._snapshots[artifact_id] = text
 
     def _delta(self, text: str) -> list[dict[str, Any]]:
         if not text:
             return []
         self._delta_sent = True
+        self._snapshots.clear()
         return [{"schema_version": SCHEMA_VERSION, "type": "delta", "text": text}]
 
     def _on_state(
@@ -259,8 +275,7 @@ class PlainTranslator:
             return self._delta(text) if artifacts is None else []
         if state == TaskState.TASK_STATE_COMPLETED:
             for artifact_id, artifact_text in artifacts or []:
-                if artifact_text:
-                    self._snapshots[artifact_id] = artifact_text
+                self._keep_snapshot(artifact_id, artifact_text)
             return self._complete(text)
         if state in _FAILED:
             return self._failed(state, text)
@@ -338,8 +353,11 @@ class PlainTranslator:
         key = self._options.usage_key
         if key is None or not metadata.fields:
             return
-        found = json_format.MessageToDict(metadata).get(key)
+        if key not in metadata.fields:
+            return
+        found = json_format.MessageToDict(metadata.fields[key])
         if found is None:
+            self._log_once("not-an-object", "plain a2a usage value is not an object; ignored")
             return
         if not isinstance(found, dict):
             self._log_once("not-an-object", "plain a2a usage value is not an object; ignored")

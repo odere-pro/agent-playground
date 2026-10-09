@@ -59,6 +59,8 @@ from chassis.ports.engine import Lane
 if TYPE_CHECKING:
     from chassis.ports.bundle import PortBundle
 
+SPAN_TASK_ID_CAP = 128
+"""suggested: characters of the remote's task id kept in the span attribute."""
 CANCEL_TIMEOUT_S = 5.0
 """suggested: the cancel has its own short timeout; the run's budget may already be spent."""
 
@@ -122,6 +124,10 @@ class A2AConnector:
 
     kind: Lane
     capabilities: frozenset[str] = frozenset({"streaming"})
+    _malformed_stream: tuple[type[BaseException], ...] = ()
+    """Exceptions that a stream the SDK could not parse raises (a `JSONDecodeError`). Empty in the
+    base: they propagate, as before. Plain mode of `remote` sets them, so they become
+    `a2a.transport` with fixed text instead of leaking the remote's payload."""
 
     def __init__(self) -> None:
         self._http: httpx.AsyncClient | None = None
@@ -159,6 +165,10 @@ class A2AConnector:
             ctx.model_dump(mode="json"),
             schema_version=SCHEMA_VERSION,
         )
+
+    def _failure_text(self, code: str, exc: BaseException) -> str:
+        """The text of a timeout or transport `Error`: the exception text, in the base."""
+        return str(exc)
 
     def _translator_for(self, request: Request) -> EventTranslator:
         """The reader of one run's stream. The base reads `chassis.event`."""
@@ -212,7 +222,7 @@ class A2AConnector:
                         bad, raws = exc, []
                     if task_id is None and translator.task_id is not None:
                         task_id = translator.task_id
-                        span.attributes["a2a.task_id"] = task_id
+                        span.attributes["a2a.task_id"] = task_id[:SPAN_TASK_ID_CAP]
                     if bad is not None:
                         yield Error(code="a2a.bad_event", message=str(bad))
                         return
@@ -231,12 +241,23 @@ class A2AConnector:
                         if isinstance(event, End | Error):
                             return
             except (httpx.TimeoutException, A2AClientTimeoutError) as exc:
-                yield Error(code="a2a.timeout", message=str(exc) or "timed out", retryable=True)
+                yield Error(
+                    code="a2a.timeout",
+                    message=self._failure_text("a2a.timeout", exc) or "timed out",
+                    retryable=True,
+                )
             except (httpx.TransportError, A2AClientError) as exc:
                 span.attributes["a2a.transport_error"] = type(exc).__name__
                 yield Error(
                     code="a2a.transport",
-                    message=str(exc) or type(exc).__name__,
+                    message=self._failure_text("a2a.transport", exc) or type(exc).__name__,
+                    retryable=True,
+                )
+            except self._malformed_stream as exc:
+                span.attributes["a2a.transport_error"] = type(exc).__name__
+                yield Error(
+                    code="a2a.transport",
+                    message=self._failure_text("a2a.transport", exc),
                     retryable=True,
                 )
             finally:
