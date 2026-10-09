@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[4]
 """The repo root: packages/bakeoff/src/bakeoff/registry.py is four levels down."""
 WORKLOADS = Path("packages/workloads")
 BAKEOFF_SCRIPT = Path("packages/fake-model-server/scripts/bakeoff.yaml")
+CLAUDE_SCRIPT = Path("packages/fake-model-server/scripts/bakeoff-claude.yaml")
 SMOLAGENTS_SCRIPT = WORKLOADS / "echo-smolagents/tests/scripts/smolagents.yaml"
 TS_MAIN = WORKLOADS / "echo-typescript/dist/src/main.js"
 MESSAGES_ROUTE = "chassis.server.model_proxy_messages"
@@ -126,6 +127,7 @@ ENGINES: tuple[Engine, ...] = (
         "python",
         trusted=False,
         handle="echo_claude_agent:handle",
+        script=CLAUDE_SCRIPT,
         mapping_files=_py("echo-claude-agent", "echo_claude_agent", "handle.py", "tools.py"),
     ),
     Engine(

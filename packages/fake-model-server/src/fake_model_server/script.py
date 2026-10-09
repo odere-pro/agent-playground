@@ -5,6 +5,13 @@ A rule without `after_tool` matches only when the last message is not a `tool` m
 matches only when the last message is a `tool` message, and its `match` is tested against that
 tool content. No `match` matches any text. So the rule that calls a tool is never picked again on
 the tool's result, and a scripted tool loop ends.
+
+Trailing turns (suggested): some clients, such as the Claude CLI, add turns after a tool result:
+a `system` note (a `total_tokens` count) and sometimes a `user` reminder. The last `tool` message
+is the trigger when only `system` or `user` messages follow it and none of those user messages
+matches any plain rule (a plain rule with no `match` matches every text). A user message that
+matches a plain rule is a new turn, and the plain rules answer it as before. A conversation that
+ends in a `tool` message is unchanged.
 """
 
 from __future__ import annotations
@@ -54,10 +61,27 @@ class Script(BaseModel):
     def from_yaml(cls, path: str | Path) -> Script:
         return cls.model_validate(yaml.safe_load(Path(path).read_text()) or {})
 
+    def _tool_trigger(self, messages: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """The last `tool` message when only system notes and non-matching user reminders follow."""
+        for i in range(len(messages) - 1, -1, -1):
+            role = messages[i].get("role")
+            if role == "tool":
+                return messages[i]
+            if role == "system":
+                continue
+            if role == "user" and not self._matches_plain(_text(messages[i].get("content"))):
+                continue
+            return None
+        return None
+
+    def _matches_plain(self, text: str) -> bool:
+        return any(not r.after_tool and (r.match is None or r.match in text) for r in self.rules)
+
     def pick(self, messages: list[dict[str, Any]]) -> Rule:
-        after_tool = bool(messages) and messages[-1].get("role") == "tool"
-        if after_tool:
-            text = _text(messages[-1].get("content"))
+        trigger = self._tool_trigger(messages)
+        after_tool = trigger is not None
+        if trigger is not None:
+            text = _text(trigger.get("content"))
         else:
             text = next(
                 (_text(m.get("content")) for m in reversed(messages) if m.get("role") == "user"),
