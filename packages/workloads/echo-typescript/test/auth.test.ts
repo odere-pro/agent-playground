@@ -223,7 +223,7 @@ function startUp(args: string[], env: Record<string, string>): { status: number 
 }
 
 test("main: a start-up error exits 2 before listening, naming only the variable", () => {
-  const secret = "tok-must-not-print";  // pragma: allowlist secret (a test canary)
+  const secret = "tok-must-not-print";
   const cases: [string[], Record<string, string>, RegExp][] = [
     [["--previous-token-env", "P"], { P: secret }, /needs --require-token-env/],
     [["--require-token-env", "T"], {}, /T is unset or empty/],
