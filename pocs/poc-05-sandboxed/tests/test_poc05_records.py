@@ -48,7 +48,7 @@ BLIND_SPOT_TOPICS = {
     "/dev/shm": r"/dev/shm",
     "H01": r"\bH01\b",
     "Envoy": r"\bEnvoy\b",
-    "claim deletion": r"claim.{0,60}delet|delet.{0,60}claim",
+    "claim deletion": r"claim.{0,60}(?:delete|deletion)|(?:delete|deletion).{0,60}claim",
 }
 
 
