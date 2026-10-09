@@ -1,7 +1,7 @@
 [project]
 name = "echo-openai-agents"
 version = "0.1.0"
-description = "PoC-6 skeleton: the simplifier as a OpenAI Agents SDK agent, handle(input, ctx) in the wire form, served by workload-a2a, no chassis dependency, no key"
+description = "PoC-6: the simplifier as an OpenAI Agents SDK agent, handle(input, ctx) in the wire form, served by workload-a2a, no chassis dependency, no key"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "openai-agents==0.23.1",
