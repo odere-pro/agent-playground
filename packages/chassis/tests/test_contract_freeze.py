@@ -48,10 +48,15 @@ FROZEN = (
 
 # sha256 of the schema files at the freeze (contract v5, C.4 lists the first 16 hex).
 SCHEMA_SHA256 = {
+    # pragma: allowlist nextline secret (a schema sha256, not a secret)
     "events.v0.json": "60de41563a1d0582336a67ffac6a2f1891036b690e8c20373194d0bb05108521",
+    # pragma: allowlist nextline secret (a schema sha256, not a secret)
     "task_input.v0.json": "6d8aa949b462c77e637de4ea61de13aefca7819248c7ee607c184b2465b68d89",
+    # pragma: allowlist nextline secret (a schema sha256, not a secret)
     "context.v0.json": "d2db0e94a50379f1e01b3441e1c6d0f5afbfe599a72b8905086bb5f447db99d6",
+    # pragma: allowlist nextline secret (a schema sha256, not a secret)
     "request.v0.json": "4ff8a4324a90e8c035f7186e5d242f5ef25e80d100a6bdb8bb141bc978894ce5",
+    # pragma: allowlist nextline secret (a schema sha256, not a secret)
     "response.v0.json": "63acf4f16dae59f952a92d9057dc85d7524148dc9dd842f06d476c9c87167aca",
 }
 
