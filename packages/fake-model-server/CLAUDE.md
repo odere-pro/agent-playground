@@ -26,7 +26,7 @@ default_reply: "ok"                    # when no rule matches
 
 A tool loop ends (suggested): a rule without `after_tool` matches only when the last message is not a `tool` message, so the rule that called the tool is not picked again on its result. An `after_tool: true` rule answers the result; when none matches, `default_reply` does. `chassis.fakes.ScriptedModel` follows the same rules (`ScriptRule.after_tool`).
 
-Trailing turns (suggested): the Claude CLI adds a `system` note, and sometimes a `user` reminder, after a tool result. The last `tool` message is the trigger when only `system` or `user` messages follow it and none of those user messages matches any plain rule (a plain rule with no `match` matches every text). A user message that matches a plain rule is a new turn. `scripts/bakeoff-claude.yaml` is `bakeoff.yaml` with the `mcp__chassis__` tool-name prefix the CLI requires.
+Trailing turns (suggested): the Claude CLI adds a `system` note, and sometimes a `user` reminder, after a tool result. The last `tool` message is the trigger when only `system` or `user` messages follow it and none of those user messages matches any plain rule (a plain rule with no `match` matches every text). A user message that matches a plain rule is a new turn. `packages/fake-model-server/scripts/bakeoff-claude.yaml` is `bakeoff.yaml` with the `mcp__chassis__` tool-name prefix the CLI requires.
 
 ## Rules
 
