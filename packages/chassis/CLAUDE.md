@@ -30,8 +30,9 @@ Under `packages/chassis/`: `configs/` the bundled specs, `schemas/` the publishe
 - Every new port gets a fake and a suite in `packages/contract-suites` in the same change (skill `contract-suite`).
 - `inprocess` is for the chassis's own tests and local runs. `check_lane` refuses it elsewhere.
 - Two chat routes share a path. Never write it bare. Say "the OpenAI interface (public port)" or "the model proxy (proxy port)".
+- Two `/v1/messages` routes exist too. The Anthropic interface (public port) calls the agent. The Anthropic proxy route (proxy port, `server/model_proxy_messages.py`) calls the model. The proxy port serves `/v1/chat/completions`, `/v1/messages`, and `/mcp`, and the remote listener serves exactly those three.
 - `/v1/mcp` on the public port is the agent as a tool. `/mcp` on the proxy port is the tools for workloads.
-- Credentials stay in the chassis. The model proxy never forwards `Authorization`. The LiteLLM key is never logged.
+- Credentials stay in the chassis. The model proxy never forwards `Authorization` or `x-api-key`. The LiteLLM key is never logged.
 - OpenAI and Anthropic errors send `public_message(code)`, never the run's own message. The detail stays in the log and the span.
 - A replica keeps nothing a retry needs. What must outlive a call goes behind `StatePort`, `ConfigPort`, or `EventPort`. Never a module global or `app.state` (exit criterion 8; `pocs/poc-04-stateless-scalable/notes/2026-10-01-hidden-state.md`).
 - A new `spec.*` field is restart-only unless it is in `RELOADABLE` and read per request from `state.config`. A reload never changes a run that is already open.

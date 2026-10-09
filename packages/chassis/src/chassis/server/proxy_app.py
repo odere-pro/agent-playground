@@ -1,11 +1,12 @@
 """The proxy app: what a workload calls, on a localhost-only listener next to the public port.
 
-`create_proxy_app(public_app)` mounts the model pass-through (`POST /v1/chat/completions`,
-`chassis.server.model_proxy`) and the MCP tool endpoint (`/mcp`, `chassis.server.tool_endpoint`)
-on its own FastAPI app. It shares `public_app.state` (the ports, `ready`, `runs`, `config`)
-instead of copying it, and it has no lifespan of its own: the public app's lifespan builds the
-ports and sets `ready`, and the proxy answers 503 until then. The MCP server's lifespan is hooked
-into the public app's, so call this before the public app starts.
+`create_proxy_app(public_app)` mounts the model pass-through (`POST /v1/chat/completions` and the
+Anthropic proxy route `POST /v1/messages`, `chassis.server.model_proxy`) and the MCP tool
+endpoint (`/mcp`, `chassis.server.tool_endpoint`) on its own FastAPI app. It shares
+`public_app.state` (the ports, `ready`, `runs`, `config`) instead of copying it, and it has no
+lifespan of its own: the public app's lifespan builds the ports and sets `ready`, and the proxy
+answers 503 until then. The MCP server's lifespan is hooked into the public app's, so call this
+before the public app starts.
 
 `chassis serve` runs this app on `--proxy-host 127.0.0.1 --proxy-port 8090` (suggested: 8090),
 so only a process in the chassis's network namespace (the sidecar workload) reaches it; the

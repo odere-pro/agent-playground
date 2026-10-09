@@ -314,6 +314,24 @@ The model proxy (proxy port) is the OpenAI-compatible pass-through a workload ca
 - The tokens are reserved at start and settled on usage.
 - When nothing is left, it answers 429 `budget_exhausted`. That is `retryable` only when in-flight reservations hold the rest.
 - Uncorrelated calls are served with their own `max_tokens` and counted.
+- `admit(...)` is the one admission step both routes use: count the call, find the run, refuse with 429, else reserve.
+- An upstream 401 or 403 answers 403 `model_route_denied` on both routes (it was 500 `http_401`). It counts `chassis.model_upstream_denied{route}` and logs once. A chat stream keeps its 200 and its error frame.
+
+### model_proxy_messages.py
+
+The Anthropic proxy route (`POST /v1/messages` on the proxy port; contract v5, part A) is a second wire format on the model proxy. It is not the Anthropic interface on the public port, which calls the agent.
+
+- Both proxy listeners serve it, because both mount the one model proxy router. On the remote listener it is behind `BearerAuth` and `RequireRun`.
+- The reader is `anthropic_compat/model_wire.py`. It reads the raw JSON by hand and maps it onto `ModelMessage`, `ToolSpec`, and `max_tokens`. The SDK types cannot hold what the Claude CLI sends.
+- It reads one header, `traceparent`. It never reads or forwards `authorization`, `x-api-key`, `anthropic-version`, or `anthropic-beta`. The query is ignored.
+- The body is capped at 4 MiB (`BODY_CAP_BYTES`, suggested), counted while it is read and before it is parsed. Over it, 413 `request_too_large`.
+- A streamed answer holds for `FIRST_CHUNK_WAIT_S` (5 s, suggested) so a model error in that window keeps its HTTP status. After that an error is one `event: error` frame. A `ping` goes out every `PING_INTERVAL_S` (15 s, suggested).
+- A correlated stream whose client leaves after the model call started is charged its last known usage, or the whole reservation. The chat route does not do this (Known gap 004 G-2).
+- Every error is Anthropic's shape with a `request-id` header and `x-should-retry`. Model errors send fixed text. The upstream text of a rejected request is logged at the chassis, never sent.
+- Empty assistant turns and empty `system` entries are skipped. An empty user turn is a 400. A JSON boolean for `max_tokens` or `temperature` is a 400.
+- `/v1/messages/count_tokens` is a 404 in the Anthropic shape. On the remote listener its 401 keeps the v4 body, because the middlewares test the exact path `/v1/messages`.
+- Counters: `chassis.model_proxy.ignored{format, param}` for each dropped field. The `chassis.model.call` span has `format`.
+- The remote listener's route list is pinned to `/v1/chat/completions`, `/v1/messages`, `/mcp`.
 
 ### correlation.py
 
