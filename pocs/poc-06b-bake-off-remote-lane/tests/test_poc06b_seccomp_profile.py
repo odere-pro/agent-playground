@@ -1,0 +1,246 @@
+"""The PoC-6 gVisor seccomp profile derivation (deploy/kind/poc06/seccomp/derive_profile.py).
+
+Offline: the input is a small dict shaped like `crictl inspect` output for a RuntimeDefault
+container. The derived profile must differ from the input in exactly the `clone3` rule, and every
+input that is not exactly the expected shape must fail closed.
+"""
+
+from __future__ import annotations
+
+import copy
+import importlib.util
+import json
+import subprocess
+import sys
+from pathlib import Path
+from types import ModuleType
+from typing import Any
+
+import pytest
+
+SCRIPT = Path(__file__).resolve().parents[3] / "deploy/kind/poc06/seccomp/derive_profile.py"
+
+
+def _load() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("derive_profile", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+derive_profile = _load()
+
+
+FILLER = {"names": [f"sys_{i}" for i in range(250)], "action": "SCMP_ACT_ALLOW"}
+MASKED_CLONE = {
+    "names": ["clone"],
+    "action": "SCMP_ACT_ALLOW",
+    "args": [{"index": 0, "value": 2114060288, "op": "SCMP_CMP_MASKED_EQ"}],
+}
+
+
+def inspect_doc(syscalls: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """A fixture shaped like containerd's output (a short syscall list, not the real one)."""
+    rules = (
+        [*syscalls, FILLER, MASKED_CLONE]
+        if syscalls is not None
+        else [
+            {"names": ["accept", "accept4", "read", "write"], "action": "SCMP_ACT_ALLOW"},
+            {"names": ["clone3"], "action": "SCMP_ACT_ERRNO", "errnoRet": 38},
+            {
+                "names": ["clone"],
+                "action": "SCMP_ACT_ALLOW",
+                "args": [{"index": 0, "value": 2114060288, "op": "SCMP_CMP_MASKED_EQ"}],
+            },
+            {"names": ["bpf", "mount"], "action": "SCMP_ACT_ERRNO", "errnoRet": 1},
+            FILLER,
+        ]
+    )
+    return {
+        "status": {"id": "abc"},
+        "info": {
+            "runtimeSpec": {
+                "ociVersion": "1.1.0",
+                "linux": {
+                    "seccomp": {
+                        "defaultAction": "SCMP_ACT_ERRNO",
+                        "defaultErrnoRet": 1,
+                        "architectures": ["SCMP_ARCH_X86_64", "SCMP_ARCH_X86", "SCMP_ARCH_X32"],
+                        "syscalls": rules,
+                    }
+                },
+            }
+        },
+    }
+
+
+def test_happy_path_changes_exactly_the_clone3_rule() -> None:
+    doc = inspect_doc()
+    source = doc["info"]["runtimeSpec"]["linux"]["seccomp"]
+    before = copy.deepcopy(doc)
+    out = derive_profile.derive(doc)
+    assert doc == before, "the input must not be mutated"
+    changed = [
+        i
+        for i, (a, b) in enumerate(zip(source["syscalls"], out["syscalls"], strict=True))
+        if a != b
+    ]
+    assert changed == [1]
+    assert out["syscalls"][1] == {"names": ["clone3"], "action": "SCMP_ACT_ALLOW"}
+    assert len(out["syscalls"]) == len(source["syscalls"])
+    assert {k: v for k, v in out.items() if k != "syscalls"} == {
+        k: v for k, v in source.items() if k != "syscalls"
+    }
+
+
+def _with(rule: dict[str, Any]) -> dict[str, Any]:
+    return inspect_doc([{"names": ["read"], "action": "SCMP_ACT_ALLOW"}, rule])
+
+
+@pytest.mark.parametrize(
+    ("doc", "message"),
+    [
+        (inspect_doc([{"names": ["read"], "action": "SCMP_ACT_ALLOW"}]), "found 0"),
+        (
+            inspect_doc(
+                [
+                    {"names": ["clone3"], "action": "SCMP_ACT_ERRNO", "errnoRet": 38},
+                    {"names": ["clone3"], "action": "SCMP_ACT_ERRNO", "errnoRet": 38},
+                ]
+            ),
+            "found 2",
+        ),
+        (
+            _with({"names": ["clone3", "unshare"], "action": "SCMP_ACT_ERRNO", "errnoRet": 38}),
+            "grouped",
+        ),
+        (_with({"names": ["clone3"], "action": "SCMP_ACT_ERRNO", "errnoRet": 1}), "errnoRet"),
+        (_with({"names": ["clone3"], "action": "SCMP_ACT_ERRNO"}), "errnoRet"),
+        (_with({"names": ["clone3"], "action": "SCMP_ACT_ALLOW", "errnoRet": 38}), "action"),
+        (_with({"names": ["clone3"], "action": "SCMP_ACT_KILL", "errnoRet": 38}), "action"),
+        ({"info": {"runtimeSpec": {"linux": {}}}}, "no .info.runtimeSpec.linux.seccomp"),
+        ({"info": {}}, "no .info.runtimeSpec.linux.seccomp"),
+        ({}, "no .info.runtimeSpec.linux.seccomp"),
+        ({"info": {"runtimeSpec": {"linux": {"seccomp": {"syscalls": "x"}}}}}, "syscalls"),
+    ],
+    ids=[
+        "no-clone3",
+        "two-clone3",
+        "grouped",
+        "wrong-errno",
+        "missing-errno",
+        "wrong-action-allow",
+        "wrong-action-kill",
+        "no-seccomp",
+        "no-runtimespec",
+        "empty",
+        "bad-syscalls",
+    ],
+)
+def test_unexpected_input_fails_closed(doc: dict[str, Any], message: str) -> None:
+    with pytest.raises(derive_profile.DeriveError, match=message):
+        derive_profile.derive(doc)
+
+
+def run_cli(stdin: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(SCRIPT)], input=stdin, capture_output=True, text=True, check=False
+    )
+
+
+def test_cli_prints_the_profile_and_only_the_clone3_rule_differs() -> None:
+    doc = inspect_doc()
+    got = run_cli(json.dumps(doc))
+    assert got.returncode == 0, got.stderr
+    out = json.loads(got.stdout)
+    source = doc["info"]["runtimeSpec"]["linux"]["seccomp"]
+    assert out["syscalls"][1]["action"] == "SCMP_ACT_ALLOW"
+    assert "errnoRet" not in out["syscalls"][1]
+    for i in (0, 2, 3):
+        assert out["syscalls"][i] == source["syscalls"][i]
+
+
+def test_cli_exits_non_zero_with_a_message_on_bad_input() -> None:
+    got = run_cli(json.dumps(inspect_doc([])))
+    assert got.returncode == 1
+    assert got.stdout == ""
+    assert "derive_profile:" in got.stderr
+    assert run_cli("not json").returncode == 1
+
+
+def _default_with(**changes: Any) -> dict[str, Any]:
+    doc = inspect_doc()
+    doc["info"]["runtimeSpec"]["linux"]["seccomp"].update(changes)
+    return doc
+
+
+def _rules(extra: list[dict[str, Any]] | None = None, drop_clone: bool = False) -> dict[str, Any]:
+    doc = inspect_doc()
+    rules = doc["info"]["runtimeSpec"]["linux"]["seccomp"]["syscalls"]
+    if drop_clone:
+        rules[:] = [r for r in rules if r["names"] != ["clone"]]
+    rules.extend(extra or [])
+    return doc
+
+
+def _with_bounding(caps: list[str]) -> dict[str, Any]:
+    doc = inspect_doc()
+    doc["info"]["runtimeSpec"]["process"] = {"capabilities": {"bounding": caps}}
+    return doc
+
+
+def _look_alike() -> dict[str, Any]:
+    """defaultAction ALLOW plus one clone3 rule: it passes every clone3 check and nothing else."""
+    doc = inspect_doc([{"names": ["clone3"], "action": "SCMP_ACT_ERRNO", "errnoRet": 38}])
+    doc["info"]["runtimeSpec"]["linux"]["seccomp"] = {
+        "defaultAction": "SCMP_ACT_ALLOW",
+        "syscalls": [{"names": ["clone3"], "action": "SCMP_ACT_ERRNO", "errnoRet": 38}],
+    }
+    return doc
+
+
+@pytest.mark.parametrize(
+    ("doc", "message"),
+    [
+        (_look_alike(), "defaultAction"),
+        (_default_with(defaultAction="SCMP_ACT_ALLOW"), "defaultAction"),
+        (_rules([{"names": ["unshare"], "action": "SCMP_ACT_ALLOW"}]), "unshare"),
+        (_rules([{"names": ["ptrace", "mount"], "action": "SCMP_ACT_ALLOW"}]), "mount"),
+        (_rules(drop_clone=True), "no clone rule"),
+        (_with_bounding(["CAP_SYS_ADMIN"]), "bounding capabilities"),
+    ],
+    ids=[
+        "look-alike",
+        "default-allow",
+        "forbidden-unshare",
+        "forbidden-mount",
+        "no-clone-mask",
+        "caps",
+    ],
+)
+def test_baseline_fails_closed(doc: dict[str, Any], message: str) -> None:
+    with pytest.raises(derive_profile.DeriveError, match=message):
+        derive_profile.derive(doc)
+
+
+def test_baseline_rejects_too_few_allowed_syscalls() -> None:
+    doc = inspect_doc()
+    rules = doc["info"]["runtimeSpec"]["linux"]["seccomp"]["syscalls"]
+    rules[:] = [r for r in rules if r is not FILLER]
+    with pytest.raises(derive_profile.DeriveError, match="allowed syscalls"):
+        derive_profile.derive(doc)
+
+
+def test_baseline_accepts_empty_bounding_set_and_ignores_forbidden_names_in_errno_rules() -> None:
+    doc = _with_bounding([])
+    derived = derive_profile.derive(doc)
+    assert derived["defaultAction"] == "SCMP_ACT_ERRNO"
+
+
+def test_errors_never_quote_the_input() -> None:
+    doc = _with_bounding(["CAP_SYS_ADMIN"])
+    doc["info"]["runtimeSpec"]["process"]["env"] = ["TOKEN=s3cret-value"]
+    with pytest.raises(derive_profile.DeriveError) as err:
+        derive_profile.derive(doc)
+    assert "s3cret" not in str(err.value)

@@ -11,6 +11,8 @@
 #   deploy/kind/poc06/run.sh build    docker build the PoC-6 images (tag poc06), kagent-adk included
 #   deploy/kind/poc06/run.sh load     kind load the PoC-6 images
 #   deploy/kind/poc06/run.sh seed     seed.sh keys (needs LiteLLM Ready)
+#   deploy/kind/poc06/run.sh seccomp  derive the gVisor seccomp profile from PoC-5's running remote-echo
+#                                     pod and write it to every kind node (`up` and `apply` run it first)
 #   deploy/kind/poc06/run.sh apply    admission params, fake model script, seed, remote/, agents/,
 #                                     kagent/ (no build, no PoC-5 bring-up)
 #   deploy/kind/poc06/run.sh test     the kind tests: POC06_KIND=1 pytest -m kind (PoC-6b tests)
@@ -30,6 +32,13 @@
 #   bake-off tasks need rules the example script lacks, and its catch-all `after_tool` rule would
 #   swallow the lookup loop. This cluster state is for the PoC-6 kind tests; the PoC-5 kind suite
 #   needs a PoC-5-only cluster (`poc05/run.sh up` alone).
+#
+# The gVisor seccomp profile (seccomp/derive_profile.py, `seccomp` verb): the nodes run runsc with
+# oci-seccomp, and runsc turns every SCMP_ACT_ERRNO rule into EPERM, so RuntimeDefault's clone3 rule
+# (ENOSYS in containerd) breaks `pthread_create` in every multi-threaded gVisor pod. The profile
+# `poc06-runsc-clone3.json` is the node's own RuntimeDefault with that one rule allowed. The PoC-6
+# gVisor pods use it as a Localhost profile. Note: notes/2026-10-09-lanes-b-kind.md, "gVisor and
+# clone3". Remove it when runsc has google/gvisor#14721.
 #
 # kagent-adk (the remote solution, kagent/): built from kagent's own source, not pulled. `build_kagent`
 # clones https://github.com/kagent-dev/kagent, checks out the commit in kagent/source.commit, fails
@@ -53,6 +62,10 @@ REMOTE_NS=poc05-remote
 KAGENT_COMMIT_FILE=$HERE/kagent/source.commit
 KAGENT_REPO=https://github.com/kagent-dev/kagent
 KAGENT_IMAGE=kind.local/agent-platform/kagent-adk:poc06
+SECCOMP_DERIVE=$HERE/seccomp/derive_profile.py
+SECCOMP_DIR=/var/lib/kubelet/seccomp/profiles
+SECCOMP_FILE=poc06-runsc-clone3.json
+SOURCE_POD_LABEL=app.kubernetes.io/name=remote-echo
 
 # The images `build` makes and `load` puts in the node: "<image>|<Dockerfile>|<context>", relative
 # to the repo root. echo-typescript is PoC-5's image (kind.local/agent-platform/echo-typescript:poc05,
@@ -192,7 +205,66 @@ apply_kagent() {
   wait_rollout "$AGENTS_NS" chassis-kagent-adk-remote
 }
 
+# Python run on the source pod's JSON: it is the PoC-5 remote-echo Sandbox's pod, on gVisor, and its
+# workload container drops ALL and has seccomp RuntimeDefault (container or pod level). Fails closed.
+SOURCE_POD_CHECK='
+import json, sys
+pod = json.load(sys.stdin)
+owners = pod["metadata"].get("ownerReferences") or []
+assert any(o.get("kind") == "Sandbox" and o.get("name") == "remote-echo" for o in owners), "owner"
+spec = pod["spec"]
+assert spec.get("runtimeClassName") == "gvisor", "runtimeClassName"
+c = [c for c in spec["containers"] if c["name"] == "workload"]
+assert len(c) == 1, "workload container"
+sc = c[0].get("securityContext") or {}
+assert (sc.get("capabilities") or {}).get("drop") == ["ALL"], "capabilities"
+sec = sc.get("seccompProfile") or (spec.get("securityContext") or {}).get("seccompProfile") or {}
+assert sec.get("type") == "RuntimeDefault", "seccomp"
+'
+
+# The gVisor seccomp profile. Source: PoC-5's running remote-echo pod (gVisor, RuntimeDefault, drop
+# ALL), so the profile containerd generated for it is the one we want. Every step fails closed.
+seccomp_profile() {
+  command -v docker >/dev/null || die "seccomp: docker not found"
+  command -v python3 >/dev/null || die "seccomp: python3 not found"
+  local pod node cid profile sum nodes n
+  pod=$(kctl -n "$REMOTE_NS" get pods -l "$SOURCE_POD_LABEL" --field-selector=status.phase=Running \
+    -o jsonpath='{.items[*].metadata.name}') || die "seccomp: cannot list pods in $REMOTE_NS"
+  [[ -n $pod && $pod != *" "* ]] || die "seccomp: want exactly one running $SOURCE_POD_LABEL pod, got '$pod'"
+  kctl -n "$REMOTE_NS" get pod "$pod" -o json | python3 -c "$SOURCE_POD_CHECK" ||
+    die "seccomp: source pod $pod is not the PoC-5 remote-echo gVisor RuntimeDefault drop-ALL pod"
+  node=$(kctl -n "$REMOTE_NS" get pod "$pod" -o jsonpath='{.spec.nodeName}') || die "seccomp: no node for $pod"
+  cid=$(kctl -n "$REMOTE_NS" get pod "$pod" \
+    -o jsonpath='{.status.containerStatuses[?(@.name=="workload")].containerID}') ||
+    die "seccomp: no container id for $pod"
+  [[ $cid == containerd://?* ]] || die "seccomp: container id '$cid' is not containerd://<id>"
+  cid=${cid#containerd://}
+  [[ -n $node ]] || die "seccomp: pod $pod has no node"
+  log "seccomp: source pod $REMOTE_NS/$pod on node $node"
+  # The inspect JSON holds the remote-echo container env, including its token. It flows only through
+  # this pipe into derive_profile.py, which never prints its input; no error path here echoes it.
+  profile=$(docker exec "$node" crictl inspect "$cid" | python3 "$SECCOMP_DERIVE") ||
+    die "seccomp: crictl inspect or derive_profile.py failed for $cid on $node"
+  [[ -n $profile ]] || die "seccomp: derived profile is empty"
+  sum=$(printf '%s\n' "$profile" | sha256sum | cut -d' ' -f1)
+  nodes=$(kctl get nodes -o jsonpath='{.items[*].metadata.name}') || die "seccomp: cannot list nodes"
+  [[ -n $nodes ]] || die "seccomp: no nodes"
+  for n in $nodes; do
+    # Write a temp file, check its sha256, then rename it into place (atomic on one filesystem).
+    printf '%s\n' "$profile" |
+      docker exec -i "$n" sh -c "mkdir -p $SECCOMP_DIR && cat > $SECCOMP_DIR/.$SECCOMP_FILE.tmp" ||
+      die "seccomp: cannot write the profile on node $n"
+    docker exec "$n" sha256sum "$SECCOMP_DIR/.$SECCOMP_FILE.tmp" | grep -q "^$sum " ||
+      die "seccomp: profile on node $n does not match sha256 $sum"
+    docker exec "$n" mv -f "$SECCOMP_DIR/.$SECCOMP_FILE.tmp" "$SECCOMP_DIR/$SECCOMP_FILE" ||
+      die "seccomp: cannot move the profile into place on node $n"
+    log "seccomp: wrote $SECCOMP_DIR/$SECCOMP_FILE on $n"
+  done
+  log "seccomp: sha256 $sum; the one changed rule: clone3, SCMP_ACT_ERRNO (errnoRet 38) -> SCMP_ACT_ALLOW"
+}
+
 apply_all() {
+  seccomp_profile
   apply_params
   apply_fake_model
   "$SEED" keys
@@ -231,7 +303,7 @@ run_tests() {
   (cd "$ROOT" && env POC06_KIND=1 uv run pytest -m kind "${KIND_TESTS[@]}" -q -rsx)
 }
 
-usage() { sed -n '2,24p' "$0"; }
+usage() { sed -n '2,26p' "$0"; }
 
 (($# > 0)) || { usage; exit 0; }
 for cmd in "$@"; do
@@ -240,6 +312,7 @@ for cmd in "$@"; do
     build) build ;;
     load) load ;;
     seed) "$SEED" keys ;;
+    seccomp) seccomp_profile ;;
     apply) apply_all ;;
     test) run_tests ;;
     pods) pods ;;

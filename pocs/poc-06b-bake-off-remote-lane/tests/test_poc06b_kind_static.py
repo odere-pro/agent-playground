@@ -114,6 +114,11 @@ def _objects(folder: str) -> list[Obj]:
 ALL_OBJECTS = [o for f in FOLDERS for o in _objects(f)]
 
 
+GVISOR_SECCOMP = {"type": "Localhost", "localhostProfile": "profiles/poc06-runsc-clone3.json"}
+"""A gVisor pod's profile: the node's RuntimeDefault with clone3 allowed (run.sh `seccomp`; note
+lanes-b-kind.md, "gVisor and clone3"). A runc pod keeps RuntimeDefault."""
+
+
 @dataclass(frozen=True)
 class Pod:
     obj: Obj
@@ -256,7 +261,10 @@ def test_every_container_is_hardened(pod: Pod) -> None:
         assert sc.get("capabilities", {}).get("drop") == ["ALL"], where
         assert not sc.get("capabilities", {}).get("add"), where
         seccomp = sc.get("seccompProfile", pod_sc.get("seccompProfile", {}))
-        assert seccomp.get("type") == "RuntimeDefault", where
+        if pod.spec.get("runtimeClassName") == "gvisor":
+            assert seccomp == GVISOR_SECCOMP, where
+        else:
+            assert seccomp == {"type": "RuntimeDefault"}, where
         limits = c.get("resources", {}).get("limits", {})
         assert limits.get("cpu") and limits.get("memory"), f"{where}: limits {limits}"
         assert c.get("resources", {}).get("requests"), f"{where}: no requests"
@@ -1019,3 +1027,41 @@ def test_the_record_names_each_exception() -> None:
         "trustedRepositories",
     ):
         assert needle in note, needle
+
+
+# --- the Localhost profile is for the four gVisor pods only -----------------------------------
+
+PROFILE_NAME = "poc06-runsc-clone3.json"
+PROFILE_PODS = {
+    "remote-typescript",
+    "remote-smolagents",
+    "remote-claude-agent",
+    "remote-kagent-adk",
+}
+
+
+def _pod_docs_under_deploy() -> Iterator[tuple[Path, Doc]]:
+    for path in sorted((ROOT / "deploy").rglob("*.y*ml")):
+        for doc in _load_all(path):
+            if isinstance(doc, dict):
+                yield path, doc
+
+
+def test_only_the_four_gvisor_pods_reference_the_profile() -> None:
+    """Scan every manifest under `deploy/` (not only poc06): the profile file is referenced by
+    exactly the four PoC-6 gVisor remotes, and by nothing else (no runc pod, no PoC-5 pod)."""
+    users: set[str] = set()
+    for path, doc in _pod_docs_under_deploy():
+        if PROFILE_NAME not in json.dumps(doc):
+            continue
+        where = f"{path.relative_to(ROOT)}: {doc.get('kind')}/{doc.get('metadata', {}).get('name')}"
+        assert "deploy/kind/poc06/" in path.as_posix(), where
+        assert doc.get("kind") in POD_KINDS, where
+        name = str(doc["metadata"]["name"])
+        assert name in PROFILE_PODS, where
+        template = (
+            doc["spec"]["podTemplate"] if doc["kind"] == "Sandbox" else doc["spec"]["template"]
+        )
+        assert template["spec"].get("runtimeClassName") == "gvisor", where
+        users.add(name)
+    assert users == PROFILE_PODS, users
