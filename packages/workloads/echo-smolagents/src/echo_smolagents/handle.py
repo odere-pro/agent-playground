@@ -53,7 +53,7 @@ DEFAULT_TIMEOUT_S = 30.0
 # The openai SDK refuses an empty key, so it gets this placeholder, never an `*_API_KEY` variable.
 # It is not sent either: `_scrub_headers` removes the header. The chassis model proxy ignores
 # `Authorization` anyway and adds the real, scoped key itself; only the chassis holds credentials.
-PLACEHOLDER_API_KEY = "not-a-key"
+PLACEHOLDER_API_KEY = "not-a-key"  # pragma: allowlist secret (not a credential)
 
 transport: httpx2.BaseTransport | None = None
 """Test-only hook: when set, model calls go through this sync `httpx2` transport, not a socket (for
