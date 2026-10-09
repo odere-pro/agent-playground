@@ -174,7 +174,9 @@ def test_the_env_builder_never_copies_the_parent(
 
 def test_the_env_builder_refuses_to_pass_anthropic_or_claude_names(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="ANTHROPIC_API_KEY") as caught:
-        build_env(tmp_path, {"ANTHROPIC_API_KEY": "value-that-must-not-print"})
+        build_env(
+            tmp_path, {"ANTHROPIC_API_KEY": "value-that-must-not-print"}
+        )  # pragma: allowlist secret
     assert "value-that-must-not-print" not in str(caught.value)
     with pytest.raises(ValueError, match="CLAUDE_X"):
         build_env(tmp_path, {"CLAUDE_X": "1"})
