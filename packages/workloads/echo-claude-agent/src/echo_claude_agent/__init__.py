@@ -1,5 +1,5 @@
-"""echo-claude-agent: PoC-6 skeleton. `handle` is the one thing served."""
+"""echo-claude-agent: the simplifier on the Claude Agent SDK. `handle` is the one thing served."""
 
-from echo_claude_agent.handle import handle
+from echo_claude_agent.handle import PROMPT_VERSION, SYSTEM_PROMPT, handle
 
-__all__ = ["handle"]
+__all__ = ["PROMPT_VERSION", "SYSTEM_PROMPT", "handle"]

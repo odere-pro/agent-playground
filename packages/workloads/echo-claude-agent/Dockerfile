@@ -1,5 +1,8 @@
 # The echo-claude-agent workload: `handle` served over A2A by workload-a2a, from the locked
-# workspace. Build from the repo root:
+# workspace. It runs the Claude Code CLI that ships inside the claude-agent-sdk wheel: one 242 MB
+# glibc ELF with its own runtime. It needs no Node, but it needs glibc (so no Alpine) and
+# /bin/bash plus coreutils for its Bash tool; python:3.12-slim (Debian) has all of them.
+# Build from the repo root:
 #   docker build -f packages/workloads/echo-claude-agent/Dockerfile -t echo-claude-agent .
 # Base and uv pinned by digest, the same as packages/chassis/Dockerfile (deploy/compose/SECURITY.md,
 # section 2). Bump both there and here on purpose, in their own commit.
@@ -34,6 +37,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM ${PYTHON_IMAGE} AS runtime
 # uid 10002: the one uid table in deploy/README.md. No home directory: HOME points at /tmp.
+# The root file system is read-only in the pod. Each run makes its own HOME and work dir under
+# CLAUDE_AGENT_HOME_BASE (/tmp, an emptyDir) and removes them; the CLI writes nowhere else.
 RUN groupadd --gid 10002 workload && useradd --uid 10002 --gid workload --no-create-home \
     --home-dir /tmp --shell /usr/sbin/nologin workload
 WORKDIR /app
@@ -44,7 +49,7 @@ COPY --from=build /app /app
 # file that runs it in its own network namespace sets HOST=0.0.0.0 there, on purpose, and then
 # needs `--allow-any-host` (workload-a2a refuses a host that is not loopback without it).
 ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOME=/tmp \
-    HOST=127.0.0.1 PORT=9000 \
+    CLAUDE_AGENT_HOME_BASE=/tmp HOST=127.0.0.1 PORT=9000 \
     CHASSIS_MODEL_URL=http://127.0.0.1:8090/v1 CHASSIS_TOOL_URL=http://127.0.0.1:8090/mcp
 USER 10002:10002
 EXPOSE 9000
