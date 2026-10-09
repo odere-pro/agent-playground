@@ -244,3 +244,9 @@ def test_errors_never_quote_the_input() -> None:
     with pytest.raises(derive_profile.DeriveError) as err:
         derive_profile.derive(doc)
     assert "s3cret" not in str(err.value)
+
+
+def test_baseline_accepts_ptrace_as_containerd_allows_it() -> None:
+    """containerd allows ptrace with no capability on kernel >= 4.8 (kind run 2)."""
+    derived = derive_profile.derive(_rules([{"names": ["ptrace"], "action": "SCMP_ACT_ALLOW"}]))
+    assert derived["defaultAction"] == "SCMP_ACT_ERRNO"
