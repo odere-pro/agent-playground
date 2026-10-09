@@ -129,7 +129,7 @@ ENGINES: tuple[Engine, ...] = (
         trusted=False,
         handle="echo_claude_agent:handle",
         script=CLAUDE_SCRIPT,
-        mapping_files=_py("echo-claude-agent", "echo_claude_agent", "handle.py", "tools.py"),
+        mapping_files=_py("echo-claude-agent", "echo_claude_agent", "mapping.py", "handle.py"),
     ),
     Engine(
         "kagent-adk",
