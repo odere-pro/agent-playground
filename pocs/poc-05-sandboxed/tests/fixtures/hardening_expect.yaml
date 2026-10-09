@@ -54,9 +54,11 @@ pods:
     kind: Sandbox
     containers:
       workload: remote-workload
+  # The per-call code runner: the pool's template; each call claims a fresh pod from it
+  # (docs/plans/2026-10-09-poc-05-per-call-sandbox.md).
   code-runner:
     namespace: poc05-tools
-    kind: Sandbox
+    kind: SandboxTemplate
     containers:
       code-runner: code-runner
 

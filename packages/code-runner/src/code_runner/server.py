@@ -42,7 +42,7 @@ class Runner(Protocol):
     ) -> Awaitable[RunResult]: ...
 
 
-def _fingerprint(code: str, timeout_s: int) -> str:
+def fingerprint(code: str, timeout_s: int) -> str:
     return hashlib.sha256(f"{timeout_s}\0{code}".encode()).hexdigest()
 
 
@@ -136,7 +136,7 @@ def _meta_key() -> str | None:
     return value
 
 
-def _resolve_key(argument: str | None) -> str:
+def resolve_key(argument: str | None) -> str:
     """`_meta.idempotency_key` first; the `idempotency_key` argument is the fallback (2.7)."""
     meta = _meta_key()
     if meta is not None and argument is not None and meta != argument:
@@ -195,7 +195,7 @@ def create_server(
         idempotency key returns the first result without running the code again.
         """
         try:
-            key = _resolve_key(idempotency_key)
+            key = resolve_key(idempotency_key)
 
             async def run() -> RunResult:
                 async with slots:
@@ -211,7 +211,7 @@ def create_server(
                 )
                 return result
 
-            return await cache.get_or_run(key, _fingerprint(code, timeout_s), run)
+            return await cache.get_or_run(key, fingerprint(code, timeout_s), run)
         except RunnerError as exc:
             raise ToolError(str(exc)) from exc
 

@@ -283,6 +283,45 @@ status() {
   done
 }
 
+# --- Kafka (T25, H11; platform/kafka.yaml) ---------------------------------------------------
+#
+#   seed.sh kafka          kafka-sasl in $PLATFORM (ADMIN_PASSWORD, CHASSIS_PASSWORD: the broker
+#                          formats its SCRAM users from them) and in $AGENTS (KAFKA_SASL_PASSWORD:
+#                          agent-echo-events's chassis); before platform/kafka.yaml
+#   seed.sh kafka-topics   the result topics, once Kafka is Ready (auto-create is off)
+#
+# The topics are made inside the broker's container with the admin client config its start.sh
+# wrote to /tmp, so no credential crosses kubectl. The tool gets its own small heap: the broker's
+# JVM already holds most of the container's memory limit.
+KAFKA_TOPICS=(agents.task.completed.v1 agents.task.failed.v1)
+
+seed_kafka() {
+  local admin value
+  if secret_exists "$PLATFORM" kafka-sasl && secret_exists "$AGENTS" kafka-sasl; then
+    return 0
+  fi
+  admin=$(new_secret)
+  value=$(new_secret)
+  printf 'ADMIN_PASSWORD=%s\nCHASSIS_PASSWORD=%s\n' "$admin" "$value" |
+    put_env_secret "$PLATFORM" kafka-sasl
+  printf '%s' "$value" | put_secret "$AGENTS" kafka-sasl KAFKA_SASL_PASSWORD
+  unset admin value
+  log "made kafka-sasl in $PLATFORM (SCRAM users) and $AGENTS (the chassis password)"
+}
+
+seed_kafka_topics() {
+  local topic
+  kctl -n "$PLATFORM" rollout status deploy/kafka --timeout=180s >/dev/null ||
+    die "kafka is not Ready; apply platform/kafka.yaml after: seed.sh kafka"
+  for topic in "${KAFKA_TOPICS[@]}"; do
+    kctl -n "$PLATFORM" exec deploy/kafka -c kafka -- env KAFKA_HEAP_OPTS=-Xmx64m \
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 \
+      --command-config /tmp/admin-client.properties \
+      --create --if-not-exists --topic "$topic" --partitions 3 --replication-factor 1 >/dev/null
+    log "topic $topic is there"
+  done
+}
+
 usage() { sed -n '2,13p' "$0"; }
 
 (($# > 0)) || { usage; exit 0; }
@@ -291,6 +330,8 @@ case $1 in
   keys) preflight; seed_keys ;;
   rotate) preflight; rotate "${2:-}" ;;
   rekey) preflight; rekey ;;
+  kafka) preflight; seed_kafka ;;
+  kafka-topics) preflight; seed_kafka_topics ;;
   status) status ;;
   *) usage; exit 2 ;;
 esac

@@ -27,7 +27,7 @@ Delivery is at least once, so every consumer must handle duplicates, and a faili
 
 ## Reuse
 
-- **Use:** Dapr resiliency policies (retries with backoff) and a `deadLetterTopic` per subscription.
+- **Use:** the `EventPort` adapter's own retries with backoff, `max_attempts`, and a dead-letter topic per subscription (ADR-004); the broker's own dead-letter feature where it has one.
 - **Build:** the duplicate drop (through 018 H-18), the replay command, and metrics.
 - **Watch:** retry behavior differs slightly per broker. Test each one.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)

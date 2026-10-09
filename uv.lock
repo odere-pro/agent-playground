@@ -484,12 +484,14 @@ version = "0.1.0"
 source = { editable = "packages/code-runner" }
 dependencies = [
     { name = "fastmcp" },
+    { name = "httpx" },
     { name = "uvicorn" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastmcp", specifier = ">=4.0.10,<5" },
+    { name = "httpx", specifier = ">=0.28,<0.29" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
 

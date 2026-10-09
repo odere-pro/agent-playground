@@ -1,14 +1,16 @@
 """PoC-5 exit criterion 1 (offline), the events port: it stays broker-agnostic.
 
-Decision 2026-10-02: the queue adapter must be broker-agnostic, and no broker runs in PoC-5 (the
-agent configs keep `events: none`). These checks keep that true on every commit:
+Decision 2026-10-02: the queue adapter must be broker-agnostic. One broker runs in PoC-5, for H11
+only (T25): `agent-echo-events` publishes result events to the kind Kafka. These checks keep that
+true on every commit:
 
 - `chassis.ports.events` and `chassis.core` import no broker client, directly or through any
   module they import. The control: the same checks find the client in the Kafka adapter.
 - Every `events` adapter in `chassis.profiles.REGISTRY` or in `PROFILE_DEFAULTS`, other than
   `none`, has a test class in the repo that binds `chassis_contracts.events.EventPortContract`
   over its implementation, or is in `EXCEPTIONS` with a reason.
-- The PoC-5 agent configs under `deploy/kind/poc05` set `events: none` or leave it out.
+- The PoC-5 agent configs under `deploy/kind/poc05` set `events: none` or leave it out, except
+  `agents/chassis/echo-events.yaml`, which sets `events: kafka` and nothing else.
 """
 
 from __future__ import annotations
@@ -228,19 +230,24 @@ def _agent_configs() -> list[tuple[Path, dict[str, object]]]:
     return found
 
 
-def test_poc05_agent_configs_run_no_broker() -> None:
+BROKER_CONFIGS = {"agents/chassis/echo-events.yaml": "kafka"}
+"""The one PoC-5 chassis config that names a broker: H11's paired control (T25)."""
+
+
+def test_poc05_agent_configs_run_no_broker_but_the_h11_agent() -> None:
     """Exit criterion 1 (offline): every PoC-5 chassis config sets `spec.adapters.events` to
-    `none` or leaves it out (the profile default, `none` in every profile). The control: at
-    least the two agent configs (`echo`, `echo-remote`) are found.
+    `none` or leaves it out (the profile default, `none` in every profile), except
+    `echo-events.yaml`, which sets `kafka`. The control: the two agent configs (`echo`,
+    `echo-remote`) and the H11 one are found.
     """
     configs = _agent_configs()
     names = {p.name for p, _ in configs}
-    assert {"echo.yaml", "echo-remote.yaml"} <= names, names
+    assert {"echo.yaml", "echo-remote.yaml", "echo-events.yaml"} <= names, names
     assert {spec.events for spec in PROFILE_DEFAULTS.values()} == {"none"}
     brokers = {
-        str(p.relative_to(POC05_AGENTS)): adapters.get("events")
+        p.relative_to(POC05_AGENTS).as_posix(): adapters.get("events")
         for p, spec in configs
         if isinstance(adapters := spec.get("adapters") or {}, dict)
         and adapters.get("events", "none") != "none"
     }
-    assert brokers == {}, brokers
+    assert brokers == BROKER_CONFIGS, brokers

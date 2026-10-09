@@ -1,0 +1,16 @@
+# Claim rule C3, only the code-runner pool: the claim names another pool.
+# expect: rejected
+# rule: C3
+# message: claim rule C3: a SandboxClaim may claim only from the warm pool code-runner
+# differs: .spec.warmPoolRef.name
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxClaim
+metadata:
+  name: admission-claim-c3
+  namespace: poc05-tools
+spec:
+  warmPoolRef:
+    name: other-pool
+  lifecycle:
+    shutdownTime: '2030-01-01T00:00:00Z'
+    shutdownPolicy: Delete

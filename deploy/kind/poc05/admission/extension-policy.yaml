@@ -1,0 +1,121 @@
+# The template and claim rules for the agent-sandbox extensions (per-call sandbox plan
+# docs/plans/2026-10-09-poc-05-per-call-sandbox.md, section "Admission", task 4; security review
+# pocs/poc-05-sandboxed/notes/2026-10-09-review-security-cluster.md, per-call design, required 1).
+# Checked offline by pocs/poc-05-sandboxed/tests/test_poc05_admission_static.py, on kind by
+# test_poc05_kind_admission.py.
+#
+# Why: a SandboxTemplate without networkPolicyManagement gets Managed, and the controller then
+# writes a NetworkPolicy that allows internet egress (B2), through its cluster-wide role. A
+# SandboxClaim may inject env, pod metadata, or volumes into the sandbox it adopts.
+#
+# The template's pod is checked by agent-trust-rule (policy.yaml matches sandboxtemplates), so
+# rules 0 to 8 hold for it too. These rules read only the extension fields:
+#   T1. networkPolicyManagement is Unmanaged. Absent is the CRD default Managed, and refused.
+#   T2. envVarsInjectionPolicy is Disallowed (absent is the CRD default Disallowed).
+#   T3. volumeClaimTemplatesPolicy is Disallowed (absent is the CRD default Disallowed).
+#   T4. the template sets no spec.volumeClaimTemplates of its own.
+#   T5. the template sets no spec.networkPolicy. Unmanaged ignores it, but a later switch to
+#       Managed must not carry it in.
+#   C1. a claim sets no spec.env.
+#   C2. a claim sets no label or annotation in spec.additionalPodMetadata. The empty object is
+#       admitted: the controller's own UPDATE of a claim writes `additionalPodMetadata: {}` (kind,
+#       2026-10-09), and refusing it left every claim not Ready.
+#   C3. a claim's spec.warmPoolRef.name is code-runner (suggested: a literal; a params key if a
+#       second pool comes).
+#   C4. a claim sets spec.lifecycle.shutdownPolicy Delete and spec.lifecycle.shutdownTime, so an
+#       orphan is removed by the controller. lifecycle is optional and shutdownPolicy defaults to
+#       Retain, so a claim without either is refused.
+#   C5. a claim sets no spec.volumeClaimTemplates.
+#
+# Two policies, not one: a policy that matched both kinds would read object.spec.env on a
+# SandboxTemplate, a field its schema does not have. No params: the rules are literals, so there
+# is no paramRef to go missing. Every field is guarded with has(), as in the trust rule.
+#
+# Field names: the v1.0.5 release (extensions.yaml and the *_types.go files), checked by the
+# design agent on 2026-10-09; CRD defaults are applied before admission. Only the cluster can
+# prove: that the expressions compile; that each rejected fixture fails with its own message and
+# its twin is admitted.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: sandbox-template-rule
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["extensions.agents.x-k8s.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["sandboxtemplates"]
+  validations:
+    - expression: >-
+        has(object.spec.networkPolicyManagement) &&
+        object.spec.networkPolicyManagement == 'Unmanaged'
+      message: >-
+        template rule T1: a SandboxTemplate must set networkPolicyManagement Unmanaged; the
+        platform ships its own NetworkPolicy
+      reason: Forbidden
+    - expression: >-
+        !has(object.spec.envVarsInjectionPolicy) ||
+        object.spec.envVarsInjectionPolicy == 'Disallowed'
+      message: >-
+        template rule T2: a SandboxTemplate must set envVarsInjectionPolicy Disallowed
+      reason: Forbidden
+    - expression: >-
+        !has(object.spec.volumeClaimTemplatesPolicy) ||
+        object.spec.volumeClaimTemplatesPolicy == 'Disallowed'
+      message: >-
+        template rule T3: a SandboxTemplate must set volumeClaimTemplatesPolicy Disallowed
+      reason: Forbidden
+    - expression: >-
+        !has(object.spec.volumeClaimTemplates) || size(object.spec.volumeClaimTemplates) == 0
+      message: "template rule T4: a SandboxTemplate may not set volumeClaimTemplates"
+      reason: Forbidden
+    - expression: "!has(object.spec.networkPolicy)"
+      message: >-
+        template rule T5: a SandboxTemplate may not set networkPolicy; the platform ships its own
+        NetworkPolicy
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: sandbox-claim-rule
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["extensions.agents.x-k8s.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["sandboxclaims"]
+  validations:
+    - expression: "!has(object.spec.env) || size(object.spec.env) == 0"
+      message: "claim rule C1: a SandboxClaim may not set env"
+      reason: Forbidden
+    - expression: >-
+        !has(object.spec.additionalPodMetadata) ||
+        ((!has(object.spec.additionalPodMetadata.labels) ||
+          size(object.spec.additionalPodMetadata.labels) == 0) &&
+         (!has(object.spec.additionalPodMetadata.annotations) ||
+          size(object.spec.additionalPodMetadata.annotations) == 0))
+      message: >-
+        claim rule C2: a SandboxClaim may not set labels or annotations in additionalPodMetadata
+      reason: Forbidden
+    - expression: >-
+        has(object.spec.warmPoolRef) && has(object.spec.warmPoolRef.name) &&
+        object.spec.warmPoolRef.name == 'code-runner'
+      message: "claim rule C3: a SandboxClaim may claim only from the warm pool code-runner"
+      reason: Forbidden
+    - expression: >-
+        has(object.spec.lifecycle) && has(object.spec.lifecycle.shutdownPolicy) &&
+        object.spec.lifecycle.shutdownPolicy == 'Delete' &&
+        has(object.spec.lifecycle.shutdownTime)
+      message: >-
+        claim rule C4: a SandboxClaim must set lifecycle shutdownPolicy Delete and a
+        shutdownTime
+      reason: Forbidden
+    - expression: >-
+        !has(object.spec.volumeClaimTemplates) || size(object.spec.volumeClaimTemplates) == 0
+      message: "claim rule C5: a SandboxClaim may not set volumeClaimTemplates"
+      reason: Forbidden

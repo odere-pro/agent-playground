@@ -140,7 +140,8 @@ spec:
               memory: 64Mi
             limits:
               cpu: 500m
-              memory: 96Mi
+              # suggested: 128Mi; 96Mi ran at 95 MiB on 2026-10-09 (bring-up note).
+              memory: 128Mi
           securityContext:
             readOnlyRootFilesystem: true
             runAsNonRoot: true

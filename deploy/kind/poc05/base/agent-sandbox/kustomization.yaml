@@ -1,10 +1,14 @@
 # kubernetes-sigs/agent-sandbox v1.0.5, pinned.
 #
-# upstream-v1.0.5.yaml is the release's `sandbox.yaml`, unmodified (gh release download v1.0.5 -R
-# kubernetes-sigs/agent-sandbox -p sandbox.yaml). sha256
-# e89fd95c0aa57609fa24be4112bd52ce67fe8939ecf6f3c17edf2f1e8f1eb860; run.sh checks it before apply.
-# It holds the controller (namespace agent-sandbox-system) and the Sandbox CRD
-# (agents.x-k8s.io/v1beta1). The extensions CRDs are not installed.
+# upstream-v1.0.5-with-extensions.yaml is the release's `sandbox-with-extensions.yaml`, unmodified
+# (gh release download v1.0.5 -R kubernetes-sigs/agent-sandbox -p sandbox-with-extensions.yaml).
+# sha256 b150cb058c577c59c42b060ff7f22e31b5311ca80430db98129f1280a0e85970; run.sh checks it before
+# apply. It holds the controller (namespace agent-sandbox-system, started with `--extensions`), the
+# Sandbox CRD (agents.x-k8s.io/v1beta1), and the extension CRDs SandboxTemplate, SandboxWarmPool,
+# and SandboxClaim (extensions.agents.x-k8s.io/v1beta1), for the per-call code runner
+# (docs/plans/2026-10-09-poc-05-per-call-sandbox.md). It has no `aggregate-to-` label, so none of
+# its ClusterRoles flows into admin, edit, or view. The `agent-sandbox-controller-extensions` role
+# writes NetworkPolicies cluster-wide; every PoC-5 template is `Unmanaged`, so it writes none.
 #
 # Changes, as patches, not edits:
 # - the controller image pinned by the digest the spike resolved for tag v1.0.5;
@@ -13,7 +17,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - upstream-v1.0.5.yaml
+  - upstream-v1.0.5-with-extensions.yaml
 images:
   - name: registry.k8s.io/agent-sandbox/agent-sandbox-controller
     digest: sha256:28a9cbdbfd6ac0a4e5c7e9261ace1aa30ee2da681cb640dccdfed98e8dd9d98b

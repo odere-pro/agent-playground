@@ -1,7 +1,7 @@
 # packages/chassis
 
 The service chassis. It serves one workload's `handle` behind the public interfaces and holds every credential.
-Spec: `docs/contracts/contract-v3.md`. Per-module detail: `docs/guides/chassis-reference.md`. Read it before you change a module.
+Spec: `docs/contracts/contract-v4.md` (PoC-5's additive changes; v3 and earlier for the rest). Per-module detail: `docs/guides/chassis-reference.md`. Read it before you change a module.
 
 ## Where things live
 
@@ -47,4 +47,5 @@ Under `packages/chassis/`: `configs/` the bundled specs, `schemas/` the publishe
 - Real adapters: `tests/integration/`, marked `network`, run by `make test-integration` (Docker). Never in the gate.
 - `make schemas` after a schema change. A test fails on drift.
 - `make lint` checks the import rules. `make quick` before every commit.
+- PoC-5 adds the `remote` lane (`adapters/a2a/remote.py`), the remote proxy listener (`server/remote_auth.py`), `ToolPort` write mode and the MCP gateway adapter (`adapters/mcp/gateway.py`), the uncorrelated cap, and `spec.trust`. Its scenarios are in `pocs/poc-05-sandboxed/tests/`; the kind ones run with `POC05_KIND=1`.
 - The full test map is in `docs/guides/chassis-reference.md`.

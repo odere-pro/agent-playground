@@ -1,0 +1,13 @@
+# The admission objects, for `kubectl kustomize` and review. run.sh admission applies the files one
+# by one in the order policy.yaml names (params, RBAC, policies, then bindings), so a binding never
+# enforces a half-built policy. fixtures/ is never applied: the kind test sends it with
+# --dry-run=server only.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - params.yaml
+  - rbac.yaml
+  - policy.yaml
+  - extension-policy.yaml
+  - binding.yaml
+  - extension-binding.yaml

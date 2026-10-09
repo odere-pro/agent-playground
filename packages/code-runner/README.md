@@ -32,6 +32,13 @@ Tool errors (MCP `isError`) start with a stable code:
 - `bad_arguments`: code over the size cap, `timeout_s` out of range, a key over 256 characters, `_meta` and argument keys that differ, or a key reused with other arguments.
 - `run_failed`: the interpreter could not start, the call stopped before a result, a process from the call could not be stopped, or isolation was lost earlier (see below).
 
+The dispatcher (below) adds two:
+
+- `sandbox_unavailable`: no free slot, the claim could not be created, the sandbox was not `Ready` within 20 s (suggested), or its `podIPs[0]` is not a pod address. Nothing ran; a retry with the same key is safe.
+- `sandbox_lost`: the sandbox ended, did not answer within `timeout_s + 5` s (suggested), answered over 256 KiB (suggested), or gave no usable answer. The key is forgotten, so a retry runs in a fresh sandbox.
+
+The text after each code is a fixed string. No upstream body and no token goes into a message or a log line. A tool error from the sandbox's own server keeps only its code.
+
 ## Each call
 
 1. A fresh directory `run-*` under `/tmp` (mode 0700); the code is written there as `main.py`.
@@ -62,12 +69,34 @@ What follows from "per process, not per sandbox":
 
 Off Linux (a developer's Mac) there is no subreaper and no `/proc`. Only the process-group kill applies, and the server logs a warning once. A process that calls `setsid()` can outlive the call there. **The guarantee holds on Linux only.**
 
+## Dispatch mode: a sandbox per call
+
+`code-runner dispatch --pool code-runner --namespace poc05-tools` runs the dispatcher (`code_runner/dispatch.py`). It serves the same `run_python` tool, the same arguments, and the same result. LiteLLM registers it as `code_runner`. It never runs code itself. Design: `docs/plans/2026-10-09-poc-05-per-call-sandbox.md`.
+
+Per call:
+
+1. Take a slot (2 concurrent claims, suggested); wait for one up to 20 s.
+2. `POST` a `SandboxClaim`: `generateName: call-`, `warmPoolRef` the pool, `lifecycle` with `shutdownPolicy: Delete` and `shutdownTime` now + 60 s (suggested). No `env`, no labels, nothing from the caller.
+3. `GET` it every 100 ms (suggested) until `Ready` is `True` and `status.sandbox.podIPs` is set, for up to 20 s.
+4. Parse `podIPs[0]` as an IP address (loopback, link-local, multicast, and unspecified are refused), then send one stateless `tools/call` to `http://<podIP>:8000/mcp` with the code, `timeout_s`, and the key in `_meta`. A refused connect is retried for up to 2 s (suggested), since `Ready` may come before the server listens.
+5. `DELETE` the claim (background propagation) on every path, also on cancel. A failed delete is counted and logged; `shutdownTime` removes the claim later.
+
+A pod is never reused. The idempotency cache lives in the dispatcher: a repeated key returns the first result without a claim. A failed call frees its key.
+
+Two `httpx` clients, never shared, and no Kubernetes SDK:
+
+- **API client:** base URL fixed at start from `KUBERNETES_SERVICE_HOST` and `KUBERNETES_SERVICE_PORT` (an IP and a port, else it refuses to start); the cluster CA (`--ca-file`) verifies the server; no redirects; nothing taken from the environment (`trust_env=False`). It is the only client that sends the token, read from `--token-file` on each request, since the projected token rotates. It sends only `create`, `get`, and `delete` on `sandboxclaims` in one namespace.
+- **Sandbox client:** no auth of any kind, no redirects, `trust_env=False`; the response body is cut off at 256 KiB (suggested), which ends the call with `sandbox_lost`.
+
+`GET /health` never calls the API, so a slow API server cannot get the dispatcher restarted.
+
 ## Limits recorded
 
 - A restart forgets every idempotency key.
 - The result cache can hold up to 256 x 128 KiB of output in the worst case; it counts against the pod's memory limit.
 - The rlimits are hygiene. The hard limits are the pod's.
-- Isolation between calls is per process, on Linux only (above). A per-call sandbox is the stronger design and is noted for later (plan 2.8: one long-lived sandbox fits the memory budget).
+- Isolation between calls is per process, on Linux only (above), when the server serves calls itself. Dispatch mode gives each call its own sandbox instead.
+- A dispatcher restart forgets every key, and its in-flight claims wait for `shutdownTime`.
 - The sweep stops every process started since the call began, so it relies on nothing else in the pod starting processes.
 - Not yet verified under gVisor: `PR_SET_CHILD_SUBREAPER`, `PR_SET_DUMPABLE`, and `RLIMIT_NPROC` enforcement. The kind test covers the sweep.
 
@@ -75,6 +104,7 @@ Off Linux (a developer's Mac) there is no subreaper and no `/proc`. Only the pro
 
 ```bash
 uv run code-runner --port 8000              # local only, for manual checks
+uv run code-runner dispatch --pool code-runner --namespace poc05-tools   # in the dispatcher pod only
 docker build -f packages/code-runner/Dockerfile -t agent-platform/code-runner:poc05 .
 uv run pytest packages/code-runner -q        # offline, in-process MCP client
 ```

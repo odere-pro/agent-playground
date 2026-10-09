@@ -193,8 +193,9 @@ forbidden_modules = ["fastapi", "starlette", "httpx", "openai", "anthropic", "li
 
 [tool.codespell]
 # `make lint-extra` runs codespell over docs packages pocs deploy scripts .github.
-# Skipped: lockfiles, images, recorded cassettes, raw measurement output under notes/*/raw, build output.
-skip = "uv.lock,package-lock.json,*.png,*.svg,*/cassettes/*,*/notes/*/raw/*,*/node_modules/*,*/dist/*,*/.venv/*"
+# Skipped: lockfiles, images, recorded cassettes, raw measurement output under notes/*/raw,
+# recorded demo output (verbatim third-party logs), build output.
+skip = "uv.lock,package-lock.json,*.png,*.svg,*/cassettes/*,*/notes/*/raw/*,*/demo/*-demo-*.md,*/node_modules/*,*/dist/*,*/.venv/*"
 # te: the mermaid participant alias for "Tool endpoint" (docs/guides/poc-05-how-it-works.md).
 # hel: a streamed token in a test fixture ("Hel" + "lo", packages/chassis/tests/test_inbound.py).
 ignore-words-list = "te,hel"

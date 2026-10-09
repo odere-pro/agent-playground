@@ -6,8 +6,9 @@ the OpenAPI spec, and the agent MCP server's tools.
 
 `interfaces` lists native first, then each other interface that is mounted and switched on, in
 the spec's order, then MCP. An HTTP interface is one OpenAPI operation; `model` is the value a
-chat format's `model` must hold (the agent's name), None for native. Trust, image digests,
-scopes, events, governance, class, kind, and task arrive later (051 H-13).
+chat format's `model` must hold (the agent's name), None for native. `ManifestAgent.trust` is the
+agent's `spec.trust` (PoC-5). Image digests, scopes, events, governance, class, kind, and task
+arrive later (051 H-13).
 """
 
 from __future__ import annotations

@@ -26,8 +26,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
-import subprocess
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -38,20 +36,23 @@ import yaml
 from poc05_kind import (
     AGENTS_NS,
     CHASSIS,
-    CONTEXT,
     NOT_A_KEY,
     PLATFORM_NS,
+    POLICY_DROPPED,
     REMOTE_NS,
     SIDECAR_POD,
-    TIMEOUT_S,
     WORKLOAD,
     chat,
     get_json,
+    in_caller,
     kubectl,
     node_sh,
     pod,
     probe,
     service_ip,
+    tcp,
+    unpoliced_caller,
+    warm_sandboxes,
 )
 
 REPO = Path(__file__).resolve().parents[3]
@@ -62,18 +63,11 @@ PROXY_IP = "10.96.85.91"  # the fixed ClusterIP of chassis-echo-remote-proxy
 TOKEN_ENV = "CHASSIS_API_TOKEN"
 TOKEN_SECRET = "remote-echo-token"  # pragma: allowlist secret (a Secret name)
 OUTSIDE_IP = "1.1.1.1"  # a literal public address: no DNS involved
-REFUSED_TCP = {"TimeoutError", "ConnectionRefusedError", "OSError"}
-CALLER = "poc05-t22-caller"
-CALLER_NS = "default"
-CALLER_IMAGE = "kind.local/agent-platform/echo-python:poc05"
+DISPATCH = "code-runner-dispatch"
 
 
 def traceparent(trace_id: str) -> dict[str, str]:
     return {"traceparent": f"00-{trace_id}-00f067aa0ba902b7-01"}
-
-
-def tcp(host: str, port: int) -> dict[str, Any]:
-    return {"kind": "tcp", "host": host, "port": port}
 
 
 @pytest.fixture(scope="module")
@@ -94,68 +88,11 @@ def in_chassis(chassis: dict[str, Any], checks: list[dict[str, Any]]) -> list[di
     return probe(AGENTS_NS, chassis["metadata"]["name"], CHASSIS, checks)
 
 
-CALLER_POD = {
-    "apiVersion": "v1",
-    "kind": "Pod",
-    "metadata": {
-        "name": CALLER,
-        "namespace": CALLER_NS,
-        "labels": {"app.kubernetes.io/name": REMOTE, "app.kubernetes.io/part-of": "poc05-t22"},
-    },
-    "spec": {
-        "automountServiceAccountToken": False,
-        "enableServiceLinks": False,
-        "restartPolicy": "Never",
-        "terminationGracePeriodSeconds": 0,
-        "activeDeadlineSeconds": 600,
-        "securityContext": {
-            "runAsNonRoot": True,
-            "runAsUser": 10002,
-            "seccompProfile": {"type": "RuntimeDefault"},
-        },
-        "containers": [
-            {
-                "name": "caller",
-                "image": CALLER_IMAGE,
-                "imagePullPolicy": "Never",
-                "command": ["python", "-c", "import time; time.sleep(600)"],
-                "securityContext": {
-                    "allowPrivilegeEscalation": False,
-                    "readOnlyRootFilesystem": True,
-                    "capabilities": {"drop": ["ALL"]},
-                },
-            }
-        ],
-    },
-}
-
-
 @pytest.fixture(scope="module")
 def caller() -> Iterator[str]:
     """A pod outside every PoC-5 namespace, with no egress policy, labeled like the remote."""
-    exe = shutil.which("kubectl")
-    assert exe is not None
-    made = subprocess.run(
-        [exe, "--context", CONTEXT, "apply", "-f", "-"],
-        input=json.dumps(CALLER_POD),
-        capture_output=True,
-        text=True,
-        timeout=TIMEOUT_S,
-        check=False,
-    )
-    assert made.returncode == 0, made.stderr
-    try:
-        ready = kubectl(
-            "wait", "-n", CALLER_NS, "--for=condition=Ready", f"pod/{CALLER}", "--timeout=90s"
-        )
-        assert ready.returncode == 0, ready.stderr
-        yield CALLER
-    finally:
-        kubectl("delete", "pod", CALLER, "-n", CALLER_NS, "--wait=false", "--grace-period=0")
-
-
-def in_caller(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return probe(CALLER_NS, CALLER, "caller", checks)
+    with unpoliced_caller() as name:
+        yield name
 
 
 # --- H17: the remote listener's bearer check and run_required ----------------------------------
@@ -239,15 +176,15 @@ def test_h18_listener_refuses_every_caller_but_the_remote_pod(
     IP, so its own egress works; the remote pod connects to 8091 by both addresses."""
     chassis_ip = remote_chassis["status"]["podIP"]
     to_proxy, to_pod, public = in_caller(
-        [tcp(PROXY_IP, 8091), tcp(chassis_ip, 8091), tcp(chassis_ip, 8080)]
+        caller, [tcp(PROXY_IP, 8091), tcp(chassis_ip, 8091), tcp(chassis_ip, 8080)]
     )
-    assert to_proxy.get("error") in REFUSED_TCP, to_proxy
-    assert to_pod.get("error") in REFUSED_TCP, to_pod
+    assert to_proxy.get("error") == POLICY_DROPPED, to_proxy
+    assert to_pod.get("error") == POLICY_DROPPED, to_pod
     assert public.get("connected") is True, public
 
     sidecar = pod(AGENTS_NS, SIDECAR_POD)["metadata"]["name"]
     (lateral,) = probe(AGENTS_NS, sidecar, WORKLOAD, [tcp(PROXY_IP, 8091)])
-    assert lateral.get("error") in REFUSED_TCP, lateral
+    assert lateral.get("error") == POLICY_DROPPED, lateral
 
     by_proxy, by_pod = in_remote(remote, [tcp(PROXY_IP, 8091), tcp(chassis_ip, 8091)])
     assert by_proxy.get("connected") is True, by_proxy
@@ -263,10 +200,10 @@ def test_h18_remote_port_refuses_every_caller_but_its_chassis(
     another pod's open port (the chassis's 8080)."""
     remote_ip, svc = remote["status"]["podIP"], service_ip(REMOTE_NS, REMOTE)
     by_pod, by_svc, public = in_caller(
-        [tcp(remote_ip, 9000), tcp(svc, 9000), tcp(remote_chassis["status"]["podIP"], 8080)]
+        caller, [tcp(remote_ip, 9000), tcp(svc, 9000), tcp(remote_chassis["status"]["podIP"], 8080)]
     )
-    assert by_pod.get("error") in REFUSED_TCP, by_pod
-    assert by_svc.get("error") in REFUSED_TCP, by_svc
+    assert by_pod.get("error") == POLICY_DROPPED, by_pod
+    assert by_svc.get("error") == POLICY_DROPPED, by_svc
     assert public.get("connected") is True, public
 
     own_pod, own_svc = in_chassis(remote_chassis, [tcp(remote_ip, 9000), tcp(svc, 9000)])
@@ -274,25 +211,47 @@ def test_h18_remote_port_refuses_every_caller_but_its_chassis(
     assert own_svc.get("connected") is True, own_svc
 
 
+def in_platform(name: str, checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Run `checks` in the one pod of the platform app `name` (its container has that name)."""
+    return probe(PLATFORM_NS, pod(PLATFORM_NS, name)["metadata"]["name"], name, checks)
+
+
 def test_h30_remote_reaches_no_other_pod(
-    remote: dict[str, Any], remote_chassis: dict[str, Any]
+    caller: str, remote: dict[str, Any], remote_chassis: dict[str, Any]
 ) -> None:
-    """Criterion 6, H30: the control refuses the remote pod's TCP connection to another agent
-    (`agent-echo`'s public port), to its own chassis's public port, to LiteLLM, to Valkey, and to
-    the code runner, by literal address. The allowed control in the same call: 8091 connects."""
-    sidecar_ip = pod(AGENTS_NS, SIDECAR_POD)["status"]["podIP"]
-    checks = [
-        tcp(sidecar_ip, 8080),
-        tcp(remote_chassis["status"]["podIP"], 8080),
-        tcp(service_ip(PLATFORM_NS, "litellm"), 4000),
-        tcp(service_ip(PLATFORM_NS, "valkey"), 6379),
-        tcp(service_ip("poc05-tools", "code-runner"), 8000),
-        tcp(PROXY_IP, 8091),
-    ]
+    """Criterion 6, H30: the control refuses (a policy drop, a timeout) the remote pod's TCP
+    connection to another agent (`agent-echo`'s public port), to its own chassis's public port,
+    to LiteLLM, to Valkey, to the code-runner dispatcher's Service, and to a warm code-runner
+    sandbox by pod IP. The allowed control in the same call: 8091 connects. Each target is up,
+    from an allowed peer in the same test: the unpoliced caller reaches both 8080 ports,
+    `agent-echo`'s workload reaches LiteLLM, its chassis reaches Valkey, LiteLLM reaches the
+    dispatcher, and the dispatcher reaches the sandbox."""
+    sidecar = pod(AGENTS_NS, SIDECAR_POD)
+    sandboxes = warm_sandboxes()
+    assert sandboxes, "no Running code-runner pod (the warm pool is empty)"
+    sidecar_web = tcp(sidecar["status"]["podIP"], 8080)
+    chassis_web = tcp(remote_chassis["status"]["podIP"], 8080)
+    litellm = tcp(service_ip(PLATFORM_NS, "litellm"), 4000)
+    valkey = tcp(service_ip(PLATFORM_NS, "valkey"), 6379)
+    dispatch = tcp(service_ip(PLATFORM_NS, DISPATCH), 8000)
+    sandbox = tcp(sandboxes[0]["status"]["podIP"], 8000)
+    checks = [sidecar_web, chassis_web, litellm, valkey, dispatch, sandbox, tcp(PROXY_IP, 8091)]
+
     *refused, allowed = in_remote(remote, checks)
     for check, result in zip(checks, refused, strict=False):
-        assert result.get("error") in REFUSED_TCP, (check, result)
+        assert result.get("error") == POLICY_DROPPED, (check, result)
     assert allowed.get("connected") is True, allowed
+
+    name = sidecar["metadata"]["name"]
+    up = [
+        *in_caller(caller, [sidecar_web, chassis_web]),
+        *probe(AGENTS_NS, name, WORKLOAD, [litellm]),
+        *probe(AGENTS_NS, name, CHASSIS, [valkey]),
+        *in_platform("litellm", [dispatch]),
+        *in_platform(DISPATCH, [sandbox]),
+    ]
+    for check, result in zip(checks[:-1], up, strict=True):
+        assert result.get("connected") is True, (check, result)
 
 
 # --- H19, H20: no way out ----------------------------------------------------------------------
@@ -306,11 +265,11 @@ def test_h19_remote_reaches_no_outside_address(caller: str, remote: dict[str, An
     https, http, allowed = in_remote(
         remote, [tcp(OUTSIDE_IP, 443), tcp(OUTSIDE_IP, 80), tcp(PROXY_IP, 8091)]
     )
-    assert https.get("error") in REFUSED_TCP, https
-    assert http.get("error") in REFUSED_TCP, http
+    assert https.get("error") == POLICY_DROPPED, https
+    assert http.get("error") == POLICY_DROPPED, http
     assert allowed.get("connected") is True, allowed
 
-    (outside,) = in_caller([tcp(OUTSIDE_IP, 443)])
+    (outside,) = in_caller(caller, [tcp(OUTSIDE_IP, 443)])
     assert outside.get("connected") is True, outside
 
 

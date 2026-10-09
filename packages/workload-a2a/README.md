@@ -1,6 +1,6 @@
 # workload-a2a
 
-The template A2A server a Python workload ships with (ADR-002, option A). It wraps a workload's `handle(input, ctx)` and serves it over A2A, so the chassis's `sidecar` connector can reach it on localhost. It never imports the chassis: the workload's environment holds this package, a2a-sdk, and its own dependencies, nothing else.
+The template A2A server a Python workload ships with (ADR-002, option A). It wraps a workload's `handle(input, ctx)` and serves it over A2A, so the chassis's `sidecar` connector can reach it on localhost. Since PoC-5 the same server runs in the `remote` lane, on its own pod, behind a bearer token. It never imports the chassis: the workload's environment holds this package, a2a-sdk, and its own dependencies, nothing else.
 
 ## Shape
 
@@ -8,7 +8,8 @@ The template A2A server a Python workload ships with (ADR-002, option A). It wra
 - `server.py`: `HandleExecutor`, `build_agent_card`, `build_app`, `build_server`, `serve`. Every event `handle` yields is validated with `jsonschema` against the vendored `schemas/events.v0.json` and gets the schema's defaults, so the wire JSON equals what the chassis's own copy produces. Error codes match the chassis copy: `workload.bad_event`, `workload.bad_order`, `workload.no_end`, `workload.exception`, `a2a.unsupported_schema_version`, `a2a.bad_request` (a `chassis.ctx` or `chassis.input` that is not a JSON object).
 - `schemas/events.v0.json`: a copy of `packages/chassis/schemas/events.v0.json`; a test fails when the two differ. `SUPPORTED_SCHEMA_VERSIONS` comes from its `schema_version` consts.
 - The task store is pruned: `PruningRequestHandler` deletes each task once it is terminal, so a long-running sidecar does not keep every task in memory.
-- Localhost only: the server binds `127.0.0.1` by default and refuses a host that is not loopback unless you pass `allow_any_host` (ADR-001).
+- `auth.py`: `BearerTokenMiddleware`, the remote lane's bearer check (PoC-5). Standard library only, no `chassis` import.
+- Localhost only: the server binds `127.0.0.1` by default and refuses a host that is not loopback unless you pass `allow_any_host` (ADR-001). `--require-token-env` is the other way to bind a non-loopback host.
 
 ## Use
 
@@ -28,11 +29,13 @@ workload-a2a serve --handle echo_python:handle --port 9000
 workload-a2a serve --handle echo_python:handle --uds /tmp/echo.sock   # Unix socket, tests and local runs
 ```
 
-Flags: `--host` (default `127.0.0.1`), `--allow-any-host`, `--name`, `--version`, `--description`, `--log-level`, `--drain-timeout-s` (suggested default 30). The chassis side points at it with `spec.engine.connector: sidecar` and `spec.engine.url: http://127.0.0.1:9000` (`packages/chassis/configs/sidecar.yaml`).
+Flags: `--host` (default `127.0.0.1`), `--allow-any-host`, `--uds`, `--require-token-env NAME`, `--previous-token-env NAME` (both in the next section), `--name`, `--version`, `--description`, `--log-level`, `--drain-timeout-s` (suggested default 30). The chassis side points at it with `spec.engine.connector: sidecar` and `spec.engine.url: http://127.0.0.1:9000` (`packages/chassis/configs/sidecar.yaml`).
 
 ## Remote lane: bearer token and rotation
 
-`--require-token-env NAME` puts a bearer check on every request, the agent card included. A missing or wrong token gets one fixed 401. `--previous-token-env NAME` also accepts the token in `$NAME`, compared in constant time against both tokens. A variable that is unset or empty is ignored without error, so one manifest works before, during, and after a rotation. The flag without `--require-token-env` is a start-up error. The `authorization` header is removed before the app sees it, and no token is logged.
+The remote pod runs the server on its pod IP with the token, for example `workload-a2a serve --handle echo_python:handle --host "$POD_IP" --port 9000 --require-token-env CHASSIS_API_TOKEN` (`deploy/kind/poc05/remote/remote-echo.yaml`). The chassis side is `spec.engine.connector: remote` with `spec.engine.url` and `spec.engine.auth.token_env`.
+
+`--require-token-env NAME` puts a bearer check on every request, the agent card included. A missing or empty `$NAME` is a start-up error that names the variable, never a value. A missing or wrong token gets one fixed 401. `--previous-token-env NAME` also accepts the token in `$NAME`, compared in constant time against both tokens. A variable that is unset or empty is ignored without error, so one manifest works before, during, and after a rotation. The flag without `--require-token-env` is a start-up error. The `authorization` header is removed before the app sees it, and no token is logged.
 
 The workload uses one token both ways: `CHASSIS_API_TOKEN` is what it sends to the chassis proxy (as its API key) and what it requires on its own server. The chassis sends only its current token (`spec.engine.auth.token_env`) and accepts both on its remote listener (`token_env` and `previous_token_env`). Each variable is read at start, so every change below needs a pod restart.
 
@@ -50,4 +53,4 @@ On SIGTERM or SIGINT the server stops accepting, closes idle keep-alive connecti
 
 ## Test
 
-`uv run pytest packages/workload-a2a`. The server runs on uvicorn over a Unix socket in a background task; no TCP, no key. One test compares the stream with the chassis's own template server and skips when the chassis is not installed.
+`uv run pytest packages/workload-a2a`. The bearer check and the rotation cases are `tests/test_workload_a2a_auth.py`. The server runs on uvicorn over a Unix socket in a background task; no TCP, no key. One test compares the stream with the chassis's own template server and skips when the chassis is not installed.

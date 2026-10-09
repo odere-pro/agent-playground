@@ -20,13 +20,18 @@ keeps looping. Each call opens one short MCP session.
 - the key goes as `_meta.idempotency_key`, and also as the `idempotency_key` argument when the
   tool's schema declares that property (the fallback for a gateway that drops `_meta`);
 - the gateway's answer maps to: the call's own JSON-RPC error first (an unknown tool
-  `unknown_tool`, invalid params `bad_arguments`), then 401 or 403 `tool_denied`, then a connect
-  error, a timeout, or a 5xx `tool_unavailable` (retryable); the session-close `DELETE`'s status
-  is never read; a tool error result the gateway phrases as a refusal maps the same way (an
-  unknown tool `unknown_tool`, a tool off the key's allow-list `tool_denied`); a tool error that
-  is not one of these stays `ToolResult(is_error=True)`.
+  `unknown_tool`, a refusal text `tool_denied`, invalid params `bad_arguments`), then 401 or
+  403 `tool_denied`, then a connect error, a timeout, or a 5xx `tool_unavailable` (retryable);
+  the session-close `DELETE`'s status is never read; a tool error result the gateway phrases as
+  a refusal maps the same way (an unknown tool `unknown_tool`, a tool off the key's allow-list
+  `tool_denied`); a tool error that is not one of these stays `ToolResult(is_error=True)`.
 
 A `ToolError.message` is fixed text, never an upstream body.
+
+Known limit: the refusal texts are matched on any tool's error text, not only the gateway's, so an
+upstream tool whose error starts with one picks its own code (`unknown_tool`, `tool_denied`,
+`idempotency_key_required`, `bad_arguments`). It cannot pick the message, which stays fixed text,
+so nothing the tool sends leaks through the error.
 """
 
 from __future__ import annotations
@@ -179,6 +184,8 @@ def _rpc_error(exc: BaseException | None, name: str) -> ToolError | None:
         if isinstance(leaf, MCPError):
             if leaf.error.code == _METHOD_NOT_FOUND or _UNKNOWN_TOOL.match(leaf.error.message):
                 return ToolError("unknown_tool", f"no tool named {name!r}")
+            if _DENIED.match(leaf.error.message):
+                return ToolError("tool_denied", f"the gateway refused {name!r} for this key")
             if leaf.error.code == _INVALID_PARAMS:
                 return ToolError("bad_arguments", f"the arguments for {name!r} were refused")
     return None
@@ -186,7 +193,7 @@ def _rpc_error(exc: BaseException | None, name: str) -> ToolError | None:
 
 def _failure(exc: BaseException | None, statuses: Sequence[int], name: str) -> ToolError:
     """Map a failed session to a `ToolError`. The message is fixed text, never upstream text.
-    The call's own JSON-RPC error (unknown tool, invalid params) wins over any HTTP status."""
+    The call's own JSON-RPC error (unknown tool, denial, invalid params) beats any HTTP status."""
     rpc = _rpc_error(exc, name)
     if rpc is not None:
         return rpc
