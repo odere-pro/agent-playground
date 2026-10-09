@@ -40,10 +40,10 @@ from chassis.server.proxy_app import create_proxy_app
 from chassis.server.remote_auth import create_remote_proxy_app
 from pydantic import TypeAdapter
 
-TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"
+TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"  # pragma: allowlist secret (a trace id in a test)
 TRACEPARENT = f"00-{TRACE}-00f067aa0ba902b7-01"
-REMOTE_TOKEN = "remote-token-canary-0123456789abcdef"  # a test value, not a secret
-API_KEY_CANARY = "xapikey-canary-fedcba9876543210"  # a test value, not a secret
+REMOTE_TOKEN = "remote-token-canary-0123456789abcdef"  # pragma: allowlist secret (canary)
+API_KEY_CANARY = "xapikey-canary-fedcba9876543210"  # pragma: allowlist secret (canary)
 CONFIG: dict[str, Any] = {
     "profile": "fake",
     "agent": {"name": "echo", "version": "0.0.1"},
