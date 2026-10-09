@@ -6,7 +6,7 @@
 # `kagent/image.sha256`. While that file holds no digest, `run.sh` does not apply this folder.
 #
 # - The model: an OpenAI-compatible config whose base_url is the chassis's remote proxy listener
-#   and `api_key_passthrough: true`, so the inbound bearer (the per-remote token) is the model key
+#   and key passthrough on, so the inbound bearer (the per-remote token) is the model key
 #   and the run's traceparent reaches the proxy (probe note, item 4). The pod holds no Secret.
 #   Recorded deviation: the URL is the fixed ClusterIP, not a DNS name, because the remote lane
 #   has no DNS (H20). The DNS-name rule in the probe note comes from Substrate's credential proxy,
@@ -34,18 +34,7 @@ metadata:
   labels:
     app.kubernetes.io/name: remote-kagent-adk
 data:
-  config.json: |
-    {
-      "model": {
-        "type": "openai",
-        "model": "fake-chat",
-        "base_url": "http://10.96.85.95:8091/v1",
-        "api_key_passthrough": true
-      },
-      "description": "kagent-adk behind the chassis remote lane",
-      "instruction": "Rewrite in plain words. Short sentences. Keep every fact.",
-      "stream": true
-    }
+  config.json: '{"model": {"type": "openai", "model": "fake-chat", "base_url": "http://10.96.85.95:8091/v1", "api_key_passthrough": true}, "description": "kagent-adk behind the chassis remote lane", "instruction": "Rewrite in plain words. Short sentences. Keep every fact.", "stream": true}'  # pragma: allowlist secret (a flag name, no value)
   agent-card.json: |
     {
       "name": "kagent_adk",

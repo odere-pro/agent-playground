@@ -67,7 +67,7 @@ pods:
 # Each remote: its chassis, the fixed ClusterIP of the chassis's remote-proxy Service, and the
 # Secret it takes (none for kagent-adk: it uses its inbound bearer as its model key).
 remotes:
-  remote-smolagents: {chassis: chassis-smolagents-remote, ip: 10.96.85.92, secret: remote-smolagents-token}
-  remote-claude-agent: {chassis: chassis-claude-agent-remote, ip: 10.96.85.93, secret: remote-claude-agent-token}
-  remote-typescript: {chassis: chassis-typescript-remote, ip: 10.96.85.94, secret: remote-typescript-token}
-  remote-kagent-adk: {chassis: chassis-kagent-adk-remote, ip: 10.96.85.95, secret: null}
+  remote-smolagents: {chassis: chassis-smolagents-remote, ip: 10.96.85.92, secret: remote-smolagents-token}  # pragma: allowlist secret (a Secret name)
+  remote-claude-agent: {chassis: chassis-claude-agent-remote, ip: 10.96.85.93, secret: remote-claude-agent-token}  # pragma: allowlist secret (a Secret name)
+  remote-typescript: {chassis: chassis-typescript-remote, ip: 10.96.85.94, secret: remote-typescript-token}  # pragma: allowlist secret (a Secret name)
+  remote-kagent-adk: {chassis: chassis-kagent-adk-remote, ip: 10.96.85.95, secret: null}  # pragma: allowlist secret (a Secret name)

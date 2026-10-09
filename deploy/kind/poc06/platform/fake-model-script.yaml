@@ -73,7 +73,7 @@ rules:
     reply: ""
     tool_call:
       name: fake_tools-glossary_lookup
-      arguments: { term: "SLM" }
+      arguments: {term: "SLM"}
   - after_tool: true
     match: "retrieval-augmented generation"
     reply: "SLM means a small language model. RAG stands for retrieval-augmented generation."
@@ -82,5 +82,5 @@ rules:
     reply: ""
     tool_call:
       name: fake_tools-acronym_expand
-      arguments: { acronym: "RAG" }
+      arguments: {acronym: "RAG"}
 default_reply: "ok"
