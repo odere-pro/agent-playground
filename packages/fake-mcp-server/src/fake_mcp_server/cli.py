@@ -11,7 +11,7 @@ from fake_mcp_server.server import ANY_CALLER, TOOL_NAMES, FakeMcpState, create_
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Scripted MCP server with three harmless tools")
+    parser = argparse.ArgumentParser(description="Scripted MCP server with four harmless tools")
     parser.add_argument("--host", default="127.0.0.1", help="bind address (default: loopback)")
     parser.add_argument("--port", type=int, default=8082)
     parser.add_argument(
