@@ -81,3 +81,43 @@ OK
 uv run python scripts/harness_lint.py
 harness-lint: ok
 ```
+
+## 2026-10-09: admission on the new layout
+
+Per-call sandbox plan, task 6 part A. Exit criteria 7 (admission and its RBAC) and 8 (no egress for the code runner). Only `tests/test_poc05_kind_admission.py` changed. The cluster runs the per-call layout: warm pool 2, the dispatcher, admission rules T1 to T5 and C1 to C5.
+
+What changed in the test:
+
+- Each fixture goes as the identity that may create it: a `SandboxClaim` as the dispatcher (`poc05-platform:code-runner-dispatch`); anything else in `poc05-agents` or `poc05-tools` as the deployer; the rest as the submitter. A rejected fixture must now name its rule's policy (`agent-trust-rule`, `sandbox-template-rule`, or `sandbox-claim-rule`, from the message prefix) and must not carry an RBAC `cannot <verb> resource` refusal.
+- `test_can_i_on_kind_matches_the_design`: every line of the static test's `CAN_I` (imported, not copied), 24 lines. Each line also checks its identity's `yes` control in the same test.
+- `test_submitter_cannot_create_pods_in_tools_after_admission`: the review's required change 4. Submitter `create` and `patch pods -n poc05-tools` are `no`; controls: the deployer `yes` there, the submitter `yes` in `poc05-remote`.
+- `test_no_network_policy_is_owned_by_an_agent_sandbox_object`: no NetworkPolicy in a `poc05-*` namespace has an owner in `agents.x-k8s.io` or `extensions.agents.x-k8s.io`. Control: every policy in the platform's own files (`agents`, `platform`, `remote`, `tools`, and the default deny) is in the same listing.
+
+Fixtures by identity (63 cases): deployer 22 rejected and 17 admitted; dispatcher 8 rejected and 5 admitted; submitter 6 rejected and 5 admitted. All pass.
+
+Mutation check, each in a temporary copy of the file (`test_poc05_kind_admission_mut.py`, removed after):
+
+| Mutation | Result |
+| --- | --- |
+| Claims sent as the deployer | 13 failed, 50 passed (every claim fixture; rejected ones fail on "refused by RBAC, not admission") |
+| `poc05-tools` fixtures sent as the submitter (the old mapping) | 15 failed, 48 passed |
+| `CAN_I` expects `yes` for `create pods -n poc05-tools` | 2 failed, 22 passed (dispatcher and submitter lines) |
+| Submitter `create pods -n poc05-tools` expected `yes` | 1 failed |
+| An injected policy owned by a `SandboxTemplate` in the listing | 1 failed: `NetworkPolicies owned by an agent-sandbox object: ['poc05-tools/injected']` |
+| The control expects a policy that is not live | 1 failed: `platform NetworkPolicies not listed: [('poc05-tools', 'not-there')]` |
+| The `yes` control asked in `poc05-agents` | 24 failed |
+
+Runs (`grep -c sk-` on each saved log: 0):
+
+```text
+$ POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py -q -rs
+103 passed in 8.17s
+$ POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs   # load 6.34 4.77 4.43
+SKIPPED [1] packages/contract-suites/src/chassis_contracts/tool.py:157: provide other_write_arguments: valid write_call arguments of another value
+SKIPPED [1] packages/contract-suites/src/chassis_contracts/tool.py:204: provide a make_unavailable fixture: the next call fails as unavailable
+2 failed, 140 passed, 2 skipped, 483 deselected in 109.43s (0:01:49)
+$ PATH=/opt/homebrew/bin:$PATH UV_NO_SYNC=1 make test-poc POC=05
+================= 481 passed, 145 skipped, 1 xfailed in 22.95s =================
+```
+
+The two kind-tier failures belong to task 6 part B, unchanged from the bring-up note: `test_poc05_kind_code_runner.py::test_code_runs_on_gvisor_with_no_egress` (`poc05-tools/code-runner: want one Running pod, got 2`) and `test_poc05_kind_remote_controls.py::test_h30_remote_reaches_no_other_pod` (`services "code-runner" not found`). The 28 admission failures are gone. The cluster is left running.
