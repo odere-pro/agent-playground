@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fake_model_server import Script
 
 SCRIPT = Script.model_validate(
@@ -13,11 +15,11 @@ SCRIPT = Script.model_validate(
         "default_reply": "dflt",
     }
 )
-CALL = {"role": "assistant", "content": None, "tool_calls": []}
-TOOL = {"role": "tool", "content": "found it"}
+CALL: dict[str, Any] = {"role": "assistant", "content": None, "tool_calls": []}
+TOOL: dict[str, Any] = {"role": "tool", "content": "found it"}
 
 
-def _user(text: str) -> dict[str, str]:
+def _user(text: str) -> dict[str, Any]:
     return {"role": "user", "content": text}
 
 
@@ -32,20 +34,25 @@ def test_old_behavior_tool_not_last_is_not_a_trigger_without_trailing_turns() ->
 
 
 def test_trailing_system_turns_are_skipped() -> None:
-    sys_note = {"role": "system", "content": "<total_tokens>9</total_tokens>"}
+    sys_note: dict[str, Any] = {"role": "system", "content": "<total_tokens>9</total_tokens>"}
     messages = [_user("lookup: x"), CALL, TOOL, sys_note, sys_note]
     assert SCRIPT.pick(messages).reply == "answered"
 
 
 def test_trailing_reminder_user_turn_is_skipped() -> None:
-    sys_note = {"role": "system", "content": "tokens"}
+    sys_note: dict[str, Any] = {"role": "system", "content": "tokens"}
     reminder = _user("<system-reminder>Remember the todo list.</system-reminder>")
     assert SCRIPT.pick([_user("lookup: x"), CALL, TOOL, sys_note, reminder]).reply == "answered"
     assert SCRIPT.pick([_user("lookup: x"), CALL, TOOL, reminder, sys_note]).reply == "answered"
 
 
 def test_a_new_user_turn_matching_a_plain_rule_is_not_skipped() -> None:
-    messages = [_user("lookup: x"), CALL, TOOL, {"role": "system", "content": "n"}]
+    messages: list[dict[str, Any]] = [
+        _user("lookup: x"),
+        CALL,
+        TOOL,
+        {"role": "system", "content": "n"},
+    ]
     assert SCRIPT.pick([*messages, _user("lookup: y")]).tool_call is not None
 
 
