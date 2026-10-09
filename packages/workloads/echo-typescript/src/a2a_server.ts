@@ -22,6 +22,7 @@ import {
 import { UserBuilder, agentCardHandler, jsonRpcHandler } from "@a2a-js/sdk/server/express";
 import express, { type Express } from "express";
 
+import { bearerAuth } from "./auth.js";
 import { SCHEMA_VERSION, type ChassisEvent, type Context, type Handle, type Json } from "./handle.js";
 import { validateEvent } from "./schema.js";
 
@@ -253,10 +254,12 @@ export function buildHandler(handle: Handle, card: AgentCard, store: TaskStore =
   return new DefaultRequestHandler(card, store, new HandleExecutor(handle));
 }
 
-/** The Express app: the agent card on /.well-known/agent-card.json and JSON-RPC on `/`. */
-export function buildApp(handle: Handle, card: AgentCard): Express {
+/** The Express app (with `auth.token`, every path needs the bearer): the agent card on /.well-known/agent-card.json and JSON-RPC on `/`. */
+export function buildApp(handle: Handle, card: AgentCard, auth: { token?: string | undefined; previous?: string | undefined } = {}): Express {
   const handler = buildHandler(handle, card);
   const app = express();
+  // First, so the agent card is protected too and the app never sees the credential.
+  if (auth.token) app.use(bearerAuth(auth.token, auth.previous));
   app.use("/.well-known/agent-card.json", agentCardHandler({ agentCardProvider: handler }));
   app.use("/", jsonRpcHandler({ requestHandler: handler, userBuilder: UserBuilder.noAuthentication }));
   return app;

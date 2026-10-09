@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { handle, udsFetch, type ChassisEvent } from "../src/handle.js";
-import { CTX, sseBody } from "./stub.js";
+import { CTX, noTools, sseBody } from "./stub.js";
 
 const TRACEPARENT = `00-${CTX.trace_id}-00f067aa0ba902b7-01`;
 
@@ -55,7 +55,7 @@ test("CHASSIS_MODEL_UDS: the model call goes over the Unix socket, path and head
   });
   process.env["CHASSIS_MODEL_UDS"] = model.path;
   try {
-    const events = await collect(handle({ text: "simplify: x" }, { ...CTX, traceparent: TRACEPARENT }, { modelUrl: "http://127.0.0.1:8090/v1" }));
+    const events = await collect(handle({ text: "simplify: x" }, { ...CTX, traceparent: TRACEPARENT }, { modelUrl: "http://127.0.0.1:8090/v1", toolFetch: noTools }));
     assert.deepEqual(events.map((e) => e.type), ["start", "delta", "delta", "metrics", "end"]);
     assert.equal(events.filter((e) => e.type === "delta").map((e) => e["text"]).join(""), "Plain words.");
     assert.deepEqual([events[3]?.["input_tokens"], events[3]?.["output_tokens"]], [42, 9]);
@@ -80,7 +80,7 @@ test("CHASSIS_MODEL_UDS: an HTTP 500 over the socket is a retryable error", asyn
   });
   process.env["CHASSIS_MODEL_UDS"] = model.path;
   try {
-    const events = await collect(handle({ text: "x" }, CTX));
+    const events = await collect(handle({ text: "x" }, CTX, { toolFetch: noTools }));
     assert.deepEqual(events[1], { schema_version: "0", type: "error", code: "http_500", message: "scripted failure", retryable: true });
   } finally {
     delete process.env["CHASSIS_MODEL_UDS"];
@@ -96,7 +96,7 @@ test("CHASSIS_MODEL_UDS: the budget timeout fires mid-stream as a timeout error"
   process.env["CHASSIS_MODEL_UDS"] = model.path;
   try {
     const ctx = { ...CTX, budget: { max_tokens: 2000, timeout_ms: 300 } };
-    const events = await collect(handle({ text: "x" }, ctx));
+    const events = await collect(handle({ text: "x" }, ctx, { toolFetch: noTools }));
     assert.deepEqual(events.map((e) => e.type), ["start", "delta", "error"]);
     assert.equal(events[2]?.["code"], "timeout");
     assert.equal(events[2]?.["retryable"], true);
