@@ -5,7 +5,7 @@ POC ?= 01
 PY := uv run python
 PYTEST := scripts/check_offline.sh
 
-.PHONY: help setup fmt fmt-check lint lint-extra type test test-poc test-integration load-test kind-poc04 kind-poc05 record-cassettes quick check planning-sync planning-check schemas harness-lint fake-model-server ts-check clean
+.PHONY: help setup fmt fmt-check lint lint-extra type test test-poc test-integration load-test kind-poc04 kind-poc05 kind-poc06 bakeoff poc06-mac record-cassettes quick check planning-sync planning-check schemas harness-lint fake-model-server ts-check clean
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -58,6 +58,15 @@ kind-poc04: ## PoC-4 kind cluster and drills: make kind-poc04 ARGS="up native-si
 
 kind-poc05: ## PoC-5 kind cluster (gVisor, NetworkPolicy, admission): make kind-poc05 ARGS="up"
 	deploy/kind/poc05/run.sh $(ARGS)
+
+kind-poc06: ## PoC-6 kind runs (stub): make kind-poc06 ARGS="..."
+	deploy/kind/poc06/run.sh $(ARGS)
+
+bakeoff: ## PoC-6 benchmark kit (stub): make bakeoff ARGS="..."
+	uv run python -m bakeoff $(ARGS)
+
+poc06-mac: ## PoC-6 runs on a Mac (stub): make poc06-mac ARGS="..."
+	scripts/poc06_mac.sh $(ARGS)
 
 # The tests that own model cassettes. Add a file here when it records through `CassetteTransport`.
 CASSETTE_TESTS ?= packages/chassis/tests/test_recorded_model.py \

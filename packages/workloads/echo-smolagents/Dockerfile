@@ -1,6 +1,6 @@
-# The echo-langgraph workload: `handle` served over A2A by workload-a2a, from the locked
+# The echo-smolagents workload: `handle` served over A2A by workload-a2a, from the locked
 # workspace. Build from the repo root:
-#   docker build -f packages/workloads/echo-langgraph/Dockerfile -t echo-langgraph .
+#   docker build -f packages/workloads/echo-smolagents/Dockerfile -t echo-smolagents .
 # Base and uv pinned by digest, the same as packages/chassis/Dockerfile (deploy/compose/SECURITY.md,
 # section 2). Bump both there and here on purpose, in their own commit.
 ARG PYTHON_IMAGE=python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
@@ -23,14 +23,18 @@ COPY packages/workloads/echo-openai-agents/pyproject.toml packages/workloads/ech
 COPY packages/workloads/echo-claude-agent/pyproject.toml packages/workloads/echo-claude-agent/
 COPY packages/workloads/echo-smolagents/pyproject.toml packages/workloads/echo-smolagents/
 COPY packages/bakeoff/pyproject.toml packages/bakeoff/
+COPY packages/workloads/echo-openai-agents/pyproject.toml packages/workloads/echo-openai-agents/
+COPY packages/workloads/echo-claude-agent/pyproject.toml packages/workloads/echo-claude-agent/
+COPY packages/workloads/echo-smolagents/pyproject.toml packages/workloads/echo-smolagents/
+COPY packages/bakeoff/pyproject.toml packages/bakeoff/
 COPY packages/fake-mcp-server/pyproject.toml packages/fake-mcp-server/
 COPY packages/code-runner/pyproject.toml packages/code-runner/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --package echo-langgraph --package workload-a2a --no-install-workspace
+    uv sync --locked --no-dev --package echo-smolagents --package workload-a2a --no-install-workspace
 COPY packages/workload-a2a/src packages/workload-a2a/src
-COPY packages/workloads/echo-langgraph/src packages/workloads/echo-langgraph/src
+COPY packages/workloads/echo-smolagents/src packages/workloads/echo-smolagents/src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --package echo-langgraph --package workload-a2a
+    uv sync --locked --no-dev --package echo-smolagents --package workload-a2a
 
 FROM ${PYTHON_IMAGE} AS runtime
 # uid 10002: the one uid table in deploy/README.md. No home directory: HOME points at /tmp.
@@ -40,10 +44,9 @@ WORKDIR /app
 # Owned by root and read-only to the app user: the process cannot change its own code.
 COPY --from=build /app /app
 # No key, ever: the model URL and the tool URL are the chassis's proxies, which hold the
-# credentials. The openai client gets the placeholder `not-a-key` from code, never from the env.
-# 127.0.0.1: the chassis reaches the workload on localhost (sidecar lane). A Compose file that runs
-# it in its own network namespace sets HOST=0.0.0.0 there, on purpose, and then needs
-# `--allow-any-host` (workload-a2a refuses a host that is not loopback without it).
+# credentials. 127.0.0.1: the chassis reaches the workload on localhost (sidecar lane). A Compose
+# file that runs it in its own network namespace sets HOST=0.0.0.0 there, on purpose, and then
+# needs `--allow-any-host` (workload-a2a refuses a host that is not loopback without it).
 ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOME=/tmp \
     HOST=127.0.0.1 PORT=9000 \
     CHASSIS_MODEL_URL=http://127.0.0.1:8090/v1 CHASSIS_TOOL_URL=http://127.0.0.1:8090/mcp
@@ -53,4 +56,4 @@ HEALTHCHECK --interval=5s --timeout=3s --retries=12 \
     CMD ["python", "-c", "import os,urllib.request,sys; sys.exit(0 if urllib.request.urlopen(f\"http://127.0.0.1:{os.environ['PORT']}/.well-known/agent-card.json\", timeout=2).status == 200 else 1)"]
 # `sh -c` so HOST and PORT come from the environment; `exec` keeps workload-a2a as PID 1 for
 # signals. Extra `docker run` arguments are appended (for example `--log-level debug`).
-ENTRYPOINT ["sh", "-c", "exec workload-a2a serve --handle echo_langgraph:handle --name echo-langgraph --version 0.1.0 --host \"$HOST\" --port \"$PORT\" \"$@\"", "--"]
+ENTRYPOINT ["sh", "-c", "exec workload-a2a serve --handle echo_smolagents:handle --name echo-smolagents --version 0.1.0 --host \"$HOST\" --port \"$PORT\" \"$@\"", "--"]

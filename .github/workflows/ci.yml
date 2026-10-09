@@ -81,6 +81,9 @@ jobs:
           - {name: echo-python, dockerfile: packages/workloads/echo-python/Dockerfile, context: ., uid: "10002"}
           - {name: echo-pydanticai, dockerfile: packages/workloads/echo-pydanticai/Dockerfile, context: ., uid: "10002"}
           - {name: echo-langgraph, dockerfile: packages/workloads/echo-langgraph/Dockerfile, context: ., uid: "10002"}
+          - {name: echo-openai-agents, dockerfile: packages/workloads/echo-openai-agents/Dockerfile, context: ., uid: "10002"}
+          - {name: echo-claude-agent, dockerfile: packages/workloads/echo-claude-agent/Dockerfile, context: ., uid: "10002"}
+          - {name: echo-smolagents, dockerfile: packages/workloads/echo-smolagents/Dockerfile, context: ., uid: "10002"}
           - {name: echo-typescript, dockerfile: packages/workloads/echo-typescript/Dockerfile, context: packages/workloads/echo-typescript, uid: "10002"}
           - {name: code-runner, dockerfile: packages/code-runner/Dockerfile, context: ., uid: "10003"}
           - {name: fake-model-server, dockerfile: packages/fake-model-server/Dockerfile, context: ., uid: "10004"}
