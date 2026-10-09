@@ -271,6 +271,7 @@ def test_only_the_platform_services_get_the_platform_secrets() -> None:
         "fake-model-server": set(),
         "fake-mcp-server": set(),
         DISPATCHER: set(),
+        "kafka": {"kafka-sasl"},
     }
     for name, doc in _workloads().items():
         used = set(re.findall(r"'(?:secretName|name)': '([\w-]+)'", _secret_refs(doc)))

@@ -10,7 +10,8 @@
 #   - MinIO 9000 is not in any chassis egress, and minio's ingress does not take chassis pods. No
 #     chassis uses `config: s3` in PoC-5 (security review F10). minio takes only the one-shot
 #     `minio-init` Job, which is not in the plan table.
-#   - Kafka (deferred pass) has no row.
+#   - Kafka (T25, H11) admits only `agent-echo-events` by name, which has no
+#     `agents.platform/role: chassis` label: it calls neither LiteLLM nor Valkey.
 #   - fake-mcp-server is port 8082 and code-runner is port 8000 (the table says "its port").
 #   - 8080 ingress on the two chassis pods is a rule with a port and no `from`: any source, as the
 #     table says ("from any source"). It is the only peerless rule, and it is ingress.
@@ -40,6 +41,7 @@ ip_blocks:
 # (`remote-echo`), the code runner, and its dispatcher have none.
 dns_allowed:
   - agent-echo
+  - agent-echo-events
   - chassis-echo-remote
   - litellm
   - minio-init
@@ -54,6 +56,14 @@ egress:
   - src: {ns: poc05-agents, labels: {app.kubernetes.io/name: agent-echo}}
     dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: valkey}}
     ports: [TCP/6379]
+
+  # The H11 agent (T25): DNS and the broker's SASL port only.
+  - src: {ns: poc05-agents, labels: {app.kubernetes.io/name: agent-echo-events}}
+    dst: {ns: kube-system, labels: {k8s-app: kube-dns}}
+    ports: [UDP/53, TCP/53]
+  - src: {ns: poc05-agents, labels: {app.kubernetes.io/name: agent-echo-events}}
+    dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: kafka}}
+    ports: [TCP/9092]
 
   - src: {ns: poc05-agents, labels: {app.kubernetes.io/name: chassis-echo-remote}}
     dst: {ns: kube-system, labels: {k8s-app: kube-dns}}
@@ -110,6 +120,9 @@ ingress:
     dst: {ns: poc05-agents, labels: {app.kubernetes.io/name: agent-echo}}
     ports: [TCP/8080]
   - src: any
+    dst: {ns: poc05-agents, labels: {app.kubernetes.io/name: agent-echo-events}}
+    ports: [TCP/8080]
+  - src: any
     dst: {ns: poc05-agents, labels: {app.kubernetes.io/name: chassis-echo-remote}}
     ports: [TCP/8080]
   # 8091 only from its own remote's pod label.
@@ -147,6 +160,9 @@ ingress:
   - src: {ns: poc05-platform, labels: {app.kubernetes.io/name: minio-init}}
     dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: minio}}
     ports: [TCP/9000]
+  - src: {ns: poc05-agents, labels: {app.kubernetes.io/name: agent-echo-events}}
+    dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: kafka}}
+    ports: [TCP/9092]
 
   - src: {ns: poc05-smoke, labels: {agents.platform/smoke-role: client}}
     dst: {ns: poc05-smoke, labels: {agents.platform/smoke-role: server}}

@@ -1,0 +1,268 @@
+# Kafka for the chassis's `EventPort` (plan sections 2.10, 2.12, task T25; H11, hard requirement 1
+# of ADR-001). Not in kustomization.yaml: `run.sh kafka` applies it with `kubectl apply -f` after
+# `seed.sh kafka`, so `up` stays the same and the deferred pass is one verb.
+#
+# One KRaft node (broker and controller in one process). Listeners:
+# - SASL (SASL_PLAINTEXT, SCRAM-SHA-512) on 9092: the only one in the Service and the only one a
+#   NetworkPolicy admits. Clients and the inter-broker login both use it.
+# - CONTROLLER (PLAINTEXT) on 127.0.0.1:9093: KRaft's own quorum, loopback only, so no other pod
+#   can reach it. There is no PLAINTEXT listener for clients.
+# `auto.create.topics.enable=false`: `seed.sh kafka-topics` creates the result topics.
+#
+# SCRAM users come from the Secret `kafka-sasl` (seed.sh kafka; ADMIN_PASSWORD, CHASSIS_PASSWORD),
+# which this file references but does not hold. start.sh formats the empty data dir with both
+# users (`kafka-storage.sh format --add-scram`), so the users exist before the broker accepts a
+# login. The passwords sit in that one short-lived process's argv inside this container only: no
+# other container shares its PID namespace, and the Secret is mounted here anyway. The broker's
+# own login and the admin client config are written to /tmp (memory, mode 600) by bash builtins.
+# Rotation: `seed.sh rotate` does not know kafka-sasl; delete both copies, run `seed.sh kafka`,
+# then delete the kafka pod (the data dir is an emptyDir, so the new pod formats again) and
+# restart the chassis that mounts it.
+#
+# No ACLs and no TLS: per-service topic ACLs, TLS, and the controller listener are 020 X-8.
+#
+# Image: the one the PoC-4 scale stack pins (deploy/compose/docker-compose.scale.yaml); Kafka 4.1
+# supports SCRAM in KRaft. Its user `appuser` is uid 1000, gid 1000 (suggested: checked with
+# `id` in the image). Not the image's own start scripts: start.sh writes server.properties from
+# the ConfigMap, so the root filesystem stays read-only.
+#
+# Memory (suggested, sized for a laptop kind node): heap 320 MiB fixed; metaspace, code cache,
+# threads, and direct buffers add about 200 MiB; limit 768Mi, request 512Mi. Logs go to stdout
+# only (log4j2.yaml below), and the GC log is off, so nothing grows on disk but the data dir.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-config
+  namespace: poc05-platform
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/part-of: poc05
+data:
+  server.properties: |
+    process.roles=broker,controller
+    node.id=1
+    controller.quorum.voters=1@127.0.0.1:9093
+    listeners=SASL://:9092,CONTROLLER://127.0.0.1:9093
+    listener.security.protocol.map=SASL:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
+    controller.listener.names=CONTROLLER
+    inter.broker.listener.name=SASL
+    sasl.enabled.mechanisms=SCRAM-SHA-512
+    sasl.mechanism.inter.broker.protocol=SCRAM-SHA-512
+    auto.create.topics.enable=false
+    num.partitions=3
+    offsets.topic.num.partitions=1
+    offsets.topic.replication.factor=1
+    transaction.state.log.num.partitions=1
+    transaction.state.log.replication.factor=1
+    transaction.state.log.min.isr=1
+    group.initial.rebalance.delay.ms=0
+    log.dirs=/var/lib/kafka/data
+    log.retention.bytes=67108864
+  log4j2.yaml: |
+    Configuration:
+      Appenders:
+        Console:
+          name: STDOUT
+          PatternLayout:
+            pattern: "[%d] %p %m (%c)%n"
+      Loggers:
+        Root:
+          level: INFO
+          AppenderRef:
+            - ref: STDOUT
+  start.sh: |
+    #!/bin/bash
+    # Builds server.properties and the admin client config in /tmp, formats an empty data dir
+    # with the SCRAM users, then execs the broker. Every credential is read from the mounted
+    # Secret and written by builtins; none goes to the log.
+    set -euo pipefail
+    umask 077
+    auth=/etc/kafka/sasl
+    conf=/tmp/server.properties
+    # The pod IP from the kubelet's /etc/hosts line for this pod: clients get it as the advertised
+    # address, and a tool run inside this container reaches it without DNS.
+    pod_ip=""
+    while read -r ip name _; do
+      if [[ $name == "$HOSTNAME" ]]; then pod_ip=$ip; break; fi
+    done </etc/hosts
+    [[ -n $pod_ip ]] || { printf 'no /etc/hosts line for %s\n' "$HOSTNAME" >&2; exit 1; }
+    admin=$(<"$auth/ADMIN_PASSWORD")
+    jaas="org.apache.kafka.common.security.scram.ScramLoginModule required"
+    {
+      cat /etc/kafka/config/server.properties
+      printf 'advertised.listeners=SASL://%s:9092\n' "$pod_ip"
+      printf 'listener.name.sasl.scram-sha-512.sasl.jaas.config=%s username="admin" password="%s";\n' "$jaas" "$admin"
+    } >"$conf"
+    {
+      printf 'security.protocol=SASL_PLAINTEXT\nsasl.mechanism=SCRAM-SHA-512\n'
+      printf 'sasl.jaas.config=%s username="admin" password="%s";\n' "$jaas" "$admin"
+    } >/tmp/admin-client.properties
+    if [[ ! -f /var/lib/kafka/data/meta.properties ]]; then
+      chassis=$(<"$auth/CHASSIS_PASSWORD")
+      KAFKA_HEAP_OPTS=-Xmx64m /opt/kafka/bin/kafka-storage.sh format --config "$conf" \
+        --cluster-id "$(KAFKA_HEAP_OPTS=-Xmx64m /opt/kafka/bin/kafka-storage.sh random-uuid)" \
+        --add-scram "SCRAM-SHA-512=[name=admin,password=$admin]" \
+        --add-scram "SCRAM-SHA-512=[name=chassis,password=$chassis]" >/dev/null
+      unset chassis
+    fi
+    unset admin
+    # The broker's heap only: a tool run with `kubectl exec` sets its own (seed.sh: 64 MiB).
+    export KAFKA_HEAP_OPTS="-Xms320m -Xmx320m"
+    exec /opt/kafka/bin/kafka-server-start.sh "$conf"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kafka
+  namespace: poc05-platform
+  labels:
+    app.kubernetes.io/part-of: poc05
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: poc05-platform
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/part-of: poc05
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka
+    spec:
+      serviceAccountName: kafka
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kafka
+          image: apache/kafka:4.1.0@sha256:bff074a5d0051dbc0bbbcd25b045bb1fe84833ec0d3c7c965d1797dd289ec88f
+          command: [/bin/bash, /etc/kafka/config/start.sh]
+          env:
+            - name: KAFKA_LOG4J_OPTS
+              value: -Dlog4j2.configurationFile=/etc/kafka/config/log4j2.yaml
+            # kafka-run-class.sh makes LOG_DIR; the default is under the read-only /opt/kafka.
+            - name: LOG_DIR
+              value: /tmp/kafka-logs
+            # Drops `-loggc`: no GC log file grows in /tmp.
+            - name: EXTRA_ARGS
+              value: -name kafkaServer
+          ports:
+            - name: sasl
+              containerPort: 9092
+          # TCP only: an exec probe would start a second JVM inside the memory limit.
+          startupProbe:
+            tcpSocket:
+              port: 9092
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/kafka/config
+              readOnly: true
+            - name: sasl
+              mountPath: /etc/kafka/sasl
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/kafka/data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: kafka-config
+        - name: sasl
+          secret:
+            secretName: kafka-sasl
+            defaultMode: 0440
+            items:
+              - key: ADMIN_PASSWORD
+                path: ADMIN_PASSWORD
+              - key: CHASSIS_PASSWORD
+                path: CHASSIS_PASSWORD
+        - name: data
+          emptyDir:
+            sizeLimit: 512Mi
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: poc05-platform
+  labels:
+    app.kubernetes.io/name: kafka
+    app.kubernetes.io/part-of: poc05
+spec:
+  selector:
+    app.kubernetes.io/name: kafka
+  ports:
+    - name: sasl
+      port: 9092
+      targetPort: 9092
+---
+# Ingress on 9092 from the one chassis pod that publishes, `agent-echo-events` in poc05-agents, by
+# name: it does not carry `agents.platform/role: chassis` (it calls neither LiteLLM nor Valkey,
+# which admit that label), and every edge must have both sides (test_poc05_netpol_static.py). Its
+# sidecar workload shares the chassis's network namespace and reaches 9092 too: H11 is a refusal
+# by credential, not by policy.
+# No egress: the controller is on loopback and the broker calls nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kafka
+  namespace: poc05-platform
+  labels:
+    app.kubernetes.io/part-of: poc05
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: agent-echo-events
+      ports:
+        - port: 9092
+          protocol: TCP
