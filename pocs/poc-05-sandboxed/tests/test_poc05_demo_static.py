@@ -27,11 +27,23 @@ prints the exception line instead of running them."""
 
 
 def test_poc05_demo_names_the_t10_exception_while_the_probe_suite_is_missing() -> None:
-    """Criterion 8 (flagged): without the probe suite, the demo says so instead of skipping."""
+    """Criterion 8 (flagged): without the probe suite, the demo says so instead of skipping, and
+    its last line names the exception: a run without the suite never ends a bare "every step ok"
+    (review LOW, 2026-10-09). The control: with the suite, the last line is the plain one."""
     text = _text()
-    assert 'if [[ -f "$TESTS/test_poc05_kind_probe.py" ]]; then' in text
-    assert "exception: in-pod probe not built (WIP)" in text
-    assert "notes/2026-10-09-t10-probe-exception.md" in text
+    branch = re.search(
+        r'if \[\[ -f "\$TESTS/test_poc05_kind_probe\.py" \]\]; then\n(.*?)\n  else\n(.*?)\n  fi',
+        text,
+        re.S,
+    )
+    assert branch, "demo.sh has no probe-suite branch"
+    with_suite, without_suite = branch.groups()
+    assert "kind_tests probe-suite" in with_suite
+    assert "exception: in-pod probe not built (WIP)" in without_suite
+    assert "notes/2026-10-09-t10-probe-exception.md" in without_suite
+    assert 'RESULT="every step ok; T10 recorded exception"' in without_suite
+    assert 'RESULT="every step ok"' in text.split(branch.group(0))[0]
+    assert "T10 recorded exception" in text.split("\n#\n", 1)[0], "the header names it"
 
 
 NO_BASH = shutil.which("bash") is None
@@ -76,7 +88,7 @@ def test_poc05_demo_redacts_what_it_captures() -> None:
 def test_poc05_demo_writes_a_dated_record_and_ends_ok() -> None:
     text = _text()
     assert '$(date -u +%F)-demo-sandboxed.md"' in text
-    assert 'echo "result: every step ok"' in text
+    assert 'echo "result: $RESULT"' in text
     assert text.rstrip().endswith('} 2>&1 | tee "$OUT"')
 
 

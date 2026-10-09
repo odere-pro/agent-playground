@@ -11,12 +11,14 @@
 #   5. Admission: every fixture, `apply --dry-run=server`; the rejected ones name their rule
 #   6. The code runner: one run_python call on gVisor, no egress
 #   7. H11, the broker: the Kafka SASL case (test_poc05_kind_hardreq1.py -k kafka)
-#   8. Where it was logged: probe.check lines, remote_unauthenticated, LiteLLM's 401 lines
+#   8. Where it was logged: probe.check lines, the remote listener's 401/403, LiteLLM's 401 lines
 # Every check reuses a run.sh verb or an existing kind test; nothing probes on its own. Each pytest
 # step prints one line per check: id, attempt, outcome, control. A failed, skipped, or missing
-# check stops the demo non-zero. All captured output goes through `run.sh redact`; the gateway key
-# reaches pytest only through `run.sh with-gateway` (env, never argv or output). Every kubectl call
-# pins --context kind-poc05. Writes the record to demo/<date>-demo-sandboxed.md.
+# check stops the demo non-zero. The last line is `result: every step ok`; while the probe suite is
+# not built it is `result: every step ok; T10 recorded exception`. All captured output goes through
+# `run.sh redact`; the gateway key reaches pytest only through `run.sh with-gateway` (env, never
+# argv or output). Every kubectl call pins --context kind-poc05. Writes the record to
+# demo/<date>-demo-sandboxed.md.
 #
 #   pocs/poc-05-sandboxed/demo/demo.sh [record.md]
 set -euo pipefail
@@ -112,11 +114,17 @@ kind_tests() {
 }
 
 # count_lines LABEL PATTERN: how many redacted pod log lines match PATTERN; prints the last three.
+# count_lines LABEL REGEX [POD]: lines of the saved logs matching REGEX, only inside the
+# `::group::<ns>/<POD>...` blocks of `run.sh logs` when POD is given; the count and the last 3.
 count_lines() {
-  local n
-  n=$(grep -cE "$2" "$TMP/logs.txt" || true)
-  printf '%-28s %s line(s)\n' "$1" "$n"
-  grep -E "$2" "$TMP/logs.txt" | tail -n 3 | cut -c1-200 || true
+  local lines n
+  lines=$(awk -v pod="${3-}" '
+    /^::group::/ { split(substr($0, 10), p, "/"); keep = (pod == "" || index(p[2], pod) == 1); next }
+    /^::endgroup::/ { keep = (pod == ""); next }
+    keep' "$TMP/logs.txt" | grep -E "$2" || true)
+  n=$(grep -c . <<<"$lines" || true)
+  printf '%-36s %s line(s)\n' "$1" "$n"
+  [[ -z $lines ]] || tail -n 3 <<<"$lines" | cut -c1-200
 }
 
 {
@@ -146,10 +154,12 @@ count_lines() {
   kind_tests sidecar-probe \
     "$TESTS/test_poc05_kind_hardreq1.py::test_litellm_refuses_the_workload_without_the_chassis_key" \
     "$TESTS/test_poc05_kind_hardreq1.py::test_mcp_gateway_refuses_the_workload_without_the_chassis_key"
+  RESULT="every step ok"
   if [[ -f "$TESTS/test_poc05_kind_probe.py" ]]; then
     kind_tests probe-suite "$TESTS/test_poc05_kind_probe.py"
   else
     echo "T10 | - | exception: in-pod probe not built (WIP) | notes/2026-10-09-t10-probe-exception.md"
+    RESULT="every step ok; T10 recorded exception"
   fi
   step "5. Admission: every fixture through a server dry run"
   kind_tests admission \
@@ -162,9 +172,11 @@ count_lines() {
   step "8. Where it was logged (pod logs through redact_logs; no secret values)"
   "$RUN" logs 2>/dev/null | "$RUN" redact >"$TMP/logs.txt"
   count_lines "probe.check" 'probe\.check'
-  count_lines "remote_unauthenticated" 'remote_unauthenticated'
-  count_lines "LiteLLM 401" '401|Authentication Error'
+  # The remote chassis logs `remote_unauthenticated` to its telemetry port (`memory` here), not
+  # stdout; its access log shows the remote listener's 401 (no or wrong token) and 403 (no run).
+  count_lines "chassis-echo-remote 401/403" 'HTTP/1\.1" 40[13] ' chassis-echo-remote
+  count_lines "LiteLLM 401" '" 401 |Authentication Error' litellm
   echo
-  echo "result: every step ok"
+  echo "result: $RESULT"
   echo '```'
 } 2>&1 | tee "$OUT"
