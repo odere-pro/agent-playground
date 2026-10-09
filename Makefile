@@ -69,7 +69,7 @@ record-cassettes: ## Re-record model cassettes offline, against the fake model s
 quick: ## Iteration gate: format check, lint, and the tests of the packages you changed
 	$(MAKE) fmt-check lint
 	@changed=$$(git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard) ; \
-	dirs=$$(echo "$$changed" | grep -oE '^(packages|pocs)/[^/]+' | sort -u | while read -r d; do [ -d "$$d" ] && echo "$$d"; done) ; \
+	dirs=$$(echo "$$changed" | grep -oE '^(packages|pocs)/[^/]+' | sort -u | while read -r d; do [ -d "$$d" ] && [ -n "$$(find "$$d" -name 'test_*.py' -not -path '*/node_modules/*' -print -quit)" ] && echo "$$d"; done) ; \
 	if [ -n "$$dirs" ]; then echo "testing: $$dirs"; $(PYTEST) $$dirs; else $(PYTEST) -m "not slow"; fi
 
 check: ## Boundary gate: everything CI runs
