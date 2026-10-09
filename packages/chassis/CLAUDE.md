@@ -49,4 +49,5 @@ Under `packages/chassis/`: `configs/` the bundled specs, `schemas/` the publishe
 - `make schemas` after a schema change. A test fails on drift.
 - `make lint` checks the import rules. `make quick` before every commit.
 - PoC-5 adds the `remote` lane (`adapters/a2a/remote.py`), the remote proxy listener (`server/remote_auth.py`), `ToolPort` write mode and the MCP gateway adapter (`adapters/mcp/gateway.py`), the uncorrelated cap, and `spec.trust`. Its scenarios are in `pocs/poc-05-sandboxed/tests/`; the kind ones run with `POC05_KIND=1`.
+- PoC-6 adds the plain-A2A mode of the `remote` lane (`spec.engine.protocol: a2a`, `adapters/a2a/plain.py`) for third-party agents that send no `chassis.event`. It is chassis-only: never edit `mapping.py` for it. It cannot show `tool_call`; the remote's own error text never reaches a `Response`.
 - The full test map is in `docs/guides/chassis-reference.md`.
