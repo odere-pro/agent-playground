@@ -86,6 +86,7 @@ scrub() {
   sed -E \
     -e 's/(sk-|Bearer )[A-Za-z0-9._-]{8,}/\1[redacted]/g' \
     -e 's/sk-[A-Za-z0-9._-]*\*+[A-Za-z0-9]*/sk-[redacted]/g' \
+    -e 's/[0-9a-fA-F]{64}/[redacted-hex]/g' \
     -e 's#/(Users|home)/[^/ ]+#~#g'
 }
 
@@ -433,7 +434,26 @@ down() {
     log "down: no cluster or no $PLATFORM in $CONTEXT; nothing to undo"
     return 0
   fi
-  log "1/5 chassis and workloads back on $BASE_ROUTE"
+  # The security reverts come first (egress, provider key, chassis keys), so a teardown that is
+  # cut short leaves no key and no egress behind. The route restores and their rollouts come last.
+  log "1/5 NetworkPolicy litellm-hosted-egress"
+  kctl -n "$PLATFORM" delete networkpolicy litellm-hosted-egress --ignore-not-found >/dev/null
+  log "2/5 LiteLLM: drop $PROVIDER_ENV and the Secret $PROVIDER_SECRET, config back to PoC-5's"
+  orig=$(original_config)
+  if [[ -n $orig ]] && { provider_env_present || [[ $(litellm_config_cm) == "$HOSTED_CM" ]]; }; then
+    unpatch_litellm "$orig"
+    kctl -n "$PLATFORM" annotate deployment litellm "$ORIGINAL_ANNOTATION-" >/dev/null 2>&1 || true
+  fi
+  kctl -n "$PLATFORM" delete secret "$PROVIDER_SECRET" --ignore-not-found >/dev/null
+  if [[ -n $orig ]]; then
+    ( wait_rollout "$PLATFORM" litellm ) || log "warning: litellm did not settle"
+  fi
+  log "3/5 chassis keys back to $BASE_ROUTE"
+  if secret_exists "$PLATFORM" litellm-master; then
+    ( trap stop_forward EXIT; set_all_keys "$BASE_ROUTE" ) ||
+      log "warning: could not reset the chassis keys (the cluster is usually deleted next)"
+  fi
+  log "4/5 chassis and workloads back on $BASE_ROUTE"
   if kctl -n "$AGENTS" get deployment >/dev/null 2>&1; then
     for pair in "${ENGINES[@]}"; do
       svc=${pair#*:}
@@ -447,23 +467,8 @@ down() {
       log "kagent-adk workload model: $k"
     fi
   fi
-  log "2/5 NetworkPolicy litellm-hosted-egress"
-  kctl -n "$PLATFORM" delete networkpolicy litellm-hosted-egress --ignore-not-found >/dev/null
-  log "3/5 LiteLLM Deployment: drop $PROVIDER_ENV, config back to PoC-5's ConfigMap"
-  orig=$(original_config)
-  if [[ -n $orig ]] && { provider_env_present || [[ $(litellm_config_cm) == "$HOSTED_CM" ]]; }; then
-    unpatch_litellm "$orig"
-    kctl -n "$PLATFORM" annotate deployment litellm "$ORIGINAL_ANNOTATION-" >/dev/null 2>&1 || true
-    ( wait_rollout "$PLATFORM" litellm ) || log "warning: litellm did not settle"
-  fi
-  log "4/5 chassis keys back to $BASE_ROUTE"
-  if secret_exists "$PLATFORM" litellm-master; then
-    ( trap stop_forward EXIT; set_all_keys "$BASE_ROUTE" ) ||
-      log "warning: could not reset the chassis keys (the cluster is usually deleted next)"
-  fi
-  log "5/5 ConfigMap $HOSTED_CM and Secret $PROVIDER_SECRET"
+  log "5/5 ConfigMap $HOSTED_CM"
   kctl -n "$PLATFORM" delete configmap "$HOSTED_CM" --ignore-not-found >/dev/null
-  kctl -n "$PLATFORM" delete secret "$PROVIDER_SECRET" --ignore-not-found >/dev/null
   log "down done"
 }
 

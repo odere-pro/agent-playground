@@ -235,7 +235,7 @@ stop_kind() {
   fi
   if [[ "$KIND_UP" == 1 ]]; then
     KIND_UP=0
-    "$KIND_RUN" delete >>"$klog" 2>&1 || warn "could not delete the kind cluster $KIND_CLUSTER; run: deploy/kind/poc06/run.sh delete"
+    "$KIND_RUN" delete >>"$klog" 2>&1 || warn "could not delete the kind cluster $KIND_CLUSTER, which may still hold the provider key Secret; run: deploy/kind/poc06/run.sh delete"
   fi
 }
 

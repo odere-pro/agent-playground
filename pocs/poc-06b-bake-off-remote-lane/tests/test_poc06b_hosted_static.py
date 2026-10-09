@@ -568,3 +568,18 @@ def test_the_relay_carries_http_both_ways_through_a_fake_kubectl(tmp_path: Path)
     )
     assert done.returncode == 0, done.stdout + done.stderr
     assert "relay ok" in done.stdout
+
+
+def test_down_reverts_egress_and_keys_before_the_route_restores() -> None:
+    """A teardown cut short must leave no provider key and no egress behind (security review)."""
+    text = HOSTED_SH.read_text()
+    body = text[text.index("down() {\n") :]
+    body = body[: body.index("\n}\n")]
+    order = [
+        body.index("delete networkpolicy litellm-hosted-egress"),
+        body.index('delete secret "$PROVIDER_SECRET"'),
+        body.index('set_all_keys "$BASE_ROUTE"'),
+        body.index("set_chassis_route"),
+        body.index('delete configmap "$HOSTED_CM"'),
+    ]
+    assert order == sorted(order), order
