@@ -180,6 +180,9 @@ admission() {
   local dir=$HERE/admission fx=$HERE/admission/fixtures name
   kctl apply -f "$dir/params.yaml"
   kctl apply -f "$dir/rbac.yaml"
+  # The submitter lost poc05-tools (per-call sandbox plan, "RBAC"); apply never deletes, so a
+  # cluster from before that change keeps the binding until this removes it.
+  kctl -n poc05-tools delete rolebinding agent-submitter --ignore-not-found
   kctl apply -f "$dir/policy.yaml"
   kctl apply -f "$dir/extension-policy.yaml"
   for name in agent-trust-rule sandbox-template-rule sandbox-claim-rule; do

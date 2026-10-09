@@ -77,6 +77,8 @@ EXTENSION_FIELDS = {
     "sandbox-claim-rule": {
         "env",
         "additionalPodMetadata",
+        "additionalPodMetadata.labels",
+        "additionalPodMetadata.annotations",
         "warmPoolRef",
         "warmPoolRef.name",
         "lifecycle",
@@ -758,6 +760,23 @@ def test_c4_refuses_a_claim_without_lifecycle_or_shutdown_policy() -> None:
     } <= differs
 
 
+def test_c2_admits_the_empty_metadata_the_controller_writes() -> None:
+    """The controller's UPDATE of a claim carries `additionalPodMetadata: {}` (kind, 2026-10-09).
+    C2 must admit that, or no claim gets Ready; a label or an annotation in it stays refused."""
+    base = {
+        "warmPoolRef": {"name": POOL},
+        "lifecycle": {"shutdownPolicy": "Delete", "shutdownTime": "2030-01-01T00:00:00Z"},
+    }
+
+    def claim(meta: Doc) -> Doc:
+        return {"kind": "SandboxClaim", "spec": {**base, "additionalPodMetadata": meta}}
+
+    assert extension_broken_rules(claim({})) == set()
+    assert extension_broken_rules(claim({"labels": {}, "annotations": {}})) == set()
+    assert extension_broken_rules(claim({"labels": {NAME: "litellm"}})) == {"C2"}
+    assert extension_broken_rules(claim({"annotations": {"a": "b"}})) == {"C2"}
+
+
 def test_fixture_headers_are_complete(policy: Doc, extension_policies: dict[str, Doc]) -> None:
     messages = _messages(policy) | _extension_messages(extension_policies)
     for f in ALL:
@@ -1056,7 +1075,9 @@ def extension_broken_rules(doc: Doc) -> set[str]:
         lifecycle = spec.get("lifecycle", {})
         checks = {
             "C1": not spec.get("env"),
-            "C2": "additionalPodMetadata" not in spec,
+            "C2": not any(
+                (spec.get("additionalPodMetadata") or {}).get(k) for k in ("labels", "annotations")
+            ),
             "C3": spec.get("warmPoolRef", {}).get("name") == POOL,
             "C4": lifecycle.get("shutdownPolicy") == "Delete" and "shutdownTime" in lifecycle,
             "C5": not spec.get("volumeClaimTemplates"),

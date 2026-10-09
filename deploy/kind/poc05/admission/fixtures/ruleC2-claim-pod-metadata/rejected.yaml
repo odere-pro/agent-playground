@@ -1,7 +1,7 @@
 # Claim rule C2, no additionalPodMetadata: the claim adds a label that a NetworkPolicy could select on.
 # expect: rejected
 # rule: C2
-# message: claim rule C2: a SandboxClaim may not set additionalPodMetadata
+# message: claim rule C2: a SandboxClaim may not set labels or annotations in additionalPodMetadata
 # differs: .spec.additionalPodMetadata
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxClaim
