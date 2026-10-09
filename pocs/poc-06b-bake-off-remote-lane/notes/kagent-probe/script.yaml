@@ -1,0 +1,8 @@
+model: fake-model
+rules:
+  - match: "simplify"
+    reply: "Plain words. Short sentences. Same facts."
+    usage: { prompt_tokens: 42, completion_tokens: 9 }
+  - match: "fail"
+    error: { status: 500, message: "scripted failure" }
+default_reply: "ok from the fake model"

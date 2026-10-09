@@ -1,0 +1,11 @@
+{
+  "model": {
+    "type": "openai",
+    "model": "fake-model",
+    "base_url": "http://127.0.0.1:18090/v1",
+    "api_key_passthrough": true
+  },
+  "description": "probe agent",
+  "instruction": "You are a probe. Answer briefly.",
+  "stream": true
+}
