@@ -39,6 +39,31 @@ All in PoC-5's namespaces and cluster: chassis pods in `poc05-agents`, remotes i
 - **Claude lookup.** `xfail(strict=False)`: the CLI offers MCP tools as `mcp__chassis__<name>`, so the scripted call names a tool it did not offer. A fix is coming separately.
 - **kagent-adk lookup** asserts the answer text only. In plain-A2A mode the chassis cannot see tool calls; the test asserts no `tool_call` event appears, so the limit is on record.
 
+## gVisor and clone3: the seccomp profile
+
+**Symptom.** The first `poc06-kind` CI run failed at `run.sh up`. The `remote-typescript` Sandbox crash-looped at Node start:
+
+```
+#  node[1]: std::unique_ptr<long unsigned int> node::WorkerThreadsTaskRunner::DelayedTaskScheduler::Start() at ../src/node_platform.cc:109
+#  Assertion failed: (0) == (uv_thread_create(t.get(), start_thread, this))
+```
+
+**Root cause.** The kind nodes run runsc with `oci-seccomp = "true"` (`deploy/kind/poc05/install-gvisor.sh`), so the pod's RuntimeDefault profile is applied inside the sandbox. runsc's OCI seccomp converter ignores `errnoRet` and returns EPERM for every `SCMP_ACT_ERRNO` rule (https://github.com/google/gvisor/issues/14688; the fix, https://github.com/google/gvisor/pull/14721, is approved but not released; our pin is runsc 20260928.0). containerd's RuntimeDefault blocks `clone3` with `errnoRet: 38` (ENOSYS), so glibc falls back to `clone`. Under runsc that is EPERM, and `pthread_create` fails in glibc 2.34 and later. Every multi-threaded program in a gVisor pod is hit: Node (at start), Python `threading`, the Claude CLI binary, kagent-adk. The Python remotes only looked healthy because they start single-threaded. Another project hit the same limit and allowed `clone3` for runsc only (eumemic/aios PR 2435).
+
+**Fix.** A Localhost profile, `poc06-runsc-clone3.json`, for the four PoC-6 gVisor pods (`remote-typescript`, `remote-smolagents`, `remote-claude-agent`, `remote-kagent-adk`; pod and container level). It is the RuntimeDefault profile the node's containerd generated for a drop-ALL container, with one change: the `clone3` rule's action is `SCMP_ACT_ALLOW` and its `errnoRet` is gone.
+
+- `deploy/kind/poc06/seccomp/derive_profile.py` makes it from `crictl inspect` of the running PoC-5 `remote-echo` container (gVisor, RuntimeDefault, drop ALL). It fails closed unless there is exactly one rule naming `clone3`, with names exactly `["clone3"]`, action `SCMP_ACT_ERRNO`, `errnoRet` 38, and it asserts the output differs from the input in that rule only. Offline tests: `tests/test_poc06b_seccomp_profile.py`.
+- `run.sh seccomp` (run first by `up` and `apply`) writes the file to `/var/lib/kubelet/seccomp/profiles/` on every kind node and logs its sha256 and the one changed rule.
+- The static test pins a gVisor pod to exactly this Localhost profile and a runc pod to RuntimeDefault. The kind test `test_remote_can_start_a_thread_and_its_seccomp_filter_is_on` starts a thread in each remote and reads `Seccomp:\t2` from `/proc/self/status`.
+
+**Accepted risk.** `clone3` is unfiltered inside the guest, so a guest process can create namespaces through `clone3`. They live in the Sentry's emulated kernel, not on the host. Every other RuntimeDefault rule is unchanged, and gVisor stays the boundary.
+
+**Removal trigger.** Bump runsc to a release that contains google/gvisor#14721, drop the Localhost profile and the `seccomp` step, and go back to RuntimeDefault in the four manifests (and in the static test).
+
+**PoC-5 is left alone.** PoC-5's `remote-echo` has the same latent limit: its Python threads would fail. It starts single-threaded, so it works. PoC-6 edits no PoC-5 file, so it is not changed here.
+
+**Not run on a cluster yet.** Two assumptions to check in the first CI run: that `crictl inspect` of a runsc container includes `info.runtimeSpec` (the step fails closed with a message if not), and that containerd's Localhost loader accepts the OCI-format profile as written. `profiles/...` is relative to the kubelet's seccomp directory (`/var/lib/kubelet/seccomp`, suggested: the kubelet default).
+
 ## What the chassis cannot see or control for kagent-adk (this slice)
 
 - Tool calls and the model's turns inside the runtime (plain mode maps artifacts to deltas and reads token usage from `kagent.dev/a2a/usage`).

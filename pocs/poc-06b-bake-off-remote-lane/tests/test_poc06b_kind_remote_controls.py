@@ -52,6 +52,7 @@ from poc05_kind import (
     unpoliced_caller,
 )
 from poc06b_kind import (
+    PYTHONS,
     REMOTES,
     KindEngine,
     probe_in,
@@ -350,6 +351,54 @@ def test_remote_runs_on_gvisor_next_to_a_runc_pod(engine: KindEngine) -> None:
     )
     assert "gvisor" in gvisor["text"], gvisor
     assert "gvisor" not in runc["text"] and runc["text"].startswith("Linux version"), runc
+
+
+STATUS = "/proc/self/status"
+THREAD_PY = (
+    "import threading; t=threading.Thread(target=lambda: None); t.start(); t.join(); print('ok')"
+)
+THREAD_NODE = (
+    "const {Worker}=require('node:worker_threads');"
+    "const w=new Worker('process.exit(0)',{eval:true});"
+    "w.on('exit',()=>console.log('ok'));w.on('error',e=>{console.error(e);process.exit(1)})"
+)
+
+
+@pytest.mark.parametrize("engine", REMOTES, ids=ENGINE_IDS)
+def test_remote_can_start_a_thread_and_its_seccomp_filter_is_on(engine: KindEngine) -> None:
+    """The gVisor pods use the Localhost profile that allows `clone3` (run.sh `seccomp`; note
+    lanes-b-kind.md, "gVisor and clone3"). Under RuntimeDefault, runsc turns the ENOSYS for
+    `clone3` into EPERM and `pthread_create` fails. The check: a thread starts in the pod (Python
+    `threading`, or a Node worker), and `/proc/self/status` still says `Seccomp:\t2`, so the
+    filter is on."""
+    remote = remote_pod(engine)
+    name = remote["metadata"]["name"]
+    exes = ["node"] if engine.language == "node" else list(PYTHONS)
+    for exe in exes:
+        if exe == "node":
+            argvs = [
+                ["node", "-e", THREAD_NODE],
+                [
+                    "node",
+                    "-e",
+                    "process.stdout.write(require('fs').readFileSync('/proc/self/status','utf8'))",
+                ],
+            ]
+        else:
+            argvs = [
+                [exe, "-c", THREAD_PY],
+                [exe, "-c", f"print(open({STATUS!r}).read())"],
+            ]
+        first = kubectl("exec", "-n", REMOTE_NS, name, "-c", WORKLOAD, "--", *argvs[0])
+        if first.returncode != 0 and "not found" in first.stderr.lower() and exe != exes[-1]:
+            continue
+        assert first.returncode == 0, f"{engine.id}: thread failed: {first.stderr[-400:]}"
+        assert first.stdout.strip().endswith("ok"), first.stdout[-200:]
+        second = kubectl("exec", "-n", REMOTE_NS, name, "-c", WORKLOAD, "--", *argvs[1])
+        assert second.returncode == 0, f"{engine.id}: status failed: {second.stderr[-400:]}"
+        assert "Seccomp:\t2" in second.stdout, f"{engine.id}: the seccomp filter is off"
+        return
+    pytest.fail(f"{engine.id}: no interpreter found")
 
 
 def test_the_remote_pods_are_the_ones_the_manifests_name() -> None:

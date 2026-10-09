@@ -38,8 +38,11 @@ spec:
       terminationGracePeriodSeconds: 40
       securityContext:
         runAsNonRoot: true
+        # Localhost, not RuntimeDefault: runsc maps RuntimeDefault's clone3 ENOSYS to EPERM and
+        # threads fail. deploy/kind/poc06/run.sh `seccomp` writes it; note lanes-b-kind.md.
         seccompProfile:
-          type: RuntimeDefault
+          type: Localhost
+          localhostProfile: profiles/poc06-runsc-clone3.json
       containers:
         - name: workload
           image: kind.local/agent-platform/echo-smolagents:poc06
@@ -95,8 +98,11 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: [ALL]
+            # Localhost, not RuntimeDefault: runsc maps RuntimeDefault's clone3 ENOSYS to EPERM and
+            # threads fail. deploy/kind/poc06/run.sh `seccomp` writes it; note lanes-b-kind.md.
             seccompProfile:
-              type: RuntimeDefault
+              type: Localhost
+              localhostProfile: profiles/poc06-runsc-clone3.json
           volumeMounts:
             - name: workload-tmp
               mountPath: /tmp

@@ -114,6 +114,11 @@ def _objects(folder: str) -> list[Obj]:
 ALL_OBJECTS = [o for f in FOLDERS for o in _objects(f)]
 
 
+GVISOR_SECCOMP = {"type": "Localhost", "localhostProfile": "profiles/poc06-runsc-clone3.json"}
+"""A gVisor pod's profile: the node's RuntimeDefault with clone3 allowed (run.sh `seccomp`; note
+lanes-b-kind.md, "gVisor and clone3"). A runc pod keeps RuntimeDefault."""
+
+
 @dataclass(frozen=True)
 class Pod:
     obj: Obj
@@ -256,7 +261,10 @@ def test_every_container_is_hardened(pod: Pod) -> None:
         assert sc.get("capabilities", {}).get("drop") == ["ALL"], where
         assert not sc.get("capabilities", {}).get("add"), where
         seccomp = sc.get("seccompProfile", pod_sc.get("seccompProfile", {}))
-        assert seccomp.get("type") == "RuntimeDefault", where
+        if pod.spec.get("runtimeClassName") == "gvisor":
+            assert seccomp == GVISOR_SECCOMP, where
+        else:
+            assert seccomp == {"type": "RuntimeDefault"}, where
         limits = c.get("resources", {}).get("limits", {})
         assert limits.get("cpu") and limits.get("memory"), f"{where}: limits {limits}"
         assert c.get("resources", {}).get("requests"), f"{where}: no requests"
