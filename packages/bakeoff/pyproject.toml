@@ -3,7 +3,7 @@ name = "bakeoff"
 version = "0.1.0"
 description = "PoC-6 benchmark kit: runs the bake-off tasks on each engine and writes the scorecard; no framework dependency"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = ["chassis", "fake-model-server", "httpx>=0.28", "jsonschema>=4.26", "pyyaml>=6", "uvicorn>=0.54"]
 
 [build-system]
 requires = ["uv_build>=0.8,<0.12"]

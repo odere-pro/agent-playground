@@ -314,6 +314,24 @@ wheels = [
 name = "bakeoff"
 version = "0.1.0"
 source = { editable = "packages/bakeoff" }
+dependencies = [
+    { name = "chassis" },
+    { name = "fake-model-server" },
+    { name = "httpx" },
+    { name = "jsonschema" },
+    { name = "pyyaml" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "chassis", editable = "packages/chassis" },
+    { name = "fake-model-server", editable = "packages/fake-model-server" },
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "jsonschema", specifier = ">=4.26" },
+    { name = "pyyaml", specifier = ">=6" },
+    { name = "uvicorn", specifier = ">=0.54" },
+]
 
 [[package]]
 name = "beartype"
