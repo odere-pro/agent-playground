@@ -30,17 +30,18 @@ from poc05_kind import (
     CHASSIS,
     NOT_A_KEY,
     PLATFORM_NS,
+    POLICY_DROPPED,
     PROXY,
     SIDECAR_POD,
     WORKLOAD,
     chat,
+    get_json,
     kubectl,
     pod,
     probe,
     service_ip,
 )
 
-REFUSED_TCP = {"TimeoutError", "ConnectionRefusedError", "OSError"}
 # The gateway lists a tool as `<server>-<tool>`; the chassis's `/mcp` passes the name on.
 GLOSSARY = "fake_tools-glossary_lookup"
 
@@ -75,11 +76,11 @@ def test_litellm_refuses_the_workload_without_the_chassis_key(sidecar: str) -> N
     assert bare["status"] == 401, bare
     assert stranger["status"] == 401, stranger
     assert NOT_A_KEY not in stranger["head"]
-    assert proxied["status"] == 200, proxied
+    assert proxied["status"] == 200, proxied.get("status", proxied.get("error"))
     assert '"choices"' in proxied["head"]
 
     (own,) = in_chassis(sidecar, [chat(litellm, auth_env="LITELLM_API_KEY")])
-    assert own["status"] == 200, own
+    assert own.get("status") == 200, own.get("status", own.get("error"))
 
 
 def test_mcp_gateway_refuses_the_workload_without_the_chassis_key(sidecar: str) -> None:
@@ -101,13 +102,13 @@ def test_mcp_gateway_refuses_the_workload_without_the_chassis_key(sidecar: str) 
     )
     assert bare == {"status": 401}, bare
     assert stranger == {"status": 401}, stranger
-    assert proxied["status"] == 200, proxied
+    assert proxied.get("status") == 200, proxied.get("status", proxied.get("error"))
     assert GLOSSARY in proxied["tools"]
 
     (own,) = in_chassis(
         sidecar, [{"kind": "mcp_tools", "url": gateway, "auth_env": "LITELLM_API_KEY"}]
     )
-    assert own["status"] == 200, own
+    assert own.get("status") == 200, own.get("status", own.get("error"))
     assert GLOSSARY in own["tools"]
 
 
@@ -147,13 +148,16 @@ def test_valkey_refuses_the_workload_without_the_chassis_password(sidecar: str) 
             }
         ],
     )
-    assert own["replies"] == ["+OK", "+PONG"], own
+    assert own.get("replies") == ["+OK", "+PONG"], own.get("replies", own.get("error"))
 
 
 def test_minio_refuses_the_workload_and_any_unsigned_call(sidecar: str) -> None:
     """Criterion 3, MinIO: the control refuses the workload at the network (no edge from any
     chassis pod, review F10: the connection to the Service and to the pod IP never opens), while
-    the workload's allowed edge to LiteLLM connects in the same test. MinIO itself refuses an
+    the workload's allowed edge to LiteLLM connects in the same test. Both drops are timeouts.
+    MinIO is up on the address the workload tried: inside its pod, an unsigned call to its own
+    pod IP gets MinIO's 403, and the Service's endpoints hold that pod IP (its one allowed peer,
+    the `minio-init` Job, has finished). MinIO itself refuses an
     unsigned ListBuckets (403) and answers the same call signed with the platform's credential,
     inside its own pod. No chassis holds a MinIO key in PoC-5 (`config: memory`), so there is no
     "through the chassis" call to make; that half returns with the first `config: s3` chassis."""
@@ -166,20 +170,27 @@ def test_minio_refuses_the_workload_and_any_unsigned_call(sidecar: str) -> None:
             {"kind": "tcp", "host": service_ip(PLATFORM_NS, "litellm"), "port": 4000},
         ],
     )
-    assert svc.get("error") in REFUSED_TCP, svc
-    assert pod_ip.get("error") in REFUSED_TCP, pod_ip
+    assert svc.get("error") == POLICY_DROPPED, svc
+    assert pod_ip.get("error") == POLICY_DROPPED, pod_ip
     assert allowed.get("connected") is True, allowed
 
     # Inside MinIO's pod: unsigned, then signed. The pair is expanded from the container's env by
     # its shell, so it is never in kubectl's argv; mc's output is dropped, only the code is kept.
     script = (
         'curl -s -o /dev/null -w "%{http_code}\\n" http://127.0.0.1:9000/; '
+        f'curl -s -o /dev/null -w "%{{http_code}}\\n" http://{minio["status"]["podIP"]}:9000/; '
         "HOME=/tmp MC_CONFIG_DIR=/tmp/.mc "
         'MC_HOST_local="http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@127.0.0.1:9000" '
         "mc ls local/agent-configs >/dev/null 2>&1; echo $?"
     )
     got = kubectl("exec", "-n", PLATFORM_NS, minio["metadata"]["name"], "--", "sh", "-c", script)
     assert got.returncode == 0, got.stderr[-300:]
-    unsigned, signed_rc = got.stdout.split()
+    unsigned, on_pod_ip, signed_rc = got.stdout.split()
     assert unsigned == "403", got.stdout
+    assert on_pod_ip == "403", got.stdout
+    slices = get_json(
+        "endpointslices", "-n", PLATFORM_NS, "-l", "kubernetes.io/service-name=minio"
+    )["items"]
+    addresses = {a for sl in slices for e in sl.get("endpoints", []) for a in e["addresses"]}
+    assert minio["status"]["podIP"] in addresses, addresses
     assert signed_rc == "0", got.stdout

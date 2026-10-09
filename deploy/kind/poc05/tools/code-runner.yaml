@@ -97,6 +97,7 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 64Mi
+        # Not a control: gVisor ignores it, runsc mounts its own tmpfs (notes/2026-10-08-remote-suite.md).
         - name: shm
           emptyDir:
             medium: Memory

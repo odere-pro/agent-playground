@@ -85,3 +85,99 @@ OK
 uv run python scripts/harness_lint.py
 harness-lint: ok
 ```
+
+## 2026-10-09: code runner and remote on the new layout
+
+Task 6, part B of the [per-call sandbox plan](../../../docs/plans/2026-10-09-poc-05-per-call-sandbox.md): the code-runner and remote kind tests on the per-call layout (warm pool 2, the dispatcher in `poc05-platform`), plus the MEDIUM and LOW fixes from the [code review](2026-10-09-review-cluster.md) and the [security review](2026-10-09-review-security-cluster.md). Branch `poc-05/cluster` at `7acf846` plus the test changes. Every `kubectl` call pinned `--context kind-poc05`. `grep -c sk-` on every saved log: 0. Nothing under `deploy/` changed.
+
+### Fixes
+
+- `test_code_runs_on_gvisor_with_no_egress`: reads the `SandboxTemplate` and the pool's unclaimed pods (`warm_sandboxes()` in `poc05_kind.py`: Running, Ready, not deleting, no `claim-uid` label), and the code's hostname must be one of them. The code's connects to 1.1.1.1:443, LiteLLM, the dispatcher pod, the node IP:6443, and the API VIP:443 must time out; 127.0.0.1:8000 connects. The connects run in one thread with `select`: threads hit the runner's limits (`RuntimeError: can't start new thread`), and five 3 s connects in a row hit the 10 s call ceiling.
+- Ingress: new `test_only_the_dispatcher_reaches_a_sandbox`. The live policy's one ingress peer is the dispatcher on 8000, with no egress. LiteLLM and the unpoliced caller time out to a warm sandbox's pod IP:8000; the dispatcher connects.
+- `test_h30_remote_reaches_no_other_pod`: targets the dispatcher Service and a warm sandbox pod IP instead of the old `code-runner` Service. Each target is shown up from an allowed peer in the same test: the unpoliced caller (both 8080 ports), `agent-echo`'s workload (LiteLLM), its chassis (Valkey), LiteLLM (the dispatcher), and the dispatcher (the sandbox).
+- `REFUSED_TCP` is gone from all four files. A policy refusal expects `POLICY_DROPPED` (`TimeoutError`) only. H13's loopback keeps `ConnectionRefusedError`, which is its claim. Up-controls added where a target had none: H03/H04 (the dispatcher reaches node:6443 and the VIP), MinIO (inside its pod, an unsigned call to its own pod IP gets 403, and the Service's EndpointSlice holds that IP; its one allowed peer, the `minio-init` Job, has finished).
+- The code runner's 1.1.1.1 refusal has the unpoliced-caller control. The caller pod moved to `poc05_kind.unpoliced_caller()`; it deletes a leftover pod (`--ignore-not-found --wait=true`) before apply.
+- Reply bytes: the probe's `http` check redacts the reply when the check sends a real credential (`auth_env`): the value, its last four characters, `sk-` runs, and hex runs of 32 or more. `test_poc05_kind_hardreq1.py` prints only the status (or the error name) for calls that carry a key, including those through the chassis's proxy.
+- H01 is live: a fixture adds 169.254.169.254/32 to the kind node's loopback and starts a one-line perl HTTP listener on port 80 (`docker exec` into the node), then removes both after the test. The workload's connect times out; an unpoliced pod in `default` gets the listener's 200 from the same address. Nothing was added to `run.sh`. After the runs: `ip -4 addr show dev lo | grep -c 169.254` gave 0, and no listener was running.
+
+### New tests (`test_poc05_kind_code_runner.py`)
+
+| Test | Criterion, H id | Result | Refusal | Allowed control |
+| ---- | --------------- | ------ | ------- | --------------- |
+| `test_python_child_burst_leaves_the_dispatcher_up` | 8, the HIGH (054 H-16), H23 tool lane | pass | the burst cannot reach another caller | a concurrent call from a second gateway session works; the next call (5 children) works; same dispatcher pod uid, restart count unchanged |
+| `test_files_do_not_cross_calls` | 8, B12 tool lane | pass | call B sees neither `/tmp/<name>` nor `/dev/shm/<name>`, on another host | call A reads both files back in its own call |
+| `test_dev_shm_is_capped` | 8, the `/dev/shm` LOW | **xfail(strict=True)** | expected ENOSPC after about 8 MiB | a 1 MiB write works |
+| `test_claim_is_gone_after_the_call` | 8, per-call plan | pass | the claim and its pod are gone within 10 s of the call's end | a claims watch saw the claim ADDED and bound to the pod the code ran in |
+| `test_only_the_dispatcher_reaches_a_sandbox` | 8, H30 tool lane | pass | LiteLLM and the unpoliced caller time out to a sandbox's 8000 | the dispatcher connects |
+
+The burst, observed once with a print in a throwaway copy (load 1.74): `{"started": 31, "refused": null}`, exit 0, not timed out; the concurrent call ran on `code-runner-qkftd`; dispatcher `restartCount` 0.
+
+**The `/dev/shm` cap does not hold under gVisor.** The emptyDir (`medium: Memory`, `sizeLimit: 8Mi`) is in the pod spec, but runsc mounts its own tmpfs there:
+
+```
+$ kubectl --context kind-poc05 -n poc05-tools exec code-runner-<warm> -- sh -c 'grep -E " /dev/shm | /tmp " /proc/mounts; df -k /dev/shm /tmp'
+none /tmp 9p rw,trans=fd,...,directfs 0 0
+none /dev/shm tmpfs rw 0 0
+none             4062256     0   4062256   0% /dev/shm
+none               65536     0     65536   0% /tmp
+```
+
+A call wrote 17 x 1 MiB files to `/dev/shm` with no error (`{'small': None, 'written_mib': 17, 'error': None}`). The pod's 256Mi memory limit still bounds it, and only for that one call. The assertion is kept and marked `xfail(strict=True)` with this evidence; it fails once the template is fixed. The fix is in `deploy/kind/poc05/tools/code-runner.yaml` (platform-security). Not checked: `remote-echo`'s `/dev/shm`.
+
+### Mutation checks
+
+Each in a temporary copy under `tests/`, deleted after (load 1.56). `7 failed in 69.10s`, each at its intended assertion:
+
+| Copy | Mutation | Failure |
+| ---- | -------- | ------- |
+| m1 | the "outside" connect points at 127.0.0.1:8000 | `('outside', {'outside': 'connected', ...})`, `'connected' == 'TimeoutError'` |
+| m2 | the "refused" ingress source is the dispatcher, not LiteLLM | `{'connected': True}`, `None == 'TimeoutError'` |
+| m3 | the restart count compared one off | `(uid, 0) == (uid, 1)` |
+| m4 | call B's check runs inside call A | `[True, True] == [False, False]` |
+| m5 | the gone-check waits on a warm pod that stays | `left after 10 s: ['pod/warm']` |
+| m6 | H01's workload probe run from the unpoliced caller | `{'connected': True}`, `None == 'TimeoutError'` |
+| m7 | H30's Valkey target on 6380 (nothing listens) | the up-control: `{'host': '10.96.149.160', 'port': 6380}, {'error': 'TimeoutError'}`, `None is True` |
+
+### Runs
+
+```
+$ POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs   # load 2.87 2.66 3.41
+SKIPPED [1] packages/contract-suites/src/chassis_contracts/tool.py:157: provide other_write_arguments: ...
+SKIPPED [1] packages/contract-suites/src/chassis_contracts/tool.py:204: provide a make_unavailable fixture: ...
+146 passed, 2 skipped, 483 deselected, 1 xfailed in 167.33s (0:02:47)
+$ deploy/kind/poc05/run.sh test-remote                                                                          # load 2.31 2.74 3.32
+21 passed, 1 xfailed in 129.00s (0:02:09)
+$ make test-poc POC=05
+================= 481 passed, 150 skipped, 1 xfailed in 22.78s =================
+```
+
+The 1 xfailed in both kind runs is `test_dev_shm_is_capped`. The 1 xfailed in `make test-poc` is the earlier `test_poc05_serve_refuses_a_wildcard_public_host` (026 CH-4); the kind tests skip offline. After the runs: no `SandboxClaim` in `poc05-tools`, pool 2/2 Ready, no caller pod in `default`, dispatcher `restartCount` 0. The cluster is left running.
+
+### The `/dev/shm` bound that holds (platform-security verdict, 2026-10-09)
+
+`platform-security` accepted the finding and recorded it (owner 055 CH-6), with no fix in the template.
+
+- `test_dev_shm_is_capped` stays `xfail(strict=True)`. Its reason now ends: "Accepted 2026-10-09, owner 055 CH-6; the per-call pod's memory limit bounds it."
+- New, passing: `test_dev_shm_is_bounded_by_the_per_call_pod`. A call writes a file to `/dev/shm` and reads it back (the control). The pod the call ran in is one from a pool snapshot taken before the call, and that pod's spec sets memory limit and request to `256Mi`. Its docstring points to `test_files_do_not_cross_calls` for the second half: call B does not see call A's file.
+- `deploy/kind/poc05/tools/code-runner.yaml` got one comment line on the `shm` volume: it is not a control, because gVisor ignores it and runsc mounts its own tmpfs. The hardening static test passes: `89 passed in 3.30s`.
+- Mutation, in a temporary copy that was deleted after: with the expected value set to `128Mi`, the test fails with `assert '256Mi' == '128Mi'` (`1 failed in 2.14s`).
+- `warm_pool_ready()` now waits until the pool is settled: no claims, and every Running pod unclaimed and Ready. `test_only_the_dispatcher_reaches_a_sandbox` runs its allowed control first and checks that the target pod is unchanged at the end. Why: twice (the first targeted run and the run below), the dispatcher's connect to the picked pod timed out. Picked by hand, settled pods connected 6 of 6 times, and a freshly replaced pod connected as soon as it was Ready. So the likely cause is a pod still in flux from the previous test's claim. That cause is inferred, not shown.
+
+Runs, the code-runner kind file (`grep -c sk-` 0 on each log):
+
+```
+before the settle fix                            # load 2.66 2.88 3.11
+1 failed, 6 passed, 1 xfailed in 55.09s          (test_only_the_dispatcher_reaches_a_sandbox: {'error': 'TimeoutError'} from the dispatcher)
+after the settle fix, run 1                      # load 4.72 3.52 3.31
+1 failed, 6 passed, 1 xfailed in 41.83s
+  test_python_child_burst_leaves_the_dispatcher_up, line `after = await run_python(other_caller, PY_FORKS.format(want=UNDER_LIMIT))`:
+  ToolResult(content='sandbox_lost: the sandbox ended before it answered', is_error=True)
+run 2                                            # load 3.03 3.26 3.23
+7 passed, 1 xfailed in 39.84s
+run 3                                            # load 3.14 3.23 3.22
+7 passed, 1 xfailed in 39.76s
+$ make test-poc POC=05
+================= 481 passed, 151 skipped, 1 xfailed in 22.32s =================
+```
+
+**Open: the call after the burst was lost once.** In 1 run of 3, at load 4.7, the 5-child call made after the burst got `sandbox_lost`. That call has its own claim and pod. The dispatcher did not restart (the restart assertion comes after this line and was not reached; it passed in the other runs). The cause is not found. Events in `poc05-tools` show only startup-probe refusals and `Killing` on pods being torn down. No OOM line was found for a code-runner pod (the node's `kubepods` `oom_kill` is 3 in total, and the one in `dmesg` is MinIO's `mc`). The test is not loosened. A `sandbox_lost` call is retryable by design, but the HIGH's claim is "the next call works". It needs a rerun under load with a watch on claims and pods.

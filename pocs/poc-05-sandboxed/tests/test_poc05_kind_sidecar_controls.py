@@ -9,10 +9,16 @@ workload container with `kubectl exec` of the echo-python image's own Python, or
 pod spec, and asserts its paired allowed control in the same test. Env and `/proc` checks return
 names only, never a value.
 
-H01 limit: nothing answers at 169.254.169.254 on kind, so a refused connection there does not by
-itself prove the policy. The test proves it statically (no live NetworkPolicy in a PoC-5
-namespace has an `ipBlock` or an empty peer that covers the address, so default deny holds) and
-records the live refusal next to an allowed edge.
+H01 on kind: nothing answers at 169.254.169.254 on its own, so the test starts a stand-in for
+the length of the test (user decision, 2026-10-09): the address on the kind node's loopback and a
+tiny perl listener on port 80, through `docker exec` into the node, both removed after. It
+returns one fixed line and serves nothing else. A pod with no egress policy reaches it (the
+control); the workload's connection is dropped. The static half stays: no live NetworkPolicy in a
+PoC-5 namespace has an `ipBlock` or an empty peer that covers the address.
+
+A policy refusal expects a timeout (`POLICY_DROPPED`), never a refused connection, and each
+target is shown up from an allowed peer in the same test. H13's loopback refusal is the one place
+a refused connection is the claim.
 
 A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc05_conftest.py`). Run:
 `POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network <this file>`.
@@ -21,8 +27,10 @@ A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc05_conftest.py
 from __future__ import annotations
 
 import ipaddress
+import shlex
 import shutil
 import subprocess
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -32,17 +40,33 @@ from poc05_kind import (
     CHASSIS_SECRET_ENV,
     METADATA_IP,
     PLATFORM_NS,
+    POLICY_DROPPED,
     SIDECAR_POD,
     WORKLOAD,
     get_json,
+    in_caller,
     node_ip,
+    node_run,
     pod,
     probe,
     service_ip,
+    tcp,
+    unpoliced_caller,
 )
 
 SA_DIR = "/var/run/secrets/kubernetes.io"
-REFUSED_TCP = {"TimeoutError", "ConnectionRefusedError", "OSError"}
+DISPATCH = "code-runner-dispatch"
+METADATA_MARK = "poc05-metadata-stub"
+METADATA_PID = "/tmp/poc05-metadata.pid"
+# A one-line HTTP answer per connection; nothing else. Bound to the metadata address only.
+METADATA_LISTENER = (
+    "use IO::Socket::INET; "
+    f'my $s = IO::Socket::INET->new(LocalAddr => "{METADATA_IP}", LocalPort => 80, '
+    "Listen => 5, ReuseAddr => 1) or die; "
+    "while (my $c = $s->accept) { my $b; $c->recv($b, 1024); "
+    f'print $c "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{METADATA_MARK}\n"; '
+    "close $c }"
+)
 NODE_CONTAINER = "poc05-control-plane"
 API_PORT = 6443
 
@@ -177,8 +201,9 @@ def node_reaches_its_api(ip: str) -> str:
 def test_h03_h04_kubernetes_api_unreachable_from_the_workload(sidecar: dict[str, Any]) -> None:
     """H03 and H04, criterion 5: the control refuses the workload's connection to the Kubernetes
     API at the node IP on 6443 (H04) and at the Service VIP on 443 (H03; with no token either,
-    H02). The controls: the node itself reaches the same address (/livez is ok), and the workload's
-    allowed edge to LiteLLM connects in the same call."""
+    H02). Both drops are timeouts. The controls: the node itself reaches the same address (/livez
+    is ok); the code-runner dispatcher, the one pod with an API edge, connects to both addresses;
+    and the workload's allowed edge to LiteLLM connects in the same call."""
     ip = node_ip()
     vip = service_ip("default", "kubernetes")
     node_api, svc_api, allowed = probe(
@@ -191,10 +216,14 @@ def test_h03_h04_kubernetes_api_unreachable_from_the_workload(sidecar: dict[str,
             allowed_edge(),
         ],
     )
-    assert node_api.get("error") in REFUSED_TCP, node_api
-    assert svc_api.get("error") in REFUSED_TCP, svc_api
+    assert node_api.get("error") == POLICY_DROPPED, node_api
+    assert svc_api.get("error") == POLICY_DROPPED, svc_api
     assert allowed.get("connected") is True, allowed
     assert node_reaches_its_api(ip) == "ok"
+
+    dispatch = pod(PLATFORM_NS, DISPATCH)["metadata"]["name"]
+    up = probe(PLATFORM_NS, dispatch, DISPATCH, [tcp(ip, API_PORT), tcp(vip, 443)])
+    assert all(r.get("connected") is True for r in up), up
 
 
 def policy_peers_covering(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> list[str]:
@@ -219,13 +248,37 @@ def policy_peers_covering(address: ipaddress.IPv4Address | ipaddress.IPv6Address
     return found
 
 
-def test_h01_metadata_address_denied(sidecar: dict[str, Any]) -> None:
+@pytest.fixture
+def metadata_listener() -> Iterator[str]:
+    """A stand-in at 169.254.169.254:80 on the kind node for the length of one test: the address
+    on the node's loopback and a perl listener. Both are removed after, also on failure."""
+    stop = (
+        f"[ -f {METADATA_PID} ] && kill $(cat {METADATA_PID}) 2>/dev/null; rm -f {METADATA_PID}; "
+        f"ip addr del {METADATA_IP}/32 dev lo 2>/dev/null; true"
+    )
+    node_run(stop)
+    node_run(
+        f"ip addr replace {METADATA_IP}/32 dev lo && "
+        f"(nohup perl -e {shlex.quote(METADATA_LISTENER)} >/dev/null 2>&1 & "
+        f"echo $! > {METADATA_PID})"
+    )
+    try:
+        reply = node_run(f"sleep 1; curl -s -m 3 http://{METADATA_IP}/")
+        assert reply.strip() == METADATA_MARK, reply
+        yield METADATA_MARK
+    finally:
+        node_run(stop)
+        left = node_run(f"ip -4 addr show dev lo | grep -c {METADATA_IP} || true")
+        assert left.strip() == "0", f"{METADATA_IP} left on the node's loopback"
+
+
+def test_h01_metadata_address_denied(sidecar: dict[str, Any], metadata_listener: str) -> None:
     """H01, criterion 5: the control refuses egress to 169.254.169.254: no live NetworkPolicy in a
     PoC-5 namespace allows it (no `ipBlock` holds it, no rule lacks a `to`), so each namespace's
-    default deny applies; the workload's connection does not open, while its allowed edge does.
-    Stated limit: nothing listens at that address on kind, so the live refusal alone proves
-    nothing; the static check is the evidence. The control for the static check: the live
-    policies are there (every PoC-5 namespace has `default-deny`)."""
+    default deny applies, and the workload's connection to a live listener there is dropped (a
+    timeout), while its allowed edge connects. The allowed controls: a pod with no egress policy
+    (`default`) gets the listener's reply from the same address in the same test, so something
+    answers there; and the live policies are there (every PoC-5 namespace has `default-deny`)."""
     namespaces = {
         p["metadata"]["namespace"]
         for p in get_json("networkpolicy", "-A")["items"]
@@ -234,11 +287,20 @@ def test_h01_metadata_address_denied(sidecar: dict[str, Any]) -> None:
     assert {"poc05-agents", "poc05-platform", "poc05-remote", "poc05-tools"} <= namespaces
     assert policy_peers_covering(METADATA_IP) == []
 
-    meta, allowed = probe(
+    url = f"http://{METADATA_IP}/"
+    meta, fetched, allowed = probe(
         AGENTS_NS,
         sidecar["metadata"]["name"],
         WORKLOAD,
-        [{"kind": "tcp", "host": str(METADATA_IP), "port": 80}, allowed_edge()],
+        [tcp(str(METADATA_IP), 80), {"kind": "http", "url": url}, allowed_edge()],
     )
-    assert meta.get("error") in REFUSED_TCP, meta
+    assert meta.get("error") == POLICY_DROPPED, meta
+    assert "status" not in fetched, fetched
     assert allowed.get("connected") is True, allowed
+
+    with unpoliced_caller() as caller:
+        reached, answered = in_caller(
+            caller, [tcp(str(METADATA_IP), 80), {"kind": "http", "url": url}]
+        )
+    assert reached.get("connected") is True, reached
+    assert answered.get("status") == 200 and metadata_listener in answered["head"], answered
