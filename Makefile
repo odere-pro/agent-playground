@@ -59,7 +59,7 @@ kind-poc04: ## PoC-4 kind cluster and drills: make kind-poc04 ARGS="up native-si
 kind-poc05: ## PoC-5 kind cluster (gVisor, NetworkPolicy, admission): make kind-poc05 ARGS="up"
 	deploy/kind/poc05/run.sh $(ARGS)
 
-kind-poc06: ## PoC-6 kind runs (stub): make kind-poc06 ARGS="..."
+kind-poc06: ## PoC-6 engines on the PoC-5 kind cluster: make kind-poc06 ARGS="..."
 	deploy/kind/poc06/run.sh $(ARGS)
 
 bakeoff: ## PoC-6 benchmark kit (stub): make bakeoff ARGS="..."
