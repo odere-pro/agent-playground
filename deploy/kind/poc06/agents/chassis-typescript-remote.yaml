@@ -1,0 +1,180 @@
+# chassis-typescript-remote: the chassis of the remote `remote-typescript` (PoC-6b). The shape is
+# deploy/kind/poc05/agents/chassis-echo-remote.yaml: the chassis runs alone; its workload is the
+# Sandbox `remote-typescript` on gVisor in poc05-remote.
+#
+# - Public port 8080 and the remote proxy listener 8091, both on the pod IP.
+# - `chassis-typescript-remote-proxy` is the fixed-ClusterIP Service in front of 8091 (10.96.85.94). The remote has no DNS,
+#   so it gets this IP as plain env (remote/remote-typescript.yaml). If it changes, change both files.
+# - One replica: the remote listener answers only for a run in flight in this process.
+# - Secrets, chassis container only: its LiteLLM virtual key, the Valkey password, and REMOTE_TOKEN
+#   from `remote-typescript-token` (the same value the remote holds as CHASSIS_API_TOKEN).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chassis-typescript-remote
+  labels:
+    app.kubernetes.io/name: chassis-typescript-remote
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chassis-typescript-remote
+  labels:
+    app.kubernetes.io/name: chassis-typescript-remote
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chassis-typescript-remote
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chassis-typescript-remote
+        agents.platform/role: chassis
+        agents.platform/lane: remote
+        agents.platform/trust: untrusted
+    spec:
+      serviceAccountName: chassis-typescript-remote
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 50
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: chassis
+          image: kind.local/agent-platform/chassis:poc05
+          imagePullPolicy: Never
+          args:
+            - --config
+            - /etc/chassis/config.yaml
+            - --host
+            - $(POD_IP)
+            - --port
+            - "8080"
+            - --remote-proxy-host
+            - $(POD_IP)
+            - --remote-proxy-port
+            - "8091"
+            - --startup-wait-s
+            - "120"
+            - --drain-delay-s
+            - "10"
+            - --drain-timeout-s
+            - "30"
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: LITELLM_BASE_URL
+              value: http://litellm.poc05-platform.svc.cluster.local:4000/v1
+            - name: LITELLM_MCP_URL
+              value: http://litellm.poc05-platform.svc.cluster.local:4000/mcp/
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: chassis-typescript-remote-litellm
+                  key: LITELLM_API_KEY
+            - name: VALKEY_URL
+              value: valkey://valkey.poc05-platform.svc.cluster.local:6379/0
+            - name: VALKEY_USERNAME
+              value: chassis
+            - name: VALKEY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: valkey-auth
+                  key: VALKEY_PASSWORD
+            - name: REMOTE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: remote-typescript-token
+                  key: token
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: remote-proxy
+              containerPort: 8091
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 1
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: chassis-tmp
+              mountPath: /tmp
+            - name: chassis-config
+              mountPath: /etc/chassis
+              readOnly: true
+      volumes:
+        - name: chassis-tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+        - name: chassis-config
+          configMap:
+            name: chassis-typescript-remote-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chassis-typescript-remote
+  labels:
+    app.kubernetes.io/name: chassis-typescript-remote
+spec:
+  selector:
+    app.kubernetes.io/name: chassis-typescript-remote
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+# The remote's only way back in. A fixed ClusterIP, since the remote pod has no DNS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: chassis-typescript-remote-proxy
+  labels:
+    app.kubernetes.io/name: chassis-typescript-remote
+spec:
+  clusterIP: 10.96.85.94
+  selector:
+    app.kubernetes.io/name: chassis-typescript-remote
+  ports:
+    - name: remote-proxy
+      port: 8091
+      targetPort: 8091

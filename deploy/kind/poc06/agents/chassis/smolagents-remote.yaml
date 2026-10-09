@@ -1,0 +1,25 @@
+# The chassis config for `chassis-smolagents-remote`: the remote lane, workload `remote-smolagents` in poc05-remote
+# on 9000 (deploy/kind/poc06/remote/). The chassis sends the per-remote token from REMOTE_TOKEN (the
+# Secret `remote-smolagents-token`, chassis container only) on every A2A call, and its remote proxy
+# listener (pod IP, 8091) accepts the same token from the remote. `config: memory`, as PoC-5.
+profile: local
+agent:
+  name: echo-smolagents-remote
+  version: 0.0.1
+spec:
+  trust: untrusted
+  adapters:
+    model: litellm
+    config: memory
+    state: valkey
+    telemetry: memory
+    tools: mcp
+    events: none
+  engine:
+    connector: remote
+    url: http://remote-smolagents.poc05-remote.svc.cluster.local:9000
+    auth:
+      scheme: bearer
+      token_env: REMOTE_TOKEN
+  model:
+    route: fake-chat

@@ -1,0 +1,18 @@
+# The PoC-6 trust params: PoC-5's agent-trust-params (deploy/kind/poc05/admission/params.yaml) with
+# one repository added to trustedRepositories, the OpenAI Agents SDK workload of the sidecar lane.
+# Rule 4 admits a trusted sidecar pod only if its workload repository is on this hand-kept list.
+# `run.sh` applies this as the cluster admin after the PoC-5 bring-up. Nothing else changes: the
+# prefix, the image source, and the other repositories are PoC-5's, and
+# test_poc06b_kind_static.py fails if they drift. The smolagents, Claude, and kagent engines are
+# remotes, which rule 4 does not read. echo-typescript is already on the list.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-trust-params
+  namespace: agent-platform-system
+  labels:
+    agents.platform/poc: "05"
+data:
+  registryPrefix: kind.local/agent-platform/
+  imageSource: pull-never
+  trustedRepositories: kind.local/agent-platform/echo-python,kind.local/agent-platform/echo-typescript,kind.local/agent-platform/echo-openai-agents

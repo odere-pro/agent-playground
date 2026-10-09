@@ -1,0 +1,16 @@
+# The PoC-6 remote sandboxes in poc05-remote: one Sandbox on gVisor per engine, its Service, and its
+# NetworkPolicy. Apply after the PoC-5 bring-up and `deploy/kind/poc06/seed.sh` (the Secrets
+# remote-<name>-token are made there, not here); before agents/. The Sandbox's podTemplate carries
+# `app.kubernetes.io/part-of` itself: kustomize does not label a custom resource's pod template.
+# TODO(kagent-adk): the kagent remote is kagent/, applied by `run.sh` only once its image digest is set.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: poc05-remote
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: poc06
+resources:
+  - remote-smolagents.yaml
+  - remote-claude-agent.yaml
+  - remote-typescript.yaml
+  - network-policy.yaml
