@@ -27,6 +27,9 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
+import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -36,7 +39,10 @@ import pytest
 import yaml
 from poc05_kind import (
     AGENTS_NS,
+    CALLER_IMAGE,
+    CALLER_NS,
     CHASSIS,
+    CONTEXT,
     NOT_A_KEY,
     POLICY_DROPPED,
     REMOTE_NS,
@@ -399,6 +405,159 @@ def test_remote_can_start_a_thread_and_its_seccomp_filter_is_on(engine: KindEngi
         assert "Seccomp:\t2" in second.stdout, f"{engine.id}: the seccomp filter is off"
         return
     pytest.fail(f"{engine.id}: no interpreter found")
+
+
+NEGATIVE_PY = r"""
+import ctypes, json, os, platform
+libc = ctypes.CDLL(None, use_errno=True)
+NEWUSER = 0x10000000
+SYS_CLONE = {"x86_64": 56, "aarch64": 220}.get(platform.machine())
+out = {}
+def call(name, fn):
+    ctypes.set_errno(0)
+    ret = fn()
+    out[name] = [ret, ctypes.get_errno()]
+    return ret
+call("unshare", lambda: libc.unshare(NEWUSER))
+call("mount", lambda: libc.mount(b"none", b"/tmp", b"tmpfs", 0, None))
+if SYS_CLONE is not None:
+    ret = call("clone", lambda: libc.syscall(SYS_CLONE, NEWUSER | 17, 0, 0, 0, 0))
+    if ret == 0:  # the call made a child: never let it run on
+        os._exit(0)
+print(json.dumps(out))
+"""
+
+
+@pytest.mark.parametrize("engine", [e for e in REMOTES if e.language != "node"], ids=lambda e: e.id)
+def test_remote_still_refuses_namespaces_and_mounts(engine: KindEngine) -> None:
+    """The Localhost profile allows `clone3` and nothing else new. In the guest, `unshare(
+    CLONE_NEWUSER)`, a `mount`, and a raw `clone` with CLONE_NEWUSER must still fail with EPERM
+    (errno 1). The raw `clone` is the masked RuntimeDefault rule that blocks CLONE_NEW*; the
+    child guard (`os._exit`) keeps a surprise success from running on. The thread test above is
+    the paired allowed control (a thread start works)."""
+    name = remote_pod(engine)["metadata"]["name"]
+    last = ""
+    for exe in PYTHONS:
+        got = kubectl("exec", "-n", REMOTE_NS, name, "-c", WORKLOAD, "--", exe, "-c", NEGATIVE_PY)
+        if got.returncode != 0 and "not found" in got.stderr.lower():
+            last = got.stderr
+            continue
+        assert got.returncode == 0, f"{engine.id}: probe failed: {got.stderr[-400:]}"
+        results = json.loads(got.stdout.strip().splitlines()[-1])
+        assert {"unshare", "mount"} <= set(results), results
+        for call, (ret, err) in results.items():
+            assert ret == -1 and err == 1, f"{engine.id}: {call} gave {ret}, errno {err}"
+        if "clone" not in results:
+            pytest.skip("raw clone: no syscall number for this architecture (checked the rest)")
+        return
+    pytest.fail(f"{engine.id}: no interpreter found: {last[-200:]}")
+
+
+SECCOMP_NODE_FILE = "/var/lib/kubelet/seccomp/profiles/poc06-runsc-clone3.json"
+
+
+def test_the_profile_file_is_the_same_on_every_node() -> None:
+    """`run.sh seccomp` writes one file to every node; the sha256 must agree across nodes."""
+    docker = shutil.which("docker")
+    assert docker is not None, "docker is not on PATH"
+    nodes = get_json("nodes")["items"]
+    assert nodes, "no nodes"
+    sums: dict[str, str] = {}
+    for node in nodes:
+        n = node["metadata"]["name"]  # a kind node's name is its Docker container's name
+        got = subprocess.run(
+            [docker, "exec", n, "sha256sum", SECCOMP_NODE_FILE],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        assert got.returncode == 0, f"{n}: {got.stderr[-300:]}"
+        sums[n] = got.stdout.split()[0]
+    assert len(set(sums.values())) == 1, sums
+
+
+MISSING_PROFILE_POD = "poc06-missing-seccomp"
+
+
+def test_a_pod_with_a_missing_profile_never_runs() -> None:
+    """Fail closed: a Localhost profile the node does not have must stop the container, not run it
+    unfiltered. Record: either admission refuses the pod (also fail closed, accepted), or the pod
+    stays out of Running with a container waiting in CreateContainerError or
+    CreateContainerConfigError. The pod is deleted after."""
+    manifest = {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {
+            "name": MISSING_PROFILE_POD,
+            "namespace": CALLER_NS,
+            "labels": {"app.kubernetes.io/part-of": "poc06-missing-seccomp"},
+        },
+        "spec": {
+            "automountServiceAccountToken": False,
+            "restartPolicy": "Never",
+            "securityContext": {
+                "runAsNonRoot": True,
+                "runAsUser": 10001,
+                "seccompProfile": {
+                    "type": "Localhost",
+                    "localhostProfile": "profiles/poc06-does-not-exist.json",
+                },
+            },
+            "containers": [
+                {
+                    "name": "c",
+                    "image": CALLER_IMAGE,
+                    "imagePullPolicy": "Never",
+                    "command": ["python", "-c", "import time; time.sleep(600)"],
+                    "securityContext": {
+                        "allowPrivilegeEscalation": False,
+                        "capabilities": {"drop": ["ALL"]},
+                    },
+                }
+            ],
+        },
+    }
+    kubectl(
+        "delete", "pod", MISSING_PROFILE_POD, "-n", CALLER_NS, "--ignore-not-found", "--wait=true"
+    )
+    exe = shutil.which("kubectl")
+    assert exe is not None, "kubectl is not on PATH"
+    made = subprocess.run(
+        [exe, "--context", CONTEXT, "create", "-f", "-"],
+        input=json.dumps(manifest),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if made.returncode != 0:
+        # Admission refused the pod before scheduling: fail closed, accepted.
+        assert "denied" in made.stderr.lower() or "forbidden" in made.stderr.lower(), made.stderr
+        return
+    try:
+        reason = ""
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline and not reason:
+            got = get_json("pod", MISSING_PROFILE_POD, "-n", CALLER_NS)
+            assert got["status"].get("phase") != "Running", "the pod ran without its profile"
+            for cs in got["status"].get("containerStatuses", []):
+                assert not cs.get("state", {}).get("running"), "the container ran"
+                waiting = cs.get("state", {}).get("waiting") or {}
+                if waiting.get("reason") in {"CreateContainerError", "CreateContainerConfigError"}:
+                    reason = waiting["reason"]
+            time.sleep(3)
+        assert reason, "no container reached CreateContainerError or CreateContainerConfigError"
+    finally:
+        kubectl(
+            "delete",
+            "pod",
+            MISSING_PROFILE_POD,
+            "-n",
+            CALLER_NS,
+            "--wait=false",
+            "--grace-period=0",
+        )
 
 
 def test_the_remote_pods_are_the_ones_the_manifests_name() -> None:
