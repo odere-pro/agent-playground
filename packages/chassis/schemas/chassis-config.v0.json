@@ -138,6 +138,17 @@
       "additionalProperties": true,
       "description": "`spec.engine`: the lane and whatever the connector needs, passed as is to `setup`.\n\n`connector` is the lane, named once (contract v1, decision 2); it defaults to `sidecar`\n(ADR-001 item 4), so an `inprocess` config names it. Restart-only.",
       "properties": {
+        "a2a": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlainA2ASpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "auth": {
           "anyOf": [
             {
@@ -176,6 +187,15 @@
           "exclusiveMinimum": 0,
           "title": "Probe Timeout S",
           "type": "number"
+        },
+        "protocol": {
+          "default": "chassis",
+          "enum": [
+            "chassis",
+            "a2a"
+          ],
+          "title": "Protocol",
+          "type": "string"
         },
         "uds": {
           "anyOf": [
@@ -362,6 +382,35 @@
         }
       },
       "title": "ModelSpec",
+      "type": "object"
+    },
+    "PlainA2ASpec": {
+      "additionalProperties": false,
+      "description": "`spec.engine.a2a`: options of the plain-A2A mode. suggested: every name and default.",
+      "properties": {
+        "context_id": {
+          "default": "omit",
+          "enum": [
+            "omit",
+            "trace_id"
+          ],
+          "title": "Context Id",
+          "type": "string"
+        },
+        "usage_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Usage Key"
+        }
+      },
+      "title": "PlainA2ASpec",
       "type": "object"
     },
     "PromptSpec": {
