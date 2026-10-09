@@ -74,6 +74,6 @@ A scorecard table with one row per engine, and side-by-side runs of both tasks o
 ## Links
 
 - Plan: [000-plan.md](000-plan.md) · Previous: [PoC-3](003-PoC-3-one-interface-every-client.md) for part A, [PoC-5](005-PoC-5-sandboxed.md) for part B · Next: [PoC-7](007-PoC-7-cross-cutting-decisions.md) · The SLM runs: [PoC-6c](006c-PoC-6c-pretrained-slm.md)
-- Decision: [ADR-001](../adr/001-chassis-delivery-model.md) (the trust rule and the lanes)
+- Decision: [ADR-001](../adr/001-chassis-delivery-model.md) (the trust rule and the lanes) · [ADR-006](../adr/006-agent-engines-default-supported-lanes.md) (engines, proposed) · [contract v5](../../contracts/contract-v5.md)
 - Backlog issues this informs: [008 H-14](../issues/008-H-14-one-agent-interface.md), [054 H-16](../issues/054-H-16-tool-port.md), [063 S-8](../issues/063-S-8-tool-call-finetune.md), [058 CH-8](../issues/058-CH-8-framework-event-mappings.md), [055 CH-6](../issues/055-CH-6-remote-lane-trust-rule.md)
 - Epic: [B.1](../slm-agent-platform-epic-v3.md#b1), [B.3](../slm-agent-platform-epic-v3.md#b3), [I](../slm-agent-platform-epic-v3.md#app-i)

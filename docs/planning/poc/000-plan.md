@@ -277,6 +277,8 @@ PoC-2 uses plain Python, PydanticAI, and LangGraph as workloads in the `sidecar`
 
 ## Bake-off criteria
 
+The result is proposed in [ADR-006](../adr/006-agent-engines-default-supported-lanes.md): the default engine, the supported engines with their lanes, and the rejected ones.
+
 Each engine gets the same two tasks: text in, text out (the simplifier), and a tool task (lookup with two tools). Each runs on a hosted big model through the router in PoC-6a and PoC-6b, and on a pre-trained SLM in PoC-6c.
 
 | Criterion | How it is measured |
