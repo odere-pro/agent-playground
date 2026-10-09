@@ -1,6 +1,6 @@
 # PoC-5: a sandbox per code-runner call
 
-Status: in progress
+Status: done
 
 Approved by the user on 2026-10-09.
 Date: 2026-10-09

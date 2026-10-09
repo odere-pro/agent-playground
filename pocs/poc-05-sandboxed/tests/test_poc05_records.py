@@ -14,9 +14,8 @@ The README's checked boxes: every `[x]` line has a `· evidence:` part. Each rel
 link in it resolves to a file, and each `tests/...py::name` reference (or the `::name` shorthand
 after one) names a function or class that is defined in that file.
 
-Parts that wait on notes not written yet are `xfail(strict=False)`, reason "written in wave 2/3":
-they pass as XPASS once the note lands, and the marker should go then. The checkers themselves are
-tested on small synthetic inputs, so a vacuous pass is not mistaken for a working check.
+The checkers themselves are tested on small synthetic inputs, so a vacuous pass is not mistaken
+for a working check.
 """
 
 from __future__ import annotations
@@ -34,7 +33,6 @@ OVERHEAD = NOTES / "2026-10-09-gvisor-overhead.md"
 BLIND_SPOTS = NOTES / "2026-10-02-blind-spots.md"
 REMOTE_ENGINES = ("echo-python", "code-runner")
 RUNTIMES = ("gvisor", "runc")
-LATER = "written in wave 2/3"
 EVIDENCE = "· evidence:"
 NUMBER = re.compile(r"\d+(?:\.\d+)?")
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
@@ -183,7 +181,6 @@ def test_every_checked_box_has_evidence_that_resolves() -> None:
     assert not problems, problems
 
 
-@pytest.mark.xfail(strict=False, reason=f"{LATER}: the close checks the boxes")
 def test_the_readme_has_checked_boxes() -> None:
     """The evidence check above has something to check: at least one exit box is `[x]`."""
     assert checked_lines()

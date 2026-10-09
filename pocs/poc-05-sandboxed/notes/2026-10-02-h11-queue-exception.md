@@ -1,5 +1,7 @@
 # H11: the queue exception for PoC-5 (2026-10-02)
 
+**Update, 2026-10-09: H11 passed on kind.** The user brought Kafka with SASL on kind into the PoC-5 close. A login with no credential, an unknown user, and a guessed password each get the broker's error 58, and the chassis's own publish lands on `agents.task.completed.v1` (`pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py::test_kafka_refuses_the_workload_without_the_chassis_credential`; [close runs](2026-10-09-close-runs.md), section 3). The exception below is closed. What remains is one accepted exception, at the end of this note. The rest is kept as written on 2026-10-02.
+
 H11 is "the event broker refuses a call without the chassis's credential" (exit criterion 3, hard requirement 1 of [ADR-001](../../../docs/planning/adr/001-chassis-delivery-model.md)). PoC-5 records it as an **exception**, not a pass.
 
 - **Owner:** `platform-security`.
@@ -54,3 +56,9 @@ When a broker reaches kind, H11 becomes one case in `pocs/poc-05-sandboxed/tests
 3. The broker's manifest is checked offline too: no PLAINTEXT listener, auto-create off, credentials from a Secret that only the chassis pod mounts.
 
 The case and its control close the exception. 020 X-8 also owns topic ACLs per service, TLS, and the controller listener.
+
+## Accepted exception after the pass (2026-10-09)
+
+Owner: 020 X-8 and `platform-security`. Accepted in the security review of the close ([review](2026-10-09-review-security-cluster.md), "Kafka with SASL on kind").
+
+The SCRAM passwords are in the argv of `kafka-storage.sh format` for one short process at pod start. Only the broker container and node root can see them. They are hex, so a parse error cannot echo them. Fix: create the users with a credentialed admin step. SASL_PLAINTEXT is accepted on single-node kind only: SCRAM never sends the password, but event payloads cross in clear. There is no authorizer, so the chassis user can read, create, and delete any topic. TLS and per-service ACLs are 020 X-8.

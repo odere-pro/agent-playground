@@ -1,6 +1,6 @@
 # PoC-5 sandboxed: the remote lane and the trust rule: design and work plan
 
-Status: in progress
+Status: done
 Date: 2026-10-02
 Author: `chassis-architect`. The orchestrator assigns the tasks in "Work breakdown".
 Source: `docs/planning/poc/005-PoC-5-sandboxed.md`. Tracking: `pocs/poc-05-sandboxed/README.md`.

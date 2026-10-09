@@ -100,7 +100,7 @@ R = {
         "**Watch:** the chassis owns retries and dead-lettering and their bugs. Broker auth, TLS, ACLs, and topic creation are the chassis's and 020 X-8's job. The Dapr adapter stays in the tree as a tested alternative, the default in no profile.",
     ],
     'H-20': [
-        '**Use:** Dapr subscriptions. Dapr delivers each CloudEvent to an HTTP route on the chassis port, never the workload\'s, and the HTTP status acknowledges or retries it.',
+        '**Use:** the broker client\'s consumer group in the chassis, behind `EventPort.subscribe` (ADR-004): the `kafka` adapter on aiokafka today. The chassis reads each event itself, never through the workload\'s port, and commits it after `handle` finishes.',
         '**Build:** the mapping from event to `TaskInput` and `Context`, and the reply events.',
     ],
     'H-21': [
@@ -109,14 +109,14 @@ R = {
         '**Watch:** FastStream generates AsyncAPI, but it supports neither SQS, Pub/Sub, nor CloudEvents, so it is not used.',
     ],
     'H-22': [
-        '**Use:** Dapr resiliency policies (retries with backoff) and a `deadLetterTopic` per subscription.',
+        '**Use:** the `EventPort` adapter\'s own retries with backoff, `max_attempts`, and a dead-letter topic per subscription (ADR-004); the broker\'s own dead-letter feature where it has one.',
         '**Build:** the duplicate drop (through 018 H-18), the replay command, and metrics.',
         '**Watch:** retry behavior differs slightly per broker. Test each one.',
     ],
     'H-23': [
-        '**Use:** Dapr pub/sub components: Kafka, AWS SNS/SQS, and GCP Pub/Sub are stable; NATS JetStream is beta.',
-        '**Build:** one component file per broker, and the shared contract suite with local emulators.',
-        '**Scope change:** no hand-written broker adapters.',
+        '**Use:** one broker client per broker behind `EventPort` (ADR-004): aiokafka for Kafka; suggested: nats-py for NATS JetStream, and the cloud SDKs for SNS/SQS and Pub/Sub. The `dapr` adapter stays as a tested alternative that reaches other brokers through Dapr components, the default in no profile.',
+        '**Build:** one adapter per broker, each bound to `EventPortContract`, and the shared contract suite with local emulators.',
+        '**Watch:** each adapter must pass the whole suite against a real broker with no xfail (ADR-004, item 8). Broker auth (SASL or the cloud\'s IAM) is the adapter\'s, with 020 X-8.',
     ],
     'S-2': [
         '**Use:** vLLM offline batch inference with the open-weight teacher, and HF datasets for storage. Optional: distilabel pipelines (now community-maintained). Presidio for PII removal.',

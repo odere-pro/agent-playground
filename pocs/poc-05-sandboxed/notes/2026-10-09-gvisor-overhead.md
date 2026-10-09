@@ -68,3 +68,11 @@ code-runner gvisor startup ms: 4187 3919 3924 3954 3929
 - Only the `systrap` platform, on one kind node in Docker Desktop on an Apple-silicon Mac. KVM is not measured.
 - No model call: the fake model and real models are out of scope. A run's end-to-end time under gVisor is not measured.
 - N=5 starts and N=50 requests are small samples. The figures are for orders of magnitude, not a benchmark.
+
+## Exception: the script's own token
+
+Owner: `platform-security`. Accepted in the security review of the close ([review](2026-10-09-review-security-cluster.md), "The overhead script's token").
+
+`q9-overhead-engines.sh` makes its own random token in a scratch namespace, an exception to "Secrets come from the seed script only". It is piped through stdin, never in argv, authenticates nothing real, and is deleted with the namespace. Using the seed's token would copy a live credential.
+
+The scratch namespace gets default-deny plus a same-namespace allow (added after the measured run).

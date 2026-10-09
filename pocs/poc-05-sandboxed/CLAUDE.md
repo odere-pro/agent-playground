@@ -1,6 +1,6 @@
 # pocs/poc-05-sandboxed
 
-Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still apply. Status: in progress. The offline work is built and reviewed; the cluster steps (T19, T21 to T23, T26) and the close are left. The current prompt and the decisions are in `notes/2026-10-02-mac-kickoff.md`.
+Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still apply. Status: done (2026-10-09), criteria 1 (sidecar kind suite manual), 3 (MinIO) and 8 flagged (`README.md`). T10 stays open as a recorded exception, owned by the user. The decisions are in `notes/2026-10-02-mac-kickoff.md` and `notes/backlog-changes.md`.
 
 ## Read first
 

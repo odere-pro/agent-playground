@@ -99,7 +99,7 @@ $ docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' poc05-control-plan
 
 A host CPU check (`top` on the Mac) is not yet run in any note.
 
-**Cause.** The kind node shares the Mac's CPUs. Under gVisor each forked Python child costs 5 to 8 MiB, and 31 of them reach the code runner's 256Mi limit. Near the limit each fork takes seconds. With the CPU busy, the test runs past its timeout. Since the per-call change a burst ends only its own sandbox, not the dispatcher. At load 4.7 the call after the burst got `sandbox_lost` once in 3 runs; the cause is not found (remote suite, 2026-10-09).
+**Cause.** The kind node shares the Mac's CPUs. Under gVisor each forked Python child costs 5 to 8 MiB, and 31 of them reach the code runner's 256Mi limit. Near the limit each fork takes seconds. With the CPU busy, the test runs past its timeout. Since the per-call change a burst ends only its own sandbox, not the dispatcher. At load 4.7 the call after the burst got `sandbox_lost` once in 3 runs (remote suite, 2026-10-09). The fix, `0399a04`, retries a connect timeout to a fresh sandbox; it did not recur in 10 runs at load under 2 (close runs, section 5).
 
 **Fix.** Stop the other load, or wait for it. Rerun the one file. Do not raise a test timeout to hide the load. The fork test now execs `cat` in each child, so a child costs less (the change in that test file).
 
@@ -175,7 +175,7 @@ Not yet run as a recipe: a watch on claims and pods while the failing call runs.
 - `sandbox_unavailable`: no free slot, the claim was not created, it was not `Ready` within 20 s, or its pod IP is not an IP. Nothing ran. A retry with the same key is safe.
 - `sandbox_lost`: the pod ended mid-call, did not answer within `timeout_s + 5` s, or answered over 256 KiB. The key is freed, so a retry runs in a fresh sandbox.
 
-**Fix.** Retry the call; both codes are safe to retry. If `sandbox_unavailable` repeats, see "The code-runner pool is not settled" and "A claim is stuck". If `sandbox_lost` repeats, read the claimed pod's `lastState.terminated.reason` before it is gone. One `sandbox_lost` after a 31-child burst, at load 4.7, is open (remote suite, 2026-10-09). Do not loosen the test.
+**Fix.** Retry the call; both codes are safe to retry. If `sandbox_unavailable` repeats, see "The code-runner pool is not settled" and "A claim is stuck". If `sandbox_lost` repeats, read the claimed pod's `lastState.terminated.reason` before it is gone. One `sandbox_lost` after a 31-child burst, at load 4.7 (remote suite, 2026-10-09), led to `0399a04`, a retry of a connect timeout; it did not recur in 10 runs (close runs, section 5). The retry was not seen firing on kind; a `connect_retry` log line is being added. Do not loosen the test.
 
 ## Rotating the remote token
 
@@ -278,7 +278,7 @@ Not yet run. No step below has output in a note. Values marked `suggested:` are 
 
 | Check id | What it observes | Criterion (and H ids) |
 | -------- | ---------------- | --------------------- |
-| `tcp_connect` | Whether a TCP connect to a host and port from env connects, times out, or is refused | 3, 5, 6, 8 (H01, H03, H04, H05, H07, H10 to H13, H18, H19, H30) |
+| `tcp_connect` | Whether a TCP connect to a host and port from env connects, times out, or is refused | 6, 8 (H01, H03, H04, H19, H30 from the remote pod; 8091 as the allowed control) |
 | `file_present` | Whether a path from env exists; never its content | 4, 8 (H02, H25) |
 | `env_names_matching` | The names of env variables that match a pattern from env; never their values | 4, 8 (H25) |
 | `rootfs_write` | Whether a write to a path on the root, from env, fails with EROFS; and that the same write to `/tmp` works | 8 (H21) |
@@ -288,13 +288,14 @@ Not yet run. No step below has output in a note. Values marked `suggested:` are 
 
 1. **Offline gate.** Unit tests for each check id and for `bad_input`, in the package's `tests/`. They open no socket (`make test` disables sockets). `UV_NO_SYNC=1 make quick` passes.
 2. **Image.** The same base as `echo-python` (`packages/workloads/echo-python/Dockerfile`). A non-root uid of its own. It runs on a read-only root with `/tmp` as the only writable path. Add it to `IMAGES` in `deploy/kind/poc05/run.sh`, so `run.sh build load` makes and loads it, and to the uid table in `packages/chassis/tests/test_image_uids.py`. The image stays off `trustedRepositories` (`admission/params.yaml`).
-3. **Manifests.** Copy the hardening of `agent-echo` and `remote-echo`; change only the image, the names, and the uid.
-   - A sidecar probe pod next to a chassis, in `deploy/kind/poc05/agents/`. Pick its trust label against admission rule 4: the image is not on `trustedRepositories`.
-   - A remote probe pod on gVisor through agent-sandbox, in `deploy/kind/poc05/remote/`, with its own `remote-<name>-token` from `seed.sh` (rules 5 and 7c).
+3. **Manifests.** The probe runs in the remote lane only. A sidecar probe pod is refused by admission: trust rule 2 if it is `untrusted`, and trust rule 4 if it is `trusted`, because the image is not on `trustedRepositories`.
+   - A remote probe pod on gVisor through agent-sandbox, in `deploy/kind/poc05/remote/`, with its own `remote-<name>-token` from `seed.sh` (rules 5 and 7c). Copy the hardening of `remote-echo`; change only the image, the names, and the uid.
+   - A sidecar probe pod spec, next to a chassis, kept as an admission fixture under `deploy/kind/poc05/admission/fixtures/`, one per trust label. It is never deployed.
    - Its rows in the section 2.11 table of `pocs/poc-05-sandboxed/tests/test_poc05_hardening_static.py`.
    - Its edges in `pocs/poc-05-sandboxed/tests/fixtures/netpol_edges.yaml`, and the policies that make them. `make test-poc POC=05` passes.
 4. **Kind suite.** `pocs/poc-05-sandboxed/tests/test_poc05_kind_probe.py`.
-   - Each check runs inside the probe pod (`kubectl exec ... python -m hostile <check_id>`), in both lanes.
+   - Each check runs inside the remote probe pod (`kubectl exec ... python -m hostile <check_id>`).
+   - The sidecar half: a server dry run of each sidecar probe fixture is refused with trust rule 2's or rule 4's message.
    - Each refusal is paired with its allowed control in the same test, as in the other kind files ("A refusal test passes when it should fail").
    - Marked `network`, skipped unless `POC05_KIND=1`. The docstring names criterion 8.
    - Add the file to `REMOTE_TESTS` in `run.sh` and to the `REMOTE_TESTS` tuple in `pocs/poc-05-sandboxed/tests/test_poc05_ci_wiring.py`.

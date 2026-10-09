@@ -50,3 +50,17 @@ Minor: add the dispatcher to `test_poc05_hardening_static.py`; record in the thr
 ## /dev/shm under gVisor, 2026-10-09
 
 Task 6b found the 8Mi `/dev/shm` emptyDir in the code-runner template is ignored under gVisor: runsc mounts its own tmpfs there (about 4 GiB in `df`), and one call wrote 17 MiB with no error. `platform-security` verdict: **accept and record, owner 055 CH-6.** With a sandbox per call, nothing in `/dev/shm` reaches the next caller, and the pod's 256Mi limit bounds it to that one sandbox. No runsc option to honor the pod's mount is known (the `dev.gvisor.spec.mount.*` hints are a lead to try, not a known fix). Required: `test_dev_shm_is_capped` stays `xfail(strict=True)` with the evidence; a passing test for the bound that holds (the pod's memory limit, and call B not seeing call A's file); a comment on the 8Mi volume that gVisor ignores it; `remote-echo` recorded as untested in the blind-spots note.
+
+## Kafka with SASL on kind, 2026-10-09
+
+H11 passed on kind ([close runs](2026-10-09-close-runs.md), section 3). `platform-security` accepts one exception, owner 020 X-8 and `platform-security`, recorded in [the H11 note](2026-10-02-h11-queue-exception.md):
+
+The SCRAM passwords are in the argv of `kafka-storage.sh format` for one short process at pod start. Only the broker container and node root can see them. They are hex, so a parse error cannot echo them. Fix: create the users with a credentialed admin step. SASL_PLAINTEXT is accepted on single-node kind only: SCRAM never sends the password, but event payloads cross in clear. There is no authorizer, so the chassis user can read, create, and delete any topic. TLS and per-service ACLs are 020 X-8.
+
+## The overhead script's token, 2026-10-09
+
+`platform-security` accepts one exception, recorded in [the gVisor overhead note](2026-10-09-gvisor-overhead.md):
+
+`q9-overhead-engines.sh` makes its own random token in a scratch namespace, an exception to "Secrets come from the seed script only". It is piped through stdin, never in argv, authenticates nothing real, and is deleted with the namespace. Using the seed's token would copy a live credential.
+
+The scratch namespace gets default-deny plus a same-namespace allow (added after the measured run).
