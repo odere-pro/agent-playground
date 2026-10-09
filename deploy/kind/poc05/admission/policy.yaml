@@ -9,6 +9,8 @@
 #   3. policy.yaml   the API server refuses an expression that does not compile; then read
 #                    status.typeChecking (warnings only) before going on
 #   4. binding.yaml  last, so nothing is enforced by a half-built policy
+# extension-policy.yaml and extension-binding.yaml hold the template and claim rules (T1 to T3,
+# C1 to C5) of the per-call sandbox; they follow the same order, after the extension CRDs exist.
 # Never apply fixtures/: the kind test sends them with --dry-run=server only.
 #
 # Pod shape, read from the pod, never from a label the submitter writes:
@@ -55,7 +57,7 @@
 #   - that every expression compiles on v1.37 (the CEL string helpers split, trim, join, matches,
 #     startsWith, contains; optional index; namespaceObject);
 #   - that request.kind.kind is 'Pod' for pods/ephemeralcontainers, and that `object` carries the
-#     Sandbox's spec.podTemplate as written;
+#     Sandbox's and the SandboxTemplate's spec.podTemplate as written;
 #   - that agent-sandbox copies the podTemplate labels and runtimeClassName onto the pod (else
 #     rule 1 or 7a rejects every Sandbox pod);
 #   - that imagePullPolicy is defaulted before validation on Pods and pod templates (a Sandbox's
@@ -92,13 +94,20 @@ spec:
         apiVersions: ["*"]
         operations: ["CREATE", "UPDATE"]
         resources: ["sandboxes"]
+      # Per-call sandbox plan, "Admission": the template's pod is checked when it is applied, not
+      # only when the pool makes its first Sandbox. A SandboxClaim has no pod; the claim rule in
+      # extension-policy.yaml covers it.
+      - apiGroups: ["extensions.agents.x-k8s.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["sandboxtemplates"]
   variables:
     # The pod (or pod template) the object describes.
     - name: template
       expression: >-
         request.kind.kind == 'Pod' ? object :
         request.kind.kind == 'CronJob' ? object.spec.jobTemplate.spec.template :
-        request.kind.kind == 'Sandbox' ? object.spec.podTemplate :
+        request.kind.kind in ['Sandbox', 'SandboxTemplate'] ? object.spec.podTemplate :
         object.spec.template
     - name: labels
       expression: >-

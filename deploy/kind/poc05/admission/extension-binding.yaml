@@ -1,0 +1,26 @@
+# Binds the template and claim rules (extension-policy.yaml) to the PoC-5 workload namespaces, the
+# same selector and actions as binding.yaml. Apply after the policies have compiled. No paramRef:
+# the rules take no params.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: sandbox-template-rule
+spec:
+  policyName: sandbox-template-rule
+  validationActions: [Deny, Audit]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        agents.platform/admission: enforce
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: sandbox-claim-rule
+spec:
+  policyName: sandbox-claim-rule
+  validationActions: [Deny, Audit]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        agents.platform/admission: enforce

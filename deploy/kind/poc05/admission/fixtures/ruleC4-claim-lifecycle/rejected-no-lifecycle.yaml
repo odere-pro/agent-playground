@@ -1,0 +1,13 @@
+# Claim rule C4, shutdownPolicy Delete with a shutdownTime: no lifecycle, so the claim is never shut down.
+# expect: rejected
+# rule: C4
+# message: claim rule C4: a SandboxClaim must set lifecycle shutdownPolicy Delete and a shutdownTime
+# differs: .spec.lifecycle
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxClaim
+metadata:
+  name: admission-claim-c4
+  namespace: poc05-tools
+spec:
+  warmPoolRef:
+    name: code-runner

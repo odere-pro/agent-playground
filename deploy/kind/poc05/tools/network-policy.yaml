@@ -1,5 +1,7 @@
-# poc05-tools: the code runner (plan section 2.10). Its MCP port only from LiteLLM; no egress at
-# all, not even DNS: the policy names Egress with no rule. No rule uses an `ipBlock`.
+# poc05-tools: the per-call code-runner sandboxes (plan section 2.10; per-call design, section
+# "NetworkPolicy"). The MCP port only from the dispatcher in poc05-platform; no egress at all, not
+# even DNS: the policy names Egress with no rule. A sandbox cannot reach another sandbox, the
+# dispatcher, LiteLLM, or the API. No rule uses an `ipBlock`.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -16,7 +18,7 @@ spec:
               kubernetes.io/metadata.name: poc05-platform
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: litellm
+              app.kubernetes.io/name: code-runner-dispatch
       ports:
         - port: 8000
           protocol: TCP

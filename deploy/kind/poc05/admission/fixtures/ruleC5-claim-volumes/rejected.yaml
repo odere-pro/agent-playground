@@ -1,0 +1,25 @@
+# Claim rule C5, no volumeClaimTemplates: the claim asks for a persistent volume.
+# expect: rejected
+# rule: C5
+# message: claim rule C5: a SandboxClaim may not set volumeClaimTemplates
+# differs: .spec.volumeClaimTemplates
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxClaim
+metadata:
+  name: admission-claim-c5
+  namespace: poc05-tools
+spec:
+  warmPoolRef:
+    name: code-runner
+  lifecycle:
+    shutdownTime: '2030-01-01T00:00:00Z'
+    shutdownPolicy: Delete
+  volumeClaimTemplates:
+  - metadata:
+      name: scratch
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Mi

@@ -11,9 +11,15 @@
 #   gVisor systrap each guest process costs about three host pids, so a gVisor pod gets roughly a
 #   third of it, and hitting it kills the whole sandbox (spike, question 6).
 # - No host port. The plan reaches pods with `kubectl port-forward` only.
+# - networking: kind's own defaults, written out because run.sh reads them. The dispatcher's API
+#   server ipBlock must lie outside both ranges (platform/network-policy.yaml), and the remote
+#   lane's fixed ClusterIPs are in the service range.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: poc05
+networking:
+  podSubnet: 10.244.0.0/16
+  serviceSubnet: 10.96.0.0/16
 nodes:
   - role: control-plane
     image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5

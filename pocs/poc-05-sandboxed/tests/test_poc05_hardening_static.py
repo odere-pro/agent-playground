@@ -9,7 +9,12 @@ in `deploy/kind/poc05/{agents,remote,tools,platform}`: non-root with the distinc
 root, drop ALL, no privilege escalation, seccomp RuntimeDefault, cpu and memory limits, a
 size-capped `/tmp`, no service account token, no host namespaces or host paths, Secrets in the
 chassis container only, the chassis public port on the pod IP, every chassis config loads, every
-pod passes the admission rules, and no NetworkPolicy under `deploy/kind/poc05/` uses an `ipBlock`.
+pod passes the admission rules, and no NetworkPolicy under `deploy/kind/poc05/` uses an `ipBlock`
+but the dispatcher's one block to the API server (the netpol test pins it down).
+Exit criterion 8 (offline part): the code runner is a `SandboxTemplate` on gVisor behind a warm
+pool, a fresh pod per call, with no egress and only the dispatcher in; the dispatcher
+(`platform/code-runner-dispatch.yaml`) gets the section 2.11 checks, and its projected token is in
+its one container only (`docs/plans/2026-10-09-poc-05-per-call-sandbox.md`).
 
 Not scanned for pod fields: `base/agent-sandbox/` (the upstream controller), `smoke/` (throwaway
 pods `run.sh smoke` deletes), and `admission/fixtures/` (their own test). The packets are tested
@@ -40,7 +45,10 @@ CHASSIS_REPO = "kind.local/agent-platform/chassis"
 POD_IP = "$(POD_IP)"
 TRUST = "agents.platform/trust"
 TOKEN_SECRET = re.compile(r"remote-(?P<name>[a-z0-9]([-a-z0-9]*[a-z0-9])?)-token")
-POD_KINDS = {"Deployment", "StatefulSet", "DaemonSet", "Job", "Pod", "Sandbox"}
+POD_KINDS = {"Deployment", "StatefulSet", "DaemonSet", "Job", "Pod", "Sandbox", "SandboxTemplate"}
+POD_TEMPLATE_KINDS = {"Sandbox", "SandboxTemplate"}  # the pod template is `spec.podTemplate`
+DISPATCHER = "code-runner-dispatch"
+EXTENSIONS = "extensions.agents.x-k8s.io/v1beta1"
 
 Doc = dict[str, Any]
 
@@ -70,7 +78,7 @@ class Pod:
         kind = self.doc["kind"]
         if kind == "Pod":
             return self.doc
-        if kind == "Sandbox":
+        if kind in POD_TEMPLATE_KINDS:
             return dict(self.doc["spec"]["podTemplate"])
         return dict(self.doc["spec"]["template"])
 
@@ -195,12 +203,15 @@ def test_the_scan_sees_the_platform_too() -> None:
 
 @pytest.mark.parametrize("pod", ALL_PODS, ids=_ids(ALL_PODS))
 def test_pod_has_no_token_and_no_host_access(pod: Pod) -> None:
+    """No automounted token anywhere. A projected token only in the dispatcher (next tests)."""
     spec = pod.spec
     assert spec.get("automountServiceAccountToken") is False, pod.id
     for field in ("shareProcessNamespace", "hostNetwork", "hostPID", "hostIPC"):
         assert not spec.get(field), f"{pod.id}: {field}"
     for v in spec.get("volumes", []):
         assert "hostPath" not in v, f"{pod.id}: hostPath volume {v['name']}"
+        if pod.id == f"platform/Deployment/{DISPATCHER}":
+            continue
         for s in v.get("projected", {}).get("sources", []):
             assert "serviceAccountToken" not in s, f"{pod.id}: projected token in {v['name']}"
 
@@ -394,10 +405,51 @@ def test_chassis_config_loads_and_matches_the_pod(pod: Pod, chassis: Doc) -> Non
 
 @pytest.mark.parametrize("pod", WORKLOAD_PODS, ids=_ids(WORKLOAD_PODS))
 def test_every_sandbox_runs_on_gvisor(pod: Pod) -> None:
-    if pod.doc["kind"] == "Sandbox":
-        assert pod.doc["apiVersion"] == "agents.x-k8s.io/v1beta1", pod.id
+    if pod.doc["kind"] in POD_TEMPLATE_KINDS:
+        want = "agents.x-k8s.io/v1beta1" if pod.doc["kind"] == "Sandbox" else EXTENSIONS
+        assert pod.doc["apiVersion"] == want, pod.id
         assert pod.spec.get("runtimeClassName") == "gvisor", pod.id
         assert pod.spec.get("enableServiceLinks") is False, pod.id
+
+
+def _one(folder: str, kind: str, name: str) -> Doc:
+    found = [d for _, d in _objects(folder) if d["kind"] == kind and d["metadata"]["name"] == name]
+    assert len(found) == 1, f"{folder}/: {kind} {name}"
+    return found[0]
+
+
+def test_the_code_runner_is_a_template_and_a_warm_pool_only() -> None:
+    """A fresh sandbox per call: no shared `Sandbox` and no Service in tools/; the template lets
+    the controller write no NetworkPolicy, inject no env, and add no volume claim."""
+    kinds = {(d["kind"], d["metadata"]["name"]) for _, d in _objects("tools")}
+    assert ("Sandbox", "code-runner") not in kinds
+    assert not {k for k in kinds if k[0] == "Service"}, kinds
+    template = _one("tools", "SandboxTemplate", "code-runner")
+    spec = template["spec"]
+    assert template["apiVersion"] == EXTENSIONS
+    assert spec["networkPolicyManagement"] == "Unmanaged"
+    assert spec["envVarsInjectionPolicy"] == "Disallowed"
+    assert spec["volumeClaimTemplatesPolicy"] == "Disallowed"
+    assert spec["service"] is False
+    assert not spec.get("networkPolicy") and not spec.get("volumeClaimTemplates")
+    pool = _one("tools", "SandboxWarmPool", "code-runner")
+    assert pool["apiVersion"] == EXTENSIONS
+    assert pool["spec"]["sandboxTemplateRef"] == {"name": "code-runner"}
+    assert pool["spec"]["replicas"] == 2
+
+
+def test_the_per_call_pod_has_no_liveness_probe_and_a_capped_dev_shm() -> None:
+    """A per-call pod lives seconds: no silent restart mid-call. `/dev/shm` is a capped emptyDir
+    (security review LOW), and memory request equals the limit."""
+    (pod,) = [p for p in WORKLOAD_PODS if p.doc["kind"] == "SandboxTemplate"]
+    (c,) = pod.containers()
+    assert "livenessProbe" not in c, pod.id
+    shm = [m for m in c["volumeMounts"] if m["mountPath"] == "/dev/shm"]
+    assert len(shm) == 1, pod.id
+    assert _volumes(pod)[shm[0]["name"]]["emptyDir"] == {"medium": "Memory", "sizeLimit": "8Mi"}
+    resources = c["resources"]
+    assert resources["requests"]["memory"] == resources["limits"]["memory"], resources
+    assert pod.labels["app.kubernetes.io/name"] == "code-runner"
 
 
 def _service(folder: str, name: str) -> Doc:
@@ -443,7 +495,19 @@ def test_remote_probes_are_tcp() -> None:
 def test_every_workload_pod_passes_the_admission_rules(pod: Pod) -> None:
     """The Python model of `admission/policy.yaml` (test_poc05_admission_static.py)."""
     params = _Params.of(_load_all(PARAMS)[0])
-    assert broken_rules(pod.doc, params, pod.namespace) == set(), pod.id
+    assert broken_rules(_as_admitted(pod), params, pod.namespace) == set(), pod.id
+
+
+def _as_admitted(pod: Pod) -> Doc:
+    """A template is admitted through the `Sandbox` objects its warm pool makes from it."""
+    if pod.doc["kind"] != "SandboxTemplate":
+        return pod.doc
+    return {
+        "apiVersion": "agents.x-k8s.io/v1beta1",
+        "kind": "Sandbox",
+        "metadata": dict(pod.doc["metadata"]),
+        "spec": {"podTemplate": pod.template},
+    }
 
 
 # --- NetworkPolicy ----------------------------------------------------------------------------
@@ -458,12 +522,16 @@ def _policies() -> list[tuple[Path, Doc]]:
     ]
 
 
-def test_no_network_policy_uses_an_ip_block() -> None:
+def test_no_network_policy_uses_an_ip_block_but_the_dispatchers() -> None:
+    """The one ipBlock is the dispatcher's API egress (test_poc05_netpol_static.py pins it)."""
     policies = _policies()
     assert len(policies) >= 10
+    with_block = []
     for path, doc in policies:
         keys = {k for k, _ in _walk(doc)}
-        assert "ipBlock" not in keys, f"{path.relative_to(ROOT)}: {doc['metadata']['name']}"
+        if "ipBlock" in keys:
+            with_block.append((path.relative_to(POC05).as_posix(), doc["metadata"]["name"]))
+    assert with_block == [("platform/network-policy.yaml", DISPATCHER)]
 
 
 def _policy(folder: str, name: str) -> Doc:
@@ -499,13 +567,84 @@ def test_only_the_remote_reaches_port_8091() -> None:
     assert [r for r in spec["ingress"] if not r.get("ports")] == [], "an ingress rule on all ports"
 
 
-def test_the_code_runner_has_no_egress_and_only_litellm_in() -> None:
+def test_the_code_runner_has_no_egress_and_only_the_dispatcher_in() -> None:
     spec = _policy("tools", "code-runner")["spec"]
+    assert spec["podSelector"] == {"matchLabels": {"app.kubernetes.io/name": "code-runner"}}
     assert "Egress" in spec["policyTypes"]
     assert spec.get("egress", []) == []
     (rule,) = spec["ingress"]
+    assert rule["ports"] == [{"port": 8000, "protocol": "TCP"}]
     (peer,) = rule["from"]
-    assert peer["podSelector"] == {"matchLabels": {"app.kubernetes.io/name": "litellm"}}
+    assert peer["podSelector"] == {"matchLabels": {"app.kubernetes.io/name": DISPATCHER}}
     assert peer["namespaceSelector"] == {
         "matchLabels": {"kubernetes.io/metadata.name": "poc05-platform"}
     }
+
+
+# --- the dispatcher (platform/code-runner-dispatch.yaml) ----------------------------------------
+
+
+def _dispatcher() -> Pod:
+    (pod,) = [p for p in ALL_PODS if p.id == f"platform/Deployment/{DISPATCHER}"]
+    return pod
+
+
+def test_the_dispatcher_runs_on_runc_with_the_section_2_11_hardening() -> None:
+    """Non-root, read-only root, drop ALL, seccomp, limits (the generic tests above), plus: runc
+    (no `runtimeClassName`), its own uid, the local image never pulled, and a /health liveness
+    that tolerates a slow API server."""
+    pod = _dispatcher()
+    assert pod.namespace == "poc05-platform"
+    assert "runtimeClassName" not in pod.spec, pod.id
+    assert pod.spec["serviceAccountName"] == DISPATCHER
+    assert pod.spec["enableServiceLinks"] is False
+    (c,) = pod.containers()
+    assert c["image"] == "kind.local/agent-platform/code-runner:poc05"
+    assert c["imagePullPolicy"] == "Never"
+    assert c["securityContext"]["runAsUser"] == c["securityContext"]["runAsGroup"] == 10003
+    assert c["resources"]["limits"] == {"cpu": "500m", "memory": "128Mi"}
+    assert c["command"][0] == "code-runner" and c["args"][0] == "dispatch"
+    args = [str(a) for a in c["args"]]
+    assert args[args.index("--pool") + 1] == "code-runner"
+    assert args[args.index("--namespace") + 1] == "poc05-tools"
+    live = c["livenessProbe"]
+    assert live["httpGet"]["path"] == "/health"
+    assert (live["timeoutSeconds"], live["failureThreshold"]) == (5, 6)
+    assert not c.get("env") and not c.get("envFrom"), "the dispatcher takes no Secret or env"
+    tmp = _tmp_volume(pod, c)
+    assert tmp is not None and tmp["emptyDir"]["medium"] == "Memory"
+
+
+def test_the_dispatcher_token_is_projected_into_its_one_container_only() -> None:
+    """Its one credential: a projected, expiring token and the cluster CA, read-only, in its one
+    container. No automount, on the pod or on its ServiceAccount."""
+    pod = _dispatcher()
+    assert pod.spec["automountServiceAccountToken"] is False
+    sa = _one("platform", "ServiceAccount", DISPATCHER)
+    assert sa.get("automountServiceAccountToken") is False
+    projected = {n: v for n, v in _volumes(pod).items() if "projected" in v}
+    (name,) = projected
+    sources = projected[name]["projected"]["sources"]
+    tokens = [s["serviceAccountToken"] for s in sources if "serviceAccountToken" in s]
+    assert tokens == [{"path": "token", "expirationSeconds": 3600}]
+    assert {
+        "configMap": {"name": "kube-root-ca.crt", "items": [{"key": "ca.crt", "path": "ca.crt"}]}
+    } in sources
+    assert len(sources) == 2, sources
+    mounts = [
+        (c["name"], m)
+        for c in pod.containers()
+        for m in c.get("volumeMounts", [])
+        if m["name"] == name
+    ]
+    assert len(mounts) == 1, mounts
+    assert mounts[0][1]["readOnly"] is True
+    assert mounts[0][1]["mountPath"] == "/var/run/secrets/kubernetes.io/serviceaccount"
+
+
+def test_the_dispatcher_is_reached_only_by_litellm() -> None:
+    spec = _policy("platform", DISPATCHER)["spec"]
+    assert spec["podSelector"] == {"matchLabels": {"app.kubernetes.io/name": DISPATCHER}}
+    (rule,) = spec["ingress"]
+    assert rule["ports"] == [{"port": 8000, "protocol": "TCP"}]
+    assert rule["from"] == [{"podSelector": {"matchLabels": {"app.kubernetes.io/name": "litellm"}}}]

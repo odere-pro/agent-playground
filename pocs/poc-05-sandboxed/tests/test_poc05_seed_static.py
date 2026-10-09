@@ -11,6 +11,7 @@ or puts one in argv. Also the offline part of criterion 1 (the seed's static che
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Iterator
 from pathlib import Path
@@ -23,6 +24,8 @@ ROOT = Path(__file__).resolve().parents[3]
 KIND = ROOT / "deploy/kind/poc05"
 PLATFORM = KIND / "platform"
 SEED = PLATFORM / "seed.sh"
+RUN_SH = KIND / "run.sh"
+AGENT_SANDBOX = KIND / "base/agent-sandbox"
 KIND_LITELLM = PLATFORM / "litellm/config.yaml"
 COMPOSE_LITELLM = ROOT / "deploy/compose/litellm"
 NON_FAKE_CONFIGS = (COMPOSE_LITELLM / "config.local.yaml", KIND_LITELLM)
@@ -32,7 +35,17 @@ LOCAL_IMAGE = re.compile(r"^kind\.local/agent-platform/[a-z0-9-]+:poc05$")
 UNPINNED_UNTIL_T19 = {"postgres:17.6-alpine"}
 """Third-party images whose digest is not in the repo yet. Each carries `TODO(T19)` in its file."""
 
-SERVICES = ("litellm", "postgres", "fake-model-server", "fake-mcp-server", "valkey", "minio")
+SERVICES = (
+    "litellm",
+    "postgres",
+    "fake-model-server",
+    "fake-mcp-server",
+    "valkey",
+    "minio",
+    "code-runner-dispatch",
+)
+DISPATCHER = "code-runner-dispatch"
+CODE_RUNNER_URL = "http://code-runner-dispatch.poc05-platform.svc.cluster.local:8000/mcp"
 CHASSIS = {"agents.platform/role": "chassis"}
 SECRET_SOURCES = re.compile(r"\b(new_secret|new_id|read_secret|openssl|curl)\b")
 
@@ -176,6 +189,21 @@ def test_kind_litellm_keeps_keys_in_postgres_and_reaches_only_platform_tools() -
     assert config["litellm_settings"]["turn_off_message_logging"] is True
 
 
+def test_kind_litellm_reaches_the_code_runner_only_through_the_dispatcher() -> None:
+    """Per-call sandbox design: the server name stays `code_runner`; its URL is the dispatcher's
+    Service, never a sandbox pod or a `poc05-tools` Service."""
+    servers = yaml.safe_load(KIND_LITELLM.read_text())["mcp_servers"]
+    assert servers["code_runner"]["url"] == CODE_RUNNER_URL
+    assert not [s["url"] for s in servers.values() if "poc05-tools" in s["url"]]
+    (svc,) = [
+        d
+        for _, d in _manifests(PLATFORM)
+        if d["kind"] == "Service" and d["metadata"]["name"] == DISPATCHER
+    ]
+    assert svc["spec"]["selector"] == {"app.kubernetes.io/name": DISPATCHER}
+    assert [(p["port"], p["targetPort"]) for p in svc["spec"]["ports"]] == [(8000, 8000)]
+
+
 # --- Platform workloads: credentials and hardening -------------------------------------------
 
 
@@ -242,6 +270,7 @@ def test_only_the_platform_services_get_the_platform_secrets() -> None:
         "minio-init": {"minio-root", "minio-chassis"},
         "fake-model-server": set(),
         "fake-mcp-server": set(),
+        DISPATCHER: set(),
     }
     for name, doc in _workloads().items():
         used = set(re.findall(r"'(?:secretName|name)': '([\w-]+)'", _secret_refs(doc)))
@@ -260,11 +289,14 @@ def _secret_refs(doc: dict[str, Any]) -> str:
 def test_platform_policies_select_chassis_pods_by_role() -> None:
     """Section 2.10: LiteLLM and Valkey admit `agents.platform/role: chassis` pods from
     `poc05-agents`; MinIO admits no chassis while no chassis reads S3 (security review F10);
-    Postgres and the fake servers admit LiteLLM only; no rule uses an `ipBlock`.
+    Postgres and the fake servers admit LiteLLM only; no rule uses an `ipBlock` but the
+    dispatcher's one block to the API server (test_poc05_netpol_static.py pins it down).
     """
     policies = _platform("NetworkPolicy")
     for path, doc in _manifests(PLATFORM):
-        assert "ipBlock" not in str(doc), path.name
+        if doc["kind"] == "NetworkPolicy" and doc["metadata"]["name"] == DISPATCHER:
+            continue
+        assert "ipBlock" not in str(doc), f"{path.name}: {doc['metadata']['name']}"
     for name in ("litellm", "valkey"):
         (rule,) = [r for r in policies[name]["spec"]["ingress"] if _from_chassis(r)]
         assert rule["ports"], name
@@ -386,3 +418,101 @@ def test_seed_review_fixes_hold() -> None:
     text = SEED.read_text()
     assert "-@admin -@dangerous" in text
     assert not re.search(r'put_env_secret "\$AGENTS" minio-chassis', text)
+
+
+# --- run.sh: the gateway key, the Job, the pool, the pinned manifest (reviews of 2026-10-09) ---
+
+
+def _function(name: str) -> str:
+    match = re.search(rf"(?ms)^{name}\(\) \{{\n(.*?)^\}}", RUN_SH.read_text())
+    assert match, f"run.sh has no {name}()"
+    return match.group(1)
+
+
+def _before(body: str, first: str, then: str) -> bool:
+    return 0 <= body.find(first) < body.find(then)
+
+
+def test_with_gateway_reads_the_key_with_tracing_off_and_masks_it_in_ci() -> None:
+    """Security review LOW: under `bash -x` the key would be printed; in CI it is not a
+    registered secret. Tracing goes off before the Secret is read; under GITHUB_ACTIONS the key is
+    masked before it is exported or any command runs."""
+    body = _function("with_gateway")
+    read = "get secret chassis-echo-litellm"
+    assert _before(body, "{ set +x; } 2>/dev/null", read)
+    assert re.search(r"\[\[ -z \$\{GITHUB_ACTIONS:-\} \]\] \|\| printf '::add-mask::%s\\n'", body)
+    assert _before(body, read, "::add-mask::")
+    assert _before(body, "::add-mask::", "export POC05_CHASSIS_VIRTUAL_KEY")
+    assert _before(body, "::add-mask::", '"$@"')
+    assert _before(body, "export POC05_CHASSIS_VIRTUAL_KEY", "set -x")
+
+
+def test_run_sh_test_runs_through_with_gateway() -> None:
+    """Code review MEDIUM: `run.sh test` skipped the code-runner and gateway tests without it."""
+    body = _function("run_tests")
+    assert "with_gateway env POC05_KIND=1 uv run pytest -m network" in body
+
+
+def test_replace_changed_job_deletes_a_failed_job_regardless_of_the_dry_run() -> None:
+    """Code review MEDIUM: a Failed minio-init with an unchanged manifest blocked `up`."""
+    body = _function("replace_changed_job")
+    failed = body.index("if [[ $finished == *Failed* ]]; then")
+    assert _before(body[failed:], 'delete job "$name"', "return 0")
+    assert failed < body.index("--dry-run=server")
+
+
+def test_the_tools_step_waits_on_the_warm_pool() -> None:
+    """Per-call design: no `code-runner` Sandbox to wait on; the pool's readyReplicas instead."""
+    body = _function("apply_tools")
+    assert "wait_pool poc05-tools code-runner" in body
+    assert "wait_sandbox" not in body
+    assert "{.status.readyReplicas}" in _function("wait_pool")
+
+
+def test_the_platform_wait_includes_the_dispatcher() -> None:
+    assert "code-runner-dispatch" in _function("apply_platform")
+
+
+def test_run_sh_pins_the_with_extensions_manifest_it_installs() -> None:
+    """The vendored file is the one kustomization.yaml installs, and its sha256 is run.sh's."""
+    text = RUN_SH.read_text()
+    (want,) = re.findall(r"(?m)^AGENT_SANDBOX_SHA256=([0-9a-f]{64})$", text)
+    assert want == "b150cb058c577c59c42b060ff7f22e31b5311ca80430db98129f1280a0e85970"
+    resources = yaml.safe_load((AGENT_SANDBOX / "kustomization.yaml").read_text())["resources"]
+    assert resources == ["upstream-v1.0.5-with-extensions.yaml"]
+    assert f"AGENT_SANDBOX_MANIFEST=$HERE/base/agent-sandbox/{resources[0]}" in text
+    manifest = AGENT_SANDBOX / resources[0]
+    assert hashlib.sha256(manifest.read_bytes()).hexdigest() == want
+    body = manifest.read_text()
+    assert "aggregate-to-" not in body, "a vendored ClusterRole would flow into admin/edit/view"
+    assert "- --extensions" in body
+    for crd in ("sandboxtemplates", "sandboxwarmpools", "sandboxclaims"):
+        assert f"{crd}.extensions.agents.x-k8s.io" in _function("install_agent_sandbox") or (
+            f"{crd}.extensions.agents.x-k8s.io" in text
+        )
+
+
+def test_admission_applies_the_extension_rules_in_order_with_a_canary() -> None:
+    """Task 4: each policy before its binding, all three type-checked, a rule-T1 canary next to
+    the rule-1 one, each with its admitted twin."""
+    body = _function("admission")
+    order = [
+        "params.yaml",
+        "rbac.yaml",
+        '"$dir/policy.yaml"',
+        "extension-policy.yaml",
+        "type_checked",
+        '"$dir/binding.yaml"',
+        "extension-binding.yaml",
+        "canary agent-trust-rule",
+        "canary sandbox-template-rule",
+    ]
+    assert [body.find(s) for s in order] == sorted(body.find(s) for s in order), body
+    assert all(body.find(s) >= 0 for s in order)
+    assert "agent-trust-rule sandbox-template-rule sandbox-claim-rule" in body
+    assert "ruleT1-network-policy-unmanaged/rejected-absent.yaml" in body
+    assert "ruleT1-network-policy-unmanaged/admitted.yaml" in body
+    assert '"$fx/ruleT1-network-policy-unmanaged/admitted.yaml" "template rule T1"' in body
+    canary = _function("canary")
+    assert '--as="$DEPLOYER"' in canary and "--dry-run=server" in canary
+    assert '*"$message"*' in canary

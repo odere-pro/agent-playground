@@ -15,6 +15,10 @@
 #   - 8080 ingress on the two chassis pods is a rule with a port and no `from`: any source, as the
 #     table says ("from any source"). It is the only peerless rule, and it is ingress.
 #   - The smoke pair (`poc05-smoke`, `run.sh smoke`) is not in the table.
+#   - The code runner is a sandbox per call (docs/plans/2026-10-09-poc-05-per-call-sandbox.md,
+#     section "NetworkPolicy"): LiteLLM reaches only the dispatcher (`code-runner-dispatch`, in
+#     poc05-platform), and only the dispatcher reaches the per-call `code-runner` pods.
+#   - The one ipBlock in PoC-5 is the dispatcher's egress to the API server (`ip_blocks` below).
 #
 # Edge format. A peer is {ns, labels}; labels are matchLabels of the podSelector, `{}` means no
 # pod selector (all pods). `src: any` means a rule with ports and no `from`.
@@ -24,8 +28,16 @@
 external_pods:
   - {ns: kube-system, labels: {k8s-app: kube-dns}}
 
+# The only ipBlock rules. Each is one egress rule whose `to` holds only this block, with no
+# `except`. The cidr is the sentinel in git; run.sh fills in the `kubernetes` EndpointSlice address.
+ip_blocks:
+  - policy: {ns: poc05-platform, name: code-runner-dispatch}
+    pod: {ns: poc05-platform, labels: {app.kubernetes.io/name: code-runner-dispatch}}
+    cidr: __API_SERVER_IP__/32
+    ports: [TCP/6443]
+
 # DNS (kube-dns, 53) is allowed for these pods only (app.kubernetes.io/name). The remote sandbox
-# (`remote-echo`) and the code runner have none.
+# (`remote-echo`), the code runner, and its dispatcher have none.
 dns_allowed:
   - agent-echo
   - chassis-echo-remote
@@ -74,6 +86,11 @@ egress:
     dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: fake-mcp-server}}
     ports: [TCP/8082]
   - src: {ns: poc05-platform, labels: {app.kubernetes.io/name: litellm}}
+    dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: code-runner-dispatch}}
+    ports: [TCP/8000]
+
+  # The dispatcher: the per-call sandboxes only (the API server is its ipBlock, above).
+  - src: {ns: poc05-platform, labels: {app.kubernetes.io/name: code-runner-dispatch}}
     dst: {ns: poc05-tools, labels: {app.kubernetes.io/name: code-runner}}
     ports: [TCP/8000]
 
@@ -105,8 +122,11 @@ ingress:
     dst: {ns: poc05-remote, labels: {app.kubernetes.io/name: remote-echo}}
     ports: [TCP/9000]
 
-  - src: {ns: poc05-platform, labels: {app.kubernetes.io/name: litellm}}
+  - src: {ns: poc05-platform, labels: {app.kubernetes.io/name: code-runner-dispatch}}
     dst: {ns: poc05-tools, labels: {app.kubernetes.io/name: code-runner}}
+    ports: [TCP/8000]
+  - src: {ns: poc05-platform, labels: {app.kubernetes.io/name: litellm}}
+    dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: code-runner-dispatch}}
     ports: [TCP/8000]
 
   - src: {ns: poc05-agents, labels: {agents.platform/role: chassis}}

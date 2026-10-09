@@ -13,13 +13,16 @@
 #   deploy/kind/poc05/run.sh request  normal requests through agent-echo and chassis-echo-remote
 #   deploy/kind/poc05/run.sh up       all of it from nothing, in the plan's section 8 order; a
 #                                     second `up` on a running cluster converges
-#   deploy/kind/poc05/run.sh test     the kind tier: POC05_KIND=1 pytest -m network (PoC-5 tests)
+#   deploy/kind/poc05/run.sh test     the kind tier: POC05_KIND=1 pytest -m network (PoC-5 tests),
+#                                     through with_gateway like test-remote
 #   deploy/kind/poc05/run.sh test-remote  the kind remote-lane and code-runner files (CI job); fails
 #                                     naming any file in REMOTE_TESTS that does not exist yet
 #   deploy/kind/poc05/run.sh with-gateway CMD...  run CMD with a port-forward to LiteLLM and
 #                                     POC05_GATEWAY_MCP_URL, POC05_CHASSIS_VIRTUAL_KEY exported
 #                                     (the key from its Secret, never in argv or output); last verb
-#   deploy/kind/poc05/run.sh pods     every pod and Sandbox in the PoC-5 namespaces
+#   deploy/kind/poc05/run.sh api-ip-fill IP  fill the API server sentinel in stdin with IP and
+#                                     write stdout; refuses a bad IP (no cluster call); last verb
+#   deploy/kind/poc05/run.sh pods     every pod, Sandbox, warm pool, and claim in PoC-5
 #   deploy/kind/poc05/run.sh logs     every PoC-5 pod's last log lines, through redact_logs
 #   deploy/kind/poc05/run.sh redact   redact_logs as a filter: stdin to stdout, no cluster call
 #   deploy/kind/poc05/run.sh delete   delete the cluster (`down` is the same)
@@ -34,7 +37,15 @@ CLUSTER=poc05
 CONTEXT=kind-$CLUSTER
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
-AGENT_SANDBOX_SHA256=e89fd95c0aa57609fa24be4112bd52ce67fe8939ecf6f3c17edf2f1e8f1eb860
+# The release's sandbox-with-extensions.yaml (base/agent-sandbox/kustomization.yaml).
+AGENT_SANDBOX_MANIFEST=$HERE/base/agent-sandbox/upstream-v1.0.5-with-extensions.yaml
+AGENT_SANDBOX_SHA256=b150cb058c577c59c42b060ff7f22e31b5311ca80430db98129f1280a0e85970
+AGENT_SANDBOX_CRDS=(
+  sandboxes.agents.x-k8s.io
+  sandboxtemplates.extensions.agents.x-k8s.io
+  sandboxwarmpools.extensions.agents.x-k8s.io
+  sandboxclaims.extensions.agents.x-k8s.io
+)
 
 # The images `build` makes and `load` puts in the node: "<image>|<Dockerfile>|<context>", paths
 # relative to the repo root. To add one, append a line; both verbs pick it up.
@@ -81,11 +92,13 @@ preflight() {
 }
 
 install_agent_sandbox() {
-  local manifest=$HERE/base/agent-sandbox/upstream-v1.0.5.yaml sum
-  sum=$(shasum -a 256 "$manifest" | cut -d' ' -f1)
+  local sum crd
+  sum=$(shasum -a 256 "$AGENT_SANDBOX_MANIFEST" | cut -d' ' -f1)
   [[ $sum == "$AGENT_SANDBOX_SHA256" ]] || die "agent-sandbox manifest sha256 $sum, want $AGENT_SANDBOX_SHA256"
   kctl apply -k "$HERE/base/agent-sandbox"
-  kctl wait --for=condition=Established crd/sandboxes.agents.x-k8s.io --timeout=60s
+  for crd in "${AGENT_SANDBOX_CRDS[@]}"; do
+    kctl wait --for=condition=Established "crd/$crd" --timeout=60s
+  done
   kctl -n agent-sandbox-system rollout status deployment/agent-sandbox-controller --timeout=180s
 }
 
@@ -122,41 +135,62 @@ load() {
 
 DEPLOYER=system:serviceaccount:agent-platform-system:deployer
 
-# The trust rule (admission/policy.yaml header). Order matters: params first (the binding denies
-# everything without them), the policy before the binding (a policy that does not compile enforces
-# nothing), and a canary last: the rule-1 fixture must be refused by agent-trust-rule and its twin
-# admitted, so a silent no-op policy fails here.
-admission() {
-  local dir=$HERE/admission fixtures=$HERE/admission/fixtures/rule1-trust-label out i
-  kctl apply -f "$dir/params.yaml"
-  kctl apply -f "$dir/rbac.yaml"
-  kctl apply -f "$dir/policy.yaml"
-  # The type check runs in the background; status.typeChecking appears once it has (an empty
-  # object: no warnings). Any expressionWarning stops here, before the binding.
+# type_checked POLICY: wait for the ValidatingAdmissionPolicy's background type check and stop on
+# any warning. status.typeChecking appears once it ran (an empty object: no warnings).
+type_checked() {
+  local name=$1 out="" i
   for i in $(seq 1 30); do
-    out=$(kctl get validatingadmissionpolicy agent-trust-rule -o json |
+    out=$(kctl get validatingadmissionpolicy "$name" -o json |
       jq -c '.status | select(has("typeChecking")) | .typeChecking') && [[ -n $out ]] && break
     sleep 1
   done
-  log "admission: status.typeChecking = ${out:-<not set after 30 s>}"
+  log "admission: $name status.typeChecking = ${out:-<not set after 30 s>}"
   [[ $out == "{}" || $out == '{"expressionWarnings":[]}' ]] ||
-    die "admission: the policy has type warnings or was not checked: ${out:-none}"
-  kctl apply -f "$dir/binding.yaml"
-  # The rule-1 fixture is in poc05-agents, where only the deployer may create pods (review F2;
-  # the kind test picks the identity the same way). Retry briefly: the binding reaches the API
-  # server's informer within seconds.
+    die "admission: $name has type warnings or was not checked: ${out:-none}"
+}
+
+# canary POLICY REJECTED ADMITTED [MESSAGE]: REJECTED must be refused by POLICY (with MESSAGE in
+# the refusal, if given) and ADMITTED let in, both as the deployer with --dry-run=server. Retries
+# briefly: a binding reaches the API server's informer within seconds.
+canary() {
+  local policy=$1 rejected=$2 admitted=$3 message=${4-} out i
   for i in $(seq 1 15); do
-    if out=$(kctl apply --dry-run=server --as="$DEPLOYER" -f "$fixtures/rejected.yaml" 2>&1); then
+    if out=$(kctl apply --dry-run=server --as="$DEPLOYER" -f "$rejected" 2>&1); then
       sleep 2
       continue
     fi
-    [[ $out == *agent-trust-rule* ]] || die "canary refused by something else: $out"
-    kctl apply --dry-run=server --as="$DEPLOYER" -f "$fixtures/admitted.yaml" >/dev/null ||
-      die "canary twin refused"
-    log "admission: canary refused by agent-trust-rule, twin admitted (try $i)"
+    [[ $out == *"$policy"* && $out == *"$message"* ]] ||
+      die "canary $rejected refused by something else: $out"
+    kctl apply --dry-run=server --as="$DEPLOYER" -f "$admitted" >/dev/null ||
+      die "canary twin $admitted refused"
+    log "admission: canary refused by $policy, twin admitted (try $i)"
     return 0
   done
-  die "admission: the canary was admitted; the policy is not enforcing"
+  die "admission: canary $rejected was admitted; $policy is not enforcing"
+}
+
+# The trust rule (admission/policy.yaml header) and the extension rules for SandboxTemplate and
+# SandboxClaim (admission/extension-policy.yaml; they need the extension CRDs from `create`).
+# Order matters: params first (the binding denies everything without them), each policy before
+# its binding (a policy that does not compile enforces nothing), and canaries last: the rule-1
+# fixture must be refused by agent-trust-rule and the rule-T1 fixture (no networkPolicyManagement)
+# by sandbox-template-rule, each next to its admitted twin, so a silent no-op policy fails here.
+# The fixtures are in poc05-agents and poc05-tools, where only the deployer may create (review F2).
+admission() {
+  local dir=$HERE/admission fx=$HERE/admission/fixtures name
+  kctl apply -f "$dir/params.yaml"
+  kctl apply -f "$dir/rbac.yaml"
+  kctl apply -f "$dir/policy.yaml"
+  kctl apply -f "$dir/extension-policy.yaml"
+  for name in agent-trust-rule sandbox-template-rule sandbox-claim-rule; do
+    type_checked "$name"
+  done
+  kctl apply -f "$dir/binding.yaml"
+  kctl apply -f "$dir/extension-binding.yaml"
+  canary agent-trust-rule "$fx/rule1-trust-label/rejected.yaml" \
+    "$fx/rule1-trust-label/admitted.yaml"
+  canary sandbox-template-rule "$fx/ruleT1-network-policy-unmanaged/rejected-absent.yaml" \
+    "$fx/ruleT1-network-policy-unmanaged/admitted.yaml" "template rule T1"
 }
 
 # The workload folders, applied as the platform deployer (admission/rbac.yaml), never as a tenant:
@@ -204,14 +238,20 @@ litellm_ready() {
     -o jsonpath='{.status.readyReplicas}' 2>/dev/null) == 1 ]]
 }
 
-# replace_changed_job NAME: delete platform Job NAME only if it finished and its manifest no
-# longer applies (the template is immutable). A running Job is never touched.
+# replace_changed_job NAME RENDERED: delete platform Job NAME if it ended Failed (it would never
+# turn Complete), or if it finished and its manifest in RENDERED (render_platform) no longer
+# applies (the template is immutable). A running Job is never touched.
 replace_changed_job() {
-  local name=$1 out finished
+  local name=$1 rendered=$2 out finished
   finished=$(kctl -n "$PLATFORM_NS" get job "$name" --ignore-not-found \
     -o jsonpath='{.status.conditions[?(@.status=="True")].type}')
   [[ $finished == *Complete* || $finished == *Failed* ]] || return 0
-  out=$(kctl apply -k "$HERE/platform" -l "app.kubernetes.io/name=$name" --dry-run=server 2>&1) &&
+  if [[ $finished == *Failed* ]]; then
+    log "job $name: ended Failed; deleting it so apply makes it again"
+    kctl -n "$PLATFORM_NS" delete job "$name" --wait=true --timeout=60s
+    return 0
+  fi
+  out=$(kctl apply -f - -l "app.kubernetes.io/name=$name" --dry-run=server 2>&1 <<<"$rendered") &&
     return 0
   [[ $out == *"field is immutable"* ]] || die "job $name: dry run failed: ${out:0:300}"
   log "job $name: finished and its manifest changed; deleting it so apply makes it again"
@@ -227,29 +267,121 @@ seed() {
   fi
 }
 
+# --- the API server ipBlock (platform/network-policy.yaml, policy code-runner-dispatch) ----------
+# The file in git holds API_SENTINEL. Every platform apply renders the folder and fills in the
+# `kubernetes` EndpointSlice address; nothing applies platform/ with `apply -k`. The fill refuses
+# an address that is not one IPv4 address, or that is in 169.254.0.0/16 (link-local, the metadata
+# service) or in the pod or service range of cluster.yaml, and input without the sentinel exactly
+# once. On a refusal it writes nothing, so nothing is applied.
+API_SENTINEL=__API_SERVER_IP__/32
+LINK_LOCAL=169.254.0.0/16
+
+# cluster_subnet KEY: podSubnet or serviceSubnet, from cluster.yaml's `networking`.
+cluster_subnet() {
+  local value
+  value=$(sed -nE "s/^  $1: *\"?([0-9./]+)\"?$/\1/p" "$HERE/cluster.yaml")
+  [[ $value == */* ]] || die "api-ip-fill: no networking.$1 in cluster.yaml"
+  printf '%s\n' "$value"
+}
+
+# ip_to_int ADDRESS: the IPv4 dotted quad as a number; fails for anything else.
+ip_to_int() {
+  local re='^(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$'
+  local n=0 i
+  [[ $1 =~ $re ]] || return 1
+  for i in 1 2 3 4; do
+    ((BASH_REMATCH[i] <= 255)) || return 1
+    n=$((n * 256 + BASH_REMATCH[i]))
+  done
+  printf '%d\n' "$n"
+}
+
+# in_cidr ADDRESS CIDR: true if ADDRESS is in the IPv4 CIDR.
+in_cidr() {
+  local ip net bits mask
+  ip=$(ip_to_int "$1") || return 1
+  net=$(ip_to_int "${2%/*}") || return 1
+  bits=${2#*/}
+  mask=$(((0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF))
+  (((ip & mask) == (net & mask)))
+}
+
+# fill_api_server_ip ADDRESS: stdin with API_SENTINEL replaced by ADDRESS/32, to stdout.
+fill_api_server_ip() {
+  local ip=${1-} pods services range text
+  [[ -n $ip ]] || die "api-ip-fill: no API server address given"
+  ip_to_int "$ip" >/dev/null || die "api-ip-fill: '$ip' is not one IPv4 address"
+  pods=$(cluster_subnet podSubnet)
+  services=$(cluster_subnet serviceSubnet)
+  for range in "$LINK_LOCAL" "$pods" "$services"; do
+    if in_cidr "$ip" "$range"; then
+      die "api-ip-fill: $ip is in $range; refusing to write it into a NetworkPolicy"
+    fi
+  done
+  text=$(cat)
+  [[ $(grep -cF "$API_SENTINEL" <<<"$text") == 1 ]] ||
+    die "api-ip-fill: the input must hold $API_SENTINEL exactly once"
+  text=${text//"$API_SENTINEL"/"$ip/32"}
+  [[ $text != *__API_SERVER_IP__* ]] || die "api-ip-fill: the sentinel is still there"
+  printf '%s\n' "$text"
+}
+
+# api_server_ip: the one address of the `kubernetes` EndpointSlice, whose port must be 6443 (the
+# policy's port). kindnet sees this address, not the ClusterIP, after the Service rewrite.
+api_server_ip() {
+  local slices ip port
+  slices=$(kctl -n default get endpointslices -l kubernetes.io/service-name=kubernetes -o json)
+  ip=$(jq -r '[.items[].endpoints[]?.addresses[]] | if length == 1 then .[0] else "" end' \
+    <<<"$slices")
+  port=$(jq -r '[.items[].ports[]?.port] | unique | map(tostring) | join(",")' <<<"$slices")
+  [[ -n $ip ]] || die "api server: want exactly one address in the kubernetes EndpointSlice"
+  [[ $port == 6443 ]] || die "api server: the kubernetes EndpointSlice port is '$port', want 6443"
+  printf '%s\n' "$ip"
+}
+
+# render_platform: platform/ rendered, the API server address filled in.
+render_platform() {
+  local ip rendered
+  ip=$(api_server_ip)
+  rendered=$(kctl kustomize "$HERE/platform")
+  fill_api_server_ip "$ip" <<<"$rendered"
+}
+
 # Platform services in section 8 order: Postgres, then LiteLLM (it runs its migrations on start),
-# then the fake servers, Valkey, MinIO and its one-shot Job. A Job is immutable: a finished one is
-# left alone, a missing one (ttl after 600 s) is made again, and its steps are idempotent. A
-# finished one whose manifest changed is deleted first, so a second `up` still converges.
+# then the fake servers, Valkey, MinIO and its one-shot Job, and the code-runner dispatcher. A Job
+# is immutable: a finished one is left alone, a missing one (ttl after 600 s) is made again, and
+# its steps are idempotent. A failed one, or a finished one whose manifest changed, is deleted
+# first, so a second `up` still converges. The render is checked before anything is applied.
 apply_platform() {
-  replace_changed_job minio-init
-  kctl apply -k "$HERE/platform"
+  local rendered name
+  rendered=$(render_platform)
+  replace_changed_job minio-init "$rendered"
+  kctl apply -f - <<<"$rendered"
   wait_rollout "$PLATFORM_NS" postgres
   wait_rollout "$PLATFORM_NS" litellm 300s
-  local name
-  for name in fake-model-server fake-mcp-server valkey minio; do
+  for name in fake-model-server fake-mcp-server valkey minio code-runner-dispatch; do
     wait_rollout "$PLATFORM_NS" "$name"
   done
   kctl -n "$PLATFORM_NS" wait --for=condition=Complete job/minio-init --timeout=120s ||
     { explain "$PLATFORM_NS" app.kubernetes.io/name=minio-init; die "minio-init did not finish"; }
 }
 
-# The code-runner Sandbox; LiteLLM's config names it (platform/litellm/config.yaml, mcp_servers),
-# so "registering" it is LiteLLM reaching it: the Sandbox is Ready and LiteLLM's NetworkPolicy has
-# the edge. The tool list itself is checked through a chassis in `request`.
+# wait_pool NS NAME: the SandboxWarmPool's readyReplicas reaches its spec.replicas. A pool has no
+# Ready condition to wait on.
+wait_pool() {
+  local ns=$1 name=$2 want
+  want=$(kctl -n "$ns" get sandboxwarmpool "$name" -o jsonpath='{.spec.replicas}')
+  kctl -n "$ns" wait --for=jsonpath='{.status.readyReplicas}'="$want" \
+    "sandboxwarmpool/$name" --timeout=180s ||
+    { explain "$ns" "app.kubernetes.io/name=$name"; die "warm pool $ns/$name: not $want ready"; }
+}
+
+# The code runner's SandboxTemplate and warm pool. LiteLLM's config names the dispatcher
+# (platform/litellm/config.yaml, mcp_servers), which claims a pool sandbox per call. The pool is
+# ready when its warm sandboxes are; the tool list itself is checked through a chassis in `request`.
 apply_tools() {
   apply_folder tools
-  wait_sandbox poc05-tools code-runner
+  wait_pool poc05-tools code-runner
 }
 
 apply_remote() {
@@ -321,7 +453,7 @@ pods() {
   for ns in "${NAMESPACES[@]:1}"; do
     kctl get pods -n "$ns" -o wide --no-headers
   done
-  kctl get sandbox -A
+  kctl get sandbox,sandboxwarmpool,sandboxclaim -A
 }
 
 # Preflight for `up`: poc04 is down (create checks it), the tools are here, and Docker has room.
@@ -364,8 +496,11 @@ up() {
   log "up done in $((SECONDS - start)) s"
 }
 
+# The code-runner and host-side gateway tests skip without the gateway, so this runs through
+# with_gateway like test-remote (code review 2026-10-09).
 run_tests() {
-  (cd "$ROOT" && POC05_KIND=1 uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs)
+  (cd "$ROOT" && with_gateway env POC05_KIND=1 uv run pytest -m network pocs/poc-05-sandboxed/tests \
+    -q -rs)
 }
 
 # The kind remote-lane and code-runner tests, selected by file path (review B1: a `-k` match
@@ -392,10 +527,11 @@ run_tests_remote() {
 # with_gateway CMD...: the kind tests that call the gateway from the host (test_poc05_kind_*.py)
 # need its URL and the chassis's virtual key. Port-forward LiteLLM on a free local port, export
 # both, run CMD, then stop the forward. The key goes from the Secret into this process's env only:
-# never into argv, a file, or the output.
+# never into argv, a file, or the output. Tracing is off while the key is read, so `bash -x` does
+# not print it; under GitHub Actions the key is registered as a mask first (security review LOW).
 with_gateway() {
   (($# > 0)) || die "with-gateway: no command given"
-  local pf_log pf port="" i
+  local pf_log pf port="" i xtrace=0
   pf_log=$(mktemp)
   kctl -n "$PLATFORM_NS" port-forward svc/litellm :4000 >"$pf_log" 2>&1 &
   pf=$!
@@ -408,10 +544,15 @@ with_gateway() {
   done
   [[ -n $port ]] || die "with-gateway: the port-forward to litellm did not start"
   export POC05_GATEWAY_MCP_URL="http://127.0.0.1:$port/mcp/"
+  [[ $- != *x* ]] || xtrace=1
+  { set +x; } 2>/dev/null
   POC05_CHASSIS_VIRTUAL_KEY=$(kctl -n poc05-agents get secret chassis-echo-litellm \
     -o 'jsonpath={.data.LITELLM_API_KEY}' | base64 -d)
   [[ -n $POC05_CHASSIS_VIRTUAL_KEY ]] || die "with-gateway: secret chassis-echo-litellm is empty"
+  # The runner reads this line from stdout and masks the value in every later log line.
+  [[ -z ${GITHUB_ACTIONS:-} ]] || printf '::add-mask::%s\n' "$POC05_CHASSIS_VIRTUAL_KEY"
   export POC05_CHASSIS_VIRTUAL_KEY
+  ((xtrace == 0)) || set -x
   "$@"
 }
 
@@ -579,13 +720,18 @@ pod_logs() {
   done
 }
 
-usage() { sed -n '2,30p' "$0"; }
+usage() { sed -n '2,33p' "$0"; }
 
 (($# > 0)) || { usage; exit 0; }
 # `with-gateway` takes the rest of the line as its command, so it ends the verb list.
 if [[ $1 == with-gateway ]]; then
   shift
   with_gateway "$@"
+  exit
+fi
+# `api-ip-fill` takes the address as its argument, so it is the only verb on the line.
+if [[ $1 == api-ip-fill ]]; then
+  fill_api_server_ip "${2-}"
   exit
 fi
 for cmd in "$@"; do

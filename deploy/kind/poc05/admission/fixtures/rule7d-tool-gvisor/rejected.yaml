@@ -21,6 +21,9 @@ spec:
   - name: code-runner
     image: kind.local/agent-platform/code-runner:poc05
     imagePullPolicy: Never
+    resources:
+      limits:
+        memory: 256Mi
     securityContext:
       allowPrivilegeEscalation: false
       capabilities:

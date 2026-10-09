@@ -17,6 +17,9 @@ refusal sits next to its allowed control in the same call.
   with EAGAIN after about 31 (bring-up note, item 8); a call that starts 5 works. The code stops
   at the first refusal and lets every child exit; the server's sweep kills anything left.
   The pod's own pids cap is never reached (31 children, about 85 guest processes allowed).
+  Each child execs `/bin/cat` on the pipe: a forked Python child costs 5 to 8 MiB under gVisor,
+  and 31 of them hit the pod's 256Mi limit, where each fork takes seconds (bring-up note,
+  2026-10-09).
 
 A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc05_conftest.py`). It needs the
 gateway URL and the chassis's key in the environment. Run:
@@ -44,7 +47,8 @@ OUTSIDE_IP = "1.1.1.1"
 TIMEOUT_S = 10  # the tool's ceiling (code_runner Limits.max_timeout_s)
 
 # Forks up to `want` children that block on a pipe, stops at the first refusal, then closes the
-# pipe so every child exits, and reaps them. Prints one JSON line.
+# pipe so every child exits, and reaps them. Prints one JSON line. Each child is `cat` on the
+# pipe, not Python (module docstring).
 FORKS = """
 import errno, json, os
 want = {want}
@@ -58,8 +62,8 @@ for _ in range(want):
         break
     if pid == 0:
         os.close(w)
-        os.read(r, 1)
-        os._exit(0)
+        os.dup2(r, 0)
+        os.execv("/bin/cat", ["cat"])
     children.append(pid)
 os.close(w)
 for pid in children:

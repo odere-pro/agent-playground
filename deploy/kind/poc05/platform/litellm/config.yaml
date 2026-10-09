@@ -28,10 +28,13 @@ mcp_servers:
     transport: http
     description: Three harmless tools (packages/fake-mcp-server); no auth of its own.
   code_runner:
-    # The Service is T15's (deploy/kind/poc05/tools/): `code-runner` in poc05-tools, port 8000.
-    url: http://code-runner.poc05-tools.svc.cluster.local:8000/mcp/
+    # The dispatcher (platform/code-runner-dispatch.yaml), port 8000. Per call it claims a fresh
+    # gVisor sandbox from the warm pool in poc05-tools and deletes it after the call. LiteLLM never
+    # reaches a sandbox pod (docs/plans/2026-10-09-poc-05-per-call-sandbox.md).
+    # `/mcp` with no slash: the server answers `/mcp/` with a 307.
+    url: http://code-runner-dispatch.poc05-platform.svc.cluster.local:8000/mcp
     transport: http
-    description: run_python in a gVisor sandbox with no egress (packages/code-runner).
+    description: run_python in a fresh gVisor sandbox per call, no egress (packages/code-runner).
 
 # Fallback if the per-key tool permission field does not exist in the pinned release (section 2.9):
 # one server entry per allow-list, each with `allowed_tools` and an `access_groups` name, and the

@@ -1,0 +1,14 @@
+# Claim rule C3, only the code-runner pool: the admitted twin.
+# expect: admitted
+# rule: C3
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxClaim
+metadata:
+  name: admission-claim-c3
+  namespace: poc05-tools
+spec:
+  warmPoolRef:
+    name: code-runner
+  lifecycle:
+    shutdownTime: '2030-01-01T00:00:00Z'
+    shutdownPolicy: Delete
