@@ -327,6 +327,8 @@ The Anthropic proxy route (`POST /v1/messages` on the proxy port; contract v5, p
 - The body is capped at 4 MiB (`BODY_CAP_BYTES`, suggested), counted while it is read and before it is parsed. Over it, 413 `request_too_large`.
 - A streamed answer holds for `FIRST_CHUNK_WAIT_S` (5 s, suggested) so a model error in that window keeps its HTTP status. After that an error is one `event: error` frame. A `ping` goes out every `PING_INTERVAL_S` (15 s, suggested).
 - A correlated stream whose client leaves after the model call started is charged its last known usage, or the whole reservation. The chat route does not do this (Known gap 004 G-2).
+- A stream has a wall clock: the rest of the run's `budget.timeout_ms`, else 300 s (suggested). At expiry it sends an `event: error` frame (`model_timeout`), closes the upstream stream, and is charged its whole reservation.
+- `model` is capped at 256 characters (suggested). Deeply nested JSON is a 400.
 - Every error is Anthropic's shape with a `request-id` header and `x-should-retry`. Model errors send fixed text. The upstream text of a rejected request is logged at the chassis, never sent.
 - Empty assistant turns and empty `system` entries are skipped. An empty user turn is a 400. A JSON boolean for `max_tokens` or `temperature` is a 400.
 - `/v1/messages/count_tokens` is a 404 in the Anthropic shape. On the remote listener its 401 keeps the v4 body, because the middlewares test the exact path `/v1/messages`.

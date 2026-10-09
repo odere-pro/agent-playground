@@ -127,6 +127,7 @@ class GatedModel:
         self.first_usage = first_usage
         self.silent = silent
         self.max_tokens: list[int | None] = []
+        self.closed = False
 
     async def complete(self, messages: Sequence[ModelMessage], **_: Any) -> ModelResult:
         await self.gate.wait()
@@ -136,10 +137,13 @@ class GatedModel:
         self, messages: Sequence[ModelMessage], *, max_tokens: int | None = None, **_: Any
     ) -> AsyncIterator[ModelChunk]:
         self.max_tokens.append(max_tokens)
-        if not self.silent:
-            yield ModelChunk(text="first", usage=self.first_usage)
-        await self.gate.wait()
-        yield ModelChunk(usage=Usage(input_tokens=1, output_tokens=1), finish=True)
+        try:
+            if not self.silent:
+                yield ModelChunk(text="first", usage=self.first_usage)
+            await self.gate.wait()
+            yield ModelChunk(usage=Usage(input_tokens=1, output_tokens=1), finish=True)
+        finally:
+            self.closed = True
 
 
 RULES = [
@@ -505,9 +509,16 @@ async def test_an_abandoned_messages_stream_is_charged_its_last_known_usage() ->
     assert (record.spent_tokens, record.reserved_tokens) == (7, 0)
 
 
-async def test_a_messages_stream_abandoned_in_the_hold_window_is_charged_too(
+async def test_a_stream_abandoned_after_a_silent_hold_window_is_charged_too(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A model that is silent past the hold window, then a client that leaves in the body phase,
+    is charged the reservation.
+
+    It does not prove a leave inside the window. The route does not read `receive` there, so a
+    client that leaves during the hold is seen only at the first send, after the window (contract
+    v5, A.6 step 9). That case cannot be observed, so it is not tested.
+    """
     monkeypatch.setattr(route_module, "FIRST_CHUNK_WAIT_S", 0.05)
     model = GatedModel(silent=True)  # no chunk before the gate: the window passes
     body = {**BODY, "max_tokens": 30, "stream": True}
@@ -929,3 +940,256 @@ async def test_the_model_error_rows_send_fixed_text(
     assert res.json()["error"]["message"].startswith(f"{named}: ")
     assert "UPSTREAM-RAW-TEXT" not in res.text
     assert res.headers["x-should-retry"] == ("true" if retryable else "false")
+
+
+# ---- review round 2 -----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("body", [b"[" * 100_000, b'{"a":' * 100_000])
+async def test_a_deeply_nested_body_is_a_400_and_never_a_500(body: bytes) -> None:
+    ports = _ports()
+    app = create_app(ChassisConfig.model_validate(CONFIG), ports)
+    transport = httpx.ASGITransport(app=create_proxy_app(app), raise_app_exceptions=False)
+    async with (
+        httpx.AsyncClient(transport=transport, base_url="http://chassis") as client,
+        app.router.lifespan_context(app),
+    ):
+        res = await client.post("/v1/messages", content=body)
+    assert res.status_code == 400, res.text[:200]
+    assert res.json()["error"] == {
+        "type": "invalid_request_error",
+        "message": "invalid_body: body: the body is not valid JSON",
+    }
+    assert _telemetry(ports).counter_value("chassis.model_calls", route="big-default") == 0
+
+
+async def test_a_long_model_name_is_refused_before_admission_and_reaches_no_telemetry(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    ports = _ports()
+    app = create_app(ChassisConfig.model_validate(CONFIG), ports)
+    long_name = "m" * (3 * 1024 * 1024)
+    caplog.set_level(logging.DEBUG)
+    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+        res = await client.post("/v1/messages", json={**BODY, "model": long_name})
+        edge = await client.post("/v1/messages", json={**BODY, "model": "e" * 256})
+        over = await client.post("/v1/messages", json={**BODY, "model": "o" * 257})
+    assert res.status_code == 400 and len(res.text) < 500
+    assert res.json()["error"]["message"] == "invalid_body: model: at most 256 characters"
+    assert (edge.status_code, over.status_code) == (200, 400)
+    telemetry = _telemetry(ports)
+    surfaces = repr(telemetry.counters) + repr(telemetry.logs) + repr(telemetry.spans) + caplog.text
+    assert "mmmmmmmm" not in surfaces and "ooooooo" not in surfaces
+    model = ports.model
+    assert isinstance(model, RecordingModel) and len(model.calls) == 1
+
+
+async def test_a_correlated_stream_ends_at_the_runs_deadline_with_an_error_frame() -> None:
+    model = GatedModel()
+    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(model))
+    request, ctx = _run(max_tokens=1000)
+    request.budget.timeout_ms = 300  # the run's wall clock
+    ctx.budget.timeout_ms = 300
+    async with (
+        _client(create_proxy_app(app)) as client,
+        app.router.lifespan_context(app),
+        app.state.runs.register(request, ctx) as record,
+    ):
+        res = await asyncio.wait_for(
+            client.post(
+                "/v1/messages",
+                json={**BODY, "max_tokens": 30, "stream": True},
+                headers={"traceparent": TRACEPARENT},
+            ),
+            5,
+        )
+    frames = _frames(res.text)
+    names = [n for n, _ in frames]
+    assert res.status_code == 200 and names[-1] == "error" and "message_stop" not in names
+    assert frames[-1][1]["error"] == {
+        "type": "timeout_error",
+        "message": "model_timeout: the model route did not answer in time",
+    }
+    assert model.closed, "the upstream stream was closed"
+    assert (record.spent_tokens, record.reserved_tokens) == (30, 0)
+
+
+async def test_an_uncorrelated_stream_ends_at_the_default_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(route_module, "UNCORRELATED_STREAM_DEADLINE_S", 0.2)
+    model = GatedModel()
+    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(model))
+    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+        res = await asyncio.wait_for(
+            client.post("/v1/messages", json={**BODY, "max_tokens": 30, "stream": True}), 5
+        )
+        cap = app.state.uncorrelated_cap
+    assert _frames(res.text)[-1][0] == "error"
+    assert model.closed and (cap.spent, cap.reserved) == (30, 0)
+    assert route_module.UNCORRELATED_STREAM_DEADLINE_S == 0.2
+
+
+def test_the_default_stream_deadline_is_five_minutes() -> None:
+    assert route_module.UNCORRELATED_STREAM_DEADLINE_S == 300.0
+
+
+class _ClosableStream:
+    """An upstream stream object (not a generator): only an explicit `aclose` marks it closed."""
+
+    def __init__(self) -> None:
+        self.gate = asyncio.Event()
+        self.closed = 0
+        self._sent = 0
+
+    def __aiter__(self) -> _ClosableStream:
+        return self
+
+    async def __anext__(self) -> ModelChunk:
+        self._sent += 1
+        if self._sent == 1:
+            return ModelChunk(text="first")
+        await self.gate.wait()
+        raise StopAsyncIteration
+
+    async def aclose(self) -> None:
+        self.closed += 1
+
+
+class _ClosableModel:
+    name = "closable"
+
+    def __init__(self) -> None:
+        self.upstream = _ClosableStream()
+
+    async def complete(self, messages: Sequence[ModelMessage], **_: Any) -> ModelResult:
+        raise AssertionError("not used")
+
+    def stream(self, messages: Sequence[ModelMessage], **_: Any) -> _ClosableStream:
+        return self.upstream
+
+
+@pytest.mark.parametrize("how", ["abandoned", "deadline"])
+async def test_the_upstream_stream_is_closed_explicitly_when_the_response_ends_early(
+    how: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model = _ClosableModel()
+    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(model))
+    body = {**BODY, "max_tokens": 30, "stream": True}
+    async with app.router.lifespan_context(app):
+        try:
+            if how == "abandoned":
+                proxy = create_proxy_app(app)
+                await _stream_and_leave(proxy, "/v1/messages", body, b"text_delta", {})
+            else:
+                monkeypatch.setattr(route_module, "UNCORRELATED_STREAM_DEADLINE_S", 0.2)
+                async with _client(create_proxy_app(app)) as client:
+                    await asyncio.wait_for(client.post("/v1/messages", json=body), 5)
+            for _ in range(100):  # the close runs as its own task, a moment after the leave
+                if model.upstream.closed:
+                    break
+                await asyncio.sleep(0.01)
+            closed = model.upstream.closed
+        finally:
+            model.upstream.gate.set()
+    assert closed == 1
+
+
+class _Upstream:
+    """A LiteLLM router stand-in: records every request it receives."""
+
+    def __init__(self) -> None:
+        self.requests: list[httpx.Request] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if json.loads(request.content).get("stream"):
+            chunk = {"choices": [{"index": 0, "delta": {"content": "hi"}}]}
+            usage = {"choices": [], "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            text = f"data: {json.dumps(chunk)}\n\ndata: {json.dumps(usage)}\n\ndata: [DONE]\n\n"
+            return httpx.Response(
+                200, content=text.encode(), headers={"content-type": "text/event-stream"}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"role": "assistant", "content": "hi"}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            },
+        )
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_no_inbound_header_or_value_reaches_the_model_adapters_upstream_request(
+    stream: bool,
+) -> None:
+    """What the LiteLLM adapter actually sends upstream: its own key, never the caller's."""
+    from chassis.adapters.litellm import LiteLLMModel
+
+    upstream = _Upstream()
+    adapter = LiteLLMModel(
+        "http://router/v1", "chassis-own-key", transport=httpx.MockTransport(upstream)
+    )
+    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(adapter))
+    leaked = {
+        "authorization": "Bearer caller-secret-1",
+        "x-api-key": "caller-secret-2",
+        "anthropic-version": "caller-secret-3",
+        "anthropic-beta": "caller-secret-4",
+        "x-claude-code-session-id": "caller-secret-5",
+        "traceparent": TRACEPARENT,
+    }
+    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+        res = await client.post(
+            "/v1/messages?beta=true", json={**BODY, "stream": stream}, headers=leaked
+        )
+    assert res.status_code == 200, res.text
+    assert len(upstream.requests) == 1
+    sent = upstream.requests[0]
+    names = {k.lower() for k in sent.headers}
+    assert not names & {"x-api-key", "anthropic-version", "anthropic-beta", "traceparent"}
+    assert "x-claude-code-session-id" not in names
+    assert sent.headers["authorization"] == "Bearer chassis-own-key"
+    everything = repr(sent.headers.raw) + sent.content.decode() + str(sent.url)
+    assert "caller-secret" not in everything and "beta=true" not in everything
+
+
+class _Bug:
+    """A chassis bug in the hold phase: `stream` raises a non-`ModelError`."""
+
+    name = "bug"
+
+    def __init__(self, at_call: bool) -> None:
+        self.at_call = at_call
+
+    async def complete(self, messages: Sequence[ModelMessage], **_: Any) -> ModelResult:
+        raise RuntimeError("bug")
+
+    def stream(self, messages: Sequence[ModelMessage], **_: Any) -> AsyncIterator[ModelChunk]:
+        if self.at_call:
+            raise RuntimeError("bug")  # before the upstream call exists
+
+        async def gen() -> AsyncIterator[ModelChunk]:
+            raise RuntimeError("bug")
+            yield ModelChunk()
+
+        return gen()
+
+
+@pytest.mark.parametrize("at_call", [True, False])
+async def test_a_chassis_bug_in_the_hold_phase_charges_nothing(at_call: bool) -> None:
+    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(_Bug(at_call)))
+    request, ctx = _run(max_tokens=1000)
+    transport = httpx.ASGITransport(app=create_proxy_app(app), raise_app_exceptions=False)
+    async with (
+        httpx.AsyncClient(transport=transport, base_url="http://chassis") as client,
+        app.router.lifespan_context(app),
+        app.state.runs.register(request, ctx) as record,
+    ):
+        res = await client.post(
+            "/v1/messages",
+            json={**BODY, "max_tokens": 30, "stream": True},
+            headers={"traceparent": TRACEPARENT},
+        )
+    assert res.status_code == 500
+    assert (record.spent_tokens, record.reserved_tokens) == (0, 0)

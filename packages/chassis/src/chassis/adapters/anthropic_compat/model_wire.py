@@ -36,6 +36,7 @@ __all__ = [
     "BILLING_PREFIX",
     "BODY_CAP_BYTES",
     "DENIED_TEXT",
+    "MODEL_MAX_CHARS",
     "TOO_LARGE",
     "ParsedMessages",
     "RefusedField",
@@ -49,6 +50,7 @@ __all__ = [
     "refusal_error",
 ]
 
+MODEL_MAX_CHARS = 256  # suggested: a route name, which reaches labels, logs, and spans
 BILLING_PREFIX = "x-anthropic-billing-header:"
 DENIED_TEXT = "this model route is not allowed for this service"
 
@@ -399,6 +401,8 @@ def _parse(raw: Any) -> ParsedMessages:
     model = raw.get("model")
     if not isinstance(model, str) or not model:
         raise RefusedField("invalid_body", "model", "a non-empty string is required")
+    if len(model) > MODEL_MAX_CHARS:
+        raise RefusedField("invalid_body", "model", f"at most {MODEL_MAX_CHARS} characters")
     max_tokens = raw.get("max_tokens")
     if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens < 1:
         raise RefusedField("invalid_body", "max_tokens", "a positive integer is required")

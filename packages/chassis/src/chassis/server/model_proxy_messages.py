@@ -21,7 +21,9 @@ model (400, 401, 403, 429, 503) are plain JSON, also when `stream` is true.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
+import time
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -47,7 +49,7 @@ from chassis.adapters.anthropic_compat.model_wire import (
     parse_messages_request,
     refusal_error,
 )
-from chassis.ports.model import ModelChunk, ModelError
+from chassis.ports.model import ModelChunk, ModelError, Usage
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server.model_proxy import (
     SPAN,
@@ -62,7 +64,13 @@ from chassis.server.model_proxy import (
 
 FIRST_CHUNK_WAIT_S = 5.0  # suggested
 PING_INTERVAL_S = 15.0  # suggested
+# suggested: the wall clock of a stream with no run to bound it. A correlated stream is bounded
+# by what is left of its run's `budget.timeout_ms`.
+UNCORRELATED_STREAM_DEADLINE_S = 300.0
 IGNORED = "chassis.model_proxy.ignored"  # suggested
+STREAM_TIMEOUT = WireError(
+    504, "timeout_error", "model_timeout", "the model route did not answer in time", True
+)
 NOT_READY = WireError(503, "overloaded_error", "not_ready", "the chassis is not ready", True)
 
 
@@ -112,12 +120,13 @@ class _MessagesStream(StreamingResponse):
         self._parsed = parsed
         self._msg_id = msg_id
         self._request_id = request_id
+        self._deadline = 0.0
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         hold = self._admission.hold
         try:
             with self._admission.bundle.telemetry.span(SPAN, **self._admission.attributes):
-                hold.started = True  # the model is called from here
+                self._deadline = time.monotonic() + _deadline_s(hold)
                 hold.charge_abandoned = True
                 chunks = self._admission.bundle.model.stream(
                     self._parsed.messages,
@@ -126,6 +135,9 @@ class _MessagesStream(StreamingResponse):
                     temperature=self._parsed.temperature,
                     max_tokens=hold.max_tokens,
                 )
+                # The upstream call starts with the first read. A chassis bug before this line
+                # (building the stream) charges nothing.
+                hold.started = True
                 first = asyncio.ensure_future(_next(chunks))
                 try:
                     await asyncio.wait({first}, timeout=FIRST_CHUNK_WAIT_S)
@@ -140,6 +152,12 @@ class _MessagesStream(StreamingResponse):
                 self.body_iterator = self._body(chunks, first)
                 await super().__call__(scope, receive, send)
         finally:
+            # Starlette leaves the body generator unclosed when the client goes: close it, so its
+            # `finally` frees the upstream stream now, then give the reservation back.
+            aclose = getattr(self.body_iterator, "aclose", None)
+            if aclose is not None:
+                with contextlib.suppress(Exception):
+                    await aclose()
             hold.release()
 
     def _early_failure(self, first: asyncio.Future[ModelChunk | None]) -> Response | None:
@@ -149,10 +167,17 @@ class _MessagesStream(StreamingResponse):
         if exc is None:
             return None
         if not isinstance(exc, ModelError):
+            # A chassis or adapter bug, not the model's answer: nothing is charged.
+            self._admission.hold.settle(None)
             raise exc
         err = model_error_to_wire(exc)
         self._note(exc, err)
         return error_response(err, self._request_id)
+
+    def _note_timeout(self) -> None:
+        self._admission.bundle.telemetry.counter(
+            "chassis.model_stream_timeout", route=self._parsed.route
+        )
 
     def _note(self, exc: ModelError, err: WireError) -> None:
         _note(self._admission.bundle.telemetry, self._parsed.route, exc, err)
@@ -165,13 +190,21 @@ class _MessagesStream(StreamingResponse):
         pending = first
         failed = False
         ended = False
+        timed_out = False
         try:
             yield enc.start()
             yield enc.ping()
             while True:
-                done, _ = await asyncio.wait({pending}, timeout=PING_INTERVAL_S)
+                left = self._deadline - time.monotonic()
+                if left <= 0:
+                    timed_out = True
+                    self._note_timeout()
+                    yield enc.error(STREAM_TIMEOUT)
+                    break
+                done, _ = await asyncio.wait({pending}, timeout=min(PING_INTERVAL_S, left))
                 if not done:
-                    yield enc.ping()
+                    if self._deadline - time.monotonic() > 0:
+                        yield enc.ping()
                     continue
                 try:
                     chunk = pending.result()
@@ -188,16 +221,55 @@ class _MessagesStream(StreamingResponse):
                 for frame in enc.chunk(chunk):
                     yield frame
                 pending = asyncio.ensure_future(_next(chunks))
-            if not failed:
+            if not (failed or timed_out):
                 for frame in enc.finish():
                     yield frame
             ended = True
         finally:
-            if not pending.done():
-                pending.cancel()
-            if ended or failed:
+            await _close(pending, chunks)
+            if timed_out:
+                # The upstream may have produced tokens we never saw: charge the reservation.
+                hold.settle(hold.seen[-1] if hold.seen else Usage(output_tokens=hold.tokens))
+            elif ended or failed:
                 hold.settle(hold.seen[-1] if hold.seen else None)
             # Otherwise the client left: `release` in `__call__` charges the abandoned stream.
+
+
+def _deadline_s(hold: _Hold) -> float:
+    """The stream's wall clock: what is left of the run's `timeout_ms`, else the fixed default."""
+    record = hold.record
+    if record is None:
+        return UNCORRELATED_STREAM_DEADLINE_S
+    return max(0.0, record.started_at + record.budget.timeout_ms / 1000 - time.monotonic())
+
+
+_CLEANUPS: set[asyncio.Future[None]] = set()
+
+
+async def _stop(
+    pending: asyncio.Future[ModelChunk | None], chunks: AsyncIterator[ModelChunk]
+) -> None:
+    if not pending.done():
+        pending.cancel()
+    await asyncio.gather(pending, return_exceptions=True)
+    aclose = getattr(chunks, "aclose", None)
+    if aclose is not None:
+        with contextlib.suppress(Exception):
+            await aclose()
+
+
+async def _close(
+    pending: asyncio.Future[ModelChunk | None], chunks: AsyncIterator[ModelChunk]
+) -> None:
+    """Stop the pending read, then close the upstream stream so its connection is freed.
+
+    The work runs as its own task. A client that leaves cancels the caller, and under that
+    cancellation every await in the caller raises again, so the close would never finish.
+    """
+    task = asyncio.ensure_future(_stop(pending, chunks))
+    _CLEANUPS.add(task)
+    task.add_done_callback(_CLEANUPS.discard)
+    await asyncio.shield(task)
 
 
 async def _empty() -> AsyncIterator[str]:
@@ -259,7 +331,7 @@ def add_messages_route(router: APIRouter, app: FastAPI) -> None:
             return error_response(TOO_LARGE, request_id)
         try:
             raw = json.loads(body)
-        except ValueError:
+        except (ValueError, RecursionError):  # deep nesting raises RecursionError
             invalid = RefusedField("invalid_body", "body", "the body is not valid JSON")
             return error_response(refusal_error(invalid), request_id)
         try:

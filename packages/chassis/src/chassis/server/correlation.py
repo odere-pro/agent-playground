@@ -28,6 +28,7 @@ the `traceparent` they send to the workload, so the workload hands it back uncha
 from __future__ import annotations
 
 import hashlib
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -60,6 +61,8 @@ class RunRecord:
     spent_output_tokens: int = 0
     model_calls: int = 0
     reserved_tokens: int = 0
+    started_at: float = field(default_factory=time.monotonic)
+    """When the run was opened (monotonic clock); with `budget.timeout_ms` it bounds a stream."""
     keyed_run_key: str | None = None
     """PoC-5: the run key the request's idempotency key gives, set by `RunRegistry.open`:
     `keyed_run_key(request)`. The tool endpoint derives write keys from it while idempotency is

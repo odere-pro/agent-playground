@@ -55,7 +55,7 @@ The request is read as raw JSON and mapped by hand onto `ModelMessage`, `ToolSpe
 
 - **Path.** `POST /v1/messages`. The query string is ignored: `?beta=true` and any other query are accepted and not read. No other method. A `GET` is FastAPI's 405.
 - **Not served.** `/v1/messages/count_tokens`, `/v1/models`, and every other path stay 404 on both listeners. On the remote listener the 404 comes after both checks, as in v4. The 404 of `/v1/messages/count_tokens` is in the Anthropic error shape (`not_found_error`, with `request-id`). Its 401 on the remote listener is v4's body, because the middlewares test the exact path `/v1/messages` (A.8). `/v1/models` keeps FastAPI's 404 body.
-- **Body.** A JSON object. Invalid JSON or a body that is not an object is 400 `invalid_body`. The route reads the body itself, so FastAPI never answers 422.
+- **Body.** A JSON object. Invalid JSON (deep nesting included), or a body that is not an object, is 400 `invalid_body`. The route reads the body itself, so FastAPI never answers 422.
 - **Body cap.** 4 MiB (`BODY_CAP_BYTES`, suggested). The route counts the bytes while it reads, and a declared `content-length` over the cap is refused at once, both before any parsing. A larger body is 413 `request_too_large` (code `body_too_large`, `x-should-retry: false`).
 
 | Header | Rule |
@@ -74,7 +74,7 @@ Legend. **Map**: carried onto the model port. **Drop**: accepted, not carried, c
 
 | Field | What the CLI sends | Decision |
 | ----- | ------------------ | -------- |
-| `model` | `big-default` (`ANTHROPIC_MODEL` verbatim) | **Map.** It is the route, passed as `route` unchanged, as on the chat route. Missing or not a non-empty string: refuse `invalid_body`. The engine must set `ANTHROPIC_MODEL` and `ANTHROPIC_SMALL_FAST_MODEL` to a route the key lists, or the CLI sends its own `claude-*` names and LiteLLM refuses them (A.9) |
+| `model` | `big-default` (`ANTHROPIC_MODEL` verbatim) | **Map.** It is the route, passed as `route` unchanged, as on the chat route. Missing or not a non-empty string, or longer than 256 characters (suggested): refuse `invalid_body`, before admission, so a huge value reaches no counter label, log, or span. The engine must set `ANTHROPIC_MODEL` and `ANTHROPIC_SMALL_FAST_MODEL` to a route the key lists, or the CLI sends its own `claude-*` names and LiteLLM refuses them (A.9) |
 | `messages` | A list of turns, text and block content, and `role: "system"` entries | **Map.** Rules in A.5.1. Missing, empty, or not a list: refuse `invalid_body`. Over `spec.limits.messages_max`: not enforced here (the proxy has no such limit today) |
 | `system` | A list of 2 text blocks: a billing marker and the agent line | **Map.** A string or a list of text blocks, joined with `"\n"` into one `ModelMessage(role="system")` at position 0, when not empty (an empty string or empty blocks give no message). A block whose text starts with `x-anthropic-billing-header:` is **dropped** first (param `system.billing_header`). Why: it is a note for Anthropic's billing, it changes per run, and it breaks a provider's prefix cache. A non-text block in `system`: refuse |
 | `tools` | 20 to 24 entries, each `{name, description, input_schema}` | **Map.** Rules in A.5.2 |
@@ -142,7 +142,7 @@ The chat route's steps move into one function in `server/model_proxy.py`, used b
 6. A run with nothing left: count `chassis.model_calls_refused`, 429.
 7. Otherwise reserve on the run (`record.reserve`), so concurrent calls of one run never get the same tokens. The forwarded `max_tokens` is the reservation.
 8. Call `ModelPort.complete` or `.stream` inside the span `chassis.model.call` (gains the attribute `format`: `openai` or `anthropic`; suggested).
-9. Settle the reservation on the usage seen, as `_Hold` does. A stream the client leaves is charged on this route when the model call started: its last known usage, or its whole reservation when usage is unknown (suggested), for a correlated and an uncorrelated stream alike. A stream whose model call never started is charged nothing. The chat route keeps its rule, where a correlated stream the client leaves is not charged (Known gap 004 G-2); that is not changed here.
+9. Settle the reservation on the usage seen, as `_Hold` does. A stream the client leaves is charged on this route when the model call started: its last known usage, or its whole reservation when usage is unknown (suggested), for a correlated and an uncorrelated stream alike. A stream whose model call never started is charged nothing, and so is a call where a chassis bug (not a `ModelError`) stops it before the first chunk. The route does not read `receive` during the hold, so a client that leaves inside the hold window is seen only at the first send, after the window; no test can observe a leave inside it. The chat route keeps its rule, where a correlated stream the client leaves is not charged (Known gap 004 G-2); that is not changed here.
 
 What follows from sharing:
 
@@ -208,6 +208,7 @@ Rules:
 - **Hold rule.** Before sending anything, the route waits up to `FIRST_CHUNK_WAIT_S` (5 s, suggested) for the first chunk or for the model's error. If the model fails in that window, the answer is the HTTP error of A.8, with its real status, because the CLI retries on status. If the first chunk comes, or the window passes with nothing, the route sends 200 and `message_start`. An error after that is one `event: error` frame, then the stream ends with no `message_stop`:
   `event: error` / `data: {"type":"error","error":{"type":"api_error","message":"<code>: <text>"}}`.
   The model call starts when the hold starts, so the hold sets `started` on the reservation at once. A client that leaves during the hold gives the same charge as one that leaves during the stream.
+- **Deadline.** The stream has a wall clock: what is left of the run's `budget.timeout_ms` when the call is correlated, else `UNCORRELATED_STREAM_DEADLINE_S` (300 s, suggested). At expiry the route sends one `event: error` frame (`timeout_error`, `model_timeout`, fixed text), closes the upstream stream, and ends with no `message_stop`. The reservation is charged whole, since the upstream may have produced tokens unseen. A stream the client leaves also closes the upstream stream at once.
 - **Refusals before the model** (400, 401, 403, 429, 503) are plain JSON responses with their status, never an SSE body, also when `stream` is true. This differs from the chat route, which sends a 429 as an SSE frame.
 
 #### A.7.2 Complete (`stream: false`)
