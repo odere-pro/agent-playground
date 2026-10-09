@@ -230,6 +230,22 @@ def test_a_json_rpc_error_wins_over_a_status_from_another_request(
     assert _failure(ExceptionGroup("session", [error]), [status], "t").code == expected
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Error: Tool 'unlisted_probe' is not allowed for your key/team on server 'fake_tools'.",
+        "User not allowed to call this tool.",
+    ],
+)
+def test_a_json_rpc_error_phrased_as_a_denial_is_tool_denied(message: str) -> None:
+    """Review L1: a denial sent as a JSON-RPC error is final, not a retryable outage."""
+    error = MCPError(code=-32603, message=message)
+    failure = _failure(ExceptionGroup("session", [error]), [], "t")
+    assert failure.code == "tool_denied"
+    assert failure.retryable is False
+    assert message not in str(failure)
+
+
 async def test_a_failing_refresh_callback_is_contained(gate: Gateway) -> None:
     """Review L2: the callback runs inside `refresh()`'s failure path; it must not escape."""
     async for port in _open(gate):
@@ -347,7 +363,8 @@ async def test_the_gateway_s_refusal_texts_map_to_their_codes(text: str, code: s
             await port.call("refused", {})
     assert info.value.code == code
     assert info.value.retryable is False
-    assert "fake_tools" not in str(info.value)  # fixed text, never the upstream body
+    assert text not in str(info.value)  # fixed text, never the upstream body
+    assert "fake_tools" not in str(info.value)
 
 
 async def test_the_unlisted_probe_is_refused_and_its_marker_never_seen(
