@@ -30,6 +30,8 @@ PASS echo-python         inprocess
 SKIP kagent-adk          remote      runs only on kind (poc06-kind.yml)
 ```
 
+With `--model-url URL --model-key-env NAME [--route big-default|local-small]` (hosted mode) there is no fake model server: the chassis processes call the LiteLLM at `URL` with the key in the variable `NAME` (a LiteLLM key, never a provider key), on that route. This is how `make poc06-mac` runs the hosted and SLM numbers (`deploy/compose/README.md`, "PoC-6: the one Mac command"). Only trusted engines run this way: an untrusted `--engine` is refused with exit 2, and the default is every trusted engine in the `inprocess` and `sidecar` lanes. The Prompt bytes and Request body keys columns are `-`, because no fake model records the requests.
+
 `run` writes `results.json` and `results.md` to `--out`. It exits 1 only when a stack does not start; a low pass rate is a result.
 
 ## The matrix and the trust rule
