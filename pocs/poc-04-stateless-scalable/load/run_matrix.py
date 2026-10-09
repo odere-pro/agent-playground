@@ -13,7 +13,8 @@ One scenario at a time, because the Docker VM is shared and small:
    while `docker stats` samples every container of Compose project `poc04` every 2 s.
 4. `scale.sh down`, always, even when a step failed.
 
-Scenarios: `main` is every engine (echo-python, echo-pydanticai, echo-langgraph, echo-typescript)
+Scenarios: `main` is every engine (echo-python, echo-pydanticai, echo-langgraph, echo-openai-agents,
+echo-typescript)
 at every pair count (1, 2, 4) with `--users`. `hop` is echo-python at 1 pair with `--hop-users`,
 in the sidecar lane and in the inprocess lane (`packages/chassis/configs/scale-inprocess.yaml`);
 the hop is sidecar minus inprocess, at p50 and p95. `idem` is echo-python at 1 pair with no
@@ -55,7 +56,13 @@ LOCUST = "locust==2.46.6"  # the newest 2.x on 2026-10-01
 PROJECT = "poc04"
 URL = "http://127.0.0.1:18080"
 
-ENGINES = ("echo-python", "echo-pydanticai", "echo-langgraph", "echo-typescript")
+ENGINES = (
+    "echo-python",
+    "echo-pydanticai",
+    "echo-langgraph",
+    "echo-openai-agents",
+    "echo-typescript",
+)
 PAIRS = (1, 2, 4)
 SCENARIO_KINDS = ("main", "hop", "idem", "rate")
 # suggested values (plan, section 9).
