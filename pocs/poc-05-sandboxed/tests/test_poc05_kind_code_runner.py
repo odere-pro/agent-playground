@@ -391,6 +391,7 @@ async def test_python_child_burst_leaves_the_dispatcher_up(
     another caller's call run at the same time works, the next call by that caller (5 children)
     works, and the dispatcher pod is the same pod with the same restart count."""
     pod_uid, restarts = dispatcher_state()
+    warm_pool_ready()
 
     async def concurrent() -> dict[str, Any]:
         await asyncio.sleep(1)  # the burst has its sandbox and is forking
@@ -403,6 +404,7 @@ async def test_python_child_burst_leaves_the_dispatcher_up(
         assert {"exit_code", "timed_out"} <= set(burst.content), burst
     assert during["host"].startswith(f"{APP}-"), during
 
+    warm_pool_ready()  # the burst's sandbox is torn down before the next call claims one
     after = await run_python(other_caller, PY_FORKS.format(want=UNDER_LIMIT))
     assert after == {"started": UNDER_LIMIT, "refused": None}, after
     assert dispatcher_state() == (pod_uid, restarts)

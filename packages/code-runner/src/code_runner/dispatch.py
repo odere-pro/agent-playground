@@ -53,6 +53,8 @@ SANDBOX_CONNECT_S = 1.0  # suggested: one connect attempt; the retry window is i
 
 UNAVAILABLE = "sandbox_unavailable"  # nothing ran; safe to retry with the same key
 LOST = "sandbox_lost"  # the sandbox died, did not answer, or answered too much; key freed
+# A connect that failed before the request was sent: nothing ran, so a retry is safe.
+CONNECT_FAILED = (httpx.ConnectError, httpx.ConnectTimeout)
 # Tool error codes the sandbox's own server may answer with; only the code is passed on.
 SANDBOX_CODES = frozenset({"idempotency_key_required", "bad_arguments", "run_failed"})
 
@@ -386,13 +388,14 @@ class Dispatcher:
         return _answer(content_type, data)
 
     async def _post_with_retry(self, url: str, body: dict[str, Any]) -> tuple[str, bytes]:
-        """Retries only a refused connect: Ready may come before the server listens."""
+        """Retries only a failed connect: Ready may come before the server listens."""
         deadline = time.monotonic() + self.config.connect_retry_s
         while True:
             try:
                 return await self._post(url, body)
-            except httpx.ConnectError:
+            except CONNECT_FAILED as exc:
                 if time.monotonic() >= deadline:
+                    log.warning("dispatch sandbox_lost error=%s", type(exc).__name__)
                     raise _lost("the sandbox ended before it answered") from None
             await asyncio.sleep(self.config.poll_s)
 
@@ -409,9 +412,11 @@ class Dispatcher:
                     if len(data) > cap:
                         raise _lost("the sandbox answer was over the size cap")
                 return response.headers.get("content-type", ""), bytes(data)
-        except httpx.ConnectError:
+        except CONNECT_FAILED:
             raise
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            # Past the connect: the code may have run, so this is never retried.
+            log.warning("dispatch sandbox_lost error=%s", type(exc).__name__)
             raise _lost("the sandbox ended before it answered") from None
 
 

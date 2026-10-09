@@ -345,6 +345,55 @@ async def test_code_runner_dispatch_retries_the_connect_until_the_server_listens
     assert len(fake_sandbox.requests) == 3
 
 
+async def test_code_runner_dispatch_retries_a_connect_timeout_like_a_refused_connect(
+    dispatcher: Dispatcher, fake_sandbox: FakeSandbox
+) -> None:
+    timed_out = 1
+
+    async def slow_to_listen(request: httpx.Request) -> httpx.Response:
+        nonlocal timed_out
+        if timed_out:
+            timed_out -= 1
+            raise httpx.ConnectTimeout("connect timed out", request=request)
+        return _rpc({"structuredContent": _result("up\n"), "isError": False})
+
+    fake_sandbox.answer = slow_to_listen
+    result = await _call(dispatcher, "print(1)", "k-ct")
+    assert result.structured_content["stdout"] == "up\n"
+    assert len(fake_sandbox.requests) == 2
+
+
+async def test_code_runner_dispatch_connect_timeout_for_the_whole_window_is_lost(
+    dispatcher: Dispatcher, fake_api: FakeApi, fake_sandbox: FakeSandbox, caplog: Any
+) -> None:
+    caplog.set_level("DEBUG")
+
+    async def never_listens(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("connect timed out", request=request)
+
+    fake_sandbox.answer = never_listens
+    with pytest.raises(ToolError, match=r"^sandbox_lost"):
+        await _call(dispatcher, "print(1)", "k-ct-all")
+    assert fake_api.deleted == ["call-0"]
+    assert "error=ConnectTimeout" in caplog.text
+    assert "10.244.0.7" not in caplog.text
+
+
+async def test_code_runner_dispatch_read_timeout_after_the_send_is_not_retried(
+    dispatcher: Dispatcher, fake_sandbox: FakeSandbox, caplog: Any
+) -> None:
+    caplog.set_level("DEBUG")
+
+    async def sent_then_silent(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("read timed out", request=request)
+
+    fake_sandbox.answer = sent_then_silent
+    with pytest.raises(ToolError, match=r"^sandbox_lost"):
+        await _call(dispatcher, "print(1)", "k-rt")
+    assert len(fake_sandbox.requests) == 1
+    assert "error=ReadTimeout" in caplog.text
+
+
 async def test_code_runner_dispatch_api_redirect_is_not_followed(
     dispatcher: Dispatcher, fake_api: FakeApi, fake_sandbox: FakeSandbox
 ) -> None:
