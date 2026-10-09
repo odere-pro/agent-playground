@@ -54,7 +54,7 @@ BODY: dict[str, Any] = {
     "max_tokens": 64,
     "messages": [{"role": "user", "content": "simplify: the quick brown fox"}],
 }
-EVENT = TypeAdapter(RawMessageStreamEvent)
+EVENT: TypeAdapter[Any] = TypeAdapter(RawMessageStreamEvent)
 
 
 class RecordingModel(ScriptedModel):
@@ -71,7 +71,7 @@ class RecordingModel(ScriptedModel):
         self.max_tokens.append(max_tokens)
         self.temperatures.append(temp)
 
-    async def complete(  # type: ignore[override]
+    async def complete(
         self,
         messages: Sequence[ModelMessage],
         *,
@@ -85,7 +85,7 @@ class RecordingModel(ScriptedModel):
             messages, route=route, tools=tools, temperature=temperature, max_tokens=max_tokens
         )
 
-    async def stream(  # type: ignore[override]
+    async def stream(
         self,
         messages: Sequence[ModelMessage],
         *,
