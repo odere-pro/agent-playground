@@ -5,8 +5,6 @@ description = "PoC-6 skeleton: the simplifier as a Claude Agent SDK agent, handl
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "claude-agent-sdk==0.2.165",
-  "mcp",
-  "httpx2",
   "workload-a2a",
 ]
 

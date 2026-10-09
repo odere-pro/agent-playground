@@ -666,8 +666,6 @@ version = "0.1.0"
 source = { editable = "packages/workloads/echo-claude-agent" }
 dependencies = [
     { name = "claude-agent-sdk" },
-    { name = "httpx2" },
-    { name = "mcp" },
     { name = "workload-a2a" },
 ]
 
@@ -680,8 +678,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "claude-agent-sdk", specifier = "==0.2.165" },
-    { name = "httpx2" },
-    { name = "mcp" },
     { name = "workload-a2a", editable = "packages/workload-a2a" },
 ]
 
