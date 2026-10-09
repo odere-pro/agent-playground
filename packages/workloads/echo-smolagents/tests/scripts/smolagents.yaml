@@ -1,0 +1,105 @@
+# Fake-model script for the smolagents CodeAgent (echo-smolagents). A CodeAgent does not use
+# OpenAI tool calls: it wants a reply with Python in a code block, `<code>` ... `</code>` in
+# smolagents 1.26, and it ends a run by calling `final_answer(...)` in that code.
+#
+# The tool results come back as the next USER message ("Execution logs: ..."), not as a `tool`
+# message, so no rule here uses `after_tool`. The first matching rule wins, so the order matters:
+#   1. Observation rules first (final answer, then the acronym call, then the import refusal),
+#      because the task message ("lookup: ...") is earlier in the history, not the last user one.
+#   2. Then the task rules, matched on the task text.
+# The observation rule for "retrieval-augmented generation" comes before the one for "small
+# language model", so an observation that holds both ends the run.
+model: fake-model
+rules:
+  # --- observations ---------------------------------------------------------------------------
+  - match: "retrieval-augmented generation"
+    reply: |
+      Thought: I have both definitions.
+      <code>
+      final_answer("SLM means a small language model. RAG stands for retrieval-augmented generation.")
+      </code>
+  - match: "small language model"
+    reply: |
+      Thought: Now the acronym.
+      <code>
+      print(acronym_expand(acronym="RAG"))
+      </code>
+  - match: "is not allowed"
+    reply: |
+      Thought: The import was refused.
+      <code>
+      final_answer("blocked: the import was refused")
+      </code>
+  - match: "first block"
+    reply: |
+      <code>
+      final_answer("right")
+      </code>
+  - match: "looping"
+    reply: |
+      <code>
+      print("looping")
+      </code>
+  # --- tasks ----------------------------------------------------------------------------------
+  - match: "simplify: Hello."
+    reply: |
+      Thought: Nothing to simplify.
+      <code>
+      final_answer("Hello.")
+      </code>
+  - match: "simplify: The SLM"
+    reply: |
+      Thought: Plain words, every fact.
+      <code>
+      final_answer("Acme put out the SLM in 2026. It cut costs by 30 percent.")
+      </code>
+  - match: "lookup:"
+    reply: |
+      Thought: Look the term up first.
+      <code>
+      print(glossary_lookup(term="SLM"))
+      </code>
+  - match: "hack:"
+    reply: |
+      Thought: Read the working directory.
+      <code>
+      import os
+      final_answer(os.getcwd())
+      </code>
+  - match: "hack-subprocess:"
+    reply: |
+      <code>
+      import subprocess
+      final_answer(subprocess.check_output(["id"]))
+      </code>
+  - match: "toolfail:"
+    reply: |
+      <code>
+      print(explode())
+      </code>
+  - match: "loop:"
+    reply: |
+      <code>
+      print("looping")
+      </code>
+  - match: "overrun:"
+    # What a model does when the proxy drops `stop`: it runs on past `</code>` and invents the
+    # observation and a second block. Cut at the stop sequence, only the first block runs.
+    reply: |
+      Thought: Print first.
+      <code>
+      print("first block")
+      </code>
+      Observation: made up
+      Thought: Done.
+      <code>
+      final_answer("WRONG")
+      </code>
+  - match: "fail503:"
+    error: { status: 503, message: "upstream down" }
+  - match: "fail401:"
+    error: { status: 401, message: "route refused" }
+default_reply: |
+  <code>
+  final_answer("ok")
+  </code>
