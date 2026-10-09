@@ -1,0 +1,120 @@
+# echo-smolagents: PoC-6b skeleton of the remote lane's the smolagents code agent, modeled on
+# deploy/kind/poc05/remote/remote-echo.yaml. An agent-sandbox Sandbox on gVisor: no service-account
+# token, a read-only root, an emptyDir /tmp, and the bearer required on every path. It sits in its
+# own folder; nothing here is applied by the PoC-5 scripts. B2 and B3 fill in the real manifest
+# (a writable $HOME on an emptyDir, the namespace, the NetworkPolicy, the Secret `echo-smolagents-token`,
+# and the chassis that fronts it); the proxy address below is the PoC-5 remote proxy, a
+# placeholder until then.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: echo-smolagents
+  labels:
+    app.kubernetes.io/name: echo-smolagents
+automountServiceAccountToken: false
+---
+apiVersion: agents.x-k8s.io/v1beta1
+kind: Sandbox
+metadata:
+  name: echo-smolagents
+  labels:
+    app.kubernetes.io/name: echo-smolagents
+spec:
+  service: false
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: echo-smolagents
+        app.kubernetes.io/part-of: poc06
+        agents.platform/lane: remote
+        agents.platform/trust: untrusted
+    spec:
+      serviceAccountName: echo-smolagents
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      runtimeClassName: gvisor
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: workload
+          image: kind.local/agent-platform/echo-smolagents:poc06
+          imagePullPolicy: Never
+          args: ["--require-token-env", "CHASSIS_API_TOKEN", "--drain-timeout-s", "30"]
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: HOST
+              value: $(POD_IP)
+            - name: PORT
+              value: "9000"
+            - name: CHASSIS_MODEL_URL
+              value: http://10.96.85.91:8091/v1
+            - name: CHASSIS_TOOL_URL
+              value: http://10.96.85.91:8091/mcp
+            - name: CHASSIS_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: echo-smolagents-token
+                  key: token
+          ports:
+            - name: a2a
+              containerPort: 9000
+          startupProbe:
+            tcpSocket:
+              port: 9000
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: 9000
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 9000
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10002
+            runAsGroup: 10002
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: workload-tmp
+              mountPath: /tmp
+      volumes:
+        - name: workload-tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: echo-smolagents
+  labels:
+    app.kubernetes.io/name: echo-smolagents
+spec:
+  selector:
+    app.kubernetes.io/name: echo-smolagents
+  ports:
+    - name: a2a
+      port: 9000
+      targetPort: 9000

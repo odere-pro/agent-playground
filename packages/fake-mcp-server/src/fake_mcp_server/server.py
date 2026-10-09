@@ -1,4 +1,4 @@
-"""The fake MCP server (PoC-5, plan section 2.7): three harmless tools, no auth of its own.
+"""The fake MCP server (PoC-5, plan section 2.7): four harmless tools, no auth of its own.
 
 `FakeMcpState` is the whole memory of one server: the notes, the count of real executions, the
 calls received, and the optional allow-list that imitates a gateway's per-key tool list.
@@ -22,7 +22,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-TOOL_NAMES = ("glossary_lookup", "note_write", "unlisted_probe")
+TOOL_NAMES = ("glossary_lookup", "acronym_expand", "note_write", "unlisted_probe")
 PROBE_MARKER = "UNLISTED-PROBE-MARKER-7f3a"
 ANY_CALLER = "*"
 MCP_PATH = "/mcp/"
@@ -39,6 +39,15 @@ GLOSSARY: dict[str, str] = {
     "port": "A typed interface the chassis uses for one outside dependency.",
     "fake": "An in-memory stand-in for a port, used in tests and the fake profile.",
     "traceparent": "The W3C header that carries the trace id from one call to the next.",
+}
+
+ACRONYMS: dict[str, str] = {
+    "RAG": "retrieval-augmented generation",
+    "SLM": "small language model",
+    "LLM": "large language model",
+    "MCP": "Model Context Protocol",
+    "A2A": "Agent-to-Agent",
+    "TTFT": "time to first token",
 }
 
 
@@ -117,6 +126,15 @@ def create_server(state: FakeMcpState) -> FastMCP:
         if definition is None:
             definition = {k.casefold(): v for k, v in GLOSSARY.items()}.get(term.casefold())
         return {"term": term, "definition": definition}
+
+    @mcp.tool(annotations={"readOnlyHint": True})
+    def acronym_expand(acronym: str) -> dict[str, str | None]:
+        """Expand an acronym. Returns its expansion, or null if unknown."""
+        state.calls.append({"tool": "acronym_expand", "arguments": {"acronym": acronym}})
+        expansion = ACRONYMS.get(acronym)
+        if expansion is None:
+            expansion = {k.casefold(): v for k, v in ACRONYMS.items()}.get(acronym.casefold())
+        return {"acronym": acronym, "expansion": expansion}
 
     @mcp.tool(annotations={"readOnlyHint": False})
     def note_write(text: str, ctx: Context, idempotency_key: str | None = None) -> dict[str, Any]:

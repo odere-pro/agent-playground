@@ -1,5 +1,6 @@
 """InMemoryTools: a ToolPort over plain Python callables, and the one shared tool,
-`glossary_lookup`, defined once here. PoC-5 adds write mode, the allow-list, and
+`glossary_lookup`, defined once here, and the second read-only tool `acronym_expand` (PoC-6).
+PoC-5 adds write mode, the allow-list, and
 `write_mode_tools()`: the write tool `note_write` and the never-allowed `unlisted_probe`.
 `default_tools()` stays read-only.
 
@@ -190,9 +191,41 @@ def glossary_lookup(term: str) -> dict[str, str | None]:
     return {"term": term, "definition": definition}
 
 
+ACRONYMS: dict[str, str] = {
+    "RAG": "retrieval-augmented generation",
+    "SLM": "small language model",
+    "LLM": "large language model",
+    "MCP": "Model Context Protocol",
+    "A2A": "Agent-to-Agent",
+    "TTFT": "time to first token",
+}
+"""suggested: the acronyms `acronym_expand` knows. The same data as `packages/fake-mcp-server`."""
+
+ACRONYM_EXPAND = ToolDefinition(
+    name="acronym_expand",
+    description="Expand an acronym. Returns its expansion, or null if unknown.",
+    parameters={
+        "type": "object",
+        "properties": {"acronym": {"type": "string", "description": "The acronym to expand."}},
+        "required": ["acronym"],
+        "additionalProperties": False,
+    },
+    read_only=True,
+)
+
+
+def acronym_expand(acronym: str) -> dict[str, str | None]:
+    """Exact match first, then a case-insensitive match. An unknown acronym is not an error."""
+    expansion = ACRONYMS.get(acronym)
+    if expansion is None:
+        folded = {k.casefold(): v for k, v in ACRONYMS.items()}
+        expansion = folded.get(acronym.casefold())
+    return {"acronym": acronym, "expansion": expansion}
+
+
 def default_tools() -> InMemoryTools:
-    """The tools every workload gets in the fake profile: `glossary_lookup`."""
-    return InMemoryTools([(GLOSSARY_LOOKUP, glossary_lookup)])
+    """The tools every workload gets in the fake profile: `glossary_lookup`, `acronym_expand`."""
+    return InMemoryTools([(GLOSSARY_LOOKUP, glossary_lookup), (ACRONYM_EXPAND, acronym_expand)])
 
 
 NOTE_WRITE = ToolDefinition(

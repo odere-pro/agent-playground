@@ -1,0 +1,111 @@
+# PoC-6 Compose overlay, `sidecar` lane: the bake-off engines that run next to the chassis. A
+# skeleton: it has the OpenAI Agents SDK workload and the TypeScript agent, one profile at a time:
+#   docker compose -f docker-compose.yaml -f docker-compose.poc06.yaml --profile openai-agents up -d --wait
+# Profiles: openai-agents (echo-openai-agents), typescript (echo-typescript). The pattern is the
+# PoC-2 overlay's (docker-compose.sidecar.yaml, which stays as it is): each workload joins the
+# chassis container's network namespace, so from the chassis 127.0.0.1:9000 is the workload and
+# from the workload 127.0.0.1:8090 is the chassis's model proxy (/v1) and MCP endpoint (/mcp).
+# The workload binds 127.0.0.1 only, publishes no port, holds no key, and runs hardened. The
+# three remote-lane engines (echo-claude-agent, echo-smolagents, kagent) are not here: they run
+# on kind (deploy/kind/poc06/). Rules: SECURITY.md, sections 1 to 3 and 6.
+#
+# Start order and restart policy: as in docker-compose.sidecar.yaml. The chassis starts first;
+# `/ready` is 503 `starting` until the sidecar's agent card answers. No restart policy, on
+# purpose: a restarted container gets a new network namespace and the workload stays on the old
+# one.
+
+name: poc06
+
+x-workload-env: &workload-env
+  # The only four variables a workload gets. No key, no `env_file` (SECURITY.md, 6).
+  CHASSIS_MODEL_URL: http://127.0.0.1:8090/v1
+  CHASSIS_TOOL_URL: http://127.0.0.1:8090/mcp
+  HOST: 127.0.0.1
+  PORT: "9000"
+
+x-workload-hardening: &workload-hardening
+  # No Linux capability, no privilege gain through setuid, a read-only root file system with a
+  # small tmpfs for /tmp, and the non-root user every workload image creates (uid 10002).
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  tmpfs: [/tmp]
+  user: "10002:10002"
+
+services:
+  chassis:
+    volumes:
+      # Replaces the base's local.yaml at the same path: `connector: sidecar`,
+      # `url: http://127.0.0.1:9000`, model `litellm`, tools `fake` (served over /mcp).
+      - ../../packages/chassis/configs/sidecar.yaml:/etc/chassis/config.yaml:ro
+    entrypoint:
+      - sh
+      - -c
+      # `$$` is a literal `$` for the shell: Compose interpolates a single `$`.
+      - |
+        set -eu
+        addr=$$(python -c 'import socket; print(socket.gethostbyname(socket.gethostname()))')
+        exec chassis serve --host "$$addr" "$$@"
+      - "--"
+    command: ["--config", "/etc/chassis/config.yaml", "--port", "8080"]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket,urllib.request,sys; a=socket.gethostbyname(socket.gethostname()); sys.exit(0 if urllib.request.urlopen(f'http://{a}:8080/ready', timeout=2).status == 200 else 1)"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 150s
+
+  workload-openai-agents:
+    profiles: [openai-agents]
+    build:
+      context: ../..
+      dockerfile: packages/workloads/echo-openai-agents/Dockerfile
+    image: agent-platform/echo-openai-agents:poc06
+    network_mode: "service:chassis"
+    <<: *workload-hardening
+    depends_on:
+      chassis:
+        condition: service_started
+    environment: *workload-env
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9000/.well-known/agent-card.json', timeout=2).status == 200 else 1)"
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+
+  workload-typescript:
+    # Self-contained build context (its own .dockerignore). A2 grows it into a full agent.
+    profiles: [typescript]
+    build:
+      context: ../../packages/workloads/echo-typescript
+    image: agent-platform/echo-typescript:poc06
+    network_mode: "service:chassis"
+    <<: *workload-hardening
+    depends_on:
+      chassis:
+        condition: service_started
+    environment: *workload-env
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:9000/.well-known/agent-card.json').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+
+# Its own project and network names, so this stack never collides with a running PoC-2 stack.
+networks:
+  default:
+    name: poc06

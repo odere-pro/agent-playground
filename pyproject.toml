@@ -41,6 +41,10 @@ members = [
   "packages/workload-a2a",
   "packages/workloads/echo-pydanticai",
   "packages/workloads/echo-langgraph",
+  "packages/workloads/echo-openai-agents",
+  "packages/workloads/echo-claude-agent",
+  "packages/workloads/echo-smolagents",
+  "packages/bakeoff",
   "packages/fake-mcp-server",
   "packages/code-runner",
 ]
@@ -53,6 +57,10 @@ echo-python = { workspace = true }
 workload-a2a = { workspace = true }
 echo-pydanticai = { workspace = true }
 echo-langgraph = { workspace = true }
+echo-openai-agents = { workspace = true }
+echo-claude-agent = { workspace = true }
+echo-smolagents = { workspace = true }
+bakeoff = { workspace = true }
 fake-mcp-server = { workspace = true }
 code-runner = { workspace = true }
 
@@ -87,6 +95,9 @@ exclude = [
   "docs/planning",
   "pocs/poc-04-stateless-scalable/tests/conftest\\.py$",
   "pocs/poc-05-sandboxed/tests/conftest\\.py$",
+  "pocs/poc-06a-bake-off-sidecar-lane/tests/conftest\\.py$",
+  "pocs/poc-06b-bake-off-remote-lane/tests/conftest\\.py$",
+  "pocs/poc-06c-pretrained-slm/tests/conftest\\.py$",
   "pocs/[^/]+/notes/",
 ]
 plugins = ["pydantic.mypy"]
@@ -102,6 +113,10 @@ root_packages = [
   "workload_a2a",
   "echo_pydanticai",
   "echo_langgraph",
+  "echo_openai_agents",
+  "echo_claude_agent",
+  "echo_smolagents",
+  "bakeoff",
   "fake_mcp_server",
   "code_runner",
 ]
@@ -110,7 +125,15 @@ include_external_packages = true
 [[tool.importlinter.contracts]]
 name = "a workload never imports the chassis (ADR-002)"
 type = "forbidden"
-source_modules = ["echo_python", "workload_a2a", "echo_pydanticai", "echo_langgraph"]
+source_modules = [
+  "echo_python",
+  "workload_a2a",
+  "echo_pydanticai",
+  "echo_langgraph",
+  "echo_openai_agents",
+  "echo_claude_agent",
+  "echo_smolagents",
+]
 forbidden_modules = ["chassis", "chassis_contracts"]
 
 [[tool.importlinter.contracts]]
@@ -128,6 +151,10 @@ forbidden_modules = [
   "workload_a2a",
   "echo_pydanticai",
   "echo_langgraph",
+  "echo_openai_agents",
+  "echo_claude_agent",
+  "echo_smolagents",
+  "bakeoff",
   "fake_mcp_server",
   "code_runner",
 ]

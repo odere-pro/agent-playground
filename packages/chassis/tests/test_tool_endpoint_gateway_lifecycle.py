@@ -174,7 +174,7 @@ async def test_a_port_without_a_lifecycle_is_left_alone() -> None:
     )
     async with _serving(ports) as app, _mcp_client(app) as client:
         listed = await client.list_tools()
-    assert [t.name for t in listed] == ["glossary_lookup"]
+    assert [t.name for t in listed] == ["glossary_lookup", "acronym_expand"]
 
 
 async def test_a_tool_shown_after_a_failed_first_refresh_is_listed_without_restart() -> None:

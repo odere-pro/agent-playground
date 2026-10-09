@@ -90,7 +90,14 @@ async def test_listing_is_the_port_definitions_defined_once() -> None:
     async with _serving(ports) as app, _mcp_client(app) as client:
         listed = await client.list_tools()
     defined = ports.tools.list_tools()
-    assert [t.name for t in listed] == [d.name for d in defined] == ["glossary_lookup"]
+    assert (
+        [t.name for t in listed]
+        == [d.name for d in defined]
+        == [
+            "glossary_lookup",
+            "acronym_expand",
+        ]
+    )
     for tool, definition in zip(listed, defined, strict=True):
         assert tool.description == definition.description
         assert tool.input_schema == definition.parameters
@@ -102,6 +109,18 @@ async def test_glossary_lookup_answers_a_known_term() -> None:
         result = await client.call_tool("glossary_lookup", {"term": "SLM"})
     assert result.is_error is False
     assert result.structured_content == {"term": "SLM", "definition": GLOSSARY["SLM"]}
+
+
+async def test_acronym_expand_is_the_second_read_only_tool() -> None:
+    async with _serving(_ports()) as app, _mcp_client(app) as client:
+        known = await client.call_tool("acronym_expand", {"acronym": "rag"})
+        unknown = await client.call_tool("acronym_expand", {"acronym": "zzz"})
+    assert known.structured_content == {
+        "acronym": "rag",
+        "expansion": "retrieval-augmented generation",
+    }
+    assert unknown.is_error is False
+    assert unknown.structured_content == {"acronym": "zzz", "expansion": None}
 
 
 async def test_unknown_term_is_not_an_error() -> None:
@@ -222,7 +241,7 @@ def test_fake_profile_builds_the_fake_tools() -> None:
     assert PROFILE_DEFAULTS["fake"].tools == "fake"
     ports = build_ports("fake")
     assert isinstance(ports.tools, InMemoryTools)
-    assert [t.name for t in ports.tools.list_tools()] == ["glossary_lookup"]
+    assert [t.name for t in ports.tools.list_tools()] == ["glossary_lookup", "acronym_expand"]
 
 
 @pytest.mark.parametrize("profile", ["local", "cloud"])
