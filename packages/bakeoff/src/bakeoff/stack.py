@@ -24,6 +24,7 @@ import uvicorn
 from fake_model_server import Script, create_app
 
 from bakeoff.config import (
+    Hosted,
     chassis_argv,
     chassis_config,
     chassis_env_vars,
@@ -33,7 +34,7 @@ from bakeoff.config import (
 )
 from bakeoff.envs import build_env
 from bakeoff.procs import Cleanup, Spawned, free_port, non_loopback_ip
-from bakeoff.registry import ROOT, TS_MAIN, Engine, Lane, check_lane
+from bakeoff.registry import ROOT, TS_MAIN, Engine, Lane, check_hosted, check_lane
 
 __all__ = ["FakeModel", "Stack", "StackError", "running_stack"]
 
@@ -90,7 +91,8 @@ class FakeModel:
 class Stack:
     url: str
     """The chassis's public listener."""
-    fake: FakeModel
+    fake: FakeModel | None
+    """None in hosted mode: there is no fake model to read calls from."""
 
 
 def _wait_ready(url: str, procs: list[Spawned], secrets_: list[str]) -> None:
@@ -112,9 +114,16 @@ def _wait_ready(url: str, procs: list[Spawned], secrets_: list[str]) -> None:
 
 
 @contextmanager
-def running_stack(engine: Engine, lane: Lane, cleanup: Cleanup) -> Iterator[Stack]:
-    """Start the processes for `engine` in `lane`; stop and remove everything on exit."""
+def running_stack(
+    engine: Engine, lane: Lane, cleanup: Cleanup, hosted: Hosted | None = None
+) -> Iterator[Stack]:
+    """Start the processes for `engine` in `lane`; stop and remove everything on exit.
+
+    With `hosted` there is no fake model server: the chassis calls `hosted.url`. Only a trusted
+    engine may run that way (`check_hosted`), checked before any process starts."""
     check_lane(engine, lane)
+    if hosted is not None:
+        check_hosted(engine)
     remote_ip: str | None = None
     if lane == "remote":
         remote_ip = non_loopback_ip()
@@ -124,10 +133,11 @@ def running_stack(engine: Engine, lane: Lane, cleanup: Cleanup) -> Iterator[Stac
     home = work / "home"
     home.mkdir()
     token = secrets.token_hex(16)
-    fake = FakeModel(ROOT / engine.script, free_port())
+    fake = None if hosted else FakeModel(ROOT / engine.script, free_port())
     children: list[Spawned] = []
     try:
-        fake.start()
+        if fake is not None:
+            fake.start()
         port, proxy_port, remote_port, workload_port = (free_port() for _ in range(4))
         if lane == "remote":
             model_url = f"http://{remote_ip}:{remote_port}/v1"
@@ -156,7 +166,10 @@ def running_stack(engine: Engine, lane: Lane, cleanup: Cleanup) -> Iterator[Stac
             )
             children.append(workload)
         config = chassis_config(
-            engine, lane, workload_port=None if lane == "inprocess" else workload_port
+            engine,
+            lane,
+            workload_port=None if lane == "inprocess" else workload_port,
+            route=hosted.route if hosted else "big-default",
         )
         config_path = work / "chassis.yaml"
         config_path.write_text(dump_config(config))
@@ -171,16 +184,23 @@ def running_stack(engine: Engine, lane: Lane, cleanup: Cleanup) -> Iterator[Stac
             ),
             build_env(
                 home,
-                chassis_env_vars(lane, fake_port=fake.port, proxy_port=proxy_port, token=token),
+                chassis_env_vars(
+                    lane,
+                    fake_port=fake.port if fake else 0,
+                    proxy_port=proxy_port,
+                    token=token,
+                    hosted=hosted,
+                ),
             ),
             ROOT,
             work / "chassis.log",
         )
         children.append(chassis)
-        _wait_ready(f"http://127.0.0.1:{port}", children, [token])
+        _wait_ready(f"http://127.0.0.1:{port}", children, [token, hosted.key if hosted else ""])
         yield Stack(f"http://127.0.0.1:{port}", fake)
     finally:
         for child in reversed(children):
             cleanup.release(child)
-        fake.stop()
+        if fake is not None:
+            fake.stop()
         cleanup.remove_dir(work)

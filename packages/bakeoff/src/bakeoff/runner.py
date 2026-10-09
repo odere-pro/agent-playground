@@ -8,6 +8,7 @@ from typing import Literal
 
 import httpx
 
+from bakeoff.config import Hosted
 from bakeoff.lines import count_files
 from bakeoff.measure import CallSource, JsonlCalls, TaskResult, measure_task
 from bakeoff.procs import Cleanup
@@ -62,7 +63,14 @@ def _lines(engine: Engine) -> tuple[int | None, list[str]]:
     return sum(c.code for c in counts), [c.path for c in counts]
 
 
-def run_cell(item: Planned, tasks: Sequence[Task], repeat: int, cleanup: Cleanup, log: Log) -> Cell:
+def run_cell(
+    item: Planned,
+    tasks: Sequence[Task],
+    repeat: int,
+    cleanup: Cleanup,
+    log: Log,
+    hosted: Hosted | None = None,
+) -> Cell:
     """Start the stack for `item`, run `tasks` `repeat` times each, and stop the stack."""
     lines, files = _lines(item.engine)
     cell = Cell(item.engine.name, item.lane, "ok", code_lines=lines, mapping_files=files)
@@ -71,7 +79,7 @@ def run_cell(item: Planned, tasks: Sequence[Task], repeat: int, cleanup: Cleanup
         return cell
     try:
         with (
-            running_stack(item.engine, item.lane, cleanup) as stack,
+            running_stack(item.engine, item.lane, cleanup, hosted) as stack,
             httpx.Client(base_url=stack.url, trust_env=False, timeout=120.0) as client,
         ):
             measure_task(client, tasks[0], 1, None)  # warm-up: not counted

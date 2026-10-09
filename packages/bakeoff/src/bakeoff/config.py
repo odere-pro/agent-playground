@@ -8,7 +8,8 @@ fake tools, served on its `/mcp`. Only the engine section changes with the lane.
 from __future__ import annotations
 
 import sys
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Literal
 
 import yaml
 
@@ -17,7 +18,9 @@ from bakeoff.registry import Engine, Lane, check_lane
 __all__ = [
     "CHASSIS_TOKEN_ENV",
     "DUMMY_MODEL_KEY",
+    "ROUTES",
     "WORKLOAD_TOKEN_ENV",
+    "Hosted",
     "chassis_argv",
     "chassis_config",
     "chassis_env_vars",
@@ -34,9 +37,28 @@ DUMMY_MODEL_KEY = "bakeoff-dummy-key"  # pragma: allowlist secret
 """Not a key. The fake model server ignores it."""
 _PY = sys.executable
 
+Route = Literal["big-default", "local-small"]
+ROUTES: tuple[Route, ...] = ("big-default", "local-small")
 
-def chassis_config(engine: Engine, lane: Lane, *, workload_port: int | None) -> dict[str, Any]:
-    """The `ChassisConfig` mapping for `engine` in `lane`. The trust rule is checked first."""
+
+@dataclass(frozen=True)
+class Hosted:
+    """A real model behind a LiteLLM URL, instead of the in-process fake.
+
+    `key` is the LiteLLM key the chassis sends, never a provider key. It stays out of `repr`.
+    """
+
+    url: str
+    key: str = field(repr=False)
+    route: Route = "big-default"
+
+
+def chassis_config(
+    engine: Engine, lane: Lane, *, workload_port: int | None, route: Route = "big-default"
+) -> dict[str, Any]:
+    """The `ChassisConfig` mapping for `engine` in `lane`. The trust rule is checked first.
+
+    `route` is `spec.model.route`, the only field a model switch changes."""
     check_lane(engine, lane)
     section: dict[str, Any]
     if lane == "inprocess":
@@ -60,7 +82,7 @@ def chassis_config(engine: Engine, lane: Lane, *, workload_port: int | None) -> 
                 "state": "memory",
             },
             "engine": section,
-            "model": {"route": "big-default"},
+            "model": {"route": route},
             "prompt": {"version": "simplifier-v1"},
         },
     }
@@ -101,12 +123,20 @@ def chassis_argv(
     return argv
 
 
-def chassis_env_vars(lane: Lane, *, fake_port: int, proxy_port: int, token: str) -> dict[str, str]:
-    """The chassis process's variables beyond `PATH` and `HOME`."""
-    env = {
-        "LITELLM_BASE_URL": f"http://127.0.0.1:{fake_port}/v1",
-        "LITELLM_API_KEY": DUMMY_MODEL_KEY,
-    }
+def chassis_env_vars(
+    lane: Lane, *, fake_port: int, proxy_port: int, token: str, hosted: Hosted | None = None
+) -> dict[str, str]:
+    """The chassis process's variables beyond `PATH` and `HOME`.
+
+    With `hosted`, the model adapter points at its URL with its LiteLLM key; `fake_port` is
+    unused. No provider key is ever passed."""
+    if hosted is not None:
+        env = {"LITELLM_BASE_URL": hosted.url, "LITELLM_API_KEY": hosted.key}
+    else:
+        env = {
+            "LITELLM_BASE_URL": f"http://127.0.0.1:{fake_port}/v1",
+            "LITELLM_API_KEY": DUMMY_MODEL_KEY,
+        }
     if lane == "inprocess":  # the handle runs in this process and calls the loopback proxy
         env["CHASSIS_MODEL_URL"] = f"http://127.0.0.1:{proxy_port}/v1"
         env["CHASSIS_TOOL_URL"] = f"http://127.0.0.1:{proxy_port}/mcp"

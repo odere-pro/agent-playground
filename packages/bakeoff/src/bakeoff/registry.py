@@ -17,6 +17,7 @@ __all__ = [
     "LANES",
     "ROOT",
     "Engine",
+    "check_hosted",
     "check_lane",
     "engine_names",
     "get_engine",
@@ -168,3 +169,16 @@ def check_lane(engine: Engine, lane: str) -> None:
         raise ValueError(f"{engine.name} is untrusted and runs only in the remote lane, not {lane}")
     if lane not in lanes_for(engine):
         raise ValueError(f"{engine.name} does not support the {lane} lane")
+
+
+def check_hosted(engine: Engine) -> None:
+    """Raise `ValueError` when `engine` may not run against a real model.
+
+    An untrusted engine executes model-written code and shell commands. With a real model that
+    must happen only in a sandbox (kind on gVisor), never as a host process or on Compose.
+    """
+    if not engine.trusted:
+        raise ValueError(
+            f"{engine.name} is untrusted: it never runs against a model URL on this host "
+            "(real models run it only on kind under gVisor)"
+        )
