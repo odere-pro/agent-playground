@@ -1,0 +1,105 @@
+# poc05-remote: what each PoC-6 remote may send and receive. The namespace's `default-deny`
+# refuses everything else. No ipBlock, no DNS rule: a remote that asks for a name gets no answer.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: remote-smolagents
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: remote-smolagents
+  policyTypes: [Ingress, Egress]
+  # 9000 only from its own chassis pod.
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chassis-smolagents-remote
+      ports:
+        - port: 9000
+          protocol: TCP
+  # Its chassis's remote proxy port, and nothing else: no DNS, no ipBlock.
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chassis-smolagents-remote
+      ports:
+        - port: 8091
+          protocol: TCP
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: remote-claude-agent
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: remote-claude-agent
+  policyTypes: [Ingress, Egress]
+  # 9000 only from its own chassis pod.
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chassis-claude-agent-remote
+      ports:
+        - port: 9000
+          protocol: TCP
+  # Its chassis's remote proxy port, and nothing else: no DNS, no ipBlock.
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chassis-claude-agent-remote
+      ports:
+        - port: 8091
+          protocol: TCP
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: remote-typescript
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: remote-typescript
+  policyTypes: [Ingress, Egress]
+  # 9000 only from its own chassis pod.
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chassis-typescript-remote
+      ports:
+        - port: 9000
+          protocol: TCP
+  # Its chassis's remote proxy port, and nothing else: no DNS, no ipBlock.
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chassis-typescript-remote
+      ports:
+        - port: 8091
+          protocol: TCP

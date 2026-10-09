@@ -1,0 +1,22 @@
+# The kagent-adk remote and its chassis (PoC-6b, the remote solution). Not part of remote/ or
+# agents/: the image is a third-party image pinned by digest, and `run.sh` applies this folder only
+# when `image.sha256` holds that digest. Objects name their own namespaces (poc05-remote and
+# poc05-agents), so there is no `namespace:` here. `run.sh` renders this folder, fills
+# `__KAGENT_ADK_SHA256__`, and applies it as the platform deployer.
+# The chassis config is made by `run.sh` from chassis/kagent-adk-remote.yaml (a ConfigMap named
+# chassis-kagent-adk-remote-config), through the configMapGenerator below.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: poc06
+resources:
+  - remote-kagent-adk.yaml
+  - chassis-kagent-adk-remote.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: chassis-kagent-adk-remote-config
+    namespace: poc05-agents
+    files:
+      - config.yaml=chassis/kagent-adk-remote.yaml

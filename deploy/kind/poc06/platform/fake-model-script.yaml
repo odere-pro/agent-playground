@@ -1,0 +1,86 @@
+# The fake model's script on the PoC-6 cluster (run.sh `up` swaps it in, see platform/
+# fake-model-server-patch.yaml). Same format as packages/fake-model-server/scripts/bakeoff.yaml:
+# the first matching rule wins; a rule matches the last user message, except an `after_tool: true`
+# rule, which matches the last tool result.
+#
+# Three things differ from bakeoff.yaml, all because of the hop through LiteLLM and the engines:
+#
+# 1. Tool names. LiteLLM's MCP gateway lists a tool as `<server>-<tool>` (`fake_tools-glossary_lookup`,
+#    PoC-5 blind-spots note B11), and an SDK that holds the tool list (OpenAI Agents SDK) refuses a
+#    call to a name it was not given. So the scripted calls carry the gateway's names. The kind
+#    tests strip the `fake_tools-` prefix before they apply the harness checks.
+# 2. A smolagents CodeAgent wants Python in a code block, not a tool call, and its tool is a Python
+#    function named `fake_tools_glossary_lookup` (the gateway name made into an identifier). The
+#    script cannot see which engine asks, so the kind test adds the marker ` [code]` to the end of
+#    the task text for that engine, and the rules below match the text with the marker. The
+#    observations come back as the next USER message, so those rules are not `after_tool`.
+# 3. kagent-adk in plain-A2A mode has no tools the chassis can see (it is given none), so it
+#    answers in text: the marker ` [text]`, and the lookup answer comes in one reply.
+#
+# Every other engine sends the task text as is and gets the OpenAI tool-call form.
+#
+# PoC-5's example.yaml rules (hello, glossary, fail, simplify) are not here: its `after_tool`
+# catch-all would swallow the lookup loop. This script is for the PoC-6 kind tests. The PoC-5 kind
+# suite needs its own cluster state (see deploy/kind/poc06/run.sh, "fake model").
+# tests/test_poc06b_kind_static.py checks that every rule is reached by the tasks it is for.
+model: fake-model
+rules:
+  # --- smolagents: observations (the next user message) --------------------------------------
+  - match: "retrieval-augmented generation"
+    reply: |
+      Thought: I have both definitions.
+      <code>
+      final_answer("SLM means a small language model. RAG stands for retrieval-augmented generation.")
+      </code>
+  - match: "small language model"
+    reply: |
+      Thought: Now the acronym.
+      <code>
+      print(fake_tools_acronym_expand(acronym="RAG"))
+      </code>
+  # --- smolagents: tasks, with the ` [code]` marker --------------------------------------------
+  - match: "simplify: Hello. [code]"
+    reply: |
+      Thought: Nothing to simplify.
+      <code>
+      final_answer("Hello.")
+      </code>
+  - match: "30 percent. [code]"
+    reply: |
+      Thought: Plain words, every fact.
+      <code>
+      final_answer("Acme put out the SLM in 2026. It cut costs by 30 percent.")
+      </code>
+  - match: "RAG stand for? [code]"
+    reply: |
+      Thought: Look the term up first.
+      <code>
+      print(fake_tools_glossary_lookup(term="SLM"))
+      </code>
+  # --- kagent-adk: tasks, with the ` [text]` marker --------------------------------------------
+  - match: "simplify: Hello. [text]"
+    reply: "Hello."
+  - match: "30 percent. [text]"
+    reply: "Acme put out the SLM in 2026. It cut costs by 30 percent."
+  - match: "RAG stand for? [text]"
+    reply: "SLM means a small language model. RAG stands for retrieval-augmented generation."
+  # --- every other engine: OpenAI chat, tool calls by the gateway's names ---------------------
+  - match: "simplify: Hello."
+    reply: "Hello."
+  - match: "simplify: The SLM"
+    reply: "Acme put out the SLM in 2026. It cut costs by 30 percent."
+  - match: "lookup:"
+    reply: ""
+    tool_call:
+      name: fake_tools-glossary_lookup
+      arguments: { term: "SLM" }
+  - after_tool: true
+    match: "retrieval-augmented generation"
+    reply: "SLM means a small language model. RAG stands for retrieval-augmented generation."
+  - after_tool: true
+    match: "small language model"
+    reply: ""
+    tool_call:
+      name: fake_tools-acronym_expand
+      arguments: { acronym: "RAG" }
+default_reply: "ok"

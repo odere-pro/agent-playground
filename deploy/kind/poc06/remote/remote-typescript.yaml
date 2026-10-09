@@ -1,36 +1,38 @@
-# echo-claude-agent: PoC-6b skeleton of the remote lane's the Claude Agent SDK engine, modeled on
-# deploy/kind/poc05/remote/remote-echo.yaml. An agent-sandbox Sandbox on gVisor: no service-account
-# token, a read-only root, an emptyDir /tmp, and the bearer required on every path. It sits in its
-# own folder; nothing here is applied by the PoC-5 scripts. B2 and B3 fill in the real manifest
-# (a writable $HOME on an emptyDir, the namespace, the NetworkPolicy, the Secret `echo-claude-agent-token`,
-# and the chassis that fronts it); the proxy address below is the PoC-5 remote proxy, a
-# placeholder until then.
-
+# remote-typescript: the TypeScript agent as a remote (PoC-6b). The shape is
+# deploy/kind/poc05/remote/remote-echo.yaml, with the Node image of the sidecar lane
+# (kind.local/agent-platform/echo-typescript:poc05, built by `poc05/run.sh build`).
+#
+# - `--require-token-env CHASSIS_API_TOKEN` puts the bearer check on every request, the agent card
+#   included, and lets HOST be the pod IP. Drain is DRAIN_TIMEOUT_MS, not a flag.
+# - The Node image has no Python. The PoC-5 in-pod checks (`kubectl exec ... python`) cannot run
+#   here; the kind tests use a small Node probe instead (test_poc06b_kind_remote_controls.py), and
+#   record what it does not cover.
+# - Its chassis is `chassis-typescript-remote` in poc05-agents.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: echo-claude-agent
+  name: remote-typescript
   labels:
-    app.kubernetes.io/name: echo-claude-agent
+    app.kubernetes.io/name: remote-typescript
 automountServiceAccountToken: false
 ---
 apiVersion: agents.x-k8s.io/v1beta1
 kind: Sandbox
 metadata:
-  name: echo-claude-agent
+  name: remote-typescript
   labels:
-    app.kubernetes.io/name: echo-claude-agent
+    app.kubernetes.io/name: remote-typescript
 spec:
   service: false
   podTemplate:
     metadata:
       labels:
-        app.kubernetes.io/name: echo-claude-agent
+        app.kubernetes.io/name: remote-typescript
         app.kubernetes.io/part-of: poc06
         agents.platform/lane: remote
         agents.platform/trust: untrusted
     spec:
-      serviceAccountName: echo-claude-agent
+      serviceAccountName: remote-typescript
       automountServiceAccountToken: false
       enableServiceLinks: false
       runtimeClassName: gvisor
@@ -41,9 +43,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: workload
-          image: kind.local/agent-platform/echo-claude-agent:poc06
+          image: kind.local/agent-platform/echo-typescript:poc05
           imagePullPolicy: Never
-          args: ["--require-token-env", "CHASSIS_API_TOKEN", "--drain-timeout-s", "30"]
+          args: ["--require-token-env", "CHASSIS_API_TOKEN"]
           env:
             - name: POD_IP
               valueFrom:
@@ -54,13 +56,15 @@ spec:
             - name: PORT
               value: "9000"
             - name: CHASSIS_MODEL_URL
-              value: http://10.96.85.91:8091/v1
+              value: http://10.96.85.94:8091/v1
             - name: CHASSIS_TOOL_URL
-              value: http://10.96.85.91:8091/mcp
+              value: http://10.96.85.94:8091/mcp
+            - name: DRAIN_TIMEOUT_MS
+              value: "30000"
             - name: CHASSIS_API_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: echo-claude-agent-token
+                  name: remote-typescript-token
                   key: token
           ports:
             - name: a2a
@@ -105,15 +109,16 @@ spec:
             medium: Memory
             sizeLimit: 32Mi
 ---
+# The chassis reaches the remote by name (it has DNS): remote-typescript.poc05-remote.svc.cluster.local.
 apiVersion: v1
 kind: Service
 metadata:
-  name: echo-claude-agent
+  name: remote-typescript
   labels:
-    app.kubernetes.io/name: echo-claude-agent
+    app.kubernetes.io/name: remote-typescript
 spec:
   selector:
-    app.kubernetes.io/name: echo-claude-agent
+    app.kubernetes.io/name: remote-typescript
   ports:
     - name: a2a
       port: 9000
