@@ -23,10 +23,6 @@ COPY packages/workloads/echo-openai-agents/pyproject.toml packages/workloads/ech
 COPY packages/workloads/echo-claude-agent/pyproject.toml packages/workloads/echo-claude-agent/
 COPY packages/workloads/echo-smolagents/pyproject.toml packages/workloads/echo-smolagents/
 COPY packages/bakeoff/pyproject.toml packages/bakeoff/
-COPY packages/workloads/echo-openai-agents/pyproject.toml packages/workloads/echo-openai-agents/
-COPY packages/workloads/echo-claude-agent/pyproject.toml packages/workloads/echo-claude-agent/
-COPY packages/workloads/echo-smolagents/pyproject.toml packages/workloads/echo-smolagents/
-COPY packages/bakeoff/pyproject.toml packages/bakeoff/
 COPY packages/fake-mcp-server/pyproject.toml packages/fake-mcp-server/
 COPY packages/code-runner/pyproject.toml packages/code-runner/
 RUN --mount=type=cache,target=/root/.cache/uv \
