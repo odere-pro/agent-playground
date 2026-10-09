@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # PoC-4 scale stack: the one entry point for docker-compose.scale.yaml (plan, section 8a).
 #
-#   ./scale.sh build                               # chassis, fake model server, four workloads
+#   ./scale.sh build                               # chassis, fake model server, five workloads
 #   ./scale.sh up <engine> <pairs> [--events kafka|dapr]
 #   ./scale.sh ps | logs [service...]
 #   ./scale.sh down                                # project poc04 only, and its secrets file
 #
-# <engine>: echo-python, echo-pydanticai, echo-langgraph, echo-typescript, or `inprocess`
+# <engine>: echo-python, echo-pydanticai, echo-langgraph, echo-openai-agents, echo-typescript, or
+# `inprocess`
 # (echo_python in the chassis process, no workload container; 1 pair only).
 # <pairs>: 1, 2, or 4. Traefik answers on http://127.0.0.1:18080.
 # MODEL_REPLICAS=<n> in the environment runs n fake model servers behind one name (default 1).
@@ -23,11 +24,11 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
 SECRETS="$HERE/.env.poc04"
-ENGINES="echo-python echo-pydanticai echo-langgraph echo-typescript"
+ENGINES="echo-python echo-pydanticai echo-langgraph echo-openai-agents echo-typescript"
 TAG=poc04
 
 usage() {
-  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2
+  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
@@ -68,7 +69,7 @@ build() {
   docker build -q -f ../../packages/fake-model-server/Dockerfile \
     -t "agent-platform/fake-model-server:$TAG" ../..
   local engine
-  for engine in echo-python echo-pydanticai echo-langgraph; do
+  for engine in echo-python echo-pydanticai echo-langgraph echo-openai-agents; do
     docker build -q -f "../../packages/workloads/$engine/Dockerfile" \
       -t "agent-platform/$engine:$TAG" ../..
   done
