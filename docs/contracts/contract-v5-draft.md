@@ -664,3 +664,21 @@ No new `RELOADABLE` path. `spec.engine` is restart-only already. The constants `
 - Decisions it rests on: [ADR-001](../planning/adr/001-chassis-delivery-model.md) (lanes, hard requirement 1, item 8), [ADR-003](../planning/adr/003-chat-formats-onto-the-canonical-request.md) (carry, refuse, ignore; the public Anthropic interface), [ADR-005](../planning/adr/005-remote-lane-auth-and-trust-admission.md) (the remote token, `RequireRun`, the card pin).
 - Evidence: [the Claude CLI capture](../../pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-claude-cli-capture.md) and its scripts in `pocs/poc-06b-bake-off-remote-lane/notes/capture/`; the kagent probe note named at the top.
 - The contract in force: [contract v4](contract-v4.md).
+
+## Review findings for parts (b) and (c), decided 2026-10-09
+
+The `reviewer` read this draft on 2026-10-09 and asked for a retry. The part (a) findings went to the `/v1/messages` build. The ones below bind the builds of parts (b) and (c). Where they conflict with the text above, they win.
+
+### Part (b), the plain-A2A mode
+
+1. **Cancel on `INPUT_REQUIRED` and `AUTH_REQUIRED`.** Today `connector.py` sets `task_id` only from a `task` item (about line 140), and it skips the cancel when `task_id` is `None` (about line 188). In plain mode, the hook also reads `task_id` from `status_update` and `artifact_update`. So an agent whose first item is a status update still gets `CancelTask`. A test covers it.
+2. **`FAILED` and `REJECTED` carry fixed text.** `error.message` is fixed text, as `_from_state` already does (`mapping.py`, about 203-204). The remote's own status text is logged at the chassis, redacted and capped (suggested: 300 characters). It never goes into `Response.output.error`.
+3. **Usage parsing is strict.** It takes non-negative integers only. A float with no fractional part (`42.0`, as protobuf `Struct` numbers can arrive) is read as an integer. Booleans, negatives, fractions, and strings count as zero, and each is logged once per run. A hostile-usage unit test covers each case.
+4. **The per-commit guard.** The kind run of kagent-adk is not the per-commit guard. Hard requirement 2 holds through the offline plain-A2A stub test in `make check`.
+
+### Part (c), the freeze
+
+1. **Error codes.** The freeze test asserts that each frozen error code is still emitted, with the same `retryable` value. It does not assert set equality. A new error code stays compatible, with no bump.
+2. **`PUBLIC_MESSAGES`.** That table lives in `core/inbound.py`. A new public code may need an entry there. That diff is the one allowed exception to the empty-diff gate on `core`, and it must add only entries.
+3. **Order rule.** It is absolute for a run that reached `handle`. A failure before `handle` is a single `error` with no `start` (contract v1, "Events").
+4. **`handle` is pinned too.** The freeze test pins the `handle` signature (`core/handle.py`: `Handle`, `wire`), not only the schemas, constants, and codes.
