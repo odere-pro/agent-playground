@@ -313,13 +313,14 @@ print(json.dumps({"api_versions": safe(api_versions), "no_sasl": safe(metadata_w
                   "guessed": safe(scram, user, "not-the-password")}))
 """
 
-# Run in the chassis container with argv: topic, marker. Assigns every partition of the topic at
-# its end, POSTs one run with the marker as its input through the chassis's public port, then
-# reads the topic with the chassis's own SCRAM user (from its env) until the marker shows up.
+# Run in the chassis container with argv: topic, marker. Subscribes (no group) and fixes every
+# partition's position at its end, POSTs one run with the marker as its input through the
+# chassis's public port, then reads the topic with the chassis's own SCRAM user (from its env)
+# until the marker shows up.
 # Prints one JSON line: the run's HTTP status and what was found, never a credential.
 RESULT_READ = r"""
 import asyncio, json, os, sys, time, urllib.error, urllib.request
-from aiokafka import AIOKafkaConsumer, TopicPartition
+from aiokafka import AIOKafkaConsumer
 topic, marker = sys.argv[1], sys.argv[2]
 
 def run():
@@ -343,10 +344,13 @@ async def main():
     )
     await consumer.start()
     try:
-        await consumer.topics()
-        parts = [TopicPartition(topic, p) for p in sorted(consumer.partitions_for_topic(topic))]
-        consumer.assign(parts)
-        await consumer.seek_to_end(*parts)
+        consumer.subscribe([topic])  # no group: every partition, offsets at the end (latest)
+        deadline = time.monotonic() + 20
+        while not consumer.assignment() and time.monotonic() < deadline:
+            await consumer.getmany(timeout_ms=200)
+        parts = sorted(consumer.assignment())
+        if not parts:
+            raise RuntimeError("no partition of the topic was assigned")
         for p in parts:
             await consumer.position(p)
         status = await asyncio.to_thread(run)

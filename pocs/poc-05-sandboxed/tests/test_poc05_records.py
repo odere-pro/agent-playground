@@ -135,13 +135,11 @@ def checked_lines() -> list[str]:
 # --- exit criterion 9: the gVisor overhead note ---
 
 
-@pytest.mark.xfail(strict=False, reason=f"{LATER}: the gVisor overhead note")
 def test_the_gvisor_overhead_note_exists() -> None:
     """Criterion 9: the overhead is recorded in its own dated note."""
     assert OVERHEAD.is_file(), OVERHEAD
 
 
-@pytest.mark.xfail(strict=False, reason=f"{LATER}: the gVisor overhead note")
 @pytest.mark.parametrize("runtime", RUNTIMES)
 @pytest.mark.parametrize("engine", REMOTE_ENGINES)
 def test_the_overhead_note_measures_each_remote_engine(engine: str, runtime: str) -> None:
@@ -151,7 +149,6 @@ def test_the_overhead_note_measures_each_remote_engine(engine: str, runtime: str
     assert rows, f"no {engine} / {runtime} row with ms and MiB numbers in {OVERHEAD.name}"
 
 
-@pytest.mark.xfail(strict=False, reason=f"{LATER}: the gVisor overhead note")
 def test_the_overhead_note_lists_typescript_as_an_exception() -> None:
     """Criterion 9, "or the exceptions are listed": echo-typescript cannot be a remote yet."""
     assert names_exception(OVERHEAD.read_text(), "typescript")

@@ -6,7 +6,8 @@
 #      unlisted tool (H08), the model proxy without its token (H17); each refused, its control allowed
 #   3. A normal request through each lane again: both still answer
 #   4. The sidecar probe: LiteLLM (H05) and the MCP gateway (H07) from the workload, refused;
-#      through the chassis, allowed. Then the in-pod probe suite (test_poc05_kind_probe.py)
+#      through the chassis, allowed. Then the in-pod probe suite (test_poc05_kind_probe.py), or
+#      the T10 exception line while that suite is not built (notes/2026-10-09-t10-probe-exception.md)
 #   5. Admission: every fixture, `apply --dry-run=server`; the rejected ones name their rule
 #   6. The code runner: one run_python call on gVisor, no egress
 #   7. H11, the broker: the Kafka SASL case (test_poc05_kind_hardreq1.py -k kafka)
@@ -145,7 +146,11 @@ count_lines() {
   kind_tests sidecar-probe \
     "$TESTS/test_poc05_kind_hardreq1.py::test_litellm_refuses_the_workload_without_the_chassis_key" \
     "$TESTS/test_poc05_kind_hardreq1.py::test_mcp_gateway_refuses_the_workload_without_the_chassis_key"
-  kind_tests probe-suite "$TESTS/test_poc05_kind_probe.py"
+  if [[ -f "$TESTS/test_poc05_kind_probe.py" ]]; then
+    kind_tests probe-suite "$TESTS/test_poc05_kind_probe.py"
+  else
+    echo "T10 | - | exception: in-pod probe not built (WIP) | notes/2026-10-09-t10-probe-exception.md"
+  fi
   step "5. Admission: every fixture through a server dry run"
   kind_tests admission \
     "$TESTS/test_poc05_kind_admission.py::test_fixture_outcome_matches_its_header"

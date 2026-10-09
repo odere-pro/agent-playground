@@ -22,7 +22,18 @@ RUN_SH = ROOT / "deploy/kind/poc05/run.sh"
 TESTS = Path(__file__).resolve().parent
 NODE_ID = re.compile(r"\$TESTS/(test_poc05_kind_\w+\.py)(?:::(\w+))?")
 PENDING = {"test_poc05_kind_probe.py"}
-"""Kind test files the demo names that are being written now; the demo fails naming them."""
+"""Kind test files the demo names that are not built yet (T10, a recorded exception); the demo
+prints the exception line instead of running them."""
+
+
+def test_poc05_demo_names_the_t10_exception_while_the_probe_suite_is_missing() -> None:
+    """Criterion 8 (flagged): without the probe suite, the demo says so instead of skipping."""
+    text = _text()
+    assert 'if [[ -f "$TESTS/test_poc05_kind_probe.py" ]]; then' in text
+    assert "exception: in-pod probe not built (WIP)" in text
+    assert "notes/2026-10-09-t10-probe-exception.md" in text
+
+
 NO_BASH = shutil.which("bash") is None
 
 
