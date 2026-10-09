@@ -1,6 +1,6 @@
 # PoC-5 runbooks
 
-Status: first draft, 2026-10-09 (T27). One section per problem: symptom, check, cause, fix. Every command was run on the Mac and is pasted in a note, unless it says "not yet run". Notes: [bring-up](../../pocs/poc-05-sandboxed/notes/2026-10-02-bring-up.md), [sidecar suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md), [remote suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-remote-suite.md). The day-to-day steps are in the skill `poc-05-operate`.
+Status: first draft, 2026-10-09 (T27). Per-call code-runner sections added 2026-10-09 (per-call plan, task 7). One section per problem: symptom, check, cause, fix. Every command was run on the Mac and is pasted in a note, unless it says "not yet run". Notes: [bring-up](../../pocs/poc-05-sandboxed/notes/2026-10-02-bring-up.md), [sidecar suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md), [remote suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-remote-suite.md). The day-to-day steps are in the skill `poc-05-operate`.
 
 Every `kubectl` call pins `--context kind-poc05`. No secret value goes in a command line, a file, or this guide.
 
@@ -35,7 +35,7 @@ Read the pod's `lastState.terminated.reason` for an OOM kill.
 
 ## A sandbox pod is not Ready
 
-**Symptom.** `remote-echo` (in `poc05-remote`) or `code-runner` (in `poc05-tools`) is missing, Pending, or not Ready. `up` waits on it and stops.
+**Symptom.** `remote-echo` (in `poc05-remote`) is missing, Pending, or not Ready. `up` waits on it and stops. For the code-runner pool, see "The code-runner pool is not settled".
 
 **Check.**
 
@@ -99,9 +99,83 @@ $ docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' poc05-control-plan
 
 A host CPU check (`top` on the Mac) is not yet run in any note.
 
-**Cause.** The kind node shares the Mac's CPUs. Under gVisor each forked Python child costs 5 to 8 MiB, and 31 of them reach the code runner's 256Mi limit. Near the limit each fork takes seconds. With the CPU busy, the test runs past its timeout. A fork burst can also restart the code-runner pod (see the blind-spots note).
+**Cause.** The kind node shares the Mac's CPUs. Under gVisor each forked Python child costs 5 to 8 MiB, and 31 of them reach the code runner's 256Mi limit. Near the limit each fork takes seconds. With the CPU busy, the test runs past its timeout. Since the per-call change a burst ends only its own sandbox, not the dispatcher. At load 4.7 the call after the burst got `sandbox_lost` once in 3 runs; the cause is not found (remote suite, 2026-10-09).
 
 **Fix.** Stop the other load, or wait for it. Rerun the one file. Do not raise a test timeout to hide the load. The fork test now execs `cat` in each child, so a child costs less (the change in that test file).
+
+## The code-runner pool is not settled
+
+**Symptom.** `up` waits on the pool and stops. Or a code-runner kind test fails at its allowed control: the dispatcher's connect to a warm pod times out.
+
+**Check.**
+
+```
+$ kubectl --context kind-poc05 -n poc05-tools get sandboxtemplate,sandboxwarmpool,sandboxclaim
+NAME                                                     READY   DESIRED   AGE
+sandboxwarmpool.extensions.agents.x-k8s.io/code-runner   2       2         45s
+$ kubectl --context kind-poc05 -n poc05-tools get pods -L agents.x-k8s.io/claim-uid
+```
+
+Settled means: no claim, and every Running pod is Ready and has no `agents.x-k8s.io/claim-uid` label. That is what `warm_pool_ready()` in `poc05_kind.py` waits for.
+
+**Cause, one of:**
+
+- A claimed pod from the previous call is still being torn down. It shows phase `Failed` (`Error`) for a moment: the server exits non-zero on SIGTERM. The pool starts its replacement at the same time.
+- A cold start under host load. A cold claim took 4.45 s at load 3 (bring-up, 2026-10-09).
+- The controller runs without its extensions, or admission refused the template (`template rule T1` to `T5`). The pool then makes no pod.
+- The quota is full: 4 claims or 6 pods in `poc05-tools`.
+
+**Fix.** Wait for the pool to settle, then rerun the one file. A deleted warm pod comes back under the same `Sandbox` name in about 5 s (bring-up, 2026-10-09). For admission, see "Admission rejects a deploy". For the quota, see "A claim is stuck". Not yet run: a warm pod whose container crashes.
+
+## A claim is stuck
+
+**Symptom.** A `SandboxClaim` stays in `poc05-tools` after its call ended, or stays `Ready False`. Calls get `sandbox_unavailable`.
+
+**Check.**
+
+```
+$ kubectl --context kind-poc05 -n poc05-tools get sandboxclaim
+No resources found in poc05-tools namespace.
+$ kubectl --context kind-poc05 -n poc05-tools get sandboxclaim <name> -o jsonpath='{.status.conditions}'
+$ kubectl --context kind-poc05 -n poc05-tools get resourcequota code-runner -o jsonpath='{.status.used}'
+{"count/sandboxclaims.extensions.agents.x-k8s.io":"0","limits.memory":"512Mi","pods":"2"}
+```
+
+**Cause, one of:**
+
+- The dispatcher's delete failed or the dispatcher restarted mid-call. It logs a failed delete as a count. The claim's `shutdownTime` (60 s after create, `suggested:`) removes it.
+- Admission refused the controller's own update. On 2026-10-09 rule C2 did: the claim showed `ReconcilerError` with `claim rule C2`. Fixed: C2 admits the empty `additionalPodMetadata: {}` the controller writes (bring-up, 2026-10-09).
+- The quota is full. A fifth claim gets `exceeded quota: code-runner`.
+
+**Fix.** Wait for `shutdownTime`. If the claim has none, or you cannot wait, delete it as the cluster admin (the plain `kind-poc05` context). The deployer has no rights on claims.
+
+```
+$ kubectl --context kind-poc05 -n poc05-tools delete sandboxclaim <name> --wait=false
+```
+
+The claim and its `Sandbox` go in about 0.1 s, the pod in about 2 s (bring-up, 2026-10-09). For a `ReconcilerError`, read the message and fix the rule or the claim, never the controller.
+
+## A code-runner call ends with `sandbox_lost` or `sandbox_unavailable`
+
+**Symptom.** A `run_python` call returns a tool error whose text starts `sandbox_unavailable` or `sandbox_lost`. The chassis passes it on as `ToolResult(is_error=True)`.
+
+**Check.**
+
+```
+$ kubectl --context kind-poc05 -n poc05-platform get pods -l app.kubernetes.io/name=code-runner-dispatch \
+    -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}'
+0
+$ kubectl --context kind-poc05 -n poc05-tools get events --sort-by=.lastTimestamp
+```
+
+Not yet run as a recipe: a watch on claims and pods while the failing call runs. The bring-up note, 2026-10-09, has the watch output of a good call.
+
+**Cause.** From `packages/code-runner/README.md`:
+
+- `sandbox_unavailable`: no free slot, the claim was not created, it was not `Ready` within 20 s, or its pod IP is not an IP. Nothing ran. A retry with the same key is safe.
+- `sandbox_lost`: the pod ended mid-call, did not answer within `timeout_s + 5` s, or answered over 256 KiB. The key is freed, so a retry runs in a fresh sandbox.
+
+**Fix.** Retry the call; both codes are safe to retry. If `sandbox_unavailable` repeats, see "The code-runner pool is not settled" and "A claim is stuck". If `sandbox_lost` repeats, read the claimed pod's `lastState.terminated.reason` before it is gone. One `sandbox_lost` after a 31-child burst, at load 4.7, is open (remote suite, 2026-10-09). Do not loosen the test.
 
 ## Rotating the remote token
 
