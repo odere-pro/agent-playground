@@ -70,7 +70,7 @@ MAX_TOOL_ROUNDS = 3
 # The openai SDK refuses an empty key, so it gets this placeholder, never an `*_API_KEY` variable.
 # It is not sent either: `_drop_authorization` removes the header. The chassis model proxy ignores
 # `Authorization` anyway and adds the real, scoped key itself; only the chassis holds credentials.
-PLACEHOLDER_API_KEY = "not-a-key"
+PLACEHOLDER_API_KEY = "not-a-key"  # pragma: allowlist secret (a placeholder, not a key)
 
 # The SDK exports traces to api.openai.com through a default processor. Remove it and switch
 # tracing off, at import, so nothing is ever queued or sent (a test proves it).
