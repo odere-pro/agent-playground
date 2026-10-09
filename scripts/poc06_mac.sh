@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# PoC-6 on a Mac: the runs that need a real model. One command, four steps, dated notes.
+# PoC-6 on a Mac: the runs that need a real model. One command, five steps, dated notes.
 #
-#   make poc06-mac ARGS="[--dry-run] [--push] [--only hosted|slm|scale|load] [--engine A,B]"
+#   make poc06-mac ARGS="[--dry-run] [--push] [--only hosted|slm|scale|load|kind] [--engine A,B]"
 #
 #   hosted  6a and 6b criterion 5: the hosted big model (LiteLLM route `big-default`) for the
 #           trusted engines, in the inprocess and sidecar lanes: smoke, simplifier, lookup x5.
@@ -11,14 +11,21 @@
 #           echo-openai-agents on `local-small`, all sharing the one llama-server.
 #   load    6a criterion 4: the PoC-4 load matrix for echo-openai-agents and echo-typescript on
 #           the fake model server.
+#   kind    6b criterion 5 for the UNTRUSTED engines (echo-smolagents, echo-claude-agent,
+#           kagent-adk): the same tasks on the hosted model, in the kind remote lane under gVisor.
+#           Runs last, after the Compose stacks are down, so Docker memory is free. It brings up
+#           PoC-5's cluster `kind-poc05` with the PoC-6 engines (deploy/kind/poc06/run.sh up), adds
+#           the hosted route (deploy/kind/poc06/hosted.sh up; the provider key goes to its stdin),
+#           runs the tasks (hosted.sh run), and on any exit runs hosted.sh down and run.sh delete.
 #
 # Options
 #   --dry-run     Print every step and command, check that every file the run needs exists, and
 #                 run nothing: no Docker, no key, no network. Works anywhere.
 #   --push        After the run, commit ONLY the notes it wrote (exact paths) on the current
 #                 branch and push that branch. Refused on main and master.
-#   --only STEP   Run one step; repeatable, or a comma list. Default: all four, in the order above.
-#   --engine A,B  The engines of the hosted and slm steps. Trusted engines only (see below).
+#   --only STEP   Run one step; repeatable, or a comma list. Default: all five, in the order above.
+#   --engine A,B  The engines of the hosted and slm steps. Trusted engines only (see below). The
+#                 kind step always runs the three untrusted ones.
 #
 # Environment (all optional; suggested defaults)
 #   POC06_HOSTED_KEY_ENV   Name of the provider-key variable in deploy/compose/.env. Default
@@ -32,18 +39,26 @@
 #   POC06_LOAD_ENGINES ("echo-openai-agents echo-typescript")  POC06_SCALE_USERS (16)
 #   POC06_LLAMA_PORT (8089)  POC06_LITELLM_PORT (14000)  POC06_LLAMA_CTX (16384)
 #   POC06_LLAMA_PARALLEL (4: slots; the scale run's shared-server limit)
+#   POC06_KIND_MIN_MIB (6000)  Docker memory floor for the kind step. suggested: the PoC-5 stack
+#                          measured about 3.3 GiB working set on the node in a 7.75 GiB VM
+#                          (pocs/poc-05-sandboxed/notes/2026-10-02-bring-up.md, section 10); the
+#                          PoC-6 chassis, remotes, and kagent-adk add about 1.5 GiB. Below 7500
+#                          MiB the script warns.
 #
 # Safety rules, enforced below
 #   - Untrusted engines (echo-smolagents, echo-claude-agent, kagent-adk) execute model-written code
 #     and shell commands. Every run here uses a real model, so none runs here, on the host or on
-#     Compose. They run on kind under gVisor (part 2). The script refuses any engine that is not
-#     on the trusted list, in every step. `bakeoff run --model-url` refuses them as well.
-#   - The provider key never leaves the LiteLLM container. The script reads it from
-#     deploy/compose/.env into a shell variable that is not exported, hands it to the one
-#     `docker compose` command that starts LiteLLM, and never prints, logs, or writes it. The
+#     Compose. They run only in the `kind` step, in the remote lane under gVisor. The script refuses
+#     any engine that is not on the trusted list in the hosted and slm steps (and in the scale and
+#     load lists). `bakeoff run --model-url` refuses them as well.
+#   - The provider key never leaves the LiteLLM container or, in the kind step, the LiteLLM pod. The
+#     script reads it from deploy/compose/.env into a shell variable that is not exported, hands it
+#     to the one `docker compose` command that starts LiteLLM and, in the kind step, to the stdin of
+#     hosted.sh (a Secret, read only by the LiteLLM pod), and never prints, logs, or writes it. The
 #     chassis gets a LiteLLM key generated for the run. Output is scrubbed before it reaches a note.
 #   - It tears down what it started on any exit: llama-server, the Compose projects poc06mac and
-#     poc04, and its temp files. It touches no other project's container, and prunes nothing.
+#     poc04, the kind cluster poc05 (it refuses to start if one already exists), and its temp files.
+#     It touches no other project's container, and prunes nothing.
 #
 # Works with the bash 3.2 macOS ships. Needs on the Mac: Docker Desktop (about 7.75 GiB), uv, node,
 # npm, make, and for slm and scale `brew install llama.cpp`. Time: suggested 60 to 90 minutes,
@@ -59,6 +74,11 @@ LITELLM_COMPOSE="$POC06_DIR/litellm-hosted.yaml"
 LITELLM_PROJECT=poc06mac
 NOTES_A="pocs/poc-06a-bake-off-sidecar-lane/notes"
 NOTES_C="pocs/poc-06c-pretrained-slm/notes"
+NOTES_B="pocs/poc-06b-bake-off-remote-lane/notes"
+KIND_DIR="$ROOT/deploy/kind/poc06"
+KIND_RUN="$KIND_DIR/run.sh"
+KIND_HOSTED="$KIND_DIR/hosted.sh"
+KIND_CLUSTER=poc05
 
 # The hard list. An engine not named here does not run. Keep in step with
 # packages/bakeoff/src/bakeoff/registry.py (a test compares them).
@@ -81,6 +101,7 @@ LLAMA_PORT=${POC06_LLAMA_PORT:-8089}
 LITELLM_PORT=${POC06_LITELLM_PORT:-14000}
 LLAMA_CTX=${POC06_LLAMA_CTX:-16384}
 LLAMA_PARALLEL=${POC06_LLAMA_PARALLEL:-4}
+KIND_MIN_MIB=${POC06_KIND_MIN_MIB:-6000}
 # Qwen3 thinking off: the model's own chat-template switch, passed to llama.cpp's Jinja engine.
 # Recorded in every slm note. The alternative is `--reasoning-budget 0` (llama.cpp's own switch).
 LLAMA_ARGS=(--jinja --chat-template-kwargs '{"enable_thinking":false}' -c "$LLAMA_CTX" -np "$LLAMA_PARALLEL"
@@ -98,6 +119,8 @@ LLAMA_PID=""
 SAMPLER_PID=""
 LITELLM_UP=0
 SCALE_UP=0
+KIND_UP=0
+KIND_HOSTED_UP=0
 HOSTED_KEY=""          # a shell variable only: never exported, never printed
 LITELLM_KEY="sk-poc06-dry-run"
 DOCKER_MEM_MIB=0
@@ -147,9 +170,9 @@ while [[ $# -gt 0 ]]; do
     *) usage ;;
   esac
 done
-[[ -n "$ONLY" ]] || ONLY="hosted slm scale load"
+[[ -n "$ONLY" ]] || ONLY="hosted slm scale load kind"
 for step in $ONLY; do
-  case "$step" in hosted | slm | scale | load) ;; *) die "--only: hosted, slm, scale, or load (got $step)" ;; esac
+  case "$step" in hosted | slm | scale | load | kind) ;; *) die "--only: hosted, slm, scale, load, or kind (got $step)" ;; esac
 done
 want() { case " $ONLY " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
@@ -165,6 +188,7 @@ want() { case " $ONLY " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 [[ "$GGUF_REPO" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die "POC06_GGUF_REPO must be owner/name"
 [[ "$GGUF_REV" =~ ^[A-Za-z0-9._-]+$ ]] || die "POC06_GGUF_REV must match [A-Za-z0-9._-]+"
 [[ "$REPEAT" =~ ^[0-9]+$ ]] || die "POC06_REPEAT must be a number"
+[[ "$KIND_MIN_MIB" =~ ^[0-9]+$ ]] || die "POC06_KIND_MIN_MIB must be a number"
 
 # ---- teardown --------------------------------------------------------------------------------
 
@@ -200,10 +224,26 @@ stop_llama() {
   fi
 }
 
+# Undo the kind step: the hosted route first, then the cluster. Each runs once, whatever came before.
+# Output goes to the step's log, so the note shows the teardown.
+stop_kind() {
+  local klog="${WORK:-/dev/null}/kind.log"
+  [[ -d "${WORK:-}" ]] || klog=/dev/null
+  if [[ "$KIND_HOSTED_UP" == 1 ]]; then
+    KIND_HOSTED_UP=0
+    "$KIND_HOSTED" down >>"$klog" 2>&1 || warn "hosted.sh down failed; the cluster delete below removes it anyway"
+  fi
+  if [[ "$KIND_UP" == 1 ]]; then
+    KIND_UP=0
+    "$KIND_RUN" delete >>"$klog" 2>&1 || warn "could not delete the kind cluster $KIND_CLUSTER, which may still hold the provider key Secret; run: deploy/kind/poc06/run.sh delete"
+  fi
+}
+
 cleanup() {
   local rc=$?
   trap '' INT TERM HUP   # a second Ctrl-C must not abort the teardown
   trap - EXIT
+  stop_kind
   stop_scale
   stop_litellm
   stop_llama
@@ -286,6 +326,12 @@ check_files() {
   need_file "$ROOT/packages/workloads/echo-typescript/package.json"
   need_file "$ROOT/$NOTES_A"
   need_file "$ROOT/$NOTES_C"
+  need_file "$ROOT/$NOTES_B"
+  need_file "$KIND_RUN"
+  need_file "$KIND_HOSTED"
+  need_file "$KIND_DIR/hosted/litellm-config.yaml"
+  need_file "$KIND_DIR/hosted/network-policy.yaml"
+  need_file "$KIND_DIR/hosted/relay.py"
   [[ "$MISSING" == 0 ]] || die "a file this run needs is missing (above)" 1
 }
 
@@ -303,7 +349,19 @@ preflight_real() {
     command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed" 1
   done
   say "  uv, node, npm, make, openssl, git, curl: present"
-  if want hosted; then
+  if want kind; then
+    for tool in kind kubectl jq; do
+      command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed (the kind step needs kind, kubectl, jq)" 1
+    done
+    say "  kind, kubectl, jq: present"
+    [[ "$DOCKER_MEM_MIB" -ge "$KIND_MIN_MIB" ]] \
+      || die "Docker has $DOCKER_MEM_MIB MiB; the kind step needs $KIND_MIN_MIB (POC06_KIND_MIN_MIB; Docker Desktop, Settings, Resources)" 1
+    [[ "$DOCKER_MEM_MIB" -ge 7500 ]] || warn "under 7500 MiB: the kind step may be slow or lose a pod to memory"
+    if kind get clusters 2>/dev/null | grep -qx "$KIND_CLUSTER"; then
+      die "a kind cluster named $KIND_CLUSTER exists, and this step deletes it at the end. Delete it yourself first (deploy/kind/poc06/run.sh delete) or run without the kind step." 1
+    fi
+  fi
+  if want hosted || want kind; then
     [[ -f "$ENV_FILE" ]] || die "deploy/compose/.env does not exist; copy .env.example and set $HOSTED_KEY_ENV" 1
     HOSTED_KEY=$(env_value "$HOSTED_KEY_ENV" "$ENV_FILE")
     if [[ -z "$HOSTED_KEY" ]]; then
@@ -602,6 +660,47 @@ step_load() {
   return "$rc"
 }
 
+step_kind() {
+  say; say "== step kind: big-default, $HOSTED_MODEL, untrusted engines $UNTRUSTED_ENGINES, kind remote lane (gVisor)"
+  local log="$WORK/kind.log" out="$WORK/kind-out" rc=0
+  [[ "$DRY" == 1 ]] || : >"$log"
+  if [[ "$DRY" == 1 ]]; then
+    say "  \$ ${KIND_RUN#"$ROOT"/} up   # PoC-5 cluster kind-poc05, gVisor, the PoC-6 engines and remotes"
+    say "  \$ printf '%s' \"\$PROVIDER_KEY\" | ${KIND_HOSTED#"$ROOT"/} up   # key from the env file, on stdin; not shown"
+    say "  \$ ${KIND_HOSTED#"$ROOT"/} run <tmp>/kind-out   # POC06_REPEAT=$REPEAT"
+    say "  \$ ${KIND_HOSTED#"$ROOT"/} down   # on any exit: the hosted route, the provider Secret, the egress policy"
+    say "  \$ ${KIND_RUN#"$ROOT"/} delete    # on any exit"
+  else
+    KIND_UP=1
+    if run_logged "$log" "$KIND_RUN" up; then
+      KIND_HOSTED_UP=1
+      if printf '%s' "$HOSTED_KEY" | POC06_HOSTED_MODEL="$HOSTED_MODEL" run_logged "$log" "$KIND_HOSTED" up; then
+        POC06_REPEAT="$REPEAT" POC06_HOSTED_MODEL="$HOSTED_MODEL" run_logged "$log" "$KIND_HOSTED" run "$out" || rc=$?
+      else
+        rc=1
+      fi
+    else
+      rc=1
+    fi
+    stop_kind
+    EXTRA_SECTION="## Kind setup
+
+- Cluster: PoC-5's \`kind-poc05\` (gVisor, agent-sandbox, admission rules) with the PoC-6 engines; \`$(basename "$KIND_RUN") up\` built the images, \`$(basename "$KIND_HOSTED") up\` added the hosted route.
+- Engines (untrusted, remote lane, gVisor): $UNTRUSTED_ENGINES. Tasks: smoke, simplifier, lookup, $REPEAT repeats, through each chassis on route \`big-default\`.
+- Route: \`big-default\` is $HOSTED_MODEL. Each chassis key lists two routes (\`fake-chat\`, \`big-default\`) and a budget of 1.0 USD (suggested).
+- Provider key: only in the Secret \`litellm-provider\` and the LiteLLM pod env. LiteLLM is the only pod with internet egress, TCP 443 only. No workload holds a provider key.
+- LiteLLM image: $(grep -o 'ghcr.io/berriai/litellm:[^ "]*' "$ROOT/deploy/kind/poc05/platform/litellm.yaml" | head -n 1)
+- kind: $(kind version 2>/dev/null | head -n 1 || echo '?'); kubectl: $(kubectl version --client 2>/dev/null | head -n 1 || echo '?')
+- Docker memory floor for this step: $KIND_MIN_MIB MiB (suggested)."
+  fi
+  write_note kind-run "$NOTES_B" "PoC-6b hosted run on kind: the untrusted engines" \
+    "PoC-6b exit criterion 5 (every engine on a hosted big model) for the untrusted engines: echo-smolagents, echo-claude-agent, and kagent-adk, in the kind remote lane under gVisor, on LiteLLM route \`big-default\`. The trusted engines are in the hosted note of PoC-6a." \
+    "deploy/kind/poc06/hosted.sh run <dir>   # uv run python -m bakeoff run --target echo-smolagents=<url> echo-claude-agent=<url> kagent-adk=<url> --tasks smoke,simplifier,lookup --repeat $REPEAT" \
+    "$log" "$rc" "$out"
+  EXTRA_SECTION=""
+  return "$rc"
+}
+
 # ---- push ------------------------------------------------------------------------------------
 
 do_push() {
@@ -653,7 +752,10 @@ if [[ "$DRY" == 1 ]]; then
   say; say "== preflight (would check)"
   say "  \$ docker info              # running; memory (Docker Desktop, about 7.75 GiB)"
   say "  \$ command -v uv node npm make openssl git curl"
-  if want hosted; then
+  if want kind; then
+    say "  \$ command -v kind kubectl jq   # and: Docker memory at least $KIND_MIN_MIB MiB; no kind cluster named $KIND_CLUSTER yet"
+  fi
+  if want hosted || want kind; then
     say "  presence of $HOSTED_KEY_ENV in ${ENV_FILE#"$ROOT"/}   # name only; the value is never printed"
   fi
   if want slm || want scale; then
@@ -664,7 +766,10 @@ else
   LITELLM_KEY="sk-poc06-$(openssl rand -hex 24)"
 fi
 
-case ",$ENGINES_CSV,$(echo "$LOAD_ENGINES" | tr ' ' ',')," in
+# Only the steps that run the trusted engines need the TypeScript build; the kind step builds its own.
+TS_CASE=",$ENGINES_CSV,$(echo "$LOAD_ENGINES" | tr ' ' ','),"
+if ! want hosted && ! want slm && ! want load; then TS_CASE=","; fi
+case "$TS_CASE" in
   *,echo-typescript,*)
     say; say "== TypeScript build"
     if [[ "$DRY" == 1 ]]; then say "  \$ make ts-check"; else make ts-check || die "make ts-check failed" 1; fi ;;

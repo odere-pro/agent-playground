@@ -104,11 +104,11 @@ Render without a daemon, with dummy secrets: `VALKEY_PASSWORD=x MINIO_ROOT_PASSW
 **What you do.**
 
 1. Put the provider key in `deploy/compose/.env`. The variable is `OPENAI_API_KEY`, as in the PoC-1 `local` variant. For another name, set `POC06_HOSTED_KEY_ENV`. For another model, set `POC06_HOSTED_MODEL` to a LiteLLM model string (suggested default: `openai/gpt-4o-mini`).
-2. `brew install llama.cpp`. Docker Desktop must run, with about 7.75 GiB. `uv`, `node`, `npm`, and `make` must be installed.
+2. `brew install llama.cpp`. Docker Desktop must run, with about 7.75 GiB (the `kind` step needs at least 6000 MiB, `POC06_KIND_MIN_MIB`, suggested). `uv`, `node`, `npm`, and `make` must be installed. The `kind` step also needs `kind`, `kubectl`, and `jq`, and no kind cluster named `poc05` (it deletes the one it makes).
 3. `make poc06-mac ARGS="--dry-run"` first. It prints every step and checks that every file exists. It reads no key and starts nothing.
-4. `make poc06-mac ARGS="--push"` for the real run. `--only hosted|slm|scale|load` runs one step. `--engine A,B` picks the engines of `hosted` and `slm`.
+4. `make poc06-mac ARGS="--push"` for the real run. `--only hosted|slm|scale|load|kind` runs one step. `--engine A,B` picks the engines of `hosted` and `slm`.
 
-**What it runs.** Every engine here is a trusted one: `echo-python`, `echo-pydanticai`, `echo-langgraph`, `echo-openai-agents`, `echo-typescript`. The script refuses any other engine, and so does `bakeoff run --model-url`. An untrusted engine (`echo-smolagents`, `echo-claude-agent`, `kagent-adk`) runs model-written code, so with a real model it runs only on kind under gVisor. That is part 2.
+**What it runs.** Every engine here is a trusted one: `echo-python`, `echo-pydanticai`, `echo-langgraph`, `echo-openai-agents`, `echo-typescript`. The script refuses any other engine, and so does `bakeoff run --model-url`. An untrusted engine (`echo-smolagents`, `echo-claude-agent`, `kagent-adk`) runs model-written code, so with a real model it runs only on kind under gVisor. That is the `kind` step (part 2).
 
 | Step | What | Model | Where |
 | ---- | ---- | ----- | ----- |
@@ -116,10 +116,13 @@ Render without a daemon, with dummy secrets: `VALKEY_PASSWORD=x MINIO_ROOT_PASSW
 | `slm` | the same run with `--route local-small` (6c) | Qwen3-1.7B Q8_0 | `llama-server --jinja --chat-template-kwargs {"enable_thinking":false} -c 16384 -np 4` on the host, behind the same LiteLLM through `host.docker.internal` |
 | `scale` | the PoC-4 matrix with 1, 2, 4 pairs of `echo-python` and `echo-openai-agents`, 16 users, 60 s each (6c criterion 4) | the same llama-server | the PoC-4 scale stack (project `poc04`) plus `poc06/scale-litellm-slm.yaml`: LiteLLM and `spec.model.route: local-small` |
 | `load` | the PoC-4 matrix for `echo-openai-agents` and `echo-typescript`, 64 users, 60 s each (6a criterion 4) | the fake model server | the PoC-4 scale stack, through `poc06/load_driver.py` |
+| `kind` | `echo-smolagents`, `echo-claude-agent`, and `kagent-adk`: smoke, simplifier, lookup, 5 repeats, `--target` mode (6b criterion 5, untrusted engines). Runs last, after the Compose stacks are down | the hosted model, route `big-default` | PoC-5's kind cluster under gVisor: `deploy/kind/poc06/run.sh up`, then `hosted.sh up` (provider key on stdin), `hosted.sh run`, and on any exit `hosted.sh down` and `run.sh delete` |
 
 `poc06/load_driver.py` loads the PoC-4 `run_matrix.py` unchanged and points it at `poc06/scale-slm.sh`, which wraps `scale.sh`. The wrapper adds the `echo-openai-agents` image (scale.sh does not list it) and, for `scale`, the LiteLLM overlay. The `slm` step changes only `--route`; `scale` changes only the route in the seeded chassis config (`poc06/chassis-configs/scale-slm.yaml`).
 
 **Keys.** The provider key goes from `.env` into one shell variable, then into the environment of the one `docker compose` command that starts LiteLLM. Only the LiteLLM container of the `hosted` step has it; the `slm` step's LiteLLM gets none. Set a spend limit at the provider before the run. The master-key-as-chassis-key shortcut is recorded in `SECURITY.md`, section 1. The chassis gets a LiteLLM key generated for the run (`sk-poc06-` and 48 hex characters), and it is the proxy's master key for that run. The script prints neither, and scrubs both from the notes.
+
+**Keys on kind.** The `kind` step puts the provider key in one Secret, `litellm-provider`, that only the LiteLLM pod reads. LiteLLM is the only pod with internet egress, TCP 443 only. Each of the three chassis keys is scoped to two routes (`fake-chat`, `big-default`) and a budget. No workload holds a key. See `SECURITY.md`, section 1.
 
 **The model file.** `llama-server` loads `~/.cache/poc06/Qwen3-1.7B-Q8_0.gguf` from `Qwen/Qwen3-1.7B-GGUF` (suggested). The first run downloads it (about 1.8 GB) and writes its sha256 to `deploy/compose/poc06/model.sha256`. The download is HTTPS only, from revision `main` (`POC06_GGUF_REV`, suggested); that is trust on first use, and the pin is what protects later runs. Later runs refuse a file with another hash. `--push` does not commit that pin, because it commits only the notes; commit it once by hand.
 

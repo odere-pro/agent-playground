@@ -196,6 +196,7 @@ def test_the_dry_run_exits_0_and_prints_every_step(tmp_path: Path) -> None:
         "step slm",
         "step scale",
         "step load",
+        "step kind",
         "== files this run needs",
         "--route big-default",
         "--route local-small",
@@ -234,18 +235,18 @@ def test_the_dry_run_never_reads_or_prints_a_key(tmp_path: Path) -> None:
     assert "value is never printed" in done.stdout
 
 
-@pytest.mark.parametrize("only", ["hosted", "slm", "scale", "load"])
+@pytest.mark.parametrize("only", ["hosted", "slm", "scale", "load", "kind"])
 def test_each_step_can_be_dry_run_alone(tmp_path: Path, only: str) -> None:
     done = run_script(tmp_path, "--dry-run", "--only", only)
     assert done.returncode == 0, done.stdout + done.stderr
     assert f"== step {only}" in done.stdout
-    others = {"hosted", "slm", "scale", "load"} - {only}
+    others = {"hosted", "slm", "scale", "load", "kind"} - {only}
     for other in others:
         assert f"== step {other}" not in done.stdout
 
 
 def test_an_unknown_step_or_option_is_a_usage_error(tmp_path: Path) -> None:
-    assert run_script(tmp_path, "--dry-run", "--only", "kind").returncode == 2
+    assert run_script(tmp_path, "--dry-run", "--only", "bogus").returncode == 2
     assert run_script(tmp_path, "--bogus").returncode == 2
 
 
@@ -294,7 +295,15 @@ def test_the_script_keeps_the_key_rules() -> None:
     assert "set -x" not in text and "xtrace" not in text
     assert "--no-verify" not in text and "--force" not in text and "push -f" not in text
     assert "export HOSTED_KEY" not in text and "declare -x HOSTED_KEY" not in text
+    # The one other use of the key: the kind step hands it to hosted.sh on stdin, through a pipe.
+    stdin_use = re.compile(
+        r"""^\s*if printf '%s' "\$HOSTED_KEY" \| POC06_HOSTED_MODEL=\S+ run_logged """
+    )
+    assert sum(1 for line in code if stdin_use.match(line)) == 1
     for line in code:
+        if stdin_use.match(line):
+            assert '"$KIND_HOSTED" up; then' in line
+            continue
         if "HOSTED_KEY" in line.replace("HOSTED_KEY_ENV", ""):
             assert not re.search(r"\b(echo|printf|say|warn|die|tee)\b", line) or "redact" in line
     # the key is handed to one command only, as a prefix assignment
@@ -307,10 +316,11 @@ def test_the_script_keeps_the_key_rules() -> None:
 
 def test_the_script_names_only_the_notes_the_task_lists() -> None:
     text = SCRIPT.read_text()
-    for stem in ("hosted-run", "slm-run", "scale-run", "load-run"):
+    for stem in ("hosted-run", "slm-run", "scale-run", "load-run", "kind-run"):
         assert f"write_note {stem}" in text
     assert 'NOTES_A="pocs/poc-06a-bake-off-sidecar-lane/notes"' in text
     assert 'NOTES_C="pocs/poc-06c-pretrained-slm/notes"' in text
+    assert 'NOTES_B="pocs/poc-06b-bake-off-remote-lane/notes"' in text
 
 
 # ---- scale-slm.sh and the driver --------------------------------------------------------------
@@ -449,8 +459,8 @@ def test_the_slm_dry_run_never_looks_at_the_env_file(tmp_path: Path) -> None:
     # slm needs no provider key in the code path either
     start = _code().index("preflight_real()")
     body = _code()[start : _code().index("ensure_gguf()")]
-    assert "if want hosted; then" in body
-    assert body.index("ENV_FILE") > body.index("if want hosted; then")
+    assert "if want hosted || want kind; then" in body
+    assert body.index("ENV_FILE") > body.index("if want hosted || want kind; then")
 
 
 def _redact(text: str, tmp_path: Path) -> str:
