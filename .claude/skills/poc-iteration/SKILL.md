@@ -14,11 +14,11 @@ The planning doc is the source; the PoC folder tracks execution.
 
 ## Run
 - Work in small steps: `make quick` after each; `make test-poc POC=NN` before ticking a box.
-- Measurements (latency, tokens, memory) go to `notes/` as dated markdown with the command that produced them.
+- Measurements (latency, tokens, memory) and drills go to `notes/` as dated markdown with the command that produced them (skill `record-measurement`).
 - A decision that outlives the iteration becomes an ADR (skill `adr`), never a note only.
 
 ## Close
 1. Every exit criterion has evidence: the test name or the command output, linked from the README.
-2. The demo script and its output are in `demo/`.
+2. The demo script and its output are in `demo/` (skill `demo-record`).
 3. `notes/backlog-changes.md` lists what the backlog issues should change, with `NNN ID` references. Apply them with skill `planning-sync`.
 4. README status `done`; `pocs/CURRENT` moves to the next folder; `make check` green.
