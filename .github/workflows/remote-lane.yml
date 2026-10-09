@@ -1,24 +1,24 @@
 # PoC-5 remote lane on kind (plan docs/plans/2026-10-02-poc-05-sandboxed.md, section 7, T24).
 #
-# Known gap: install-gvisor.sh pins the gVisor sha512 for aarch64 only. The x86_64 sha512 is not
-# pinned yet, so on an ubuntu-latest (x86_64) runner this job fails closed at the gVisor step of
-# `run.sh up` until that sum is pinned from the gVisor release's published .sha512 file (checked
-# out of band). The job never skips the check. Until then, the offline remote lane in `make check`
-# (ci.yml, LaneContract over the remote lane) stays the every-commit gate (hard requirement 2).
+# Trigger: push, pull_request, and workflow_dispatch. Never pull_request_target. The switch from
+# manual came once the three pins held (test_poc05_ci_wiring.py now requires them): the x86_64
+# gVisor sha512 in install-gvisor.sh, the kind remote test files in run.sh REMOTE_TESTS, and
+# KIND_SHA256 and KUBECTL_SHA256 below. Each install step still fails closed on a bad sum.
 #
-# Trigger: manual (workflow_dispatch) until three things hold: the x86_64 gVisor sum is pinned,
-# the kind remote test files in run.sh REMOTE_TESTS exist, and KIND_SHA256 and KUBECTL_SHA256 are
-# pinned below. Then switch to push and pull_request (test_poc05_ci_wiring.py enforces both
-# states). Never pull_request_target. The kind half of exit criteria 1 and 2 is not in CI yet.
+# Open: no spike has run gVisor (systrap, nested under Docker) on a GitHub ubuntu-latest runner.
+# If runsc cannot start there, the job fails at the gVisor step of `run.sh up`; it never skips the
+# check. The offline remote lane in `make check` (ci.yml, LaneContract over the remote lane)
+# stays the every-commit gate either way (hard requirement 2).
 #
 # No secret is used: the seed step makes every credential inside the cluster. Pod logs go
 # through run.sh `logs`, which sends each through redact_logs (the one filter, in run.sh).
-# kind and kubectl are pinned by version and by a sha256 in the job env. KIND_SHA256 and
-# KUBECTL_SHA256 are empty today, so the install steps fail closed. Pin each from the project's
-# published sha256 file (checked out of band) before the push trigger.
+# kind and kubectl are pinned by version and by a sha256 in the job env, each read once from the
+# project's published sha256 file; the job never fetches a sum from the same release.
 name: remote-lane
 
 on:
+  push:
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -31,10 +31,10 @@ jobs:
     env:
       KIND_VERSION: v0.33.0
       KUBECTL_VERSION: v1.37.0
-      # Must be pinned from the published kind-linux-amd64.sha256sum and kubectl.sha256 files
-      # before the push trigger. Empty: the install step refuses to run (fails closed).
-      KIND_SHA256: ""
-      KUBECTL_SHA256: ""
+      # From https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64.sha256sum
+      KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+      # From https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl.sha256
+      KUBECTL_SHA256: 6129359f4e1f3848a5572ccb0b26cf28b8ca08cef38c95a765b2f64a2c961a2f
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0

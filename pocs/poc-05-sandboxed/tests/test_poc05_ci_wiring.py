@@ -1,21 +1,19 @@
 """PoC-5 CI wiring, offline (plan `docs/plans/2026-10-02-poc-05-sandboxed.md`, section 7, T24).
 
 Exit criterion 1: the hostile suites run in CI, and the no-cluster parts run offline on every
-commit. Only the offline half is in CI today: `ci.yml` runs `make check`, and `make check`
-collects the PoC-5 offline tests. The kind half is not in CI yet: `remote-lane.yml` runs by hand
-only, and no H check runs on kind in it. It may run on push and pull request only
-once the x86_64 gVisor sum is pinned, the kind remote test files exist, and the kind and kubectl
-sha256 sums are pinned in its env (the trigger test enforces both states).
+commit. The offline half: `ci.yml` runs `make check`, and `make check` collects the PoC-5
+offline tests. The kind half: `remote-lane.yml` runs on push and pull request, now that the x86_64
+gVisor sum, the kind remote test files, and the kind and kubectl sha256 sums are all pinned (the
+trigger test requires every one). Whether gVisor starts on a GitHub runner is shown only by a run.
 
 Exit criterion 2: a fake workload goes through the `remote` lane on every commit. Offline that is
-the `LaneContract` file in `make check`. The kind half is not in CI yet: the `test-remote` verb
-selects the kind remote test files by path, and those files are not written yet, so the verb
-fails and names them.
+the `LaneContract` file in `make check`. On kind, the `test-remote` verb selects the kind remote
+test files by path and fails, naming them, if one is missing.
 
 Also checked: the workflow pins every action by a full commit SHA, uses no secret, is never
 triggered by `pull_request_target`, always deletes the cluster, and sends every pod log through
-one redaction filter in `run.sh`; the gVisor installer it relies on fails closed for an arch with
-no pinned sum.
+one redaction filter in `run.sh`; the gVisor installer it relies on pins a sum for both arches
+and fails closed for any other.
 """
 
 from __future__ import annotations
@@ -84,22 +82,20 @@ def _job_env(doc: dict[str, Any]) -> dict[str, Any]:
     return env
 
 
-def test_poc05_remote_lane_runs_on_push_only_when_everything_is_pinned(
+def test_poc05_remote_lane_runs_on_push_with_everything_pinned(
     remote_lane: dict[str, Any],
 ) -> None:
-    """Manual only until all three hold (a known-red job on every push helps nobody): the x86_64
-    gVisor sum is pinned, the kind remote test files exist, and `KIND_SHA256` and `KUBECTL_SHA256`
-    are pinned in the job env (security review item 3). Then push and pull request."""
-    names = _triggers(remote_lane)
+    """The job runs on push and pull request (and by hand), so all three must hold (security
+    review item 3): the x86_64 gVisor sum is pinned, the kind remote test files exist, and
+    `KIND_SHA256` and `KUBECTL_SHA256` are pinned in the job env."""
+    assert _triggers(remote_lane) == {"push", "pull_request", "workflow_dispatch"}
     gvisor = INSTALL_GVISOR.read_text()
-    x86_pinned = re.search(r'^GVISOR_SHA512_X86_64="?[0-9a-f]{128}"?$', gvisor, re.M) is not None
-    files = all((ROOT / f).is_file() for f in REMOTE_TESTS)
+    assert re.search(r"^GVISOR_SHA512_X86_64=[0-9a-f]{128}$", gvisor, re.M), "x86_64 not pinned"
+    missing = [f for f in REMOTE_TESTS if not (ROOT / f).is_file()]
+    assert not missing, missing
     env = _job_env(remote_lane)
-    sums = all(SHA256.match(str(env.get(k) or "")) for k in ("KIND_SHA256", "KUBECTL_SHA256"))
-    if x86_pinned and files and sums:
-        assert {"push", "pull_request"} <= names
-    else:
-        assert names == {"workflow_dispatch"}, (x86_pinned, files, sums)
+    for key in ("KIND_SHA256", "KUBECTL_SHA256"):
+        assert SHA256.match(str(env.get(key) or "")), f"{key} not pinned"
 
 
 def test_poc05_no_workflow_uses_pull_request_target() -> None:
@@ -187,15 +183,15 @@ def test_poc05_run_sh_test_remote_fails_naming_missing_files() -> None:
 
 def test_poc05_remote_lane_tools_checked_by_checksum(remote_lane: dict[str, Any]) -> None:
     """Security review item 3: kind and kubectl are checked against sums pinned in the job env,
-    not a sum fetched from the same release. An empty sum fails closed before any download."""
+    not a sum fetched from the same release. The shape check before any download stays, so a
+    blanked sum fails closed."""
     runs = _runs(remote_lane)
     env = _job_env(remote_lane)
     assert env.get("KIND_VERSION") == "v0.33.0"
     assert env.get("KUBECTL_VERSION") == "v1.37.0"
     for key in ("KIND_SHA256", "KUBECTL_SHA256"):
         assert key in env, f"{key} missing from the job env"
-        value = env[key] or ""
-        assert value == "" or SHA256.match(value), f"{key} is neither empty nor a sha256"
+        assert SHA256.match(str(env[key] or "")), f"{key} is not a pinned sha256"
         guard = runs.find(f"[[ ${{{key}}} =~ ^[0-9a-f]{{64}}$ ]] ||")
         assert guard >= 0, f"no fail-closed check on {key}"
         check = runs.find(f'"${{{key}}}  ', guard)
@@ -326,11 +322,14 @@ def test_poc05_make_check_collects_poc05_offline_tests() -> None:
     assert offline <= present, f"missing: {sorted(offline - present)}"
 
 
-def test_poc05_gvisor_arm64_pinned_and_unpinned_arch_fails_closed() -> None:
+def test_poc05_gvisor_both_arches_pinned_and_other_arch_fails_closed() -> None:
     text = INSTALL_GVISOR.read_text()
-    assert re.search(r"^GVISOR_SHA512_AARCH64=[0-9a-f]{128}$", text, re.M)
-    # x86_64 has no sum in the file; it comes from the environment or stays empty.
-    assert re.search(r'^GVISOR_SHA512_X86_64="\$\{GVISOR_SHA512_X86_64:-\}"$', text, re.M)
+    # Both sums sit in the file for the one pinned release; neither comes from the environment.
+    assert re.search(r"^GVISOR_RELEASE=\d{8}\.\d+$", text, re.M)
+    arm = re.search(r"^GVISOR_SHA512_AARCH64=([0-9a-f]{128})$", text, re.M)
+    x86 = re.search(r"^GVISOR_SHA512_X86_64=([0-9a-f]{128})$", text, re.M)
+    assert arm and x86 and arm.group(1) != x86.group(1)
+    assert "${GVISOR_SHA512_" not in text, "a sum may not be overridden from the environment"
     # The sum is checked for shape before any download; an empty one dies.
     guard = text.find("[[ $sum =~ ^[0-9a-f]{128}$ ]] ||")
     assert guard >= 0, "no fail-closed check on the pinned sum"
@@ -339,7 +338,10 @@ def test_poc05_gvisor_arm64_pinned_and_unpinned_arch_fails_closed() -> None:
     assert re.search(r"\*\) die .*unsupported arch", text)
 
 
-def test_poc05_remote_lane_notes_gvisor_unpinned() -> None:
+def test_poc05_remote_lane_notes_gvisor_on_runner_is_open() -> None:
+    """The header says gVisor on a GitHub runner is not yet shown, that the job fails rather
+    than skips if it cannot start, and that `make check` stays the every-commit gate."""
     head = REMOTE_LANE.read_text().split("\nname:", 1)[0]
+    assert "gVisor" in head and "ubuntu-latest" in head and "never skips" in head
     assert "x86_64" in head and "sha512" in head and "fails closed" in head
     assert "make check" in head
