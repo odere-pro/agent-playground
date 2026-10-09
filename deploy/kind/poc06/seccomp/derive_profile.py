@@ -27,6 +27,21 @@ SYSCALL = "clone3"
 EXPECTED_ACTION = "SCMP_ACT_ERRNO"
 EXPECTED_ERRNO = 38  # ENOSYS
 NEW_ACTION = "SCMP_ACT_ALLOW"
+MIN_ALLOWED_SYSCALLS = 200  # suggested: containerd's RuntimeDefault allows over 300
+FORBIDDEN_ALLOWED = (
+    "mount",
+    "umount2",
+    "unshare",
+    "setns",
+    "bpf",
+    "keyctl",
+    "open_by_handle_at",
+    "perf_event_open",
+    "init_module",
+    "finit_module",
+    "ptrace",
+    "kexec_load",
+)
 
 
 class DeriveError(Exception):
@@ -67,10 +82,47 @@ def clone3_rule_index(profile: dict[str, Any]) -> int:
     return hits[0]
 
 
+def check_baseline(inspect: Any, profile: dict[str, Any]) -> None:
+    """The input is containerd's RuntimeDefault for a drop-ALL container, not a look-alike.
+
+    No message here quotes the input: the inspect document holds the container env (a token).
+    """
+    if profile.get("defaultAction") != "SCMP_ACT_ERRNO":
+        raise DeriveError("baseline: defaultAction is not SCMP_ACT_ERRNO")
+    allowed: set[str] = set()
+    for rule in profile["syscalls"]:
+        if isinstance(rule, dict) and rule.get("action") == "SCMP_ACT_ALLOW":
+            allowed.update(n for n in (rule.get("names") or []) if isinstance(n, str))
+    if len(allowed) < MIN_ALLOWED_SYSCALLS:
+        raise DeriveError(
+            f"baseline: only {len(allowed)} allowed syscalls, want at least {MIN_ALLOWED_SYSCALLS}"
+        )
+    bad = sorted(allowed.intersection(FORBIDDEN_ALLOWED))
+    if bad:
+        raise DeriveError(f"baseline: the input allows syscalls it must not: {bad}")
+    masked_clone = [
+        r
+        for r in profile["syscalls"]
+        if isinstance(r, dict) and "clone" in (r.get("names") or []) and r.get("args")
+    ]
+    if not masked_clone:
+        raise DeriveError("baseline: no clone rule with an args mask (the CLONE_NEW* block)")
+    caps = (
+        inspect.get("info", {})
+        .get("runtimeSpec", {})
+        .get("process", {})
+        .get("capabilities", {})
+        .get("bounding")
+    )
+    if caps:
+        raise DeriveError("baseline: the container has bounding capabilities; want none")
+
+
 def derive(inspect: Any) -> dict[str, Any]:
     """The derived profile; it differs from the input in exactly the clone3 rule."""
     source = extract_profile(inspect)
     index = clone3_rule_index(source)
+    check_baseline(inspect, source)
     derived = copy.deepcopy(source)
     rule = derived["syscalls"][index]
     rule["action"] = NEW_ACTION

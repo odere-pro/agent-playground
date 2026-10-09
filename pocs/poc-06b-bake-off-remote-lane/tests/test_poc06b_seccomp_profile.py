@@ -32,10 +32,18 @@ def _load() -> ModuleType:
 derive_profile = _load()
 
 
+FILLER = {"names": [f"sys_{i}" for i in range(250)], "action": "SCMP_ACT_ALLOW"}
+MASKED_CLONE = {
+    "names": ["clone"],
+    "action": "SCMP_ACT_ALLOW",
+    "args": [{"index": 0, "value": 2114060288, "op": "SCMP_CMP_MASKED_EQ"}],
+}
+
+
 def inspect_doc(syscalls: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """A fixture shaped like containerd's output (a short syscall list, not the real one)."""
     rules = (
-        syscalls
+        [*syscalls, FILLER, MASKED_CLONE]
         if syscalls is not None
         else [
             {"names": ["accept", "accept4", "read", "write"], "action": "SCMP_ACT_ALLOW"},
@@ -46,6 +54,7 @@ def inspect_doc(syscalls: list[dict[str, Any]] | None = None) -> dict[str, Any]:
                 "args": [{"index": 0, "value": 2114060288, "op": "SCMP_CMP_MASKED_EQ"}],
             },
             {"names": ["bpf", "mount"], "action": "SCMP_ACT_ERRNO", "errnoRet": 1},
+            FILLER,
         ]
     )
     return {
@@ -158,3 +167,80 @@ def test_cli_exits_non_zero_with_a_message_on_bad_input() -> None:
     assert got.stdout == ""
     assert "derive_profile:" in got.stderr
     assert run_cli("not json").returncode == 1
+
+
+def _default_with(**changes: Any) -> dict[str, Any]:
+    doc = inspect_doc()
+    doc["info"]["runtimeSpec"]["linux"]["seccomp"].update(changes)
+    return doc
+
+
+def _rules(extra: list[dict[str, Any]] | None = None, drop_clone: bool = False) -> dict[str, Any]:
+    doc = inspect_doc()
+    rules = doc["info"]["runtimeSpec"]["linux"]["seccomp"]["syscalls"]
+    if drop_clone:
+        rules[:] = [r for r in rules if r["names"] != ["clone"]]
+    rules.extend(extra or [])
+    return doc
+
+
+def _with_bounding(caps: list[str]) -> dict[str, Any]:
+    doc = inspect_doc()
+    doc["info"]["runtimeSpec"]["process"] = {"capabilities": {"bounding": caps}}
+    return doc
+
+
+def _look_alike() -> dict[str, Any]:
+    """defaultAction ALLOW plus one clone3 rule: it passes every clone3 check and nothing else."""
+    doc = inspect_doc([{"names": ["clone3"], "action": "SCMP_ACT_ERRNO", "errnoRet": 38}])
+    doc["info"]["runtimeSpec"]["linux"]["seccomp"] = {
+        "defaultAction": "SCMP_ACT_ALLOW",
+        "syscalls": [{"names": ["clone3"], "action": "SCMP_ACT_ERRNO", "errnoRet": 38}],
+    }
+    return doc
+
+
+@pytest.mark.parametrize(
+    ("doc", "message"),
+    [
+        (_look_alike(), "defaultAction"),
+        (_default_with(defaultAction="SCMP_ACT_ALLOW"), "defaultAction"),
+        (_rules([{"names": ["unshare"], "action": "SCMP_ACT_ALLOW"}]), "unshare"),
+        (_rules([{"names": ["ptrace", "mount"], "action": "SCMP_ACT_ALLOW"}]), "mount"),
+        (_rules(drop_clone=True), "no clone rule"),
+        (_with_bounding(["CAP_SYS_ADMIN"]), "bounding capabilities"),
+    ],
+    ids=[
+        "look-alike",
+        "default-allow",
+        "forbidden-unshare",
+        "forbidden-mount",
+        "no-clone-mask",
+        "caps",
+    ],
+)
+def test_baseline_fails_closed(doc: dict[str, Any], message: str) -> None:
+    with pytest.raises(derive_profile.DeriveError, match=message):
+        derive_profile.derive(doc)
+
+
+def test_baseline_rejects_too_few_allowed_syscalls() -> None:
+    doc = inspect_doc()
+    rules = doc["info"]["runtimeSpec"]["linux"]["seccomp"]["syscalls"]
+    rules[:] = [r for r in rules if r is not FILLER]
+    with pytest.raises(derive_profile.DeriveError, match="allowed syscalls"):
+        derive_profile.derive(doc)
+
+
+def test_baseline_accepts_empty_bounding_set_and_ignores_forbidden_names_in_errno_rules() -> None:
+    doc = _with_bounding([])
+    derived = derive_profile.derive(doc)
+    assert derived["defaultAction"] == "SCMP_ACT_ERRNO"
+
+
+def test_errors_never_quote_the_input() -> None:
+    doc = _with_bounding(["CAP_SYS_ADMIN"])
+    doc["info"]["runtimeSpec"]["process"]["env"] = ["TOKEN=s3cret-value"]
+    with pytest.raises(derive_profile.DeriveError) as err:
+        derive_profile.derive(doc)
+    assert "s3cret" not in str(err.value)
