@@ -12,7 +12,7 @@ help: ## Show this help
 
 setup: ## Install Python 3.12, the workspace, and the git pre-commit hook
 	uv sync --all-packages
-	install -m 755 scripts/git-hooks/pre-commit .git/hooks/pre-commit
+	install -m 755 scripts/git-hooks/pre-commit "$$(git rev-parse --git-common-dir)/hooks/pre-commit"
 	@echo "ready: run 'make test'"
 
 fmt: ## Format code
