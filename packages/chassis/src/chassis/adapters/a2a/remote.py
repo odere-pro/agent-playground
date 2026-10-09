@@ -21,6 +21,11 @@ card's interface URL is never followed: `_check_card` keeps only the JSON-RPC in
 its URL to the configured `url` (a card with none is refused). The token is never kept as an
 attribute, logged, put in a span or an error, or shown in `repr`.
 
+- `protocol` (default `chassis`): `a2a` reads a third-party agent's own A2A stream (no
+  `chassis.event` metadata) through `chassis.adapters.a2a.plain`; `a2a` (optional) holds its
+  `usage_key` and `context_id`. The bearer, the card pin, and the probe are the same in both modes.
+  The mode is the operator's choice; the connector never detects it.
+
 Everything after `setup` is `A2AConnector`: the mapping, the deadline, the cancel, the span, and
 the `traceparent`. `probe()` GETs the agent card with the token over a client of its own. `True`
 on 200 only; `False` on any other status, a timeout, or a transport error. It never raises.
@@ -34,11 +39,13 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 import httpx
-from a2a.types import AgentCard, AgentInterface
+from a2a.types import AgentCard, AgentInterface, SendMessageRequest
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH, TransportProtocol
 from a2a.utils.errors import A2AError
 
-from chassis.adapters.a2a.connector import A2AConnector
+from chassis.adapters.a2a.connector import A2AConnector, EventTranslator
+from chassis.adapters.a2a.plain import PlainOptions, PlainTranslator, plain_message
+from chassis.core.envelope import Context, Request
 from chassis.ports.engine import Lane
 
 if TYPE_CHECKING:
@@ -96,6 +103,8 @@ class RemoteConnector(A2AConnector):
         super().__init__()
         self.url: str | None = None
         self._probe_http: httpx.AsyncClient | None = None
+        self._plain: PlainOptions | None = None
+        """Set in `protocol: a2a` mode only."""
 
     def __repr__(self) -> str:
         return f"RemoteConnector(url={self.url!r})"
@@ -118,6 +127,18 @@ class RemoteConnector(A2AConnector):
         del card.supported_interfaces[:]
         card.supported_interfaces.append(pinned)
 
+    def _message_for(self, request: Request, ctx: Context) -> SendMessageRequest:
+        if self._plain is None:
+            return super()._message_for(request, ctx)
+        return plain_message(
+            request.input.model_dump(mode="json"), ctx.model_dump(mode="json"), self._plain
+        )
+
+    def _translator_for(self, request: Request) -> EventTranslator:
+        if self._plain is None or self._ports is None:
+            return super()._translator_for(request)
+        return PlainTranslator(request.request_id, self._plain, self._ports.telemetry.log)
+
     def _client_for(self, token: str, uds: str | None, timeout: float | None) -> httpx.AsyncClient:
         transport = httpx.AsyncHTTPTransport(uds=uds) if uds else None
         kwargs: dict[str, Any] = {} if timeout is None else {"timeout": timeout}
@@ -139,6 +160,13 @@ class RemoteConnector(A2AConnector):
         probe_timeout = config.get("probe_timeout_s", PROBE_TIMEOUT_S)
         if not isinstance(probe_timeout, int | float) or probe_timeout <= 0:
             raise ValueError("engine.probe_timeout_s must be a positive number")
+        protocol = config.get("protocol", "chassis")
+        if protocol not in ("chassis", "a2a"):
+            raise ValueError("engine.protocol must be 'chassis' or 'a2a'")
+        plain = PlainOptions.from_mapping(config.get("a2a")) if protocol == "a2a" else None
+        if protocol != "a2a" and config.get("a2a") is not None:
+            raise ValueError("engine.a2a needs engine.protocol: a2a")
+        self._plain = plain
         self.url = url
         http = self._client_for(token, uds, None)
         try:
