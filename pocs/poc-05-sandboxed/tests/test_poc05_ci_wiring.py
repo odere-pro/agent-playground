@@ -41,6 +41,7 @@ REMOTE_TESTS = (
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_lane.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py",
+    "pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_shm.py",
 )
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 

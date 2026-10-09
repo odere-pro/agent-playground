@@ -11,6 +11,8 @@
 #   deploy/kind/poc05/run.sh seed     seed.sh base, then seed.sh keys once LiteLLM is Ready
 #   deploy/kind/poc05/run.sh apply    platform/, tools/, seed keys, remote/, agents/, each waited for
 #   deploy/kind/poc05/run.sh request  normal requests through agent-echo and chassis-echo-remote
+#   deploy/kind/poc05/run.sh kafka    the deferred Kafka pass (T25, H11): seed.sh kafka, Kafka,
+#                                     its topics, and agent-echo-events, each waited for
 #   deploy/kind/poc05/run.sh up       all of it from nothing, in the plan's section 8 order; a
 #                                     second `up` on a running cluster converges
 #   deploy/kind/poc05/run.sh test     the kind tier: POC05_KIND=1 pytest -m network (PoC-5 tests),
@@ -406,6 +408,25 @@ apply_all() {
   apply_agents
 }
 
+# The deferred Kafka pass (T25, H11; platform/kafka.yaml, agents/agent-echo-events.yaml). Neither
+# file is in a kustomization, so `up` stays the same. seed.sh makes kafka-sasl before the broker
+# formats its SCRAM users from it; the topics come once the broker is Ready (auto-create is off).
+# The agent pod is applied as the platform deployer, like agents/. A separate pytest run after
+# this verb needs POC05_KAFKA=1 set by hand for the same fail-not-skip rule.
+kafka() {
+  "$SEED" kafka
+  kctl apply -f "$HERE/platform/kafka.yaml"
+  wait_rollout "$PLATFORM_NS" kafka
+  "$SEED" kafka-topics
+  kctl -n poc05-agents create configmap chassis-echo-events-config \
+    --from-file=config.yaml="$HERE/agents/chassis/echo-events.yaml" --dry-run=client -o yaml |
+    kctl apply -f - --as="$DEPLOYER"
+  kctl apply -f "$HERE/agents/agent-echo-events.yaml" --as="$DEPLOYER"
+  wait_rollout poc05-agents agent-echo-events
+  # The verbs after this one (test, with-gateway) then fail, not skip, on a missing broker.
+  export POC05_KAFKA=1
+}
+
 # --- one normal request per lane ---------------------------------------------------------------
 
 # The chassis binds its public port to the pod IP only (B6), and `kubectl port-forward` dials
@@ -512,6 +533,7 @@ REMOTE_TESTS=(
   pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_lane.py
   pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py
   pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py
+  pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_shm.py
 )
 
 # The remote-lane CI job (.github/workflows/remote-lane.yml) runs this after `up`. A missing file
@@ -723,7 +745,7 @@ pod_logs() {
   done
 }
 
-usage() { sed -n '2,33p' "$0"; }
+usage() { sed -n '2,35p' "$0"; }
 
 (($# > 0)) || { usage; exit 0; }
 # `with-gateway` takes the rest of the line as its command, so it ends the verb list.
@@ -749,6 +771,7 @@ for cmd in "$@"; do
     seed) seed ;;
     apply) apply_all ;;
     request) request ;;
+    kafka) kafka ;;
     up) up ;;
     test) run_tests ;;
     test-remote) run_tests_remote ;;
