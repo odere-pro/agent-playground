@@ -46,6 +46,11 @@ make kind-poc06 ARGS=up        # then ARGS=test; kind and Docker, see deploy/kin
 
 Not recorded yet. The offline bake-off demo is [in 6a](../poc-06a-bake-off-sidecar-lane/demo/README.md). A kind demo waits on the first green `poc06-kind.yml` run.
 
+## Findings from the kind work
+
+- **Threads under gVisor.** runsc with `oci-seccomp` turns RuntimeDefault's `clone3 -> ENOSYS` into EPERM (google/gvisor#14688; the fix is google/gvisor#14721 and is not released). So glibc 2.34 and later cannot create threads in a gVisor pod. PoC-6 gives its gVisor pods a Localhost seccomp profile, `profiles/poc06-runsc-clone3.json`. It is RuntimeDefault with only `clone3` allowed. `deploy/kind/poc06/run.sh` derives it from the node's containerd. Details are in [notes/2026-10-09-lanes-b-kind.md](notes/2026-10-09-lanes-b-kind.md). The kind-run box above stays open until CI is green. The profile and the note text land from another branch.
+- **kagent-adk runs as uid 65532.** That is the uid of its upstream Dockerfile. The image is built from pinned source, and `packages/chassis/tests/test_image_uids.py` has an `UPSTREAM_UIDS` table for such images.
+
 ## Notes and decisions
 
 Dated files in `notes/`: [Claude CLI capture](notes/2026-10-09-claude-cli-capture.md), [kagent probe](notes/2026-10-09-kagent-probe.md), [engines on kind](notes/2026-10-09-lanes-b-kind.md). [notes/backlog-changes.md](notes/backlog-changes.md) lists what the backlog should change.
