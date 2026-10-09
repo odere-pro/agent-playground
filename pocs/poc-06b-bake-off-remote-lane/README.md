@@ -16,7 +16,7 @@ Which untrusted frameworks and which remote solution does the chassis front in t
 **Both parts:**
 
 - [ ] Two benchmark tasks for every engine: text in, text out (the simplifier), and a tool task (a lookup with two read-only tools).
-- [ ] Run every task on a big model and on an SLM (vLLM or llama.cpp), both through the chassis model proxy and the router.
+- [ ] Run every task on a hosted big model, through the chassis model proxy and the router. The SLM runs are [PoC-6c](../../docs/planning/poc/006c-PoC-6c-pretrained-slm.md) (user decision, 2026-10-09).
 - [ ] Score each engine against the bake-off criteria in [000-plan.md](../../docs/planning/poc/000-plan.md#bake-off-criteria): event mapping effort, streaming fidelity over A2A, tool support, model agnostic, token overhead, latency, footprint, statelessness, lane under the trust rule, observability hooks, durability, license and maturity.
 - [ ] Check router compatibility per engine: does it need provider-only features (for example the Responses API or prompt caching) that the chassis model proxy or LiteLLM does not pass through?
 - [ ] Rerun the PoC-3 contract suite, the PoC-4 load test, and the PoC-5 hostile suite on each new engine, in its lane.
@@ -31,7 +31,7 @@ Each one has a scenario test in `tests/` or a recorded reason it cannot have one
 - [ ] The non-Python agent and the remote solution pass the same contract suite, with no change to the chassis core.
 - [ ] Every shortlisted engine is scored on every criterion, with numbers where the criterion is measurable.
 - [ ] Every supported engine passes the contract, load, and hostile suites, in its lane.
-- [ ] The token overhead against plain Python is known per engine, on a big model and on an SLM.
+- [ ] The token overhead against plain Python is known per engine, on a hosted big model. PoC-6c measures it on an SLM.
 - [ ] What the chassis cannot control is listed for the remote solution.
 - [ ] An ADR names the default engine, the supported engines with their lane, and the rejected engines with reasons. Part A leaves it as a draft; part B completes it.
 - [ ] The `handle` contract and the chassis event schema are frozen as v1, or the changes they needed are listed.

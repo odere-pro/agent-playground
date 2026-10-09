@@ -35,7 +35,7 @@ It runs in two parts, so the trusted frameworks do not wait on the cluster work 
 **Both parts:**
 
 - [ ] Two benchmark tasks for every engine: text in, text out (the simplifier), and a tool task (a lookup with two read-only tools).
-- [ ] Run every task on a big model and on an SLM (vLLM or llama.cpp), both through the chassis model proxy and the router.
+- [ ] Run every task on a hosted big model, through the chassis model proxy and the router. The SLM runs are [PoC-6c](006c-PoC-6c-pretrained-slm.md) (user decision, 2026-10-09).
 - [ ] Score each engine against the bake-off criteria in [000-plan.md](000-plan.md#bake-off-criteria): event mapping effort, streaming fidelity over A2A, tool support, model agnostic, token overhead, latency, footprint, statelessness, lane under the trust rule, observability hooks, durability, license and maturity.
 - [ ] Check router compatibility per engine: does it need provider-only features (for example the Responses API or prompt caching) that the chassis model proxy or LiteLLM does not pass through?
 - [ ] Rerun the PoC-3 contract suite, the PoC-4 load test, and the PoC-5 hostile suite on each new engine, in its lane.
@@ -66,14 +66,14 @@ A scorecard table with one row per engine, and side-by-side runs of both tasks o
 - [ ] The non-Python agent and the remote solution pass the same contract suite, with no change to the chassis core.
 - [ ] Every shortlisted engine is scored on every criterion, with numbers where the criterion is measurable.
 - [ ] Every supported engine passes the contract, load, and hostile suites, in its lane.
-- [ ] The token overhead against plain Python is known per engine, on a big model and on an SLM.
+- [ ] The token overhead against plain Python is known per engine, on a hosted big model. PoC-6c measures it on an SLM.
 - [ ] What the chassis cannot control is listed for the remote solution.
 - [ ] An ADR names the default engine, the supported engines with their lane, and the rejected engines with reasons. Part A leaves it as a draft; part B completes it.
 - [ ] The `handle` contract and the chassis event schema are frozen as v1, or the changes they needed are listed.
 
 ## Links
 
-- Plan: [000-plan.md](000-plan.md) · Previous: [PoC-3](003-PoC-3-one-interface-every-client.md) for part A, [PoC-5](005-PoC-5-sandboxed.md) for part B · Next: [PoC-7](007-PoC-7-cross-cutting-decisions.md)
+- Plan: [000-plan.md](000-plan.md) · Previous: [PoC-3](003-PoC-3-one-interface-every-client.md) for part A, [PoC-5](005-PoC-5-sandboxed.md) for part B · Next: [PoC-7](007-PoC-7-cross-cutting-decisions.md) · The SLM runs: [PoC-6c](006c-PoC-6c-pretrained-slm.md)
 - Decision: [ADR-001](../adr/001-chassis-delivery-model.md) (the trust rule and the lanes)
 - Backlog issues this informs: [008 H-14](../issues/008-H-14-one-agent-interface.md), [054 H-16](../issues/054-H-16-tool-port.md), [063 S-8](../issues/063-S-8-tool-call-finetune.md), [058 CH-8](../issues/058-CH-8-framework-event-mappings.md), [055 CH-6](../issues/055-CH-6-remote-lane-trust-rule.md)
 - Epic: [B.1](../slm-agent-platform-epic-v3.md#b1), [B.3](../slm-agent-platform-epic-v3.md#b3), [I](../slm-agent-platform-epic-v3.md#app-i)
