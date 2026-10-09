@@ -1,8 +1,8 @@
-# Contract v5 (draft)
+# Contract v5
 
-The design for the three contract questions of PoC-6 part B: the Anthropic Messages route on the chassis model proxy (for the Claude Agent SDK), a plain-A2A mode in the `remote` connector (for third-party agents that emit no chassis events), and the freeze of the `handle` contract and the event schema (exit criterion 8). Every change is additive over [contract v4](contract-v4.md), which still holds for everything this document does not name. Status: draft, written 2026-10-09 at commit `5860257`, from the code, the [Claude CLI capture](../../pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-claude-cli-capture.md), and the kagent probe note (`pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-kagent-probe.md`, merged on the integration branch, not on this one yet). Nothing here is built. The plan is [the PoC-6 work plan](../plans/2026-10-09-poc-06-bake-off.md), tasks B1 and B6. The planning doc is [PoC-6](../planning/poc/006-PoC-6-framework-bake-off.md).
+The written contract after PoC-6: the Anthropic Messages route on the chassis model proxy (for the Claude Agent SDK), a plain-A2A mode in the `remote` connector (for third-party agents that emit no chassis events), and the freeze of the `handle` contract and the event schema (exit criterion 8). Every change is additive over [contract v4](contract-v4.md), which stays as the PoC-5 record and still holds for everything this document does not name. Contracts v3 to v1 hold for what v4 does not name. Status: in force after PoC-6, written 2026-10-09. It began as a design at commit `5860257`, from the code, the [Claude CLI capture](../../pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-claude-cli-capture.md), and the [kagent probe](../../pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-kagent-probe.md). The code was then built to it and the review findings were folded in. Where this text and the code differ, the code wins, and the code's docstrings name this document. The plan is [the PoC-6 work plan](../plans/2026-10-09-poc-06-bake-off.md), tasks B1 and B6. The planning doc is [PoC-6](../planning/poc/006-PoC-6-framework-bake-off.md). The decision on engines is [ADR-006](../planning/adr/006-agent-engines-default-supported-lanes.md).
 
-Contract v5 is a version of this document, not of the wire. The event schema stays `schema_version: "0"` (see part C). When the work is built, this file is renamed `contract-v5.md` and rewritten from the code, as v4 was.
+Contract v5 is a version of this document, not of the wire. The event schema stays `schema_version: "0"` (see part C).
 
 ## Decisions at a glance
 
@@ -11,8 +11,9 @@ Contract v5 is a version of this document, not of the wire. The event schema sta
 | A | `POST /v1/messages` on both model proxy listeners, mapped onto `ModelPort` | The workload's model contract (a second wire format on the proxy port); the remote listener's route list and refusal bodies. Not the envelope, events, `handle`, a port, the A2A mapping, or `spec.*` | Route exists, nobody calls it | Route exists on loopback, nobody calls it | The Claude Agent SDK's path. Same hop as `/v1/chat/completions` |
 | B | `spec.engine.protocol: a2a` in the `remote` connector | The A2A mapping (a second, opt-in reading side) and `spec.engine.*`. Not the event schema | Refused | Refused | Opt-in per remote. No new hop |
 | C | Freeze `schema_version: "0"` as the stable line, with a written rule for what is breaking | All of them, in content: none changes | None | None | None |
+| D | Chassis-mode transport errors keep `str(exc)`; plain mode uses fixed text (B.6.1) | The text of `a2a.transport` and `a2a.timeout` errors | None | None | Chassis mode: as in v4. Plain mode: fixed text |
 
-None of the three touches `chassis.core`. The check is `git diff --stat main -- packages/chassis/src/chassis/core packages/chassis/src/chassis/ports packages/chassis/schemas/events.v0.json` printing nothing at the end of PoC-6.
+None of the four touches `chassis.core`. The check is `git diff --stat main -- packages/chassis/src/chassis/core packages/chassis/src/chassis/ports packages/chassis/schemas/events.v0.json` printing nothing at the end of PoC-6.
 
 ## What did not change
 
@@ -423,9 +424,9 @@ The default, `ChassisTranslator`, wraps `update_to_event`: it returns zero or on
 | `status_update` or `task`, state `COMPLETED` | `metrics`, then `end {status: ok}`. `output` is `{"text": <text>}` **only if no delta was sent**: the snapshots in the order first seen, else the terminal message's text. If a delta was sent, `output` is not set and the collector joins the deltas |
 | `task` that is terminal, as the unary answer | The artifacts' text parts are snapshots; the status message's text is the fallback. Handled as `COMPLETED` above. A `task` that arrives after streamed deltas is a snapshot too and changes nothing |
 | `message` (a reply with no task) | Its text is the snapshot; handled as `COMPLETED`. kagent does not send this shape; it is unit-tested only |
-| `FAILED` or `REJECTED` | `metrics` if usage was seen, then `error {code: "a2a.failed", retryable: false}`. The message is the status message's text, else `the task ended in state <STATE>` (v1's text) |
+| `FAILED` or `REJECTED` | `metrics` if usage was seen, then `error {code: "a2a.failed", retryable: false}`. The message is fixed text, as `_from_state` writes it (`the task ended in state <STATE>`, v1's text). The remote's own status text goes to the chassis log, redacted and capped at 300 characters (suggested). It never reaches `Response.output.error` |
 | `CANCELED` | `error {code: "a2a.canceled", retryable: false}`. As in chassis mode, where the connector never asks for `cancelled=True`, so this is always an error |
-| `INPUT_REQUIRED` or `AUTH_REQUIRED` | `error {code: "a2a.unsupported_state", retryable: false}`, message `<STATE> is not in the contract`. The contract has no pause. The code is v1's, so `status_for` and `PUBLIC_MESSAGES` need no new entry |
+| `INPUT_REQUIRED` or `AUTH_REQUIRED` | `error {code: "a2a.unsupported_state", retryable: false}`, message `<STATE> is not in the contract`. The contract has no pause. The code is v1's, so `status_for` and `PUBLIC_MESSAGES` need no new entry. The task stays open on the remote, so the connector cancels it (B.6.2) |
 | An SSE `: ping` comment | Never reaches the mapping. a2a-sdk drops it. It keeps the HTTP read alive and does not extend the run deadline |
 | After a terminal item | Ignored. The translator is finished |
 
@@ -433,7 +434,7 @@ A stream that ends with no terminal state is not the translator's: the connector
 
 **`metrics`.** One event before the terminal event of a `COMPLETED` run, and before `FAILED` or `REJECTED` only when usage was seen. Fields: `input_tokens`, `output_tokens`, `attempt: 1`; `cost_usd`, `model_route`, and `latency_ms` unset.
 
-- Usage is read from the key `a2a.usage_key`, on `status_update.metadata`, `artifact_update.metadata`, `artifact.metadata`, and `task.metadata`. The value is an object. The input count is the first integer found under `promptTokenCount`, `prompt_tokens`, `input_tokens`, `inputTokens`; the output count under `candidatesTokenCount`, `completion_tokens`, `output_tokens`, `outputTokens` (suggested: this alias list). A value that is not an integer is skipped.
+- Usage is read from the key `a2a.usage_key`, on `status_update.metadata`, `artifact_update.metadata`, `artifact.metadata`, and `task.metadata`. The value is an object. The input count is the first integer found under `promptTokenCount`, `prompt_tokens`, `input_tokens`, `inputTokens`; the output count under `candidatesTokenCount`, `completion_tokens`, `output_tokens`, `outputTokens` (suggested: this alias list). The reading is strict: non-negative integers only. A float with no fractional part (`42.0`, as protobuf `Struct` numbers can arrive) is read as an integer. Booleans, negatives, fractions, and strings count as zero, and each is logged once per run.
 - **The last value wins; values are never summed.** kagent reports the same totals on the final artifact and the final status. Summing would double them.
 - No key configured, or none found: zeros. **Zeros mean unknown, not none.** The event cannot say it. So the run's span gets `a2a.usage_known=false` (suggested), and a plain remote that goes through the chassis model proxy has its real token count in the run's budget (`spent`), which is the better number. A future change could copy the proxy's count into the response. It is not in this design.
 
@@ -442,6 +443,19 @@ A stream that ends with no terminal state is not the translator's: the connector
 **Ordering by construction.** `start` first and once, one terminal event last, nothing after. The server-side checks that enforce the order for a chassis workload (`workload.bad_order`, `workload.no_end`) do not exist for a third party, so the translator is what holds the order.
 
 **`server_finished`** is true after `COMPLETED`, `FAILED`, `REJECTED`, and `CANCELED`. It is false after `INPUT_REQUIRED` or `AUTH_REQUIRED`: the task is paused on the remote, not finished, so the connector sends `CancelTask` and the task does not hang. (The chassis-mode rule sets `server_done` for `a2a.unsupported_state` too, which skips the cancel. That is a small bug there; it is not fixed here because it is outside this change. See "Open points".)
+
+#### B.6.1 Decision D: the text of transport errors
+
+A timeout or a dropped stream is `error {code: "a2a.timeout"}` or `{code: "a2a.transport"}`. The connector asks the lane for the text through `_failure_text(code, exc)`.
+
+- **Chassis mode keeps `str(exc)`.** A chassis-mode remote already writes its own `error.message` through chassis events, so the exception text adds no channel the remote does not have. The existing connector tests and the v4 behavior stay as they are.
+- **Plain mode uses fixed text.** The SDK puts the remote's own words in its exceptions (a JSON-RPC error message, an SSE payload). In plain mode that text would reach a `Response`, a span, or an event. So `RemoteConnector._failure_text` returns `the remote timed out` for `a2a.timeout` and `the remote failed` for the rest. The exception text goes to the chassis log as a warning, redacted by `redact`. A stream the SDK cannot parse (a `JSONDecodeError`) is also `a2a.transport` with fixed text.
+
+Why not fixed text everywhere: it would change a v4 behavior that a chassis-mode remote can already override, for no gain. Why not `str(exc)` everywhere: plain mode talks to code the operator did not write.
+
+#### B.6.2 Cancel on a paused task
+
+`connector.py` sets `task_id` from a `task` item. In plain mode the hook also reads `task_id` from `status_update` and `artifact_update`. So a remote whose first item is a status update still gets `CancelTask` after `INPUT_REQUIRED` or `AUTH_REQUIRED`. A test covers it. Without a `task_id` the connector cannot cancel and skips it.
 
 ### B.7 Card pinning and the bearer
 
@@ -474,7 +488,7 @@ For the PoC-6b list (exit criterion 6). Mark `suggested:` where it is an inferen
 | File | Change |
 | ---- | ------ |
 | `packages/chassis/src/chassis/adapters/a2a/plain.py` (new) | `PlainTranslator`, `plain_message`, `PlainOptions`, the usage reader. Imports a2a-sdk, protobuf's `json_format`, and `chassis.core.events.SCHEMA_VERSION`. Imports nothing private from `mapping.py` |
-| `packages/chassis/src/chassis/adapters/a2a/connector.py` | The hooks `_message_for` and `_translator_for`, `ChassisTranslator`, and the loop over a translator's list. No change in chassis mode |
+| `packages/chassis/src/chassis/adapters/a2a/connector.py` | The hooks `_message_for`, `_translator_for`, and `_failure_text` (B.6.1), `ChassisTranslator`, and the loop over a translator's list. No change in chassis mode |
 | `packages/chassis/src/chassis/adapters/a2a/remote.py` | `setup` reads `protocol` and `a2a`, builds `PlainOptions`, overrides the two hooks, sets span attributes `a2a.protocol` and `a2a.usage_known` |
 | `packages/chassis/src/chassis/server/config.py` | `EngineSpec.protocol`, `PlainA2ASpec`, the two refusals, `as_mapping` |
 | `packages/chassis/schemas/chassis-config.v0.json` | Regenerated with `make schemas`: `spec.engine.protocol` (enum, default `chassis`) and `spec.engine.a2a`. Optional, so the major stays `0` |
@@ -494,7 +508,7 @@ If a later change needs a shared helper in `mapping.py`, it changes both copies 
   - `last_chunk` with `append=true` is a delta;
   - `FAILED` with and without a message; `REJECTED`; `CANCELED`; `INPUT_REQUIRED` and `AUTH_REQUIRED` with `server_finished` false;
   - data parts ignored; `task.history` ignored; `metadata["chassis.event"]` ignored (a forged `tool_call` produces nothing);
-  - usage under each alias; a non-integer skipped; the last value wins; no `usage_key` gives zeros; usage on the final artifact and the final status is not doubled;
+  - usage under each alias; hostile usage (a boolean, a negative, a fraction, a string) counts as zero and is logged once, and `42.0` reads as 42; the last value wins; no `usage_key` gives zeros; usage on the final artifact and the final status is not doubled;
   - a second terminal item and any item after a terminal are ignored;
   - the order invariant: for every sequence above, `start` is first and once and exactly one terminal event is last.
 - `packages/chassis/tests/test_remote_connector_plain.py` (new, over a Unix socket like `test_lane_contract.py`): a small a2a-sdk server that emits plain events (no `chassis.event`).
@@ -503,12 +517,14 @@ If a later change needs a shared helper in `mapping.py`, it changes both copies 
   - The bearer is on the card fetch, the message, the cancel, and the probe.
   - A card that names another host: every request still goes to `spec.engine.url`.
   - A card with only a gRPC interface is refused.
-  - `INPUT_REQUIRED` sends `CancelTask`; `COMPLETED` does not.
+  - `INPUT_REQUIRED` sends `CancelTask`, also when the first item is a status update; `COMPLETED` does not.
+  - `FAILED`, a timeout, and a dropped stream carry fixed text, and the remote's text is only in the log.
   - The deadline gives `a2a.timeout`; a dropped stream gives `a2a.transport`.
   - Chassis mode is unchanged: the existing `test_remote_connector.py` and `test_lane_contract.py` pass without edits.
 - `packages/chassis/tests/test_server.py` or `test_config_loader.py`: the two refusals and their text; the defaults; `as_mapping` for `sidecar` has no `protocol`; the schema drift test after `make schemas`.
 - `packages/workload-a2a/tests/test_workload_a2a_copies.py`: unchanged; add `test_plain_mode_is_chassis_only`, asserting `workload_a2a` has no `plain` module.
-- PoC-6b B4, `pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kagent_adk_lane.py`: the lane contract's observable subset (start first, deltas join to the answer, `end ok`, `metrics`, order) against kagent-adk, in memory with a stub and on kind with the real runtime. Not the full `LaneContract`: `tool_call` and the `retry` and `fallback` statuses cannot appear.
+- PoC-6b B4, `pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_plain_a2a_contract.py`: the lane contract's observable subset (start first, deltas join to the answer, `end ok`, `metrics`, order) against a plain-A2A stub. The real kagent-adk runs on kind in `poc06-kind.yml`. Not the full `LaneContract`: `tool_call` and the `retry` and `fallback` statuses cannot appear.
+- **The per-commit guard.** The kind run of kagent-adk is not the per-commit guard. Hard requirement 2 holds through the offline plain-A2A stub tests in `make check`.
 
 ### B.11 Open points
 
@@ -535,13 +551,13 @@ Four things carry "v1" today, so this reading is written down to stop a search f
 
 Fixed means: the description below is the contract, and a test pins it (C.4).
 
-1. **`handle`.** `async def handle(input: dict, ctx: dict) -> AsyncIterator[dict]` on the wire; the typed `Handle` alias is internal. A yielded event with no `schema_version` is filled with `"0"`. The order: `start` first and once, `end` or `error` last, nothing after. `handle` forwards `ctx["traceparent"]` as the `traceparent` header on every model and MCP call. It calls only the proxy listeners.
+1. **`handle`.** `async def handle(input: dict, ctx: dict) -> AsyncIterator[dict]` on the wire; the typed `Handle` alias is internal. The freeze test pins the signature (`core/handle.py`: `Handle`, `wire`), not only the schemas, constants, and codes. A yielded event with no `schema_version` is filled with `"0"`. The order: `start` first and once, `end` or `error` last, nothing after. The rule is absolute for a run that reached `handle`. A failure before `handle` is a single `error` with no `start` (contract v1, "Events"). `handle` forwards `ctx["traceparent"]` as the `traceparent` header on every model and MCP call. It calls only the proxy listeners.
 2. **`TaskInput`** (`task_input.v0.json`): `text: str | None`, `data: object`, `extra="forbid"`.
 3. **`Context`** (`context.v0.json`): `request_id`, `trace_id`, `idempotency_key`, `agent`, `agent_version`, `budget {max_tokens, timeout_ms}`, `versions`, `model_route`, `traceparent`. Passed through unchanged. The remote's bearer token is never in it.
 4. **The six events** (`events.v0.json`) with their fields: `start {request_id}`, `delta {text}`, `tool_call {call_id, name, arguments, result?}`, `metrics {input_tokens, output_tokens, cost_usd?, model_route?, latency_ms?, attempt}`, `end {status: ok | retry | fallback, output?}`, `error {code, message, retryable}`. Every event has `schema_version`. Unknown fields are refused. `end.output` replaces the joined deltas when set. The collector sums `metrics`.
 5. **The envelope:** `Request` and `Response` (`request.v0.json`, `response.v0.json`).
 6. **The A2A mapping in chassis mode.** The four metadata keys (`chassis.event`, `chassis.ctx`, `chassis.input`, `chassis.schema_version`) as JSON strings; one A2A event per chassis event, in order; `context_id` is the trace id; the event-to-state table; the `traceparent` HTTP header; the cancel; the native parts as the view for generic clients. The v0 `Struct` form of those keys stays readable. It is reader-only compatibility, no writer produces it, and it is dropped only at the next major (contract v1 said "dropped in v2" and the code never did; this keeps the code's behavior).
-7. **The error codes of contract v1** with their `retryable`: `a2a.unsupported_schema_version`, `a2a.bad_request`, `workload.bad_event`, `workload.bad_order`, `workload.no_end`, `workload.exception`, `a2a.bad_event`, `a2a.request_mismatch`, `a2a.timeout`, `a2a.transport`, `a2a.canceled`, `a2a.failed`, `a2a.unsupported_state`, `engine_error`. A workload's own codes stay a convention.
+7. **The error codes of contract v1** with their `retryable`: `a2a.unsupported_schema_version`, `a2a.bad_request`, `workload.bad_event`, `workload.bad_order`, `workload.no_end`, `workload.exception`, `a2a.bad_event`, `a2a.request_mismatch`, `a2a.timeout`, `a2a.transport`, `a2a.canceled`, `a2a.failed`, `a2a.unsupported_state`, `engine_error`. A workload's own codes stay a convention. The freeze test asserts that each of these codes is still emitted, with the same `retryable` value. It does not assert set equality, so a new code stays compatible (C.3).
 
 Not frozen, and why:
 
@@ -568,7 +584,7 @@ A breaking change bumps `schema_version` to `"1"`, adds `"1"` to `SUPPORTED_SCHE
 **Compatible, no bump:**
 
 - a new optional `Context` field;
-- a new error code (codes are open strings; the first new code with a public meaning also gets a `PUBLIC_MESSAGES` entry);
+- a new error code (codes are open strings; the first new code with a public meaning also gets a `PUBLIC_MESSAGES` entry in `core/inbound.py`; that diff is the one allowed exception to the empty-diff gate on `core`, and it adds entries only);
 - a new optional `spec.*` field;
 - a new A2A metadata key that the other side ignores;
 - a new route, port, interface, or adapter;
@@ -607,11 +623,12 @@ A breaking change bumps `schema_version` to `"1"`, adds `"1"` to `SUPPORTED_SCHE
 **The machine check for criterion 8** (task B6, run once more at the end of W3 against the real engines):
 
 1. `git diff --stat main -- packages/chassis/src/chassis/core packages/chassis/src/chassis/ports packages/chassis/schemas/events.v0.json packages/chassis/schemas/task_input.v0.json packages/chassis/schemas/context.v0.json packages/chassis/schemas/request.v0.json packages/chassis/schemas/response.v0.json` prints nothing.
-2. `packages/chassis/tests/test_contract_freeze.py` (new; suggested name) passes. It pins:
+2. `packages/chassis/tests/test_contract_freeze.py` (written in parallel with this document) passes. It pins:
    - the sha256 of the five schema files (hashes at `5860257`, first 16 hex: `events.v0` `60de41563a1d0582`, `task_input.v0` `6d8aa949b462c77e`, `context.v0` `d2db0e94a50379f1`, `request.v0` `4ff8a4324a90e8c0`, `response.v0` `63acf4f16dae59f9`; the test holds the full digests);
    - the set of event types is the six, `SCHEMA_VERSION == "0"`, `SUPPORTED_SCHEMA_VERSIONS == ("0",)`;
    - the four metadata key constants in `mapping.py` and the event-to-state table;
-   - the set of frozen error codes, as strings the connector and `workload_a2a` can emit.
+   - each frozen error code is still emitted with the same `retryable` (not set equality);
+   - the `handle` signature (`core/handle.py`: `Handle`, `wire`).
    Changing any of them fails the test. The fix is a bump and a new contract, or a revert. That is what "frozen" means in the repo.
 3. Every engine's mapping test parses every event it emits with `parse_event`.
 4. The existing byte-equality test of `mapping.py` and the TypeScript twin check (`make ts-check`) pass.
@@ -625,13 +642,13 @@ If any engine turns out to need an event change after all, B6 lists it in `pocs/
 | Bump to `"1"` with the same content | A rename. It forces `Literal["0"]` to change in `chassis.core.events`, and `SCHEMA_VERSION` in `mapping.py` (both copies), the vendored schema in `workload_a2a`, and the TypeScript server. A chassis that speaks `"1"` makes every deployed `"0"`-only workload answer `a2a.unsupported_schema_version`. The cost is large and the information is none: `schema_version` counts breaking changes (contract v1), it is not a maturity label. It also puts a change in `chassis.core` into the criterion 2 diff |
 | Freeze nothing and write only a list | Criterion 8 asks for a freeze first. With no engine needing a change, the list is empty and the freeze is the real work |
 | Freeze the plain mode too | One probe is not enough evidence |
-| Freeze the model proxy formats | They are chassis-side, they are already additive under contract v4, and the Anthropic route is not built |
+| Freeze the model proxy formats | They are chassis-side, they are already additive under contract v4, and the Anthropic route had no second client yet |
 
 ### C.6 Open points
 
 - **Version negotiation.** The chassis sends `chassis.schema_version: "0"` and the server refuses a version it does not know. When `"1"` exists, a chassis that wants to send it needs to learn what the workload accepts (a card extension, or a field on the card). Decide in the bump's design.
 - **Strict readers.** The cost of every additive event change being a bump is a decision to revisit at the first additive need (the last row of the table above).
-- **ADR.** The freeze meaning ("first stable line, major stays `0`") and the plain-A2A choice are decisions. They go into the bake-off ADR (suggested: ADR-006, task A5 and B6) with the reasons here. They are not an ADR of their own, because this task writes the design document only.
+- **ADR.** The freeze meaning ("first stable line, major stays `0`") and the plain-A2A choice are recorded in [ADR-006](../planning/adr/006-agent-engines-default-supported-lanes.md) with the reasons here.
 
 ---
 
@@ -665,23 +682,10 @@ No new `RELOADABLE` path. `spec.engine` is restart-only already. The constants `
 
 - Plan and planning doc: [the PoC-6 work plan](../plans/2026-10-09-poc-06-bake-off.md), [PoC-6](../planning/poc/006-PoC-6-framework-bake-off.md).
 - Decisions it rests on: [ADR-001](../planning/adr/001-chassis-delivery-model.md) (lanes, hard requirement 1, item 8), [ADR-003](../planning/adr/003-chat-formats-onto-the-canonical-request.md) (carry, refuse, ignore; the public Anthropic interface), [ADR-005](../planning/adr/005-remote-lane-auth-and-trust-admission.md) (the remote token, `RequireRun`, the card pin).
-- Evidence: [the Claude CLI capture](../../pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-claude-cli-capture.md) and its scripts in `pocs/poc-06b-bake-off-remote-lane/notes/capture/`; the kagent probe note named at the top.
-- The contract in force: [contract v4](contract-v4.md).
+- Evidence: [the Claude CLI capture](../../pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-claude-cli-capture.md) and its scripts in `pocs/poc-06b-bake-off-remote-lane/notes/capture/`; the [kagent probe](../../pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-kagent-probe.md).
+- The contract before this one: [contract v4](contract-v4.md), which this document supersedes.
+- The decision on engines and lanes: [ADR-006](../planning/adr/006-agent-engines-default-supported-lanes.md).
 
-## Review findings for parts (b) and (c), decided 2026-10-09
+## Review history
 
-The `reviewer` read this draft on 2026-10-09 and asked for a retry. The part (a) findings went to the `/v1/messages` build. The ones below bind the builds of parts (b) and (c). Where they conflict with the text above, they win.
-
-### Part (b), the plain-A2A mode
-
-1. **Cancel on `INPUT_REQUIRED` and `AUTH_REQUIRED`.** Today `connector.py` sets `task_id` only from a `task` item (about line 140), and it skips the cancel when `task_id` is `None` (about line 188). In plain mode, the hook also reads `task_id` from `status_update` and `artifact_update`. So an agent whose first item is a status update still gets `CancelTask`. A test covers it.
-2. **`FAILED` and `REJECTED` carry fixed text.** `error.message` is fixed text, as `_from_state` already does (`mapping.py`, about 203-204). The remote's own status text is logged at the chassis, redacted and capped (suggested: 300 characters). It never goes into `Response.output.error`.
-3. **Usage parsing is strict.** It takes non-negative integers only. A float with no fractional part (`42.0`, as protobuf `Struct` numbers can arrive) is read as an integer. Booleans, negatives, fractions, and strings count as zero, and each is logged once per run. A hostile-usage unit test covers each case.
-4. **The per-commit guard.** The kind run of kagent-adk is not the per-commit guard. Hard requirement 2 holds through the offline plain-A2A stub test in `make check`.
-
-### Part (c), the freeze
-
-1. **Error codes.** The freeze test asserts that each frozen error code is still emitted, with the same `retryable` value. It does not assert set equality. A new error code stays compatible, with no bump.
-2. **`PUBLIC_MESSAGES`.** That table lives in `core/inbound.py`. A new public code may need an entry there. That diff is the one allowed exception to the empty-diff gate on `core`, and it must add only entries.
-3. **Order rule.** It is absolute for a run that reached `handle`. A failure before `handle` is a single `error` with no `start` (contract v1, "Events").
-4. **`handle` is pinned too.** The freeze test pins the `handle` signature (`core/handle.py`: `Handle`, `wire`), not only the schemas, constants, and codes.
+The `reviewer` read the design on 2026-10-09 and asked for a retry. The part (a) findings went to the `/v1/messages` build. The findings for parts (b) and (c) are folded into this text: fixed text for `FAILED` and `REJECTED` (B.6), strict usage (B.6), the cancel on a paused task (B.6.2), the per-commit guard (B.10), and the freeze rules for error codes, `PUBLIC_MESSAGES`, the order rule, and `handle` (C.2, C.3, C.4). Decision D (B.6.1) was made at the close.
