@@ -78,7 +78,7 @@ flowchart LR
 - **Tools.** A workload never reaches a tool server. It calls `/mcp` on its chassis; the chassis calls LiteLLM's MCP gateway with its own virtual key; the gateway calls `fake-mcp-server` or `code-runner-dispatch`.
 - **The code runner, a sandbox per call.** The dispatcher is the only server LiteLLM registers as `code_runner`. It never runs code itself (next section).
 - **Kafka with SASL: being added** in the PoC-5 close-out (decision 2026-10-09). Until then both agent configs set `spec.adapters.events: none`, and no broker runs.
-- **The in-pod probe workload (T10): being added** in the close-out (decision 2026-10-09, which reverses the drop of 2026-10-02).
+- **The in-pod probe workload (T10): a recorded exception**, work in progress, owner the user ([the T10 note](../../pocs/poc-05-sandboxed/notes/2026-10-09-t10-probe-exception.md)). It is not deployed.
 
 ### The code runner: one sandbox per call
 
@@ -298,7 +298,7 @@ What the map says, in words:
 - **The code-runner pods** take 8000 from the dispatcher only, and have no egress at all, not even DNS. A sandbox cannot reach another sandbox, the dispatcher, LiteLLM, or the API.
 - **The dispatcher** takes 8000 from LiteLLM. It reaches the sandboxes on 8000 and the API server endpoint on 6443. It has no DNS. `run.sh` fills the endpoint address from the `kubernetes` EndpointSlice and refuses a sentinel, link-local, pod, or service address.
 - **MinIO** takes only `minio-init`. No chassis uses `config: s3` in PoC-5 (security review F10), so no chassis edge.
-- **Not in the map yet:** the probe pods and Kafka with SASL, both being added in the close-out.
+- **Not in the map:** the probe pods (T10, a recorded exception, [the T10 note](../../pocs/poc-05-sandboxed/notes/2026-10-09-t10-probe-exception.md)). Kafka with SASL is being added in the close-out.
 - **What this does not prove:** that kindnet drops the packets. The kind suites test that (H01, H03, H04, H18, H19, H20, H30), each with a paired allowed control, and they ran on 2026-10-08 and 2026-10-09. kindnet does not log a drop.
 
 ## 5. The remote-lane request path
@@ -389,7 +389,7 @@ Every Secret is made at run time by `deploy/kind/poc05/platform/seed.sh`, run as
 | `remote-echo-token` | `poc05-agents` | The chassis container of `chassis-echo-remote`, env `REMOTE_TOKEN` | The chassis's remote listener on 8091: 401 `remote_unauthenticated` (H17). Without it the chassis refuses `--remote-proxy-host` and does not start |
 | `remote-echo-token` | `poc05-remote` | The `remote-echo` workload, env `CHASSIS_API_TOKEN` | The remote's A2A server: it refuses every path without the token, the agent card included |
 
-The probe workload's keys are not in the map yet; it is being added in the close-out.
+The probe workload's keys are not in the map: T10 is a recorded exception, work in progress, owner the user ([the T10 note](../../pocs/poc-05-sandboxed/notes/2026-10-09-t10-probe-exception.md)).
 
 The `agent-echo` workload container, the code-runner pods, the dispatcher, the fake model server, and the fake MCP server hold no Secret. One pod mounts a service account token: `code-runner-dispatch`, a projected token whose rights are `create`, `get`, and `delete` on `sandboxclaims` in `poc05-tools`. Every other pod sets `automountServiceAccountToken: false`; rules 5 and 7d enforce it for remote and tool pods.
 
@@ -467,7 +467,7 @@ flowchart LR
 
 The checks per threat id, each with its paired allowed control, are in [the plan, section 5](../plans/2026-10-02-poc-05-sandboxed.md#5-hostile-suites-how-the-probe-workload-is-driven). A refusal counts only when its control is allowed in the same test. Otherwise the test fails with "control failed: the refusal proves nothing" ([threat model, section 6](../../pocs/poc-05-sandboxed/notes/2026-10-02-threat-model.md#6-pitfalls--making-a-hostile-test-pass-for-the-wrong-reason)). "Pending" below names the task that will fill the cell. "Not run on kind" means no PoC-5 task runs that check on the cluster.
 
-**Criterion 8.** The in-pod probe workload (T10) is being added in the close-out (decision 2026-10-09). Until it runs, the kind suites check the controls from outside the pod: `kubectl exec` of the image's own Python in our own workload containers, the live pod spec, and the node's cgroup. Each refusal has its paired control in the same test ([sidecar suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md), [remote suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-remote-suite.md)). Hard requirement 1 for LiteLLM, the MCP gateway, and Valkey now runs from the sidecar workload container. H05 to H08 and H10 also have earlier bring-up evidence ([bring-up](../../pocs/poc-05-sandboxed/notes/2026-10-02-bring-up.md), items 2, 3, and 5). The full list per id is in [the blind-spots note](../../pocs/poc-05-sandboxed/notes/2026-10-02-blind-spots.md), section 3.
+**Criterion 8 is flagged, "partly shown".** The in-pod probe workload (T10) is a recorded exception, work in progress, owner the user ([the T10 note](../../pocs/poc-05-sandboxed/notes/2026-10-09-t10-probe-exception.md)). How it is tested once built is in [the runbooks](poc-05-runbooks.md#testing-the-probe-workload-t10-after-it-is-built). Until then, the kind suites check the controls from outside the pod: `kubectl exec` of the image's own Python in our own workload containers, the live pod spec, and the node's cgroup. Each refusal has its paired control in the same test ([sidecar suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md), [remote suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-remote-suite.md)). Hard requirement 1 for LiteLLM, the MCP gateway, and Valkey now runs from the sidecar workload container. H05 to H08 and H10 also have earlier bring-up evidence ([bring-up](../../pocs/poc-05-sandboxed/notes/2026-10-02-bring-up.md), items 2, 3, and 5). The full list per id is in [the blind-spots note](../../pocs/poc-05-sandboxed/notes/2026-10-02-blind-spots.md), section 3.
 
 **Not in CI yet.** Criterion 1's kind half is not in CI. The remote-lane workflow (`.github/workflows/remote-lane.yml`) runs by hand only, until the gVisor x86_64 sum and the kind and kubectl sums are pinned and the remote kind test files exist. Every kind row below was run by hand on the Mac.
 

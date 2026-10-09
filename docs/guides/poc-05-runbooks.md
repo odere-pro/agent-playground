@@ -260,3 +260,48 @@ The rules are listed at the top of `deploy/kind/poc05/admission/policy.yaml`. Ap
 - 6a to 6c, 7a to 7c, 8: chassis shape, namespace shape, and pull policy. Read the message.
 
 **Fix.** Change the pod, not the policy. A pod that is untrusted goes to the remote lane. Only `agents.platform:platform-admins` may change `agent-trust-params` (`admission/rbac.yaml`); the submitter and the deployer cannot. The admission kind suite shows every rule refusing its fixture with its own message, next to an admitted twin (`test_poc05_kind_admission.py`, 51 passed).
+
+## Testing the probe workload (T10) after it is built
+
+**Symptom.** The probe workload `packages/workloads/hostile` is built, and criterion 8 is still flagged "partly shown". PoC-5 closed with T10 as a recorded exception, owner the user ([the T10 note](../../pocs/poc-05-sandboxed/notes/2026-10-09-t10-probe-exception.md)). This section is how the exception closes.
+
+Not yet run. No step below has output in a note. Values marked `suggested:` are not fixed anywhere yet. The checks' code is the user's; this section gives only the interface and the steps.
+
+**Check: the interface the probe must keep.**
+
+- `python -m hostile <check_id>` runs one check and prints one JSON line, schema `probe-result.v1`. The line holds the check id and the observed outcome (`suggested:` fields `schema`, `check`, `outcome`, `error`, where `error` is an exception name such as `TimeoutError`, never a message).
+- Exit 0 for any observed outcome, a refusal included. The host test decides pass or fail, not the probe.
+- Exit 2 with `bad_input` for an unknown check id or a missing or malformed target.
+- Targets come from env only (`suggested:` names prefixed `PROBE_`). No argument but the check id.
+- No value is ever printed: no env value, no file content, no token, no response body. Names, counts, and outcomes only.
+- No check attacks anything. Each one observes one control and stops.
+
+| Check id | What it observes | Criterion (and H ids) |
+| -------- | ---------------- | --------------------- |
+| `tcp_connect` | Whether a TCP connect to a host and port from env connects, times out, or is refused | 3, 5, 6, 8 (H01, H03, H04, H05, H07, H10 to H13, H18, H19, H30) |
+| `file_present` | Whether a path from env exists; never its content | 4, 8 (H02, H25) |
+| `env_names_matching` | The names of env variables that match a pattern from env; never their values | 4, 8 (H25) |
+| `rootfs_write` | Whether a write to a path on the root, from env, fails with EROFS; and that the same write to `/tmp` works | 8 (H21) |
+| `child_burst` | How many children start before one is refused, capped at 64 | 8 (H23) |
+
+**Fix: the steps, in order.** Each step ends green before the next starts. One agent at a time on kind.
+
+1. **Offline gate.** Unit tests for each check id and for `bad_input`, in the package's `tests/`. They open no socket (`make test` disables sockets). `UV_NO_SYNC=1 make quick` passes.
+2. **Image.** The same base as `echo-python` (`packages/workloads/echo-python/Dockerfile`). A non-root uid of its own. It runs on a read-only root with `/tmp` as the only writable path. Add it to `IMAGES` in `deploy/kind/poc05/run.sh`, so `run.sh build load` makes and loads it, and to the uid table in `packages/chassis/tests/test_image_uids.py`. The image stays off `trustedRepositories` (`admission/params.yaml`).
+3. **Manifests.** Copy the hardening of `agent-echo` and `remote-echo`; change only the image, the names, and the uid.
+   - A sidecar probe pod next to a chassis, in `deploy/kind/poc05/agents/`. Pick its trust label against admission rule 4: the image is not on `trustedRepositories`.
+   - A remote probe pod on gVisor through agent-sandbox, in `deploy/kind/poc05/remote/`, with its own `remote-<name>-token` from `seed.sh` (rules 5 and 7c).
+   - Its rows in the section 2.11 table of `pocs/poc-05-sandboxed/tests/test_poc05_hardening_static.py`.
+   - Its edges in `pocs/poc-05-sandboxed/tests/fixtures/netpol_edges.yaml`, and the policies that make them. `make test-poc POC=05` passes.
+4. **Kind suite.** `pocs/poc-05-sandboxed/tests/test_poc05_kind_probe.py`.
+   - Each check runs inside the probe pod (`kubectl exec ... python -m hostile <check_id>`), in both lanes.
+   - Each refusal is paired with its allowed control in the same test, as in the other kind files ("A refusal test passes when it should fail").
+   - Marked `network`, skipped unless `POC05_KIND=1`. The docstring names criterion 8.
+   - Add the file to `REMOTE_TESTS` in `run.sh` and to the `REMOTE_TESTS` tuple in `pocs/poc-05-sandboxed/tests/test_poc05_ci_wiring.py`.
+   - Break each test once in a temporary copy and see it fail; delete the copy. Then run `run.sh test-remote` and the kind tier, and paste both tails in a dated note.
+5. **Demo.** `pocs/poc-05-sandboxed/demo/demo.sh` runs the probe suite in step 4 when `test_poc05_kind_probe.py` exists. Today it prints `T10 | - | exception: in-pod probe not built (WIP)` instead. Check the probe step runs, then re-record the demo.
+6. **Close-out.**
+   - Move criterion 8 in `pocs/poc-05-sandboxed/README.md` from flagged to a plain `[x]`, with the kind suite's test names and run as evidence.
+   - Add a "Closed" line to the T10 note, with the date and the run.
+   - Update the blind-spots note (section 3), the threat model (section 7), and `notes/backlog-changes.md` (criterion 8, 055 CH-6).
+   - Run `make planning-check` if a planning doc changed.

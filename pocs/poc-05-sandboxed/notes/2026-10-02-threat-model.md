@@ -269,4 +269,4 @@ New risk from the per-call layout, recorded in the [blind-spots note](2026-10-02
 - A stolen dispatcher token can delete other callers' claims: a denial of service. It cannot pick or change a template or pool, or reach another namespace.
 - The agent-sandbox controller's upstream ClusterRole may write NetworkPolicies in every namespace. Admission rule T1 refuses any template that is not `Unmanaged`, so the controller writes none.
 
-The in-pod probe workload (T10), dropped on 2026-10-02, is back in scope and being built. The checks it runs, per id, go here. <!-- result: filled in wave 3 -->
+The in-pod probe workload (T10) is a recorded exception, work in progress, owner the user ([the T10 note](2026-10-09-t10-probe-exception.md)). Until it lands, every H id above is checked from outside the pod.
