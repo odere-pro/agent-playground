@@ -184,6 +184,20 @@ def test_sasl_credentials_with_a_plaintext_protocol_are_refused(
         KafkaEvents.from_env()
 
 
+@pytest.mark.parametrize("protocol", ["SASL_SSL", "SSL"])
+def test_a_tls_protocol_is_refused_until_020_x8(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, protocol: str
+) -> None:
+    _sasl_env(monkeypatch, tmp_path)
+    if protocol == "SSL":
+        for name in SASL_VARS[1:]:
+            monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("KAFKA_SECURITY_PROTOCOL", protocol)
+    with pytest.raises(ValueError, match="020 X-8") as info:
+        KafkaEvents.from_env()
+    assert PASSWORD not in str(info.value)
+
+
 def test_plaintext_stays_the_default_with_no_sasl(recorder: type[_Recorder]) -> None:
     port = KafkaEvents.from_env()
     assert (port.security_protocol, port.sasl) == ("PLAINTEXT", None)

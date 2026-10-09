@@ -363,6 +363,28 @@ async def test_code_runner_dispatch_retries_a_connect_timeout_like_a_refused_con
     assert len(fake_sandbox.requests) == 2
 
 
+async def test_code_runner_dispatch_logs_each_connect_retry_by_class_name_only(
+    dispatcher: Dispatcher, fake_sandbox: FakeSandbox, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level("DEBUG")
+    timed_out = 1
+
+    async def slow_to_listen(request: httpx.Request) -> httpx.Response:
+        nonlocal timed_out
+        if timed_out:
+            timed_out -= 1
+            raise httpx.ConnectTimeout("connect timed out", request=request)
+        return _rpc({"structuredContent": _result("up\n"), "isError": False})
+
+    fake_sandbox.answer = slow_to_listen
+    await _call(dispatcher, "print(1)", "k-ct-log")
+    ours = [r.getMessage() for r in caplog.records if r.name.startswith("code_runner")]
+    assert [m for m in ours if "connect_retry" in m] == [
+        "dispatch connect_retry error=ConnectTimeout"
+    ]
+    assert not [m for m in ours if "10.244.0.7" in m]
+
+
 async def test_code_runner_dispatch_connect_timeout_for_the_whole_window_is_lost(
     dispatcher: Dispatcher, fake_api: FakeApi, fake_sandbox: FakeSandbox, caplog: Any
 ) -> None:

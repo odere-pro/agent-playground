@@ -397,6 +397,7 @@ class Dispatcher:
                 if time.monotonic() >= deadline:
                     log.warning("dispatch sandbox_lost error=%s", type(exc).__name__)
                     raise _lost("the sandbox ended before it answered") from None
+                log.info("dispatch connect_retry error=%s", type(exc).__name__)
             await asyncio.sleep(self.config.poll_s)
 
     async def _post(self, url: str, body: dict[str, Any]) -> tuple[str, bytes]:

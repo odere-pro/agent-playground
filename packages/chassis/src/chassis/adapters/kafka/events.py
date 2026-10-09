@@ -55,6 +55,8 @@ USERNAME_VAR: Final = "KAFKA_SASL_USERNAME"
 PASSWORD_VAR: Final = "KAFKA_SASL_PASSWORD"
 PASSWORD_FILE_VAR: Final = "KAFKA_SASL_PASSWORD_FILE"
 SASL_MECHANISMS: Final = ("SCRAM-SHA-512", "SCRAM-SHA-256")
+# No `ssl_context` is passed yet, so a TLS protocol would fail late inside aiokafka. TLS is 020 X-8.
+PROTOCOLS: Final = ("PLAINTEXT", "SASL_PLAINTEXT")
 """The first is the default (suggested)."""
 
 
@@ -118,7 +120,10 @@ def _password_from_env() -> str:
 def sasl_from_env(protocol: str) -> SaslCredentials | None:
     """The SCRAM user for a `SASL_*` protocol, else `None`. A `SASL_*` protocol with no user or
     no password raises `LookupError`; SASL variables with any other protocol raise `ValueError`,
-    so a credential is never set and then silently unused."""
+    so a credential is never set and then silently unused. A protocol outside `PROTOCOLS`
+    (`SSL`, `SASL_SSL`) raises `ValueError` until 020 X-8 adds TLS."""
+    if protocol not in PROTOCOLS:
+        raise ValueError(f"events: kafka {PROTOCOL_VAR} must be one of {PROTOCOLS}; TLS is 020 X-8")
     if not protocol.startswith("SASL_"):
         named = [v for v in (USERNAME_VAR, PASSWORD_VAR, PASSWORD_FILE_VAR) if os.environ.get(v)]
         if named:
