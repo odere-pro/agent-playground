@@ -142,6 +142,31 @@ def _mcp_stub() -> Any:
     return server.http_app(path="/mcp", stateless_http=True)
 
 
+class TrimTrailingSystem(httpx.AsyncBaseTransport):
+    """The fake model picks a rule by the LAST message: after a tool round it wants a `tool`
+    message. The CLI adds a `<total_tokens>` note as a `role: "system"` turn, and a reminder in
+    the user turn, after each tool result, and the route keeps them in order, so the fake would
+    see no tool result. This drops those trailing turns when a tool result sits before them. It
+    touches only the fake's input; the route and the CLI are the real ones."""
+
+    def __init__(self, inner: httpx.AsyncBaseTransport) -> None:
+        self.inner = inner
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content or b"null")
+        messages = body.get("messages") if isinstance(body, dict) else None
+        if isinstance(messages, list):
+            kept = list(messages)
+            while kept and kept[-1].get("role") in ("system", "user"):
+                kept.pop()
+            if kept and kept[-1].get("role") == "tool" and len(kept) < len(messages):
+                headers = {k: v for k, v in request.headers.items() if k != "content-length"}
+                request = httpx.Request(
+                    request.method, request.url, headers=headers, json={**body, "messages": kept}
+                )
+        return await self.inner.handle_async_request(request)
+
+
 def _chassis_proxy() -> tuple[Any, Any]:
     """(public app, proxy app): the real chassis model proxy over a ScriptedModel-free stack, the
     fake model server behind the `LiteLLMModel` adapter."""
@@ -153,8 +178,16 @@ def _chassis_proxy() -> tuple[Any, Any]:
     handle_mod = importlib.import_module("chassis.core.handle")
     fake_model_server = importlib.import_module("fake_model_server")
 
-    fake = fake_model_server.create_app(fake_model_server.Script.from_yaml(BAKEOFF))
-    model = litellm.LiteLLMModel("http://fake/v1", transport=httpx.ASGITransport(app=fake))
+    script = fake_model_server.Script.from_yaml(BAKEOFF)
+    for rule in script.rules:
+        # The CLI knows MCP tools as `mcp__<server>__<tool>` and says "No such tool available" to a
+        # bare name, so the scripted calls carry the prefix. `handle` strips it from the event.
+        if rule.tool_call is not None:
+            rule.tool_call.name = f"mcp__chassis__{rule.tool_call.name}"
+    fake = fake_model_server.create_app(script)
+    model = litellm.LiteLLMModel(
+        "http://fake/v1", transport=TrimTrailingSystem(httpx.ASGITransport(app=fake))
+    )
     ports = bundle.PortBundle(
         model=model,
         engine=fakes.FakeEngine(handle=handle_mod.echo),
@@ -174,6 +207,33 @@ def _chassis_proxy() -> tuple[Any, Any]:
     return public, proxy_app.create_proxy_app(public)
 
 
+def _open_run(public: Any) -> Any:
+    """Register an in-flight run for the traceparent's trace id, as `/v1/run` does when it starts
+    one. The CLI's calls (`max_tokens` 32000) are then correlated and charged to this run's
+    budget, not to the uncorrelated cap (which stays at its default)."""
+    envelope = importlib.import_module("chassis.core.envelope")
+    trace_id = TRACEPARENT.split("-")[1]
+    request = envelope.Request(
+        request_id="req-e2e",
+        trace_id=trace_id,
+        idempotency_key="idem-e2e",
+        agent="echo",
+        agent_version="0.0.1",
+        input=envelope.TaskInput(text="x"),
+        budget=envelope.Budget(max_tokens=1_000_000),
+    )
+    ctx = envelope.Context(
+        request_id=request.request_id,
+        trace_id=trace_id,
+        idempotency_key=request.idempotency_key,
+        agent=request.agent,
+        agent_version=request.agent_version,
+        budget=request.budget,
+        versions=envelope.Versions(chassis="0"),
+    )
+    return public.state.runs.open(request, ctx)
+
+
 class Stack:
     def __init__(self, proxy: Recorder, tools: Recorder, proxy_url: str, tool_url: str) -> None:
         self.proxy, self.tools = proxy, tools
@@ -190,7 +250,11 @@ def stack() -> Iterator[Stack]:
         ThreadedServer(proxy, lifespan_app=public) as proxy_server,
         ThreadedServer(tools, lifespan_app=tools.app) as tool_server,
     ):
-        yield Stack(proxy, tools, proxy_server.url + "/v1", tool_server.url + "/mcp")
+        record = _open_run(public)
+        try:
+            yield Stack(proxy, tools, proxy_server.url + "/v1", tool_server.url + "/mcp")
+        finally:
+            public.state.runs.close(record)
 
 
 def _run_child(stack: Stack, text: str, tmp_path: Path) -> list[dict[str, Any]]:
@@ -223,7 +287,8 @@ def _check(events: list[dict[str, Any]]) -> str:
     for event in events:
         jsonschema.validate(event, EVENTS_SCHEMA)
     assert events[0]["type"] == "start", events
-    assert events[-1]["type"] == "end" and events[-1]["status"] == "ok", events[-1]
+    summary = [(e["type"], e.get("name") or e.get("code"), e.get("arguments")) for e in events]
+    assert events[-1]["type"] == "end" and events[-1]["status"] == "ok", summary
     return "".join(e["text"] for e in events if e["type"] == "delta")
 
 
