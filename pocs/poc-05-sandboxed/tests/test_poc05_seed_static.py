@@ -478,6 +478,7 @@ def test_run_sh_pins_the_with_extensions_manifest_it_installs() -> None:
     """The vendored file is the one kustomization.yaml installs, and its sha256 is run.sh's."""
     text = RUN_SH.read_text()
     (want,) = re.findall(r"(?m)^AGENT_SANDBOX_SHA256=([0-9a-f]{64})$", text)
+    # pragma: allowlist nextline secret (a public sha256)
     assert want == "b150cb058c577c59c42b060ff7f22e31b5311ca80430db98129f1280a0e85970"
     resources = yaml.safe_load((AGENT_SANDBOX / "kustomization.yaml").read_text())["resources"]
     assert resources == ["upstream-v1.0.5-with-extensions.yaml"]

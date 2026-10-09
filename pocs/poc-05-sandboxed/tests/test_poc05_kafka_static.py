@@ -39,7 +39,7 @@ DEFAULT_DENY = POC05 / "base/default-deny.yaml"
 PARAMS = POC05 / "admission/params.yaml"
 COMPOSE = ROOT / "deploy/compose/docker-compose.scale.yaml"
 
-SECRET = "kafka-sasl"
+SECRET = "kafka-sasl"  # pragma: allowlist secret (a Secret name)
 CHASSIS_IMAGE = "kind.local/agent-platform/chassis:"
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
 MEMORY_LIMIT_MAX_MI = 768

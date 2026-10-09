@@ -15,7 +15,7 @@ from chassis.adapters.kafka import KafkaEvents
 from chassis.adapters.kafka import events as kafka_events
 from chassis_contracts.events import make_event
 
-PASSWORD = "s3cret-not-in-any-log"  # a test value, not a credential
+PASSWORD = "s3cret-not-in-any-log"  # pragma: allowlist secret (a test value)
 SASL_VARS = (
     "KAFKA_SECURITY_PROTOCOL",
     "KAFKA_SASL_MECHANISM",

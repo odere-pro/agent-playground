@@ -206,7 +206,7 @@ spec:
             name: kafka-config
         - name: sasl
           secret:
-            secretName: kafka-sasl
+            secretName: kafka-sasl  # pragma: allowlist secret (a Secret name)
             defaultMode: 0440
             items:
               - key: ADMIN_PASSWORD

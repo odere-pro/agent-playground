@@ -191,8 +191,8 @@ $ deploy/kind/poc05/platform/seed.sh status
 
 **Fix.** The three steps from `packages/workload-a2a/README.md`, "Remote lane: bearer token and rotation". Old token `O`, new token `N`. Each side accepts `{current, previous}`.
 
-1. Accept `N` everywhere, still send `O`. Secret: `token` = `O`, `previous-token` = `N`. Restart the chassis pods and the remote pods. Wait until all are Ready.
-2. Swap what is sent. Secret: `token` = `N`, `previous-token` = `O`. Restart both, one pod at a time. Wait until all are Ready.
+1. Accept `N` everywhere, still send `O`. Secret: `token` = `O`, `previous-token` = `N`. Restart the chassis pods and the remote pods. Wait until all are Ready. <!-- pragma: allowlist secret (placeholders, no value) -->
+2. Swap what is sent. Secret: `token` = `N`, `previous-token` = `O`. Restart both, one pod at a time. Wait until all are Ready. <!-- pragma: allowlist secret (placeholders, no value) -->
 3. Drop `O`. Delete `previous-token`. Restart both.
 
 No side starts a step before every pod of both sides finished the one before. Then no call gets a 401.
