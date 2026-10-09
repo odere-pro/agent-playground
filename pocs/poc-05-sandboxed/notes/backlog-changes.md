@@ -20,6 +20,8 @@ Decisions on 2026-10-02 that every bullet assumes: T10 (the in-pod probe workloa
 
 ## Also carry: findings with their issue
 
+- **054 H-16** (contract v4 review, 2026-10-09): on `/mcp` outside a run, a name the port does not list answers `idempotency_key_required` (`adapters/mcp/server.py:208-216` treats it as a write tool), including a misspelled name and a read tool called by its bare name. Suggested: `unknown_tool` when no run is in flight; keep the write-path rule inside a run. For the bare-name write tool (above), suggested: resolve a bare name to the one matching `<server>-<name>` entry and refuse when more than one matches. Why: tool naming and the write-mode key are this issue's.
+
 - **054 H-16** (T19, 2026-10-08, for `chassis-architect`): the gateway lists tools as `<server>-<tool>`. A workload that calls a write tool by its bare name gets `idempotency_key_required`, because `McpGatewayTools` adds the key argument only for a tool it listed under that name; read tools work by bare name. T19 also mapped LiteLLM's refusal texts to `unknown_tool` and `tool_denied` (`packages/chassis/tests/test_tool_gateway_contract.py`). Why: tool naming and the write-mode key are this issue's.
 
 | Finding | Source | Issue |
