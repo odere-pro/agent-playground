@@ -17,7 +17,6 @@ Known gaps, each a recorded `xfail`, not a dropped test:
 - `echo-claude-agent` lookup. The Claude CLI prefixes MCP tool names with `mcp__chassis__` and adds
   trailing system turns, so the fake model's scripted tool call does not name a tool the CLI
   offered. A fix to the script is coming separately; `strict=False`, so it shows when it works.
-- `kagent-adk` while `deploy/kind/poc06/kagent/image.sha256` holds no digest.
 - `kagent-adk` lookup is checked on the answer text only. In plain-A2A mode the chassis cannot see
   tool calls ("what the chassis cannot see"), so a `tool_call` event there is a failure of the
   limit, not a pass.
@@ -32,12 +31,10 @@ import pytest
 from poc06_harness import CHECKS, LOOKUP, Task
 from poc06b_kind import (
     ENGINES,
-    KAGENT_XFAIL,
     TASKS,
     KindEngine,
     answer_only_verdict,
     gateway_view,
-    kagent_enabled,
     run_stream,
 )
 
@@ -76,8 +73,6 @@ def test_the_engine_passes_the_task_through_its_chassis(engine: KindEngine, name
     simplifier (every fact kept), and the lookup (`glossary_lookup{term: SLM}` then
     `acronym_expand{acronym: RAG}`, both results non-null, the answer holds both facts), each
     checked by `poc06_harness`. A failure prints the raw events."""
-    if engine.name == "kagent-adk" and not kagent_enabled():
-        pytest.xfail(KAGENT_XFAIL)
     task = task_named(name)
     result = run_stream(engine, engine.text(task))
     assert result.status == 200, (result.status, result.head)

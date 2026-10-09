@@ -67,7 +67,9 @@ LANE = "agents.platform/lane"
 NAME = "app.kubernetes.io/name"
 NS_LABEL = "kubernetes.io/metadata.name"
 TOKEN_SECRET = re.compile(r"remote-(?P<name>[a-z0-9]([-a-z0-9]*[a-z0-9])?)-token")
-SENTINEL = "__KAGENT_ADK_SHA256__"
+KAGENT_COMMIT = (
+    "e324f6d844da1d99cd035124db856c3b74fae63b"  # pragma: allowlist secret (a git commit)
+)
 
 Doc = dict[str, Any]
 
@@ -492,21 +494,42 @@ def test_the_proxy_addresses_are_unique_across_poc05_and_poc06() -> None:
     assert all(f"clusterIP: {ip}" not in poc05 for ip in ips)
 
 
-def test_kagent_is_pinned_by_digest_filled_from_one_file() -> None:
-    """A third-party image is allowed in the remote lane only, and only pinned. The manifest holds
-    a sentinel; `run.sh` fills it from `kagent/image.sha256` and applies nothing while that file
-    holds no digest."""
-    image = _pod("remote-kagent-adk").containers()[0]["image"]
-    assert image == f"ghcr.io/kagent-dev/kagent/kagent-adk@sha256:{SENTINEL}"
+def test_kagent_is_built_from_a_pinned_commit() -> None:
+    """The image is not pulled: `run.sh build_kagent` clones kagent, checks out the commit in
+    `kagent/source.commit`, and fails closed unless HEAD equals it. The pod runs the loaded image
+    with `imagePullPolicy: Never`, in the remote lane only."""
+    c = _pod("remote-kagent-adk").containers()[0]
+    assert c["image"] == "kind.local/agent-platform/kagent-adk:poc06"
+    assert c["imagePullPolicy"] == "Never"
     assert _pod("remote-kagent-adk").labels[LANE] == "remote"
-    digest = [
-        ln for ln in (POC06 / "kagent/image.sha256").read_text().splitlines() if SHA256.match(ln)
-    ]
-    assert len(digest) <= 1
+    commits = [
+        ln for ln in (POC06 / "kagent/source.commit").read_text().splitlines()
+        if re.fullmatch(r"[0-9a-f]{40}", ln)
+    ]  # fmt: skip
+    assert commits == [KAGENT_COMMIT]  # pragma: allowlist secret (a public git commit)
+    assert not (POC06 / "kagent/image.sha256").exists()
     run = RUN_SH.read_text()
-    assert f"KAGENT_PLACEHOLDER={SENTINEL}" in run and "skipping the remote" in run
-    kagent_docs = "\n".join(p.read_text() for p in (POC06 / "kagent").glob("*.yaml"))
-    assert kagent_docs.count(SENTINEL) == 3  # the header comment, the image, and the comment on it
+    body = run[run.index("build_kagent() {") :].split("\n}\n")[0]
+    assert "git clone --quiet --filter=blob:none" in body
+    assert 'checkout --quiet --detach "$commit"' in body
+    assert '[[ $head == "$commit" ]] || die' in body
+    assert body.index("rev-parse HEAD") < body.index("docker build")
+    assert '-f "$dir/kagent/python/Dockerfile"' in body and '-t "$KAGENT_IMAGE"' in body
+    assert "KAGENT_IMAGE=kind.local/agent-platform/kagent-adk:poc06" in run
+    assert 'kind load docker-image "$KAGENT_IMAGE"' in run
+    assert "apply_kagent" in run.split("apply_all() {")[1].split("}")[0]
+
+
+def test_kagent_launcher_runs_the_image_venv_python_with_the_exporters_off() -> None:
+    cm = next(o.doc for o in _objects("kagent") if o.kind == "ConfigMap")
+    assert "kapp.build(local=True)" in cm["data"]["run_kagent_adk.py"]
+    compile(cm["data"]["run_kagent_adk.py"], "run_kagent_adk.py", "exec")
+    c = _pod("remote-kagent-adk").containers()[0]
+    assert c["command"] == ["/.kagent/.venv/bin/python"]
+    assert c["args"][0] == "/config/run_kagent_adk.py"
+    env = _env(c)
+    for name in ("OTEL_TRACES_EXPORTER", "OTEL_METRICS_EXPORTER", "OTEL_LOGS_EXPORTER"):
+        assert env[name]["value"] == "none", name
 
 
 # --- admission --------------------------------------------------------------------------------
@@ -538,8 +561,8 @@ def test_every_workload_image_is_loaded_by_run_sh_or_poc05() -> None:
     for pod in PODS:
         for c in pod.containers():
             image = c["image"]
-            if image.startswith("ghcr.io/"):
-                assert pod.id == "remote-kagent-adk", image
+            if image == "kind.local/agent-platform/kagent-adk:poc06":
+                assert "KAGENT_IMAGE=" + image in RUN_SH.read_text()
                 continue
             assert image.startswith("kind.local/agent-platform/"), image
             assert f'"$REGISTRY/{image.split("/")[-1]}|' in run + poc05, (
@@ -990,7 +1013,7 @@ def test_the_record_names_each_exception() -> None:
     for needle in (
         "No Python in the Node image",
         "Claude lookup",
-        "image.sha256",
+        "source.commit",
         "cannot see tool calls",
         "not a DNS name",
         "trustedRepositories",

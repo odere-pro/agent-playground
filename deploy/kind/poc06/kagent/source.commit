@@ -1,0 +1,3 @@
+# The kagent commit the kagent-adk image is built from (run.sh build_kagent). The first line that is
+# 40 hex characters is the pin; the clone is checked out at it and `git rev-parse HEAD` must equal it.
+e324f6d844da1d99cd035124db856c3b74fae63b

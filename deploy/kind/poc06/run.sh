@@ -4,11 +4,11 @@
 # admission rules, and adds the PoC-6 engines on top. It edits no PoC-5 file: it calls
 # deploy/kind/poc05/run.sh for the bring-up, the logs, the redaction filter, and the delete.
 #
-#   deploy/kind/poc06/run.sh up       PoC-5 `up`, then build and load the PoC-6 images, extend the
+#   deploy/kind/poc06/run.sh up       PoC-5 `up`, then build and load the PoC-6 images (kagent-adk from source), extend the
 #                                     trusted repositories, switch the fake model's script, seed the
 #                                     PoC-6 keys and tokens, apply remote/, agents/, and (with a
-#                                     digest) kagent/, each waited for. A second `up` converges
-#   deploy/kind/poc06/run.sh build    docker build the PoC-6 images (tag poc06)
+#                                     kagent/, each waited for. A second `up` converges
+#   deploy/kind/poc06/run.sh build    docker build the PoC-6 images (tag poc06), kagent-adk included
 #   deploy/kind/poc06/run.sh load     kind load the PoC-6 images
 #   deploy/kind/poc06/run.sh seed     seed.sh keys (needs LiteLLM Ready)
 #   deploy/kind/poc06/run.sh apply    admission params, fake model script, seed, remote/, agents/,
@@ -31,10 +31,13 @@
 #   swallow the lookup loop. This cluster state is for the PoC-6 kind tests; the PoC-5 kind suite
 #   needs a PoC-5-only cluster (`poc05/run.sh up` alone).
 #
-# kagent-adk (the remote solution, kagent/): a third-party image pinned by digest. kagent/image.sha256
-# holds no digest yet, so `up` skips it and says so; the kind tests for it then xfail with that
-# reason. Put the 64-hex digest in that file to enable it. To add another plain-A2A remote, copy
-# kagent/ (a Sandbox, a chassis with `spec.engine.protocol: a2a`, a ConfigMap) and add it below.
+# kagent-adk (the remote solution, kagent/): built from kagent's own source, not pulled. `build_kagent`
+# clones https://github.com/kagent-dev/kagent, checks out the commit in kagent/source.commit, fails
+# closed unless `git rev-parse HEAD` equals it, and builds python/Dockerfile as
+# kind.local/agent-platform/kagent-adk:poc06. That Dockerfile does not pin its base images by digest
+# (debian:bookworm-slim, the uv image by tag); an accepted, recorded gap for a PoC remote (see
+# notes/2026-10-09-lanes-b-kind.md). To add another plain-A2A remote, copy kagent/ (a Sandbox, a
+# chassis with `spec.engine.protocol: a2a`, a ConfigMap) and add it below.
 set -euo pipefail
 
 CLUSTER=poc05
@@ -47,8 +50,9 @@ DEPLOYER=system:serviceaccount:agent-platform-system:deployer
 PLATFORM_NS=poc05-platform
 AGENTS_NS=poc05-agents
 REMOTE_NS=poc05-remote
-KAGENT_DIGEST_FILE=$HERE/kagent/image.sha256
-KAGENT_PLACEHOLDER=__KAGENT_ADK_SHA256__
+KAGENT_COMMIT_FILE=$HERE/kagent/source.commit
+KAGENT_REPO=https://github.com/kagent-dev/kagent
+KAGENT_IMAGE=kind.local/agent-platform/kagent-adk:poc06
 
 # The images `build` makes and `load` puts in the node: "<image>|<Dockerfile>|<context>", relative
 # to the repo root. echo-typescript is PoC-5's image (kind.local/agent-platform/echo-typescript:poc05,
@@ -80,12 +84,37 @@ kctl() { kubectl --context "$CONTEXT" "$@"; }
 log() { printf '[kind-poc06] %s\n' "$*" >&2; }
 die() { log "$*"; exit 1; }
 
+# kagent_commit: the pinned commit, the first 40-hex line of kagent/source.commit.
+kagent_commit() {
+  local commit
+  commit=$(grep -E '^[0-9a-f]{40}$' "$KAGENT_COMMIT_FILE" | head -n 1 || true)
+  [[ -n $commit ]] || die "no 40-hex commit in $KAGENT_COMMIT_FILE"
+  printf '%s\n' "$commit"
+}
+
+# build_kagent: kagent-adk from kagent's source at the pinned commit. The clone goes to its own
+# new empty directory, and its path is an argument to git and docker; nothing runs from inside it.
+# Fails closed unless HEAD is exactly the pinned commit.
+build_kagent() {
+  local commit dir head
+  commit=$(kagent_commit)
+  dir=$(mktemp -d)
+  # shellcheck disable=SC2064 # expand now: the trap runs after the locals are gone
+  trap "rm -rf '$dir'" RETURN
+  git clone --quiet --filter=blob:none "$KAGENT_REPO" "$dir/kagent"
+  git -C "$dir/kagent" checkout --quiet --detach "$commit"
+  head=$(git -C "$dir/kagent" rev-parse HEAD)
+  [[ $head == "$commit" ]] || die "kagent: HEAD is $head, want $commit; refusing to build"
+  docker build -f "$dir/kagent/python/Dockerfile" -t "$KAGENT_IMAGE" "$dir/kagent/python"
+}
+
 build() {
   local entry image dockerfile context
   for entry in "${IMAGES[@]}"; do
     IFS='|' read -r image dockerfile context <<<"$entry"
     docker build -t "$image" -f "$ROOT/$dockerfile" "$ROOT/$context"
   done
+  build_kagent
 }
 
 load() {
@@ -94,6 +123,7 @@ load() {
     image=${entry%%|*}
     kind load docker-image "$image" --name "$CLUSTER"
   done
+  kind load docker-image "$KAGENT_IMAGE" --name "$CLUSTER"
 }
 
 # On a failed wait: the object's events and the last log lines, redacted, never a Secret.
@@ -156,20 +186,8 @@ apply_agents() {
   done
 }
 
-# kagent_digest: the 64-hex digest in kagent/image.sha256, or nothing.
-kagent_digest() {
-  grep -E '^[0-9a-f]{64}$' "$KAGENT_DIGEST_FILE" | head -n 1 || true
-}
-
 apply_kagent() {
-  local digest
-  digest=$(kagent_digest)
-  if [[ -z $digest ]]; then
-    log "kagent-adk: kagent/image.sha256 holds no digest; skipping the remote (its kind tests xfail)"
-    return 0
-  fi
-  kctl kustomize "$HERE/kagent" | sed "s/$KAGENT_PLACEHOLDER/$digest/g" |
-    kctl apply -f - --as="$DEPLOYER"
+  apply_folder kagent
   wait_sandbox "$REMOTE_NS" remote-kagent-adk
   wait_rollout "$AGENTS_NS" chassis-kagent-adk-remote
 }
