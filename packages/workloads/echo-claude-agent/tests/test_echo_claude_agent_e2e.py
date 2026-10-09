@@ -38,7 +38,7 @@ pytest.importorskip(
 
 ROOT = Path(__file__).resolve().parents[4]
 EVENTS_SCHEMA = json.loads((ROOT / "packages/chassis/schemas/events.v0.json").read_text())
-BAKEOFF = ROOT / "packages/fake-model-server/scripts/bakeoff.yaml"
+BAKEOFF = ROOT / "packages/fake-model-server/scripts/bakeoff-claude.yaml"
 TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
 RUN_TIMEOUT_S = 180
 
@@ -142,31 +142,6 @@ def _mcp_stub() -> Any:
     return server.http_app(path="/mcp", stateless_http=True)
 
 
-class TrimTrailingSystem(httpx.AsyncBaseTransport):
-    """The fake model picks a rule by the LAST message: after a tool round it wants a `tool`
-    message. The CLI adds a `<total_tokens>` note as a `role: "system"` turn, and a reminder in
-    the user turn, after each tool result, and the route keeps them in order, so the fake would
-    see no tool result. This drops those trailing turns when a tool result sits before them. It
-    touches only the fake's input; the route and the CLI are the real ones."""
-
-    def __init__(self, inner: httpx.AsyncBaseTransport) -> None:
-        self.inner = inner
-
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content or b"null")
-        messages = body.get("messages") if isinstance(body, dict) else None
-        if isinstance(messages, list):
-            kept = list(messages)
-            while kept and kept[-1].get("role") in ("system", "user"):
-                kept.pop()
-            if kept and kept[-1].get("role") == "tool" and len(kept) < len(messages):
-                headers = {k: v for k, v in request.headers.items() if k != "content-length"}
-                request = httpx.Request(
-                    request.method, request.url, headers=headers, json={**body, "messages": kept}
-                )
-        return await self.inner.handle_async_request(request)
-
-
 def _chassis_proxy() -> tuple[Any, Any]:
     """(public app, proxy app): the real chassis model proxy over a ScriptedModel-free stack, the
     fake model server behind the `LiteLLMModel` adapter."""
@@ -179,15 +154,8 @@ def _chassis_proxy() -> tuple[Any, Any]:
     fake_model_server = importlib.import_module("fake_model_server")
 
     script = fake_model_server.Script.from_yaml(BAKEOFF)
-    for rule in script.rules:
-        # The CLI knows MCP tools as `mcp__<server>__<tool>` and says "No such tool available" to a
-        # bare name, so the scripted calls carry the prefix. `handle` strips it from the event.
-        if rule.tool_call is not None:
-            rule.tool_call.name = f"mcp__chassis__{rule.tool_call.name}"
     fake = fake_model_server.create_app(script)
-    model = litellm.LiteLLMModel(
-        "http://fake/v1", transport=TrimTrailingSystem(httpx.ASGITransport(app=fake))
-    )
+    model = litellm.LiteLLMModel("http://fake/v1", transport=httpx.ASGITransport(app=fake))
     ports = bundle.PortBundle(
         model=model,
         engine=fakes.FakeEngine(handle=handle_mod.echo),

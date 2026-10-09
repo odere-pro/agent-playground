@@ -79,3 +79,17 @@ async def test_a_result_with_both_texts_ends_the_loop(client: httpx.AsyncClient)
     message = await _message(client, messages)
     assert message["content"].endswith("retrieval-augmented generation.")
     assert "tool_calls" not in message
+
+
+def test_the_claude_script_is_the_bakeoff_script_with_prefixed_tool_names() -> None:
+    plain = Script.from_yaml(SCRIPT)
+    claude = Script.from_yaml(SCRIPT.with_name("bakeoff-claude.yaml"))
+    assert len(plain.rules) == len(claude.rules)
+    for a, b in zip(plain.rules, claude.rules, strict=True):
+        assert a.match == b.match and a.after_tool == b.after_tool and a.reply == b.reply
+        if a.tool_call is None:
+            assert b.tool_call is None
+        else:
+            assert b.tool_call is not None
+            assert b.tool_call.name == f"mcp__chassis__{a.tool_call.name}"
+            assert b.tool_call.arguments == a.tool_call.arguments
