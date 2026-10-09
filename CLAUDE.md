@@ -43,7 +43,7 @@ The service chassis for the SLM agent platform and the nine PoC iterations that 
 | Spans, correlation, Langfuse, OTel | `observability-expert` |
 | README, CLAUDE.md, PoC checklists, planning docs | `docs-editor` |
 
-Skills: `poc-iteration`, `record-measurement`, `demo-record`, `contract-suite`, `adr`, `git-flow` (also parallel worktrees), `planning-sync`.
+Skills: `poc-iteration`, `record-measurement`, `demo-record`, `contract-suite`, `adr`, `git-flow` (also parallel worktrees), `planning-sync`, `poc-05-operate` (the PoC-5 kind cluster).
 
 ## Style
 
