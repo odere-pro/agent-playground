@@ -46,7 +46,7 @@ from plain_a2a_stub import (
 
 REMOTE_URL = "http://remote.test:8443"
 TOKEN_ENV = "POC06_TEST_PLAIN_TOKEN"
-SECRET_TEXT = "disk full at /var/lib/secret-path, contact admin@internal.example"
+REMOTE_FAILURE_TEXT = "disk full at /var/lib/secret-path, contact admin@internal.example"
 """Text a failing remote puts in its status message. It must never reach a `Response`."""
 
 
@@ -231,7 +231,7 @@ async def test_a_message_reply_is_the_answer(token: str) -> None:
 async def test_a_failed_task_has_fixed_text_and_the_remote_text_stays_in_the_log(
     token: str, state: int
 ) -> None:
-    stub = PlainStub(_script(task(S.TASK_STATE_SUBMITTED), status(state, text=SECRET_TEXT)))
+    stub = PlainStub(_script(task(S.TASK_STATE_SUBMITTED), status(state, text=REMOTE_FAILURE_TEXT)))
     async with serve_uds(RequireBearer(stub_app(stub), token)) as path:
         connector, telemetry = await _remote(path)
         response = await _response(connector, make_request())
