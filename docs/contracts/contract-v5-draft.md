@@ -54,8 +54,9 @@ The request is read as raw JSON and mapped by hand onto `ModelMessage`, `ToolSpe
 ### A.4 Request: URL and headers
 
 - **Path.** `POST /v1/messages`. The query string is ignored: `?beta=true` and any other query are accepted and not read. No other method. A `GET` is FastAPI's 405.
-- **Not served.** `/v1/messages/count_tokens`, `/v1/models`, and every other path stay 404 on both listeners. On the remote listener the 404 comes after both checks, as in v4.
-- **Body.** A JSON object. Invalid JSON or a body that is not an object is 400 `invalid_body`. The route reads the body itself, so FastAPI never answers 422.
+- **Not served.** `/v1/messages/count_tokens`, `/v1/models`, and every other path stay 404 on both listeners. On the remote listener the 404 comes after both checks, as in v4. The 404 of `/v1/messages/count_tokens` is in the Anthropic error shape (`not_found_error`, with `request-id`). Its 401 on the remote listener is v4's body, because the middlewares test the exact path `/v1/messages` (A.8). `/v1/models` keeps FastAPI's 404 body.
+- **Body.** A JSON object. Invalid JSON (deep nesting included), or a body that is not an object, is 400 `invalid_body`. The route reads the body itself, so FastAPI never answers 422.
+- **Body cap.** 4 MiB (`BODY_CAP_BYTES`, suggested). The route counts the bytes while it reads, and a declared `content-length` over the cap is refused at once, both before any parsing. A larger body is 413 `request_too_large` (code `body_too_large`, `x-should-retry: false`).
 
 | Header | Rule |
 | ------ | ---- |
@@ -69,18 +70,18 @@ The request is read as raw JSON and mapped by hand onto `ModelMessage`, `ToolSpe
 
 ### A.5 Request: the body, field by field
 
-Legend. **Map**: carried onto the model port. **Drop**: accepted, not carried, counted as `chassis.model_proxy.ignored{format="anthropic", param}` (suggested: the counter name; `param` is from the fixed list below, or `other`). **Drop, silent**: not carried, not counted, not logged (it may identify a person). **Refuse**: 400 before the model is called and before `chassis.model_calls` is counted. A refusal body is in A.8.
+Legend. **Map**: carried onto the model port. **Drop**: accepted, not carried, counted as `chassis.model_proxy.ignored{format="anthropic", param}` (suggested: the counter name; `param` is from the fixed list below, or `other`). **Drop, silent**: not carried, not counted, not logged (it may identify a person). **Refuse**: 400 before the model is called and before `chassis.model_calls` is counted. A refusal body is in A.8. A refusal names the field by path and says why in fixed words. It never repeats a value from the request (a role, a block type, an id), so a refusal cannot echo a secret.
 
 | Field | What the CLI sends | Decision |
 | ----- | ------------------ | -------- |
-| `model` | `big-default` (`ANTHROPIC_MODEL` verbatim) | **Map.** It is the route, passed as `route` unchanged, as on the chat route. Missing or not a non-empty string: refuse `invalid_body`. The engine must set `ANTHROPIC_MODEL` and `ANTHROPIC_SMALL_FAST_MODEL` to a route the key lists, or the CLI sends its own `claude-*` names and LiteLLM refuses them (A.9) |
+| `model` | `big-default` (`ANTHROPIC_MODEL` verbatim) | **Map.** It is the route, passed as `route` unchanged, as on the chat route. Missing or not a non-empty string, or longer than 256 characters (suggested): refuse `invalid_body`, before admission, so a huge value reaches no counter label, log, or span. The engine must set `ANTHROPIC_MODEL` and `ANTHROPIC_SMALL_FAST_MODEL` to a route the key lists, or the CLI sends its own `claude-*` names and LiteLLM refuses them (A.9) |
 | `messages` | A list of turns, text and block content, and `role: "system"` entries | **Map.** Rules in A.5.1. Missing, empty, or not a list: refuse `invalid_body`. Over `spec.limits.messages_max`: not enforced here (the proxy has no such limit today) |
-| `system` | A list of 2 text blocks: a billing marker and the agent line | **Map.** A string or a list of text blocks, joined with `"\n"` into one `ModelMessage(role="system")` at position 0, when not empty. A block whose text starts with `x-anthropic-billing-header:` is **dropped** first (param `system.billing_header`). Why: it is a note for Anthropic's billing, it changes per run, and it breaks a provider's prefix cache. A non-text block in `system`: refuse |
+| `system` | A list of 2 text blocks: a billing marker and the agent line | **Map.** A string or a list of text blocks, joined with `"\n"` into one `ModelMessage(role="system")` at position 0, when not empty (an empty string or empty blocks give no message). A block whose text starts with `x-anthropic-billing-header:` is **dropped** first (param `system.billing_header`). Why: it is a note for Anthropic's billing, it changes per run, and it breaks a provider's prefix cache. A non-text block in `system`: refuse |
 | `tools` | 20 to 24 entries, each `{name, description, input_schema}` | **Map.** Rules in A.5.2 |
 | `tool_choice` | Not sent | **Map** `auto` or absent: nothing. `none`: send no tools to the model (history keeps its tool blocks). `any`, `tool`, or any other value: **refuse** `unsupported_parameter`, since the port cannot force a tool. `disable_parallel_tool_use` inside `auto` or `none`: **drop** (param `tool_choice.disable_parallel_tool_use`) |
-| `max_tokens` | `32000` | **Map.** Required, an integer of at least 1, not a boolean, else refuse `invalid_body`. It goes to admission as the wanted tokens. A correlated call is capped at what its run has left, so 32000 is clamped to the run's budget. An uncorrelated call reserves it whole, so 32000 is above the default cap of 20000 and is refused with 429 (A.8). That is the existing rule, not a new one |
+| `max_tokens` | `32000` | **Map.** Required, an integer of at least 1, else refuse `invalid_body`. A JSON boolean is refused (it is an integer in Python, not in JSON). It goes to admission as the wanted tokens. A correlated call is capped at what its run has left, so 32000 is clamped to the run's budget. An uncorrelated call reserves it whole, so 32000 is above the default cap of 20000 and is refused with 429 (A.8). That is the existing rule, not a new one |
 | `stream` | `true` always | **Map.** A boolean, default `false`, else refuse `invalid_body`. `true` is the SSE answer (A.7.1), `false` the JSON message (A.7.2) |
-| `temperature` | Not sent | **Map.** A number from 0 to 1 is passed through; anything else is refused `invalid_body`. Absent: the chat route's default, 0.0 (suggested) |
+| `temperature` | Not sent | **Map.** A number from 0 to 1 is passed through; anything else, a JSON boolean included, is refused `invalid_body`. Absent: the chat route's default, 0.0 (suggested) |
 | `top_p`, `top_k`, `stop_sequences` | Not sent | **Drop.** The port carries none of them |
 | `thinking` | `{"type":"adaptive","display":"updates"}` | **Drop** (param `thinking`). The reply never has a thinking block |
 | `output_config` | `{"effort":"high"}` | `effort`: **drop** (param `output_config.effort`). `format`: **refuse** `unsupported_parameter` (structured output is not on the port). Not an object: refuse `invalid_body` |
@@ -102,9 +103,9 @@ Each Anthropic turn becomes one or more `ModelMessage`s, in order.
 | --------- | ------- |
 | `content` is a string | The text, as is |
 | `content` is a list | Blocks in A.5.1's table below. `text` blocks join with `"\n"`, the model proxy's rule |
-| `role: "user"` | `user` message with the joined text. If the turn has `tool_result` blocks, each becomes a `tool` message first (below), then the text, when not empty, as one `user` message |
-| `role: "assistant"` | One `assistant` message. `content` is the joined text, or `None` when there is none and there are `tool_use` blocks. `tool_use {id, name, input}` becomes `ToolCallRequest(call_id=id, name=name, arguments=input)`, in order. `input` must be an object, else refuse `unsupported_message` at `messages[i].content[j].input` |
-| `role: "system"` (the `mid-conversation-system` beta) | One `system` message **in place**, text blocks joined. It is not merged into the top message and not moved. The CLI sends an `# Environment` block and, after each tool result, a `<total_tokens>` note, which can be the last message. (suggested: in place. Qwen3's chat template renders a later `system` as a normal turn, and LiteLLM hoists it for Anthropic models. If PoC-6c finds a route whose template refuses it, add a fold rule then) |
+| `role: "user"` | A turn with no content (no text and no `tool_result`, after `thinking` blocks are dropped) is refused `invalid_body` at `messages[i].content`: `a user turn needs content`. Otherwise a `user` message with the joined text. If the turn has `tool_result` blocks, each becomes a `tool` message first (below), then the text, when not empty, as one `user` message |
+| `role: "assistant"` | One `assistant` message, or none: a turn that is empty after its `thinking` blocks are dropped is skipped. Otherwise one message. `content` is the joined text, or `None` when there is none and there are `tool_use` blocks. `tool_use {id, name, input}` becomes `ToolCallRequest(call_id=id, name=name, arguments=input)`, in order. `input` must be an object, else refuse `unsupported_message` at `messages[i].content[j].input` |
+| `role: "system"` (the `mid-conversation-system` beta) | An entry with no text is skipped. Otherwise one `system` message **in place**, text blocks joined. It is not merged into the top message and not moved. The CLI sends an `# Environment` block and, after each tool result, a `<total_tokens>` note, which can be the last message. (suggested: in place. Qwen3's chat template renders a later `system` as a normal turn, and LiteLLM hoists it for Anthropic models. If PoC-6c finds a route whose template refuses it, add a fold rule then) |
 | `role` is anything else | Refuse `unsupported_message` at `messages[i].role` |
 | The last message is `assistant` | Refuse `unsupported_message`: assistant prefill is not supported (as the public interface). A last message with role `system` or `user` is fine |
 
@@ -112,7 +113,7 @@ Each Anthropic turn becomes one or more `ModelMessage`s, in order.
 | ----- | ---- |
 | `text` | Carried. `cache_control` dropped. `citations` dropped silently |
 | `tool_use` | Assistant only (see above). On a `user` turn: refuse |
-| `tool_result {tool_use_id, content, is_error}` | `user` turns only. Becomes `ModelMessage(role="tool", tool_call_id=tool_use_id, content=<text>)`. `content` is a string, or a list of `text` blocks joined with `"\n"`, or absent (empty string). An `image`, `document`, or other block inside: refuse. `is_error` is dropped (param `tool_result.is_error`): the chat format has no error flag, and the CLI writes the error text into `content`. The id must name a `tool_use` in an earlier assistant turn of this request, else refuse `unsupported_message` (`tool_result: no tool_use with id ...`). All `tool_result` blocks must come before any text in the turn, as Anthropic requires, else refuse |
+| `tool_result {tool_use_id, content, is_error}` | `user` turns only. Becomes `ModelMessage(role="tool", tool_call_id=tool_use_id, content=<text>)`. `content` is a string, or a list of `text` blocks joined with `"\n"`, or absent (empty string). An `image`, `document`, or other block inside: refuse. `is_error` is dropped (param `tool_result.is_error`): the chat format has no error flag, and the CLI writes the error text into `content`. The id resolves to the nearest preceding `tool_use` with that id (an id may repeat across turns). With no such `tool_use` before it, refuse `unsupported_message` (`tool_result: no earlier tool_use has this id`). The text never repeats the id. All `tool_result` blocks must come before any text in the turn, as Anthropic requires, else refuse |
 | `thinking`, `redacted_thinking` | **Drop** (param `content.thinking`). This reply never carries one, so one can only arrive from a resumed session. The model does not need its own reasoning back |
 | `image`, `document`, `search_result`, `server_tool_use`, `web_search_tool_result`, `mcp_tool_use`, `mcp_tool_result`, `container_upload`, `tool_reference`, and any block with another `type` | Refuse `unsupported_message` at `messages[i].content[j]`: `block type '<type>' is not supported`. The port is text-only. (`ToolSearch` is off for a non-first-party base URL, so `tool_reference` should not appear) |
 
@@ -141,7 +142,7 @@ The chat route's steps move into one function in `server/model_proxy.py`, used b
 6. A run with nothing left: count `chassis.model_calls_refused`, 429.
 7. Otherwise reserve on the run (`record.reserve`), so concurrent calls of one run never get the same tokens. The forwarded `max_tokens` is the reservation.
 8. Call `ModelPort.complete` or `.stream` inside the span `chassis.model.call` (gains the attribute `format`: `openai` or `anthropic`; suggested).
-9. Settle the reservation on the usage seen, as `_Hold` does. A stream the client leaves is handled by the same `_HeldStream` rule: an uncorrelated stream that started is charged its last usage or its whole reservation; a stream whose body never started is charged nothing.
+9. Settle the reservation on the usage seen, as `_Hold` does. A stream the client leaves is charged on this route when the model call started: its last known usage, or its whole reservation when usage is unknown (suggested), for a correlated and an uncorrelated stream alike. A stream whose model call never started is charged nothing, and so is a call where a chassis bug (not a `ModelError`) stops it before the first chunk. The route does not read `receive` during the hold, so a client that leaves inside the hold window is seen only at the first send, after the window; no test can observe a leave inside it. The chat route keeps its rule, where a correlated stream the client leaves is not charged (Known gap 004 G-2); that is not changed here.
 
 What follows from sharing:
 
@@ -207,6 +208,7 @@ Rules:
 - **Hold rule.** Before sending anything, the route waits up to `FIRST_CHUNK_WAIT_S` (5 s, suggested) for the first chunk or for the model's error. If the model fails in that window, the answer is the HTTP error of A.8, with its real status, because the CLI retries on status. If the first chunk comes, or the window passes with nothing, the route sends 200 and `message_start`. An error after that is one `event: error` frame, then the stream ends with no `message_stop`:
   `event: error` / `data: {"type":"error","error":{"type":"api_error","message":"<code>: <text>"}}`.
   The model call starts when the hold starts, so the hold sets `started` on the reservation at once. A client that leaves during the hold gives the same charge as one that leaves during the stream.
+- **Deadline.** The stream has a wall clock: what is left of the run's `budget.timeout_ms` when the call is correlated, else `UNCORRELATED_STREAM_DEADLINE_S` (300 s, suggested). At expiry the route sends one `event: error` frame (`timeout_error`, `model_timeout`, fixed text), closes the upstream stream, and ends with no `message_stop`. The reservation is charged whole, since the upstream may have produced tokens unseen. A stream the client leaves also closes the upstream stream at once.
 - **Refusals before the model** (400, 401, 403, 429, 503) are plain JSON responses with their status, never an SSE body, also when `stream` is true. This differs from the chat route, which sends a 429 as an SSE frame.
 
 #### A.7.2 Complete (`stream: false`)
@@ -229,10 +231,11 @@ Every error is `{"type":"error","error":{"type":T,"message":M},"request_id":"req
 
 | Status | `error.type` | Code | When | Text | `x-should-retry` |
 | ------ | ------------ | ---- | ---- | ---- | ---------------- |
+| 413 | `request_too_large` | `body_too_large` | The body is over 4 MiB | `the request body is over the size limit` | false |
 | 400 | `invalid_request_error` | `invalid_body` | Not JSON, not an object, a field of the wrong type, `max_tokens` missing or below 1 | Names the field: `max_tokens: a positive integer is required` | false |
 | 400 | `invalid_request_error` | `unsupported_parameter` | `tool_choice` any or tool, `output_config.format`, `mcp_servers`, `container`, a tool `type` | Names the field | false |
 | 400 | `invalid_request_error` | `unsupported_message` | A block, role, or id the port cannot carry (A.5.1) | Names `messages[i].content[j]` | false |
-| 400 | `invalid_request_error` | `model_rejected_request` | The model route answered 400, 413, or 422. This is the caller's own request, so the redacted upstream text is sent, at most 300 characters (`MESSAGE_CAP`). The CLI reads a context-length message to compact its history | The upstream text | false |
+| 400 | `invalid_request_error` | `model_rejected_request` | The model route answered 400, 413, or 422. The remote is untrusted, so no upstream text reaches it. The chassis logs the upstream text (already redacted by the adapter, at most 300 characters) in one warning | `the model route rejected the request` | false |
 | 401 | `authentication_error` | `remote_unauthenticated` | Remote listener, `BearerAuth` | `missing or invalid bearer token`. Sends `www-authenticate: Bearer` | false |
 | 403 | `permission_error` | `run_required` | Remote listener, `RequireRun` | `the traceparent names no run in flight` | false |
 | 403 | `permission_error` | `model_route_denied` | The model route answered 401 or 403 (A.9) | `this model route is not allowed for this service` | false |
@@ -244,7 +247,7 @@ Every error is `{"type":"error","error":{"type":T,"message":M},"request_id":"req
 | 502 | `api_error` | `model_unavailable` | Any other retryable `ModelError` (5xx, `connect_error`, `transport_error`) | `the model route could not be reached; retry later` | true |
 | 500 | `api_error` | `model_error` | Any other `ModelError` (`bad_response`, an unmapped 4xx) | `the model call failed` | false |
 
-- **Fixed texts.** Apart from 400 `model_rejected_request`, a model error sends the fixed text above, never `ModelError.message`. The remote is untrusted code, so no upstream body reaches it. (The chat route still sends `exc.message` today. Aligning it is a separate change, not made here.)
+- **Fixed texts.** Every model error, `model_rejected_request` included, sends the fixed text above, never `ModelError.message`. The remote is untrusted code, so no upstream body reaches it. (The chat route still sends `exc.message` today. Aligning it is a separate change, not made here.)
 - **Mid-stream** an error is the `event: error` frame of A.7.1, with the same `type` and `message` and no status.
 - **Telemetry.** A 403 `model_route_denied` counts `chassis.model_upstream_denied{route}` (suggested) and logs one warning with the upstream code. A chassis key that is itself invalid also answers 401 upstream, so the remote cannot tell the two apart. The operator can, from the counter and the log.
 - **The middleware bodies.** `BearerAuth` and `RequireRun` choose the body by the raw request path before routing. For `/v1/messages` it is the Anthropic body above, fixed bytes except `request_id`; for every other path it is v4's `{"error":{code,type,message}}`. Status, headers, counters, and order do not change.
@@ -267,7 +270,7 @@ Touched:
 | ---- | ------ |
 | `packages/chassis/src/chassis/adapters/anthropic_compat/model_wire.py` (new) | Pure, no I/O. `parse_messages_request(raw) -> ParsedMessages` (route, `list[ModelMessage]`, `list[ToolSpec] | None`, `max_tokens`, `temperature`, `stream`, `ignored: list[str]`); `RefusedField(code, param, message)`; `message_json(result, route, msg_id)`; `StreamEncoder` (`start`, `ping`, `chunk`, `finish`, `error`) that owns the block indexes. Imports `chassis.ports.model` and `chassis.adapters.openai_compat.messages.is_empty`, and the SDK types through `types.py` |
 | `packages/chassis/src/chassis/adapters/anthropic_compat/types.py` | Re-export `ToolUseBlock`, `InputJSONDelta`, `RawMessageStreamEvent` (already), so the server never imports `anthropic` |
-| `packages/chassis/src/chassis/server/model_proxy.py` | Move steps 1 and 3 to 7 of A.6 into `admit(...)`, returning an admission or a refusal (status, code, message, retryable). `chat_completions` calls it and formats as before. `_Hold` and `_HeldStream` take headers. `model_proxy_router` also registers the Anthropic route. Map `http_401` and `http_403` to 403 (A.9). The module docstring names both routes |
+| `packages/chassis/src/chassis/server/model_proxy.py` | Move steps 1 and 3 to 7 of A.6 into `admit(...)`, returning an admission or a refusal (status, code, message, retryable). `chat_completions` calls it and formats as before. `_HeldStream` takes response headers (`request-id`, `cache-control`) and `_Hold` gains `charge_abandoned`. Neither takes a request header. `model_proxy_router` also registers the Anthropic route. Map `http_401` and `http_403` to 403 (A.9). The module docstring names both routes |
 | `packages/chassis/src/chassis/server/model_proxy_messages.py` (new) | `add_messages_route(router, app, admit)`: reads the body, calls `parse_messages_request`, `admit`, drives the stream with the hold rule and pings, formats errors by A.8 |
 | `packages/chassis/src/chassis/server/remote_auth.py` | The two fixed bodies get an Anthropic variant, chosen by `scope["path"] == "/v1/messages"` |
 | `pocs/poc-05-sandboxed/tests/test_poc05_hostile_offline.py` | H29 expects 403 (A.9) |
@@ -296,7 +299,7 @@ Route, with a `ScriptedModel` (`packages/chassis/tests/test_model_proxy_messages
 - **Admission parity.** A correlated call is charged to its run. The `max_tokens` forwarded is capped at the remainder. 429 `budget_exhausted` in the Anthropic shape with `x-should-retry`, complete and stream (a JSON body in both). The uncorrelated cap is shared: spend through the chat route, get refused on the Anthropic route, and the reverse. A concurrent pair on both routes is never given the same tokens.
 - **The hold rule.** A model error before the first chunk is its HTTP status. A first chunk then an error is a 200 and an `event: error`. A first chunk later than the window is a 200 with `message_start` and `ping`. A silent gap longer than the interval gets a `ping` and loses no chunk.
 - **Client leaves** during the hold and during the stream: the reservation is settled as the chat route's tests require.
-- **Every row of the A.8 table**, from a `ScriptedModel` that raises the matching `ModelError`: status, `type`, `code` in the message, `x-should-retry`, and a fixed text that holds no part of `ModelError.message` (except 400 `model_rejected_request`).
+- **Every row of the A.8 table**, from a `ScriptedModel` that raises the matching `ModelError`: status, `type`, `code` in the message, `x-should-retry`, and a fixed text that holds no part of `ModelError.message`.
 - **Headers.** `anthropic-version`, `anthropic-beta`, `x-api-key`, `authorization` never reach the model adapter (assert the adapter's received arguments and the fake model server's headers); `?beta=true` and any other query are accepted; `accept: application/json` with `stream: true` still gets `text/event-stream`.
 - **The span and counters.** `chassis.model.call` with `format=anthropic`; `chassis.model_calls` counted after a refusal does not count.
 
@@ -318,7 +321,7 @@ Gate for the developer: `git diff --stat main -- packages/chassis/src/chassis/co
 - **`message_start` carries `input_tokens: 0`.** The CLI's cost display may read it. Check against the CLI's reported totals in B2. Fall back to an estimate from the request size if it matters.
 - **Long sessions** may add compaction, title, or `count_tokens` calls. The capture ran 1 to 4 turns. Rerun it on a CLI bump, as the capture note says.
 - **The Bash tool's child sees the token.** The capture saw `ANTHROPIC_AUTH_TOKEN` in the child's environment. What it opens is ADR-005's blast radius: one chassis's proxies, from the remote's pod, inside a run. A per-run token would shrink it. That is `platform-security`'s call, not this route's.
-- **Context length on an SLM.** A 15k-token tool list plus history may pass a small model's window. The upstream 400 is passed through as `model_rejected_request`; whether the CLI then compacts is a PoC-6c finding.
+- **Context length on an SLM.** A 15k-token tool list plus history may pass a small model's window. The upstream 400 becomes `model_rejected_request` with fixed text, so the CLI gets no context-length message to compact from; whether it then compacts anyway is a PoC-6c finding. If it needs the number, send a fixed phrase for a context-length error, not the upstream text.
 
 ---
 
