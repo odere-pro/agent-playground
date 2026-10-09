@@ -23,6 +23,7 @@ The metrics decide what "good" means for every pair, model, and release. They ar
 - Banned words: the count of words from the versioned 027 S-1 list.
 - Judge and embedding calls at temperature 0, with model and route versions recorded in the output.
 - Per-pair and aggregate results as JSON, ready to log to MLflow later.
+- Status after PoC-6: the bake-off checks are string matches, no judge model: the simplifier output holds `2026`, `Acme`, and `30`; the lookup answer holds `small language model` and `retrieval-augmented generation` (`packages/bakeoff/src/bakeoff/tasks.py`). They stand in for `facts_kept`; the real metric is still this issue's.
 
 ## Out of scope
 
