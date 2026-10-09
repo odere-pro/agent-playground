@@ -107,7 +107,8 @@ def test_the_hosted_config_is_poc05s_plus_exactly_the_big_default_entry() -> Non
 
 def test_the_hosted_config_text_is_poc05s_text_with_the_header_and_entry_added() -> None:
     base = CONFIG_P5.read_text()
-    text = CONFIG_P6.read_text()
+    # The copy marks its two `api_key` lines for detect-secrets; nothing else may differ.
+    text = re.sub(r"  # pragma: allowlist secret$", "", CONFIG_P6.read_text(), flags=re.M)
     lines = text.splitlines(keepends=True)
     header = lines[:5]  # the five-line PoC-6 header comment
     assert header[0].startswith("# PoC-6 copy of") and all(ln.startswith("#") for ln in header)

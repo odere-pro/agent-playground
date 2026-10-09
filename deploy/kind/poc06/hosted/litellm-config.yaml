@@ -17,7 +17,7 @@ model_list:
       model: openai/fake-model
       api_base: http://fake-model-server.poc05-platform.svc.cluster.local:8081/v1
       # The fake model server takes no key (section 2.12: it is closed by network, H09).
-      api_key: fake
+      api_key: fake  # pragma: allowlist secret
 
   # PoC-6 (deploy/kind/poc06/hosted.sh): the one added route. The model string is filled in by
   # hosted.sh from POC06_HOSTED_MODEL; the key is read from the environment, which the Deployment
@@ -25,7 +25,7 @@ model_list:
   - model_name: big-default
     litellm_params:
       model: __POC06_HOSTED_MODEL__
-      api_key: os.environ/POC06_PROVIDER_KEY
+      api_key: os.environ/POC06_PROVIDER_KEY  # pragma: allowlist secret
 
 # The MCP gateway. Each key sees only the servers and tools its permission names (seed.sh); no
 # entry has `allow_all_keys` (H07), so a caller with no key is granted nothing.
