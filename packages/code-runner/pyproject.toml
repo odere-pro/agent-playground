@@ -3,7 +3,7 @@ name = "code-runner"
 version = "0.1.0"
 description = "The code-execution tool: an MCP server with one write tool, run_python, in a gVisor sandbox behind LiteLLM's MCP gateway; never imported by the chassis (PoC-5)"
 requires-python = ">=3.12,<3.13"
-dependencies = ["fastmcp>=4.0.10,<5", "uvicorn>=0.30"]
+dependencies = ["fastmcp>=4.0.10,<5", "httpx>=0.28,<0.29", "uvicorn>=0.30"]
 
 [project.scripts]
 code-runner = "code_runner.cli:main"

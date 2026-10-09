@@ -96,10 +96,12 @@ spec:
               cpu: 200m
               memory: 384Mi
             # Measured on kind (T19): 567 MiB working set at idle after migrations; at 640Mi one
-            # extra Python process in the container was OOM-killed. 768Mi leaves room for load.
+            # extra Python process in the container was OOM-killed. 768Mi left room for load until
+            # 2026-10-09, when the working set was 707 MiB and the peak at the limit (bring-up note).
+            # suggested: 1024Mi.
             limits:
               cpu: "1"
-              memory: 768Mi
+              memory: 1024Mi
           securityContext:
             readOnlyRootFilesystem: true
             runAsNonRoot: true

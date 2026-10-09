@@ -3,9 +3,12 @@ section 2.10; task T20).
 
 Exit criterion 5 (offline part): "an agent pod has no route to the internal services except
 through the chassis". Exit criterion 6 (offline part): "the remote pod holds no way out but its
-chassis, and the code runner holds none at all". The packets are tested on kind (T19, T21); this
-file is the only offline control behind the claims that the cloud metadata address
-(169.254.169.254) and the Kubernetes API (the Service IP and the node on 6443) are not reachable.
+chassis, and the code runner holds none at all". Exit criterion 8 (offline part): the per-call
+code-runner sandboxes take only the dispatcher and send nothing
+(`docs/plans/2026-10-09-poc-05-per-call-sandbox.md`, section "NetworkPolicy"). The packets are
+tested on kind (T19, T21); this file is the only offline control behind the claims that the cloud
+metadata address (169.254.169.254) and the Kubernetes API (the Service IP and the node on 6443)
+are not reachable, except the one recorded exception below.
 
 Why those claims follow from these checks. A NetworkPolicy peer is an `ipBlock`, a pod selector, or
 a namespace selector. The metadata service and the API server are not pods in a PoC-5 namespace.
@@ -14,6 +17,12 @@ destination), or a peer selecting everything in every namespace, could allow the
 refuse all three, refuse any other policy kind (a CNI-specific policy could carry a CIDR), and
 require the namespace default deny. What is left is the edges in `fixtures/netpol_edges.yaml`,
 each between pods this repo defines (plus kube-dns).
+
+The one exception is the `ipBlock` in policy `code-runner-dispatch` (poc05-platform): the
+dispatcher's egress to the API server endpoint, `/32`, TCP 6443 only. The file in git holds the
+sentinel `__API_SERVER_IP__/32`; `run.sh` fills in the `kubernetes` EndpointSlice address and
+refuses the sentinel, a link-local address, and the pod and service ranges. Both halves are
+checked here, the fill step by running it.
 
 `agent-sandbox-system` (the vendored controller, `base/agent-sandbox/`) is excluded: it needs the
 API server and has no default deny, as `base/default-deny.yaml` says. The probe pods the plan
@@ -24,6 +33,8 @@ edges file covers what exists.
 from __future__ import annotations
 
 import copy
+import re
+import subprocess
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,10 +46,14 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 POC05 = ROOT / "deploy/kind/poc05"
 EDGES = Path(__file__).resolve().parent / "fixtures/netpol_edges.yaml"
+RUN_SH = POC05 / "run.sh"
+CLUSTER = POC05 / "cluster.yaml"
+SENTINEL = "__API_SERVER_IP__/32"
 
 NAME = "app.kubernetes.io/name"
 NS_LABEL = "kubernetes.io/metadata.name"
-POD_KINDS = {"Deployment", "StatefulSet", "DaemonSet", "Job", "Pod", "Sandbox"}
+POD_KINDS = {"Deployment", "StatefulSet", "DaemonSet", "Job", "Pod", "Sandbox", "SandboxTemplate"}
+POD_TEMPLATE_KINDS = {"Sandbox", "SandboxTemplate"}  # the pod template is `spec.podTemplate`
 BOTH = {"Ingress", "Egress"}
 ANY_PORT = "ANY"
 
@@ -159,7 +174,7 @@ def _template_labels(doc: Doc) -> dict[str, str]:
     kind = doc["kind"]
     if kind == "Pod":
         return dict(doc["metadata"].get("labels", {}))
-    template = doc["spec"]["podTemplate"] if kind == "Sandbox" else doc["spec"]["template"]
+    template = doc["spec"]["podTemplate"] if kind in POD_TEMPLATE_KINDS else doc["spec"]["template"]
     return dict(template.get("metadata", {}).get("labels", {}))
 
 
@@ -210,8 +225,10 @@ def _match_labels(selector: Doc | None, where: str, problems: list[str]) -> Labe
 
 def _peer(policy: Policy, raw: Doc, where: str, problems: list[str]) -> Sel | None:
     """One peer as a Sel. Records a problem and returns None for a peer that allows too much."""
+    if set(raw) == {"ipBlock"}:  # checked by `ip_block_problems`, against the fixture
+        return None
     extra = set(raw) - {"podSelector", "namespaceSelector"}
-    if extra:  # ipBlock is reported by `structure_problems`; anything else is not modeled
+    if extra:  # anything else is not modeled
         problems.append(f"{where}: peer keys {sorted(extra)} are not allowed")
         return None
     ns = policy.ns
@@ -285,15 +302,78 @@ def _walk(node: Any) -> Iterator[str]:
 
 
 def structure_problems(model: Model) -> list[str]:
-    """No ipBlock, no other policy kind, no wide peer, no egress without a peer."""
-    problems: list[str] = []
-    for policy in model.policies:
-        if policy.doc["kind"] != "NetworkPolicy":
-            problems.append(f"{policy.label()}: kind {policy.doc['kind']} is not modeled")
-        if "ipBlock" in set(_walk(policy.doc)):
-            problems.append(f"{policy.label()}: uses an ipBlock")
+    """No ipBlock but the fixture's, no other policy kind, no wide peer, no peerless egress."""
+    problems = [
+        f"{policy.label()}: kind {policy.doc['kind']} is not modeled"
+        for policy in model.policies
+        if policy.doc["kind"] != "NetworkPolicy"
+    ]
+    problems += ip_block_problems(model)
     parse_rules(model.policies, problems)
     return sorted(set(problems))
+
+
+# ---- the one ipBlock: the dispatcher to the API server ----------------------------------------
+
+
+def _ip_block_rules(policy: Policy) -> list[tuple[str, Doc]]:
+    """(direction, rule) for every rule of `policy` that has an ipBlock peer."""
+    return [
+        (direction, raw)
+        for direction, rule_key, peer_key in (
+            ("Ingress", "ingress", "from"),
+            ("Egress", "egress", "to"),
+        )
+        for raw in policy.spec.get(rule_key) or []
+        if any("ipBlock" in peer for peer in raw.get(peer_key) or [])
+    ]
+
+
+def ip_block_problems(model: Model) -> list[str]:
+    """Exactly the fixture's ipBlocks: each in its policy, on its one pod, `/32`, its ports only."""
+    wanted = {(e["policy"]["ns"], e["policy"]["name"]): e for e in EXPECT["ip_blocks"]}
+    problems: list[str] = []
+    total = sum(1 for p in model.policies for key in _walk(p.doc) if key == "ipBlock")
+    if total != len(wanted):
+        problems.append(f"expected {len(wanted)} ipBlock across every PoC-5 policy, found {total}")
+    for policy in model.policies:
+        rules = _ip_block_rules(policy)
+        entry = wanted.get((policy.ns, policy.name))
+        if entry is None:
+            if rules or "ipBlock" in set(_walk(policy.doc)):
+                problems.append(f"{policy.label()}: uses an ipBlock")
+            continue
+        problems += _one_ip_block_problems(model, policy, entry, rules)
+    return problems
+
+
+def _one_ip_block_problems(
+    model: Model, policy: Policy, entry: Doc, rules: list[tuple[str, Doc]]
+) -> list[str]:
+    where = policy.label()
+    problems: list[str] = []
+    pod = _sel(entry["pod"])
+    if policy.ns != pod.ns or _policy_labels(policy) != pod.labels:
+        problems.append(f"{where}: podSelector must be exactly {pod}")
+    selected = _selected(model, policy)
+    if len(selected) != 1:
+        problems.append(f"{where}: selects {[str(p) for p in selected]}, want one pod")
+    if not entry["cidr"].endswith("/32"):
+        problems.append(f"{where}: fixture cidr {entry['cidr']} is not a /32")
+    if len(rules) != 1:
+        problems.append(f"{where}: {len(rules)} rules hold an ipBlock, want one")
+    for direction, raw in rules:
+        if direction != "Egress":
+            problems.append(f"{where}: an ipBlock in an {direction} rule")
+        if raw.get("to") != [{"ipBlock": {"cidr": entry["cidr"]}}]:
+            problems.append(
+                f"{where}: `to` must hold only ipBlock {entry['cidr']} with no except, "
+                f"got {raw.get('to')}"
+            )
+        ports = _ports(raw.get("ports"), where, problems)
+        if ports != tuple(entry["ports"]):
+            problems.append(f"{where}: ports {ports}, want exactly {entry['ports']}")
+    return problems
 
 
 # ---- edges ------------------------------------------------------------------------------------
@@ -468,6 +548,9 @@ def dead_selector_problems(model: Model) -> list[str]:
 # ---- DNS --------------------------------------------------------------------------------------
 
 
+NO_DNS = {"remote-echo", "code-runner", "code-runner-dispatch"}
+
+
 def dns_problems(model: Model) -> list[str]:
     allowed = set(EXPECT["dns_allowed"])
     dns_pods = {p for p in model.externals if dict(p.labels).get("k8s-app") == "kube-dns"}
@@ -486,7 +569,7 @@ def dns_problems(model: Model) -> list[str]:
     problems += [f"{a}: has DNS but the fixture does not list it" for a in sorted(got - allowed)]
     problems += [f"{a}: fixture lists DNS but no policy allows it" for a in sorted(allowed - got)]
     for pod in model.pods:
-        if pod.app in {"remote-echo", "code-runner"} and pod.app in got:
+        if pod.app in NO_DNS and pod.app in got:
             problems.append(f"{pod}: the remote sandbox and the code runner have no DNS")
     return problems
 
@@ -527,6 +610,17 @@ def isolation_problems(model: Model) -> list[str]:
         on_8091 = {(str(s), p) for s, p in concrete_ingress(model, chassis) if p.endswith("/8091")}
         if on_8091 != {(str(remote), "TCP/8091")}:
             problems.append(f"{chassis}: 8091 must take only {remote}, got {on_8091}")
+    return problems + _code_runner_problems(model)
+
+
+def _apps(model: Model, app: str) -> set[tuple[str, str]]:
+    return {(str(p), "TCP/8000") for p in model.pods if p.app == app}
+
+
+def _code_runner_problems(model: Model) -> list[str]:
+    """The per-call sandboxes: no egress, only the dispatcher in. The dispatcher: only LiteLLM in,
+    only the sandboxes out (pods; its API server ipBlock is `ip_block_problems`)."""
+    problems: list[str] = []
     runners = [p for p in model.pods if p.ns == "poc05-tools"]
     if not runners:
         problems.append("no pod in poc05-tools")
@@ -534,9 +628,18 @@ def isolation_problems(model: Model) -> list[str]:
         if concrete_egress(model, runner):
             problems.append(f"{runner}: must have no egress, got {concrete_egress(model, runner)}")
         got_in = {(str(s), port) for s, port in concrete_ingress(model, runner)}
-        want = {(str(p), "TCP/8000") for p in model.pods if p.app == "litellm"}
-        if got_in != want:
-            problems.append(f"{runner}: ingress must be only LiteLLM TCP/8000, got {got_in}")
+        if got_in != _apps(model, "code-runner-dispatch"):
+            problems.append(f"{runner}: ingress must be only the dispatcher TCP/8000, got {got_in}")
+    dispatchers = [p for p in model.pods if p.app == "code-runner-dispatch"]
+    if [str(p) for p in dispatchers] != ["poc05-platform/code-runner-dispatch"]:
+        problems.append(f"want one dispatcher pod in poc05-platform, got {dispatchers}")
+    for dispatcher in dispatchers:
+        got_out = {(str(d), port) for d, port in concrete_egress(model, dispatcher)}
+        if got_out != _apps(model, "code-runner"):
+            problems.append(f"{dispatcher}: pod egress must be only the sandboxes, got {got_out}")
+        got_in = {(str(s), port) for s, port in concrete_ingress(model, dispatcher)}
+        if got_in != _apps(model, "litellm"):
+            problems.append(f"{dispatcher}: ingress must be only LiteLLM TCP/8000, got {got_in}")
     return problems
 
 
@@ -559,14 +662,34 @@ def test_poc05_netpol_default_deny_in_every_namespace(model: Model) -> None:
 
 
 def test_poc05_netpol_no_rule_can_reach_metadata_or_api(model: Model) -> None:
-    """Exit criterion 5 (offline part): no policy has an ipBlock or an any-destination rule.
+    """Exit criterion 5 (offline part): no policy has an ipBlock but the dispatcher's, and no
+    any-destination rule.
 
     The metadata service (169.254.169.254) and the Kubernetes API (Service IP, node on 6443) are
     not pods in a PoC-5 namespace. Only an `ipBlock`, a peerless egress rule, or a peer selecting
-    every namespace could allow them. All three fail here, so no rule can allow them.
+    every namespace could allow them. All three fail here, except the one ipBlock the next test
+    pins down, so no other rule can allow them.
     """
     assert any(p.ns == "poc05-agents" for p in model.policies)
     assert structure_problems(model) == []
+
+
+def test_poc05_netpol_one_ip_block_only_for_the_dispatcher(model: Model) -> None:
+    """Exit criterion 8 (offline part): the one ipBlock in PoC-5 is the dispatcher's API egress.
+
+    Exactly one ipBlock across every PoC-5 policy. It is in policy `code-runner-dispatch` in
+    poc05-platform, whose podSelector selects only the dispatcher; its egress rule holds only that
+    block, as a `/32`, with no `except`, on exactly TCP 6443. The file in git holds the sentinel.
+    """
+    (entry,) = EXPECT["ip_blocks"]
+    assert entry["policy"] == {"ns": "poc05-platform", "name": "code-runner-dispatch"}
+    assert entry["cidr"] == SENTINEL and entry["ports"] == ["TCP/6443"]
+    assert ip_block_problems(model) == []
+    (policy,) = [p for p in model.policies if p.name == "code-runner-dispatch"]
+    assert policy.source == "platform/network-policy.yaml"
+    assert SENTINEL in (POC05 / policy.source).read_text()
+    (pod,) = _selected(model, policy)
+    assert str(pod) == "poc05-platform/code-runner-dispatch"
 
 
 def test_poc05_netpol_edges_equal_the_fixture(model: Model) -> None:
@@ -582,10 +705,11 @@ def test_poc05_netpol_edges_equal_the_fixture(model: Model) -> None:
 def test_poc05_netpol_dns_only_for_the_listed_pods(model: Model) -> None:
     """Exit criterion 6 (offline part): kube-dns on 53 only for the fixture's pods.
 
-    The remote sandbox and the code runner have no DNS: a name lookup gets no answer.
+    The remote sandbox, the code runner, and its dispatcher have no DNS: a name lookup gets no
+    answer. The dispatcher uses `KUBERNETES_SERVICE_HOST` and pod IPs.
     """
     assert dns_problems(model) == []
-    assert {"remote-echo", "code-runner"}.isdisjoint(EXPECT["dns_allowed"])
+    assert NO_DNS.isdisjoint(EXPECT["dns_allowed"])
 
 
 def test_poc05_netpol_every_edge_has_both_sides(model: Model) -> None:
@@ -608,8 +732,9 @@ def test_poc05_netpol_remote_and_code_runner_are_boxed_in(model: Model) -> None:
     """Exit criterion 6 (offline part): the remote has one way out and the runner has none.
 
     The remote sandbox's only egress is its chassis's remote listener port (8091); its only
-    ingress is its chassis on 9000; the chassis takes 8091 only from that remote. The code runner
-    has no egress and takes ingress only from LiteLLM.
+    ingress is its chassis on 9000; the chassis takes 8091 only from that remote. Each per-call
+    code-runner sandbox has no egress and takes ingress only from the dispatcher; the dispatcher
+    takes only LiteLLM and reaches only the sandboxes (and the API server, by its one ipBlock).
     """
     assert isolation_problems(model) == []
 
@@ -714,3 +839,117 @@ def test_poc05_netpol_checks_bite_remote_dns_and_runner_egress(model: Model) -> 
         ),
     )
     assert isolation_problems(other)
+
+
+def _api_rule(spec: Doc) -> Doc:
+    """The dispatcher's API rule itself (not a copy), for the mutations to change."""
+    rules: list[Doc] = [r for r in spec["egress"] if any("ipBlock" in p for p in r["to"])]
+    (rule,) = rules
+    return rule
+
+
+def test_poc05_netpol_checks_bite_the_dispatcher_ip_block(model: Model) -> None:
+    """Exit criterion 8 (offline part): control passes; each widening of the one ipBlock fails."""
+    assert ip_block_problems(model) == []
+
+    def bad(change: Any) -> list[str]:
+        return ip_block_problems(_mutated(model, "code-runner-dispatch", change))
+
+    assert bad(lambda s: _api_rule(s)["to"][0]["ipBlock"].update({"except": ["10.0.0.1/32"]}))
+    assert bad(lambda s: _api_rule(s)["ports"].append({"port": 10250, "protocol": "TCP"}))
+    assert bad(lambda s: _api_rule(s).pop("ports"))
+    assert bad(lambda s: _api_rule(s)["to"][0]["ipBlock"].update(cidr="172.18.0.0/16"))
+    assert bad(lambda s: _api_rule(s)["to"][0]["ipBlock"].update(cidr="172.18.0.2/32"))
+    assert bad(lambda s: _api_rule(s)["to"].append({"ipBlock": {"cidr": SENTINEL}}))
+    assert bad(
+        lambda s: s["podSelector"].update(matchLabels={"app.kubernetes.io/part-of": "poc05"})
+    )
+    assert bad(lambda s: s.update(ingress=[{"from": [{"ipBlock": {"cidr": SENTINEL}}]}]))
+    # An ipBlock in any other policy fails too, even with the dispatcher's rule intact.
+    other = _mutated(
+        model, "litellm", lambda s: s["egress"].append({"to": [{"ipBlock": {"cidr": SENTINEL}}]})
+    )
+    assert any("litellm: uses an ipBlock" in p for p in ip_block_problems(other))
+
+
+# ---- run.sh fills the sentinel and refuses a bad address ---------------------------------------
+
+
+def _fill(ip: str, text: str | None = None) -> subprocess.CompletedProcess[str]:
+    """`run.sh api-ip-fill IP`: the fill step as a filter, stdin to stdout, no cluster call."""
+    source = (POC05 / "platform/network-policy.yaml").read_text() if text is None else text
+    return subprocess.run(
+        ["bash", str(RUN_SH), "api-ip-fill", ip],
+        input=source,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+def _cluster_subnets() -> dict[str, str]:
+    networking = dict(yaml.safe_load(CLUSTER.read_text())["networking"])
+    return {k: str(networking[k]) for k in ("podSubnet", "serviceSubnet")}
+
+
+def test_poc05_run_sh_fills_the_api_server_ip() -> None:
+    """Exit criterion 8 (offline part): the control. A node address replaces the sentinel, once."""
+    out = _fill("172.18.0.2")
+    assert out.returncode == 0, out.stderr
+    assert SENTINEL not in out.stdout
+    assert out.stdout.count("cidr: 172.18.0.2/32") == 1
+    policies = [d for d in yaml.safe_load_all(out.stdout) if d]
+    assert len(policies) == len(_docs(POC05 / "platform/network-policy.yaml"))
+
+
+@pytest.mark.parametrize(
+    ("ip", "why"),
+    [
+        ("", "empty"),
+        ("__API_SERVER_IP__", "sentinel"),
+        ("169.254.169.254", "link-local"),
+        ("169.254.0.1", "link-local"),
+        ("10.244.0.7", "pod range"),
+        ("10.244.255.255", "pod range"),
+        ("10.96.0.1", "service range"),
+        ("10.96.200.3", "service range"),
+        ("172.18.0.2/32", "not an address"),
+        ("256.1.1.1", "not an address"),
+        ("172.18.0", "not an address"),
+        ("fd00::1", "not an address"),
+        ("172.18.0.2 ", "not an address"),
+    ],
+)
+def test_poc05_run_sh_refuses_a_bad_api_server_ip(ip: str, why: str) -> None:
+    """Exit criterion 8 (offline part): `run.sh` never writes a sentinel, link-local, pod-range,
+    or service-range block. Nothing reaches stdout, so nothing is applied."""
+    out = _fill(ip)
+    assert out.returncode != 0, f"{why}: {ip!r} was accepted"
+    assert out.stdout == "", why
+    assert "api-ip-fill" in out.stderr, out.stderr
+
+
+def test_poc05_run_sh_refuses_input_without_exactly_one_sentinel() -> None:
+    """A policy file whose sentinel was replaced by a literal address in git is refused."""
+    filled = (POC05 / "platform/network-policy.yaml").read_text().replace(SENTINEL, "1.2.3.4/32")
+    assert _fill("172.18.0.2", filled).returncode != 0
+    twice = (POC05 / "platform/network-policy.yaml").read_text() + f"\n# {SENTINEL}\n"
+    assert _fill("172.18.0.2", twice).returncode != 0
+
+
+def test_poc05_run_sh_reads_the_ranges_from_cluster_yaml() -> None:
+    """The pod and service ranges the fill refuses are the ones the cluster is created with."""
+    assert _cluster_subnets() == {"podSubnet": "10.244.0.0/16", "serviceSubnet": "10.96.0.0/16"}
+    text = RUN_SH.read_text()
+    assert re.search(r"podSubnet", text) and re.search(r"serviceSubnet", text)
+    assert "169.254.0.0/16" in text
+
+
+def test_poc05_run_sh_applies_platform_only_through_the_fill() -> None:
+    """`apply -k platform` would send the sentinel; every platform apply renders, then fills."""
+    text = RUN_SH.read_text()
+    assert not re.search(r"apply\s+-k\s+\"?\$HERE/platform", text), "platform applied unfilled"
+    assert re.search(r"(?m)^render_platform\(\) \{", text)
+    assert "fill_api_server_ip" in text
+    assert not re.search(r"apply_folder\s+platform\b", text), "platform applied unfilled"
+    assert "if [[ $1 == api-ip-fill ]]; then" in text, "run.sh has no api-ip-fill verb"

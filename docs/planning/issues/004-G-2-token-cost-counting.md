@@ -24,6 +24,7 @@ Token and cost numbers are the core measurement of the epic. The baseline (005 G
 - Streaming calls counted the same way as complete calls.
 - Token and cost counters exposed as Prometheus metrics, labeled by agent, user, and route.
 - Status after PoC-1: token counts per call are visible in the router through a custom callback (`deploy/compose/litellm/token_log.py`). It prints one line per call with route, tokens, cost, and `tags=agent:<name>`, because there is no Postgres and `/spend/logs` answers `No connected db.` Streamed calls log real counts, not zero. The agent tag comes from the request metadata, so it is spoofable until a virtual key carries it. The criterion "counted under the agent of its key" stays open and needs the virtual-key work. Cost is `0.000000` for the fake model; a real cost figure is unverified until the `local` override runs. See `pocs/poc-01-walking-skeleton/notes/2026-09-29-compose-key-debt.md`.
+- Status after PoC-5: a model stream inside a run that the client closes early gives its reservation back to the run uncharged (`_Hold.release` in `packages/chassis/src/chassis/server/model_proxy.py`). An uncorrelated stream that started is charged. The agent tag is in the virtual key's `metadata.tags` now, but H31 (a spoofed tag) was not run, so the criterion "counted under the agent of its key" stays open.
 
 ## Out of scope
 

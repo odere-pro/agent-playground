@@ -1,0 +1,19 @@
+# Claim rule C1, no env: the claim injects an env var.
+# expect: rejected
+# rule: C1
+# message: claim rule C1: a SandboxClaim may not set env
+# differs: .spec.env
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxClaim
+metadata:
+  name: admission-claim-c1
+  namespace: poc05-tools
+spec:
+  warmPoolRef:
+    name: code-runner
+  lifecycle:
+    shutdownTime: '2030-01-01T00:00:00Z'
+    shutdownPolicy: Delete
+  env:
+  - name: INJECTED
+    value: x

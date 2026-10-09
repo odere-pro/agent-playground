@@ -147,7 +147,7 @@ The connector is the lane, picked by `spec.engine.connector`.
 - **Source:** the owning team wrote and reviewed it, and its image is built in our registry.
 - **Behavior:** it does not run code, shell commands, or file writes itself.
 
-Everything else is untrusted. The agent config declares `spec.trust: trusted | untrusted`, and an admission check blocks an untrusted workload in the `sidecar` lane. Generated code that runs through the code-execution tool behind `ToolPort` does not make an agent untrusted. How a remote proves itself to the chassis (one bearer token per remote, a separate listener on the pod IP) and how admission checks the rule (a ValidatingAdmissionPolicy, not Kyverno) are proposed in [ADR-005](../adr/005-remote-lane-auth-and-trust-admission.md), from PoC-5.
+Everything else is untrusted. The agent config declares `spec.trust: trusted | untrusted`, and an admission check blocks an untrusted workload in the `sidecar` lane. Generated code that runs through the code-execution tool behind `ToolPort` does not make an agent untrusted. How a remote proves itself to the chassis (one bearer token per remote, a separate listener on the pod IP) and how admission checks the rule (a ValidatingAdmissionPolicy, not Kyverno) are decided in [ADR-005](../adr/005-remote-lane-auth-and-trust-admission.md), from PoC-5, accepted 2026-10-09. Code from a model runs in a fresh gVisor sandbox per call.
 
 ### Outbound proxies: the same controls for every engine
 

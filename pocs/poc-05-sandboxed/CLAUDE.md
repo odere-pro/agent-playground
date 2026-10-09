@@ -1,6 +1,6 @@
 # pocs/poc-05-sandboxed
 
-Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still apply. Status: in progress. The offline work is built and reviewed; the cluster steps (T19, T21 to T23, T26) and the close are left. The current prompt and the decisions are in `notes/2026-10-02-mac-kickoff.md`.
+Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still apply. Status: done (2026-10-09), criteria 1 (sidecar kind suite manual), 3 (MinIO) and 8 flagged (`README.md`). T10 stays open as a recorded exception, owned by the user. The decisions are in `notes/2026-10-02-mac-kickoff.md` and `notes/backlog-changes.md`.
 
 ## Read first
 
@@ -9,7 +9,7 @@ Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still appl
 ## What the iteration touches
 
 - `packages/chassis`: the `remote` connector, `ToolPort` write mode, the remote proxy listener, `spec.trust`.
-- `packages/workload-a2a` (the bearer check), and the new `packages/fake-mcp-server` and `packages/code-runner`. The probe workload `packages/workloads/hostile` (T10) was dropped on 2026-10-02 and its empty skeleton removed on 2026-10-08.
+- `packages/workload-a2a` (the bearer check), and the new `packages/fake-mcp-server` and `packages/code-runner`. The probe workload `packages/workloads/hostile` (T10) is work in progress by the user, a recorded exception (`notes/2026-10-09-t10-probe-exception.md`). It is not in the tree yet.
 - `deploy/kind/poc05/` (cluster, gVisor, NetworkPolicy, admission, seed script), `docs/contracts/contract-v4.md`, and ADR-005.
 - Here: `tests/`, `demo/`, and `notes/` (`spike/` holds the spike files). Code that outlives the iteration goes in `packages/` or `deploy/`.
 
@@ -19,7 +19,8 @@ Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still appl
 - The kind context is `kind-poc05`. Pass it on every `kubectl` call. Never act on another context.
 - Tests are `test_poc05_*`, and the docstring names the exit criterion. Kind tests are marked `network` and run only with `POC05_KIND=1`. Everything else runs offline in `make test`.
 - A refusal check always has a paired allowed control: the same call works where it should.
-- T10, the in-pod probe workload, is dropped (2026-10-02). Check controls from outside the pod: `kubectl exec` of tools already in our images, pod specs, cgroup files. Never write an attack tool.
+- T10, the in-pod probe workload, is WIP by the user and a recorded exception (`notes/2026-10-09-t10-probe-exception.md`; how to test it: `docs/guides/poc-05-runbooks.md`, "Testing the probe workload (T10) after it is built"). Until it lands, check controls from outside the pod: `kubectl exec` of tools already in our images, pod specs, cgroup files.
+- Never write an attack tool.
 - No credential in a file, a command line, or a log. Secrets come from the seed script only.
 
 ## How to run

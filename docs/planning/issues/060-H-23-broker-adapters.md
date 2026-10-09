@@ -15,19 +15,20 @@ The broker sits behind a port, so the platform can run with any broker and on an
 
 ## What
 
-- Dapr pub/sub components (not hand-written adapters, see Reuse) behind the event port and the event consumer adapter, for the brokers not chosen in DEC-1, from this list: NATS JetStream, Kafka (Strimzi, Redpanda, or managed), AWS (SNS/SQS, EventBridge), and GCP Pub/Sub.
+- Broker client adapters ([ADR-004](../adr/004-events-through-a-broker-client.md), see Reuse) behind the event port and the event consumer adapter, for the brokers not chosen in DEC-1, from this list: NATS JetStream, Kafka (Strimzi, Redpanda, or managed), AWS (SNS/SQS, EventBridge), and GCP Pub/Sub.
 - The same CloudEvents mapping and extensions on every broker.
 - The broker is picked by config only (suggested key: `events.broker`), with no change to agent code.
 - The `run_id` partition key maps to each broker's ordering feature, for example the Kafka message key or the Pub/Sub ordering key.
 - Retries and dead-letter topics (053 H-22) keep the same behavior, using the broker's own dead-letter feature where it has one.
 - One shared contract test suite runs against every adapter.
 - Suggested: local emulators in CI (Redpanda for Kafka, LocalStack for AWS, the Pub/Sub emulator for GCP).
+- Status after PoC-5: a broker added here must pass the whole `EventPortContract` against a real broker, with no xfail ([ADR-004](../adr/004-events-through-a-broker-client.md), item 8). `chassis.core` and `chassis.ports.events` import no broker client (`pocs/poc-05-sandboxed/tests/test_poc05_events_agnostic.py`).
 
 ## Reuse
 
-- **Use:** Dapr pub/sub components: Kafka, AWS SNS/SQS, and GCP Pub/Sub are stable; NATS JetStream is beta.
-- **Build:** one component file per broker, and the shared contract suite with local emulators.
-- **Scope change:** no hand-written broker adapters.
+- **Use:** one broker client per broker behind `EventPort` (ADR-004): aiokafka for Kafka; suggested: nats-py for NATS JetStream, and the cloud SDKs for SNS/SQS and Pub/Sub. The `dapr` adapter stays as a tested alternative that reaches other brokers through Dapr components, the default in no profile.
+- **Build:** one adapter per broker, each bound to `EventPortContract`, and the shared contract suite with local emulators.
+- **Watch:** each adapter must pass the whole suite against a real broker with no xfail (ADR-004, item 8). Broker auth (SASL or the cloud's IAM) is the adapter's, with 020 X-8.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
 
 ## Out of scope
@@ -38,7 +39,7 @@ The broker sits behind a port, so the platform can run with any broker and on an
 
 ## Acceptance criteria
 
-- [ ] Each new broker component passes the same contract suite as the first one: publish, consume, duplicate drop, retry, dead-letter, and `run_id` ordering.
+- [ ] Each new broker adapter passes the same contract suite as the first one: publish, consume, duplicate drop, retry, dead-letter, and `run_id` ordering.
 - [ ] The echo agent switches broker by config only and passes its event tests on each broker.
 - [ ] CloudEvents attributes and extensions survive a round trip on every broker.
 - [ ] The contract suite runs in CI for every adapter.

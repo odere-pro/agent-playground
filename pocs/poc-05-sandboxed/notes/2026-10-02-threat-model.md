@@ -8,6 +8,8 @@ Author: platform-security, 2026-10-02. Read-only review. Inputs: `docs/planning/
 
 Scope note: this is design input for the chassis-architect's plan. No secrets in this file.
 
+Sections 1 to 6 are the review as written on 2026-10-02. What changed since is in section 7.
+
 ## 1. Threat model for the two lanes
 
 ### Assets (what the attacker wants)
@@ -248,3 +250,23 @@ proves the intended control and not an accident.
   a known-gVisor-intercepted syscall behaves as under runsc.
 - Idempotency/cross-tenant (A6/H12): a "cannot read other caller's data" test passes today only because there is one
   caller. Note it: per-caller scope is NOT a control yet (PoC-8). Do not claim B12 closed.
+
+## 7. Status, 2026-10-09
+
+Added by `docs-editor` for task 7 of the [per-call sandbox plan](../../../docs/plans/2026-10-09-poc-05-per-call-sandbox.md). Sections 1 to 6 are unchanged. Evidence: the [bring-up note](2026-10-02-bring-up.md) and the [remote suite](2026-10-08-remote-suite.md), both 2026-10-09.
+
+| Id | Status | Evidence |
+| -- | ------ | -------- |
+| B4 | Holds, with one recorded platform exception. The code-runner dispatcher (`poc05-platform`, runc) holds a Kubernetes token and reaches the API server endpoint: one `ipBlock`, a `/32` on TCP 6443, no `except`. `run.sh` fills the address from the `kubernetes` EndpointSlice and refuses the sentinel, `169.254.0.0/16`, and the pod and service ranges. Its RBAC is `create`, `get`, `delete` on `sandboxclaims` in `poc05-tools` only, under a quota of 4 claims and 6 pods. Workloads, remotes, and sandboxes still reach no API address | Offline: `test_poc05_netpol_static.py` (exactly one `ipBlock`, in policy `code-runner-dispatch`). Kind: node:6443 connects and node:10250 times out from the dispatcher; the `can-i` list, each `no` next to its `yes`; a fifth claim refused by the quota |
+| B12 | Closed for the code runner: a fresh gVisor pod per call, deleted after. Open for Valkey: one ACL user with `~*` serves every caller (PoC-8) | `test_poc05_kind_code_runner.py::test_files_do_not_cross_calls` (call B sees neither `/tmp` nor `/dev/shm` files from call A, on another host), `::test_claim_is_gone_after_the_call` |
+| H01 | Live on kind. A fixture puts 169.254.169.254 on the node's loopback with an HTTP listener. The sidecar workload times out; an unpoliced pod in `default` gets 200 from the same address. A real cloud metadata service still needs a cloud rerun (038 X-1a) | `test_poc05_kind_sidecar_controls.py::test_h01_metadata_address_denied` |
+| H11 | Passed on kind. Kafka with SASL/SCRAM and no PLAINTEXT listener: no credential, an unknown user, and a guessed password each get the broker's error 58; the chassis's publish lands on its topic. On 2026-10-02 it was a recorded exception ([the H11 note](2026-10-02-h11-queue-exception.md)). Open: no authorizer, payloads in clear, TLS and per-service ACLs (020 X-8) | `test_poc05_kind_hardreq1.py::test_kafka_refuses_the_workload_without_the_chassis_credential`; [close runs](2026-10-09-close-runs.md), section 3 |
+| H22 | `/dev/shm` under gVisor ignores the pod's `sizeLimit`: runsc mounts its own tmpfs. For the code runner, the pod's 256Mi limit and a fresh pod per call bound it (accepted, owner 055 CH-6). `remote-echo` is bounded by its memory limit only: a 40 MiB fill gets no error (accepted, 055 CH-6) | `test_poc05_kind_code_runner.py::test_dev_shm_is_capped` (`xfail(strict=True)`), `::test_dev_shm_is_bounded_by_the_per_call_pod` |
+| H23 | Restated for gVisor: hitting the pids cap ends the whole sandbox instead of failing one `fork` with EAGAIN. In the code runner that sandbox is the one call's own pod | `test_poc05_kind_remote_controls.py::test_h23_pids_cap_is_the_configured_limit` (the cap as set); `test_poc05_kind_code_runner.py::test_python_child_burst_leaves_the_dispatcher_up` |
+
+New risk from the per-call layout, recorded in the [blind-spots note](2026-10-02-blind-spots.md), section 2:
+
+- A stolen dispatcher token can delete other callers' claims: a denial of service. It cannot pick or change a template or pool, or reach another namespace.
+- The agent-sandbox controller's upstream ClusterRole may write NetworkPolicies in every namespace. Admission rule T1 refuses any template that is not `Unmanaged`, so the controller writes none.
+
+The in-pod probe workload (T10) is a recorded exception, work in progress, owner the user ([the T10 note](2026-10-09-t10-probe-exception.md)). Until it lands, every H id above is checked from outside the pod.

@@ -1,6 +1,6 @@
 # Contract v4
 
-The written contract after PoC-5: the `remote` lane with its per-remote credential, `spec.trust` and the admission check, the remote proxy listener, the uncorrelated token cap, `ToolPort` write mode with its error codes, and `agent.trust` in `/manifest`. Every change is additive over [contract v3](contract-v3.md), which stays as the PoC-4 record and still holds for everything this document does not name. Contracts v2 and v1 still hold for what v3 does not name. Generated schemas: `packages/chassis/schemas/*.json` (`make schemas`); `chassis-config.v0.json` and `manifest.v0.json` gain optional fields and keep their major. Source (under `packages/chassis/src/chassis/`): `server/config.py`, `server/remote_auth.py`, `server/model_proxy.py`, `server/tool_endpoint.py`, `server/cli.py`, `server/manifest.py`, `core/manifest.py`, `core/inbound.py`, `ports/tool.py`, `ports/events.py`, `adapters/a2a/remote.py`, `adapters/mcp/server.py`, `adapters/mcp/gateway.py`, and `profiles.py`; outside the chassis, `packages/workload-a2a/src/workload_a2a/auth.py` and `cli.py`, and `deploy/kind/poc05/admission/`. Status: PoC-5, written 2026-10-02 from the code. The design is [the PoC-5 plan](../plans/2026-10-02-poc-05-sandboxed.md), section 3. The decisions are [ADR-005](../planning/adr/005-remote-lane-auth-and-trust-admission.md). Where the plan and the code differ, this document describes the code and says so at the end.
+The written contract after PoC-5: the `remote` lane with its per-remote credential, `spec.trust` and the admission check, the remote proxy listener, the uncorrelated token cap, `ToolPort` write mode with its error codes, and `agent.trust` in `/manifest`. Every change is additive over [contract v3](contract-v3.md), which stays as the PoC-4 record and still holds for everything this document does not name. Contracts v2 and v1 still hold for what v3 does not name. Generated schemas: `packages/chassis/schemas/*.json` (`make schemas`); `chassis-config.v0.json` and `manifest.v0.json` gain optional fields and keep their major. Source (under `packages/chassis/src/chassis/`): `server/config.py`, `server/remote_auth.py`, `server/model_proxy.py`, `server/tool_endpoint.py`, `server/cli.py`, `server/manifest.py`, `core/manifest.py`, `core/inbound.py`, `ports/tool.py`, `ports/events.py`, `adapters/a2a/remote.py`, `adapters/mcp/server.py`, `adapters/mcp/gateway.py`, and `profiles.py`; outside the chassis, `packages/workload-a2a/src/workload_a2a/auth.py` and `cli.py`, and `deploy/kind/poc05/admission/`. Status: PoC-5, written 2026-10-02 from the code, and checked against the code again on 2026-10-09 for the close (T30): the gateway's tool naming and refusal texts, the `/mcp` rule for a name it does not list, the CLI's `--host`, and the known gaps from the cluster run. The design is [the PoC-5 plan](../plans/2026-10-02-poc-05-sandboxed.md), section 3. The decisions are [ADR-005](../planning/adr/005-remote-lane-auth-and-trust-admission.md). Where the plan and the code differ, this document describes the code and says so at the end.
 
 Contract v4 is a version of this document, not of the wire. The event schema is still `schema_version: "0"`.
 
@@ -84,9 +84,9 @@ An explicit route list, nothing else:
 | `POST /v1/chat/completions` | The model proxy (`model_proxy_router`), the same router as on the loopback listener |
 | `/mcp` | The tool endpoint (`mount_tool_endpoint`), the same MCP server as on the loopback listener |
 
-- Every other path is 404. No `/dapr/*`, no docs, no OpenAPI document.
+- Every other path is 404. No `/dapr/*`, no docs, no OpenAPI document (`server/remote_auth.py:197-206`).
 - It shares the public app's `state` (the ports, `runs`, the uncorrelated cap). It has no lifespan of its own.
-- A websocket is closed with 1008 before accept. Any scope that is not `http` or `lifespan` is dropped.
+- A websocket is closed with 1008 before accept. Any scope that is not `http` or `lifespan` is dropped. Both middlewares do this, so a websocket never reaches a route (`server/remote_auth.py:91-96`, `135-137`, `176-178`).
 
 ### Refusals
 
@@ -101,13 +101,17 @@ Two pure ASGI middlewares, outermost first. suggested: every code, type, and tex
 - The body is one fixed JSON object, `{"error": {code, type, message}}`, the same bytes every time. The caller learns nothing about which token or which run.
 - **The token check** compares the presented token with every accepted token (`hmac.compare_digest`, and no early exit), so the time does not say which one matched. On success the `Authorization` header is removed before the route sees it.
 - **The run check** means a remote spends tokens and calls tools only inside a run the chassis opened, under that run's budget.
-- **Counters** (suggested: the names): `chassis.remote.auth_failed{reason}` with `reason` `missing` or `wrong`; `chassis.remote.run_required`. The warning log has the method and the path only, never the header.
+- **Counters** (suggested: the names): `chassis.remote.auth_failed{reason}` with `reason` `missing` or `wrong`; `chassis.remote.run_required`. A 401 also writes one warning log with the reason, the method, and the path only, never the header (`server/remote_auth.py:155-160`). A 403 is counted and not logged (`server/remote_auth.py:182-186`).
+- **Order.** `BearerAuth` runs first, then `RequireRun` (`server/remote_auth.py:207-209`). So a call with no token gets 401 even when its `traceparent` names a run, and the run check never runs for a caller without the token.
+- **`/mcp` on this listener** never sees a call outside a run: `RequireRun` answers 403 first. The `/mcp` refusal of a write outside a run (`idempotency_key_required`, below) shows on the loopback listener only.
 - A model or tool call that passes both checks answers as on the loopback listener, including 429 `budget_exhausted` and the tool errors below.
 
 ### The CLI
 
-- `--remote-proxy-host` must be one IP address (the pod IP). Loopback and wildcards (`0.0.0.0`, `::`) are refused. It is refused unless `spec.engine.connector` is `remote` and the variable in `spec.engine.auth.token_env` is set. `--remote-proxy-port` must differ from `--port` and `--proxy-port`. A bad flag exits 2 with the reason.
-- **Bind order (H14).** The proxy listeners bind first. A taken proxy port exits 3 with a message naming the address, before the public listener binds and before anything reaches the workload. Then the public lifespan runs in the background: `/health` answers at once and `/ready` is 503 `starting` until the workload is reachable, for up to `--startup-wait-s` (120, suggested). Past that, exit 3.
+- `--remote-proxy-host` must be one IP address (the pod IP). A host name, `localhost` included, loopback, and wildcards (`0.0.0.0`, `::`) are refused. It is refused unless `spec.engine.connector` is `remote` and the variable in `spec.engine.auth.token_env` is set. `--remote-proxy-port` must differ from `--port` and `--proxy-port`. A bad flag exits 2 with the reason (`server/cli.py:120-147`).
+- The `remote` lane does not need `--remote-proxy-host`. Without it the chassis serves a remote with no listener for the remote's model and tool calls. The CLI has no rule that ties the two together (`server/cli.py:166-167`).
+- **`--host` (the public listener) has no CLI rule.** `chassis serve --host 0.0.0.0` is accepted (`server/cli.py:79`, and `parse_args`, lines 150-168, checks `--proxy-host` only). Only `--remote-proxy-host` refuses a wildcard. The pod-IP bind of the public port is held by the manifests under `deploy/kind/poc05/` and their static test (`pocs/poc-05-sandboxed/tests/test_poc05_hostile_offline.py::test_h13_the_public_port_binds_the_pod_ip_and_the_proxy_loopback`). See "Known gaps".
+- **Bind order (H14).** The proxy listeners bind first (`server/cli.py:224-235`, `Drain.serve`). A taken proxy port exits 3 with a message naming the address, before the public listener binds and before anything reaches the workload. Then the public lifespan runs in the background: `/health` answers at once and `/ready` is 503 `starting` until the workload is reachable, for up to `--startup-wait-s` (120, suggested). Past that, exit 3.
 - On shutdown the proxy listeners stop last, as in v3.
 
 ## The uncorrelated cap
@@ -116,11 +120,13 @@ Plan section 2.12, H16. Since PoC-2, a model call on the proxy whose `traceparen
 
 - **The limit:** `spec.limits.uncorrelated_tokens_per_minute` (L). Integer, at least 0. Default 20000 (suggested). `0` refuses every uncorrelated call. Reloadable: it is read from `state.config` on each admission.
 - **The window:** a fixed window of 60 s (`WINDOW_S`), not a sliding one. Per replica, in process, by design.
-- **The worst case:** the call's `max_tokens`, or 1024 when it sets none (`DEFAULT_UNCORRELATED_MAX_TOKENS`, suggested; the epic gives no value). The 1024 is itself capped at L: the default worst case is `max(1, min(1024, L))`. A `max_tokens` below 1 counts as 1. The worst case is forwarded upstream as the call's `max_tokens`.
+- **The worst case:** the call's `max_tokens`, or 1024 when it sets none (`DEFAULT_UNCORRELATED_MAX_TOKENS`, suggested; the epic gives no value). The 1024 is a ceiling, and it is itself capped at L: the default worst case is `max(1, min(1024, L))` (`server/model_proxy.py:108`, `144-148`). A `max_tokens` below 1 counts as 1. A `max_tokens` the caller sets is not capped at 1024: it is admitted when it fits L. The worst case is forwarded upstream as the call's `max_tokens`.
+- **Counted first:** every call that names no run in flight counts `chassis.model_calls_uncorrelated` and logs a warning before the cap is checked, so a refused call is counted twice: once as uncorrelated, once as refused (`server/model_proxy.py:479-490`).
 - **Admission:** the call is let in only if spent plus reserved plus its worst case is at most L. The check and the reservation are one step under a lock.
-- **Refusal:** 429, before the model is called, counted as `chassis.model_calls_refused`. Body: `{"error": {"message", "type": "budget_exhausted", "code": "budget_exhausted", "retryable"}}`. The message is `uncorrelated model calls are capped at <L> tokens per minute`, plus `; this call asks for <worst>` when the worst case alone is over L. `retryable` is `true` when the call would fit an empty window, and `false` for L = 0 and for a call whose worst case alone is over L. For `stream: true` the refusal is one error frame, then `[DONE]`.
+- **Refusal:** 429, before the model is called, counted as `chassis.model_calls_refused`. Body: `{"error": {"message", "type": "budget_exhausted", "code": "budget_exhausted", "retryable"}}`. The message is `uncorrelated model calls are capped at <L> tokens per minute`, plus `; this call asks for <worst>` when L is above 0 and the worst case alone is over L (`server/model_proxy.py:277-289`). `retryable` is `true` when the call would fit an empty window, and `false` for L = 0 and for a call whose worst case alone is over L. For `stream: true` the refusal is one error frame, then `[DONE]`.
 - **Settle:** the reservation is replaced by the call's usage (input plus output tokens), charged to the window in which it settles. A reservation still held when the window rolls carries over.
-- **No usage:** a call that reached the model and ends with no usage (an upstream error, a stream the client left, a cancel) is charged its whole reservation. A refused call, or a stream whose body never started, is charged nothing.
+- **No usage:** a call that reached the model and ends with no usage (an upstream error, a stream the client left, a cancel) is charged its whole reservation. A stream the client left after a usage frame is charged that last usage (`_Hold.release`, `server/model_proxy.py:365-375`). A refused call, or a stream whose body never started, is charged nothing.
+- **Not the run path.** This rule is the cap's only. A stream inside a run that the client closes early gives its reservation back to the run uncharged (`_Hold.release`, the `record.release` branch). That is a PoC-4 debt, 004 G-2; see "Known gaps".
 - **The bound:** the tokens charged in one window are at most L plus the prompt tokens of the calls that settle in it. `max_tokens` cannot bound a prompt; LiteLLM's key budget is the hard cap for that. After a reload lowers L, calls in flight keep their reservations.
 - The remote listener shares the cap through `app.state.uncorrelated_cap`, so the two listeners spend one budget.
 
@@ -157,18 +163,32 @@ class ToolPort(Protocol):
 
 | Code | When | `retryable` | Public message |
 | ---- | ---- | ----------- | -------------- |
-| `unknown_tool` | No tool by that name, or the gateway's JSON-RPC error says so | `false` | `"no such tool"` |
-| `bad_arguments` | The arguments fail the tool's `parameters`, or `_meta.idempotency_key` is not a string of 1 to 256 characters | `false` | `"the tool arguments do not match the tool's input schema"` |
-| `idempotency_key_required` (new) | A write tool called without a key; on `/mcp`, a write with no run in flight | `false` | `"this is a write tool; call it inside a run"` |
-| `tool_denied` (new) | The gateway answered 401 or 403: the tool is not on the key's allow-list, or the key is not valid | `false` | `"this tool is not allowed for this service"` |
+| `unknown_tool` | No tool by that name. In the gateway adapter: a JSON-RPC error `-32601`, a JSON-RPC error whose text says so, or a tool error result whose text says so (LiteLLM: `Error: Tool '<name>' not found`) | `false` | `"no such tool"` |
+| `bad_arguments` | The arguments fail the tool's `parameters` (the adapter checks required fields, top-level types, and extra fields when `additionalProperties` is false, before any request); a JSON-RPC error `-32602`; a tool error result whose text is a validation error; or, on a `/mcp` write, `_meta.idempotency_key` is not a string of 1 to 256 characters | `false` | `"the tool arguments do not match the tool's input schema"` |
+| `idempotency_key_required` (new) | A write tool called without a key; on `/mcp`, a write, or a name the port does not list, with no run in flight; a tool error result whose text starts `idempotency_key_required` (the tool server got no key, see "Tool names") | `false` | `"this is a write tool; call it inside a run"` |
+| `tool_denied` (new) | The gateway answered 401 or 403 (the key is not valid or not allowed), or a JSON-RPC error or tool error result whose text is LiteLLM's allow-list refusal: `Error: Tool '<name>' is not allowed for your key/team ...` or `User not allowed to call this tool.` | `false` | `"this tool is not allowed for this service"` |
 | `tool_unavailable` (new) | No answer (a connect error or a timeout), or the gateway answered 5xx, 408, or 429 | `true`. Any other unexpected status is also `tool_unavailable`, with `retryable: false` | `"the tool could not be reached; retry later"` |
+
+Sources: the codes and their `retryable` in `ports/tool.py:36-55`; the texts in `core/inbound.py:245-250`; the `/mcp` checks in `adapters/mcp/server.py:80-94` and `145-159`; the gateway adapter in `adapters/mcp/gateway.py:70-83` (the patterns) and `181-208`, `328-371` (the mapping).
+
+**How the gateway adapter maps an answer** (`McpGatewayTools.call`), in order. The first match wins.
+
+1. Before any request, for a tool it lists under that name: a write tool with no key is `idempotency_key_required`; arguments that fail the listed schema are `bad_arguments` (`gateway.py:336-341`).
+2. The call's own JSON-RPC error: `-32601` or an unknown-tool text is `unknown_tool`, an allow-list refusal text (the same LiteLLM texts as step 4) is `tool_denied`, `-32602` is `bad_arguments`. It wins over any HTTP status the session saw (`gateway.py:181-199`).
+3. An HTTP 401 or 403 is `tool_denied`. A 5xx, 408, or 429 is `tool_unavailable`, retryable. Any other status of 400 or more is `tool_unavailable`, not retryable. No answer is `tool_unavailable`, retryable (`gateway.py:200-208`). The status of the session-close `DELETE` is never read: a gateway in stateless mode may refuse it (`gateway.py:176-178`).
+4. A tool error result (HTTP 200, `isError: true`) whose first text block is a refusal maps by its text: unknown tool, then denied, then `idempotency_key_required`, then a validation error (`gateway.py:359-370`). The patterns match LiteLLM v1.103.0's texts, taken on kind (`pocs/poc-05-sandboxed/notes/2026-10-02-bring-up.md`, section 3 and "Requests"). Test: `packages/chassis/tests/test_tool_gateway_contract.py::test_the_gateway_s_refusal_texts_map_to_their_codes`.
+5. Any other tool error result stays `ToolResult(is_error=True)`: the tool's own failure (`gateway.py:371`).
+
+`ToolError.message` is fixed text with the tool name, never the upstream body. LiteLLM puts no allow-list status on the wire: a tool off the key's list is HTTP 200 with an error result, so step 4, not step 3, is how the code sees it on kind.
 
 ### The tool endpoint (`/mcp`, both proxy listeners)
 
 - **A `ToolError`** becomes an MCP tool error result (`isError: true`), never a transport failure. Its text is the public message. Its structured content is `{"code", "message", "retryable"}`, with `message` the public message (`adapters/mcp/server.py`, `_error`).
 - **The tool key.** The workload does not pick the port's key. For a write inside a run, the endpoint derives it: `tk1:` plus the first 40 hex of the sha256 of `<run key>|<tool>|<canonical JSON of the arguments>|<nonce>` (`tool_key`; suggested: the prefix and the length). The run key is the run's idempotency scope when `spec.idempotency.enabled` is true, so a replayed run sends the same tool keys again and the tool server dedupes the writes; else it is the `request_id`. The nonce is the workload's optional MCP `_meta.idempotency_key`, mixed in, never sent raw.
 - **A write with no run in flight** (no `traceparent`, or an unknown one) is refused with `idempotency_key_required` before the port is called.
+- **The nonce is read on a write only.** A read-only call never reads `_meta.idempotency_key`, so a bad one is not refused there (`adapters/mcp/server.py:149-151`).
 - `/mcp` lists what the port lists now, read on every request. Before the lifespan builds the MCP server, `/mcp` is 503.
+- **A name the port does not list** is still sent to the port, as a write tool with an open schema: the list is a cache, and the gateway decides (`adapters/mcp/server.py:208-216`). So outside a run, any unlisted name, an unknown one or a read tool by a name the port does not list, is refused with `idempotency_key_required`, not `unknown_tool`. Inside a run it gets a derived key and goes to the port, which answers `unknown_tool` or the tool's result. Test: `packages/chassis/tests/test_tool_endpoint_gateway_lifecycle.py::test_a_call_to_a_tool_no_longer_listed_still_goes_to_the_port`.
 
 ### `spec.adapters.tools: mcp`
 
@@ -179,10 +199,19 @@ class ToolPort(Protocol):
 | `mcp` | `LITELLM_MCP_URL`, `LITELLM_API_KEY` (the service's own virtual key) | `LITELLM_MCP_AUTH_HEADER` (`Authorization`) |
 
 - suggested: 30 s per call (`DEFAULT_TIMEOUT_S`), a list refresh every 60 s (`TOOLS_REFRESH_S`). A failed refresh keeps the last list and counts `chassis.tools.refresh_failed`.
-- The key goes as `_meta.idempotency_key`, and also as the `idempotency_key` argument when the tool's schema declares that property.
+- The key goes as `_meta.idempotency_key`, and also as the `idempotency_key` argument when the tool is listed under the called name, is a write tool, and its schema declares that property (`gateway.py:342-345`).
+- A tool with no `readOnlyHint` is listed as a write tool (`gateway.py:139`).
 - No proxy variable or redirect can carry the key elsewhere (`trust_env=False`, no redirects). The key is never logged, in an error, or in `repr`.
 - Profile defaults: `fake` uses `fake` (`default_tools`); `local` and `cloud` use `mcp`. `cloud` refuses `fake` and `memory`, as for every port.
 - Suite: `ToolPortContract` (`chassis_contracts/tool.py`) adds the write cases: listed as write, refused without a key with no effect, one effect per key, a reused key with other arguments returns the first result, two keys are two effects, a tool outside the allow-list is not listed and not called, unavailable is retryable. Bound to the fake and to `McpGatewayTools` over `packages/fake-mcp-server` (`packages/chassis/tests/test_tool_gateway_contract.py`).
+
+#### Tool names and the key on LiteLLM's gateway
+
+Found on kind (bring-up note, section 3, "Requests", and "Kind tier, 2026-10-08"; T19). These are the gateway's behavior, not a chassis rule.
+
+- **Names are `<server>-<tool>`.** The gateway lists `fake_tools-glossary_lookup`, `fake_tools-note_write`, `code_runner-run_python`. The chassis passes the names on unchanged: `/mcp` lists the same names (`pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md`). A workload calls the listed name.
+- **`_meta` is not forwarded.** The tool server never sees `_meta.idempotency_key`. Only the argument reaches it. So a write tool that does not declare `idempotency_key` in its schema never gets the key, and a third-party tool server may ignore the argument. The code runner's result cache is in memory.
+- **A bare name.** The gateway also answers a bare tool name (`glossary_lookup`). The adapter does not list that name, so it skips its own checks and does not add the key argument (`gateway.py:331-345`). A read tool called by its bare name works. A write tool called by its bare name reaches the server with no key, and the server's refusal maps to `idempotency_key_required` (step 4 above). Through `/mcp`, the same call outside a run is refused before the port (see "The tool endpoint"). See "Known gaps".
 
 ### `EventPort` (unchanged; stays broker-agnostic)
 
@@ -250,7 +279,7 @@ Each rule has its own message, which starts `trust rule <n>:`. The kind test mat
 ### Tests
 
 - Offline: `pocs/poc-05-sandboxed/tests/test_poc05_admission_static.py` checks a Python model of the CEL and the syntax it can see. Each rule has a rejected fixture and an admitted twin that differs only in the field the rule checks.
-- On kind: `test_poc05_kind_admission.py` applies each fixture with `--dry-run=server` as the submitter (as the deployer for fixtures in `poc05-agents`, `admission/rbac.yaml`) and asserts the outcome and the message. Part of the CEL has run on kind: the API server type-checked the policy with no warning (`status.typeChecking` is `{}`), and the rule-1 canary was refused while its twin was admitted ([bring-up note](../../pocs/poc-05-sandboxed/notes/2026-10-02-bring-up.md), section 9, lines 128-129). The per-rule kind test has not run yet. Until it does, rules 0 and 2 to 8 have no on-cluster refusal of their own; `policy.yaml`'s header lists what only the cluster can prove.
+- On kind: `test_poc05_kind_admission.py` applies each fixture with `--dry-run=server` as the submitter (as the deployer for fixtures in `poc05-agents`, `admission/rbac.yaml`) and asserts the outcome and the message. Part of the CEL has run on kind: the API server type-checked the policy with no warning (`status.typeChecking` is `{}`), and the rule-1 canary was refused while its twin was admitted ([bring-up note](../../pocs/poc-05-sandboxed/notes/2026-10-02-bring-up.md), section 9, lines 128-129). The per-rule kind test ran on 2026-10-08: 51 passed, every rejected fixture refused by `agent-trust-rule` with its rule message and every admitted twin admitted ([sidecar suite note](../../pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md), "Results per H id", the admission row and the command tails).
 - CI: criterion 1's kind half is not in CI yet. The remote-lane workflow (`.github/workflows/remote-lane.yml`) runs by hand only, until the gVisor x86_64 sum and the kind and kubectl sums are pinned and the remote kind test files exist.
 
 ## Config reference
@@ -298,6 +327,8 @@ All additive; none changes `events.v0.json`, `request.v0.json`, `response.v0.jso
 6. **`agent.trust` in `/manifest`.** Why: a caller can see which lane's rules apply.
 7. **The proxy listeners bind first.** Why: H14; a workload must never find the proxy port free and take it.
 
+Checked on 2026-10-09: the gateway's refusal-text mapping (added 2026-10-08), the `/mcp` rule for an unlisted name, and the `_redact` fix are additive. They map more upstream answers to the PoC-5 codes, and change no field, route, or v3 text. One behavior is new and was not in v3, so it is flagged, not counted as a break: on `/mcp`, outside a run, a name the port does not list now answers `idempotency_key_required`. v2 and v3 did not say what an unlisted name answers.
+
 **Rejected:** a new `schema_version` (nothing on the wire changes); the token in `ctx` or in A2A metadata (it would cross into `handle` and into logs; a transport header is never seen by the mapping).
 
 ### Where the code differs from the plan's text
@@ -328,8 +359,14 @@ This document follows the code. These are the places where [the PoC-5 plan](../p
 
 | Gap | Where | Owner |
 | --- | ----- | ----- |
-| The per-rule admission test has not run on kind. Only the type check and the rule-1 canary ran there (bring-up note, lines 128-129); the offline test checks a Python model of the CEL | `deploy/kind/poc05/admission/policy.yaml` header; `test_poc05_kind_admission.py` | PoC-5 kind pass (`tester`) |
+| Closed on 2026-10-08: the per-rule admission test had not run on kind. `test_poc05_kind_admission.py` then ran there, 51 passed | `pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md` | PoC-5 kind pass (`tester`) |
 | `trustedRepositories` is a hand-kept ConfigMap, not registry metadata or a signature | `deploy/kind/poc05/admission/params.yaml` | 025 H-10 (`platform-security`) |
 | The drain order between chassis replicas and a remote workload is not defined | "Cost per lane" | `chassis-architect` |
 | The uncorrelated cap is per replica; N replicas allow N times L | `server/model_proxy.py` | suggested: accept for PoC-5; LiteLLM's key budget is the cluster-wide cap |
+| A model stream inside a run that the client closes early gives its reservation back to the run uncharged. An uncorrelated stream that started is charged | `_Hold.release`, `server/model_proxy.py:365-375` | 004 G-2 (PoC-4 debt). H31 waits on it |
+| A write tool called by its bare name, not the gateway's `<server>-<tool>`, gets `idempotency_key_required`: the adapter adds the key argument only for a tool it lists under the called name, and the gateway drops `_meta`. Read tools work by bare name | `adapters/mcp/gateway.py:331-345`; bring-up note, "Requests" and "Kind tier, 2026-10-08" | 054 H-16 (`chassis-architect`) |
+| A write tool whose schema does not declare `idempotency_key` never gets the key through LiteLLM's gateway, and a third-party tool server may ignore it. The code runner's result cache is in memory and a restart forgets it | `adapters/mcp/gateway.py:342-345`; bring-up note, section 3 | 054 H-16 |
+| On `/mcp`, outside a run, a name the port does not list is refused as `idempotency_key_required`, not `unknown_tool`, even for an unknown name or a read tool | `adapters/mcp/server.py:208-216` | 054 H-16 (`chassis-architect`) |
+| `chassis serve --host 0.0.0.0` has no CLI rule. Only `--remote-proxy-host` refuses a wildcard. The pod-IP bind of the public port is held by the manifests and their static test | `server/cli.py:79`, `150-168`; `test_poc05_hostile_offline.py::test_h13_the_public_port_binds_the_pod_ip_and_the_proxy_loopback` | 026 CH-4 (B6) |
+| Closed in the chassis: LiteLLM's 401 body echoes the last 4 characters of a refused key (`Received API Key = sk-...<4>`) and its hash (`Key Hash (Token) = ...`). `_redact` now strips both, so they no longer reach `ModelError.message`, the 500 body on the proxy listeners, the `error` event, or `/v1/run`. Still open outside the chassis: LiteLLM logs the same line at INFO | `adapters/litellm/client.py:89-102`; `packages/chassis/tests/test_litellm.py::test_401_litellm_echo_of_key_suffix_and_hash_is_redacted` | 026 CH-4 (`platform-security`); 022 H-6's key-leak canary should also look for the suffix and hash |
 | The v3 known gaps still hold, unless closed there | [contract v3](contract-v3.md), "Known gaps" | As listed there |

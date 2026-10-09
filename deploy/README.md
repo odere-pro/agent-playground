@@ -5,7 +5,7 @@ How the chassis and its workloads run.
 | Folder | Arrives in | What |
 | ------ | ---------- | ---- |
 | `compose/` | PoC-1 walking skeleton | Docker Compose: the chassis, LiteLLM, and the fake model server or llama.cpp; since PoC-2 one workload container next to the chassis (the sidecar variant); later MinIO and the observability stack. Files and variants: [`compose/README.md`](compose/README.md) |
-| `kind/` | PoC-4, then PoC-5 | PoC-4: a local kind cluster `poc04` with the two container-role variants (native sidecar, preStop) and their drills; see [kind (PoC-4)](#kind-poc-4). PoC-5 adds a gVisor RuntimeClass and the admission policies |
+| `kind/` | PoC-4, then PoC-5 | PoC-4: a local kind cluster `poc04` with the two container-role variants (native sidecar, preStop) and their drills; see [kind (PoC-4)](#kind-poc-4). PoC-5: a second cluster `poc05` with gVisor, NetworkPolicy, and admission; see [kind (PoC-5)](#kind-poc-5) |
 | `helm/` | PoC-9 | The shared library chart that adds the chassis container with a pinned tag (024 CH-3) |
 
 ## Container uids
@@ -90,3 +90,32 @@ What runs, in namespace `poc04` (Pod Security Standard `restricted`, enforced):
 Both variants: 3 replicas, `maxUnavailable: 0`, `maxSurge: 1`, no service account token. Every container has a read-only root file system, its own `emptyDir` at `/tmp`, a non-root user, no privilege escalation, and no capability. The chassis is ready on `/ready` (every 2 s) and live on `/health`. The workload listens on 127.0.0.1 only, so the kubelet's `httpGet` cannot reach it: its startup and liveness probes `exec` a GET on the agent card. Its liveness probe has its own `terminationGracePeriodSeconds: 10` (suggested): a hung, stopped process ignores SIGTERM, and without it the restart waits for the preStop sleep and the pod's grace.
 
 Secrets: `run.sh` generates `VALKEY_PASSWORD` with `openssl rand` into the Secret `poc04-secrets`, through a pipe. Only the chassis and Valkey read it; the workload gets four plain variables and no Secret. Known PoC gap: Valkey gets the password as a command-line argument inside its own pod.
+
+## kind (PoC-5)
+
+Whether an untrusted workload can be held in its own sandbox while the chassis keeps every credential. Plan: `docs/plans/2026-10-02-poc-05-sandboxed.md` (per-call code sandbox: `docs/plans/2026-10-09-poc-05-per-call-sandbox.md`). How it works: [`docs/guides/poc-05-how-it-works.md`](../docs/guides/poc-05-how-it-works.md). Operating it: the `poc-05-operate` skill (`.claude/skills/poc-05-operate/SKILL.md`). Problems: [`docs/guides/poc-05-runbooks.md`](../docs/guides/poc-05-runbooks.md).
+
+```bash
+make kind-poc05 ARGS="up"            # from nothing: create, smoke, admission, build, load, seed, apply, request
+make kind-poc05 ARGS="status"        # nodes, RuntimeClass, namespaces, policies, controller
+make kind-poc05 ARGS="test"          # every PoC-5 kind test (POC05_KIND=1, -m network)
+make kind-poc05 ARGS="test-remote"   # the remote lane and the code runner only (the CI job)
+make kind-poc05 ARGS="pods logs"     # every pod, Sandbox, and claim; logs through the redaction filter
+make kind-poc05 ARGS="delete"        # kind delete cluster --name poc05
+```
+
+`make kind-poc05 ARGS="<verb>"` calls `kind/poc05/run.sh`; several verbs run in order. The header of `run.sh` lists every verb. It touches only the cluster `poc05`: every kubectl call passes `--context kind-poc05`, every kind call `--name poc05`. It refuses to create while `poc04` runs. Stop other Docker stacks first: the VM has 7.75 GiB. `.github/workflows/remote-lane.yml` runs `up test-remote` on push and pull request.
+
+What runs:
+
+| Folder | Namespace | What |
+| ------ | --------- | ---- |
+| `kind/poc05/cluster.yaml`, `install-gvisor.sh` | | One node, gVisor `runsc` installed by checksum, `podPidsLimit` 256 |
+| `kind/poc05/base/` | all | RuntimeClass `gvisor`, the `poc05-*` namespaces with Pod Security labels, default deny in and out, agent-sandbox pinned by sha256 |
+| `kind/poc05/platform/` | `poc05-platform` | LiteLLM (master key, one virtual key per service), Postgres, Valkey (ACL user, `valkey.conf` from the Secret), MinIO, the fake model and MCP servers, the code-runner dispatcher; `seed.sh` makes every Secret |
+| `kind/poc05/tools/` | `poc05-tools` | The code-runner warm pool and template: a fresh gVisor sandbox per call, no egress, no token |
+| `kind/poc05/remote/` | `poc05-remote` | `remote-echo`, an agent-sandbox `Sandbox` on gVisor: no DNS, one egress edge to the chassis's 8091, its own token only |
+| `kind/poc05/agents/` | `poc05-agents` | `agent-echo` (sidecar lane: the chassis as the native sidecar) and `chassis-echo-remote` (remote lane) |
+| `kind/poc05/admission/` | | The `agent-trust-rule` ValidatingAdmissionPolicy and the extension rules for `SandboxTemplate` and `SandboxClaim`, with a rejected fixture and an admitted twin per rule |
+
+The PoC-5 close adds Kafka with SASL/SCRAM and no PLAINTEXT listener (H11). Secrets come only from `seed.sh`, never from a file or argv. Logs leave the cluster only through `run.sh logs`, which strips keys and tokens.

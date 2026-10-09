@@ -1,0 +1,14 @@
+# Claim rule C4, shutdownPolicy Delete with a shutdownTime: the admitted twin.
+# expect: admitted
+# rule: C4
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxClaim
+metadata:
+  name: admission-claim-c4
+  namespace: poc05-tools
+spec:
+  warmPoolRef:
+    name: code-runner
+  lifecycle:
+    shutdownTime: '2030-01-01T00:00:00Z'
+    shutdownPolicy: Delete

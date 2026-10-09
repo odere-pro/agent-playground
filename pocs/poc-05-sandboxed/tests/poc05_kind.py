@@ -1,12 +1,20 @@
 """Shared helpers for the PoC-5 kind tests that check controls from inside a pod. Not a test
 module; the T21 files (`test_poc05_kind_hardreq1.py`, `test_poc05_kind_sidecar_controls.py`) and
-the T22 files (`test_poc05_kind_remote_lane.py`, `test_poc05_kind_remote_controls.py`) import it.
+the T22 files (`test_poc05_kind_remote_lane.py`, `test_poc05_kind_remote_controls.py`,
+`test_poc05_kind_code_runner.py`) import it.
 
 Every check runs with `kubectl exec` of the image's own Python (T10 is dropped: no probe workload,
 no attack tool). `PROBE` is one small stdlib script: it takes a JSON list of checks in argv and
 prints one JSON list of results. A result holds a status code, an error class name, a reply's
 first bytes, or names; never a credential. A credential the chassis uses is named by its env
 variable (`auth_env`, `{"env": NAME}`), read inside the chassis container, and never returned.
+
+A policy drop on kindnet is a timeout; a refused connection means nothing listens. So a check
+that the network policy refuses an edge expects `POLICY_DROPPED` only, and proves the target is up
+from an allowed peer in the same test (code review and security review, 2026-10-09).
+
+`unpoliced_caller` starts a short-lived pod in `default` (no NetworkPolicy there): the control
+that an address answers from this cluster when no egress policy holds the caller back.
 
 Every kubectl call pins `--context kind-poc05`.
 """
@@ -17,6 +25,9 @@ import ipaddress
 import json
 import shutil
 import subprocess
+import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 CONTEXT = "kind-poc05"
@@ -34,9 +45,16 @@ TIMEOUT_S = 90
 CHASSIS_SECRET_ENV = frozenset({"LITELLM_API_KEY", "VALKEY_PASSWORD"})
 NOT_A_KEY = "sk-poc05-not-a-real-key-0000"
 METADATA_IP = ipaddress.ip_address("169.254.169.254")
+# kindnet drops a policy-refused packet: the connect times out. ConnectionRefusedError means no
+# listener, so it never counts as a policy refusal.
+POLICY_DROPPED = "TimeoutError"
+CALLER = "poc05-t22-caller"  # a prefix: each caller pod gets its own name
+CALLER_PART_OF = "poc05-t22"
+CALLER_NS = "default"
+CALLER_IMAGE = "kind.local/agent-platform/echo-python:poc05"
 
 PROBE = r"""
-import errno, json, os, socket, struct, sys, urllib.error, urllib.request
+import errno, json, os, re, socket, struct, sys, urllib.error, urllib.request
 
 def _headers(c):
     h = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
@@ -61,10 +79,23 @@ def _rpc(raw):
             return json.loads(line[5:])
     return json.loads(text) if text.strip().startswith("{") else {}
 
+def _redact(text, c):
+    # A reply to a call made with a real credential may echo part of it (LiteLLM's 401 names
+    # the key's last characters and its hash). Drop `sk-` runs, long hex runs, the value, and
+    # its last four characters before anything leaves the pod.
+    if not c.get("auth_env"):
+        return text
+    value = os.environ[c["auth_env"]]
+    for part in (value, value[-4:] if len(value) >= 8 else None):
+        if part:
+            text = text.replace(part, "<redacted>")
+    text = re.sub(r"sk-[A-Za-z0-9_\-]+", "sk-<redacted>", text)
+    return re.sub(r"[0-9a-fA-F]{32,}", "<redacted>", text)
+
 def http(c):
     try:
         code, _, raw = _post(c["url"], c.get("body"), _headers(c), c.get("timeout", 5))
-        return {"status": code, "head": raw[:120].decode(errors="replace")}
+        return {"status": code, "head": _redact(raw[:120].decode(errors="replace"), c)}
     except Exception as e:
         return {"error": type(e).__name__}
 
@@ -210,6 +241,27 @@ def pod(namespace: str, name: str) -> dict[str, Any]:
     return found
 
 
+def pods(namespace: str, name: str) -> list[dict[str, Any]]:
+    """Every Running pod of the app `name` (label `app.kubernetes.io/name`), maybe none."""
+    items = get_json("pods", "-n", namespace, "-l", f"app.kubernetes.io/name={name}")["items"]
+    return [p for p in items if p["status"].get("phase") == "Running"]
+
+
+def warm_sandboxes() -> list[dict[str, Any]]:
+    """The code-runner pool's unclaimed pods: Running, Ready, not being deleted, and no claim's
+    label. A test that needs a sandbox nobody else uses picks one of these."""
+    return [
+        p
+        for p in pods(TOOLS_NS, "code-runner")
+        if "deletionTimestamp" not in p["metadata"]
+        and "agents.x-k8s.io/claim-uid" not in p["metadata"].get("labels", {})
+        and any(
+            c["type"] == "Ready" and c["status"] == "True"
+            for c in p["status"].get("conditions", [])
+        )
+    ]
+
+
 def service_ip(namespace: str, name: str) -> str:
     ip: str = get_json("service", name, "-n", namespace)["spec"]["clusterIP"]
     return ip
@@ -248,6 +300,105 @@ def node_sh(script: str) -> str:
     )
     assert got.returncode == 0, f"node exec failed: {got.stderr[-300:]}"
     return got.stdout
+
+
+def node_run(script: str) -> str:
+    """Run `script` as root in the kind node (`docker exec`); its stdout. For a test's own setup
+    and cleanup on the node, which the test undoes."""
+    docker = shutil.which("docker")
+    assert docker is not None, "docker is not on PATH"
+    got = subprocess.run(
+        [docker, "exec", NODE_CONTAINER, "sh", "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=TIMEOUT_S,
+        check=False,
+    )
+    assert got.returncode == 0, f"node exec failed: {got.stderr[-300:]}"
+    return got.stdout
+
+
+CALLER_POD: dict[str, Any] = {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+        "name": CALLER,  # replaced per use
+        "namespace": CALLER_NS,
+        "labels": {
+            "app.kubernetes.io/name": "remote-echo",
+            "app.kubernetes.io/part-of": "poc05-t22",
+        },
+    },
+    "spec": {
+        "automountServiceAccountToken": False,
+        "enableServiceLinks": False,
+        "restartPolicy": "Never",
+        "terminationGracePeriodSeconds": 0,
+        "activeDeadlineSeconds": 600,
+        "securityContext": {
+            "runAsNonRoot": True,
+            "runAsUser": 10002,
+            "seccompProfile": {"type": "RuntimeDefault"},
+        },
+        "containers": [
+            {
+                "name": "caller",
+                "image": CALLER_IMAGE,
+                "imagePullPolicy": "Never",
+                "command": ["python", "-c", "import time; time.sleep(600)"],
+                "securityContext": {
+                    "allowPrivilegeEscalation": False,
+                    "readOnlyRootFilesystem": True,
+                    "capabilities": {"drop": ["ALL"]},
+                },
+            }
+        ],
+    },
+}
+
+
+@contextmanager
+def unpoliced_caller() -> Iterator[str]:
+    """A pod in `default`, outside every PoC-5 namespace and every egress policy, labeled like the
+    remote (`app.kubernetes.io/name: remote-echo`); its name. Each use gets its own name, so two
+    test sessions on one cluster never delete each other's caller (full tier, 2026-10-09: a fixed
+    name let one session's setup kill the pod another session was using). Caller pods left by an
+    interrupted run that are no longer Running are deleted first. Deleted after."""
+    exe = shutil.which("kubectl")
+    assert exe is not None, "kubectl is not on PATH"
+    gone = kubectl(
+        "delete", "pod", "-n", CALLER_NS, "-l", f"app.kubernetes.io/part-of={CALLER_PART_OF}",
+        "--field-selector=status.phase!=Running", "--ignore-not-found", "--wait=true",
+    )  # fmt: skip
+    assert gone.returncode == 0, gone.stderr
+    name = f"{CALLER}-{uuid.uuid4().hex[:6]}"
+    manifest = {**CALLER_POD, "metadata": {**CALLER_POD["metadata"], "name": name}}
+    made = subprocess.run(
+        [exe, "--context", CONTEXT, "create", "-f", "-"],
+        input=json.dumps(manifest),
+        capture_output=True,
+        text=True,
+        timeout=TIMEOUT_S,
+        check=False,
+    )
+    assert made.returncode == 0, made.stderr
+    try:
+        ready = kubectl(
+            "wait", "-n", CALLER_NS, "--for=condition=Ready", f"pod/{name}", "--timeout=90s"
+        )
+        assert ready.returncode == 0, ready.stderr
+        yield name
+    finally:
+        kubectl("delete", "pod", name, "-n", CALLER_NS, "--wait=false", "--grace-period=0")
+
+
+def in_caller(caller: str, checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Run `checks` in the caller pod `caller` (the name `unpoliced_caller` gave)."""
+    return probe(CALLER_NS, caller, "caller", checks)
+
+
+def tcp(host: str, port: int) -> dict[str, Any]:
+    return {"kind": "tcp", "host": host, "port": port}
 
 
 def chat(url: str, **extra: Any) -> dict[str, Any]:

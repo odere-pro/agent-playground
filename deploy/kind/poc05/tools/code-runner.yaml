@@ -1,16 +1,23 @@
-# code-runner: the code-execution tool (plan sections 2.8, 2.10, 2.11; T15). An MCP server in an
-# agent-sandbox Sandbox on gVisor, behind LiteLLM's MCP gateway, so it is allow-listed per virtual
-# key like every other tool. LiteLLM reaches it at
-# http://code-runner.poc05-tools.svc.cluster.local:8000/mcp/ (platform/litellm/config.yaml).
+# code-runner: the code-execution tool, a fresh gVisor sandbox per call (plan sections 2.8, 2.10,
+# 2.11; T15; docs/plans/2026-10-09-poc-05-per-call-sandbox.md). The SandboxTemplate is the pod; the
+# SandboxWarmPool keeps two of them started. Per call, the dispatcher in poc05-platform
+# (platform/code-runner-dispatch.yaml) creates a SandboxClaim on this pool, calls `run_python` on
+# the claimed pod's IP, and deletes the claim, which deletes the pod. LiteLLM registers only the
+# dispatcher; nothing else reaches these pods, and they reach nothing (network-policy.yaml).
 #
 # - The image's entrypoint is `code-runner --host 0.0.0.0 --port 8000 --tmp-root /tmp`; uid:gid
-#   10003:10003. It needs no Secret and gets none, and no egress at all (network-policy.yaml).
+#   10003:10003. It needs no Secret and gets none, and no egress at all.
 # - Trust label `trusted`: the image is ours, built from this repo, so admission holds it to the
 #   registry prefix (rule 3). The code it runs is not trusted; that is why it runs on gVisor, with
-#   no egress, no service account token, and a capped memory-backed /tmp for the scratch dirs.
+#   no egress, no service account token, and a capped memory-backed /tmp and /dev/shm.
+# - No liveness probe: a per-call pod lives seconds, and a restart mid-call must not happen
+#   silently. Memory request equals the limit. suggested: 256Mi, /tmp 64Mi, /dev/shm 8Mi.
 # - PIDs: the kubelet's podPidsLimit (256, cluster.yaml). Under gVisor each guest process costs
-#   about three host pids, so a fork bomb in a snippet ends the sandbox, not the node (spike, q6).
-# - `spec.service: false`: the Service `code-runner` below is ours, with a port.
+#   about three host pids, so a fork bomb in a snippet ends its own sandbox, not the node (spike,
+#   q6), and not another caller's sandbox.
+# - The template: `networkPolicyManagement: Unmanaged` (Managed would write a policy that allows
+#   internet egress), no env injection, no volume claims, no Service (the dispatcher dials pod IPs).
+#   Admission refuses a template that is not set this way (admission/, task 4).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -19,13 +26,16 @@ metadata:
     app.kubernetes.io/name: code-runner
 automountServiceAccountToken: false
 ---
-apiVersion: agents.x-k8s.io/v1beta1
-kind: Sandbox
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
 metadata:
   name: code-runner
   labels:
     app.kubernetes.io/name: code-runner
 spec:
+  networkPolicyManagement: Unmanaged
+  envVarsInjectionPolicy: Disallowed
+  volumeClaimTemplatesPolicy: Disallowed
   service: false
   podTemplate:
     metadata:
@@ -60,16 +70,10 @@ spec:
               path: /health
               port: 8000
             periodSeconds: 5
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 8000
-            periodSeconds: 10
-            failureThreshold: 3
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi
+              memory: 256Mi
             limits:
               cpu: 500m
               memory: 256Mi
@@ -86,22 +90,28 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: shm
+              mountPath: /dev/shm
       volumes:
         - name: tmp
           emptyDir:
             medium: Memory
             sizeLimit: 64Mi
+        # Not a control: gVisor ignores it, runsc mounts its own tmpfs (notes/2026-10-08-remote-suite.md).
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Mi
 ---
-apiVersion: v1
-kind: Service
+# suggested: 2 warm sandboxes. One would cold-start every second call in a burst; three add about
+# 120 MiB for no test that needs it. An empty pool is slower, not a failure: a claim cold-starts.
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxWarmPool
 metadata:
   name: code-runner
   labels:
     app.kubernetes.io/name: code-runner
 spec:
-  selector:
-    app.kubernetes.io/name: code-runner
-  ports:
-    - name: mcp
-      port: 8000
-      targetPort: 8000
+  replicas: 2
+  sandboxTemplateRef:
+    name: code-runner

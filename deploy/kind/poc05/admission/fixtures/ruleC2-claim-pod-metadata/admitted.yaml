@@ -1,0 +1,14 @@
+# Claim rule C2, no additionalPodMetadata: the admitted twin.
+# expect: admitted
+# rule: C2
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxClaim
+metadata:
+  name: admission-claim-c2
+  namespace: poc05-tools
+spec:
+  warmPoolRef:
+    name: code-runner
+  lifecycle:
+    shutdownTime: '2030-01-01T00:00:00Z'
+    shutdownPolicy: Delete

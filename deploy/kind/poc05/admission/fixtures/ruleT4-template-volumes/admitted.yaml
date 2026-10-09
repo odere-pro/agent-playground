@@ -1,0 +1,59 @@
+# Template rule T4, no volumeClaimTemplates: the admitted twin.
+# expect: admitted
+# rule: T4
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  name: admission-template-t4
+  namespace: poc05-tools
+spec:
+  envVarsInjectionPolicy: Disallowed
+  networkPolicyManagement: Unmanaged
+  podTemplate:
+    metadata:
+      labels:
+        agents.platform/trust: trusted
+        app.kubernetes.io/name: code-runner
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - image: kind.local/agent-platform/code-runner:poc05
+        imagePullPolicy: Never
+        name: code-runner
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 10003
+          runAsUser: 10003
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+        - mountPath: /dev/shm
+          name: shm
+      enableServiceLinks: false
+      runtimeClassName: gvisor
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: code-runner
+      volumes:
+      - emptyDir:
+          medium: Memory
+          sizeLimit: 64Mi
+        name: tmp
+      - emptyDir:
+          medium: Memory
+          sizeLimit: 8Mi
+        name: shm
+  volumeClaimTemplatesPolicy: Disallowed

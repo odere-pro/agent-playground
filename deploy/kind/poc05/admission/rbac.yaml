@@ -2,9 +2,13 @@
 #
 # - The submitter: a test ServiceAccount poc05-tenant/submitter, used through
 #   `kubectl --as=system:serviceaccount:poc05-tenant:submitter`. It may submit workloads in
-#   poc05-remote and poc05-tools only. It has nothing in poc05-agents: any principal that may
-#   create a pod in a namespace can read every Secret there through the pod (env or volume), and
-#   the chassis Secrets live in poc05-agents. It has no access to Secrets, Services,
+#   poc05-remote only. It has nothing in poc05-agents: any principal that may create a pod in a
+#   namespace can read every Secret there through the pod (env or volume), and the chassis Secrets
+#   live in poc05-agents. It has nothing in poc05-tools either (per-call sandbox plan, "RBAC"):
+#   that namespace holds platform tools and the code-runner warm pool, which a tenant could fill
+#   up to the quota or patch; a tenant reaches a tool only through the gateway. It has no
+#   extension resources (sandboxtemplates, sandboxwarmpools, sandboxclaims) anywhere. It has no
+#   access to Secrets, Services,
 #   NetworkPolicies, namespaces, RBAC, or admission objects anywhere, and nothing in
 #   agent-platform-system, so it cannot write agent-trust-params.
 # - The deployer: agent-platform-system/deployer stands in for the platform's chart or pipeline
@@ -12,7 +16,15 @@
 #   `--as=system:serviceaccount:agent-platform-system:deployer`), and it is the identity the kind
 #   admission test uses for fixtures in poc05-agents, so the policy, not RBAC, refuses them. It
 #   cannot read or write Secrets (seed.sh, run as cluster admin, makes them) and cannot edit the
-#   params.
+#   params. It applies the code-runner SandboxTemplate and SandboxWarmPool in tools/, but never a
+#   SandboxClaim: claims are the dispatcher's alone.
+# - The dispatcher: poc05-platform/code-runner-dispatch (the ServiceAccount is made in
+#   platform/code-runner-dispatch.yaml, not here). Its Role in poc05-tools allows create, get, and
+#   delete on sandboxclaims and nothing else: no list or watch (orphans expire at shutdownTime), no
+#   update or patch (a claim never changes after creation), no templates, pools, pods, or Secrets.
+#   A stolen token can still delete other callers' claims (denial of service, blind-spots note).
+# - The quota in poc05-tools (suggested: values) caps what a stolen dispatcher token can start.
+#   Every pod in poc05-tools must then set a memory limit.
 # - The platform: the group agents.platform:platform-admins (suggested) may edit the params
 #   ConfigMap by name. On kind the cluster admin applies it; the group shows who else may.
 #
@@ -58,20 +70,6 @@ subjects:
     name: submitter
     namespace: poc05-tenant
 ---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: agent-submitter
-  namespace: poc05-tools
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agent-submitter
-subjects:
-  - kind: ServiceAccount
-    name: submitter
-    namespace: poc05-tenant
----
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -95,6 +93,9 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["agents.x-k8s.io"]
     resources: ["sandboxes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["extensions.agents.x-k8s.io"]
+    resources: ["sandboxtemplates", "sandboxwarmpools"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
@@ -168,3 +169,41 @@ subjects:
   - kind: Group
     apiGroup: rbac.authorization.k8s.io
     name: agents.platform:platform-admins
+---
+# The code-runner dispatcher's one right (per-call sandbox plan, "RBAC"). Applied by the cluster
+# admin with the admission objects: the deployer has no RBAC rights.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: code-runner-claims
+  namespace: poc05-tools
+rules:
+  - apiGroups: ["extensions.agents.x-k8s.io"]
+    resources: ["sandboxclaims"]
+    verbs: ["create", "get", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: code-runner-claims
+  namespace: poc05-tools
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: code-runner-claims
+subjects:
+  - kind: ServiceAccount
+    name: code-runner-dispatch
+    namespace: poc05-platform
+---
+# suggested: 4 claims, 6 pods (2 warm, up to 4 claimed), 1536Mi of memory limits (6 x 256Mi).
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: code-runner
+  namespace: poc05-tools
+spec:
+  hard:
+    count/sandboxclaims.extensions.agents.x-k8s.io: "4"
+    pods: "6"
+    limits.memory: 1536Mi

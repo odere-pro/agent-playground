@@ -1,0 +1,59 @@
+# Template rule T2, envVarsInjectionPolicy: the admitted twin.
+# expect: admitted
+# rule: T2
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
+metadata:
+  name: admission-template-t2
+  namespace: poc05-tools
+spec:
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: code-runner
+        agents.platform/trust: trusted
+    spec:
+      serviceAccountName: code-runner
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      runtimeClassName: gvisor
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: code-runner
+        image: kind.local/agent-platform/code-runner:poc05
+        imagePullPolicy: Never
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsUser: 10003
+          runAsGroup: 10003
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: shm
+          mountPath: /dev/shm
+      volumes:
+      - name: tmp
+        emptyDir:
+          medium: Memory
+          sizeLimit: 64Mi
+      - name: shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 8Mi
+  networkPolicyManagement: Unmanaged
+  envVarsInjectionPolicy: Disallowed
+  volumeClaimTemplatesPolicy: Disallowed

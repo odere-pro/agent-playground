@@ -10,23 +10,24 @@
 # runsc and shim binaries. The kind node has no zstd, so this installs Debian's zstd package in
 # the node (spike shortcut; a real setup would bake a node image).
 #
-# Arch: read from the node (`uname -m`). Only aarch64 has a pinned sum (taken by the spike from the
-# published checksum file and checked on this host). x86_64 fails closed until its sum is pinned:
-# set GVISOR_SHA512_X86_64 to the value from
-#   https://storage.googleapis.com/gvisor/releases/release/<release>/x86_64/gvisor.tar.zstd.sha512
-# after checking it out of band, or add it below.
+# Arch: read from the node (`uname -m`). aarch64 and x86_64 each have a sum pinned below for the
+# same release, taken from the release's published file:
+#   https://storage.googleapis.com/gvisor/releases/release/<release>/<arch>/gvisor.tar.zstd.sha512
+# Any other arch fails closed.
 #
 # Usage: install-gvisor.sh [cluster-name]   (default poc05)
 set -euo pipefail
 
 CLUSTER="${1:-poc05}"
 # Pinned dated release from https://storage.googleapis.com/gvisor/releases/release/
-# Trust (security review F13, recorded): the pinned sum below was read once, by the spike, from the
-# same channel as the published sum, so the channel was trusted once. zstd comes from the node's
+# Trust (security review F13, recorded): each pinned sum below was read once from the same channel
+# as the published sum, so the channel was trusted once per arch. zstd comes from the node's
 # apt with signature checks but no version pin. The later fix is a node image with runsc baked in.
 GVISOR_RELEASE=20260928.0
+# From .../20260928.0/aarch64/gvisor.tar.zstd.sha512, read by the spike (2026-10-02).
 GVISOR_SHA512_AARCH64=31519c2c8476c6eb24f51aa1378e555b4e86883dc1c8d81fb82df1af1900f38b10149affaa05bcc2418e57989bd04a33603a10ac73fee92e0fe20aef44e402e3
-GVISOR_SHA512_X86_64="${GVISOR_SHA512_X86_64:-}"
+# From .../20260928.0/x86_64/gvisor.tar.zstd.sha512, read by the user for T24 (2026-10-09).
+GVISOR_SHA512_X86_64=4ce35ca83aef7f96b06cde668e0b23aa98b05aa1829508e974196c2a1e02786c95f5bf79315fd7ddcfd88fe7a00f083ed8053e25eff7673d28d5256440caae8b
 # systrap is the default; KVM is not available inside Docker Desktop's VM (spike, question 1).
 RUNSC_PLATFORM=systrap
 
@@ -44,7 +45,7 @@ for node in $nodes; do
     *) die "$node: unsupported arch $arch" ;;
   esac
   [[ $sum =~ ^[0-9a-f]{128}$ ]] ||
-    die "$node: no pinned sha512 for gVisor $GVISOR_RELEASE on $arch; refusing to install (set GVISOR_SHA512_$(tr '[:lower:]' '[:upper:]' <<<"$arch") from the release's published .sha512 file)"
+    die "$node: no pinned sha512 for gVisor $GVISOR_RELEASE on $arch; refusing to install"
   log "$node ($arch): gVisor $GVISOR_RELEASE"
   docker exec -e REL="$GVISOR_RELEASE" -e SUM="$sum" -e PLATFORM="$RUNSC_PLATFORM" -e ARCH="$arch" \
     -e DEBIAN_FRONTEND=noninteractive \
