@@ -10,7 +10,7 @@ Can the agent pods run their tasks on a pre-trained SLM, served once behind Lite
 
 ## Scope
 
-All of these run on the user's Mac. The container that built them has no Docker, no GPU, and no model file. The offline checks are `tests/test_poc06c_mac_static.py` (47 pass).
+All of these run on the user's Mac. The container that built them has no Docker, no GPU, and no model file. The offline checks are `tests/test_poc06c_mac_static.py` (the Mac command, the Compose override, the model download) and `tests/test_poc06c_route_switch.py` (every sidecar engine runs smoke, simplifier, and lookup on `big-default`, then on `local-small` against the fake model, and only `spec.model.route` changes). Run them with `make test-poc POC=06c`.
 
 - [ ] One pre-trained SLM, not fine-tuned: Qwen3-1.7B, served once by the llama.cpp OpenAI-compatible server, with native tool calls on. · built, not run: the download is https-only with validated names (`test_the_model_download_is_https_only_and_the_names_are_validated`). Waits on: the Mac run.
 - [ ] The model server sits behind LiteLLM on the existing `local-small` route, outside the agent pods. · configured: `test_the_litellm_config_routes_big_default_hosted_and_local_small_to_the_host`, `test_litellm_reaches_the_llama_server_through_host_docker_internal`. Waits on: the Mac run.

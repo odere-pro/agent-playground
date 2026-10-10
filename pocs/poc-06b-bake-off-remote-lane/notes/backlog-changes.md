@@ -23,4 +23,3 @@ Evidence: [Claude CLI capture](2026-10-09-claude-cli-capture.md), [kagent probe]
 
 - The kind results (`poc06-kind.yml`) for every engine, and the `kagent-adk` cells of the scorecard.
 - ADR-006 acceptance, by the user at the PR.
-- `packages/chassis/tests/test_contract_freeze.py` landing, which closes criterion 8.

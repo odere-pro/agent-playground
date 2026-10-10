@@ -1,6 +1,6 @@
 # PoC-6b: Framework bake-off, part B: the `remote` lane
 
-Status: in progress: offline evidence complete; waiting on the `poc06-kind.yml` CI run (kind results), on the Mac run (`make poc06-mac`, hosted-model numbers), on test_contract_freeze.py landing, and on the user to accept ADR-006
+Status: in progress: offline evidence complete; waiting on the `poc06-kind.yml` CI run (kind results), on the Mac run (`make poc06-mac`, hosted-model numbers), and on the user to accept ADR-006
 Planning doc: [006-PoC-6-framework-bake-off.md](../../docs/planning/poc/006-PoC-6-framework-bake-off.md)
 Time box: 1 week, after PoC-5
 
@@ -20,7 +20,7 @@ Which untrusted frameworks and which remote solution does the chassis front in t
 - [x] Check router compatibility per engine. · evidence: [scorecard](../poc-06a-bake-off-sidecar-lane/notes/2026-10-09-scorecard.md), "Router compatibility"; `packages/workloads/echo-smolagents/tests/test_echo_smolagents_wire.py::test_lookup_passes_when_the_router_drops_stop`. Claude: the route drops `thinking`, `cache_control`, and others, and counts them (contract v5, A.5).
 - [ ] Rerun the PoC-3 contract suite, the PoC-4 load test, and the PoC-5 hostile suite on each new engine, in its lane. · see criterion 4.
 - [x] List what the chassis cannot see or control for the remote solution. · evidence: [contract v5](../../docs/contracts/contract-v5.md) B.8; [notes/2026-10-09-lanes-b-kind.md](notes/2026-10-09-lanes-b-kind.md), "What the chassis cannot see or control for kagent-adk"
-- [ ] Freeze the `handle` contract and the chassis event schema as v1. · see criterion 8.
+- [x] Freeze the `handle` contract and the chassis event schema as v1. · see criterion 8.
 
 ## Exit criteria
 
@@ -33,7 +33,7 @@ Each one has a scenario test in `tests/` or a recorded reason it cannot have one
 - [ ] 5. The token overhead against plain Python is known per engine, on a hosted big model. · waits on: the Mac run, `make poc06-mac`. Offline proxy: smolagents sends +1918% prompt bytes over a lookup, Claude +335% ([scorecard](../poc-06a-bake-off-sidecar-lane/notes/2026-10-09-scorecard.md), criterion 5).
 - [x] 6. What the chassis cannot control is listed for the remote solution. · evidence: [contract v5](../../docs/contracts/contract-v5.md) B.8; [lanes-b-kind note](notes/2026-10-09-lanes-b-kind.md); [kagent probe](notes/2026-10-09-kagent-probe.md). Tool calls and state are invisible, the runtime checks no inbound bearer, usage is self-reported.
 - [ ] 7. An ADR names the default engine, the supported engines with their lane, and the rejected engines with reasons. · [ADR-006](../../docs/planning/adr/006-agent-engines-default-supported-lanes.md) is written, Proposed. Waits on: the user's acceptance at the PR. The hosted and SLM numbers may reopen the default.
-- [ ] 8. The `handle` contract and the chassis event schema are frozen as v1, or the changes they needed are listed. · decided in [contract v5](../../docs/contracts/contract-v5.md) part C: frozen as the first stable line, `schema_version` stays `"0"`, no engine needed an event change (the "v1" is not the string `"1"`). Waits on: `packages/chassis/tests/test_contract_freeze.py` landing (branch `poc06/freeze`).
+- [x] 8. The `handle` contract and the chassis event schema are frozen as v1, or the changes they needed are listed. · decided in [contract v5](../../docs/contracts/contract-v5.md) part C: frozen as the first stable line, `schema_version` stays `"0"`, no engine needed an event change (the "v1" is not the string `"1"`). Pinned by `packages/chassis/tests/test_contract_freeze.py` (44 tests): the sha256 of the five v0 schema files, the `handle` and `wire` signatures, the six events and their fields, the schema versions, the four A2A metadata keys, and every frozen error code with its `retryable` value, each checked by running its emitter.
 
 ## How to run
 
@@ -48,7 +48,7 @@ Not recorded yet. The offline bake-off demo is [in 6a](../poc-06a-bake-off-sidec
 
 ## Findings from the kind work
 
-- **Threads under gVisor.** runsc with `oci-seccomp` turns RuntimeDefault's `clone3 -> ENOSYS` into EPERM (google/gvisor#14688; the fix is google/gvisor#14721 and is not released). So glibc 2.34 and later cannot create threads in a gVisor pod. PoC-6 gives its gVisor pods a Localhost seccomp profile, `profiles/poc06-runsc-clone3.json`. It is RuntimeDefault with only `clone3` allowed. `deploy/kind/poc06/run.sh` derives it from the node's containerd. Details are in [notes/2026-10-09-lanes-b-kind.md](notes/2026-10-09-lanes-b-kind.md). The kind-run box above stays open until CI is green. The profile and the note text land from another branch.
+- **Threads under gVisor.** runsc with `oci-seccomp` turns RuntimeDefault's `clone3 -> ENOSYS` into EPERM (google/gvisor#14688; the fix is google/gvisor#14721 and is not released). So glibc 2.34 and later cannot create threads in a gVisor pod. PoC-6 gives its gVisor pods a Localhost seccomp profile, `profiles/poc06-runsc-clone3.json`, under the kubelet's seccomp root on each node. It is not a file in the repo: `deploy/kind/poc06/run.sh seccomp` derives it at `up` from the node's own containerd RuntimeDefault through `deploy/kind/poc06/seccomp/derive_profile.py`, with only `clone3` allowed. Details are in [notes/2026-10-09-lanes-b-kind.md](notes/2026-10-09-lanes-b-kind.md). The kind boxes above stay open until `poc06-kind.yml` is green.
 - **kagent-adk runs as uid 65532.** That is the uid of its upstream Dockerfile. The image is built from pinned source, and `packages/chassis/tests/test_image_uids.py` has an `UPSTREAM_UIDS` table for such images.
 
 ## Notes and decisions

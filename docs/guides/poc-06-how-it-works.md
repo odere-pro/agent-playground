@@ -151,5 +151,5 @@ The fake model server on this cluster runs the PoC-6 script, so PoC-5's own kind
 - The kind half has not run. The lanes-b-kind note says no cluster ran it, so every statement in section 8 comes from the script and the manifests, not from a kind run.
 - The Mac steps have not run on a Mac. The guide describes the script, not its output.
 - `test_contract_freeze.py` and the route-switch test were read on the integration branch. Their exact assertions can change before merge.
-- The clone3 finding and `profiles/poc06-runsc-clone3.json` come from the task brief and the lanes-b-kind note on another branch. The profile file and the code in `run.sh` that derives it are not on the branch that wrote this guide.
+- `profiles/poc06-runsc-clone3.json` is not a file in the repo. `deploy/kind/poc06/run.sh seccomp` derives it on each node at `up`, through `deploy/kind/poc06/seccomp/derive_profile.py` (lanes-b-kind note, "gVisor and clone3").
 - ADR-006 is Proposed. The default engine in it is not decided yet.
