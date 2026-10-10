@@ -182,5 +182,6 @@ async def test_repr_does_not_show_the_token(token: str) -> None:
 
 
 def test_redact_removes_a_short_exact_secret_that_the_shapes_miss() -> None:
-    assert "hunter2" in redact("pw is hunter2")
-    assert redact("pw is hunter2", secret="hunter2") == "pw is [redacted]"
+    short = "hunter2"  # pragma: allowlist secret
+    assert short in redact(f"pw is {short}")
+    assert redact(f"pw is {short}", secret=short) == "pw is [redacted]"
