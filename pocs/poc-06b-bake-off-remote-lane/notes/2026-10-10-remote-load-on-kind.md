@@ -31,20 +31,36 @@ grep -E '^LOAD engine=' <log>
 
 Line format: `LOAD engine=<name> lane=<lane> n=<runs> ok=<k> err=<e> p50_ms=<x> p95_ms=<y> wall_s=<z>`.
 
-## Numbers (fill from the next CI run)
+## Numbers
 
-Run id: _pending_. Head: _pending_. Runner: GitHub-hosted, 4 CPUs.
+Head `978c2ea`, two runs of `poc06-kind.yml` on GitHub-hosted runners (4 CPUs). Copied from the `LOAD engine=` lines in the job logs. `n` is both rounds together.
+
+Run 38064809801 (push), job 114250189940:
 
 | Engine | n | ok | err | p50 ms | p95 ms | wall s |
 | ------ | - | -- | --- | ------ | ------ | ------ |
-| echo-smolagents | _pending_ | | | | | |
-| echo-claude-agent | _pending_ | | | | | |
-| echo-typescript (remote) | _pending_ | | | | | |
-| kagent-adk | _pending_ | | | | | |
+| echo-smolagents | 16 | 16 | 0 | 5807 | 6196 | 12.3 |
+| echo-claude-agent | 6 | 6 | 0 | 4525 | 4699 | 9.3 |
+| echo-typescript (remote) | 16 | 16 | 0 | 6038 | 6454 | 12.6 |
+| kagent-adk | 16 | 16 | 0 | 5689 | 5991 | 12.0 |
+
+Run 38064813425 (pull_request), job 114250200592:
+
+| Engine | n | ok | err | p50 ms | p95 ms | wall s |
+| ------ | - | -- | --- | ------ | ------ | ------ |
+| echo-smolagents | 16 | 16 | 0 | 7394 | 7719 | 15.4 |
+| echo-claude-agent | 6 | 6 | 0 | 5899 | 5976 | 11.9 |
+| echo-typescript (remote) | 16 | 16 | 0 | 7381 | 7622 | 15.2 |
+| kagent-adk | 16 | 16 | 0 | 7231 | 7517 | 15.0 |
+
+The same jobs' kind suites: `78 passed, 1 deselected` (the deselected test is the offline `test_nearest_rank_percentile`, which `-m kind` leaves out).
 
 ## Reading
 
-Pending the run. The criterion's load half passes if every row has `err=0`. A row with errors stays in this table.
+- Every row has `err=0`: each remote engine took 8 runs in flight (3 for Claude), twice, under gVisor with the Localhost seccomp profile, and every run ended `end{status: ok}`. The load half of criterion 4 passes.
+- The latency is not engine speed. Each run starts a `kubectl exec` into the chassis container, 8 at once on a 4-CPU runner that also runs the whole kind cluster, and the model is the fake. That is why the four engines land within about 0.5 s of each other on one runner, and why the two runners differ by about 1.5 s. Compare engines only within one run.
+- Claude ran 3 in flight, not 8, so its lower latency is not a speed-up (module docstring of the test).
+- Real-model latency and tokens per engine come from the Mac run (criterion 5).
 
 ## Controls
 
