@@ -9,3 +9,5 @@ pocs/poc-06a-bake-off-sidecar-lane/demo/demo.sh
 It needs Node and the npm registry for `npm ci` the first time. It starts no Docker and no kind.
 
 The hosted demo is not here. It comes from the Mac run, `make poc06-mac` (see `deploy/compose/README.md`, "PoC-6: the one Mac command"). `measure_extra.py` is the helper that took the RSS and cold-start numbers in the scorecard.
+
+Latest record: [2026-10-10-demo-bakeoff-offline.md](2026-10-10-demo-bakeoff-offline.md) (every step ok, commit `d8ea82d`).
