@@ -82,3 +82,11 @@ All in PoC-5's namespaces and cluster: chassis pods in `poc05-agents`, remotes i
 ## What CI will first show (expectation)
 
 Not run. Likely first failures, in order: (1) a gVisor start problem on the runner (as for `remote-lane.yml`); (2) the Claude pod's memory or startup time under gVisor; (3) smolagents or OpenAI Agents SDK tool names against the gateway; (4) the fake-model script's reach for the Claude smoke and simplifier (the CLI's trailing system turns); (5) the kagent source build (network clone, uv sync) and its launcher under gVisor. The kagent tests are real, not xfail.
+
+## Update 2026-10-10: first kind run, kagent-adk 403 on the model call
+
+Run: `poc06-kind` 38007359399 (job 114079121220, kind run 4). Result: 70 passed, 1 xfailed, 3 failed. The three failures are the `kagent-adk` tasks, and the `Up` step was green. Every other engine passed. Each kagent-adk task ended `a2a.failed`: its model call to the chassis remote proxy (`POST http://10.96.85.95:8091/v1/chat/completions`) got 403. The chassis log said `RequireRun`: "the traceparent names no run in flight". The bearer passed (no 401), so the failure was the missing trace context, not the token.
+
+Cause (reproduced locally, details in the probe note, Item 4): the pod runs with the OTel exporters `none`, so kagent's `instrument_app` does not instrument the app and the inbound `traceparent` is dropped; and the model client uses `httpx2`, which the httpx instrumentor does not patch. The probe's "same trace id reached the model" was measured on 0.4.0 from PyPI with exporters on. It does not hold for the source build at the pin.
+
+Fix: `run_kagent_adk.py` in `deploy/kind/poc06/kagent/remote-kagent-adk.yaml` now registers `TraceparentPassthroughPlugin` after `LLMPassthroughPlugin`. It copies the inbound `traceparent` onto every model request through a request hook on the model's client. The bearer passthrough is unchanged. The exporters stay off. Offline tests: `tests/test_poc06b_kagent_traceparent.py`. Not yet shown on kind: that waits for the next `poc06-kind` run.
