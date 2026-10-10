@@ -33,7 +33,31 @@ def _pieces(text: str) -> list[str]:
     return out
 
 
-def _tool_calls(rule: Rule) -> list[dict[str, Any]] | None:
+PREFIX_SEPARATORS = ("__", "-")
+"""How a client joins a prefix to a tool name: the Claude CLI's `mcp__<server>__<name>`, LiteLLM's
+MCP gateway `<server>-<name>`."""
+
+
+def _offered_names(body: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    for tool in body.get("tools") or []:
+        function = tool.get("function") if isinstance(tool, dict) else None
+        name = function.get("name") if isinstance(function, dict) else None
+        if isinstance(name, str):
+            names.append(name)
+    return names
+
+
+def _resolve(name: str, offered: list[str]) -> str:
+    """The scripted name, or the ONE offered name that is it with a prefix (`mcp__chassis__` +
+    name). An exact match, no match, or two candidates keep the scripted name: no guessing."""
+    if not offered or name in offered:
+        return name
+    hits = [o for o in offered if any(o.endswith(sep + name) for sep in PREFIX_SEPARATORS)]
+    return hits[0] if len(hits) == 1 else name
+
+
+def _tool_calls(rule: Rule, offered: list[str]) -> list[dict[str, Any]] | None:
     if rule.tool_call is None:
         return None
     return [
@@ -41,7 +65,7 @@ def _tool_calls(rule: Rule) -> list[dict[str, Any]] | None:
             "id": f"call_{uuid.uuid4().hex[:8]}",
             "type": "function",
             "function": {
-                "name": rule.tool_call.name,
+                "name": _resolve(rule.tool_call.name, offered),
                 "arguments": json.dumps(rule.tool_call.arguments),
             },
         }
@@ -86,7 +110,7 @@ def create_app(script: Script, *, max_calls: int = MAX_CALLS) -> FastAPI:
             "completion_tokens": rule.usage.completion_tokens,
             "total_tokens": rule.usage.prompt_tokens + rule.usage.completion_tokens,
         }
-        tool_calls = _tool_calls(rule)
+        tool_calls = _tool_calls(rule, _offered_names(body))
         finish = "tool_calls" if tool_calls else "stop"
 
         if not body.get("stream"):
