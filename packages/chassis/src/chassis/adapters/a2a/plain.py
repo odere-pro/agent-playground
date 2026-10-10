@@ -129,10 +129,13 @@ def plain_message(
     return SendMessageRequest(message=message)
 
 
-def redact(text: str, cap: int = REMOTE_TEXT_CAP) -> str:
-    """The remote's text for a log line: no control characters, no bearer or key shape, no long
-    token-like run, at most `cap` characters.
+def redact(text: str, cap: int = REMOTE_TEXT_CAP, secret: str | None = None) -> str:
+    """The remote's text for a log line: the exact `secret` (the remote's own bearer token, which
+    the shapes below can miss when it is short), no control characters, no bearer or key shape, no
+    long token-like run, at most `cap` characters. The secret goes first, before the cut.
     """
+    if secret:
+        text = text.replace(secret, "[redacted]")
     text = _CONTROL.sub(" ", text)
     text = _BEARER.sub("[redacted]", text)
     text = _KEY_SHAPE.sub("[redacted]", text)
@@ -171,7 +174,11 @@ def _strict_count(value: Any) -> tuple[int, str | None]:
 class PlainTranslator:
     """One run's reader of a plain A2A stream. Made per run; see the module docstring."""
 
-    def __init__(self, request_id: str, options: PlainOptions, log: Log) -> None:
+    def __init__(
+        self, request_id: str, options: PlainOptions, log: Log, secret: str | None = None
+    ) -> None:
+        self._secret = secret
+        """The remote's bearer token, removed from the text that goes to the log."""
         self._request_id = request_id
         self._options = options
         self._log = log
@@ -307,7 +314,12 @@ class PlainTranslator:
         self._stop(server_finished=True)
         name = TaskState.Name(state)
         # The remote's own text is for the operator's log, never for the response.
-        self._log("warning", "plain a2a remote failed", state=name, remote_text=redact(text))
+        self._log(
+            "warning",
+            "plain a2a remote failed",
+            state=name,
+            remote_text=redact(text, secret=self._secret),
+        )
         out = [self._metrics()] if self._usage_known else []
         return [*out, self._error("a2a.failed", f"the task ended in state {name}")]
 

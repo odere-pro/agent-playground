@@ -482,6 +482,7 @@ For the PoC-6b list (exit criterion 6). Mark `suggested:` where it is an inferen
 - **Telemetry.** With default OTel settings the probe saw `COMPLETED` come 16.8 s after the last chunk, and 0.64 s with the three OTel exporters set to `none`. Likely a flush to an unreachable collector; not root-caused. Set them to `none` on the pod.
 - **Cancel.** Whether kagent-adk stops work on `CancelTask` is untested.
 - **Size.** No cap on the text a remote returns, as in chassis mode.
+- **The remote's own token.** An untrusted remote can read its bearer token from its environment and print it. `RemoteConnector` replaces each exact occurrence in every event it yields, in both protocols, with `[redacted]`. It matches per event, so a token split across two `delta` events is not caught. `previous_token_env` is not read by the client, so it is not scrubbed.
 
 ### B.9 Files
 
