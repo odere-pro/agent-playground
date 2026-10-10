@@ -28,6 +28,10 @@ EXPECTED_ACTION = "SCMP_ACT_ERRNO"
 EXPECTED_ERRNO = 38  # ENOSYS
 NEW_ACTION = "SCMP_ACT_ALLOW"
 MIN_ALLOWED_SYSCALLS = 200  # suggested: containerd's RuntimeDefault allows over 300
+# Syscalls containerd's RuntimeDefault allows only with a capability (CAP_SYS_ADMIN, CAP_BPF,
+# CAP_DAC_READ_SEARCH, CAP_PERFMON, CAP_SYS_MODULE) or not at all (keyctl, kexec_load), so a
+# drop-ALL container's profile never allows them. Not `ptrace`: containerd allows it with no
+# capability on kernel 4.8 and later (contrib/seccomp/seccomp_default.go), as Docker does.
 FORBIDDEN_ALLOWED = (
     "mount",
     "umount2",
@@ -39,7 +43,6 @@ FORBIDDEN_ALLOWED = (
     "perf_event_open",
     "init_module",
     "finit_module",
-    "ptrace",
     "kexec_load",
 )
 
