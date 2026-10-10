@@ -5,7 +5,7 @@ POC ?= 01
 PY := uv run python
 PYTEST := scripts/check_offline.sh
 
-.PHONY: help setup fmt fmt-check lint lint-extra type test test-poc test-integration load-test kind-poc04 kind-poc05 record-cassettes quick check planning-sync planning-check schemas harness-lint fake-model-server ts-check clean
+.PHONY: help setup fmt fmt-check lint lint-extra type test test-poc test-integration load-test kind-poc04 kind-poc05 kind-poc06 bakeoff poc06-mac record-cassettes quick check planning-sync planning-check schemas harness-lint fake-model-server ts-check clean
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -59,6 +59,15 @@ kind-poc04: ## PoC-4 kind cluster and drills: make kind-poc04 ARGS="up native-si
 kind-poc05: ## PoC-5 kind cluster (gVisor, NetworkPolicy, admission): make kind-poc05 ARGS="up"
 	deploy/kind/poc05/run.sh $(ARGS)
 
+kind-poc06: ## PoC-6 engines on the PoC-5 kind cluster: make kind-poc06 ARGS="..."
+	deploy/kind/poc06/run.sh $(ARGS)
+
+bakeoff: ## PoC-6 benchmark kit (stub): make bakeoff ARGS="..."
+	uv run python -m bakeoff $(ARGS)
+
+poc06-mac: ## PoC-6 runs on a Mac (stub): make poc06-mac ARGS="..."
+	scripts/poc06_mac.sh $(ARGS)
+
 # The tests that own model cassettes. Add a file here when it records through `CassetteTransport`.
 CASSETTE_TESTS ?= packages/chassis/tests/test_recorded_model.py \
 	pocs/poc-03-one-interface-every-client/tests/test_interface_contract.py
@@ -69,7 +78,7 @@ record-cassettes: ## Re-record model cassettes offline, against the fake model s
 quick: ## Iteration gate: format check, lint, and the tests of the packages you changed
 	$(MAKE) fmt-check lint
 	@changed=$$(git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard) ; \
-	dirs=$$(echo "$$changed" | grep -oE '^(packages|pocs)/[^/]+' | sort -u | while read -r d; do [ -d "$$d" ] && echo "$$d"; done) ; \
+	dirs=$$(echo "$$changed" | grep -oE '^(packages|pocs)/[^/]+' | sort -u | while read -r d; do [ -d "$$d" ] && [ -n "$$(find "$$d" -name 'test_*.py' -not -path '*/node_modules/*' -print -quit)" ] && echo "$$d"; done) ; \
 	if [ -n "$$dirs" ]; then echo "testing: $$dirs"; $(PYTEST) $$dirs; else $(PYTEST) -m "not slow"; fi
 
 check: ## Boundary gate: everything CI runs

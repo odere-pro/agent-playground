@@ -59,6 +59,8 @@ That result events leave through a broker client in the chassis, not Dapr ([019 
 
 How a remote workload authenticates to the chassis (one bearer token per remote, a separate listener) and how admission enforces the trust rule ([026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), a ValidatingAdmissionPolicy) is decided in [ADR-005](../adr/005-remote-lane-auth-and-trust-admission.md), from PoC-5, accepted 2026-10-09.
 
+Which engine is the default for new agents, which engines are supported in which lane, and which are rejected ([008 H-14](008-H-14-one-agent-interface.md), [058 CH-8](058-CH-8-framework-event-mappings.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md)) is proposed in [ADR-006](../adr/006-agent-engines-default-supported-lanes.md), from PoC-6. The user accepts it at the PoC-6 pull request.
+
 ## Definition of done for every issue
 
 The platform must be swappable and testable from day 0. So every issue, on top of its own acceptance criteria, is done only when:

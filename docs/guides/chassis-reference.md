@@ -129,6 +129,7 @@ Each is built by `from_env()` and loaded lazily.
   - A transport failure is `a2a.transport`. So is a stream with no `end` or `error`.
   - It cancels even when closing the stream raises.
   - It opens one span per run.
+  - It has two hooks a lane can override: `_message_for` builds the A2A request and `_translator_for` makes the run's `EventTranslator`. The default `ChassisTranslator` reads `chassis.event`. The translator also reports the remote's `task_id` and whether the task is finished there. The connector cancels only a task that is not finished.
 - `inprocess.py` is `InProcessConnector`. It runs that server in this process over `httpx.ASGITransport`.
   - Events arrive in one batch.
   - The run deadline ends the stream but not `handle`.
@@ -137,6 +138,23 @@ Each is built by `from_env()` and loaded lazily.
   - It uses TCP or the `spec.engine.uds` Unix socket.
   - It streams.
   - `probe()` GETs the agent card.
+- `remote.py` is `RemoteConnector`. It calls a workload's A2A server on another host with `Authorization: Bearer` on every request: the card fetch, each message, the cancel, and the probe.
+  - It never follows a redirect. It ignores the card's own URL and pins the JSON-RPC interface to `spec.engine.url`.
+  - `spec.engine.protocol: chassis` (the default) reads `chassis.event` as above.
+  - `spec.engine.protocol: a2a` is the plain-A2A mode, for a third-party agent (kagent-adk, a managed runtime) that sends no `chassis.event`. The operator picks it. The connector never detects it.
+- `plain.py` is the plain-A2A mode. It is chassis-only: `mapping.py` and the workload copy are not touched.
+  - `PlainTranslator` builds events from the agent's own stream. It emits `start` itself, once. It ends with one `end` or `error`. It never reads `chassis.event` or `task.history`, so a remote cannot forge a `tool_call` or a chassis error code.
+  - Text parts become `delta`. A `last_chunk` artifact event with no `append` is a snapshot, not a delta. It is the `end.output` only if no delta went out. Data, file, and URL parts are ignored. Empty status messages and SSE pings make no event.
+  - `COMPLETED` is `metrics` then `end ok`. A unary `task` and a `message` reply are read the same way.
+  - `FAILED` and `REJECTED` are `error {code: "a2a.failed"}` with fixed text. The remote's own text goes to the log only, redacted and capped at 300 characters (suggested).
+  - `INPUT_REQUIRED` and `AUTH_REQUIRED` are `error {code: "a2a.unsupported_state"}`. The task stays open on the remote, so the connector sends `CancelTask`. The task id is read from a `task`, a `status_update`, or an `artifact_update`.
+  - Usage is read from `spec.engine.a2a.usage_key` only, on the task, status, artifact, and artifact-event metadata. The last value wins; values are never summed. Only non-negative integers count. A float with no fractional part counts as an integer. A boolean, a negative, a fraction, a string, or a value above 2^53 (suggested) counts as zero and is logged once per run. Zeros mean unknown. The run's span says `a2a.usage_known`.
+  - `plain_message` sends a text part, a data part only when `input.data` is not empty, and no metadata. `chassis.ctx` is not sent. `context_id: omit` (the default) sends no `context_id`. `trace_id` sends the run's trace id.
+  - In plain mode a timeout or a transport failure has fixed text (`the remote timed out`, `the remote failed`). The SDK puts the remote's own payload in its exception text. That text goes to the log, redacted and capped, and nowhere else. A stream the SDK cannot parse is `a2a.transport` too. In chassis mode the exception text is still the message (not changed).
+  - A failure before the first stream item (a connect error, a timeout) is a lone `error` with no `start`, the same as the rule for a failure before `handle`. The translator emits `start` only when the first item arrives.
+  - The span attribute `a2a.task_id` keeps at most 128 characters (suggested) of the remote's task id. At most 64 artifact snapshots are kept (suggested), and none once a delta went out.
+  - Not visible: `tool_call`, and the `retry` and `fallback` statuses.
+  - Tests: `tests/test_a2a_plain.py` (the translator), `tests/test_remote_connector_plain.py` (the connector against the stub in `tests/plain_a2a_stub.py`), and `pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_plain_a2a_contract.py` (`EngineConnectorContract`).
 - `packages/workload-a2a` holds the workload-side copies. Its `mapping.py` is byte for byte. Its `server.py` is mirrored.
 
 ### mcp
@@ -176,6 +194,7 @@ Each is built by `from_env()` and loaded lazily.
 - `spec.limits` is `LimitsSpec`: `max_tokens_max`, `timeout_ms_max`, `messages_max`, `body_bytes_max`. Each is at least 1.
 - `spec.idempotency` is `IdempotencySpec`: `enabled`, `ttl_s`, `lease_s`, `wait_poll_ms`, `max_entry_bytes`.
 - `spec.events` is `EventsSpec` with `result_events`. A non-null `consume` is refused at load until event-triggered runs exist.
+- `spec.engine.protocol` is `chassis` (the default) or `a2a`. `a2a` is for `connector: remote` only. `spec.engine.a2a` is `{usage_key: null, context_id: omit | trace_id}`. It needs `protocol: a2a`. Both are restart-only. `as_mapping()` leaves them out for `sidecar` and `inprocess`. suggested: the names and defaults.
 - `RELOADABLE` and `RESTART_ONLY` list the field paths a reload may and may not change.
 - suggested: every default.
 
@@ -314,6 +333,26 @@ The model proxy (proxy port) is the OpenAI-compatible pass-through a workload ca
 - The tokens are reserved at start and settled on usage.
 - When nothing is left, it answers 429 `budget_exhausted`. That is `retryable` only when in-flight reservations hold the rest.
 - Uncorrelated calls are served with their own `max_tokens` and counted.
+- `admit(...)` is the one admission step both routes use: count the call, find the run, refuse with 429, else reserve.
+- An upstream 401 or 403 answers 403 `model_route_denied` on both routes (it was 500 `http_401`). It counts `chassis.model_upstream_denied{route}` and logs once. A chat stream keeps its 200 and its error frame.
+
+### model_proxy_messages.py
+
+The Anthropic proxy route (`POST /v1/messages` on the proxy port; contract v5, part A) is a second wire format on the model proxy. It is not the Anthropic interface on the public port, which calls the agent.
+
+- Both proxy listeners serve it, because both mount the one model proxy router. On the remote listener it is behind `BearerAuth` and `RequireRun`.
+- The reader is `anthropic_compat/model_wire.py`. It reads the raw JSON by hand and maps it onto `ModelMessage`, `ToolSpec`, and `max_tokens`. The SDK types cannot hold what the Claude CLI sends.
+- It reads one header, `traceparent`. It never reads or forwards `authorization`, `x-api-key`, `anthropic-version`, or `anthropic-beta`. The query is ignored.
+- The body is capped at 4 MiB (`BODY_CAP_BYTES`, suggested), counted while it is read and before it is parsed. Over it, 413 `request_too_large`.
+- A streamed answer holds for `FIRST_CHUNK_WAIT_S` (5 s, suggested) so a model error in that window keeps its HTTP status. After that an error is one `event: error` frame. A `ping` goes out every `PING_INTERVAL_S` (15 s, suggested).
+- A correlated stream whose client leaves after the model call started is charged its last known usage, or the whole reservation. The chat route does not do this (Known gap 004 G-2).
+- A stream has a wall clock: the rest of the run's `budget.timeout_ms`, else 300 s (suggested). At expiry it sends an `event: error` frame (`model_timeout`), closes the upstream stream, and is charged its whole reservation.
+- `model` is capped at 256 characters (suggested). Deeply nested JSON is a 400.
+- Every error is Anthropic's shape with a `request-id` header and `x-should-retry`. Model errors send fixed text. The upstream text of a rejected request is logged at the chassis, never sent.
+- Empty assistant turns and empty `system` entries are skipped. An empty user turn is a 400. A JSON boolean for `max_tokens` or `temperature` is a 400.
+- `/v1/messages/count_tokens` is a 404 in the Anthropic shape. On the remote listener its 401 keeps the v4 body, because the middlewares test the exact path `/v1/messages`.
+- Counters: `chassis.model_proxy.ignored{format, param}` for each dropped field. The `chassis.model.call` span has `format`.
+- The remote listener's route list is pinned to `/v1/chat/completions`, `/v1/messages`, `/mcp`.
 
 ### correlation.py
 
@@ -343,6 +382,7 @@ The model proxy (proxy port) is the OpenAI-compatible pass-through a workload ca
 - `spec.adapters.engine` is refused.
 - `connector: inprocess` builds `InProcessConnector`. `spec.engine.handle` names the workload as `module:attribute`.
 - `connector: sidecar` builds `SidecarConnector`. It uses `spec.engine.url` and the optional `spec.engine.uds`.
+- `connector: remote` builds `RemoteConnector`. It adds `spec.engine.auth`, and `spec.engine.protocol: a2a` for a third-party agent.
 - `spec.adapters` (`model`, `config`, `telemetry`, `tools`, `state`, `events`) merges over the profile defaults per field.
 - `cloud` refuses `fake` and `memory` adapters. suggested.
 - `state` is `memory` or `valkey`. The default is `memory` in `fake`, and `valkey` in `local` and `cloud`.

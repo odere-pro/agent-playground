@@ -30,12 +30,22 @@ UIDS: dict[str, int] = {
     "echo-python": 10002,
     "echo-pydanticai": 10002,
     "echo-langgraph": 10002,
+    "echo-openai-agents": 10002,
+    "echo-claude-agent": 10002,
+    "echo-smolagents": 10002,
     "echo-typescript": 10002,
     "code-runner": 10003,
     "fake-model-server": 10004,
     "fake-mcp-server": 10005,
 }
 """suggested: image name (the part after `agent-platform/`) to its uid and gid."""
+
+UPSTREAM_UIDS: dict[str, int] = {
+    "kagent-adk": 65532,
+}
+"""Images built from pinned upstream source, with no Dockerfile in this repo, to the uid their own
+Dockerfile sets. kagent-adk: kagent's `python/Dockerfile` (PoC-6b kagent probe note), built by
+`deploy/kind/poc06/run.sh` at `deploy/kind/poc06/kagent/source.commit`."""
 
 REJECTED = re.compile(r"^#\s*expect:\s*rejected\s*$", re.M)
 """An admission fixture the policy must refuse. Each differs from its admitted twin in exactly the
@@ -48,6 +58,9 @@ DOCKERFILES: dict[str, Path] = {
     "echo-python": ROOT / "packages/workloads/echo-python/Dockerfile",
     "echo-pydanticai": ROOT / "packages/workloads/echo-pydanticai/Dockerfile",
     "echo-langgraph": ROOT / "packages/workloads/echo-langgraph/Dockerfile",
+    "echo-openai-agents": ROOT / "packages/workloads/echo-openai-agents/Dockerfile",
+    "echo-claude-agent": ROOT / "packages/workloads/echo-claude-agent/Dockerfile",
+    "echo-smolagents": ROOT / "packages/workloads/echo-smolagents/Dockerfile",
     "echo-typescript": ROOT / "packages/workloads/echo-typescript/Dockerfile",
     "code-runner": ROOT / "packages/code-runner/Dockerfile",
     "fake-model-server": ROOT / "packages/fake-model-server/Dockerfile",
@@ -70,8 +83,9 @@ def _image_name(ref: str) -> str | None:
 
 
 def _want(name: str) -> int:
-    assert name in UIDS, f"agent-platform/{name} is not in the uid table"
-    return UIDS[name]
+    table = UIDS | UPSTREAM_UIDS
+    assert name in table, f"agent-platform/{name} is not in the uid table"
+    return table[name]
 
 
 def _runtime_stage(text: str) -> str:
@@ -95,6 +109,7 @@ def test_distinct_roles_have_distinct_uids() -> None:
     others = [uid for name, uid in UIDS.items() if not name.startswith("echo-")]
     assert len(roles) == len(others), UIDS
     assert UIDS["echo-python"] not in roles
+    assert not set(UPSTREAM_UIDS.values()) & set(UIDS.values()), UPSTREAM_UIDS
 
 
 @pytest.mark.parametrize("name", sorted(DOCKERFILES))
@@ -180,7 +195,8 @@ COMPOSE = list(_compose_runs())
 def test_manifests_were_found() -> None:
     """Guard against a vacuous pass: every image in the table runs somewhere."""
     run = {name for _, name, *_ in KIND} | {name for _, name, _ in COMPOSE}
-    assert run >= set(UIDS), sorted(set(UIDS) - run)
+    want = set(UIDS) | set(UPSTREAM_UIDS)
+    assert run >= want, sorted(want - run)
 
 
 @pytest.mark.parametrize(("where", "name", "uid", "gid"), KIND, ids=[k[0] for k in KIND])

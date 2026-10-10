@@ -21,6 +21,11 @@ card's interface URL is never followed: `_check_card` keeps only the JSON-RPC in
 its URL to the configured `url` (a card with none is refused). The token is never kept as an
 attribute, logged, put in a span or an error, or shown in `repr`.
 
+- `protocol` (default `chassis`): `a2a` reads a third-party agent's own A2A stream (no
+  `chassis.event` metadata) through `chassis.adapters.a2a.plain`; `a2a` (optional) holds its
+  `usage_key` and `context_id`. The bearer, the card pin, and the probe are the same in both modes.
+  The mode is the operator's choice; the connector never detects it.
+
 Everything after `setup` is `A2AConnector`: the mapping, the deadline, the cancel, the span, and
 the `traceparent`. `probe()` GETs the agent card with the token over a client of its own. `True`
 on 200 only; `False` on any other status, a timeout, or a transport error. It never raises.
@@ -29,16 +34,21 @@ on 200 only; `False` on any other status, a timeout, or a transport error. It ne
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from collections.abc import AsyncGenerator, AsyncIterator, Mapping
+from contextlib import aclosing
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlsplit
 
 import httpx
-from a2a.types import AgentCard, AgentInterface
+from a2a.types import AgentCard, AgentInterface, SendMessageRequest
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH, TransportProtocol
 from a2a.utils.errors import A2AError
+from google.protobuf import json_format
 
-from chassis.adapters.a2a.connector import A2AConnector
+from chassis.adapters.a2a.connector import A2AConnector, EventTranslator
+from chassis.adapters.a2a.plain import PlainOptions, PlainTranslator, plain_message, redact
+from chassis.core.envelope import Context, Request
+from chassis.core.events import Event, parse_event
 from chassis.ports.engine import Lane
 
 if TYPE_CHECKING:
@@ -46,6 +56,20 @@ if TYPE_CHECKING:
 
 PROBE_TIMEOUT_S = 2.0
 """suggested: the probe's timeout when `probe_timeout_s` is not given."""
+REDACTED = "[redacted]"
+
+
+class _Secret:
+    """The token, held for the output scrub. Its `repr` and `str` hide it, so `vars(connector)`
+    and a traceback never show it."""
+
+    __slots__ = ("value",)
+
+    def __init__(self, value: str) -> None:
+        self.value = value
+
+    def __repr__(self) -> str:
+        return "<secret>"
 
 
 def remote_url(url: object) -> str:
@@ -96,9 +120,37 @@ class RemoteConnector(A2AConnector):
         super().__init__()
         self.url: str | None = None
         self._probe_http: httpx.AsyncClient | None = None
+        self._plain: PlainOptions | None = None
+        """Set in `protocol: a2a` mode only."""
+        self._token: _Secret | None = None
+        """The bearer token, for the output scrub only. Never in `repr`, a log, or a span."""
 
     def __repr__(self) -> str:
         return f"RemoteConnector(url={self.url!r})"
+
+    def _scrub(self, value: Any) -> Any:
+        """`value` with the token replaced by `[redacted]` in every string, key, and list item."""
+        if self._token is None:
+            return value
+        token = self._token.value
+        if isinstance(value, str):
+            return value.replace(token, REDACTED)
+        if isinstance(value, dict):
+            return {self._scrub(k): self._scrub(v) for k, v in value.items()}
+        if isinstance(value, list | tuple):
+            return [self._scrub(v) for v in value]
+        return value
+
+    def _scrub_event(self, event: Event) -> Event:
+        """The same event when the token is not in it; else a copy with the token removed."""
+        dumped = event.model_dump(mode="json")
+        clean = self._scrub(dumped)
+        return event if clean == dumped else parse_event(clean)
+
+    async def run(self, request: Request, ctx: Context) -> AsyncIterator[Event]:
+        async with aclosing(cast(AsyncGenerator[Event], super().run(request, ctx))) as events:
+            async for event in events:
+                yield self._scrub_event(event)
 
     def _check_card(self, card: AgentCard) -> None:
         """Keep the JSON-RPC interface only, at the configured URL. The card's own URL, which
@@ -117,6 +169,39 @@ class RemoteConnector(A2AConnector):
         )
         del card.supported_interfaces[:]
         card.supported_interfaces.append(pinned)
+
+    def _message_for(self, request: Request, ctx: Context) -> SendMessageRequest:
+        if self._plain is None:
+            return super()._message_for(request, ctx)
+        return plain_message(
+            request.input.model_dump(mode="json"), ctx.model_dump(mode="json"), self._plain
+        )
+
+    def _failure_text(self, code: str, exc: BaseException) -> str:
+        """In plain mode the SDK's exception text can hold the remote's own words (a JSON-RPC
+        error message, an SSE payload). It goes to the log, redacted and capped; the `Error` gets
+        fixed text."""
+        if self._plain is None:
+            return super()._failure_text(code, exc)
+        if self._ports is not None:
+            self._ports.telemetry.log(
+                "warning",
+                "plain a2a remote failed in transit",
+                code=code,
+                error_type=type(exc).__name__,
+                remote_text=redact(str(exc), secret=self._token.value if self._token else None),
+            )
+        return "the remote timed out" if code == "a2a.timeout" else "the remote failed"
+
+    def _translator_for(self, request: Request) -> EventTranslator:
+        if self._plain is None or self._ports is None:
+            return super()._translator_for(request)
+        return PlainTranslator(
+            request.request_id,
+            self._plain,
+            self._ports.telemetry.log,
+            secret=self._token.value if self._token else None,
+        )
 
     def _client_for(self, token: str, uds: str | None, timeout: float | None) -> httpx.AsyncClient:
         transport = httpx.AsyncHTTPTransport(uds=uds) if uds else None
@@ -139,6 +224,15 @@ class RemoteConnector(A2AConnector):
         probe_timeout = config.get("probe_timeout_s", PROBE_TIMEOUT_S)
         if not isinstance(probe_timeout, int | float) or probe_timeout <= 0:
             raise ValueError("engine.probe_timeout_s must be a positive number")
+        protocol = config.get("protocol", "chassis")
+        if protocol not in ("chassis", "a2a"):
+            raise ValueError("engine.protocol must be 'chassis' or 'a2a'")
+        plain = PlainOptions.from_mapping(config.get("a2a")) if protocol == "a2a" else None
+        if protocol != "a2a" and config.get("a2a") is not None:
+            raise ValueError("engine.a2a needs engine.protocol: a2a")
+        self._plain = plain
+        self._token = _Secret(token)
+        self._malformed_stream = (ValueError, json_format.ParseError) if plain else ()
         self.url = url
         http = self._client_for(token, uds, None)
         try:

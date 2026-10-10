@@ -23,6 +23,7 @@ The trained SLM must answer through the router like any other model, so agents c
 - Runs in the Docker Compose GPU profile, and on a rented GPU host for the first version.
 - vLLM metrics scraped by Prometheus, and SLM calls counted in router usage.
 - A latency and throughput test with typical inputs.
+- Status after PoC-6: PoC-6c serves Qwen3-1.7B with llama.cpp on the host behind LiteLLM's `local-small` route, not vLLM. Configured and tested offline only; the SLM numbers wait on the Mac run. vLLM on a GPU stays here.
 
 ## Reuse
 

@@ -250,13 +250,14 @@ Test layers, all mature Python tools:
 | 5 | [Sandboxed: the remote lane and the trust rule](005-PoC-5-sandboxed.md) | Can untrusted code run in the `remote` lane without reaching secrets, the internet, the disk, or tools it is not allowed? Does only the chassis reach internal services? | 3 weeks |
 | 6a | [Framework bake-off, part A: the `sidecar` lane](006-PoC-6-framework-bake-off.md) | Which trusted frameworks should the platform support, and which is the default? | 1 week |
 | 6b | [Framework bake-off, part B: the `remote` lane](006-PoC-6-framework-bake-off.md) | Which untrusted frameworks and which remote solution does the chassis front, with no change to its core? | 1 week |
+| 6c | [Agent pods on a pre-trained SLM](006c-PoC-6c-pretrained-slm.md) | Can the agent pods run their tasks on a pre-trained SLM behind LiteLLM, with no change to the workload or the chassis? Which engines still work on it? | 1 week (suggested) |
 | 7 | [Confirm the cross-cutting stack](007-PoC-7-cross-cutting-decisions.md) | Does the chosen stack give security, observability, feedback, and evals to every engine, with no engine-specific code? | 2–3 weeks |
 | 8 | [Build in the cross-cutting concerns](008-PoC-8-build-cross-cutting.md) | Do the chosen designs work end to end on every engine? | 3–5 days |
 | 9 | [Agent MVP: template and factory](009-PoC-9-agent-mvp-template.md) | Can a new agent with any business logic be scaffolded and running in under a day? | 1 week |
 
-About 13–15 weeks for one engineer. An earlier draft said 8.5–10.5. The review of 2026-09-29 raised PoC-5 to 3 weeks (cluster plumbing: kind, a CNI that enforces NetworkPolicy, gVisor, agent-sandbox, Kyverno, and two hostile suites), PoC-7 to 2–3 weeks (four new ports with real adapters, two tool comparisons, a red-team set, and four ADRs), PoC-2 to 2 weeks (the TypeScript echo and the per-token measurements), and PoC-4 to 1 week (the Dapr decision and the pod lifecycle checks). The reuse picks and ADR-001 are already in these numbers. The time boxes are suggestions; change them per iteration.
+About 13–15 weeks for one engineer. An earlier draft said 8.5–10.5. The review of 2026-09-29 raised PoC-5 to 3 weeks (cluster plumbing: kind, a CNI that enforces NetworkPolicy, gVisor, agent-sandbox, Kyverno, and two hostile suites), PoC-7 to 2–3 weeks (four new ports with real adapters, two tool comparisons, a red-team set, and four ADRs), PoC-2 to 2 weeks (the TypeScript echo and the per-token measurements), and PoC-4 to 1 week (the Dapr decision and the pod lifecycle checks). The reuse picks and ADR-001 are already in these numbers. PoC-6c, added on 2026-10-09, adds 1 week (suggested). The time boxes are suggestions; change them per iteration.
 
-Order: 1 → 2 → 3. Then 4, 5, and 6a can run in parallel, because 6a needs only 3. 6b needs 5, because its frameworks run in the `remote` lane. 7 needs 6a and 6b. Then 8, then 9. With one engineer, 6a fits between 4 and 5, or while the cluster work in 5 waits on something.
+Order: 1 → 2 → 3. Then 4, 5, and 6a can run in parallel, because 6a needs only 3. 6b needs 5, because its frameworks run in the `remote` lane. 6c needs 6a, and can run next to 6b, because it uses Docker Compose and a model server, not the cluster. 7 needs 6a and 6b; 6c closes before 9. Then 8, then 9. With one engineer, 6a fits between 4 and 5, or while the cluster work in 5 waits on something.
 
 ## Framework shortlist
 
@@ -272,11 +273,13 @@ Pick 4–5 for the bake-off. Each one covers a different kind of agent.
 | Code agent | smolagents | The agent writes and runs code itself, so it runs in the `remote` lane |
 | Optional | Google ADK, Microsoft Agent Framework, Strands Agents, CrewAI | Only if the team has a reason to use one |
 
-PoC-2 uses plain Python, PydanticAI, and LangGraph as workloads in the `sidecar` lane, plus a TypeScript echo workload that proves the contract carries nothing Python-specific. PoC-6a adds the rest of the trusted shortlist and grows the TypeScript echo into a full agent. PoC-6b adds the `remote`-lane frameworks and one remote solution.
+PoC-2 uses plain Python, PydanticAI, and LangGraph as workloads in the `sidecar` lane, plus a TypeScript echo workload that proves the contract carries nothing Python-specific. PoC-6a adds the rest of the trusted shortlist and grows the TypeScript echo into a full agent. PoC-6b adds the `remote`-lane frameworks and one remote solution. PoC-6c runs the PoC-6a engines on a pre-trained SLM.
 
 ## Bake-off criteria
 
-Each engine gets the same two tasks: text in, text out (the simplifier), and a tool task (lookup with two tools). Each runs on a big model and on an SLM through the router.
+The result is proposed in [ADR-006](../adr/006-agent-engines-default-supported-lanes.md): the default engine, the supported engines with their lanes, and the rejected ones.
+
+Each engine gets the same two tasks: text in, text out (the simplifier), and a tool task (lookup with two tools). Each runs on a hosted big model through the router in PoC-6a and PoC-6b, and on a pre-trained SLM in PoC-6c.
 
 | Criterion | How it is measured |
 | --------- | ------------------ |

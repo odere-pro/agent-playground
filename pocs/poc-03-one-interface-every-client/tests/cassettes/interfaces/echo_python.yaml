@@ -4,7 +4,9 @@ interactions:
       in plain words. Short sentences. Keep every fact."},{"role":"user","content":"simplify:
       the quick brown fox"}],"temperature":0.0,"max_tokens":300,"tools":[{"type":"function","function":{"name":"glossary_lookup","description":"Look
       up a platform term. Returns its short definition, or null if unknown.","parameters":{"properties":{"term":{"type":"string","description":"The
-      term to look up."}},"required":["term"],"type":"object","additionalProperties":false}}}],"metadata":{"tags":["agent:simplifier"]},"stream":true,"stream_options":{"include_usage":true}}'
+      term to look up."}},"required":["term"],"type":"object","additionalProperties":false}}},{"type":"function","function":{"name":"acronym_expand","description":"Expand
+      an acronym. Returns its expansion, or null if unknown.","parameters":{"properties":{"acronym":{"type":"string","description":"The
+      acronym to expand."}},"required":["acronym"],"type":"object","additionalProperties":false}}}],"metadata":{"tags":["agent:simplifier"]},"stream":true,"stream_options":{"include_usage":true}}'
     headers:
       content-type:
       - application/json
@@ -12,43 +14,43 @@ interactions:
     uri: http://model.invalid/v1/chat/completions
   response:
     body:
-      string: 'data: {"id": "chatcmpl-0342d8e9d5a4", "object": "chat.completion.chunk",
-        "created": 1790842929, "model": "big-default", "choices": [{"index": 0, "delta":
+      string: 'data: {"id": "chatcmpl-a0484c1d26df", "object": "chat.completion.chunk",
+        "created": 1791576285, "model": "big-default", "choices": [{"index": 0, "delta":
         {"role": "assistant", "content": ""}, "finish_reason": null}]}
 
 
-        data: {"id": "chatcmpl-0342d8e9d5a4", "object": "chat.completion.chunk", "created":
-        1790842929, "model": "big-default", "choices": [{"index": 0, "delta": {"content":
+        data: {"id": "chatcmpl-a0484c1d26df", "object": "chat.completion.chunk", "created":
+        1791576285, "model": "big-default", "choices": [{"index": 0, "delta": {"content":
         "Plain "}, "finish_reason": null}]}
 
 
-        data: {"id": "chatcmpl-0342d8e9d5a4", "object": "chat.completion.chunk", "created":
-        1790842929, "model": "big-default", "choices": [{"index": 0, "delta": {"content":
+        data: {"id": "chatcmpl-a0484c1d26df", "object": "chat.completion.chunk", "created":
+        1791576285, "model": "big-default", "choices": [{"index": 0, "delta": {"content":
         "words. "}, "finish_reason": null}]}
 
 
-        data: {"id": "chatcmpl-0342d8e9d5a4", "object": "chat.completion.chunk", "created":
-        1790842929, "model": "big-default", "choices": [{"index": 0, "delta": {"content":
+        data: {"id": "chatcmpl-a0484c1d26df", "object": "chat.completion.chunk", "created":
+        1791576285, "model": "big-default", "choices": [{"index": 0, "delta": {"content":
         "Short "}, "finish_reason": null}]}
 
 
-        data: {"id": "chatcmpl-0342d8e9d5a4", "object": "chat.completion.chunk", "created":
-        1790842929, "model": "big-default", "choices": [{"index": 0, "delta": {"content":
+        data: {"id": "chatcmpl-a0484c1d26df", "object": "chat.completion.chunk", "created":
+        1791576285, "model": "big-default", "choices": [{"index": 0, "delta": {"content":
         "sentences. "}, "finish_reason": null}]}
 
 
-        data: {"id": "chatcmpl-0342d8e9d5a4", "object": "chat.completion.chunk", "created":
-        1790842929, "model": "big-default", "choices": [{"index": 0, "delta": {"content":
+        data: {"id": "chatcmpl-a0484c1d26df", "object": "chat.completion.chunk", "created":
+        1791576285, "model": "big-default", "choices": [{"index": 0, "delta": {"content":
         "Same "}, "finish_reason": null}]}
 
 
-        data: {"id": "chatcmpl-0342d8e9d5a4", "object": "chat.completion.chunk", "created":
-        1790842929, "model": "big-default", "choices": [{"index": 0, "delta": {"content":
+        data: {"id": "chatcmpl-a0484c1d26df", "object": "chat.completion.chunk", "created":
+        1791576285, "model": "big-default", "choices": [{"index": 0, "delta": {"content":
         "facts."}, "finish_reason": null}]}
 
 
-        data: {"id": "chatcmpl-0342d8e9d5a4", "object": "chat.completion.chunk", "created":
-        1790842929, "model": "big-default", "choices": [{"index": 0, "delta": {},
+        data: {"id": "chatcmpl-a0484c1d26df", "object": "chat.completion.chunk", "created":
+        1791576285, "model": "big-default", "choices": [{"index": 0, "delta": {},
         "finish_reason": "stop"}], "usage": {"prompt_tokens": 42, "completion_tokens":
         9, "total_tokens": 51}}
 

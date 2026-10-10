@@ -5,6 +5,7 @@ A test MCP server (FastMCP, streamable HTTP at `/mcp/`). Design: `docs/plans/202
 ## Tools
 
 - `glossary_lookup(term)`: read-only (`readOnlyHint: true`). Same data as the chassis fake; an unknown term gives `definition: null`, not an error.
+- `acronym_expand(acronym)`: read-only (`readOnlyHint: true`), added for PoC-6. Same data as the chassis fake (`ACRONYMS`); an unknown acronym gives `expansion: null`. It is not a write tool and is in no write-mode set.
 - `note_write(text, idempotency_key=None)`: write tool (`readOnlyHint: false`). One note per key; a repeated key returns the first result and does not execute again. No key is a tool error whose text starts `idempotency_key_required`. `FakeMcpState.executions` counts real writes.
 - `unlisted_probe()`: returns `PROBE_MARKER`. It is on no real allow-list; a test that sees the marker means the allow-list failed (H08).
 
@@ -14,7 +15,7 @@ A client sends it as `_meta.idempotency_key` of the `tools/call` request. If the
 
 ## `--allow`
 
-`--allow TOKEN=tool,tool` (repeatable) imitates a gateway's per-key list. The token is the `Authorization: Bearer` value. Tools outside the list are not listed, and a call to one fails as `unknown tool: <name>`. `--allow tool,tool` with no token covers any caller. With any `--allow`, a caller with no matching entry sees no tools. Without it, everyone sees all three.
+`--allow TOKEN=tool,tool` (repeatable) imitates a gateway's per-key list. The token is the `Authorization: Bearer` value. Tools outside the list are not listed, and a call to one fails as `unknown tool: <name>`. `--allow tool,tool` with no token covers any caller. With any `--allow`, a caller with no matching entry sees no tools. Without it, everyone sees all four.
 
 ## Run and bind
 

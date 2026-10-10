@@ -24,6 +24,7 @@ Agents name a route, not a model, so any model is swapped by changing router con
 - Optional: each service's virtual key lists the routes that service may use, and a call to any other route is refused ([ADR-001](../adr/001-chassis-delivery-model.md) item 6).
 - One table that documents every route: name, current model, owner, tool-call support, and version.
 - Status after PoC-1: `big-default` and `local-small` answer by name. Switching `spec.model.route` is a config change and a restart (`pocs/poc-01-walking-skeleton/demo/2026-09-29-demo-fake-variant.md`). This issue names the second route `simplifier-slm`. Open decision: rename `local-small` to `simplifier-slm`, or keep it as a third route. Not yet: tool-call declaration per route, route versions in config history, and the clear error for an unknown route.
+- Status after PoC-6: PoC-6a and 6b ran on one route name, `big-default`, with the fake model server offline. The hosted route and the `local-small` route to the llama.cpp server are configured for the Mac run (`deploy/compose/litellm/`, `pocs/poc-06c-pretrained-slm/tests/test_poc06c_mac_static.py`); nothing has run on them yet. The name `local-small` stays.
 
 ## Out of scope
 
