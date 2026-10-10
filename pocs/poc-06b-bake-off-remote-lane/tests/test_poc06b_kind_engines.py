@@ -13,10 +13,12 @@ Two adaptations to the hop through the gateway, both in `poc06b_kind.gateway_vie
 its docstring: the tool name carries the gateway's `fake_tools-` prefix, and a text-only result is
 read as the object it holds. Nothing else about an event is changed.
 
-Known gaps, each a recorded `xfail`, not a dropped test:
-- `echo-claude-agent` lookup. The Claude CLI prefixes MCP tool names with `mcp__chassis__` and adds
-  trailing system turns, so the fake model's scripted tool call does not name a tool the CLI
-  offered. A fix to the script is coming separately; `strict=False`, so it shows when it works.
+The Claude CLI offers the MCP tools as `mcp__chassis__fake_tools-<name>`. The fake model server
+answers a scripted call by the one offered name that ends with the scripted name
+(`packages/fake-model-server`, `_resolve`), and the workload strips `mcp__chassis__` from its
+events, so Claude runs the same rules as every other engine. (Kind run 4 had it as an xfail.)
+
+Known gap:
 - `kagent-adk` lookup is checked on the answer text only. In plain-A2A mode the chassis cannot see
   tool calls ("what the chassis cannot see"), so a `tool_call` event there is a failure of the
   limit, not a pass.
@@ -40,23 +42,8 @@ from poc06b_kind import (
 
 pytestmark = pytest.mark.kind
 
-CLAUDE_LOOKUP = (
-    "The Claude CLI offers MCP tools as mcp__chassis__<name> and adds trailing system turns; the "
-    "fake model's scripted tool call names a tool the CLI did not offer. A script fix is coming "
-    "separately."
-)
-
 CASES = [
-    pytest.param(
-        engine,
-        name,
-        id=f"{engine.id}-{name}",
-        marks=(
-            [pytest.mark.xfail(strict=False, reason=CLAUDE_LOOKUP)]
-            if engine.name == "echo-claude-agent" and name == "lookup"
-            else []
-        ),
-    )
+    pytest.param(engine, name, id=f"{engine.id}-{name}")
     for engine in ENGINES
     for name in ("smoke", "simplifier", "lookup")
 ]
