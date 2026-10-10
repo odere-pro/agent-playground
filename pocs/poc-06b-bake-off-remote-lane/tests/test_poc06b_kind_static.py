@@ -847,6 +847,7 @@ def test_run_sh_test_selects_the_kind_files_by_path_and_names_missing_ones() -> 
     listed = _array(text, "KIND_TESTS")
     assert listed == [
         "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_engines.py",
+        "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_load.py",
         "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_remote_controls.py",
         "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_sidecar_controls.py",
     ]

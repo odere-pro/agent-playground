@@ -89,6 +89,7 @@ DEPLOYMENTS=(
 # The kind test files `test` runs; it fails naming any that is missing.
 KIND_TESTS=(
   pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_engines.py
+  pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_load.py
   pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_remote_controls.py
   pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_sidecar_controls.py
 )
