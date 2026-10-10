@@ -12,7 +12,8 @@
 #   image's venv Python. It is our file, not the image's; the image only supplies the libraries.
 # - The model: an OpenAI-compatible config whose base_url is the chassis's remote proxy listener
 #   and key passthrough on, so the inbound bearer (the per-remote token) is the model key and the
-#   run's traceparent reaches the proxy (probe note, item 4). The pod holds no Secret.
+#   run's traceparent reaches the proxy (probe note, item 4; the launcher forwards it itself, see
+#   TraceparentPassthroughPlugin). The pod holds no Secret.
 #   Recorded deviation: the URL is the fixed ClusterIP, not a DNS name, because the remote lane
 #   has no DNS (H20). The DNS-name rule in the probe note comes from Substrate's credential proxy,
 #   which is not used here.
@@ -43,36 +44,85 @@ data:
     task store, no kagent API). Usage: run_kagent_adk.py CONFIG_DIR HOST PORT. After kagent's
     cli.py at the pinned commit; the probe ran the same code."""
 
+    import contextvars
     import json
     import os
+    import re
     import sys
 
     import uvicorn
     from a2a.types import AgentCard
+    from google.adk.plugins.base_plugin import BasePlugin
     from google.protobuf.json_format import ParseDict
     from kagent.adk import AgentConfig, KAgentApp
     from kagent.adk._llm_passthrough_plugin import LLMPassthroughPlugin
     from kagent.core import bootstrap, instrument_app
     from kagent.core.telemetry import conv
 
-    cfg_dir, host, port = sys.argv[1], sys.argv[2], int(sys.argv[3])
-    os.environ.setdefault("KAGENT_PORT", str(port + 1000))
-    agent_config = AgentConfig.model_validate(json.load(open(os.path.join(cfg_dir, "config.json"))))
-    card = ParseDict(json.load(open(os.path.join(cfg_dir, "agent-card.json"))), AgentCard())
-    plugins = [LLMPassthroughPlugin()] if agent_config.model.api_key_passthrough else None
-    kapp = KAgentApp(
-        lambda: agent_config.to_agent("kagent_adk", None, False),
-        card,
-        "http://127.0.0.1:1",
-        "kagent__poc05-remote__kagent_adk",
-        plugins=plugins,
-        stream=bool(agent_config.stream),
-        agent_config=agent_config,
-    )
-    server = kapp.build(local=True)
-    bootstrap(conv.KagentRuntimeValues.ADK_PYTHON, fallback_name=card.name)
-    instrument_app(server)
-    uvicorn.run(server, host=host, port=port, log_level="info", log_config=None)
+    # The run's trace context, one value per inbound request. A ContextVar, not a model field: two
+    # runs share one model object, and each must send its own traceparent.
+    inbound_traceparent = contextvars.ContextVar("inbound_traceparent", default=None)
+    # W3C trace context, version 00. The chassis keys `RequireRun` on the trace id in it.
+    TRACEPARENT = re.compile(r"^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$")
+
+
+    async def stamp_traceparent(request):
+        """httpx2 request hook (async, for the async client): send the inbound traceparent on every model request, retries too."""
+        value = inbound_traceparent.get()
+        if value:
+            request.headers["traceparent"] = value
+
+
+    class TraceparentPassthroughPlugin(BasePlugin):
+        """Forward the inbound `traceparent` to the model, as LLMPassthroughPlugin does the bearer.
+
+        Why: OTel carries it only if the exporters are on, and here they are off (`instrument_app`
+        returns early), so the model call would start a new trace and the chassis proxy would
+        answer 403 run_required. The openai client uses httpx2, which OTel's httpx instrumentor
+        does not patch either. So this reads the header from the A2A request state, where kagent
+        keeps it, and a request hook on the model's own client sets it. Run it after
+        LLMPassthroughPlugin: a new bearer rebuilds the model's client, and the hook goes on the new one.
+        """
+
+        def __init__(self):
+            super().__init__(name="traceparent_passthrough")
+
+        async def before_model_callback(self, *, callback_context, llm_request):
+            headers = callback_context.state.get("headers", {})
+            value = (headers.get("traceparent") or "").strip().lower()
+            inbound_traceparent.set(value if TRACEPARENT.match(value) else None)
+            model = callback_context._invocation_context.agent.model
+            hooks = model._client._client.event_hooks  # AsyncOpenAI -> its httpx2 client
+            if stamp_traceparent not in hooks["request"]:
+                hooks["request"] = [*hooks["request"], stamp_traceparent]
+            return None
+
+
+    def main():
+        cfg_dir, host, port = sys.argv[1], sys.argv[2], int(sys.argv[3])
+        os.environ.setdefault("KAGENT_PORT", str(port + 1000))
+        agent_config = AgentConfig.model_validate(json.load(open(os.path.join(cfg_dir, "config.json"))))
+        card = ParseDict(json.load(open(os.path.join(cfg_dir, "agent-card.json"))), AgentCard())
+        plugins = None
+        if agent_config.model.api_key_passthrough:
+            plugins = [LLMPassthroughPlugin(), TraceparentPassthroughPlugin()]
+        kapp = KAgentApp(
+            lambda: agent_config.to_agent("kagent_adk", None, False),
+            card,
+            "http://127.0.0.1:1",
+            "kagent__poc05-remote__kagent_adk",
+            plugins=plugins,
+            stream=bool(agent_config.stream),
+            agent_config=agent_config,
+        )
+        server = kapp.build(local=True)
+        bootstrap(conv.KagentRuntimeValues.ADK_PYTHON, fallback_name=card.name)
+        instrument_app(server)
+        uvicorn.run(server, host=host, port=port, log_level="info", log_config=None)
+
+
+    if __name__ == "__main__":
+        main()
   agent-card.json: |
     {
       "name": "kagent_adk",
