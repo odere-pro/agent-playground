@@ -1,6 +1,6 @@
 # PoC-6: how the bake-off works
 
-Status: written 2026-10-09. The code and the manifests win where this guide and they differ. Nothing in section 8 has run on a cluster yet; section 9 lists what this guide could not confirm from code.
+Status: written 2026-10-09. The code and the manifests win where this guide and they differ. Section 8 ran in CI: `poc06-kind.yml` run 38010290978, 74 passed (run table in `pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-lanes-b-kind.md`). Section 9 lists what this guide could not confirm from code.
 Contract: [contract v5](../contracts/contract-v5.md). Plan: [the PoC-6 work plan](../plans/2026-10-09-poc-06-bake-off.md). Decision: [ADR-006](../planning/adr/006-agent-engines-default-supported-lanes.md) (Proposed). Tracking: the READMEs of [6a](../../pocs/poc-06a-bake-off-sidecar-lane/README.md), [6b](../../pocs/poc-06b-bake-off-remote-lane/README.md), and [6c](../../pocs/poc-06c-pretrained-slm/README.md). The kit: [packages/bakeoff](../../packages/bakeoff/README.md).
 
 Paths under `chassis/` are `packages/chassis/src/chassis/`. Manifests are under `deploy/kind/poc06/`.

@@ -1,6 +1,6 @@
 # PoC-6 engines on kind: design, exceptions, and what is not yet shown (2026-10-09)
 
-Task T-LANES-B. Command: `deploy/kind/poc06/run.sh up` then `run.sh test` (CI: `.github/workflows/poc06-kind.yml`). Nothing here has run on a cluster yet: the container that wrote it has no kind, no kubectl, and no working Docker. The offline half is `pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_static.py`. The kind half is `test_poc06b_kind_{engines,remote_controls,sidecar_controls}.py`.
+Task T-LANES-B. Command: `deploy/kind/poc06/run.sh up` then `run.sh test` (CI: `.github/workflows/poc06-kind.yml`). It was written in a container with no kind, no kubectl, and no working Docker; the kind half ran in CI, and the results are in "Kind runs" at the end. The offline half is `pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_static.py`. The kind half is `test_poc06b_kind_{engines,remote_controls,sidecar_controls}.py`.
 
 ## What runs where
 
@@ -70,7 +70,7 @@ All in PoC-5's namespaces and cluster: chassis pods in `poc05-agents`, remotes i
 
 **PoC-5 is left alone.** PoC-5's `remote-echo` has the same latent limit: its Python threads would fail. It starts single-threaded, so it works. PoC-6 edits no PoC-5 file, so it is not changed here.
 
-**Not run on a cluster yet.** Two assumptions to check in the first CI run: that `crictl inspect` of a runsc container includes `info.runtimeSpec` (the step fails closed with a message if not), and that containerd's Localhost loader accepts the OCI-format profile as written. `profiles/...` is relative to the kubelet's seccomp directory (`/var/lib/kubelet/seccomp`, suggested: the kubelet default).
+**Checked on a cluster (kind runs 4 to 6).** Both assumptions held: `crictl inspect` of a runsc container includes `info.runtimeSpec`, and containerd's Localhost loader accepts the OCI-format profile as written. `profiles/...` is relative to the kubelet's seccomp directory (`/var/lib/kubelet/seccomp`, suggested: the kubelet default).
 
 ## What the chassis cannot see or control for kagent-adk (this slice)
 
@@ -79,9 +79,9 @@ All in PoC-5's namespaces and cluster: chassis pods in `poc05-agents`, remotes i
 - The runtime's own telemetry and its state (OTEL is set off in the manifest; in-memory task store).
 - Kagent's controller, Substrate, and PostgreSQL are not part of this slice, so nothing here says what they would do to the admission rules or the memory budget.
 
-## What CI will first show (expectation)
+## What CI was expected to show (written before the first run)
 
-Not run. Likely first failures, in order: (1) a gVisor start problem on the runner (as for `remote-lane.yml`); (2) the Claude pod's memory or startup time under gVisor; (3) smolagents or OpenAI Agents SDK tool names against the gateway; (4) the fake-model script's reach for the Claude smoke and simplifier (the CLI's trailing system turns); (5) the kagent source build (network clone, uv sync) and its launcher under gVisor. The kagent tests are real, not xfail.
+The expectation, kept for the record; "Kind runs" at the end has what happened. Likely first failures, in order: (1) a gVisor start problem on the runner (as for `remote-lane.yml`); (2) the Claude pod's memory or startup time under gVisor; (3) smolagents or OpenAI Agents SDK tool names against the gateway; (4) the fake-model script's reach for the Claude smoke and simplifier (the CLI's trailing system turns); (5) the kagent source build (network clone, uv sync) and its launcher under gVisor. The kagent tests are real, not xfail.
 
 ## Update 2026-10-10: first kind run, kagent-adk 403 on the model call
 
@@ -90,3 +90,15 @@ Run: `poc06-kind` 38007359399 (job 114079121220, kind run 4). Result: 70 passed,
 Cause (reproduced locally, details in the probe note, Item 4): the pod runs with the OTel exporters `none`, so kagent's `instrument_app` does not instrument the app and the inbound `traceparent` is dropped; and the model client uses `httpx2`, which the httpx instrumentor does not patch. The probe's "same trace id reached the model" was measured on 0.4.0 from PyPI with exporters on. It does not hold for the source build at the pin.
 
 Fix: `run_kagent_adk.py` in `deploy/kind/poc06/kagent/remote-kagent-adk.yaml` now registers `TraceparentPassthroughPlugin` after `LLMPassthroughPlugin`. It copies the inbound `traceparent` onto every model request through a request hook on the model's client. The bearer passthrough is unchanged. The exporters stay off. Offline tests: `tests/test_poc06b_kagent_traceparent.py`. Not yet shown on kind: that waits for the next `poc06-kind` run.
+
+## Kind runs (CI, `poc06-kind.yml`)
+
+| Run | Head | Result |
+| --- | ---- | ------ |
+| 38001700054 (run 1) | `fa7fe99` | `Up` failed: `remote-typescript` crash-looped, Node's `uv_thread_create` assertion. Cause: runsc turns RuntimeDefault's `clone3 -> ENOSYS` into EPERM ("gVisor and clone3" above) |
+| 38005452147 (run 2; run 3 on `0e1655a` the same) | `e025021` | `Up` failed in the `seccomp` step: `derive_profile: baseline: the input allows syscalls it must not: ['ptrace']`. containerd allows `ptrace` with no capability on kernel 4.8 and later; it left the deny list. The source-pod checks and `crictl inspect` worked |
+| 38007359399 (run 4) | `d8ea82d` | `Up` green, every PoC-6 gVisor Sandbox Ready. 70 passed, 1 xfailed (Claude lookup), 3 failed (kagent-adk, 403 `run_required`; the update above) |
+| 38010118212 (run 5) | `e28a584` | 71 passed, 3 failed (kagent-adk only). The Claude lookup passed once the fake model answered the prefixed tool name; the token scrub broke nothing |
+| 38010290978 (PR run) and 38010210641 (push run) | `0248655` | **74 passed**, no skip, no xfail. Every pod Running with 0 restarts. The profile's sha256 on the node: `916fe642...`, the one changed rule `clone3` |
+
+So on kind, under gVisor with the Localhost profile, every remote engine (TypeScript, smolagents, Claude Agent SDK, kagent-adk) and every sidecar engine of this slice (OpenAI Agents SDK, TypeScript) passes smoke, simplifier, and lookup through its chassis, and the remote and sidecar controls (`test_poc06b_kind_remote_controls.py`, `test_poc06b_kind_sidecar_controls.py`) pass, including the thread start, `Seccomp: 2`, and the refused namespace and mount checks.
