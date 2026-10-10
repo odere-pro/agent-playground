@@ -49,7 +49,7 @@ What smolagents' `LocalPythonExecutor` allows (checked in `tests/test_echo_smola
 - Tools: `final_answer` and the MCP tools, called as functions.
 - A run of generated code is cut after `ctx.budget.timeout_ms`.
 
-That is an AST interpreter with deny lists, not a security boundary. Its own docs say so, and escapes are found now and then. The in-process executor is the reason the lane is `remote`: the real boundary is the gVisor sandbox pod, no key in it, egress only to the chassis. The process holds no key, so the worst code can reach is the chassis proxies and what the pod's network allows.
+That is an AST interpreter with deny lists, not a security boundary. Its own docs say so, and escapes are found now and then. The in-process executor is the reason the lane is `remote`: the real boundary is the gVisor sandbox pod, no key in it, egress only to the chassis. The process holds no provider key. It does hold its per-remote bearer token (`CHASSIS_API_TOKEN`), and model-written code can read it. That token works only from inside this pod: the NetworkPolicy lets only the pod's own chassis in, and the chassis remote proxy also needs the `traceparent` of a run in flight. The chassis scrubs that exact token from every event it reads back (contract v5). So the worst code can reach is the chassis proxies and what the pod's network allows.
 
 What it writes to disk: nothing. A test runs the lookup and a refused `import os` with `cwd`, `HOME`, and the temp dir empty, and checks they stay empty. The executor keeps state in memory only.
 

@@ -40,9 +40,13 @@ jobs:
       KUBECTL_SHA256: 6129359f4e1f3848a5572ccb0b26cf28b8ca08cef38c95a765b2f64a2c961a2f  # pragma: allowlist secret (public sha256)
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # PR code runs `run.sh up`: it gets no stored token.
+          persist-credentials: false
       - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0
         with:
-          enable-cache: true
+          # No uv cache on pull_request: PR code cannot poison what a push run restores.
+          enable-cache: ${{ github.event_name != 'pull_request' }}
       - name: Sync
         run: uv sync --all-packages --frozen
       - name: Install kind
