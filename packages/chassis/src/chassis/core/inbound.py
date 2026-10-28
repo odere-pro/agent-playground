@@ -248,6 +248,9 @@ PUBLIC_MESSAGES: Mapping[str, str] = {
     "idempotency_key_required": "this is a write tool; call it inside a run",
     "tool_denied": "this tool is not allowed for this service",
     "tool_unavailable": "the tool could not be reached; retry later",
+    # Guardrail codes (PoC-7, 022 H-6): a guard stage refused the text, or could not check it.
+    "guardrail_blocked": "a guardrail blocked this content",
+    "guardrail_unavailable": "the guardrails cannot check content now; retry later",
 }
 """suggested: the fixed text the OpenAI and Anthropic interfaces send for a run error. An exception
 or a connector message can carry internal URLs or an upstream body, so it stays in the log and the

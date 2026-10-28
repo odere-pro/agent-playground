@@ -54,6 +54,7 @@ from chassis.server.manifest import mount_manifest
 from chassis.server.pipeline import RunPipeline
 from chassis.server.readiness import ProbeSettings, ReadinessMonitor, Reason, not_ready_reason
 from chassis.server.results import ResultPublisher
+from chassis.server.security import install_security
 
 
 class Health(BaseModel):
@@ -187,5 +188,6 @@ def create_app(
 
     mount_manifest(app)
     mount_interfaces(app, config)  # last
+    install_security(app)  # PoC-7: caller auth and scopes, outside the body limit
     app.add_middleware(CloseWhenDraining, state=app.state)  # public only, never the proxy app
     return app

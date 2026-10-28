@@ -22,7 +22,8 @@ a longer run, and the run's own `budget.timeout_ms` bounds it. FastMCP merges th
 headers into the call (all but `authorization`, `cookie`, and a few hop headers), and in some paths
 a caller's header wins over the client's own. So a request hook (`_run_headers`) runs last, after
 every merge: it keeps only the transport headers the client sets and `FORWARDED_HEADERS`
-(`traceparent`, `tracestate`, `Idempotency-Key`), drops everything else the caller sent, and sets
+(`traceparent`, `tracestate`, `Idempotency-Key`), copies the MCP caller's `Authorization` from
+the inbound request (PoC-7, `server.security`), drops everything else the caller sent, and sets
 `x-chassis-interface: mcp` itself, so an MCP caller cannot claim another interface. A non-2xx answer
 is an MCP tool error; a run that ends with `status: error` is a 200 envelope, so a tool result
 that is not `isError` (a known gap, section 4).
@@ -34,6 +35,7 @@ from typing import Any
 
 import httpx2
 from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.providers.openapi import MCPType, RouteMap
 
 __all__ = ["FORWARDED_HEADERS", "INTERFACE_HEADER", "RUN_OPERATION", "RUN_PATH", "build_agent_mcp"]
@@ -61,11 +63,16 @@ _TRANSPORT_HEADERS = frozenset(
 
 
 async def _run_headers(request: httpx2.Request) -> None:
-    """The last word on the inner call's headers: transport and correlation headers only, and the
-    interface marker set here, after every merge FastMCP did."""
+    """The last word on the inner call's headers: transport and correlation headers only, the
+    MCP caller's own `Authorization` (PoC-7: `/v1/run` checks the caller's token again; the
+    in-process hop is never trusted by address), and the interface marker set here, after every
+    merge FastMCP did."""
     for name in {key.lower() for key in request.headers}:
         if name not in _TRANSPORT_HEADERS and name not in FORWARDED_HEADERS:
             del request.headers[name]
+    caller = get_http_headers(include={"authorization"}).get("authorization")
+    if caller:
+        request.headers["authorization"] = caller
     request.headers[INTERFACE_HEADER] = "mcp"
 
 

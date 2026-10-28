@@ -20,6 +20,11 @@ lists now, not what it listed at startup (review H1). Every app that mounts `/mc
 `lifespan_app` (the proxy, and the remote listener when it is on) shares one MCP server, and the
 tools port is started and stopped once (review L1).
 
+PoC-7: with a guardrail port and `spec.guardrails.tool_output` on, `/mcp` serves the tools through
+`chassis.server.guard.GuardedTools`, so each result passes the `tool_output` stage before the
+workload reads it; a blocked result is the MCP tool error `guardrail_blocked`. The lifecycle below
+stays on the port itself.
+
 A tools port with a lifecycle (the gateway adapter, plan section 2.7: `refresh`, `start`,
 `aclose`) is started here: the first `await refresh()` fills its cached list before `/mcp` opens,
 `start()` begins the background refresh, and `aclose()` stops it on shutdown. A failed first
@@ -43,7 +48,9 @@ from chassis.adapters.mcp import build_mcp_server
 from chassis.ports.bundle import PortBundle
 from chassis.ports.telemetry import TelemetryPort
 from chassis.ports.tool import ToolPort
+from chassis.server import guard
 from chassis.server.correlation import RunRecord, RunRegistry
+from chassis.server.guard import GuardedTools
 
 PATH = "/mcp"
 REFRESH_FAILED = "chassis.tools.refresh_failed"
@@ -151,9 +158,12 @@ def mount_tool_endpoint(app: FastAPI, lifespan_app: FastAPI | None = None) -> No
 
             await _start_tools(bundle.tools, bundle.telemetry)
             try:
-                mcp_app = build_mcp_server(
-                    bundle.tools, bundle.telemetry, run_of, run_key_for
-                ).http_app(path=PATH, stateless_http=True)
+                served: ToolPort = bundle.tools
+                if guard.enabled(bundle, host.state.config.spec.guardrails, "tool_output"):
+                    served = GuardedTools(bundle.tools, bundle, host.state.config.spec.guardrails)
+                mcp_app = build_mcp_server(served, bundle.telemetry, run_of, run_key_for).http_app(
+                    path=PATH, stateless_http=True
+                )
                 async with mcp_app.router.lifespan_context(mcp_app):
                     for each in endpoints:
                         each.inner = mcp_app

@@ -47,6 +47,7 @@ members = [
   "packages/bakeoff",
   "packages/fake-mcp-server",
   "packages/code-runner",
+  "packages/guardrail-server",
 ]
 
 [tool.uv.sources]
@@ -63,6 +64,7 @@ echo-smolagents = { workspace = true }
 bakeoff = { workspace = true }
 fake-mcp-server = { workspace = true }
 code-runner = { workspace = true }
+guardrail-server = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["packages", "pocs"]
@@ -104,7 +106,7 @@ exclude = [
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["pytest_socket.*", "google.protobuf.*", "vcr.*", "aiokafka.*"]
+module = ["pytest_socket.*", "google.protobuf.*", "vcr.*", "aiokafka.*", "torch.*", "transformers.*"]
 ignore_missing_imports = true
 
 [tool.importlinter]
@@ -120,6 +122,7 @@ root_packages = [
   "bakeoff",
   "fake_mcp_server",
   "code_runner",
+  "guardrail_server",
 ]
 include_external_packages = true
 
@@ -144,6 +147,12 @@ source_modules = ["fake_mcp_server", "code_runner"]
 forbidden_modules = ["chassis", "chassis_contracts"]
 
 [[tool.importlinter.contracts]]
+name = "the guardrail server never imports the chassis (it sits behind LiteLLM, PoC-7)"
+type = "forbidden"
+source_modules = ["guardrail_server"]
+forbidden_modules = ["chassis", "chassis_contracts"]
+
+[[tool.importlinter.contracts]]
 name = "the chassis never imports a workload (no business logic in the chassis)"
 type = "forbidden"
 source_modules = ["chassis"]
@@ -158,6 +167,7 @@ forbidden_modules = [
   "bakeoff",
   "fake_mcp_server",
   "code_runner",
+  "guardrail_server",
 ]
 # `allow_indirect_imports` stays unset so an indirect import counts too. The connector loads
 # `spec.engine.handle` by dotted path at runtime through `importlib`, which this does not see.
