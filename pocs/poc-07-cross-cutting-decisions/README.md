@@ -1,6 +1,6 @@
 # PoC-7: Confirm the cross-cutting stack: security, observability, feedback, and evals
 
-Status: not started
+Status: in progress (opened 2026-10-28). Plan: [docs/plans/2026-10-28-poc-07-cross-cutting.md](../../docs/plans/2026-10-28-poc-07-cross-cutting.md)
 Planning doc: [007-PoC-7-cross-cutting-decisions.md](../../docs/planning/poc/007-PoC-7-cross-cutting-decisions.md)
 Time box: 2–3 weeks
 

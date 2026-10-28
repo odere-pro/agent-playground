@@ -8,6 +8,7 @@ class TestScriptedModel(ModelPortContract):
         return ScriptedModel([...])
 """
 
+from chassis_contracts.auth import AuthPortContract, GoodToken
 from chassis_contracts.config import ConfigPortContract
 from chassis_contracts.engine import (
     JSON_VALUE,
@@ -15,6 +16,9 @@ from chassis_contracts.engine import (
     EngineConnectorContract,
     json_values_handle,
 )
+from chassis_contracts.evaluator import EvaluatorPortContract
+from chassis_contracts.feedback import FeedbackPortContract, make_feedback
+from chassis_contracts.guardrail import GuardrailPortContract, PiiCase
 from chassis_contracts.inbound import InboundAdapterContract
 from chassis_contracts.lane import CASES, LaneCase, LaneContract, LaneFactory
 from chassis_contracts.model import ModelPortContract
@@ -25,14 +29,21 @@ __all__ = [
     "CASES",
     "JSON_VALUE",
     "JSON_VALUES_HANDLE",
+    "AuthPortContract",
     "ConfigPortContract",
     "EngineConnectorContract",
+    "EvaluatorPortContract",
+    "FeedbackPortContract",
+    "GoodToken",
+    "GuardrailPortContract",
     "InboundAdapterContract",
     "LaneCase",
     "LaneContract",
     "LaneFactory",
     "ModelPortContract",
+    "PiiCase",
     "TelemetryPortContract",
     "ToolPortContract",
     "json_values_handle",
+    "make_feedback",
 ]
