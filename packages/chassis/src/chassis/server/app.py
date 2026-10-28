@@ -20,6 +20,10 @@ The config loader (`chassis.server.config_loader`) sets the first config in the 
 store document or the bootstrap `config`, then swaps `app.state.config` on each accepted reload.
 `/ready` is `starting` until the first config is set.
 
+With `spec.harness.evaluator_gate` (PoC-7) the lifespan puts the engine behind the evaluator gate
+(`chassis.server.evaluator_gate.with_gate`) once the first config is set; the gate refuses to start
+with no evaluator.
+
 With `spec.events.result_events` the lifespan adds a `ResultPublisher` (`chassis.server.results`)
 to `pipeline.on_finished`; on the way out it waits for pending publishes, bounded, before the
 ports close.
@@ -56,6 +60,7 @@ from chassis.profiles import LaneNotAllowed, build_ports, check_lane
 from chassis.server.config import ChassisConfig
 from chassis.server.config_loader import ConfigReloader
 from chassis.server.correlation import RunRegistry
+from chassis.server.evaluator_gate import with_gate
 from chassis.server.feedback import (
     FeedbackEvents,
     FeedbackLookup,
@@ -97,8 +102,9 @@ def check_engine(bundle: PortBundle, config: ChassisConfig, *, built: bool) -> N
 
 async def close_ports(bundle: PortBundle) -> None:
     """Close the engine, the model adapter when it has an `aclose()`, the feedback adapter when it
-    has one (PoC-7), the state store, the event port, and the config port when it has an
-    `aclose()` (S3Config holds a client), in that order. Each one closes even when an earlier one
+    has one (PoC-7), the state store, the event port, the config port when it has an `aclose()`
+    (S3Config holds a client), and the evaluator when it has one (PoC-7), in that order. Each one
+    closes even when an earlier one
     raises.
     """
     closers = [
@@ -108,6 +114,7 @@ async def close_ports(bundle: PortBundle) -> None:
         bundle.state.aclose,
         bundle.events.aclose,
         getattr(bundle.config, "aclose", None),
+        getattr(getattr(bundle, "evaluator", None), "aclose", None),
     ]
     async with AsyncExitStack() as stack:
         for closer in reversed(closers):  # the stack runs them last in, first out
@@ -151,6 +158,12 @@ def create_app(
             await close_ports(bundle)
             raise
         app.state.config_reloader = reloader
+        try:  # PoC-7: the evaluator gate wraps the engine, by the first config
+            bundle = app.state.ports = with_gate(bundle, app.state)
+        except BaseException:
+            await reloader.stop()
+            await close_ports(bundle)
+            raise
         publisher = None  # result events: `spec.events` is restart-only, read once here
         if app.state.config.spec.events.result_events:
             publisher = ResultPublisher(app.state)
