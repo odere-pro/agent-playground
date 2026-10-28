@@ -1,4 +1,9 @@
-"""InMemoryTelemetry: records spans, counters, and logs so tests can assert on them."""
+"""InMemoryTelemetry: records spans, counters, and logs so tests can assert on them.
+
+A span opened with a valid W3C `traceparent` attribute takes that header's parent id as its
+`parent_id`, even inside another span (`TelemetryPortContract`, PoC-7). The attribute is kept, as
+every attribute is.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +14,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from chassis.ports.telemetry import Span
+from chassis.tracecontext import parent_span_id
 
 _current: contextvars.ContextVar[Span | None] = contextvars.ContextVar("span", default=None)
 
@@ -23,10 +29,15 @@ class InMemoryTelemetry:
     @contextmanager
     def span(self, name: str, **attributes: Any) -> Iterator[Span]:
         parent = _current.get()
+        parent_id = parent.span_id if parent else None
+        traceparent = attributes.get("traceparent")
+        remote = parent_span_id(traceparent) if isinstance(traceparent, str) else None
+        if remote is not None:
+            parent_id = remote
         span = Span(
             name=name,
             span_id=f"span-{next(self._ids)}",
-            parent_id=parent.span_id if parent else None,
+            parent_id=parent_id,
             attributes=dict(attributes),
         )
         self.spans.append(span)

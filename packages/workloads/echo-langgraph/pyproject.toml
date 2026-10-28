@@ -10,7 +10,8 @@ dependencies = [
   "openai",
   "mcp",
   "httpx2",
-  "workload-a2a",
+  "workload-a2a[otel]",
+  "openinference-instrumentation-langchain>=0.1.80",
 ]
 
 [dependency-groups]
@@ -22,3 +23,6 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-name = "echo_langgraph"
+
+[tool.uv.sources]
+workload-a2a = { workspace = true }

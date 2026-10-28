@@ -28,6 +28,12 @@ the run's trace id and the run span as parent. It travels twice with the same va
 and as the `traceparent` HTTP header on every A2A request of the run (the message and the cancel),
 through a2a-sdk's `ClientCallContext.service_parameters`. The caller's `ctx` is not changed. The
 card fetch in `setup` belongs to no run and carries none.
+
+The run span carries `trace_id` (`trace_id_hex(ctx.trace_id)`), so a telemetry adapter keeps it in
+the run's trace even with no `chassis.run` span around it. PoC-7: when the telemetry adapter has
+`propagation_headers()` (the OTel one does; the port does not require it), its W3C `baggage`
+header (`user.id`, `session.id`) goes on every A2A request of the run next to `traceparent`. It is
+read through `getattr`, so this module imports no telemetry SDK; it never replaces `traceparent`.
 """
 
 from __future__ import annotations
@@ -53,7 +59,7 @@ from pydantic import ValidationError
 from chassis.adapters.a2a.mapping import BadJson, request_to_message, update_to_event
 from chassis.core.envelope import Context, Request
 from chassis.core.events import SCHEMA_VERSION, End, Error, Event, Start, parse_event
-from chassis.core.trace import traceparent_for
+from chassis.core.trace import trace_id_hex, traceparent_for
 from chassis.ports.engine import Lane
 
 if TYPE_CHECKING:
@@ -63,6 +69,21 @@ SPAN_TASK_ID_CAP = 128
 """suggested: characters of the remote's task id kept in the span attribute."""
 CANCEL_TIMEOUT_S = 5.0
 """suggested: the cancel has its own short timeout; the run's budget may already be spent."""
+
+
+PROPAGATED = frozenset({"baggage"})
+"""The headers a telemetry adapter's `propagation_headers()` may add to an A2A request."""
+
+
+def propagation_headers(telemetry: object) -> dict[str, str]:
+    """The telemetry adapter's extra W3C headers (`baggage`), or `{}` when it has none."""
+    extra = getattr(telemetry, "propagation_headers", None)
+    if not callable(extra):
+        return {}
+    headers = extra()
+    if not isinstance(headers, dict):
+        return {}
+    return {k: v for k, v in headers.items() if k in PROPAGATED and isinstance(v, str) and v}
 
 
 class EventTranslator(Protocol):
@@ -180,14 +201,17 @@ class A2AConnector:
         telemetry = self._ports.telemetry
         task_id: str | None = None
         with telemetry.span(
-            "chassis.engine.run", lane=self.kind, request_id=request.request_id
+            "chassis.engine.run",
+            lane=self.kind,
+            request_id=request.request_id,
+            trace_id=trace_id_hex(ctx.trace_id),
         ) as span:
             traceparent = traceparent_for(ctx, span.span_id)
             message = self._message_for(
                 request, ctx.model_copy(update={"traceparent": traceparent})
             )
             translator = self._translator_for(request)
-            headers = {"traceparent": traceparent}
+            headers = {**propagation_headers(telemetry), "traceparent": traceparent}
             call = ClientCallContext(
                 timeout=request.budget.timeout_ms / 1000, service_parameters=dict(headers)
             )

@@ -21,6 +21,7 @@ import httpx2
 from agents.mcp import MCPServerStreamableHttp
 from mcp.types import CallToolResult
 from mcp.types import Tool as MCPTool
+from workload_a2a.telemetry import inject_trace_headers
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +85,11 @@ def build_server(
             timeout=timeout,
             auth=auth,
             follow_redirects=True,
-            event_hooks={} if token else {"request": [_drop_authorization]},
+            event_hooks={
+                "request": [inject_trace_headers]
+                if token
+                else [inject_trace_headers, _drop_authorization]
+            },
         )
 
     return ChassisMcpServer(

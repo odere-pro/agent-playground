@@ -81,10 +81,12 @@ def check_engine(bundle: PortBundle, config: ChassisConfig, *, built: bool) -> N
 
 async def close_ports(bundle: PortBundle) -> None:
     """Close the engine, the model adapter when it has an `aclose()`, the state store, the
-    event port, and the config port when it has an `aclose()` (S3Config holds a client), in
-    that order. Each one closes even when an earlier one raises.
+    event port, the config port when it has an `aclose()` (S3Config holds a client), and last the
+    telemetry adapter when it has one (`OtelTelemetry` flushes its spans), in that order. Each one
+    closes even when an earlier one raises.
     """
     closers = [
+        getattr(getattr(bundle, "telemetry", None), "aclose", None),
         bundle.engine.close,
         getattr(bundle.model, "aclose", None),
         bundle.state.aclose,

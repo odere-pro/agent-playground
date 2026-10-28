@@ -122,8 +122,8 @@ async def test_events_hold_the_record_and_close_it_when_the_engine_ends() -> Non
     telemetry = _telemetry(app)
     runs = [s for s in telemetry.spans if s.name == "chassis.run"]
     assert [s.attributes for s in runs] == [
-        {"request_id": "r1", "agent": "echo", "interface": "native"},
-        {"request_id": "r2", "agent": "echo", "interface": "native"},
+        {"request_id": "r1", "trace_id": "f" * 32, "agent": "echo", "interface": "native"},
+        {"request_id": "r2", "trace_id": "f" * 32, "agent": "echo", "interface": "native"},
     ]
     assert all(s.ended for s in runs)
     assert telemetry.counter_value("chassis.requests", agent="echo", interface="native") == 2

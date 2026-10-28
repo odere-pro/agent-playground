@@ -1,0 +1,46 @@
+# PoC-7 OTel Collector (014 H-7, plan decision 7): the chassis and the workload export OTLP here;
+# the Collector fans traces out to Langfuse and Tempo. Swapping or adding a backend is this file.
+# Minimal on purpose: the Compose stack that runs it (Langfuse v4, Tempo) is owned elsewhere.
+# LANGFUSE_AUTH is base64("<public key>:<secret key>") of the Langfuse project, from the
+# environment, never written here.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch: {}
+  # Named-entity redaction of workload and chassis logs belongs in the Collector, never in the
+  # chassis (ADR-001 memory estimate). Stub: the chassis already redacts emails, phone numbers,
+  # and ids with regex; a Presidio-backed or pattern processor replaces this in PoC-8.
+  transform/redact:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements: []
+
+exporters:
+  otlphttp/langfuse:
+    endpoint: http://langfuse-web:3000/api/public/otel
+    headers:
+      Authorization: "Basic ${env:LANGFUSE_AUTH}"
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/langfuse, otlp/tempo]
+    logs:
+      receivers: [otlp]
+      processors: [transform/redact, batch]
+      exporters: [debug]

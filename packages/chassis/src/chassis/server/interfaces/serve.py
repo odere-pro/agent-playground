@@ -14,8 +14,10 @@ A router validates the body (FastAPI does), resolves the ids (`ids.resolve_ids`)
    lost mid-run (`server.idempotency`, the fence) cancels the run and answers 409
    `idempotency_in_progress`, retryable, in complete mode or before the first delta; later in a
    stream, as an `error` event.
-4. `ids.open_run`, re-minting the trace id when `ids.may_remint` allows; otherwise a trace id in
-   use is `adapter.error("trace_id_in_use", ...)` (native: 409). The claim is released.
+4. `ids.open_run` with `pipeline.observed_for(headers)` (the session header and the caller's
+   `traceparent` on the run span, PoC-7), re-minting the trace id when `ids.may_remint` allows;
+   otherwise a trace id in use is `adapter.error("trace_id_in_use", ...)` (native: 409). The
+   claim is released.
 5. `chassis.inbound_ignored{interface, param}` (suggested) once per name in `ignored`.
 6. Complete: the whole run, then `adapter.complete(response, meta)`. With `errors_as_http`, a run
    that had an `error` event is `adapter.error(code, message, retryable, meta)` instead. With
@@ -194,7 +196,13 @@ async def serve[BodyT](
             budget = request.budget.model_copy(update={"timeout_ms": claim.timeout_ms})
             request = request.model_copy(update={"budget": budget})
     try:
-        run = open_run(pipeline, request, interface=interface, remint=may_remint(ids, interface))
+        run = open_run(
+            pipeline,
+            request,
+            interface=interface,
+            remint=may_remint(ids, interface),
+            observed=pipeline.observed_for(headers),
+        )
     except TraceIdInUse as exc:
         if claim is not None:
             await claim.release()

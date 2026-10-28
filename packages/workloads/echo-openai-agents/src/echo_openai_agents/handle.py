@@ -14,7 +14,10 @@ error codes as echo-python and echo-pydanticai; the framework mapping is in `map
   processor is registered (`set_trace_processors([])`), and `tracing_disabled` is set globally and
   on each run's `RunConfig`. Nothing is ever sent to OpenAI.
 - `ctx["traceparent"]`, when set, is a default header on both HTTP clients, so every model call
-  and every MCP request carries it (contract v1 decision 4). A plain header, no OpenTelemetry.
+  and every MCP request carries it (contract v1 decision 4). PoC-7: when the workload's tracing is
+  on (`workload_a2a.telemetry`), the OpenInference instrumentor is the SDK's only trace processor
+  (`telemetry.py`), the run's `RunConfig` has tracing on, and a request hook on both clients
+  replaces that header with the current span's `traceparent` and `baggage`. Off, as before.
 - No model key. In the `remote` lane `CHASSIS_API_TOKEN`, when set and not empty, is the bearer on
   every model call and MCP request. Unset, the client gets a placeholder key and the
   `Authorization` header is dropped before each request leaves. No `*_API_KEY` variable is read.
@@ -49,7 +52,9 @@ from agents import (
 from agents.mcp import MCPServer
 from agents.tracing import set_trace_processors
 from openai import AsyncOpenAI
+from workload_a2a import telemetry as workload_telemetry
 
+from echo_openai_agents import telemetry as engine_telemetry
 from echo_openai_agents import tools
 from echo_openai_agents.mapping import EventMapper, ToolLoopExceeded, error_event, event
 
@@ -77,6 +82,8 @@ PLACEHOLDER_API_KEY = "not-a-key"  # pragma: allowlist secret (a placeholder, no
 set_trace_processors([])
 set_tracing_disabled(True)
 
+workload_telemetry.register_instrumentor(engine_telemetry.instrument)
+
 transport: httpx2.AsyncBaseTransport | None = None
 """Test-only hook: when set, model calls go through this `httpx2` transport, not a socket. The
 MCP hook is `echo_openai_agents.tools.transport`."""
@@ -100,8 +107,14 @@ def _model_client(headers: dict[str, str], timeout: float, token: str | None) ->
         headers=headers,
         timeout=timeout,
         follow_redirects=True,
-        event_hooks={} if token else {"request": [_drop_authorization]},
+        event_hooks={"request": _request_hooks(token)},
     )
+
+
+def _request_hooks(token: str | None) -> list[Any]:
+    """The trace headers on every request; without a remote token, no `Authorization` either."""
+    hooks: list[Any] = [workload_telemetry.inject_trace_headers]
+    return hooks if token else [*hooks, _drop_authorization]
 
 
 class _RoundLimit(RunHooks[Any]):
@@ -167,7 +180,7 @@ async def handle(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[di
                 text,
                 max_turns=MAX_TOOL_ROUNDS + 1,
                 hooks=_RoundLimit(),
-                run_config=RunConfig(tracing_disabled=True),
+                run_config=RunConfig(tracing_disabled=not engine_telemetry.TRACING.enabled),
             )
             try:
                 async for ev in result.stream_events():
