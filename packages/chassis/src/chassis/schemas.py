@@ -16,6 +16,7 @@ from chassis.core.envelope import Context, Request, Response, TaskInput
 from chassis.core.events import SCHEMA_VERSION, event_json_schema
 from chassis.core.manifest import MANIFEST_VERSION, Manifest
 from chassis.core.results import TaskResult
+from chassis.ports.feedback import FEEDBACK_SCHEMA_VERSION, FeedbackReceived
 from chassis.server.config import ChassisConfig
 
 CONFIG_SCHEMA_VERSION = "0"
@@ -36,6 +37,7 @@ def generate() -> dict[str, dict[str, Any]]:
         f"manifest.v{MANIFEST_VERSION}.json": Manifest.model_json_schema(),
         f"chassis-config.v{CONFIG_SCHEMA_VERSION}.json": ChassisConfig.model_json_schema(),
         f"task-result.v{TASK_RESULT_SCHEMA_VERSION}.json": TaskResult.model_json_schema(),
+        f"feedback.v{FEEDBACK_SCHEMA_VERSION}.json": FeedbackReceived.model_json_schema(),
     }
 
 

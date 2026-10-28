@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 import pytest
 from chassis.ports.feedback import Feedback, FeedbackError, FeedbackPort
@@ -64,6 +65,13 @@ class FeedbackPortContract:
         self, feedback_port: FeedbackPort, read_feedback: ReadFeedback
     ) -> None:
         feedback = make_feedback(score=0.0, label=None, comment=None, subject=None)
+        await feedback_port.submit(feedback)
+        assert read_feedback(feedback.feedback_id) == feedback
+
+    async def test_a_timestamp_is_kept(
+        self, feedback_port: FeedbackPort, read_feedback: ReadFeedback
+    ) -> None:
+        feedback = make_feedback(timestamp=datetime(2026, 10, 28, 12, 0, tzinfo=UTC))
         await feedback_port.submit(feedback)
         assert read_feedback(feedback.feedback_id) == feedback
 
