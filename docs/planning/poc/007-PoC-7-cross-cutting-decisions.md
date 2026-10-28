@@ -63,5 +63,6 @@ For two engines, one trace shows the whole call: chassis, engine steps in the wo
 
 - Plan: [000-plan.md](000-plan.md) · Previous: [PoC-6](006-PoC-6-framework-bake-off.md) · Next: [PoC-8](008-PoC-8-build-cross-cutting.md)
 - Decision it builds on: [ADR-001](../adr/001-chassis-delivery-model.md)
+- Decisions it proposes: [ADR-007](../adr/007-observability-otel-collector-langfuse.md) (observability), [ADR-008](../adr/008-security-identity-guardrails-defense-in-depth.md) (security), [ADR-009](../adr/009-feedback-langfuse-scores-event.md) (feedback), [ADR-010](../adr/010-evals-offline-tool-online-gate.md) (evals); the wire contract is [contract v6](../../contracts/contract-v6.md)
 - Backlog issues this informs: [022 H-6](../issues/022-H-6-security-middleware.md), [014 H-7](../issues/014-H-7-observability.md), [017 H-4](../issues/017-H-4-harness-features.md), [037 M-2](../issues/037-M-2-eval-gate-ci.md), [023 C-5](../issues/023-C-5-ai-generated-marking.md)
 - Epic: [B.2](../slm-agent-platform-epic-v3.md#b2), [G.2](../slm-agent-platform-epic-v3.md#g2), [G.3](../slm-agent-platform-epic-v3.md#g3), [E.5](../slm-agent-platform-epic-v3.md#e5), [R5](../slm-agent-platform-epic-v3.md#r5)

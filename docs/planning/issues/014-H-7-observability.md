@@ -25,6 +25,7 @@ Every call must be traced, and the Phase 0 done-when says the echo agent appears
 - A `TelemetryPort` adapter, so the core never calls OpenTelemetry directly.
 - A default per-agent Grafana dashboard (G.2): requests, latency, errors, tokens, cost, and fallback rate.
 - Docker Compose services for Prometheus, Grafana, Loki, Tempo, and Langfuse, so telemetry can be seen locally.
+- Proposed in PoC-7 ([ADR-007](../adr/007-observability-otel-collector-langfuse.md), [contract v6](../../contracts/contract-v6.md); the user accepts it at the PoC-7 pull request): `OtelTelemetry` (OTLP over HTTP) behind `TelemetryPort`; the run span on the request's W3C trace id; every process exports to one OpenTelemetry Collector, which fans out to Langfuse v4 and a second backend (Jaeger in PoC-7, Tempo for production); user and session ids as W3C `baggage` over A2A, never as `Context` fields; sampling in the Collector. The PoC-7 results are added when it closes.
 
 ## Reuse
 

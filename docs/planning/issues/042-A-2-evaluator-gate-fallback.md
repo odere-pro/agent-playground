@@ -24,6 +24,7 @@ The top quality risk is that the simplifier drops facts. This issue guards every
 - The envelope `status` is `ok`, `retry`, or `fallback`. `metrics` carries the score, the attempt count, and the route that answered.
 - Suggested: if the evaluator fails or times out, treat it as a failed check and fall back, so no unchecked SLM answer is returned.
 - Pass, retry, and fallback counters, plus the judge's tokens and cost per agent (004 G-2).
+- Proposed in PoC-7 ([ADR-010](../adr/010-evals-offline-tool-online-gate.md); the user accepts it at the PoC-7 pull request): the gate wraps the engine in the chassis, with sync and async modes and a sample rate per request id; `judge` (through `ModelPort`) and `encoder` (an HTTP classifier) are the two evaluator adapters. Whether this issue keeps the `evaluator-facts` agent behind `EvaluatorPort` stays open there.
 
 ## Out of scope
 
