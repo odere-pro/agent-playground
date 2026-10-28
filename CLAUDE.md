@@ -12,8 +12,11 @@ The service chassis for the SLM agent platform and the nine PoC iterations that 
 - `packages/workloads` what runs behind the chassis, one folder per workload (PoC-6 adds `echo-openai-agents`, `echo-smolagents`, `echo-claude-agent`).
 - `packages/bakeoff` the PoC-6 bake-off kit: `python -m bakeoff smoke|run`, one `/v1/run` per engine, lane, and task.
 - `packages/workload-a2a` the template A2A server a Python workload ships with; never imports `chassis` (ADR-002).
+- `packages/guardrail-server` the injection and secret check behind LiteLLM's generic guardrail API (Prompt Guard 2, or a pattern stand-in offline), plus a LiteLLM stub for tests (PoC-7).
+- `packages/fake-langfuse` a fake of the Langfuse scores and OTLP routes for offline tests (PoC-7).
+- `evals/` the eval tool configs run on the golden set: `deepeval/` (the CI pick) and `promptfoo/` (PoC-7 trial).
 - `pocs/poc-NN-<slug>` one iteration: README (checklist), CLAUDE.md, `tests/`, `demo/`, `notes/`. `pocs/CURRENT` names the one in progress.
-- `deploy/` compose (PoC-4 scale stack: `compose/scale.sh`), kind (PoC-4: `kind/run.sh`; PoC-5: `kind/poc05/`, `make kind-poc05`; PoC-6: `kind/poc06/`, `make kind-poc06`, kagent-adk built from pinned source; `compose/poc06/` for the Mac run), helm (PoC-9, empty). `scripts/poc06_mac.sh` is the one Mac command (`make poc06-mac`). `docs/` planning, contracts, guides (chassis modules: `guides/chassis-reference.md`, PoC-4: `guides/poc-04-how-it-works.md`, PoC-5: `guides/poc-05-how-it-works.md`, PoC-6: `guides/poc-06-how-it-works.md`), templates, `plans/`.
+- `deploy/` compose (PoC-4 scale stack: `compose/scale.sh`), kind (PoC-4: `kind/run.sh`; PoC-5: `kind/poc05/`, `make kind-poc05`; PoC-6: `kind/poc06/`, `make kind-poc06`, kagent-adk built from pinned source; `compose/poc06/` for the Mac run); PoC-7: `compose/poc07/stack.sh` (Langfuse v4, OTel Collector, Jaeger), `agent-scan/` (Snyk Agent Scan in a sandbox), helm (PoC-9, empty). `scripts/poc06_mac.sh` is the one Mac command (`make poc06-mac`). `docs/` planning, contracts, guides (chassis modules: `guides/chassis-reference.md`, PoC-4: `guides/poc-04-how-it-works.md`, PoC-5: `guides/poc-05-how-it-works.md`, PoC-6: `guides/poc-06-how-it-works.md`), templates, `plans/`.
 
 ## Commands
 
