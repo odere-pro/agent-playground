@@ -11,6 +11,7 @@ One folder per iteration of the PoC track in [docs/planning/poc/000-plan.md](../
 | `poc-05-sandboxed` | [005](../docs/planning/poc/005-PoC-5-sandboxed.md) | Can untrusted code run in the `remote` lane without reaching anything? |
 | `poc-06a-bake-off-sidecar-lane` | [006](../docs/planning/poc/006-PoC-6-framework-bake-off.md) | Which trusted frameworks to support, and which is the default? |
 | `poc-06b-bake-off-remote-lane` | [006](../docs/planning/poc/006-PoC-6-framework-bake-off.md) | Which untrusted frameworks and which remote solution does the chassis front? |
+| `poc-06c-pretrained-slm` | [006c](../docs/planning/poc/006c-PoC-6c-pretrained-slm.md) | Can the agent pods run their tasks on a pre-trained SLM, with no change to the workload or the chassis? |
 | `poc-07-cross-cutting-decisions` | [007](../docs/planning/poc/007-PoC-7-cross-cutting-decisions.md) | Does the chosen stack give security, observability, feedback, and evals to every engine? |
 | `poc-08-cross-cutting-build` | [008](../docs/planning/poc/008-PoC-8-build-cross-cutting.md) | Do those designs work end to end on every engine? |
 | `poc-09-agent-mvp-template` | [009](../docs/planning/poc/009-PoC-9-agent-mvp-template.md) | Can a new agent be scaffolded and running in under a day? |

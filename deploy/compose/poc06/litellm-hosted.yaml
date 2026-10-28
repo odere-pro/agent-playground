@@ -1,0 +1,52 @@
+# PoC-6 Mac run: LiteLLM alone, in its own Compose project (`poc06mac`) and network. The Mac
+# script starts it for the hosted and slm steps:
+#   docker compose -p poc06mac -f deploy/compose/poc06/litellm-hosted.yaml up -d --wait
+# Routes: litellm.config.yaml (`big-default` hosted, `local-small` on the host's llama-server).
+#
+# Secrets. No value in this file. The script puts three variables in the environment of the
+# `docker compose` command only, and Compose hands them to this one container:
+#   POC06_LITELLM_KEY      generated per run; becomes the proxy's master key. The chassis gets the
+#                          same value as its LiteLLM key. It is not the provider key.
+#   POC06_HOSTED_API_KEY   the provider key, read from deploy/compose/.env under the name in
+#                          POC06_HOSTED_KEY_ENV. Only this container sees it (ADR-001 item 1).
+#   POC06_HOSTED_MODEL     the LiteLLM model string of `big-default`. Not a secret.
+# No chassis, workload, or fake server is here, and none gets a provider key.
+# Image: the same pinned digest as ../docker-compose.yaml.
+
+name: poc06mac
+
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.103.0@sha256:bd089afdcd35b894b14a93f9743cdc8b591f82da1a38dd43a010a7b0c9de5fd7
+    command: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - ./litellm.config.yaml:/etc/litellm/config.yaml:ro
+      - ../litellm/token_log.py:/etc/litellm/token_log.py:ro
+    environment:
+      LITELLM_MASTER_KEY: ${POC06_LITELLM_KEY:?set by scripts/poc06_mac.sh}
+      POC06_HOSTED_API_KEY: ${POC06_HOSTED_API_KEY:-unused}
+      POC06_HOSTED_MODEL: ${POC06_HOSTED_MODEL:-openai/gpt-4o-mini}
+      POC06_LLAMA_BASE: http://host.docker.internal:${POC06_LLAMA_PORT:-8089}/v1
+      LITELLM_LOG: INFO
+      # Use the cost map bundled in the pinned image; never download one at run time.
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+    ports:
+      # The host's bakeoff processes call this. Loopback only.
+      - "127.0.0.1:${POC06_LITELLM_PORT:-14000}:4000"
+    healthcheck:
+      # No curl in the LiteLLM image; python is on PATH.
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=3).status == 200 else 1)"
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+
+networks:
+  default:
+    name: poc06mac

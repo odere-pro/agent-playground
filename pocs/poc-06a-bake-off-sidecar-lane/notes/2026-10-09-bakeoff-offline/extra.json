@@ -1,0 +1,434 @@
+[
+  {
+    "engine": "echo-python",
+    "lane": "sidecar",
+    "rss_idle_kb": 89056,
+    "rss_warm_kb": 93496,
+    "rss_peak_kb": 95740,
+    "rss_after_kb": 95700,
+    "stream": {
+      "simplifier": {
+        "deltas_min": 13,
+        "deltas_median": 13.0,
+        "deltas_max": 13,
+        "ttft_p50_ms": 54.48635499988086,
+        "gap_mean_ms": 0.493135566678878,
+        "total_p50_ms": 61.91579799997271,
+        "event_types": [
+          "delta",
+          "end",
+          "metrics",
+          "response",
+          "start"
+        ]
+      },
+      "lookup": {
+        "deltas_min": 11,
+        "deltas_median": 11.0,
+        "deltas_max": 11,
+        "ttft_p50_ms": 120.50147650006693,
+        "gap_mean_ms": 0.7062824700187775,
+        "total_p50_ms": 130.16346750009689,
+        "event_types": [
+          "delta",
+          "end",
+          "metrics",
+          "response",
+          "start",
+          "tool_call"
+        ]
+      }
+    },
+    "cold_start_ms": [
+      1375.3657429997475,
+      1395.316985000136,
+      1537.7406899997368,
+      1320.0064290003866,
+      1323.2967990006728
+    ],
+    "router_keys": {
+      "calls": 3,
+      "sent_keys": [
+        "messages",
+        "model",
+        "stream",
+        "stream_options",
+        "tools"
+      ],
+      "dropped_by_proxy": [
+        "stream_options"
+      ],
+      "kept_by_proxy": [
+        "messages",
+        "model",
+        "stream",
+        "tools"
+      ]
+    }
+  },
+  {
+    "engine": "echo-pydanticai",
+    "lane": "sidecar",
+    "rss_idle_kb": 134080,
+    "rss_warm_kb": 140220,
+    "rss_peak_kb": 142780,
+    "rss_after_kb": 142660,
+    "stream": {
+      "simplifier": {
+        "deltas_min": 13,
+        "deltas_median": 13.0,
+        "deltas_max": 13,
+        "ttft_p50_ms": 37.49337249973905,
+        "gap_mean_ms": 1.3039868000002268,
+        "total_p50_ms": 55.137348999778624,
+        "event_types": [
+          "delta",
+          "end",
+          "metrics",
+          "response",
+          "start"
+        ]
+      },
+      "lookup": {
+        "deltas_min": 11,
+        "deltas_median": 11.0,
+        "deltas_max": 11,
+        "ttft_p50_ms": 98.42339950000678,
+        "gap_mean_ms": 1.4455188899955829,
+        "total_p50_ms": 120.72294500012504,
+        "event_types": [
+          "delta",
+          "end",
+          "metrics",
+          "response",
+          "start",
+          "tool_call"
+        ]
+      }
+    },
+    "cold_start_ms": [
+      2864.948798000114,
+      3632.462654999472,
+      2803.2728119997046,
+      2717.592494999735,
+      2752.771882000161
+    ],
+    "router_keys": {
+      "calls": 3,
+      "sent_keys": [
+        "messages",
+        "model",
+        "stream",
+        "stream_options",
+        "tool_choice",
+        "tools"
+      ],
+      "dropped_by_proxy": [
+        "stream_options",
+        "tool_choice"
+      ],
+      "kept_by_proxy": [
+        "messages",
+        "model",
+        "stream",
+        "tools"
+      ]
+    }
+  },
+  {
+    "engine": "echo-langgraph",
+    "lane": "sidecar",
+    "rss_idle_kb": 135740,
+    "rss_warm_kb": 140124,
+    "rss_peak_kb": 141816,
+    "rss_after_kb": 141852,
+    "stream": {
+      "simplifier": {
+        "deltas_min": 13,
+        "deltas_median": 13.0,
+        "deltas_max": 13,
+        "ttft_p50_ms": 56.51256700002705,
+        "gap_mean_ms": 0.8370571166551599,
+        "total_p50_ms": 68.5203109997019,
+        "event_types": [
+          "delta",
+          "end",
+          "metrics",
+          "response",
+          "start"
+        ]
+      },
+      "lookup": {
+        "deltas_min": 11,
+        "deltas_median": 11.0,
+        "deltas_max": 11,
+        "ttft_p50_ms": 139.25066350020643,
+        "gap_mean_ms": 0.8130934899872955,
+        "total_p50_ms": 147.28769000021202,
+        "event_types": [
+          "delta",
+          "end",
+          "metrics",
+          "response",
+          "start",
+          "tool_call"
+        ]
+      }
+    },
+    "cold_start_ms": [
+      2327.389365000272,
+      2480.1518410004064,
+      2282.183895000344,
+      2517.332245000034,
+      2438.0818150002597
+    ],
+    "router_keys": {
+      "calls": 3,
+      "sent_keys": [
+        "messages",
+        "model",
+        "stream",
+        "stream_options",
+        "tools"
+      ],
+      "dropped_by_proxy": [
+        "stream_options"
+      ],
+      "kept_by_proxy": [
+        "messages",
+        "model",
+        "stream",
+        "tools"
+      ]
+    }
+  },
+  {
+    "engine": "echo-openai-agents",
+    "lane": "sidecar",
+    "rss_idle_kb": 120852,
+    "rss_warm_kb": 132128,
+    "rss_peak_kb": 133816,
+    "rss_after_kb": 133612,
+    "stream": {
+      "simplifier": {
+        "deltas_min": 13,
+        "deltas_median": 13.0,
+        "deltas_max": 13,
+        "ttft_p50_ms": 43.75614150012552,
+        "gap_mean_ms": 0.7841960000026423,
+        "total_p50_ms": 52.91435499975705,
+        "event_types": [
+          "delta",
+          "end",
+          "metrics",
+          "response",
+          "start"
+        ]
+      },
+      "lookup": {
+        "deltas_min": 11,
+        "deltas_median": 11.0,
+        "deltas_max": 11,
+        "ttft_p50_ms": 107.12007700021786,
+        "gap_mean_ms": 0.9517155900175567,
+        "total_p50_ms": 116.67179200003375,
+        "event_types": [
+          "delta",
+          "end",
+          "metrics",
+          "response",
+          "start",
+          "tool_call"
+        ]
+      }
+    },
+    "cold_start_ms": [
+      2415.9874980005043,
+      2226.1809060000814,
+      2398.4443649997047,
+      2590.6454880005185,
+      2456.0549529996933
+    ],
+    "router_keys": {
+      "calls": 3,
+      "sent_keys": [
+        "messages",
+        "model",
+        "stream",
+        "tools"
+      ],
+      "dropped_by_proxy": [],
+      "kept_by_proxy": [
+        "messages",
+        "model",
+        "stream",
+        "tools"
+      ]
+    }
+  },
+  {
+    "engine": "echo-typescript",
+    "lane": "sidecar",
+    "rss_idle_kb": 96140,
+    "rss_warm_kb": 98868,
+    "rss_peak_kb": 117732,
+    "rss_after_kb": 117732,
+    "stream": {
+      "simplifier": {
+        "deltas_min": 13,
+        "deltas_median": 13.0,
+        "deltas_max": 13,
+        "ttft_p50_ms": 29.42062599959172,
+        "gap_mean_ms": 0.3461135666687672,
+        "total_p50_ms": 34.7774229994684,
+        "event_types": [
+          "delta",
+          "end",
+          "metrics",
+          "response",
+          "start"
+        ]
+      },
+      "lookup": {
+        "deltas_min": 11,
+        "deltas_median": 11.0,
+        "deltas_max": 11,
+        "ttft_p50_ms": 61.60574200021074,
+        "gap_mean_ms": 0.32685375999790267,
+        "total_p50_ms": 65.51153149985112,
+        "event_types": [
+          "delta",
+          "end",
+          "metrics",
+          "response",
+          "start",
+          "tool_call"
+        ]
+      }
+    },
+    "cold_start_ms": [
+      418.40778199912165,
+      418.35639200053265,
+      394.03234200017323,
+      390.5792929999734,
+      392.5370529996144
+    ],
+    "router_keys": null
+  },
+  {
+    "engine": "echo-smolagents",
+    "lane": "remote",
+    "rss_idle_kb": 121156,
+    "rss_warm_kb": 126032,
+    "rss_peak_kb": 131608,
+    "rss_after_kb": 131584,
+    "stream": {
+      "simplifier": {
+        "deltas_min": 1,
+        "deltas_median": 1.0,
+        "deltas_max": 1,
+        "ttft_p50_ms": 58.753993999744125,
+        "gap_mean_ms": null,
+        "total_p50_ms": 60.028784499536414,
+        "event_types": [
+          "delta",
+          "end",
+          "metrics",
+          "response",
+          "start"
+        ]
+      },
+      "lookup": {
+        "deltas_min": 1,
+        "deltas_median": 1.0,
+        "deltas_max": 1,
+        "ttft_p50_ms": 131.8803445001322,
+        "gap_mean_ms": null,
+        "total_p50_ms": 134.30195800037836,
+        "event_types": [
+          "delta",
+          "end",
+          "metrics",
+          "response",
+          "start",
+          "tool_call"
+        ]
+      }
+    },
+    "cold_start_ms": [
+      2101.3537879998694,
+      2137.7627640003993,
+      2040.1378730002762,
+      2199.5283149999523,
+      1988.779663999594
+    ],
+    "router_keys": {
+      "calls": 3,
+      "sent_keys": [
+        "messages",
+        "model",
+        "stop"
+      ],
+      "dropped_by_proxy": [
+        "stop"
+      ],
+      "kept_by_proxy": [
+        "messages",
+        "model"
+      ]
+    }
+  },
+  {
+    "engine": "echo-claude-agent",
+    "lane": "remote",
+    "rss_idle_kb": 90716,
+    "rss_warm_kb": 322488,
+    "rss_peak_kb": 335836,
+    "rss_after_kb": 330900,
+    "stream": {
+      "simplifier": {
+        "deltas_min": 13,
+        "deltas_median": 13.0,
+        "deltas_max": 13,
+        "ttft_p50_ms": 548.0864989999645,
+        "gap_mean_ms": 1.11288363333036,
+        "total_p50_ms": 582.3544879999645,
+        "event_types": [
+          "delta",
+          "end",
+          "metrics",
+          "response",
+          "start"
+        ]
+      },
+      "lookup": {
+        "deltas_min": 11,
+        "deltas_median": 11.0,
+        "deltas_max": 11,
+        "ttft_p50_ms": 631.1874120001448,
+        "gap_mean_ms": 1.3247971000237158,
+        "total_p50_ms": 650.077065000005,
+        "event_types": [
+          "delta",
+          "end",
+          "metrics",
+          "response",
+          "start",
+          "tool_call"
+        ]
+      }
+    },
+    "cold_start_ms": [
+      1385.5045569998765,
+      1354.1933639999115,
+      1461.38518799944,
+      1430.014869999468,
+      1351.6732460002459
+    ],
+    "router_keys": null
+  },
+  {
+    "engine": "kagent-adk",
+    "skip": "runs only on kind (poc06-kind.yml)"
+  }
+]

@@ -1,0 +1,108 @@
+"""Point the chassis `RemoteConnector` (a2a-sdk 1.2 client, bearer from env, card URL pinned) at
+a kagent runtime and print what it does. Usage: probe_chassis_remote.py URL OUTDIR
+
+Writes OUTDIR/chassis-run.json (the chassis view: events, the requests the SDK sent, with the
+bearer redacted) and OUTDIR/raw-*.txt (raw JSON-RPC replies for the same message sent with httpx).
+The token is the fixed probe value below; it protects nothing.
+"""
+
+import asyncio
+import json
+import os
+import sys
+
+import httpx
+from chassis.adapters.a2a.remote import RemoteConnector
+from chassis.core.envelope import Budget
+from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.ports.bundle import PortBundle
+from chassis_contracts.helpers import make_context, make_request
+
+URL, OUT = sys.argv[1].rstrip("/"), sys.argv[2]
+TOKEN = "probe-remote-token"
+os.environ["POC06_PROBE_TOKEN"] = TOKEN
+os.makedirs(OUT, exist_ok=True)
+
+
+def redact(h):
+    return {k: ("Bearer <redacted>" if k.lower() == "authorization" else v) for k, v in h.items()}
+
+
+async def main() -> None:
+    sent: list[dict] = []
+    conn = RemoteConnector()
+    bundle = PortBundle(
+        model=ScriptedModel(), engine=conn, config=InMemoryConfig(), telemetry=InMemoryTelemetry()
+    )
+    await conn.setup(
+        {
+            "connector": "remote",
+            "url": URL,
+            "auth": {
+                "scheme": "bearer",
+                "token_env": "POC06_PROBE_TOKEN",
+                "previous_token_env": None,
+            },
+        },
+        bundle,
+    )
+
+    async def hook(request: httpx.Request) -> None:
+        sent.append(
+            {
+                "method": request.method,
+                "url": str(request.url),
+                "headers": redact(dict(request.headers)),
+                "body": request.content.decode()[:3000] if request.content else None,
+            }
+        )
+
+    assert conn._http is not None
+    conn._http.event_hooks["request"].append(hook)
+    card_urls = (
+        [i.url for i in conn._client._card.supported_interfaces]
+        if hasattr(conn._client, "_card")
+        else None
+    )
+    req = make_request(text=os.environ.get("PROBE_TEXT", "Please simplify: the cat sat."))
+    req = req.model_copy(update={"budget": Budget(timeout_ms=30000)})
+    ctx = make_context(req)
+    events = [e.model_dump(mode="json") async for e in conn.run(req, ctx)]
+    await conn.close()
+    json.dump(
+        {"pinned_card_urls": card_urls, "chassis_events": events, "sdk_requests": sent},
+        open(f"{OUT}/chassis-run.json", "w"),
+        indent=2,
+    )
+    print("chassis events:", json.dumps(events))
+
+    # Raw replay of the first SDK message request with httpx, to keep the exact bytes of the reply.
+    msg = next(s for s in sent if s["method"] == "POST" and s["body"])
+    tp = msg["headers"].get("traceparent")
+    async with httpx.AsyncClient(timeout=60, trust_env=False) as c:
+        r = await c.get(
+            f"{URL}/.well-known/agent-card.json", headers={"Authorization": f"Bearer {TOKEN}"}
+        )
+        open(f"{OUT}/raw-agent-card.json", "w").write(r.text)
+        print("card", r.status_code)
+        for name, method in (("stream", "SendStreamingMessage"), ("unary", "SendMessage")):
+            body = json.loads(msg["body"])
+            body["method"] = method
+            body["id"] = f"probe-{name}"
+            hdrs = {
+                k: v
+                for k, v in msg["headers"].items()
+                if k.lower() in ("content-type", "accept", "a2a-version", "traceparent")
+            }
+            hdrs["Authorization"] = f"Bearer {TOKEN}"
+            if name == "unary":
+                hdrs["accept"] = "application/json"
+            async with c.stream("POST", URL, json=body, headers=hdrs) as resp:
+                text = (await resp.aread()).decode()
+            open(f"{OUT}/raw-{name}.txt", "w").write(
+                f"HTTP {resp.status_code} {resp.headers.get('content-type')}\n\n{text}"
+            )
+            print(name, resp.status_code, len(text))
+
+
+asyncio.run(main())

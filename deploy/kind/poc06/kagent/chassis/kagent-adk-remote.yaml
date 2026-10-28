@@ -1,0 +1,29 @@
+# The chassis config for `chassis-kagent-adk-remote`: the remote lane in plain-A2A mode (contract v5
+# draft, part B). kagent-adk sends no `chassis.event`: the connector maps its artifacts to deltas,
+# reads token usage from `kagent.dev/a2a/usage` (suggested), and sends no `context_id`. Tool calls
+# are invisible to the chassis in this mode. The token still goes out as a bearer.
+profile: local
+agent:
+  name: echo-kagent-adk-remote
+  version: 0.0.1
+spec:
+  trust: untrusted
+  adapters:
+    model: litellm
+    config: memory
+    state: valkey
+    telemetry: memory
+    tools: mcp
+    events: none
+  engine:
+    connector: remote
+    protocol: a2a
+    a2a:
+      usage_key: kagent.dev/a2a/usage
+      context_id: omit
+    url: http://remote-kagent-adk.poc05-remote.svc.cluster.local:9000
+    auth:
+      scheme: bearer
+      token_env: REMOTE_TOKEN
+  model:
+    route: fake-chat

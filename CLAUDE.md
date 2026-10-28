@@ -9,14 +9,15 @@ The service chassis for the SLM agent platform and the nine PoC iterations that 
 - `packages/fake-model-server` scripted OpenAI-compatible server for offline tests.
 - `packages/fake-mcp-server` test MCP server: in process for offline tests, behind the MCP gateway on kind (PoC-5).
 - `packages/code-runner` the PoC-5 code-execution tool: an MCP server with one tool, `run_python`, in a gVisor sandbox pod.
-- `packages/workloads` what runs behind the chassis, one folder per workload.
+- `packages/workloads` what runs behind the chassis, one folder per workload (PoC-6 adds `echo-openai-agents`, `echo-smolagents`, `echo-claude-agent`).
+- `packages/bakeoff` the PoC-6 bake-off kit: `python -m bakeoff smoke|run`, one `/v1/run` per engine, lane, and task.
 - `packages/workload-a2a` the template A2A server a Python workload ships with; never imports `chassis` (ADR-002).
 - `pocs/poc-NN-<slug>` one iteration: README (checklist), CLAUDE.md, `tests/`, `demo/`, `notes/`. `pocs/CURRENT` names the one in progress.
-- `deploy/` compose (PoC-4 scale stack: `compose/scale.sh`), kind (PoC-4: `kind/run.sh`; PoC-5: `kind/poc05/`, `make kind-poc05`), helm (PoC-9, empty). `docs/` planning, contracts, guides (chassis modules: `guides/chassis-reference.md`, PoC-4: `guides/poc-04-how-it-works.md`, PoC-5: `guides/poc-05-how-it-works.md`), templates, `plans/`.
+- `deploy/` compose (PoC-4 scale stack: `compose/scale.sh`), kind (PoC-4: `kind/run.sh`; PoC-5: `kind/poc05/`, `make kind-poc05`; PoC-6: `kind/poc06/`, `make kind-poc06`, kagent-adk built from pinned source; `compose/poc06/` for the Mac run), helm (PoC-9, empty). `scripts/poc06_mac.sh` is the one Mac command (`make poc06-mac`). `docs/` planning, contracts, guides (chassis modules: `guides/chassis-reference.md`, PoC-4: `guides/poc-04-how-it-works.md`, PoC-5: `guides/poc-05-how-it-works.md`, PoC-6: `guides/poc-06-how-it-works.md`), templates, `plans/`.
 
 ## Commands
 
-`make setup` · `make quick` (before every commit) · `make check` (what CI runs) · `make test` · `make test-poc POC=01` · `make test-integration` (Docker) · `make load-test` · `make kind-poc04` · `make kind-poc05` · `make ts-check` (the TypeScript workload) · `make record-cassettes` · `make schemas` · `make planning-sync` · `make planning-check` · `make harness-lint` · `make lint-extra` (shellcheck, actionlint, hadolint, codespell, yamllint, detect-secrets; its own CI job, not in `check`) · `make fake-model-server`. Run `make help` for the rest.
+`make setup` · `make quick` (before every commit) · `make check` (what CI runs) · `make test` · `make test-poc POC=01` · `make test-integration` (Docker) · `make load-test` · `make kind-poc04` · `make kind-poc05` · `make kind-poc06` · `make bakeoff ARGS="smoke"` · `make poc06-mac` (a Mac, `--dry-run` first) · `make ts-check` (the TypeScript workload) · `make record-cassettes` · `make schemas` · `make planning-sync` · `make planning-check` · `make harness-lint` · `make lint-extra` (shellcheck, actionlint, hadolint, codespell, yamllint, detect-secrets; its own CI job, not in `check`) · `make fake-model-server`. Run `make help` for the rest.
 
 ## Hard rules
 

@@ -1,0 +1,1940 @@
+{
+  "cells": [
+    {
+      "engine": "echo-python",
+      "lane": "inprocess",
+      "mapping_code_lines": 243,
+      "mapping_files": [
+        "packages/workloads/echo-python/src/echo_python/handle.py",
+        "packages/workloads/echo-python/src/echo_python/tools.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 146.38490850029484,
+          "latency_p95_ms": 203.36157185038252,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 152
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 497
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 796
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 144.25137950001954
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 61.354153999673144,
+          "latency_p95_ms": 96.37109350028369,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 187
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 60.094106499946065
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 57.227412999964145,
+          "latency_p95_ms": 80.05032155001574,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 134
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 56.95363550012189
+        }
+      }
+    },
+    {
+      "engine": "echo-python",
+      "lane": "sidecar",
+      "mapping_code_lines": 243,
+      "mapping_files": [
+        "packages/workloads/echo-python/src/echo_python/handle.py",
+        "packages/workloads/echo-python/src/echo_python/tools.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 150.85950299953765,
+          "latency_p95_ms": 176.51359495025645,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 152
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 497
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 796
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 135.05459699990752
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 86.965049999435,
+          "latency_p95_ms": 101.09464864990515,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 187
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 69.66265599976396
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 66.85756700017009,
+          "latency_p95_ms": 77.84872184952292,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 134
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 65.6912744998408
+        }
+      }
+    },
+    {
+      "engine": "echo-python",
+      "lane": "remote",
+      "mapping_code_lines": 243,
+      "mapping_files": [
+        "packages/workloads/echo-python/src/echo_python/handle.py",
+        "packages/workloads/echo-python/src/echo_python/tools.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 148.04317599964634,
+          "latency_p95_ms": 168.4637508999458,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 152
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 497
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 796
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 133.69949249954516
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 65.40741599974353,
+          "latency_p95_ms": 73.54509439974208,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 187
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 61.95708199948058
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 62.337273999673926,
+          "latency_p95_ms": 160.52482964969397,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 134
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 59.39075599962962
+        }
+      }
+    },
+    {
+      "engine": "echo-pydanticai",
+      "lane": "inprocess",
+      "mapping_code_lines": 181,
+      "mapping_files": [
+        "packages/workloads/echo-pydanticai/src/echo_pydanticai/mapping.py",
+        "packages/workloads/echo-pydanticai/src/echo_pydanticai/handle.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 100.96924050048983,
+          "latency_p95_ms": 265.74904284998416,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 152
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 494
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 790
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 95.66986049958359
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 58.781161999831966,
+          "latency_p95_ms": 65.60988429964709,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 187
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 56.87034600032348
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 42.09881500037227,
+          "latency_p95_ms": 48.50574830034021,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 134
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 41.63366400007362
+        }
+      }
+    },
+    {
+      "engine": "echo-pydanticai",
+      "lane": "sidecar",
+      "mapping_code_lines": 181,
+      "mapping_files": [
+        "packages/workloads/echo-pydanticai/src/echo_pydanticai/mapping.py",
+        "packages/workloads/echo-pydanticai/src/echo_pydanticai/handle.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 108.457726999859,
+          "latency_p95_ms": 127.32128815027865,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 152
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 494
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 790
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 82.2813690001567
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 54.53694750030991,
+          "latency_p95_ms": 67.4722393997854,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 187
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 37.66094200000225
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 42.85378099984882,
+          "latency_p95_ms": 51.876488650214014,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 134
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 40.92800849957712
+        }
+      }
+    },
+    {
+      "engine": "echo-pydanticai",
+      "lane": "remote",
+      "mapping_code_lines": 181,
+      "mapping_files": [
+        "packages/workloads/echo-pydanticai/src/echo_pydanticai/mapping.py",
+        "packages/workloads/echo-pydanticai/src/echo_pydanticai/handle.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 106.6187119999995,
+          "latency_p95_ms": 129.43187765013136,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 152
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 494
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 790
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 87.67501850024928
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 53.84227849981471,
+          "latency_p95_ms": 67.69325530035532,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 187
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 35.578897000505094
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 45.43137300015587,
+          "latency_p95_ms": 55.89746159989773,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 134
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 41.03532950011868
+        }
+      }
+    },
+    {
+      "engine": "echo-langgraph",
+      "lane": "inprocess",
+      "mapping_code_lines": 224,
+      "mapping_files": [
+        "packages/workloads/echo-langgraph/src/echo_langgraph/mapping.py",
+        "packages/workloads/echo-langgraph/src/echo_langgraph/handle.py",
+        "packages/workloads/echo-langgraph/src/echo_langgraph/tools.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 130.38413450021835,
+          "latency_p95_ms": 182.0738247497957,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 152
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 497
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 796
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 129.46066849963245
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 57.75361700034409,
+          "latency_p95_ms": 175.53156104941095,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 187
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 54.39602749993355
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 43.93012099990301,
+          "latency_p95_ms": 57.502866550294144,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 134
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 44.510843500120245
+        }
+      }
+    },
+    {
+      "engine": "echo-langgraph",
+      "lane": "sidecar",
+      "mapping_code_lines": 224,
+      "mapping_files": [
+        "packages/workloads/echo-langgraph/src/echo_langgraph/mapping.py",
+        "packages/workloads/echo-langgraph/src/echo_langgraph/handle.py",
+        "packages/workloads/echo-langgraph/src/echo_langgraph/tools.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 137.60983199972543,
+          "latency_p95_ms": 153.29713164992427,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 152
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 497
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 796
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 124.95811299959314
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 59.55437999955393,
+          "latency_p95_ms": 66.93747739955143,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 187
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 52.24201750024804
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 45.183898999766825,
+          "latency_p95_ms": 54.33035794994794,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 134
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 46.869349499957025
+        }
+      }
+    },
+    {
+      "engine": "echo-langgraph",
+      "lane": "remote",
+      "mapping_code_lines": 224,
+      "mapping_files": [
+        "packages/workloads/echo-langgraph/src/echo_langgraph/mapping.py",
+        "packages/workloads/echo-langgraph/src/echo_langgraph/handle.py",
+        "packages/workloads/echo-langgraph/src/echo_langgraph/tools.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 161.4800090001154,
+          "latency_p95_ms": 195.52634469955595,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 152
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 497
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 796
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 150.20530450010483
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 67.70426350021808,
+          "latency_p95_ms": 84.782258049745,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 187
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 58.58741199972428
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 53.43365699991409,
+          "latency_p95_ms": 63.29200830000446,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 134
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 61.61333799991553
+        }
+      }
+    },
+    {
+      "engine": "echo-openai-agents",
+      "lane": "inprocess",
+      "mapping_code_lines": 295,
+      "mapping_files": [
+        "packages/workloads/echo-openai-agents/src/echo_openai_agents/mapping.py",
+        "packages/workloads/echo-openai-agents/src/echo_openai_agents/handle.py",
+        "packages/workloads/echo-openai-agents/src/echo_openai_agents/tools.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 95.26463899965165,
+          "latency_p95_ms": 224.40480685004343,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 152
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 497
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 796
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 98.80734099988331
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 45.144744500248635,
+          "latency_p95_ms": 61.6962865505684,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 187
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 43.18606400011049
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 35.066954999820155,
+          "latency_p95_ms": 51.939136200326175,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 134
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 35.932807499648334
+        }
+      }
+    },
+    {
+      "engine": "echo-openai-agents",
+      "lane": "sidecar",
+      "mapping_code_lines": 295,
+      "mapping_files": [
+        "packages/workloads/echo-openai-agents/src/echo_openai_agents/mapping.py",
+        "packages/workloads/echo-openai-agents/src/echo_openai_agents/handle.py",
+        "packages/workloads/echo-openai-agents/src/echo_openai_agents/tools.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 118.58156599964786,
+          "latency_p95_ms": 155.09403195014787,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 152
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 497
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 796
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 108.17310650008949
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 70.79176950037436,
+          "latency_p95_ms": 77.3922768995817,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 187
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 49.24234100008107
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 47.856744000455365,
+          "latency_p95_ms": 63.35842914963905,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 134
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 40.220193499862944
+        }
+      }
+    },
+    {
+      "engine": "echo-openai-agents",
+      "lane": "remote",
+      "mapping_code_lines": 295,
+      "mapping_files": [
+        "packages/workloads/echo-openai-agents/src/echo_openai_agents/mapping.py",
+        "packages/workloads/echo-openai-agents/src/echo_openai_agents/handle.py",
+        "packages/workloads/echo-openai-agents/src/echo_openai_agents/tools.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 102.3919625004055,
+          "latency_p95_ms": 128.17256765015372,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 152
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 497
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 796
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 89.75432700026431
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 62.15615750033976,
+          "latency_p95_ms": 142.85365460041257,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 187
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 48.04943800036199
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 38.52841300022192,
+          "latency_p95_ms": 46.898730799557605,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 134
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 39.5423610002581
+        }
+      }
+    },
+    {
+      "engine": "echo-typescript",
+      "lane": "sidecar",
+      "mapping_code_lines": 551,
+      "mapping_files": [
+        "packages/workloads/echo-typescript/src/a2a_server.ts",
+        "packages/workloads/echo-typescript/src/handle.ts",
+        "packages/workloads/echo-typescript/src/schema.ts",
+        "packages/workloads/echo-typescript/src/tools.ts"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 76.03124650040627,
+          "latency_p95_ms": 91.31715519993122,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 152
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 494
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 790
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 72.23480849961561
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 32.06815299927257,
+          "latency_p95_ms": 36.8656077997457,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 187
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 27.809703999992053
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 29.527350499392924,
+          "latency_p95_ms": 34.52727279995998,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 134
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 27.003961500213336
+        }
+      }
+    },
+    {
+      "engine": "echo-typescript",
+      "lane": "remote",
+      "mapping_code_lines": 551,
+      "mapping_files": [
+        "packages/workloads/echo-typescript/src/a2a_server.ts",
+        "packages/workloads/echo-typescript/src/handle.ts",
+        "packages/workloads/echo-typescript/src/schema.ts",
+        "packages/workloads/echo-typescript/src/tools.ts"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 66.62986550054484,
+          "latency_p95_ms": 89.92213130018173,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 152
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 494
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 790
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 62.109934499858355
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 29.972177499985264,
+          "latency_p95_ms": 33.55015700021795,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 187
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 28.134337500432594
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 29.918726999767387,
+          "latency_p95_ms": 124.22348674977013,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 134
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 26.690330999826983
+        }
+      }
+    },
+    {
+      "engine": "echo-smolagents",
+      "lane": "remote",
+      "mapping_code_lines": 380,
+      "mapping_files": [
+        "packages/workloads/echo-smolagents/src/echo_smolagents/mapping.py",
+        "packages/workloads/echo-smolagents/src/echo_smolagents/handle.py",
+        "packages/workloads/echo-smolagents/src/echo_smolagents/tools.py",
+        "packages/workloads/echo-smolagents/src/echo_smolagents/agent.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 143.6286345001463,
+          "latency_p95_ms": 154.760700849738,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "temperature"
+              ],
+              "prompt_bytes": 9253
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "temperature"
+              ],
+              "prompt_bytes": 9738
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "temperature"
+              ],
+              "prompt_bytes": 10172
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 139.17082650004886
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 67.9594619996351,
+          "latency_p95_ms": 83.94655820002299,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "temperature"
+              ],
+              "prompt_bytes": 9288
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 66.22066399995674
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 72.49755849989015,
+          "latency_p95_ms": 160.88425854968602,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "temperature"
+              ],
+              "prompt_bytes": 9235
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 67.28609750007308
+        }
+      }
+    },
+    {
+      "engine": "echo-claude-agent",
+      "lane": "remote",
+      "mapping_code_lines": 168,
+      "mapping_files": [
+        "packages/workloads/echo-claude-agent/src/echo_claude_agent/handle.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 30.0,
+          "latency_p50_ms": 708.4271969997644,
+          "latency_p95_ms": 796.0921617000622,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 1676
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 2112
+            },
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 2502
+            }
+          ],
+          "output_tokens": 15.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 722.8044855000917
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 616.3436289998572,
+          "latency_p95_ms": 683.2173605001117,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 1711
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 579.6250850003162
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 10.0,
+          "latency_p50_ms": 651.5239094997014,
+          "latency_p95_ms": 1002.5391117497295,
+          "model_calls": [
+            {
+              "body_keys": [
+                "max_tokens",
+                "messages",
+                "metadata",
+                "model",
+                "stream",
+                "stream_options",
+                "temperature",
+                "tools"
+              ],
+              "prompt_bytes": 1658
+            }
+          ],
+          "output_tokens": 5.0,
+          "pass_rate": 1.0,
+          "passed": 10,
+          "runs": 10,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 623.6235015003331
+        }
+      }
+    },
+    {
+      "engine": "kagent-adk",
+      "lane": "remote",
+      "mapping_code_lines": null,
+      "mapping_files": [],
+      "reason": "runs only on kind (poc06-kind.yml)",
+      "status": "skip",
+      "tasks": {}
+    }
+  ],
+  "meta": {
+    "generated": "2026-10-09T22:38:06Z",
+    "model": "fake model server (scripted)",
+    "repeat": 10,
+    "target_mode": false,
+    "tasks": [
+      "smoke",
+      "simplifier",
+      "lookup"
+    ]
+  }
+}

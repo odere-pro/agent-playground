@@ -1,0 +1,298 @@
+# remote-kagent-adk: kagent's Python ADK runtime as a remote (PoC-6b, the remote solution; kagent
+# probe note pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-kagent-probe.md, "cheaper
+# alternative"). It is the `kagent-adk` runtime alone: a Google ADK A2A server, no controller, no
+# Substrate, no PostgreSQL. It is a third-party program, so it runs only in the remote lane
+# (admission rules 3 and 8 exempt that lane). There is no pinned ghcr image: `run.sh build_kagent`
+# builds kagent's own python/Dockerfile at the commit in `kagent/source.commit` and loads it as
+# kind.local/agent-platform/kagent-adk:poc06 (supply-chain gaps: notes/2026-10-09-lanes-b-kind.md).
+#
+# - The launcher: the image's `kagent-adk static` builds the app against a kagent API server for
+#   its task store, and there is none here. The probe ran the same app with `local=True` (in-memory
+#   task store); `run_kagent_adk.py` below is that run, from this ConfigMap, started with the
+#   image's venv Python. It is our file, not the image's; the image only supplies the libraries.
+# - The model: an OpenAI-compatible config whose base_url is the chassis's remote proxy listener
+#   and key passthrough on, so the inbound bearer (the per-remote token) is the model key and the
+#   run's traceparent reaches the proxy (probe note, item 4; the launcher forwards it itself, see
+#   TraceparentPassthroughPlugin). The pod holds no Secret.
+#   Recorded deviation: the URL is the fixed ClusterIP, not a DNS name, because the remote lane
+#   has no DNS (H20). The DNS-name rule in the probe note comes from Substrate's credential proxy,
+#   which is not used here.
+# - Inbound auth: the runtime checks no bearer (probe note, item 5). The control is the
+#   NetworkPolicy: 9000 only from its own chassis. What the chassis cannot control is listed in
+#   notes/2026-10-09-lanes-b-kind.md.
+# - OTEL exporters are off: with defaults the last event waited 16 s on an unreachable collector.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: remote-kagent-adk
+  namespace: poc05-remote
+  labels:
+    app.kubernetes.io/name: remote-kagent-adk
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: remote-kagent-adk-config
+  namespace: poc05-remote
+  labels:
+    app.kubernetes.io/name: remote-kagent-adk
+data:
+  config.json: '{"model": {"type": "openai", "model": "fake-chat", "base_url": "http://10.96.85.95:8091/v1", "api_key_passthrough": true}, "description": "kagent-adk behind the chassis remote lane", "instruction": "Rewrite in plain words. Short sentences. Keep every fact.", "stream": true}'  # pragma: allowlist secret (a flag name, no value)
+  run_kagent_adk.py: |
+    """Run the kagent ADK runtime as `kagent-adk static` builds it, with local=True (in-memory
+    task store, no kagent API). Usage: run_kagent_adk.py CONFIG_DIR HOST PORT. After kagent's
+    cli.py at the pinned commit; the probe ran the same code."""
+
+    import contextvars
+    import json
+    import os
+    import re
+    import sys
+
+    import uvicorn
+    from a2a.types import AgentCard
+    from google.adk.plugins.base_plugin import BasePlugin
+    from google.protobuf.json_format import ParseDict
+    from kagent.adk import AgentConfig, KAgentApp
+    from kagent.adk._llm_passthrough_plugin import LLMPassthroughPlugin
+    from kagent.core import bootstrap, instrument_app
+    from kagent.core.telemetry import conv
+
+    # The run's trace context, one value per inbound request. A ContextVar, not a model field: two
+    # runs share one model object, and each must send its own traceparent.
+    inbound_traceparent = contextvars.ContextVar("inbound_traceparent", default=None)
+    # W3C trace context, version 00. The chassis keys `RequireRun` on the trace id in it.
+    TRACEPARENT = re.compile(r"^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$")
+
+
+    async def stamp_traceparent(request):
+        """httpx2 request hook (async, for the async client): send the inbound traceparent on every model request, retries too."""
+        value = inbound_traceparent.get()
+        if value:
+            request.headers["traceparent"] = value
+
+
+    class TraceparentPassthroughPlugin(BasePlugin):
+        """Forward the inbound `traceparent` to the model, as LLMPassthroughPlugin does the bearer.
+
+        Why: OTel carries it only if the exporters are on, and here they are off (`instrument_app`
+        returns early), so the model call would start a new trace and the chassis proxy would
+        answer 403 run_required. The openai client uses httpx2, which OTel's httpx instrumentor
+        does not patch either. So this reads the header from the A2A request state, where kagent
+        keeps it, and a request hook on the model's own client sets it. Run it after
+        LLMPassthroughPlugin: a new bearer rebuilds the model's client, and the hook goes on the new one.
+        """
+
+        def __init__(self):
+            super().__init__(name="traceparent_passthrough")
+
+        async def before_model_callback(self, *, callback_context, llm_request):
+            headers = callback_context.state.get("headers", {})
+            value = (headers.get("traceparent") or "").strip().lower()
+            inbound_traceparent.set(value if TRACEPARENT.match(value) else None)
+            model = callback_context._invocation_context.agent.model
+            hooks = model._client._client.event_hooks  # AsyncOpenAI -> its httpx2 client
+            if stamp_traceparent not in hooks["request"]:
+                hooks["request"] = [*hooks["request"], stamp_traceparent]
+            return None
+
+
+    def main():
+        cfg_dir, host, port = sys.argv[1], sys.argv[2], int(sys.argv[3])
+        os.environ.setdefault("KAGENT_PORT", str(port + 1000))
+        agent_config = AgentConfig.model_validate(json.load(open(os.path.join(cfg_dir, "config.json"))))
+        card = ParseDict(json.load(open(os.path.join(cfg_dir, "agent-card.json"))), AgentCard())
+        plugins = None
+        if agent_config.model.api_key_passthrough:
+            plugins = [LLMPassthroughPlugin(), TraceparentPassthroughPlugin()]
+        kapp = KAgentApp(
+            lambda: agent_config.to_agent("kagent_adk", None, False),
+            card,
+            "http://127.0.0.1:1",
+            "kagent__poc05-remote__kagent_adk",
+            plugins=plugins,
+            stream=bool(agent_config.stream),
+            agent_config=agent_config,
+        )
+        server = kapp.build(local=True)
+        bootstrap(conv.KagentRuntimeValues.ADK_PYTHON, fallback_name=card.name)
+        instrument_app(server)
+        uvicorn.run(server, host=host, port=port, log_level="info", log_config=None)
+
+
+    if __name__ == "__main__":
+        main()
+  agent-card.json: |
+    {
+      "name": "kagent_adk",
+      "description": "kagent-adk behind the chassis remote lane",
+      "version": "v1",
+      "supportedInterfaces": [
+        {
+          "url": "http://remote-kagent-adk.poc05-remote.svc.cluster.local:9000",
+          "protocolBinding": "JSONRPC",
+          "protocolVersion": "1.0"
+        }
+      ],
+      "capabilities": {"streaming": true},
+      "skills": [],
+      "defaultInputModes": ["text"],
+      "defaultOutputModes": ["text"]
+    }
+---
+apiVersion: agents.x-k8s.io/v1beta1
+kind: Sandbox
+metadata:
+  name: remote-kagent-adk
+  namespace: poc05-remote
+  labels:
+    app.kubernetes.io/name: remote-kagent-adk
+spec:
+  service: false
+  podTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: remote-kagent-adk
+        app.kubernetes.io/part-of: poc06
+        agents.platform/lane: remote
+        agents.platform/trust: untrusted
+    spec:
+      serviceAccountName: remote-kagent-adk
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      runtimeClassName: gvisor
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        runAsNonRoot: true
+        # Localhost, not RuntimeDefault: runsc maps RuntimeDefault's clone3 ENOSYS to EPERM and
+        # threads fail. deploy/kind/poc06/run.sh `seccomp` writes it; note lanes-b-kind.md.
+        seccompProfile:
+          type: Localhost
+          localhostProfile: profiles/poc06-runsc-clone3.json
+      containers:
+        - name: workload
+          image: kind.local/agent-platform/kagent-adk:poc06
+          imagePullPolicy: Never
+          command: ["/.kagent/.venv/bin/python"]
+          args: ["/config/run_kagent_adk.py", "/config", "$(POD_IP)", "9000"]
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: HOME
+              value: /tmp
+            - name: KAGENT_NAME
+              value: kagent-adk
+            - name: KAGENT_NAMESPACE
+              value: poc05-remote
+            - name: KAGENT_URL
+              value: http://127.0.0.1:1
+            - name: OTEL_TRACES_EXPORTER
+              value: none
+            - name: OTEL_METRICS_EXPORTER
+              value: none
+            - name: OTEL_LOGS_EXPORTER
+              value: none
+          ports:
+            - name: a2a
+              containerPort: 9000
+          startupProbe:
+            tcpSocket:
+              port: 9000
+            periodSeconds: 2
+            failureThreshold: 90
+          readinessProbe:
+            tcpSocket:
+              port: 9000
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 9000
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 768Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            # Localhost, not RuntimeDefault: runsc maps RuntimeDefault's clone3 ENOSYS to EPERM and
+            # threads fail. deploy/kind/poc06/run.sh `seccomp` writes it; note lanes-b-kind.md.
+            seccompProfile:
+              type: Localhost
+              localhostProfile: profiles/poc06-runsc-clone3.json
+          volumeMounts:
+            - name: workload-tmp
+              mountPath: /tmp
+            - name: agent-config
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: workload-tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: agent-config
+          configMap:
+            name: remote-kagent-adk-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: remote-kagent-adk
+  namespace: poc05-remote
+  labels:
+    app.kubernetes.io/name: remote-kagent-adk
+spec:
+  selector:
+    app.kubernetes.io/name: remote-kagent-adk
+  ports:
+    - name: a2a
+      port: 9000
+      targetPort: 9000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: remote-kagent-adk
+  namespace: poc05-remote
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: remote-kagent-adk
+  policyTypes: [Ingress, Egress]
+  # 9000 only from its own chassis pod. The runtime checks no bearer, so this is the control.
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chassis-kagent-adk-remote
+      ports:
+        - port: 9000
+          protocol: TCP
+  # Its chassis's remote proxy port, and nothing else: no DNS, no ipBlock.
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chassis-kagent-adk-remote
+      ports:
+        - port: 8091
+          protocol: TCP

@@ -22,6 +22,7 @@ Tool agents need a model that picks the right tool and fills its arguments well.
 - Its own eval: correct tool, arguments valid against the tool schema, argument match, and correct "no tool" cases. Native mode and guided JSON mode are both scored.
 - Served on a named route that declares native tool support, with a big-model fallback route.
 - A go or no-go note on whether tool agents should use it.
+- Status after PoC-6: PoC-6c measures what the pre-trained base model does on the bake-off tasks without fine-tuning. This is the baseline this issue improves on. No number exists yet; it waits on the Mac run.
 
 ## Out of scope
 

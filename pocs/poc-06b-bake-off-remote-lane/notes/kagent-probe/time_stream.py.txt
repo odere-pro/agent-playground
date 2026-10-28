@@ -1,0 +1,38 @@
+"""Time each SSE line of a SendStreamingMessage reply. Usage: time_stream.py URL"""
+
+import json, sys, time, httpx
+
+URL = sys.argv[1].rstrip("/")
+body = {
+    "jsonrpc": "2.0",
+    "id": "t1",
+    "method": "SendStreamingMessage",
+    "params": {
+        "message": {
+            "messageId": "m-timing",
+            "role": "ROLE_USER",
+            "parts": [{"text": "Please simplify: the cat sat."}],
+        }
+    },
+}
+h = {
+    "Authorization": "Bearer probe-remote-token",
+    "A2A-Version": "1.0",
+    "Accept": "text/event-stream",
+    "traceparent": "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01",
+}
+t0 = time.monotonic()
+with (
+    httpx.Client(timeout=60, trust_env=False) as c,
+    c.stream("POST", URL, json=body, headers=h) as r,
+):
+    for line in r.iter_lines():
+        if not line:
+            continue
+        kind = "ping" if line.startswith(":") else next(iter(json.loads(line[6:])["result"]))
+        state = ""
+        if kind != "ping":
+            res = json.loads(line[6:])["result"][kind]
+            state = res.get("status", {}).get("state", "") if isinstance(res, dict) else ""
+        print(f"{time.monotonic() - t0:6.2f}s {kind} {state}")
+print(f"total {time.monotonic() - t0:.2f}s")

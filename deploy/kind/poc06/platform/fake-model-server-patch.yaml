@@ -1,0 +1,19 @@
+# A strategic merge patch for the PoC-5 Deployment poc05-platform/fake-model-server: run it on the
+# PoC-6 script (platform/fake-model-script.yaml, mounted from the ConfigMap `fake-model-script-poc06`)
+# instead of the image's example.yaml. `run.sh` applies it as the cluster admin after the PoC-5
+# bring-up, and adds the script's sha256 as a pod annotation so a changed script restarts the pod.
+# No PoC-5 file changes; the patch is on the live object and a second `up` applies it again.
+spec:
+  template:
+    spec:
+      containers:
+        - name: fake-model-server
+          args: ["--script", "/etc/fake-model/script.yaml"]
+          volumeMounts:
+            - name: script
+              mountPath: /etc/fake-model
+              readOnly: true
+      volumes:
+        - name: script
+          configMap:
+            name: fake-model-script-poc06

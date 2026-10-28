@@ -14,7 +14,7 @@ from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.exceptions import ToolError
 from starlette.applications import Starlette
 
-TOOLS = {"glossary_lookup", "note_write", "unlisted_probe"}
+TOOLS = {"glossary_lookup", "acronym_expand", "note_write", "unlisted_probe"}
 
 
 @asynccontextmanager
@@ -32,14 +32,24 @@ async def connect(app: Starlette, token: str | None = None) -> AsyncIterator[Cli
         yield client
 
 
-async def test_lists_three_tools_with_read_only_hints() -> None:
+async def test_lists_four_tools_with_read_only_hints() -> None:
     app = create_app(FakeMcpState())
     async with connect(app) as client:
         tools = {t.name: t for t in await client.list_tools()}
     assert set(tools) == TOOLS
     hints = {n: t.annotations.read_only_hint for n, t in tools.items() if t.annotations}
     assert hints["glossary_lookup"] is True
+    assert hints["acronym_expand"] is True
     assert hints["note_write"] is False
+
+
+async def test_acronym_expand_answers_and_unknown_is_not_an_error() -> None:
+    app = create_app(FakeMcpState())
+    async with connect(app) as client:
+        hit = await client.call_tool("acronym_expand", {"acronym": "rag"})
+        miss = await client.call_tool("acronym_expand", {"acronym": "nope"})
+    assert hit.data == {"acronym": "rag", "expansion": "retrieval-augmented generation"}
+    assert miss.data == {"acronym": "nope", "expansion": None}
 
 
 async def test_glossary_lookup_answers_and_unknown_is_not_an_error() -> None:

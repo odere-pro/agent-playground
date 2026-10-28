@@ -1,0 +1,39 @@
+# PoC-6 hosted run: the one internet edge of the cluster. It adds egress for the LiteLLM pod ONLY,
+# so LiteLLM can reach the hosted model provider: TCP 443 to any public address. NetworkPolicies
+# add up, so PoC-5's `litellm` policy (network-policy.yaml there) still gives LiteLLM its DNS,
+# Postgres, fake-model, fake-MCP, and dispatcher edges; its DNS rule (UDP and TCP 53 to kube-dns)
+# already covers the provider's name, so this file adds no DNS rule.
+#
+# `except` removes every private, link-local, loopback, and shared-address range, and the kind pod
+# and service CIDRs (deploy/kind/poc05/cluster.yaml), so the rule cannot reach the metadata service, a
+# node, the API server, or another pod. 0.0.0.0/8 is "this network". IPv4 only, as the cluster is.
+# `hosted.sh up` applies it; `hosted.sh down` deletes it. No other pod gets internet egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: litellm-hosted-egress
+  namespace: poc05-platform
+  labels:
+    app.kubernetes.io/part-of: poc06
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: litellm
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 10.244.0.0/16
+              - 10.96.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP

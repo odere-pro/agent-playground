@@ -26,6 +26,7 @@ All agent classes (stateless, orchestrator, data) must share one interface and o
 - One echo agent per class, from the same template, used as test fixtures by later issues. Each is a workload that can run in every lane the tests use. In this issue, they run through the fake engine's direct call from 007 H-1. The lanes come in 009 CH-1.
 - The class, kind, loaded modules, lane, trust value, and chassis version available at run time, so the manifest can report them later.
 - Status after PoC-2: four workloads (plain Python, PydanticAI, LangGraph, TypeScript) run behind one `handle` contract and pass the same `EnginePort` suite and the same response-shape tests ([PoC-2](../../../pocs/poc-02-two-engines-one-contract/README.md)). `spec.engine.connector` is a typed field with default `sidecar`, and `inprocess` is refused outside `fake` and `local`. Open: `class`, `kind`, `spec.trust`, modules, and the B.5 table.
+- Status after PoC-6 ([ADR-006](../adr/006-agent-engines-default-supported-lanes.md), proposed): eight engines run the same three tasks behind one `handle`: plain Python, PydanticAI, LangGraph, OpenAI Agents SDK, TypeScript (`sidecar`), smolagents, the Claude Agent SDK, and `kagent-adk` (`remote`). Proposed default: PydanticAI. The `handle` contract is frozen as the first stable line: `schema_version` stays `"0"` ([contract v5](../../contracts/contract-v5.md), part C). Hosted-model numbers wait on the Mac run.
 
 ## Out of scope
 

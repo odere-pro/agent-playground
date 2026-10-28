@@ -1,0 +1,33 @@
+# LiteLLM proxy config for the PoC-6 Mac run (scripts/poc06_mac.sh). Two routes, the same names as
+# the PoC-1 `local` variant: `big-default` goes to the hosted model, `local-small` goes to the
+# llama.cpp server on the host. Switching a chassis between them is `spec.model.route` and nothing
+# else. Rules: ../SECURITY.md, section 1.
+#
+# No key value here. The provider key is a variable of this container only, set by Compose from the
+# script's environment (litellm-hosted.yaml). The proxy's own master key comes from the same place.
+
+model_list:
+  - model_name: big-default
+    litellm_params:
+      # POC06_HOSTED_MODEL is a LiteLLM model string (suggested: openai/gpt-4o-mini, the PoC-1
+      # example). An OpenAI-compatible provider needs OPENAI_API_BASE in the container, which
+      # LiteLLM reads on its own for `openai/` models.
+      model: os.environ/POC06_HOSTED_MODEL
+      api_key: os.environ/POC06_HOSTED_API_KEY  # pragma: allowlist secret
+  - model_name: local-small
+    litellm_params:
+      model: openai/local-small
+      # llama-server on the host: http://host.docker.internal:<port>/v1 (Docker Desktop resolves
+      # the name). llama.cpp has no auth; LiteLLM's client wants a non-empty placeholder.
+      api_base: os.environ/POC06_LLAMA_BASE
+      api_key: fake  # pragma: allowlist secret
+
+litellm_settings:
+  # Keep token counts, drop request and response content from the logs.
+  turn_off_message_logging: true
+  callbacks: token_log.handler
+  # llama.cpp ignores or rejects some OpenAI parameters; LiteLLM drops what a route cannot take.
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

@@ -1,0 +1,12 @@
+{
+  "name": "probe_agent",
+  "description": "probe agent",
+  "version": "v1",
+  "supportedInterfaces": [
+    {"url": "http://127.0.0.1:18080", "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}
+  ],
+  "capabilities": {"streaming": true},
+  "skills": [],
+  "defaultInputModes": ["text"],
+  "defaultOutputModes": ["text"]
+}

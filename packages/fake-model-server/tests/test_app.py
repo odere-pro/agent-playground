@@ -155,3 +155,51 @@ async def test_the_call_log_is_bounded_and_counts_every_call() -> None:
 
 def test_the_call_log_keeps_1000_by_default() -> None:
     assert create_app(Script.from_yaml(SCRIPT)).state.calls.maxlen == 1000
+
+
+def _offered(*names: str) -> list[dict[str, Any]]:
+    return [{"type": "function", "function": {"name": n, "parameters": {}}} for n in names]
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_a_scripted_tool_name_resolves_to_the_one_offered_name_ending_with_it(
+    client: httpx.AsyncClient, stream: bool
+) -> None:
+    """A client that prefixes tool names (the Claude CLI: `mcp__<server>__<name>`) gets the call
+    by the name it offered, so one script serves every engine."""
+    body: dict[str, Any] = {
+        "messages": [{"role": "user", "content": "glossary: SLM"}],
+        "tools": _offered("mcp__chassis__glossary_lookup", "mcp__chassis__acronym_expand"),
+        "stream": stream,
+    }
+    response = await client.post("/v1/chat/completions", json=body)
+    if stream:
+        chunks = [
+            c for c in _sse_chunks(response.text) if c["choices"][0]["delta"].get("tool_calls")
+        ]
+        name = chunks[0]["choices"][0]["delta"]["tool_calls"][0]["function"]["name"]
+    else:
+        name = response.json()["choices"][0]["message"]["tool_calls"][0]["function"]["name"]
+    assert name == "mcp__chassis__glossary_lookup"
+
+
+@pytest.mark.parametrize(
+    "tools",
+    [
+        None,  # no tool list: the scripted name as is
+        _offered("glossary_lookup", "mcp__chassis__glossary_lookup"),  # an exact match wins
+        _offered("a__glossary_lookup", "b__glossary_lookup"),  # two candidates: no guess
+        _offered("acronym_expand"),  # no candidate: the scripted name as is
+        _offered("xglossary_lookup"),  # a bare suffix is not a match
+    ],
+)
+async def test_the_scripted_tool_name_stays_when_no_single_offered_name_fits(
+    client: httpx.AsyncClient, tools: list[dict[str, Any]] | None
+) -> None:
+    body: dict[str, Any] = {"messages": [{"role": "user", "content": "glossary: SLM"}]}
+    if tools is not None:
+        body["tools"] = tools
+    complete = (await client.post("/v1/chat/completions", json=body)).json()
+    assert (
+        complete["choices"][0]["message"]["tool_calls"][0]["function"]["name"] == "glossary_lookup"
+    )

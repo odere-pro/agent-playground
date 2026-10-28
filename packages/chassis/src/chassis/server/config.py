@@ -45,6 +45,20 @@ class EngineAuthSpec(BaseModel):
     previous_token_env: str | None = Field(default=None, pattern=ENV_NAME)
 
 
+Protocol = Literal["chassis", "a2a"]
+"""`spec.engine.protocol` (contract v5 draft, B.4): how the `remote` connector reads the agent."""
+
+
+class PlainA2ASpec(BaseModel):
+    """`spec.engine.a2a`: options of the plain-A2A mode. suggested: every name and default."""
+
+    model_config = ConfigDict(extra="forbid")
+    usage_key: str | None = None
+    """The metadata key that holds token usage; a flat lookup. Null: usage is not read."""
+    context_id: Literal["omit", "trace_id"] = "omit"
+    """`omit`: the request has no `context_id`. `trace_id`: the run's trace id."""
+
+
 class EngineSpec(BaseModel):
     """`spec.engine`: the lane and whatever the connector needs, passed as is to `setup`.
 
@@ -67,9 +81,21 @@ class EngineSpec(BaseModel):
     """`remote` (required): the bearer token by variable name. Refused in the other lanes."""
     probe_timeout_s: float = Field(default=2.0, gt=0)
     """`remote`: the readiness probe's timeout; the probe crosses the network. suggested: 2.0."""
+    protocol: Protocol = "chassis"
+    """`remote` only for `a2a`: read the agent's own A2A stream, which has no `chassis.event`
+    metadata (a third-party agent). suggested: the name. Restart-only."""
+    a2a: PlainA2ASpec | None = None
+    """Options of `protocol: a2a`. Refused while `protocol` is `chassis`."""
 
     @model_validator(mode="after")
     def _remote_fields(self) -> EngineSpec:
+        if self.protocol == "a2a" and self.connector != "remote":
+            raise ValueError(
+                f"spec.engine.protocol: a2a is for spec.engine.connector: remote only "
+                f"(got {self.connector!r})"
+            )
+        if self.a2a is not None and self.protocol != "a2a":
+            raise ValueError("spec.engine.a2a needs spec.engine.protocol: a2a")
         if self.connector != "remote":
             if self.auth is not None:
                 raise ValueError(
@@ -89,10 +115,12 @@ class EngineSpec(BaseModel):
 
     def as_mapping(self) -> dict[str, Any]:
         """What the connector's `setup` reads. `probe_timeout_s` only for `remote`, so the other
-        lanes see the same mapping as before PoC-5."""
+        lanes see the same mapping as before PoC-5. `protocol` and `a2a` likewise."""
         mapping = self.model_dump(exclude_none=True)
         if self.connector != "remote":
             mapping.pop("probe_timeout_s", None)
+            mapping.pop("protocol", None)
+            mapping.pop("a2a", None)
         return mapping
 
 

@@ -1,0 +1,21 @@
+# The chassis config for `agent-typescript`: the sidecar lane, a trusted workload on loopback. Mounted
+# read-only at /etc/chassis/config.yaml (configMapGenerator in kustomization.yaml). `config:
+# memory`, as PoC-5's chassis/echo.yaml.
+profile: local
+agent:
+  name: echo-typescript
+  version: 0.0.1
+spec:
+  trust: trusted
+  adapters:
+    model: litellm
+    config: memory
+    state: valkey
+    telemetry: memory
+    tools: mcp
+    events: none
+  engine:
+    connector: sidecar
+    url: http://127.0.0.1:9000
+  model:
+    route: fake-chat

@@ -1,0 +1,61 @@
+# PoC-6c scale run: an overlay on ../docker-compose.scale.yaml (project poc04) that puts LiteLLM
+# in front of the one llama-server on the host, so N chassis and workload pairs share one model
+# server. The base file has no LiteLLM: its chassis call the fake model server directly. Use it
+# only through scale-slm.sh, which passes `-p poc04`, the secrets file, and the variables below:
+#   POC06_LITELLM_KEY   generated per run; the proxy's master key and every chassis's LiteLLM key
+#   CHASSIS_CONFIG      scale-slm.yaml (set by scale-slm.sh)
+# The pairs, Traefik, Valkey, and MinIO are the base file's, unchanged. The only differences:
+#   - a LiteLLM service (the PoC-6 config; `local-small` goes to host.docker.internal);
+#   - each chassis points its model adapter at it and waits for it;
+#   - the chassis config (and minio-init's seed) come from ./chassis-configs, whose only change
+#     is `spec.model.route: local-small`.
+# No provider key is here: `big-default` is unused in this run and gets a placeholder. Paths are
+# relative to deploy/compose, the project directory of the base file.
+
+x-slm-chassis: &slm-chassis
+  environment:
+    LITELLM_BASE_URL: http://litellm:4000/v1
+    LITELLM_API_KEY: ${POC06_LITELLM_KEY:?set by scale-slm.sh}
+  volumes:
+    # Same target as the base's mount, so this replaces it: only scale-slm.yaml is visible.
+    - ./poc06/chassis-configs:/etc/chassis:ro
+  depends_on:
+    litellm:
+      condition: service_healthy
+
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.103.0@sha256:bd089afdcd35b894b14a93f9743cdc8b591f82da1a38dd43a010a7b0c9de5fd7
+    command: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 768m
+    volumes:
+      - ./poc06/litellm.config.yaml:/etc/litellm/config.yaml:ro
+      - ./litellm/token_log.py:/etc/litellm/token_log.py:ro
+    environment:
+      LITELLM_MASTER_KEY: ${POC06_LITELLM_KEY:?set by scale-slm.sh}
+      POC06_HOSTED_API_KEY: unused  # pragma: allowlist secret
+      POC06_HOSTED_MODEL: openai/unused
+      POC06_LLAMA_BASE: http://host.docker.internal:${POC06_LLAMA_PORT:-8089}/v1
+      LITELLM_LOG: INFO
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=3).status == 200 else 1)"
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+
+  chassis-1: *slm-chassis
+  chassis-2: *slm-chassis
+  chassis-3: *slm-chassis
+  chassis-4: *slm-chassis
+
+  minio-init:
+    volumes:
+      - ./poc06/chassis-configs:/seed/configs:ro

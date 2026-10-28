@@ -67,6 +67,30 @@ updates:
         patterns: ["*"]
 
   - package-ecosystem: docker
+    directory: /packages/workloads/echo-openai-agents
+    schedule:
+      interval: weekly
+    groups:
+      docker-echo-openai-agents:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /packages/workloads/echo-claude-agent
+    schedule:
+      interval: weekly
+    groups:
+      docker-echo-claude-agent:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /packages/workloads/echo-smolagents
+    schedule:
+      interval: weekly
+    groups:
+      docker-echo-smolagents:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
     directory: /packages/workloads/echo-pydanticai
     schedule:
       interval: weekly

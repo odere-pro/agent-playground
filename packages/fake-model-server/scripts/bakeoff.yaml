@@ -1,0 +1,30 @@
+# The PoC-6 bake-off script: one scripted reply for each step of the three tasks. The first
+# matching rule wins, so the order matters. A rule matches the last user message, except an
+# `after_tool: true` rule, which matches the last tool result (see example.yaml).
+#
+# Smoke and simplifier: no tool. Lookup: two tool calls, then the answer.
+#   1. "lookup:" calls glossary_lookup {"term": "SLM"}.
+#   2. Its result holds "small language model": the model calls acronym_expand {"acronym": "RAG"}.
+#   3. That result holds "retrieval-augmented generation": the final answer.
+# The answer rule comes before the acronym rule, so a result that holds both texts ends the loop.
+model: fake-model
+rules:
+  - match: "simplify: Hello."
+    reply: "Hello."
+  - match: "simplify: The SLM"
+    reply: "Acme put out the SLM in 2026. It cut costs by 30 percent."
+  - match: "lookup:"
+    reply: ""
+    tool_call:
+      name: glossary_lookup
+      arguments: { term: "SLM" }
+  - after_tool: true
+    match: "retrieval-augmented generation"
+    reply: "SLM means a small language model. RAG stands for retrieval-augmented generation."
+  - after_tool: true
+    match: "small language model"
+    reply: ""
+    tool_call:
+      name: acronym_expand
+      arguments: { acronym: "RAG" }
+default_reply: "ok"

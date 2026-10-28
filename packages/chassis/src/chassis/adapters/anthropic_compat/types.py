@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from anthropic.types import (
     ErrorResponse,
+    InputJSONDelta,
     Message,
     MessageCreateParams,
     MessageDeltaUsage,
@@ -23,12 +24,14 @@ from anthropic.types import (
     RawMessageStreamEvent,
     TextBlock,
     TextDelta,
+    ToolUseBlock,
     Usage,
 )
 from anthropic.types.raw_message_delta_event import Delta as MessageDelta
 
 __all__ = [
     "ErrorResponse",
+    "InputJSONDelta",
     "Message",
     "MessageCreateParams",
     "MessageDelta",
@@ -42,5 +45,6 @@ __all__ = [
     "RawMessageStreamEvent",
     "TextBlock",
     "TextDelta",
+    "ToolUseBlock",
     "Usage",
 ]

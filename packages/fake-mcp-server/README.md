@@ -1,6 +1,6 @@
 # fake-mcp-server
 
-A scripted MCP server with three harmless tools, for offline tests and the kind cluster. It has no auth of its own: on kind a NetworkPolicy lets only LiteLLM reach it.
+A scripted MCP server with four harmless tools, for offline tests and the kind cluster. It has no auth of its own: on kind a NetworkPolicy lets only LiteLLM reach it.
 
 ```bash
 uv run fake-mcp-server                               # 127.0.0.1:8082, MCP at /mcp/

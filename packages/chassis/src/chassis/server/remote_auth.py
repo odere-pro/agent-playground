@@ -2,8 +2,9 @@
 on the pod IP, for a workload in another pod.
 
 `create_remote_proxy_app(public_app, tokens)` builds its own FastAPI app from an explicit list of
-routes: the model pass-through (`POST /v1/chat/completions`, `chassis.server.model_proxy`) and the
-MCP tool endpoint (`/mcp`, `chassis.server.tool_endpoint`). Nothing else: no `/dapr/*`, no docs,
+routes: the model pass-through (`POST /v1/chat/completions` and the Anthropic proxy route `POST
+/v1/messages`, `chassis.server.model_proxy` and `model_proxy_messages`) and the MCP tool
+endpoint (`/mcp`, `chassis.server.tool_endpoint`). Nothing else: no `/dapr/*`, no docs,
 no OpenAPI document; every other path is 404. It shares `public_app.state` (the ports, `runs`),
 like the loopback proxy app, and it has no lifespan of its own. Call it before the public app
 starts: the tool endpoint hooks into the public app's lifespan.
@@ -14,12 +15,15 @@ other non-`http` scope (a websocket is closed with 1008 before accept):
 1. `BearerAuth(tokens)`: `Authorization: Bearer <t>` must equal one of `tokens` (the current one
    and, during a rotation, the previous one), compared with `hmac.compare_digest` against every
    token. Missing, not `Bearer`, or wrong: 401 with one fixed body,
-   `{"error": {"code": "remote_unauthenticated", ...}}`. Counted as
+   `{"error": {"code": "remote_unauthenticated", ...}}`; on `/v1/messages` the Anthropic body
+   `{"type": "error", "error": {...}, "request_id": ...}` (contract v5, A.8), chosen by the raw
+   path. `x-api-key` alone is not a credential. Counted as
    `chassis.remote.auth_failed` (`reason`: `missing` or `wrong`, suggested) and logged with the
    method and the path only, never the header. The header is removed before the route sees it.
 2. `RequireRun`: the `traceparent` must name a run in flight in `state.runs`. Else 403
-   `{"error": {"code": "run_required", ...}}`. So a remote spends tokens and calls tools only
-   inside a run the chassis opened, under that run's budget.
+   `{"error": {"code": "run_required", ...}}` (the Anthropic body on `/v1/messages`). So a
+   remote spends tokens and calls tools only inside a run the chassis opened, under that run's
+   budget.
 
 `chassis serve --remote-proxy-host <pod IP>` runs this app on `--remote-proxy-port` (suggested
 8091), only in the `remote` lane (`chassis.server.cli`). The loopback proxy app is unchanged.
@@ -31,6 +35,7 @@ import hmac
 import json
 import logging
 import os
+import uuid
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -38,6 +43,7 @@ from fastapi import FastAPI
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from chassis import CHASSIS_VERSION
+from chassis.adapters.anthropic_compat.model_wire import WireError, error_body, new_ids
 from chassis.core.trace import parse_traceparent
 from chassis.server.model_proxy import model_proxy_router
 from chassis.server.tool_endpoint import mount_tool_endpoint
@@ -65,6 +71,28 @@ _RUN_REQUIRED = json.dumps(
         }
     }
 ).encode()
+
+# The Anthropic proxy route's variants (contract v5, A.8): chosen by the raw request path.
+ANTHROPIC_PATH = "/v1/messages"
+_UNAUTHENTICATED_ANTHROPIC = WireError(
+    401, "authentication_error", "remote_unauthenticated", "missing or invalid bearer token", False
+)
+_RUN_REQUIRED_ANTHROPIC = WireError(
+    403, "permission_error", "run_required", "the traceparent names no run in flight", False
+)
+
+
+def _refusal(
+    scope: Scope, v4_body: bytes, anthropic: WireError, extra: list[tuple[bytes, bytes]]
+) -> tuple[bytes, list[tuple[bytes, bytes]]]:
+    """The body and headers of a middleware refusal: Anthropic's shape on `/v1/messages`, v4's
+    `{"error": {...}}` on every other path. Status, counters, and order do not change."""
+    if scope.get("path") != ANTHROPIC_PATH:
+        return v4_body, extra
+    _, request_id = new_ids(uuid.uuid4().hex[:24])
+    body = json.dumps(error_body(anthropic, request_id)).encode()
+    headers = [(b"request-id", request_id.encode()), (b"x-should-retry", b"false"), *extra]
+    return body, headers
 
 
 def remote_tokens(auth: Mapping[str, Any] | None) -> tuple[str, ...]:
@@ -150,7 +178,10 @@ class BearerAuth:
         elif values:
             reason = "wrong"  # more than one header: refused, never guessed
         self._refused(scope, reason)
-        await _send_json(send, 401, _UNAUTHENTICATED, [(b"www-authenticate", b"Bearer")])
+        body, headers = _refusal(
+            scope, _UNAUTHENTICATED, _UNAUTHENTICATED_ANTHROPIC, [(b"www-authenticate", b"Bearer")]
+        )
+        await _send_json(send, 401, body, headers)
 
     def _refused(self, scope: Scope, reason: str) -> None:
         method, path = scope.get("method", ""), scope.get("path", "")
@@ -183,7 +214,8 @@ class RequireRun:
             ports = getattr(self._state, "ports", None)
             if ports is not None:
                 ports.telemetry.counter("chassis.remote.run_required")
-            await _send_json(send, 403, _RUN_REQUIRED, [])
+            body, headers = _refusal(scope, _RUN_REQUIRED, _RUN_REQUIRED_ANTHROPIC, [])
+            await _send_json(send, 403, body, headers)
             return
         await self.app(scope, receive, send)
 

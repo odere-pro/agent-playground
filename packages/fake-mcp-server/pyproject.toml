@@ -1,7 +1,7 @@
 [project]
 name = "fake-mcp-server"
 version = "0.1.0"
-description = "A test MCP server with three harmless tools (glossary_lookup, note_write, unlisted_probe), behind LiteLLM's MCP gateway on kind or in-process offline; never imported by the chassis (PoC-5)"
+description = "A test MCP server with four harmless tools (glossary_lookup, acronym_expand, note_write, unlisted_probe), behind LiteLLM's MCP gateway on kind or in-process offline; never imported by the chassis (PoC-5)"
 requires-python = ">=3.12,<3.13"
 dependencies = ["fastmcp>=4.0.10,<5", "uvicorn>=0.30"]
 

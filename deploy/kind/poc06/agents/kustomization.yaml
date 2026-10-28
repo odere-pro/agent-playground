@@ -1,0 +1,36 @@
+# The PoC-6 chassis pods in poc05-agents: the sidecar pods `agent-openai-agents` and
+# `agent-typescript`, and the chassis of each remote (`chassis-<engine>-remote`), with their
+# configs, Services, and NetworkPolicies. Apply after platform seed (`deploy/kind/poc06/seed.sh`):
+# the Secrets chassis-<svc>-litellm and remote-<name>-token come from there, none is here. Apply
+# remote/ first: a remote chassis waits (/ready 503) until its remote answers. Applied by `run.sh`
+# as the platform deployer, never as a tenant.
+# TODO(kagent-adk): its chassis is kagent/, applied by `run.sh` only once its image digest is set.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: poc05-agents
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: poc06
+resources:
+  - agent-openai-agents.yaml
+  - agent-typescript.yaml
+  - chassis-smolagents-remote.yaml
+  - chassis-claude-agent-remote.yaml
+  - chassis-typescript-remote.yaml
+  - network-policy.yaml
+configMapGenerator:
+  - name: chassis-openai-agents-config
+    files:
+      - config.yaml=chassis/openai-agents.yaml
+  - name: chassis-typescript-config
+    files:
+      - config.yaml=chassis/typescript.yaml
+  - name: chassis-smolagents-remote-config
+    files:
+      - config.yaml=chassis/smolagents-remote.yaml
+  - name: chassis-claude-agent-remote-config
+    files:
+      - config.yaml=chassis/claude-agent-remote.yaml
+  - name: chassis-typescript-remote-config
+    files:
+      - config.yaml=chassis/typescript-remote.yaml

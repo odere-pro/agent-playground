@@ -1,0 +1,27 @@
+# The allowed NetworkPolicy edges of the PoC-6 pods as data. test_poc06b_kind_static.py computes
+# the edges from deploy/kind/poc06/{remote,agents,kagent} and requires equality with this file, both
+# ways. PoC-5's namespace `default-deny` refuses everything else. Format: a peer is {ns, labels};
+# `src: any` is a rule with ports and no `from` (the chassis's public port, ingress only).
+# Ports are PROTO/NUMBER. No rule uses an ipBlock. Only the chassis pods have DNS; no remote has.
+external_pods:
+  - {ns: kube-system, labels: {k8s-app: kube-dns}}
+
+sidecar_pods: [agent-openai-agents, agent-typescript]
+remote_pairs:
+  - {remote: remote-smolagents, chassis: chassis-smolagents-remote}
+  - {remote: remote-claude-agent, chassis: chassis-claude-agent-remote}
+  - {remote: remote-typescript, chassis: chassis-typescript-remote}
+  - {remote: remote-kagent-adk, chassis: chassis-kagent-adk-remote}
+
+# For every chassis pod (the two sidecar pods and the four remote chassis):
+chassis_egress:
+  - {dst: {ns: kube-system, labels: {k8s-app: kube-dns}}, ports: [UDP/53, TCP/53]}
+  - {dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: litellm}}, ports: [TCP/4000]}
+  - {dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: valkey}}, ports: [TCP/6379]}
+chassis_ingress:
+  - {src: any, ports: [TCP/8080]}
+
+# For every pair (the remote and its chassis, and nobody else):
+pair_edges:
+  - {from: remote, to: chassis, ports: [TCP/8091]}
+  - {from: chassis, to: remote, ports: [TCP/9000]}

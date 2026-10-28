@@ -1,0 +1,37 @@
+"""Run the kagent Python ADK runtime outside Kubernetes, as `kagent-adk static` builds it,
+but with local=True (in-memory task store, no controller). Usage: run_kagent_adk.py CONFIG_DIR PORT
+
+It follows kagent/python/packages/kagent-adk/src/kagent/adk/cli.py `static` at the pinned commit.
+"""
+
+import json
+import os
+import sys
+
+import uvicorn
+from google.protobuf.json_format import ParseDict
+from a2a.types import AgentCard
+from kagent.adk import AgentConfig, KAgentApp
+from kagent.adk._llm_passthrough_plugin import LLMPassthroughPlugin
+from kagent.core import bootstrap, instrument_app
+from kagent.core.telemetry import conv
+
+cfg_dir, port = sys.argv[1], int(sys.argv[2])
+os.environ.setdefault("KAGENT_PORT", str(port + 1000))  # the runtime's own gRPC A2A listener
+agent_config = AgentConfig.model_validate(json.load(open(os.path.join(cfg_dir, "config.json"))))
+card = ParseDict(json.load(open(os.path.join(cfg_dir, "agent-card.json"))), AgentCard())
+plugins = [LLMPassthroughPlugin()] if agent_config.model.api_key_passthrough else None
+
+kapp = KAgentApp(
+    lambda: agent_config.to_agent("probe_agent", None, False),
+    card,
+    "http://127.0.0.1:1",  # kagent_api_url: unused in local mode
+    "kagent__NS__probe_agent",
+    plugins=plugins,
+    stream=bool(agent_config.stream),
+    agent_config=agent_config,
+)
+server = kapp.build(local=True)
+bootstrap(conv.KagentRuntimeValues.ADK_PYTHON, fallback_name=card.name)
+instrument_app(server)
+uvicorn.run(server, host="127.0.0.1", port=port, log_level="info", log_config=None)

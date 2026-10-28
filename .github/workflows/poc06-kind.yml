@@ -1,0 +1,90 @@
+# PoC-6 engines on kind (plan docs/plans/2026-10-09-poc-06-bake-off.md, tasks B2 to B5, W3).
+#
+# What it runs: `deploy/kind/poc06/run.sh up` (the PoC-5 bring-up, then the PoC-6 images, seeds, and
+# manifests), then `run.sh test` (the kind tests of pocs/poc-06b-bake-off-remote-lane: every engine's
+# smoke, simplifier, and lookup through its chassis, and the PoC-5 remote and sidecar controls on
+# every new pod). The cluster is PoC-5's; `remote-lane.yml` runs PoC-5's own suite on its own cluster
+# and is not touched.
+#
+# Trigger: push, pull_request, and workflow_dispatch. Never pull_request_target.
+# Open: gVisor (systrap, nested under Docker) on a GitHub ubuntu-latest runner is shown by
+# remote-lane.yml; if runsc cannot start here either, the job fails at the gVisor step of
+# `run.sh up`; it never skips the check. The offline gate (`make check`, ci.yml) stays the
+# every-commit gate either way.
+#
+# No secret is used: the seed step makes every credential inside the cluster. Pod logs go through
+# run.sh `logs`, which sends each through redact_logs (PoC-5's one filter).
+# kind and kubectl are pinned by version and by a sha256 in the job env, the same pins as
+# remote-lane.yml; the job never fetches a sum from the same release. Each install step fails
+# closed on a bad sum. Every action is pinned by a full commit SHA, the same as ci.yml.
+name: poc06-kind
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  poc06-kind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      KIND_VERSION: v0.33.0
+      KUBECTL_VERSION: v1.37.0
+      # From https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64.sha256sum
+      KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  # pragma: allowlist secret (public sha256)
+      # From https://dl.k8s.io/release/v1.37.0/bin/linux/amd64/kubectl.sha256
+      KUBECTL_SHA256: 6129359f4e1f3848a5572ccb0b26cf28b8ca08cef38c95a765b2f64a2c961a2f  # pragma: allowlist secret (public sha256)
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # PR code runs `run.sh up`: it gets no stored token.
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0
+        with:
+          # No uv cache on pull_request: PR code cannot poison what a push run restores.
+          enable-cache: ${{ github.event_name != 'pull_request' }}
+      - name: Sync
+        run: uv sync --all-packages --frozen
+      - name: Install kind
+        run: |
+          set -euo pipefail
+          [[ ${KIND_SHA256} =~ ^[0-9a-f]{64}$ ]] ||
+            { echo "::error::KIND_SHA256 is not pinned; refusing to install kind"; exit 1; }
+          base="https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}"
+          cd "$RUNNER_TEMP"
+          curl -fsSLo kind-linux-amd64 "${base}/kind-linux-amd64"
+          echo "${KIND_SHA256}  kind-linux-amd64" | sha256sum -c -
+          sudo install -m 0755 kind-linux-amd64 /usr/local/bin/kind
+          kind version
+      - name: Install kubectl
+        run: |
+          set -euo pipefail
+          [[ ${KUBECTL_SHA256} =~ ^[0-9a-f]{64}$ ]] ||
+            { echo "::error::KUBECTL_SHA256 is not pinned; refusing to install kubectl"; exit 1; }
+          base="https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64"
+          cd "$RUNNER_TEMP"
+          curl -fsSLo kubectl "${base}/kubectl"
+          echo "${KUBECTL_SHA256}  kubectl" | sha256sum -c -
+          sudo install -m 0755 kubectl /usr/local/bin/kubectl
+          kubectl version --client
+      # The PoC-5 bring-up, then the PoC-6 images, trust params, fake-model script, seeds, manifests.
+      - name: Up
+        run: deploy/kind/poc06/run.sh up
+      - name: PoC-6 kind tests
+        run: deploy/kind/poc06/run.sh test
+      # No upload-artifact SHA is pinned in this repo yet, so logs go to the job output. Every pod
+      # log goes through run.sh `logs` (PoC-5's redact_logs, pinned to kind-poc05); never a bare
+      # `kubectl logs` here (test_poc06b_kind_static.py).
+      - name: Pod logs
+        if: failure()
+        run: |
+          set -uo pipefail
+          deploy/kind/poc06/run.sh pods
+          deploy/kind/poc06/run.sh logs
+      - name: Delete
+        if: always()
+        run: deploy/kind/poc06/run.sh delete

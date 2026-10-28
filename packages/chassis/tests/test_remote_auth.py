@@ -217,6 +217,114 @@ async def test_dapr_docs_and_other_paths_are_404_even_with_the_token() -> None:
     assert not any(str(p).startswith("/dapr") for p in paths)
 
 
+def _route_paths(routes: Any) -> set[str]:
+    """Every path, with an included router's routes unfolded (FastAPI nests them)."""
+    paths: set[str] = set()
+    for route in routes:
+        inner = getattr(route, "original_router", None)
+        if inner is not None:
+            paths |= _route_paths(inner.routes)
+        else:
+            paths.add(str(route.path))
+    return paths
+
+
+def test_the_remote_listener_route_list_is_pinned() -> None:
+    """Contract v5, A.6: exactly the chat route, the Anthropic proxy route, and `/mcp`. A route
+    added later fails here, on purpose."""
+    _, remote, _ = _app()
+    assert _route_paths(remote.routes) == {"/v1/chat/completions", "/v1/messages", "/mcp"}
+
+
+ANTHROPIC_PATH = "/v1/messages"
+
+
+async def test_the_anthropic_proxy_route_refusals_are_in_the_anthropic_body() -> None:
+    """Contract v5, A.8: 401 and 403 on `/v1/messages` use Anthropic's error shape, and the chat
+    route keeps v4's bytes. `x-api-key` alone is not a credential."""
+    public, remote, _ = _app()
+    request, ctx = _run()
+    anthropic_body = {**BODY, "max_tokens": 32}
+    async with (
+        _client(remote) as client,
+        public.router.lifespan_context(public),
+        public.state.runs.register(request, ctx),
+    ):
+        none = await client.post(ANTHROPIC_PATH, json=anthropic_body)
+        key_only = await client.post(
+            ANTHROPIC_PATH, json=anthropic_body, headers={"x-api-key": CURRENT}
+        )
+        both = await client.post(
+            ANTHROPIC_PATH,
+            json=anthropic_body,
+            headers={"x-api-key": CURRENT, "Authorization": f"Bearer {'w' * 64}"},
+        )
+        no_run = await client.post(
+            ANTHROPIC_PATH,
+            json=anthropic_body,
+            headers={"Authorization": f"Bearer {CURRENT}", "x-api-key": "k"},
+        )
+        chat = await client.post("/v1/chat/completions", json=BODY)
+        inside = await client.post(ANTHROPIC_PATH, json=anthropic_body, headers=_auth(CURRENT))
+    for response in (none, key_only, both):
+        assert response.status_code == 401
+        data = response.json()
+        assert data["type"] == "error"
+        assert data["error"] == {
+            "type": "authentication_error",
+            "message": "remote_unauthenticated: missing or invalid bearer token",
+        }
+        assert data["request_id"] == response.headers["request-id"]
+        assert response.headers["www-authenticate"] == "Bearer"
+        assert response.headers["x-should-retry"] == "false"
+    assert no_run.status_code == 403
+    assert no_run.json()["error"] == {
+        "type": "permission_error",
+        "message": "run_required: the traceparent names no run in flight",
+    }
+    assert chat.status_code == 401 and chat.json() == UNAUTHENTICATED
+    assert chat.content == (
+        b'{"error": {"code": "remote_unauthenticated", "type": "authentication_error", '
+        b'"message": "missing or invalid bearer token"}}'
+    )
+    assert inside.status_code == 200, inside.text
+    assert inside.json()["content"] == [{"type": "text", "text": "Plain words."}]
+
+
+async def test_count_tokens_and_models_are_404_with_a_token_and_401_without() -> None:
+    """Auth comes first. `count_tokens` is the Anthropic 404 once authenticated, but its 401 keeps
+    v4's body: the middlewares test the exact path `/v1/messages` (contract v5, A.8)."""
+    public, remote, _ = _app()
+    request, ctx = _run()
+    async with (
+        _client(remote) as client,
+        public.router.lifespan_context(public),
+        public.state.runs.register(request, ctx),
+    ):
+        for path in ("/v1/messages/count_tokens", "/v1/models"):
+            allowed = await client.post(path, json={}, headers=_auth(CURRENT))
+            denied = await client.post(path, json={})
+            assert allowed.status_code == 404, path
+            assert denied.status_code == 401 and denied.json() == UNAUTHENTICATED, path
+        counted = await client.post("/v1/messages/count_tokens", json={}, headers=_auth(CURRENT))
+    assert counted.json()["error"]["type"] == "not_found_error"
+
+
+async def test_a_websocket_to_the_anthropic_proxy_route_is_closed_with_1008() -> None:
+    _, remote, _ = _app()
+    sent: list[Any] = []
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "websocket.connect"}
+
+    async def send(message: Any) -> None:
+        sent.append(message)
+
+    scope = {"type": "websocket", "path": ANTHROPIC_PATH, "headers": [], "query_string": b""}
+    await remote(scope, receive, send)
+    assert sent == [{"type": "websocket.close", "code": 1008}]
+
+
 async def test_the_mcp_route_is_served_inside_a_run() -> None:
     """The tool endpoint is on the remote listener too; the token lets the request reach it."""
     public, remote, _ = _app()

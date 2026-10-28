@@ -1,0 +1,23 @@
+# PoC-6c scale run: the PoC-4 scale config (packages/chassis/configs/scale.yaml) with one change,
+# `spec.model.route: local-small`. The chassis calls LiteLLM (scale-litellm-slm.yaml, in the folder
+# above), which routes `local-small` to llama-server on the host. Seeded to MinIO by minio-init.
+# No key here.
+profile: local
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  adapters:
+    model: litellm
+    config: minio
+    state: valkey
+    telemetry: memory
+    tools: fake
+    events: none
+  engine:
+    connector: sidecar
+    url: http://127.0.0.1:9000
+  model:
+    route: local-small
+  prompt:
+    version: simplifier-v1

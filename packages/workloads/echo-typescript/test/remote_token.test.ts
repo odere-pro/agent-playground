@@ -1,6 +1,6 @@
 // The remote lane: with CHASSIS_API_TOKEN set, the model call carries `Authorization: Bearer
-// <token>`; unset or empty, it carries none; the token is in no event and no console line. This
-// workload has no MCP client, so the model call is its only call to the chassis.
+// <token>`; unset or empty, it carries none; the token is in no event and no console line.
+// (`test/agent.test.ts` checks the same header on the MCP requests.)
 
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";

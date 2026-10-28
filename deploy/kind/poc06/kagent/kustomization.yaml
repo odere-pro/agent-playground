@@ -1,0 +1,19 @@
+# The kagent-adk remote and its chassis (PoC-6b, the remote solution). Not part of remote/ or
+# agents/: its image is built from kagent's source by `run.sh build_kagent` (kagent/source.commit).
+# Objects name their own namespaces (poc05-remote and poc05-agents), so there is no `namespace:`
+# here. `run.sh` applies this folder as the platform deployer, last.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: poc06
+resources:
+  - remote-kagent-adk.yaml
+  - chassis-kagent-adk-remote.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: chassis-kagent-adk-remote-config
+    namespace: poc05-agents
+    files:
+      - config.yaml=chassis/kagent-adk-remote.yaml

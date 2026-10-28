@@ -65,6 +65,15 @@ The cap is read from `state.config` per call, so a reload applies on the next ad
 this process only, by design: a limit per replica. The remote listener shares it through
 `app.state.uncorrelated_cap`. A correlated call never touches it.
 
+Two routes share one admission step (`admit`): the OpenAI route above and the Anthropic proxy route
+(`POST /v1/messages` on the proxy port, `chassis.server.model_proxy_messages`, contract v5 part A).
+Same run lookup, same budget reservation, same uncorrelated cap. Neither route forwards a header.
+
+A refused model route (contract v5, A.9). A `ModelError` with code `http_401` or `http_403` (the
+model router refuses a route the key does not list) answers 403 `model_route_denied`, not 500, on
+both routes. On the OpenAI route only the complete call changes status; a stream keeps its 200 and
+its error frame. The call is counted as `chassis.model_upstream_denied{route}` and logged once.
+
 This is the model proxy (`POST /v1/chat/completions` on the proxy port). The router is mounted
 on the proxy app (`chassis.server.proxy_app`), a localhost-only listener,
 never on the public port (`deploy/CLAUDE.md`). The public port's route of the same path is the
@@ -75,10 +84,12 @@ reaches `ports.model` directly.
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 import uuid
 from collections.abc import AsyncIterator, Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, FastAPI
@@ -87,6 +98,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import Receive, Scope, Send
 
+from chassis.adapters.anthropic_compat.model_wire import DENIED_TEXT
 from chassis.adapters.openai_compat.messages import UnsupportedMessage, to_port_message
 from chassis.ports.bundle import PortBundle
 from chassis.ports.model import (
@@ -101,7 +113,9 @@ from chassis.ports.model import (
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server.correlation import RunRecord, RunRegistry, parse_traceparent
 
+log = logging.getLogger("chassis.model_proxy")
 SPAN = "chassis.model.call"
+DENIED = "chassis.model_upstream_denied"  # suggested
 WINDOW_S = 60.0
 # suggested: the worst case reserved, and forwarded, for an uncorrelated call that sets no
 # `max_tokens`; never more than the cap itself. The epic gives no value.
@@ -173,9 +187,12 @@ __all__ = [
     "DEFAULT_UNCORRELATED_MAX_TOKENS",
     "SPAN",
     "WINDOW_S",
+    "Admission",
     "ChatCompletionRequest",
+    "Refusal",
     "UncorrelatedCap",
     "UnsupportedMessage",
+    "admit",
     "model_proxy_router",
     "to_port_message",
 ]
@@ -255,7 +272,60 @@ def _error_body(exc: ModelError) -> dict[str, Any]:
     }
 
 
-def _budget_error(record: RunRecord) -> dict[str, Any]:
+@dataclass(frozen=True)
+class Refusal:
+    """A call refused at admission: 429 `budget_exhausted`, before the model is called."""
+
+    code: str
+    message: str
+    retryable: bool
+    status: int = 429
+
+    def chat_body(self) -> dict[str, Any]:
+        return {
+            "error": {
+                "message": self.message,
+                "type": self.code,
+                "code": self.code,
+                "retryable": self.retryable,
+            }
+        }
+
+
+def _denied(exc: ModelError) -> bool:
+    return exc.code in ("http_401", "http_403")
+
+
+def _denied_body() -> dict[str, Any]:
+    return {
+        "error": {
+            "message": DENIED_TEXT,
+            "type": "permission_error",
+            "code": "model_route_denied",
+            "retryable": False,
+        }
+    }
+
+
+def note_rejected(telemetry: TelemetryPort, route: str, exc: ModelError) -> None:
+    """Log the upstream's own text for a 400-class rejection at the chassis. The adapter has
+    already redacted and capped it. It never reaches the response."""
+    log.warning(
+        "model route rejected the request: route=%s code=%s upstream=%s",
+        route,
+        exc.code,
+        exc.message,
+    )
+
+
+def note_denied(telemetry: TelemetryPort, route: str, exc: ModelError) -> None:
+    """Count and log a refused model route once. The caller cannot tell a route outside its key
+    from a chassis key that is itself invalid; the operator can, from this."""
+    telemetry.counter(DENIED, route=route)
+    log.warning("model route refused by the upstream: route=%s code=%s", route, exc.code)
+
+
+def _budget_error(record: RunRecord) -> Refusal:
     held = record.reserved_tokens
     message = (
         f"request {record.request_id} has spent {record.spent_tokens} of its "
@@ -263,30 +333,16 @@ def _budget_error(record: RunRecord) -> dict[str, Any]:
     )
     if held:
         message += f"; {held} more are held by its in-flight model calls"
-    return {
-        "error": {
-            "message": message,
-            "type": "budget_exhausted",
-            "code": "budget_exhausted",
-            # Retryable only when in-flight calls hold the rest: they may settle for less.
-            "retryable": not record.exhausted,
-        }
-    }
+    # Retryable only when in-flight calls hold the rest: they may settle for less.
+    return Refusal("budget_exhausted", message, not record.exhausted)
 
 
-def _uncorrelated_error(limit: int, worst: int) -> dict[str, Any]:
+def _uncorrelated_error(limit: int, worst: int) -> Refusal:
     message = f"uncorrelated model calls are capped at {limit} tokens per minute"
     if 0 < limit < worst:
         message += f"; this call asks for {worst}"
-    return {
-        "error": {
-            "message": message,
-            "type": "budget_exhausted",
-            "code": "budget_exhausted",
-            # Retryable only when the call would fit an empty window.
-            "retryable": worst <= limit,
-        }
-    }
+    # Retryable only when the call would fit an empty window.
+    return Refusal("budget_exhausted", message, worst <= limit)
 
 
 async def _refused_stream(body: dict[str, Any]) -> AsyncIterator[str]:
@@ -294,10 +350,13 @@ async def _refused_stream(body: dict[str, Any]) -> AsyncIterator[str]:
     yield "data: [DONE]\n\n"
 
 
-def _span_attributes(route: str, trace_id: str | None, record: RunRecord | None) -> dict[str, Any]:
+def _span_attributes(
+    route: str, trace_id: str | None, record: RunRecord | None, fmt: str
+) -> dict[str, Any]:
     if record is None:
-        return {"route": route, "trace_id": trace_id, "correlated": False}
+        return {"route": route, "trace_id": trace_id, "correlated": False, "format": fmt}
     return {
+        "format": fmt,
         "route": route,
         "trace_id": record.trace_id,
         "request_id": record.request_id,
@@ -350,6 +409,10 @@ class _Hold:
             self.tokens = held  # the router reserved it on the cap
         self.max_tokens = self.tokens if record is not None or cap is not None else wanted
         self.started = False
+        # The Anthropic route sets this: a correlated stream whose client left after the model
+        # call started is charged too (contract v5 review, item 1). The chat route does not
+        # (Known gap 004 G-2).
+        self.charge_abandoned = False
         self.seen: list[Usage] = []
         self._done = False
 
@@ -367,6 +430,10 @@ class _Hold:
             return
         if self.cap is not None and self.started:
             self.settle(self.seen[-1] if self.seen else None)
+            return
+        if self.record is not None and self.charge_abandoned and self.started:
+            # Usage unknown: charge the whole reservation, the most the upstream can produce.
+            self.settle(self.seen[-1] if self.seen else Usage(output_tokens=self.tokens))
             return
         self._done = True
         if self.record is not None:
@@ -400,8 +467,10 @@ class _HeldStream(StreamingResponse):
     body generator unclosed, so `_sse`'s own `finally` runs late or never).
     """
 
-    def __init__(self, body: AsyncIterator[str], hold: _Hold) -> None:
-        super().__init__(body, media_type="text/event-stream")
+    def __init__(
+        self, body: AsyncIterator[str], hold: _Hold, headers: dict[str, str] | None = None
+    ) -> None:
+        super().__init__(body, media_type="text/event-stream", headers=headers)
         self._hold = hold
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -448,65 +517,96 @@ async def _frames(
     yield "data: [DONE]\n\n"
 
 
+@dataclass
+class Admission:
+    """A call let through: its reservation (`hold.max_tokens` is what to forward), and the span
+    attributes. Settle or release the hold exactly as `_Hold` says."""
+
+    hold: _Hold
+    attributes: dict[str, Any]
+    bundle: PortBundle
+    route: str
+
+
+def admit(
+    app: FastAPI, *, route: str, wanted: int | None, traceparent: str | None, fmt: str
+) -> Admission | Refusal:
+    """Steps 3 to 7 of the shared admission (contract v5, A.6): count the call, find its run,
+    refuse a spent run or a full uncorrelated cap with 429, else reserve. `fmt` is `openai` or
+    `anthropic`. The caller has checked `app.state.ready` and parsed the body.
+    """
+    bundle: PortBundle = app.state.ports
+    telemetry = bundle.telemetry
+    telemetry.counter("chassis.model_calls", route=route)
+    trace_id = parse_traceparent(traceparent)
+    runs: RunRegistry = app.state.runs
+    record = runs.lookup(trace_id) if trace_id is not None else None
+    cap: UncorrelatedCap = app.state.uncorrelated_cap
+    worst = 0
+    if record is None:
+        telemetry.counter("chassis.model_calls_uncorrelated", route=route)
+        telemetry.log(
+            "warning",
+            "model call names no in-flight run; served uncorrelated",
+            route=route,
+            trace_id=trace_id,
+            reason="no traceparent" if trace_id is None else "no in-flight run",
+        )
+        limit = app.state.config.spec.limits.uncorrelated_tokens_per_minute
+        worst = cap.worst_case(wanted, limit)
+        if not cap.reserve(worst, limit):
+            telemetry.counter("chassis.model_calls_refused", route=route)
+            return _uncorrelated_error(limit, worst)
+    elif record.remaining_tokens == 0:
+        telemetry.counter("chassis.model_calls_refused", route=route)
+        return _budget_error(record)
+    # No await between the check above and the reservation: one step on the event loop.
+    # An uncorrelated call's reservation is already on the cap.
+    hold = _Hold(record, wanted, cap, worst)
+    return Admission(hold, _span_attributes(route, trace_id, record, fmt), bundle, route)
+
+
+def is_ready(app: FastAPI) -> bool:
+    return bool(getattr(app.state, "ready", False))
+
+
 def model_proxy_router(app: FastAPI, *, clock: Callable[[], float] | None = None) -> APIRouter:
     """The router; `app.state.ports` is read per request, so it works after the lifespan.
 
     `clock` feeds the `UncorrelatedCap` the router makes; the cap is also at
     `app.state.uncorrelated_cap`, which a test may replace.
     """
+    from chassis.server.model_proxy_messages import add_messages_route
+
     router = APIRouter()
     if clock is not None or getattr(app.state, "uncorrelated_cap", None) is None:
         app.state.uncorrelated_cap = UncorrelatedCap(clock or time.monotonic)
 
     @router.post("/v1/chat/completions")
     async def chat_completions(body: ChatCompletionRequest, http: HTTPRequest) -> Any:
-        if not getattr(app.state, "ready", False):
+        if not is_ready(app):
             return JSONResponse({"detail": "model proxy not ready"}, status_code=503)
         try:
             messages: Sequence[ModelMessage] = body.port_messages()
         except UnsupportedMessage as exc:
             return JSONResponse(exc.body(), status_code=400)
-        bundle: PortBundle = app.state.ports
-        telemetry = bundle.telemetry
-        route = body.model
-        telemetry.counter("chassis.model_calls", route=route)
-        trace_id = parse_traceparent(http.headers.get("traceparent"))
-        runs: RunRegistry = app.state.runs
-        record = runs.lookup(trace_id) if trace_id is not None else None
-        cap: UncorrelatedCap = app.state.uncorrelated_cap
-        worst = 0
-        if record is None:
-            telemetry.counter("chassis.model_calls_uncorrelated", route=route)
-            telemetry.log(
-                "warning",
-                "model call names no in-flight run; served uncorrelated",
-                route=route,
-                trace_id=trace_id,
-                reason="no traceparent" if trace_id is None else "no in-flight run",
-            )
-            limit = app.state.config.spec.limits.uncorrelated_tokens_per_minute
-            worst = cap.worst_case(body.max_tokens, limit)
-            if not cap.reserve(worst, limit):
-                telemetry.counter("chassis.model_calls_refused", route=route)
-                refusal = _uncorrelated_error(limit, worst)
-                if body.stream:
-                    return StreamingResponse(
-                        _refused_stream(refusal), status_code=429, media_type="text/event-stream"
-                    )
-                return JSONResponse(refusal, status_code=429)
-        elif record.remaining_tokens == 0:
-            telemetry.counter("chassis.model_calls_refused", route=route)
+        admission = admit(
+            app,
+            route=body.model,
+            wanted=body.max_tokens,
+            traceparent=http.headers.get("traceparent"),
+            fmt="openai",
+        )
+        if isinstance(admission, Refusal):
+            refusal = admission.chat_body()
             if body.stream:
                 return StreamingResponse(
-                    _refused_stream(_budget_error(record)),
-                    status_code=429,
-                    media_type="text/event-stream",
+                    _refused_stream(refusal), status_code=429, media_type="text/event-stream"
                 )
-            return JSONResponse(_budget_error(record), status_code=429)
-        # No await between the check above and the reservation: one step on the event loop.
-        # An uncorrelated call's reservation is already on the cap.
-        hold = _Hold(record, body.max_tokens, cap, worst)
-        attributes = _span_attributes(route, trace_id, record)
+            return JSONResponse(refusal, status_code=429)
+        bundle, hold, route = admission.bundle, admission.hold, admission.route
+        telemetry = bundle.telemetry
+        attributes = admission.attributes
         tools = body.port_tools()
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
         created = int(time.time())
@@ -533,6 +633,9 @@ def model_proxy_router(app: FastAPI, *, clock: Callable[[], float] | None = None
                 )
             except ModelError as exc:
                 hold.settle(None)
+                if _denied(exc):
+                    note_denied(telemetry, route, exc)
+                    return JSONResponse(_denied_body(), status_code=403)
                 return JSONResponse(_error_body(exc), status_code=502 if exc.retryable else 500)
             except BaseException:
                 hold.settle(None)
@@ -540,4 +643,5 @@ def model_proxy_router(app: FastAPI, *, clock: Callable[[], float] | None = None
             hold.settle(result.usage)
         return JSONResponse(_completion(result, route, completion_id, created))
 
+    add_messages_route(router, app)
     return router

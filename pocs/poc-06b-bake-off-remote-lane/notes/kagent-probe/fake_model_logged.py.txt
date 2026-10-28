@@ -1,0 +1,43 @@
+"""The repo's fake model server, plus an ASGI layer that logs what the caller sent.
+
+Run with: uv run --package fake-model-server python fake_model_logged.py SCRIPT PORT LOG
+Logs one JSON line per request: method, path, traceparent (verbatim), the scheme of
+Authorization and its length (never the value), and the other header names.
+"""
+
+import json
+import sys
+
+import uvicorn
+from fake_model_server.app import create_app
+from fake_model_server.script import Script
+
+script_path, port, log_path = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+app = create_app(Script.from_yaml(script_path))
+
+
+class LogHeaders:
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            h = {k.decode().lower(): v.decode("latin-1") for k, v in scope["headers"]}
+            auth = h.get("authorization", "")
+            scheme, _, val = auth.partition(" ")
+            rec = {
+                "method": scope["method"],
+                "path": scope["path"],
+                "traceparent": h.get("traceparent"),
+                "tracestate": h.get("tracestate"),
+                "authorization_scheme": scheme or None,
+                "authorization_len": len(val),
+                "authorization_is_probe_token": val == "probe-remote-token",
+                "header_names": sorted(h),
+            }
+            with open(log_path, "a") as f:
+                f.write(json.dumps(rec) + "\n")
+        await self.inner(scope, receive, send)
+
+
+uvicorn.run(LogHeaders(app), host="127.0.0.1", port=port, log_level="warning")

@@ -384,9 +384,12 @@ async def test_h29_a_route_outside_the_key_is_refused_and_an_in_scope_call_is_20
     assert in_scope[0] == 200, in_scope
     assert in_scope[1]["choices"][0]["message"]["content"] == REPLY
     assert run.response is not None and run.response.json()["status"] == "ok", run.response
-    assert out_of_scope[0] == 500 and "choices" not in out_of_scope[1], out_of_scope
+    # Contract v5, A.9: an upstream 401 or 403 is 403 `model_route_denied` (it was 500
+    # `http_401` in v4). The remote can act on a 403, and it does not read as a chassis outage.
+    assert out_of_scope[0] == 403 and "choices" not in out_of_scope[1], out_of_scope
     error = out_of_scope[1]["error"]
-    assert error["code"] == "http_401" and error["retryable"] is False, error
+    assert error["code"] == "model_route_denied" and error["retryable"] is False, error
+    assert error["type"] == "permission_error", error
     assert scoped[0].refused == [OUT_OF_SCOPE], scoped[0].refused
 
 
