@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "fake-mcp-server": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["deploy/agent-scan/stdio_server.py", "fake-mcp-server"]
+    },
+    "code-runner": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["deploy/agent-scan/stdio_server.py", "code-runner"]
+    }
+  }
+}

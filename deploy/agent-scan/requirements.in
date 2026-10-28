@@ -1,0 +1,2 @@
+# The scanner, pinned. Lock: see requirements.txt.
+snyk-agent-scan==0.6.9
