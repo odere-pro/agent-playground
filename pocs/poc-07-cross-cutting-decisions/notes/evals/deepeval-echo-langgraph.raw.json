@@ -1,0 +1,2042 @@
+{
+ "testFile": "evals/deepeval/test_golden.py",
+ "testCases": [
+  {
+   "name": "g01",
+   "input": "simplify: The SLM, released in 2026 by Acme, cut costs by 30 percent.",
+   "actualOutput": "Acme put out the SLM in 2026. It cut costs by 30 percent.",
+   "toolsCalled": [],
+   "flaky": false,
+   "success": true,
+   "metricsData": [
+    {
+     "name": "contains:2026",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:Acme",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:30 percent",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:utilize",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:leverage",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": true,
+     "score": 1.0,
+     "reason": "The answer meets the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.08193989099981991,
+   "evaluationCost": 0.0,
+   "order": 0,
+   "metadata": {
+    "case_id": "g01",
+    "trace_id": "94a1598e5c024fe2bff42cda259d9c40"
+   }
+  },
+  {
+   "name": "g02",
+   "input": "simplify: Pursuant to the policy, employees must utilize the portal to submit expenses within 14 days.",
+   "actualOutput": "Staff must use the portal to send in expenses within 14 days.",
+   "toolsCalled": [],
+   "flaky": false,
+   "success": true,
+   "metricsData": [
+    {
+     "name": "contains:portal",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:expenses",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:14 days",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:pursuant",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:utilize",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": true,
+     "score": 1.0,
+     "reason": "The answer meets the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.0659872380001616,
+   "evaluationCost": 0.0,
+   "order": 1,
+   "metadata": {
+    "case_id": "g02",
+    "trace_id": "24e3a016352a4899a4ac78d1575103b6"
+   }
+  },
+  {
+   "name": "g03",
+   "input": "simplify: The aforementioned server will be decommissioned on 3 March owing to elevated maintenance expenditure.",
+   "actualOutput": "The server will be shut down on 3 March because it costs too much to maintain.",
+   "toolsCalled": [],
+   "flaky": false,
+   "success": true,
+   "metricsData": [
+    {
+     "name": "contains:server",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:3 March",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:aforementioned",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:decommissioned",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:expenditure",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": true,
+     "score": 1.0,
+     "reason": "The answer meets the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.04733471200006534,
+   "evaluationCost": 0.0,
+   "order": 2,
+   "metadata": {
+    "case_id": "g03",
+    "trace_id": "910df8f46fed482fba3b72bb777661c5"
+   }
+  },
+  {
+   "name": "g04",
+   "input": "simplify: In order to facilitate onboarding, the team will commence weekly sessions of 45 minutes.",
+   "actualOutput": "To help new people start, the team will hold weekly sessions of 45 minutes.",
+   "toolsCalled": [],
+   "flaky": false,
+   "success": true,
+   "metricsData": [
+    {
+     "name": "contains:weekly",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:45 minutes",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:facilitate",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:commence",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:in order to",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": true,
+     "score": 1.0,
+     "reason": "The answer meets the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.045706940999934886,
+   "evaluationCost": 0.0,
+   "order": 3,
+   "metadata": {
+    "case_id": "g04",
+    "trace_id": "3128b1b226a54701b5a2ef2bf046138b"
+   }
+  },
+  {
+   "name": "g05",
+   "input": "simplify: Customers who have not remitted payment by 30 June will incur a late fee of 5 percent.",
+   "actualOutput": "Customers who have not paid by 30 June will pay a late fee of 5 percent.",
+   "toolsCalled": [],
+   "flaky": false,
+   "success": true,
+   "metricsData": [
+    {
+     "name": "contains:30 June",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:5 percent",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:remitted",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:incur",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": true,
+     "score": 1.0,
+     "reason": "The answer meets the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.04611351899984584,
+   "evaluationCost": 0.0,
+   "order": 4,
+   "metadata": {
+    "case_id": "g05",
+    "trace_id": "862d03fbbb9a4ff8af2d17c44098de60"
+   }
+  },
+  {
+   "name": "g06",
+   "input": "simplify: The committee reached a consensus to allocate 2 million euros to the Berlin office.",
+   "actualOutput": "The committee agreed to give 2 million euros to the Berlin office.",
+   "toolsCalled": [],
+   "flaky": false,
+   "success": true,
+   "metricsData": [
+    {
+     "name": "contains:2 million euros",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:Berlin",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:consensus",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:allocate",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": true,
+     "score": 1.0,
+     "reason": "The answer meets the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.0458544980001534,
+   "evaluationCost": 0.0,
+   "order": 5,
+   "metadata": {
+    "case_id": "g06",
+    "trace_id": "89f623a5fc314d8e94a26a441756e59e"
+   }
+  },
+  {
+   "name": "g07",
+   "input": "simplify: Notwithstanding the outage, the platform maintained 99.9 percent availability in Q3.",
+   "actualOutput": "Despite the outage, the platform was up 99.9 percent of the time in Q3.",
+   "toolsCalled": [],
+   "flaky": false,
+   "success": true,
+   "metricsData": [
+    {
+     "name": "contains:99.9 percent",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:Q3",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:notwithstanding",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:availability",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": true,
+     "score": 1.0,
+     "reason": "The answer meets the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.047434896000140725,
+   "evaluationCost": 0.0,
+   "order": 6,
+   "metadata": {
+    "case_id": "g07",
+    "trace_id": "65ac5a1f3262436aa7790b33f6c766c4"
+   }
+  },
+  {
+   "name": "g08",
+   "input": "simplify: The model was trained on 12 billion tokens and evaluated on 3 benchmarks.",
+   "actualOutput": "The model learned from 12 billion tokens. It was tested on 3 benchmarks.",
+   "toolsCalled": [],
+   "flaky": false,
+   "success": false,
+   "metricsData": [
+    {
+     "name": "contains:12 billion tokens",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:3 benchmarks",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:utilize",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:leverage",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": false,
+     "score": 0.0,
+     "reason": "Learned from is not the same claim as trained on.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.056371054999999615,
+   "evaluationCost": 0.0,
+   "order": 7,
+   "metadata": {
+    "case_id": "g08",
+    "trace_id": "78b94357499e4148ba0747a77d18bc3c"
+   }
+  },
+  {
+   "name": "g09",
+   "input": "simplify: The library opens at 9 am, closes at 6 pm, and is closed on Sundays.",
+   "actualOutput": "The library opens at 9 am and closes at 6 pm.",
+   "toolsCalled": [],
+   "flaky": false,
+   "success": false,
+   "metricsData": [
+    {
+     "name": "contains:9 am",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:6 pm",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:Sundays",
+     "threshold": 1.0,
+     "success": false,
+     "score": 0.0,
+     "reason": "output lacks 'Sundays'",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:utilize",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:leverage",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": false,
+     "score": 0.0,
+     "reason": "The answer misses the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.043789325000034296,
+   "evaluationCost": 0.0,
+   "order": 8,
+   "metadata": {
+    "case_id": "g09",
+    "trace_id": "c01aa4b43076456f8dc512e81d30ce1b"
+   }
+  },
+  {
+   "name": "g10",
+   "input": "simplify: Staff should leverage the new dashboard to monitor the 4 regional sites.",
+   "actualOutput": "Staff should leverage the new dashboard to watch the 4 regional sites.",
+   "toolsCalled": [],
+   "flaky": false,
+   "success": false,
+   "metricsData": [
+    {
+     "name": "contains:dashboard",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:4 regional sites",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:leverage",
+     "threshold": 1.0,
+     "success": false,
+     "score": 0.0,
+     "reason": "output holds banned 'leverage'",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": false,
+     "score": 0.0,
+     "reason": "The answer misses the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.044308122000074945,
+   "evaluationCost": 0.0,
+   "order": 9,
+   "metadata": {
+    "case_id": "g10",
+    "trace_id": "ac4a0cd0d85f4e85a07739c23ecbda5f"
+   }
+  },
+  {
+   "name": "g11",
+   "input": "simplify: The bridge, built in 1932, carries 40000 vehicles per day.",
+   "actualOutput": "The bridge was built in 1932. It carries 4000 vehicles a day.",
+   "toolsCalled": [],
+   "flaky": false,
+   "success": false,
+   "metricsData": [
+    {
+     "name": "contains:1932",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:40000",
+     "threshold": 1.0,
+     "success": false,
+     "score": 0.0,
+     "reason": "output lacks '40000'",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:utilize",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:leverage",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": false,
+     "score": 0.0,
+     "reason": "The answer misses the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.0484802670002864,
+   "evaluationCost": 0.0,
+   "order": 10,
+   "metadata": {
+    "case_id": "g11",
+    "trace_id": "f43db5db003d422d8cc427be74060891"
+   }
+  },
+  {
+   "name": "g12",
+   "input": "simplify: The clinic moved to Elm Street in 2024.",
+   "actualOutput": "The clinic moved to Elm Street in 2024 to be closer to the hospital.",
+   "toolsCalled": [],
+   "flaky": false,
+   "success": false,
+   "metricsData": [
+    {
+     "name": "contains:Elm Street",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:2024",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:utilize",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "banned:leverage",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": false,
+     "score": 0.0,
+     "reason": "The answer misses the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.05210502099998848,
+   "evaluationCost": 0.0,
+   "order": 11,
+   "metadata": {
+    "case_id": "g12",
+    "trace_id": "eb10e22242934997926c7dd115d58bd1"
+   }
+  },
+  {
+   "name": "g13",
+   "input": "lookup: What is a sidecar? Also expand RAG.",
+   "actualOutput": "A sidecar is a lane where the workload runs in its own container next to the chassis. RAG stands for retrieval-augmented generation.",
+   "toolsCalled": [
+    {
+     "name": "glossary_lookup",
+     "type": "FUNCTION",
+     "inputParameters": {
+      "term": "sidecar"
+     }
+    },
+    {
+     "name": "acronym_expand",
+     "type": "FUNCTION",
+     "inputParameters": {
+      "acronym": "RAG"
+     }
+    }
+   ],
+   "flaky": false,
+   "success": true,
+   "metricsData": [
+    {
+     "name": "contains:own container",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:retrieval-augmented generation",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": true,
+     "score": 1.0,
+     "reason": "The answer meets the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.06376644500005568,
+   "evaluationCost": 0.0,
+   "order": 12,
+   "metadata": {
+    "case_id": "g13",
+    "trace_id": "4b60e689e4064718bdc73c49d2eb9b00"
+   }
+  },
+  {
+   "name": "g14",
+   "input": "lookup: Define LiteLLM and expand LLM.",
+   "actualOutput": "LiteLLM is the model router the chassis calls. LLM stands for large language model.",
+   "toolsCalled": [
+    {
+     "name": "glossary_lookup",
+     "type": "FUNCTION",
+     "inputParameters": {
+      "term": "LiteLLM"
+     }
+    },
+    {
+     "name": "acronym_expand",
+     "type": "FUNCTION",
+     "inputParameters": {
+      "acronym": "LLM"
+     }
+    }
+   ],
+   "flaky": false,
+   "success": true,
+   "metricsData": [
+    {
+     "name": "contains:model router",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:large language model",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": true,
+     "score": 1.0,
+     "reason": "The answer meets the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.047848234999946726,
+   "evaluationCost": 0.0,
+   "order": 13,
+   "metadata": {
+    "case_id": "g14",
+    "trace_id": "7ce67326e5f347cda7c84ca93ee6b98b"
+   }
+  },
+  {
+   "name": "g15",
+   "input": "lookup: Define traceparent and expand TTFT.",
+   "actualOutput": "traceparent is the W3C header that carries the trace id. TTFT stands for time to first token.",
+   "toolsCalled": [
+    {
+     "name": "glossary_lookup",
+     "type": "FUNCTION",
+     "inputParameters": {
+      "term": "traceparent"
+     }
+    },
+    {
+     "name": "acronym_expand",
+     "type": "FUNCTION",
+     "inputParameters": {
+      "acronym": "TTFT"
+     }
+    }
+   ],
+   "flaky": false,
+   "success": true,
+   "metricsData": [
+    {
+     "name": "contains:trace id",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:time to first token",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": true,
+     "score": 1.0,
+     "reason": "The answer meets the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.052970191999975214,
+   "evaluationCost": 0.0,
+   "order": 14,
+   "metadata": {
+    "case_id": "g15",
+    "trace_id": "410ae59684dd40cd967bbc252304da9d"
+   }
+  },
+  {
+   "name": "g16",
+   "input": "lookup: What is a lane?",
+   "actualOutput": "A lane is how the chassis reaches a workload: inprocess, sidecar, or remote.",
+   "toolsCalled": [
+    {
+     "name": "glossary_lookup",
+     "type": "FUNCTION",
+     "inputParameters": {
+      "term": "lane"
+     }
+    }
+   ],
+   "flaky": false,
+   "success": true,
+   "metricsData": [
+    {
+     "name": "contains:inprocess",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:sidecar",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:remote",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": true,
+     "score": 1.0,
+     "reason": "The answer meets the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.04798659999960364,
+   "evaluationCost": 0.0,
+   "order": 15,
+   "metadata": {
+    "case_id": "g16",
+    "trace_id": "8f3d2cad901e46ca8f0a7b9019b76a2a"
+   }
+  },
+  {
+   "name": "g17",
+   "input": "lookup: What is a port in the chassis?",
+   "actualOutput": "A port is a typed interface the chassis uses for one outside dependency.",
+   "toolsCalled": [
+    {
+     "name": "glossary_lookup",
+     "type": "FUNCTION",
+     "inputParameters": {
+      "term": "port"
+     }
+    }
+   ],
+   "flaky": false,
+   "success": true,
+   "metricsData": [
+    {
+     "name": "contains:typed interface",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": true,
+     "score": 1.0,
+     "reason": "The answer meets the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.04267956100011361,
+   "evaluationCost": 0.0,
+   "order": 16,
+   "metadata": {
+    "case_id": "g17",
+    "trace_id": "f7d6cc441b6d4187bab71693266e1b47"
+   }
+  },
+  {
+   "name": "g18",
+   "input": "lookup: Expand MCP.",
+   "actualOutput": "MCP stands for Model Context Protocol.",
+   "toolsCalled": [
+    {
+     "name": "acronym_expand",
+     "type": "FUNCTION",
+     "inputParameters": {
+      "acronym": "MCP"
+     }
+    }
+   ],
+   "flaky": false,
+   "success": true,
+   "metricsData": [
+    {
+     "name": "contains:Model Context Protocol",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": true,
+     "score": 1.0,
+     "reason": "The answer meets the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.05602661900002204,
+   "evaluationCost": 0.0,
+   "order": 17,
+   "metadata": {
+    "case_id": "g18",
+    "trace_id": "4c1e0cebe1a745a38501075a7964d5d8"
+   }
+  },
+  {
+   "name": "g19",
+   "input": "lookup: Define fake and expand A2A.",
+   "actualOutput": "A fake is an in-memory stand-in used in tests.",
+   "toolsCalled": [
+    {
+     "name": "glossary_lookup",
+     "type": "FUNCTION",
+     "inputParameters": {
+      "term": "fake"
+     }
+    }
+   ],
+   "flaky": false,
+   "success": false,
+   "metricsData": [
+    {
+     "name": "contains:in-memory stand-in",
+     "threshold": 1.0,
+     "success": true,
+     "score": 1.0,
+     "reason": "ok",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "contains:Agent-to-Agent",
+     "threshold": 1.0,
+     "success": false,
+     "score": 0.0,
+     "reason": "output lacks 'Agent-to-Agent'",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": false,
+     "score": 0.0,
+     "reason": "tool calls [{'name': 'glossary_lookup', 'arguments': {'term': 'fake'}}], expected [{'name': 'glossary_lookup', 'arguments': {'term': 'fake'}}, {'name': 'acronym_expand', 'arguments': {'acronym': 'A2A'}}]",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": false,
+     "score": 0.0,
+     "reason": "The answer misses the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.0514677539999866,
+   "evaluationCost": 0.0,
+   "order": 18,
+   "metadata": {
+    "case_id": "g19",
+    "trace_id": "9af42003e8bb474ab21a13e0bd5055ef"
+   }
+  },
+  {
+   "name": "g20",
+   "input": "lookup: Define workload.",
+   "actualOutput": "I could not find the word workload.",
+   "toolsCalled": [
+    {
+     "name": "acronym_expand",
+     "type": "FUNCTION",
+     "inputParameters": {
+      "acronym": "workload"
+     }
+    }
+   ],
+   "flaky": false,
+   "success": false,
+   "metricsData": [
+    {
+     "name": "contains:agent code",
+     "threshold": 1.0,
+     "success": false,
+     "score": 0.0,
+     "reason": "output lacks 'agent code'",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "tools",
+     "threshold": 1.0,
+     "success": false,
+     "score": 0.0,
+     "reason": "tool calls [{'name': 'acronym_expand', 'arguments': {'acronym': 'workload'}}], expected [{'name': 'glossary_lookup', 'arguments': {'term': 'workload'}}]",
+     "strictMode": false,
+     "flaky": false
+    },
+    {
+     "name": "rubric [GEval]",
+     "threshold": 0.5,
+     "success": false,
+     "score": 0.0,
+     "reason": "The answer misses the rubric.",
+     "strictMode": false,
+     "flaky": false,
+     "evaluationModel": "fake-judge (Local Model)",
+     "evaluationCost": 0.0,
+     "inputTokenCount": 0,
+     "outputTokenCount": 0
+    }
+   ],
+   "runDuration": 0.057188601000234485,
+   "evaluationCost": 0.0,
+   "order": 19,
+   "metadata": {
+    "case_id": "g20",
+    "trace_id": "e8d4b68aab12468ba8fbd8449d2f51be"
+   }
+  }
+ ],
+ "conversationalTestCases": [],
+ "metricsScores": [
+  {
+   "metric": "contains:2026",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:Acme",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:30 percent",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "banned:utilize",
+   "scores": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+   ],
+   "passes": 6,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "banned:leverage",
+   "scores": [
+    1.0,
+    1.0,
+    1.0,
+    0.0,
+    1.0,
+    1.0
+   ],
+   "passes": 5,
+   "fails": 1,
+   "errors": 0
+  },
+  {
+   "metric": "tools",
+   "scores": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0
+   ],
+   "passes": 18,
+   "fails": 2,
+   "errors": 0
+  },
+  {
+   "metric": "rubric [GEval]",
+   "scores": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0
+   ],
+   "passes": 13,
+   "fails": 7,
+   "errors": 0
+  },
+  {
+   "metric": "contains:portal",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:expenses",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:14 days",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "banned:pursuant",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:server",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:3 March",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "banned:aforementioned",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "banned:decommissioned",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "banned:expenditure",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:weekly",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:45 minutes",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "banned:facilitate",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "banned:commence",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "banned:in order to",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:30 June",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:5 percent",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "banned:remitted",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "banned:incur",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:2 million euros",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:Berlin",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "banned:consensus",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "banned:allocate",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:99.9 percent",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:Q3",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "banned:notwithstanding",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "banned:availability",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:12 billion tokens",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:3 benchmarks",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:9 am",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:6 pm",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:Sundays",
+   "scores": [
+    0.0
+   ],
+   "passes": 0,
+   "fails": 1,
+   "errors": 0
+  },
+  {
+   "metric": "contains:dashboard",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:4 regional sites",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:1932",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:40000",
+   "scores": [
+    0.0
+   ],
+   "passes": 0,
+   "fails": 1,
+   "errors": 0
+  },
+  {
+   "metric": "contains:Elm Street",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:2024",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:own container",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:retrieval-augmented generation",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:model router",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:large language model",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:trace id",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:time to first token",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:inprocess",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:sidecar",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:remote",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:typed interface",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:Model Context Protocol",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:in-memory stand-in",
+   "scores": [
+    1.0
+   ],
+   "passes": 1,
+   "fails": 0,
+   "errors": 0
+  },
+  {
+   "metric": "contains:Agent-to-Agent",
+   "scores": [
+    0.0
+   ],
+   "passes": 0,
+   "fails": 1,
+   "errors": 0
+  },
+  {
+   "metric": "contains:agent code",
+   "scores": [
+    0.0
+   ],
+   "passes": 0,
+   "fails": 1,
+   "errors": 0
+  }
+ ],
+ "testPassed": 13,
+ "testFailed": 7,
+ "runDuration": 4.893177953999839,
+ "evaluationCost": 0.0,
+ "official": false
+}

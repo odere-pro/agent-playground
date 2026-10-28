@@ -2,7 +2,7 @@
 
 The PoC-6 benchmark kit: `python -m bakeoff smoke | run`. Usage, the matrix, and the columns are in `README.md`.
 
-- No agent framework, no product SDK, and no key. Never imported by the chassis; import-linter enforces it. It may import `chassis.fakes` (tool schemas), `fake_model_server`, `httpx`, `uvicorn`, and `yaml`. It declares no dependency of its own: the workspace venv has them (adding one changes `uv.lock`).
+- No agent framework, no product SDK, and no key. Never imported by the chassis; import-linter enforces it. It may import `chassis.fakes` (tool schemas), `chassis.core.trace` (the W3C trace id), `fake_model_server`, `httpx`, `uvicorn`, and `yaml`. It declares no dependency of its own: the workspace venv has them (adding one changes `uv.lock`).
 - No Dockerfile.
 - The CLI is not a test, so it may use localhost TCP. A test that spawns it is marked `network`. All other tests run offline; `httpx.MockTransport` stands in for the chassis.
 - Trust rule: an untrusted engine runs only in `remote`. Keep `registry.lanes_for`, `registry.check_lane`, and the generated `spec.trust` in step. With a real model (`--model-url`) an untrusted engine never runs on the host: `registry.check_hosted` refuses it in `running_stack` and the CLI, and `scripts/poc06_mac.sh` keeps the same list (a test compares them).
@@ -10,3 +10,4 @@ The PoC-6 benchmark kit: `python -m bakeoff smoke | run`. Usage, the matrix, and
 - Every process runs through `procs.Cleanup` (own process group, killed at exit). Ports come from `procs.free_port`.
 - A new engine is one `Engine` row in `registry.py`: handle or runner, trust, script, mapping files, and the skip rule. Add its row to the tests in `test_bakeoff_matrix.py`.
 - Tests start with the package name.
+- PoC-7 eval trial (`evaltrial.py`, `golden/`, `evalreport.py`, `langfuse_datasets.py`): the golden set is `golden/cases.yaml`; after an edit run `python -m bakeoff.golden.generate --write` (a test checks the generated scripts and promptfoo tests). The eval tools never enter `uv.lock`: `uv run --no-project --with deepeval==4.3.2`, `npx -y promptfoo@0.125.1`. Their telemetry is always off (`evaltrial.TELEMETRY_OFF`). Langfuse credentials come from the environment only and are never printed.

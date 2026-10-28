@@ -1,0 +1,237 @@
+# The PoC-7 golden set: 20 cases, the same for every engine and every eval tool.
+#
+# Each case has the input the chassis gets on `POST /v1/run`, what a good answer must show
+# (`expect`), a rubric for the model-graded metric, a reference answer, and a human label of that
+# reference answer (`pass` or `fail`), so a judge's agreement can be measured later.
+#
+# The fake model server answers each case with its reference answer (generated script:
+# packages/fake-model-server/scripts/golden.yaml). Six references are wrong on purpose, so the
+# tools have something to fail. `model.calls`, when present, is what the scripted model asks for
+# instead of `expect.tool_calls` (a wrong tool plan). `judge`, when present, is the scripted judge's
+# verdict when it differs from the label (a judge error, for the agreement number); otherwise the
+# judge agrees with the label. Regenerate the scripts and the promptfoo tests after an edit:
+#   uv run python -m bakeoff.golden.generate --write
+#
+# Labels: hand-written by the PoC-7 author on 2026-10-28, one reviewer pass. suggested: a second
+# labeller before the set gates a release (backlog 064 D-1).
+version: 1
+cases:
+  - id: g01
+    task: simplifier
+    input: "simplify: The SLM, released in 2026 by Acme, cut costs by 30 percent."
+    expect:
+      contains: ["2026", "Acme", "30 percent"]
+      banned: ["utilize", "leverage"]
+      tool_calls: []
+    rubric: "The answer keeps the year 2026, the maker Acme, and the 30 percent cost cut, in plain words, and adds no new claim."
+    reference: "Acme put out the SLM in 2026. It cut costs by 30 percent."
+    label: pass
+  - id: g02
+    task: simplifier
+    input: "simplify: Pursuant to the policy, employees must utilize the portal to submit expenses within 14 days."
+    expect:
+      contains: ["portal", "expenses", "14 days"]
+      banned: ["pursuant", "utilize"]
+      tool_calls: []
+    rubric: "The answer says staff use the portal to send expenses within 14 days, in plain words, and adds no new claim."
+    reference: "Staff must use the portal to send in expenses within 14 days."
+    label: pass
+  - id: g03
+    task: simplifier
+    input: "simplify: The aforementioned server will be decommissioned on 3 March owing to elevated maintenance expenditure."
+    expect:
+      contains: ["server", "3 March"]
+      banned: ["aforementioned", "decommissioned", "expenditure"]
+      tool_calls: []
+    rubric: "The answer says the server stops on 3 March because upkeep costs too much, in plain words, and adds no new claim."
+    reference: "The server will be shut down on 3 March because it costs too much to maintain."
+    label: pass
+  - id: g04
+    task: simplifier
+    input: "simplify: In order to facilitate onboarding, the team will commence weekly sessions of 45 minutes."
+    expect:
+      contains: ["weekly", "45 minutes"]
+      banned: ["facilitate", "commence", "in order to"]
+      tool_calls: []
+    rubric: "The answer says the team holds weekly 45 minute sessions to help new people start, in plain words, and adds no new claim."
+    reference: "To help new people start, the team will hold weekly sessions of 45 minutes."
+    label: pass
+  - id: g05
+    task: simplifier
+    input: "simplify: Customers who have not remitted payment by 30 June will incur a late fee of 5 percent."
+    expect:
+      contains: ["30 June", "5 percent"]
+      banned: ["remitted", "incur"]
+      tool_calls: []
+    rubric: "The answer says customers who have not paid by 30 June pay a 5 percent late fee, in plain words, and adds no new claim."
+    reference: "Customers who have not paid by 30 June will pay a late fee of 5 percent."
+    label: pass
+  - id: g06
+    task: simplifier
+    input: "simplify: The committee reached a consensus to allocate 2 million euros to the Berlin office."
+    expect:
+      contains: ["2 million euros", "Berlin"]
+      banned: ["consensus", "allocate"]
+      tool_calls: []
+    rubric: "The answer says the committee agreed to give 2 million euros to the Berlin office, in plain words, and adds no new claim."
+    reference: "The committee agreed to give 2 million euros to the Berlin office."
+    label: pass
+  - id: g07
+    task: simplifier
+    input: "simplify: Notwithstanding the outage, the platform maintained 99.9 percent availability in Q3."
+    expect:
+      contains: ["99.9 percent", "Q3"]
+      banned: ["notwithstanding", "availability"]
+      tool_calls: []
+    rubric: "The answer says the platform was up 99.9 percent of the time in Q3 despite the outage, in plain words, and adds no new claim."
+    reference: "Despite the outage, the platform was up 99.9 percent of the time in Q3."
+    label: pass
+  - id: g08
+    task: simplifier
+    input: "simplify: The model was trained on 12 billion tokens and evaluated on 3 benchmarks."
+    expect:
+      contains: ["12 billion tokens", "3 benchmarks"]
+      banned: ["utilize", "leverage"]
+      tool_calls: []
+    rubric: "The answer says the model was trained on 12 billion tokens and tested on 3 benchmarks, in plain words, and adds no new claim."
+    reference: "The model learned from 12 billion tokens. It was tested on 3 benchmarks."
+    label: pass
+    judge:
+      verdict: fail
+      reason: "Learned from is not the same claim as trained on."
+  - id: g09
+    task: simplifier
+    input: "simplify: The library opens at 9 am, closes at 6 pm, and is closed on Sundays."
+    expect:
+      contains: ["9 am", "6 pm", "Sundays"]
+      banned: ["utilize", "leverage"]
+      tool_calls: []
+    rubric: "The answer keeps all three facts: opens at 9 am, closes at 6 pm, closed on Sundays, in plain words."
+    reference: "The library opens at 9 am and closes at 6 pm."
+    label: fail
+    note: "Drops a fact: closed on Sundays."
+  - id: g10
+    task: simplifier
+    input: "simplify: Staff should leverage the new dashboard to monitor the 4 regional sites."
+    expect:
+      contains: ["dashboard", "4 regional sites"]
+      banned: ["leverage"]
+      tool_calls: []
+    rubric: "The answer says staff use the new dashboard to watch the 4 regional sites, with no jargon such as leverage."
+    reference: "Staff should leverage the new dashboard to watch the 4 regional sites."
+    label: fail
+    note: "Keeps a banned word: leverage."
+  - id: g11
+    task: simplifier
+    input: "simplify: The bridge, built in 1932, carries 40000 vehicles per day."
+    expect:
+      contains: ["1932", "40000"]
+      banned: ["utilize", "leverage"]
+      tool_calls: []
+    rubric: "The answer keeps the year 1932 and the number 40000 vehicles a day exactly, in plain words."
+    reference: "The bridge was built in 1932. It carries 4000 vehicles a day."
+    label: fail
+    note: "Changes a number: 40000 became 4000."
+  - id: g12
+    task: simplifier
+    input: "simplify: The clinic moved to Elm Street in 2024."
+    expect:
+      contains: ["Elm Street", "2024"]
+      banned: ["utilize", "leverage"]
+      tool_calls: []
+    rubric: "The answer says the clinic moved to Elm Street in 2024 and adds no new claim, such as a reason for the move."
+    reference: "The clinic moved to Elm Street in 2024 to be closer to the hospital."
+    label: fail
+    note: "Adds a claim that is not in the input. Only the model-graded metric can catch it."
+  - id: g13
+    task: lookup
+    input: "lookup: What is a sidecar? Also expand RAG."
+    expect:
+      contains: ["own container", "retrieval-augmented generation"]
+      tool_calls:
+        - { name: glossary_lookup, arguments: { term: sidecar } }
+        - { name: acronym_expand, arguments: { acronym: RAG } }
+    rubric: "The answer defines a sidecar from the glossary and expands RAG, using only what the tools returned."
+    reference: "A sidecar is a lane where the workload runs in its own container next to the chassis. RAG stands for retrieval-augmented generation."
+    label: pass
+  - id: g14
+    task: lookup
+    input: "lookup: Define LiteLLM and expand LLM."
+    expect:
+      contains: ["model router", "large language model"]
+      tool_calls:
+        - { name: glossary_lookup, arguments: { term: LiteLLM } }
+        - { name: acronym_expand, arguments: { acronym: LLM } }
+    rubric: "The answer defines LiteLLM from the glossary and expands LLM, using only what the tools returned."
+    reference: "LiteLLM is the model router the chassis calls. LLM stands for large language model."
+    label: pass
+  - id: g15
+    task: lookup
+    input: "lookup: Define traceparent and expand TTFT."
+    expect:
+      contains: ["trace id", "time to first token"]
+      tool_calls:
+        - { name: glossary_lookup, arguments: { term: traceparent } }
+        - { name: acronym_expand, arguments: { acronym: TTFT } }
+    rubric: "The answer defines traceparent from the glossary and expands TTFT, using only what the tools returned."
+    reference: "traceparent is the W3C header that carries the trace id. TTFT stands for time to first token."
+    label: pass
+  - id: g16
+    task: lookup
+    input: "lookup: What is a lane?"
+    expect:
+      contains: ["inprocess", "sidecar", "remote"]
+      tool_calls:
+        - { name: glossary_lookup, arguments: { term: lane } }
+    rubric: "The answer defines a lane from the glossary and names the three lanes."
+    reference: "A lane is how the chassis reaches a workload: inprocess, sidecar, or remote."
+    label: pass
+  - id: g17
+    task: lookup
+    input: "lookup: What is a port in the chassis?"
+    expect:
+      contains: ["typed interface"]
+      tool_calls:
+        - { name: glossary_lookup, arguments: { term: port } }
+    rubric: "The answer defines a port from the glossary, using only what the tool returned."
+    reference: "A port is a typed interface the chassis uses for one outside dependency."
+    label: pass
+  - id: g18
+    task: lookup
+    input: "lookup: Expand MCP."
+    expect:
+      contains: ["Model Context Protocol"]
+      tool_calls:
+        - { name: acronym_expand, arguments: { acronym: MCP } }
+    rubric: "The answer expands MCP, using only what the tool returned."
+    reference: "MCP stands for Model Context Protocol."
+    label: pass
+  - id: g19
+    task: lookup
+    input: "lookup: Define fake and expand A2A."
+    expect:
+      contains: ["in-memory stand-in", "Agent-to-Agent"]
+      tool_calls:
+        - { name: glossary_lookup, arguments: { term: fake } }
+        - { name: acronym_expand, arguments: { acronym: A2A } }
+    model:
+      calls:
+        - { name: glossary_lookup, arguments: { term: fake } }
+    rubric: "The answer defines a fake from the glossary and expands A2A, using only what the tools returned."
+    reference: "A fake is an in-memory stand-in used in tests."
+    label: fail
+    note: "Skips the second tool call, so A2A is never expanded."
+  - id: g20
+    task: lookup
+    input: "lookup: Define workload."
+    expect:
+      contains: ["agent code"]
+      tool_calls:
+        - { name: glossary_lookup, arguments: { term: workload } }
+    model:
+      calls:
+        - { name: acronym_expand, arguments: { acronym: workload } }
+    rubric: "The answer defines a workload from the glossary, using only what the tool returned."
+    reference: "I could not find the word workload."
+    label: fail
+    note: "Calls the wrong tool (acronym_expand), so it finds nothing."
