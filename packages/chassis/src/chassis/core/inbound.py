@@ -242,6 +242,8 @@ PUBLIC_MESSAGES: Mapping[str, str] = {
     "idempotency_conflict": "this Idempotency-Key was already used with a different request",
     "idempotency_in_progress": "a request with this Idempotency-Key is still running; retry later",
     "state_unavailable": "the chassis cannot reach its state store; retry later",
+    # PoC-7: every attempt failed the evaluator gate and there is no fallback route.
+    "evaluator_gate_failed": "the answer did not pass the quality check",
     # Tool codes (PoC-5, plan section 2.6): the text of an MCP tool error on `/mcp`.
     "unknown_tool": "no such tool",
     "bad_arguments": "the tool arguments do not match the tool's input schema",

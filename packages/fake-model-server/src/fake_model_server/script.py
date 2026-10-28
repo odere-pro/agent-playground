@@ -12,6 +12,10 @@ is the trigger when only `system` or `user` messages follow it and none of those
 matches any plain rule (a plain rule with no `match` matches every text). A user message that
 matches a plain rule is a new turn, and the plain rules answer it as before. A conversation that
 ends in a `tool` message is unchanged.
+
+Routes (PoC-7, suggested): a rule with `model` matches only a request whose `model` (the route)
+is that value; a rule without it matches every route. The evaluator gate's fallback attempt goes
+to another route, so a script can answer the fallback differently.
 """
 
 from __future__ import annotations
@@ -44,6 +48,8 @@ class ErrorSpec(BaseModel):
 class Rule(BaseModel):
     model_config = ConfigDict(extra="forbid")
     match: str | None = None
+    model: str | None = None
+    """Only for a request to this model (route); None matches every route."""
     after_tool: bool = False
     reply: str = ""
     tool_call: ToolCallSpec | None = None
@@ -77,7 +83,7 @@ class Script(BaseModel):
     def _matches_plain(self, text: str) -> bool:
         return any(not r.after_tool and (r.match is None or r.match in text) for r in self.rules)
 
-    def pick(self, messages: list[dict[str, Any]]) -> Rule:
+    def pick(self, messages: list[dict[str, Any]], model: str | None = None) -> Rule:
         trigger = self._tool_trigger(messages)
         after_tool = trigger is not None
         if trigger is not None:
@@ -88,6 +94,8 @@ class Script(BaseModel):
                 "",
             )
         for rule in self.rules:
+            if rule.model is not None and rule.model != model:
+                continue
             if rule.after_tool == after_tool and (rule.match is None or rule.match in text):
                 return rule
         return Rule(reply=self.default_reply)
