@@ -12,8 +12,8 @@ Proposed, 2026-10-28. The user accepts it at the PoC-7 pull request.
 Evidence that is not in yet:
 
 - **The Collector, Langfuse, and Jaeger run only in CI or on the Mac.** The Docker registries need auth in the build container, so the stack in `deploy/compose/poc07/` runs in `poc07-stack.yml` or on the Mac. Every offline check uses the in-memory span exporter.
-- EVIDENCE: the run of `poc07-stack.yml` that shows one trace in Langfuse and in Jaeger, with its run id.
-- EVIDENCE: the test that joins the chassis and the workload spans in one trace over A2A, in `inprocess` and `sidecar`.
+- Waits on: the `poc07-stack.yml` CI run that shows one trace in Langfuse and in Jaeger (`pocs/poc-07-cross-cutting-decisions/tests/test_poc07_stack.py::test_same_spans_reach_langfuse_and_jaeger_through_the_collector`, skipped offline). Its run id goes here.
+- Offline, the join is shown in the `sidecar` lane, over A2A on a Unix socket: `pocs/poc-07-cross-cutting-decisions/tests/test_poc07_obs_trace_join.py::test_one_trace_joins_chassis_workload_framework_model_and_tool[echo-langgraph]` and `[echo-openai-agents]`. The swap by exporter config is shown against two in-process OTLP receivers: `pocs/poc-07-cross-cutting-decisions/tests/test_poc07_obs_telemetry_swap.py::test_switching_the_backend_is_exporter_config_only`.
 
 ## Context
 
@@ -45,7 +45,7 @@ Options considered:
 
 1. **The real adapter is `OtelTelemetry`** behind `TelemetryPort` (`spec.adapters.telemetry: otel`). It uses the OpenTelemetry SDK and exports OTLP over HTTP. The fake stays `InMemoryTelemetry`. Both pass the same suite. The endpoint and headers come from the standard `OTEL_EXPORTER_OTLP_*` variables, not from `spec`.
 2. **The run span sits on the request's W3C trace id.** The chassis continues a caller's `traceparent`. Otherwise the trace id is `trace_id_hex(ctx.trace_id)`, as today. The connector's run span is the parent id of the `traceparent` sent to the workload, so the workload's spans hang under it. The chassis adds spans per stage it owns: the run, each model and tool proxy call, each guard stage (ADR-008), and the evaluator gate (ADR-010). suggested: `chassis.*` names, as today; GenAI attributes only where they are stable enough to read.
-3. **User and session ids travel as W3C baggage, not as `Context` fields.** The chassis drops any inbound `baggage` header from the caller. It sets its own: `user.id` is the caller's `Principal.subject` from `AuthPort` (ADR-008), and `session.id` is the value of the header named by `spec.observability.session_header` (suggested: `x-session-id`). The A2A connectors send `baggage` next to `traceparent` on every A2A request of the run. The chassis also sets both as attributes on its own spans. OPEN: whether `user.id` is the subject itself or a keyed hash of it, and whether an `untrusted` remote gets `user.id` at all (ADR-008 owns the answer).
+3. **User and session ids travel as W3C baggage, not as `Context` fields.** The chassis drops any inbound `baggage` header from the caller. It sets its own: `user.id` is the caller's `Principal.subject` from `AuthPort` (ADR-008), and `session.id` is the value of the header named by `spec.observability.session_header` (suggested: `x-session-id`). The A2A connectors send `baggage` next to `traceparent` on every A2A request of the run. The chassis also sets both as attributes on its own spans. As built: `user.id` is the authenticated subject as it is. With auth off (`NoAuth`) there is no `user.id` (`packages/chassis/tests/test_security_auth.py::test_the_callers_subject_is_user_id_on_the_run_span`, `::test_auth_off_puts_no_user_id_on_the_run_span`; `packages/chassis/tests/test_otel_wiring.py::test_the_connector_sends_baggage_next_to_the_traceparent`). The baggage is built from the chassis's own span attributes, so a caller's `baggage` header is never forwarded. OPEN (user): should `user.id` be a keyed hash of the subject instead, and should an `untrusted` remote get `user.id` at all? Today it is the raw subject, in every lane.
 4. **Where each hook lives:**
 
    | Hook | Lives in | Why there |
@@ -57,11 +57,11 @@ Options considered:
    | Fan-out, sampling, and log redaction | The OTel Collector | The backends and their credentials stay out of the pods |
    | Backend credentials | The Collector's environment | Hard requirement 1: no workload holds one |
 
-5. **What each engine must expose.** Nothing new in its event mapping. In its process it must: forward `traceparent` and `baggage` on every model and MCP call (`traceparent` is already required by contract v1); run the OpenInference instrumentor for its framework, or native OpenTelemetry; export OTLP to the Collector endpoint it is given; and switch off any vendor trace export (the OpenAI Agents SDK's own tracing, as in PoC-6). The list per engine is in contract v6, part F. EVIDENCE: the W1 table that shows each of the two PoC-7 engines in one trace.
-6. **The second backend is Jaeger v2 in PoC-7** (`deploy/compose/poc07/`). It proves the swap. Tempo stays the pick for production in 014 H-7. The swap is the Collector's exporter list only. EVIDENCE: the Collector config diff and the two screenshots or API reads.
-7. **Workload logs are redacted in the Collector's log pipeline.** The chassis redacts its own logs and events with regex (`chassis.redaction`, ADR-008). OPEN: named-entity redaction in the Collector. The contrib `redaction` processor matches patterns; names need a Presidio call from the pipeline or a custom processor. If neither is ready in PoC-8, names in workload logs are a recorded gap with an owner.
-8. **Sampling.** The chassis marks every run sampled today (`traceparent` flags `01`). suggested: sample in the Collector (tail sampling), so one decision covers the chassis, the workload, and LiteLLM. The epic's `observability.trace_sample_rate` maps to that policy. OPEN: head or tail sampling, decided in PoC-8 with the volume numbers.
-9. **The egress rule.** The workload pod may reach the Collector's OTLP port and nothing else of the telemetry stack. That rule belongs to 026 CH-4. OPEN: what an `untrusted` remote may send. suggested: a remote exports to a separate Collector receiver that requires the remote's token and marks its spans as untrusted data, or it exports nothing and the trace holds only the chassis and LiteLLM spans for that remote.
+5. **What each engine must expose.** Nothing new in its event mapping. In its process it must: forward `traceparent` and `baggage` on every model and MCP call (`traceparent` is already required by contract v1); run the OpenInference instrumentor for its framework, or native OpenTelemetry; export OTLP to the Collector endpoint it is given; and switch off any vendor trace export (the OpenAI Agents SDK's own tracing, as in PoC-6). The list per engine is in contract v6, part F, and in [the per-engine note](../../../pocs/poc-07-cross-cutting-decisions/notes/2026-10-28-per-engine-mapping.md). Two engines were run in one trace, `echo-langgraph` and `echo-openai-agents` (`test_poc07_obs_trace_join.py`). Neither needed anything in its event mapping: only the instrumentor and `inject_trace_headers` on its HTTP clients, in its own `telemetry.py`.
+6. **The second backend is Jaeger v2 in PoC-7** (`deploy/compose/poc07/`). It proves the swap. Tempo stays the pick for production in 014 H-7. The swap is the Collector's exporter list only. The config is `deploy/compose/poc07/otel-collector.yaml`: the traces pipeline lists `otlphttp/langfuse` and `otlp/jaeger` (`pocs/poc-07-cross-cutting-decisions/tests/test_poc07_stack_static.py::test_collector_traces_go_to_langfuse_and_jaeger`). Waits on: the `poc07-stack.yml` CI run for the two API reads, one from each backend.
+7. **Workload logs are redacted in the Collector's log pipeline.** The chassis redacts its own logs and events with regex (`chassis.redaction`, ADR-008). As built in PoC-7, the Collector's log pipeline masks emails and phone numbers by regex only (`transform/redact`; `pocs/poc-07-cross-cutting-decisions/tests/test_poc07_stack_static.py::test_collector_logs_pipeline_masks_emails_and_phones`). Named-entity redaction there is not built. It needs a Presidio call from the pipeline or a custom processor. Owner: 014 H-7, in PoC-8. Until then, names in workload logs are a recorded gap.
+8. **Sampling.** The chassis marks every run sampled today (`traceparent` flags `01`). suggested: sample in the Collector (tail sampling), so one decision covers the chassis, the workload, and LiteLLM. The epic's `observability.trace_sample_rate` maps to that policy. Deferred to PoC-8 (014 H-7): head or tail sampling, decided with the volume numbers.
+9. **The egress rule.** The workload pod may reach the Collector's OTLP port and nothing else of the telemetry stack. That rule belongs to 026 CH-4. OPEN (user): what may an `untrusted` remote send? suggested: a remote exports to a separate Collector receiver that requires the remote's token and marks its spans as untrusted data, or it exports nothing and the trace holds only the chassis and LiteLLM spans for that remote.
 
 ## Consequences
 
@@ -81,15 +81,15 @@ Harder:
 
 Costs:
 
-- The OpenTelemetry SDK in the chassis image and in every workload image. EVIDENCE: the image size and idle RSS delta of the chassis with `otel` against `memory`.
-- Per run: one span export batch from each container. EVIDENCE: the p50 latency delta of `/v1/run` with `otel` on, on the fake model.
+- The OpenTelemetry SDK in the chassis image and in every workload image. Waits on: the image size and the idle RSS delta of the chassis with `otel` against `memory`. They need Docker, so the Mac run or the PoC-8 build; not measured in PoC-7.
+- Per run: one span export batch from each container. Waits on: the p50 latency delta of `/v1/run` with `otel` on, on the fake model. Not measured in PoC-7.
 - In every lane:
 
   | Lane | Cost |
   | ---- | ---- |
   | `inprocess` | The in-memory exporter. The `baggage` header rides the ASGI transport. No new hop |
   | `sidecar` | The workload exports to the Collector over the pod network. About 100 bytes more per A2A request for `baggage` (suggested estimate) |
-  | `remote` | The same header over the network. Whether the remote's spans are accepted is OPEN (item 9) |
+  | `remote` | The same header over the network. Whether the remote's spans are accepted is an open question (item 9) |
 
 ## Revisit
 
@@ -106,3 +106,9 @@ Reopen this decision on any of these:
 - Langfuse and OpenTelemetry: <https://langfuse.com/integrations/native/opentelemetry>
 - W3C Baggage: <https://www.w3.org/TR/baggage/>
 - OpenTelemetry Collector: <https://opentelemetry.io/docs/collector/>
+
+## Open questions for the user
+
+1. Should `user.id` be a keyed hash of the caller's subject rather than the subject itself? Today it is the raw subject (item 3).
+2. Should an `untrusted` remote get `user.id` in its baggage? Today it does, in every lane (item 3).
+3. What may an `untrusted` remote send to the trace: its spans through a separate, token-checked Collector receiver, or nothing (item 9)?

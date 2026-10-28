@@ -13,6 +13,7 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
 - PoC-4 adds state, events, the config store and reload, idempotency, readiness, and the drain.
 - Spec: [contract v3](../contracts/contract-v3.md), PoC-4's additive changes. Read v2 and v1 for what v3 does not name.
 - How PoC-4 works: [the PoC-4 guide](poc-04-how-it-works.md).
+- PoC-7 adds security, observability, feedback, and the evaluator gate. Spec: [contract v6](../contracts/contract-v6.md). See [PoC-7 modules](#poc-7-modules).
 
 ## core
 
@@ -374,6 +375,30 @@ The Anthropic proxy route (`POST /v1/messages` on the proxy port; contract v5, p
 - `mount_tool_endpoint(proxy, lifespan_app=public_app)` mounts `/mcp` on the proxy port. It serves the tools for workloads.
 - It is never on the public port.
 - Streamable HTTP is built from `state.ports.tools` in the public app's lifespan. It answers 503 before that.
+
+## PoC-7 modules
+
+Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 in `docs/planning/adr/`. Every port is off (`none`) in the `fake` and `local` profiles until an agent names it.
+
+| Module | What it does | Contract v6 |
+| ------ | ------------ | ----------- |
+| `chassis/ports/{auth,guardrail,evaluator,feedback}.py` | The four new ports, each with a no-op default in `PortBundle` | A.1 to A.4 |
+| `chassis/fakes/{auth,guardrail,evaluator,feedback}.py` | `StaticTokens`, `KeywordGuardrails`, `ScriptedEvaluator`, `InMemoryFeedback` | A.1 to A.4 |
+| `chassis/adapters/otel` | `OtelTelemetry`: OTLP over HTTP, the run span on the request's W3C trace id, `user.id` and `session.id` as baggage | A.5, F |
+| `chassis/adapters/oidc` | `OidcAuth`: a JWT checked against the IdP's JWKS (pyjwt) | A.1, D.1 |
+| `chassis/adapters/litellm/guardrails.py` | `LiteLLMGuardrails`: LiteLLM's `POST /guardrails/apply_guardrail`, guardrail names per stage | A.2, D.3 |
+| `chassis/adapters/langfuse` | `LangfuseFeedback`: Langfuse `POST /api/public/scores`, plain httpx | A.4 |
+| `chassis/adapters/evaluators.py` | `JudgeEvaluator` (an LLM judge through `ModelPort`) and `EncoderEvaluator` (a TEI classifier) | A.3 |
+| `chassis/server/security.py` | `CallerAuth`: the bearer token and the route's scope on the public app | D.1, D.4 |
+| `chassis/server/guard.py` | The `input`, `tool_output`, and `output` guard stages | D.2 |
+| `chassis/server/marking.py` | `MarkOutputs`: `X-AI-Generated` and `X-AI-Disclosure-Required` on every run interface | E |
+| `chassis/server/feedback.py` | `POST /v1/feedback`, the request-to-trace lookup in `StatePort`, the event `agents.feedback.received.v1` | B, C |
+| `chassis/server/evaluator_gate.py` | `GatedEngine`: sync and async gating, retry, fallback, sample rate | G |
+| `chassis/redaction.py` | Regex redaction of the chassis's logs and events. Never a named-entity model | B.6, ADR-008 item 6 |
+| `chassis/tracecontext.py` | A checked inbound `traceparent` for the model proxy and the tool endpoint to continue | A.5 |
+
+- The model proxy also sends every call of the gate's fallback attempt to the fallback route (`chassis.model_route_forced`).
+- Tests: the fake bindings are in `tests/test_contracts_poc07.py`; each real adapter binds the same suite in its own file (`test_oidc_adapter.py`, `test_litellm_guardrails.py`, `test_evaluators.py`, `test_langfuse_feedback.py`, `test_otel_telemetry.py`), offline against a stub. The scenarios are in `pocs/poc-07-cross-cutting-decisions/tests/`.
 
 ## profiles.py
 
