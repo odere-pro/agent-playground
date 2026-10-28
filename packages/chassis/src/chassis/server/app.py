@@ -24,6 +24,11 @@ With `spec.events.result_events` the lifespan adds a `ResultPublisher` (`chassis
 to `pipeline.on_finished`; on the way out it waits for pending publishes, bounded, before the
 ports close.
 
+When `feedback_on(config)` (PoC-7, `chassis.server.feedback`), `create_app` mounts
+`POST /v1/feedback` and the lifespan adds a `FeedbackLookup` to `pipeline.on_finished`, gives the
+adapter `spec.feedback.score_name`, and, with `spec.feedback.events`, starts `FeedbackEvents`
+(`app.state.feedback_events`), drained like the result publisher.
+
 `/health` is 200 while the process serves HTTP, draining included; it never looks at the
 workload. `/ready` is 503 with a `reason` (`starting`, `draining`, `workload_unreachable`) until
 the lifespan finished, from the moment `state.draining` is set (`chassis.server.lifecycle`), and
@@ -48,6 +53,13 @@ from chassis.profiles import LaneNotAllowed, build_ports, check_lane
 from chassis.server.config import ChassisConfig
 from chassis.server.config_loader import ConfigReloader
 from chassis.server.correlation import RunRegistry
+from chassis.server.feedback import (
+    FeedbackEvents,
+    FeedbackLookup,
+    bind_score_name,
+    feedback_on,
+    mount_feedback,
+)
 from chassis.server.interfaces import mount_interfaces
 from chassis.server.lifecycle import CloseWhenDraining
 from chassis.server.manifest import mount_manifest
@@ -80,13 +92,15 @@ def check_engine(bundle: PortBundle, config: ChassisConfig, *, built: bool) -> N
 
 
 async def close_ports(bundle: PortBundle) -> None:
-    """Close the engine, the model adapter when it has an `aclose()`, the state store, the
-    event port, and the config port when it has an `aclose()` (S3Config holds a client), in
-    that order. Each one closes even when an earlier one raises.
+    """Close the engine, the model adapter when it has an `aclose()`, the feedback adapter when it
+    has one (PoC-7), the state store, the event port, and the config port when it has an
+    `aclose()` (S3Config holds a client), in that order. Each one closes even when an earlier one
+    raises.
     """
     closers = [
         bundle.engine.close,
         getattr(bundle.model, "aclose", None),
+        getattr(getattr(bundle, "feedback", None), "aclose", None),
         bundle.state.aclose,
         bundle.events.aclose,
         getattr(bundle.config, "aclose", None),
@@ -138,6 +152,16 @@ def create_app(
             publisher = ResultPublisher(app.state)
             app.state.pipeline.on_finished.append(publisher)
         app.state.result_publisher = publisher
+        lookup = None  # feedback: `spec.feedback` is restart-only, read once here
+        feedback_events = None
+        if feedback_route:
+            spec_feedback = app.state.config.spec.feedback
+            bind_score_name(bundle.feedback, spec_feedback.score_name)
+            lookup = FeedbackLookup(app.state)
+            app.state.pipeline.on_finished.append(lookup)
+            if spec_feedback.events:
+                feedback_events = FeedbackEvents(app.state)
+        app.state.feedback_events = feedback_events
         monitor.start()
         app.state.ready = True
         try:
@@ -151,13 +175,20 @@ def create_app(
             if publisher is not None:  # pending publishes go out, bounded, before the ports close
                 app.state.pipeline.on_finished.remove(publisher)
                 await publisher.aclose()
+            if lookup is not None:
+                app.state.pipeline.on_finished.remove(lookup)
+            if feedback_events is not None:
+                app.state.feedback_events = None
+                await feedback_events.aclose()
             await close_ports(bundle)
 
+    feedback_route = feedback_on(config)
     app = FastAPI(title="chassis", version=CHASSIS_VERSION, lifespan=lifespan)
     app.state.config = config
     app.state.config_loaded = False  # set by the config loader in the lifespan
     app.state.config_reloader = None
     app.state.result_publisher = None  # set in the lifespan when `spec.events.result_events`
+    app.state.feedback_events = None  # set in the lifespan when `spec.feedback.events`
     app.state.ready = False
     app.state.draining = False
     app.state.readiness = None
@@ -186,6 +217,8 @@ def create_app(
         return JSONResponse({"status": "not ready", "reason": reason}, status_code=503)
 
     mount_manifest(app)
+    if feedback_route:
+        mount_feedback(app)  # not an interface: no `x-chassis-interface`, not in the manifest
     mount_interfaces(app, config)  # last
     app.add_middleware(CloseWhenDraining, state=app.state)  # public only, never the proxy app
     return app

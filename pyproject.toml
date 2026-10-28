@@ -47,6 +47,7 @@ members = [
   "packages/bakeoff",
   "packages/fake-mcp-server",
   "packages/code-runner",
+  "packages/fake-langfuse",
 ]
 
 [tool.uv.sources]
@@ -63,6 +64,7 @@ echo-smolagents = { workspace = true }
 bakeoff = { workspace = true }
 fake-mcp-server = { workspace = true }
 code-runner = { workspace = true }
+fake-langfuse = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["packages", "pocs"]
@@ -120,6 +122,7 @@ root_packages = [
   "bakeoff",
   "fake_mcp_server",
   "code_runner",
+  "fake_langfuse",
 ]
 include_external_packages = true
 
@@ -144,6 +147,12 @@ source_modules = ["fake_mcp_server", "code_runner"]
 forbidden_modules = ["chassis", "chassis_contracts"]
 
 [[tool.importlinter.contracts]]
+name = "the fake Langfuse API never imports the chassis (PoC-7)"
+type = "forbidden"
+source_modules = ["fake_langfuse"]
+forbidden_modules = ["chassis", "chassis_contracts"]
+
+[[tool.importlinter.contracts]]
 name = "the chassis never imports a workload (no business logic in the chassis)"
 type = "forbidden"
 source_modules = ["chassis"]
@@ -158,6 +167,7 @@ forbidden_modules = [
   "bakeoff",
   "fake_mcp_server",
   "code_runner",
+  "fake_langfuse",
 ]
 # `allow_indirect_imports` stays unset so an indirect import counts too. The connector loads
 # `spec.engine.handle` by dotted path at runtime through `importlib`, which this does not see.

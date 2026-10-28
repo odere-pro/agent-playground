@@ -2,11 +2,16 @@
 adapter is `LangfuseFeedback` (`chassis.adapters.langfuse`), Langfuse's scores API.
 
 `submit(feedback)` is idempotent per `feedback_id`: the same id twice is one record. The chassis
-serves it as `POST /v1/feedback` and finds the trace from the `request_id`.
+serves it as `POST /v1/feedback` (`chassis.server.feedback`) and finds the trace from the
+`request_id`.
+
+`FeedbackReceived` is the payload of the CloudEvent `agents.feedback.received.v1`, published on
+`EventPort` when `spec.feedback.events` is on; its schema is `schemas/feedback.v0.json`.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,6 +32,31 @@ class Feedback(BaseModel):
     comment: str | None = Field(default=None, max_length=COMMENT_MAX)
     subject: str | None = None
     """Who gave it: the caller's `Principal.subject`, never a value from the body."""
+    timestamp: datetime | None = None
+    """When this `feedback_id` was first given, timezone-aware. The chassis keeps it per id, so a
+    repeat sends the same value: Langfuse updates a score only for the same `id` and `timestamp`.
+    None lets the store pick the time."""
+
+
+FEEDBACK_SCHEMA_VERSION = "0"
+"""`feedback.v0.json`: the payload of `agents.feedback.received.v1`."""
+
+
+class FeedbackReceived(BaseModel):
+    """The payload of `agents.feedback.received.v1` (PoC-7, suggested). The comment is redacted
+    (`chassis.redaction.redact`) before it is put here."""
+
+    model_config = ConfigDict(extra="forbid")
+    feedback_id: str
+    request_id: str
+    trace_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    agent: str
+    score: float = Field(ge=0, le=1)
+    label: str | None = None
+    comment: str | None = None
+    """Redacted: emails, phone numbers, and ids are `<ENTITY>`."""
+    subject: str | None = None
+    received_at: datetime
 
 
 class FeedbackError(Exception):
