@@ -35,6 +35,9 @@ the lifespan finished, from the moment `state.draining` is set (`chassis.server.
 while the workload probe fails (`chassis.server.readiness`). New calls are still served while
 draining: `state.ready` stays the pipeline's "engine set up" flag. While draining, every public
 response carries `Connection: close` (`chassis.server.lifecycle.CloseWhenDraining`).
+
+With `spec.governance.marking` on, every response of a run route carries `X-AI-Generated` and
+`X-AI-Disclosure-Required` (`chassis.server.marking.MarkOutputs`, the outermost middleware).
 """
 
 from __future__ import annotations
@@ -63,6 +66,7 @@ from chassis.server.feedback import (
 from chassis.server.interfaces import mount_interfaces
 from chassis.server.lifecycle import CloseWhenDraining
 from chassis.server.manifest import mount_manifest
+from chassis.server.marking import MarkOutputs
 from chassis.server.pipeline import RunPipeline
 from chassis.server.readiness import ProbeSettings, ReadinessMonitor, Reason, not_ready_reason
 from chassis.server.results import ResultPublisher
@@ -221,4 +225,5 @@ def create_app(
         mount_feedback(app)  # not an interface: no `x-chassis-interface`, not in the manifest
     mount_interfaces(app, config)  # last
     app.add_middleware(CloseWhenDraining, state=app.state)  # public only, never the proxy app
+    app.add_middleware(MarkOutputs, state=app.state)  # outermost: a refusal is marked too
     return app

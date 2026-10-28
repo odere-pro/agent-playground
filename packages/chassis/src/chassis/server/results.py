@@ -24,6 +24,14 @@ a `PublishFailed` (or any other exception from the adapter) as
 never the payload (suggested names). A run that did not finish (the client left, the stream ended
 early) publishes nothing, and neither does a replay: `serve` never calls `on_finished` for one.
 
+**Redacted before it is stored (PoC-7, 022 H-6).** A result event is a stored record: H-6 says
+PII is redacted before any record is stored. So the free text in the payload goes through
+`chassis.redaction.redact_value` before the event is built: `output` (the answer text, tool call
+arguments, and the error message under `output.error.message`) and `input` (the user's text and
+data). Regex only (emails, phone numbers, card numbers, IBANs, US social security numbers); each
+match becomes `<ENTITY>`. The answer to the caller is not redacted: it is not a record. Ids,
+hashes, versions, and usage counts are not free text and stay as they are.
+
 At shutdown the lifespan awaits `aclose()` before the ports close: it waits for pending publishes
 up to `SHUTDOWN_WAIT_S` (suggested: 5 s), then cancels the rest and counts them as
 `chassis.events.publish_abandoned`.
@@ -38,10 +46,12 @@ from datetime import UTC, datetime
 
 from starlette.datastructures import State
 
+from chassis.core.envelope import TaskInput
 from chassis.core.results import TASK_COMPLETED, TASK_FAILED, TaskResult
 from chassis.core.trace import traceparent_for
 from chassis.ports.bundle import PortBundle
 from chassis.ports.events import CloudEvent, PublishFailed
+from chassis.redaction import redact_value
 from chassis.server.pipeline import Run
 
 __all__ = [
@@ -84,7 +94,8 @@ DATASCHEMA = "task-result.v1.json"
 
 
 async def result_event(run: Run) -> tuple[str, CloudEvent]:
-    """The topic and the CloudEvent for a finished run. The run must be `done`."""
+    """The topic and the CloudEvent for a finished run, its free text redacted (module
+    docstring). The run must be `done`."""
     response = await run.response()
     request = run.request
     topic = TASK_FAILED if response.status == "error" else TASK_COMPLETED
@@ -95,8 +106,8 @@ async def result_event(run: Run) -> tuple[str, CloudEvent]:
         request_id=request.request_id,
         idempotency_key=hashed,
         status=response.status,
-        input=request.input,
-        output=response.output,
+        input=TaskInput.model_validate(redact_value(request.input.model_dump(mode="json"))),
+        output=redact_value(response.output),
         usage=response.metrics,
         versions=response.versions,
     )

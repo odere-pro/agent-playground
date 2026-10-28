@@ -46,6 +46,7 @@ from chassis.core.envelope import Budget, Context, Request, Response, TaskInput,
 from chassis.core.events import Error, Event
 from chassis.core.inbound import Interface, Served
 from chassis.ports.bundle import PortBundle
+from chassis.redaction import redact
 from chassis.server.config import ChassisConfig
 from chassis.server.correlation import RunRecord, RunRegistry, TraceIdInUse
 from chassis.server.idempotency import Idempotency
@@ -282,16 +283,18 @@ class Run:
 
     def _record_error(self, attributes: dict[str, Any], error: Error) -> None:
         """Keep a run error's detail where an operator sees it: the span and the log. The OpenAI
-        and Anthropic interfaces send a fixed text per code instead (`public_message`)."""
+        and Anthropic interfaces send a fixed text per code instead (`public_message`). The detail
+        is regex-redacted (`chassis.redaction`, 022 H-6) in both: a log and a span are stored."""
+        detail = redact(error.message)
         attributes["error.code"] = error.code
-        attributes["error.message"] = error.message
+        attributes["error.message"] = detail
         self._pipeline.ports.telemetry.log(
             "error",
             "run error",
             request_id=self.request.request_id,
             trace_id=self.request.trace_id,
             code=error.code,
-            detail=error.message,
+            detail=detail,
         )
 
     async def response(self) -> Response:
