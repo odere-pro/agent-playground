@@ -169,9 +169,10 @@ def test_criterion_4_the_scale_stack_builds_and_names_every_sidecar_engine() -> 
 
 
 def test_criterion_4_the_hostile_suite_on_kind() -> None:
-    """Criterion 4 (hostile suite): the PoC-5 sidecar kind suite for each engine. Skipped: it
-    needs a kind cluster (CI's kind job and the Mac run, plan A4), not this offline task."""
-    pytest.skip("the PoC-5 sidecar kind suite runs on kind (plan A4, kind CI job); not offline")
+    """Criterion 4 (hostile suite): the PoC-5 sidecar kind suite for each new sidecar engine. It
+    lives in 6b, `test_poc06b_kind_sidecar_controls.py`, and passed on kind (`poc06-kind.yml` run
+    38010290978). Skipped here: it needs a kind cluster, not this offline gate."""
+    pytest.skip("runs on kind: 6b test_poc06b_kind_sidecar_controls.py (poc06-kind.yml)")
 
 
 # --- Criterion 5 to 8 ---
