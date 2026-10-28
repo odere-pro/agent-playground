@@ -67,6 +67,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.datastructures import State
 
 from chassis.core.trace import trace_id_hex
+from chassis.ports.auth import ANY_SCOPE
 from chassis.ports.bundle import PortBundle
 from chassis.ports.events import CloudEvent, PublishFailed
 from chassis.ports.feedback import (
@@ -333,8 +334,11 @@ def _refused(code: str) -> JSONResponse:
 
 
 def _subject(http: HTTPRequest) -> str | None:
-    """The authenticated caller, when an auth middleware set `request.state.principal`."""
+    """The authenticated caller, when the auth middleware set `request.state.principal`. Auth off
+    (`NoAuth`'s anonymous principal, which holds every scope) is no subject."""
     principal = getattr(http.state, "principal", None)
+    if ANY_SCOPE in getattr(principal, "scopes", ()):
+        return None
     subject = getattr(principal, "subject", None)
     return subject if isinstance(subject, str) and subject else None
 

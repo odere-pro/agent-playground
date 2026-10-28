@@ -17,8 +17,10 @@ import pytest
 from chassis.core.handle import echo
 from chassis.core.trace import trace_id_hex
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.auth import StaticTokens
 from chassis.fakes.events import InMemoryBus
 from chassis.fakes.feedback import InMemoryFeedback
+from chassis.ports.auth import NoAuth, Principal
 from chassis.ports.bundle import PortBundle
 from chassis.ports.feedback import FeedbackPort, NoFeedback
 from chassis.ports.state import InMemoryState, StatePort
@@ -62,6 +64,7 @@ def _app(
     state: StatePort | None = None,
     bus: InMemoryBus | None = None,
     config: ChassisConfig | None = None,
+    auth: StaticTokens | None = None,
 ) -> FastAPI:
     ports = PortBundle(
         model=ScriptedModel(),
@@ -71,6 +74,7 @@ def _app(
         state=state or InMemoryState(),
         events=bus or InMemoryBus(),
         feedback=feedback or InMemoryFeedback(),
+        auth=auth or NoAuth(),
     )
     return create_app(config or _config(), ports)
 
@@ -181,21 +185,24 @@ async def test_a_bad_body_is_422(body: dict[str, Any]) -> None:
 
 
 async def test_the_subject_comes_from_the_principal_never_the_body() -> None:
-    class Principal:
-        subject = "user-42"
-
+    token = "tok-42"
+    scopes = frozenset({"agent:run", "agent:feedback"})
     store = InMemoryFeedback()
-    app = _app(feedback=store)
-
-    @app.middleware("http")
-    async def authenticate(request: Any, call_next: Any) -> Any:
-        request.state.principal = Principal()  # what W2's auth middleware sets
-        return await call_next(request)
+    app = _app(feedback=store, auth=StaticTokens({token: Principal("user-42", scopes)}))
+    headers = {"Authorization": f"Bearer {token}"}
 
     async with _client(app) as client:
-        run = await _run(client)
+        run = (
+            await client.post("/v1/run", json={"input": {"text": "hello"}}, headers=headers)
+        ).json()
+        spoofed = await client.post(
+            FEEDBACK_PATH,
+            json={"request_id": run["request_id"], "score": 1, "subject": "spoofed"},
+            headers=headers,
+        )
+        assert spoofed.status_code == 422, "the body cannot name the subject"
         answer = await client.post(
-            FEEDBACK_PATH, json={"request_id": run["request_id"], "score": 1}
+            FEEDBACK_PATH, json={"request_id": run["request_id"], "score": 1}, headers=headers
         )
     stored = store.records[answer.json()["feedback_id"]]
     assert stored.subject == "user-42"

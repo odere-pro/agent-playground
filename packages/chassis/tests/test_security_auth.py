@@ -259,3 +259,34 @@ async def test_before_the_lifespan_auth_none_passes_and_oidc_refuses() -> None:
             transport=httpx.ASGITransport(app=app), base_url="http://chassis"
         ) as client:
             assert (await client.get("/openapi.json")).status_code == status
+
+
+async def test_the_callers_subject_is_user_id_on_the_run_span() -> None:
+    """PoC-7 (ADR-007): `user.id` on `chassis.run` is the checked caller's subject, never a
+    header; the session id comes from `spec.observability.session_header`."""
+    app = _app()
+    async with _client(app) as client:
+        reply = await client.post(
+            "/v1/run",
+            json=RUN_BODY,
+            headers={**_bearer(RUNNER), "x-session-id": "s-1", "x-user-id": "spoofed"},
+        )
+        assert reply.status_code == 200
+        telemetry: InMemoryTelemetry = app.state.ports.telemetry
+    runs = [s for s in telemetry.spans if s.name == "chassis.run"]
+    assert runs[-1].attributes["user.id"] == "user-run"
+    assert runs[-1].attributes["session.id"] == "s-1"
+
+
+async def test_auth_off_puts_no_user_id_on_the_run_span() -> None:
+    ports = PortBundle(
+        model=ScriptedModel(),
+        engine=FakeEngine(handle=echo),
+        config=InMemoryConfig(),
+        telemetry=InMemoryTelemetry(),
+    )
+    app = create_app(ChassisConfig.model_validate(CONFIG), ports)
+    async with _client(app) as client:
+        assert (await client.post("/v1/run", json=RUN_BODY)).status_code == 200
+    runs = [s for s in ports.telemetry.spans if s.name == "chassis.run"]  # type: ignore[attr-defined]
+    assert "user.id" not in runs[-1].attributes

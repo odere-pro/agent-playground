@@ -39,6 +39,7 @@ and `x-chassis-interface` grant nothing.
 
 from __future__ import annotations
 
+import contextvars
 import json
 from typing import Any, Literal
 
@@ -46,7 +47,7 @@ from fastapi import FastAPI
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from chassis.ports.auth import AuthError, AuthPort, Principal
+from chassis.ports.auth import ANY_SCOPE, AuthError, AuthPort, Principal
 from chassis.profiles import AdapterNotAvailable, merge_adapters
 from chassis.server.config import ChassisConfig
 
@@ -99,6 +100,21 @@ def _bearer(headers: Headers) -> str | None:
     if scheme.lower() != "bearer":
         return None
     return token.strip() or None
+
+
+_CALLER: contextvars.ContextVar[Principal | None] = contextvars.ContextVar(
+    "chassis_caller", default=None
+)
+
+
+def current_user_id() -> str | None:
+    """The checked caller's subject for this request, for `user.id` on spans and in baggage
+    (PoC-7, ADR-007). None with auth off (`NoAuth`'s anonymous principal) or outside a request.
+    """
+    principal = _CALLER.get()
+    if principal is None or ANY_SCOPE in principal.scopes:
+        return None
+    return principal.subject
 
 
 def principal_of(scope: Scope) -> Principal | None:
@@ -177,7 +193,11 @@ class CallerAuth:
             state["principal"] = principal
         else:  # pragma: no cover - a server that gives a State object
             state.principal = principal
-        await self.app(scope, receive, send)
+        token = _CALLER.set(principal)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            _CALLER.reset(token)
 
     def _auth_off(self) -> bool:
         config: ChassisConfig | None = getattr(self.public.state, "config", None)

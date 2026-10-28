@@ -86,6 +86,7 @@ from chassis.server.interfaces.hold import hold
 from chassis.server.interfaces.ids import ResolvedIds, may_remint, open_run
 from chassis.server.interfaces.limits import enforce_limits
 from chassis.server.pipeline import Run, RunPipeline, RunStream
+from chassis.server.security import current_user_id
 
 __all__ = [
     "CLIENT_DISCONNECTED",
@@ -201,7 +202,7 @@ async def serve[BodyT](
             request,
             interface=interface,
             remint=may_remint(ids, interface),
-            observed=pipeline.observed_for(headers),
+            observed=pipeline.observed_for(headers, user_id=current_user_id()),
         )
     except TraceIdInUse as exc:
         if claim is not None:

@@ -257,7 +257,8 @@ def test_fan_out_sends_the_same_spans_to_both(backends: dict[str, Receiver]) -> 
 def test_the_collector_config_fans_traces_out_to_langfuse_and_jaeger() -> None:
     """Exit criterion 1 (config): the Collector config parses; its traces pipeline takes OTLP in
     and exports to both Langfuse (OTLP/HTTP at `/api/public/otel`, Basic auth from the
-    environment, never a literal key) and Jaeger, the second backend; the logs pipeline has the redaction stage."""
+    environment, never a literal key) and Jaeger, the second backend; the logs pipeline has the
+    redaction stage."""
     config = yaml.safe_load(COLLECTOR.read_text())
     assert "otlp" in config["receivers"]
     exporters = config["exporters"]
