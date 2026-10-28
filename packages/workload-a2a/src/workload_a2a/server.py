@@ -16,6 +16,11 @@ The request is read with `mapping.message_to_input`: `chassis.ctx` and `chassis.
 strings, passed to `handle` as is. After the schema-version check and before `handle` runs, a value
 there that is not a JSON object is `error {code: "a2a.bad_request"}` (suggested: the code name).
 
+Tracing (PoC-7): each task's `handle` runs inside `telemetry.handle_span`, a `workload.handle`
+span that continues the A2A request's `traceparent` header (else `ctx["traceparent"]`) and carries
+its `baggage`. `build_app` calls `telemetry.configure_from_env()`, so the span is exported only when
+an OTLP endpoint is set or a test configured telemetry; otherwise it is a no-op.
+
 `PruningRequestHandler` deletes each task from the store once it is terminal, so a long-running
 sidecar does not keep every task in memory (PoC-1 debt, 2026-09-29). `build_server` and `serve`
 run the app on uvicorn, on loopback only unless `allow_any_host` is set (ADR-001: the sidecar
@@ -66,6 +71,7 @@ from fastapi import FastAPI
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import best_match
 
+from workload_a2a import telemetry
 from workload_a2a.mapping import (
     SCHEMA_VERSION_KEY,
     BadJson,
@@ -211,7 +217,11 @@ class HandleExecutor(AgentExecutor):
         except BadJson as exc:
             await event_to_update(_error("a2a.bad_request", str(exc)), updater)
             return
-        stream = self._handle(input, ctx)
+        headers = context.call_context.state.get("headers") if context.call_context else None
+        with telemetry.handle_span(headers if isinstance(headers, dict) else {}, ctx):
+            await self._run(self._handle(input, ctx), task_id, updater)
+
+    async def _run(self, stream: AsyncIterator[Any], task_id: str, updater: TaskUpdater) -> None:
         self._running[task_id] = stream
         started = False
         terminal = False
@@ -372,7 +382,9 @@ def build_agent_card(
 def build_app(
     handle: WireHandle, card: AgentCard, *, task_store: TaskStore | None = None
 ) -> FastAPI:
-    """The ASGI app: the agent card and the JSON-RPC endpoint, over `PruningRequestHandler`."""
+    """The ASGI app: the agent card and the JSON-RPC endpoint, over `PruningRequestHandler`.
+    Configures tracing from the environment when it is not configured yet (`telemetry`)."""
+    telemetry.configure_from_env()
     handler = PruningRequestHandler(
         agent_executor=HandleExecutor(handle),
         task_store=task_store if task_store is not None else InMemoryTaskStore(),

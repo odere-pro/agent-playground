@@ -11,9 +11,11 @@ Schema, so what a workload lists over MCP is the port's definition, not a schema
 Python signature. A call opens one `chassis.tool.call` span, counts `chassis.tool_calls` per tool,
 and turns a `ToolError` into an MCP tool error result (`isError: true`), never a transport failure:
 its text is `public_message(code)` (PoC-5), never the error's own message.
-The span has `tool`; `trace_id` when the inbound MCP HTTP request carried a valid `traceparent`
-(parsed by `chassis.core.trace.parse_traceparent`; an invalid one records nothing, so a raw header
-never reaches telemetry); and `request_id` when `run_of` names an in-flight run with that trace id.
+The span has `tool`; `trace_id` and `traceparent` (checked and cut by
+`chassis.tracecontext.continued`, so the span continues the workload's call, PoC-7) when the
+inbound MCP HTTP request carried a valid `traceparent` (an invalid one records nothing, so a raw
+header never reaches telemetry); and `request_id` when `run_of` names an in-flight run with that
+trace id.
 
 PoC-5 write mode (plan section 2.6): a write tool (`read_only: false`) gets one idempotency key per
 call, `tool_key(run_key, tool, arguments, nonce)`, where `run_key` comes from `run_key_of` for the
@@ -44,6 +46,7 @@ from chassis.core.inbound import public_message
 from chassis.core.trace import parse_traceparent
 from chassis.ports.telemetry import TelemetryPort
 from chassis.ports.tool import ToolDefinition, ToolError, ToolPort
+from chassis.tracecontext import continued
 
 if TYPE_CHECKING:
     from fastmcp.utilities.versions import VersionSpec
@@ -95,11 +98,9 @@ def _workload_nonce() -> str | None:
     return nonce
 
 
-def _inbound_trace_id() -> str | None:
-    """The trace id of the `traceparent` on the MCP HTTP request this call came in on, or None
-    when it is absent or malformed.
-    """
-    return parse_traceparent(get_http_headers(include={"traceparent"}).get("traceparent"))
+def _inbound_traceparent() -> str | None:
+    """The `traceparent` header of the MCP HTTP request this call came in on, as sent."""
+    return get_http_headers(include={"traceparent"}).get("traceparent")
 
 
 def _error(exc: ToolError) -> MCPToolResult:
@@ -160,9 +161,11 @@ class PortTool(Tool):
 
     async def run(self, arguments: dict[str, Any]) -> MCPToolResult:
         attributes: dict[str, Any] = {"tool": self.name}
-        trace_id = _inbound_trace_id()
+        header = _inbound_traceparent()
+        trace_id = parse_traceparent(header)
         if trace_id is not None:
             attributes["trace_id"] = trace_id
+            attributes["traceparent"] = continued(header)
             request_id = self._run_of(trace_id) if self._run_of is not None else None
             if request_id is not None:
                 # Named only, not charged: a tool call has no token cost today.

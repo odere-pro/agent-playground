@@ -8,7 +8,8 @@ dependencies = [
   "openai",
   "mcp",
   "httpx2",
-  "workload-a2a",
+  "workload-a2a[otel]",
+  "openinference-instrumentation-openai-agents>=2.6.0",
 ]
 
 [dependency-groups]
@@ -20,3 +21,6 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-name = "echo_openai_agents"
+
+[tool.uv.sources]
+workload-a2a = { workspace = true }

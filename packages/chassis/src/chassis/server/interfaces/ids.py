@@ -25,7 +25,7 @@ from typing import Literal
 from chassis.core.envelope import Request
 from chassis.core.inbound import Ids, Interface
 from chassis.core.trace import parse_traceparent, trace_id_hex
-from chassis.server.pipeline import Run, RunPipeline
+from chassis.server.pipeline import Observed, Run, RunPipeline
 
 __all__ = [
     "IDEMPOTENCY_KEY_HEADER",
@@ -95,7 +95,14 @@ def may_remint(ids: ResolvedIds, interface: Interface) -> bool:
     return not (interface == "native" and ids.trace_from == "body")
 
 
-def open_run(pipeline: RunPipeline, request: Request, *, interface: Interface, remint: bool) -> Run:
+def open_run(
+    pipeline: RunPipeline,
+    request: Request,
+    *,
+    interface: Interface,
+    remint: bool,
+    observed: Observed | None = None,
+) -> Run:
     """`pipeline.open(request, interface=interface)`, re-minting the trace id once first when
     `remint` is set and an in-flight run holds it. The check and the open run with no await
     between, so they are one step on the event loop. Raises `TraceIdInUse` when `remint` is not
@@ -114,4 +121,4 @@ def open_run(pipeline: RunPipeline, request: Request, *, interface: Interface, r
             interface=interface,
         )
         request = request.model_copy(update={"trace_id": fresh})
-    return pipeline.open(request, interface=interface)
+    return pipeline.open(request, interface=interface, observed=observed)

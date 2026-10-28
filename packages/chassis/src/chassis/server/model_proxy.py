@@ -117,6 +117,7 @@ from chassis.ports.model import (
 )
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server.correlation import RunRecord, RunRegistry, parse_traceparent
+from chassis.tracecontext import continued
 
 log = logging.getLogger("chassis.model_proxy")
 SPAN = "chassis.model.call"
@@ -357,10 +358,13 @@ async def _refused_stream(body: dict[str, Any]) -> AsyncIterator[str]:
 
 
 def _span_attributes(
-    route: str, trace_id: str | None, record: RunRecord | None, fmt: str
+    route: str, trace_id: str | None, record: RunRecord | None, fmt: str, traceparent: str | None
 ) -> dict[str, Any]:
+    """The call's span attributes. `traceparent` (checked, `chassis.tracecontext.continued`) makes
+    the span a child of the workload's call that sent it (PoC-7)."""
+    parent = {"traceparent": continued(traceparent)} if continued(traceparent) else {}
     if record is None:
-        return {"route": route, "trace_id": trace_id, "correlated": False, "format": fmt}
+        return {"route": route, "trace_id": trace_id, "correlated": False, "format": fmt, **parent}
     return {
         "format": fmt,
         "route": route,
@@ -368,6 +372,7 @@ def _span_attributes(
         "request_id": record.request_id,
         "agent": record.agent,
         "correlated": True,
+        **parent,
     }
 
 
@@ -573,7 +578,8 @@ def admit(
     # No await between the check above and the reservation: one step on the event loop.
     # An uncorrelated call's reservation is already on the cap.
     hold = _Hold(record, wanted, cap, worst)
-    return Admission(hold, _span_attributes(route, trace_id, record, fmt), bundle, route)
+    attributes = _span_attributes(route, trace_id, record, fmt, traceparent)
+    return Admission(hold, attributes, bundle, route)
 
 
 def is_ready(app: FastAPI) -> bool:

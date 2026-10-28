@@ -29,6 +29,16 @@ callbacks; `serve` awaits `RunPipeline.finished(run)` once after each run ends, 
 which calls each in order. A callback that raises is counted
 (`chassis.on_finished_failed`, suggested) and logged, never sent to the client.
 
+**Trace context (PoC-7, 014 H-7).** The `chassis.run` span carries `trace_id` (the 32-hex W3C id
+of the request's trace id), so a telemetry adapter roots the run in that trace. `open(...,
+observed=...)` adds what the caller's HTTP request says about the run (`Observed`, built by
+`observed_for` from the headers): `session.id` from the header `spec.observability.session_header`
+names, `user.id` when the caller gives one (the caller's principal; never a header), and the
+caller's `traceparent` when it names the run's own trace (a re-minted trace id drops it), so the
+run span continues the caller's span. They are span attributes only: no field of `Context` or
+`Request` changes (contract v5, C.2). The OTel adapter turns `user.id` and `session.id` into
+baggage, which the A2A connector sends to the workload.
+
 `RunPipeline.idempotency` is built lazily from `state.ports.state` and
 `state.config.spec.idempotency` (PoC-4 plan, section 4), so `app.py` does not change for it. It is
 rebuilt when the ports change, and it follows a reloaded `spec.idempotency`.
@@ -38,6 +48,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from starlette.datastructures import State
@@ -49,6 +60,7 @@ from chassis.core.collector import collect
 from chassis.core.envelope import Budget, Context, Request, Response, TaskInput, Versions
 from chassis.core.events import Error, Event
 from chassis.core.inbound import Interface, Served
+from chassis.core.trace import parse_traceparent, trace_id_hex
 from chassis.ports.bundle import PortBundle
 from chassis.redaction import redact
 from chassis.server import guard
@@ -57,6 +69,7 @@ from chassis.server.correlation import RunRecord, RunRegistry, TraceIdInUse
 from chassis.server.idempotency import Idempotency
 
 __all__ = [
+    "Observed",
     "OnFinished",
     "Run",
     "RunPipeline",
@@ -68,6 +81,41 @@ __all__ = [
 
 ON_FINISHED_FAILED = "chassis.on_finished_failed"
 """suggested: the counter of an `on_finished` callback that raised."""
+SESSION_ID_MAX = 128
+"""suggested: the longest session id kept; a longer or non-printable one is dropped."""
+
+
+def _printable(value: str | None, limit: int = SESSION_ID_MAX) -> str | None:
+    """`value` stripped when it is printable ASCII of at most `limit` characters, else None."""
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if not value or len(value) > limit or not all(" " <= c <= "~" for c in value):
+        return None
+    return value
+
+
+@dataclass(frozen=True)
+class Observed:
+    """What the caller's request adds to the run's span: the session id, the user id (the
+    caller's principal subject, set by the auth layer; never read from a header), and the caller's
+    `traceparent`. All optional; none of them changes the run."""
+
+    session_id: str | None = None
+    user_id: str | None = None
+    traceparent: str | None = None
+
+    def span_attributes(self, trace_id: str) -> dict[str, str]:
+        """The `chassis.run` attributes for a run in `trace_id` (32 hex). The `traceparent` is
+        kept only when it is valid and names that trace."""
+        out: dict[str, str] = {}
+        if self.user_id:
+            out["user.id"] = self.user_id
+        if self.session_id:
+            out["session.id"] = self.session_id
+        if self.traceparent and parse_traceparent(self.traceparent) == trace_id:
+            out["traceparent"] = self.traceparent.strip().lower()[:55]
+        return out
 
 
 def versions_for(config: ChassisConfig) -> Versions:
@@ -203,10 +251,32 @@ class RunPipeline:
     def context_for(self, request: Request) -> Context:
         return context_for(request, self.config)
 
-    def open(self, request: Request, *, interface: Interface = "native") -> Run:
+    def observed_for(self, headers: Mapping[str, str], *, user_id: str | None = None) -> Observed:
+        """The `Observed` of one inbound call: the session id from the header
+        `spec.observability.session_header` names, `user_id` as given, and the `traceparent`
+        header as sent (`Observed.span_attributes` checks it)."""
+        name = self.config.spec.observability.session_header.lower()
+        session = headers.get(name)
+        if session is None:
+            session = next((v for k, v in headers.items() if k.lower() == name), None)
+        traceparent = headers.get("traceparent")
+        return Observed(
+            session_id=_printable(session),
+            user_id=_printable(user_id, 256),
+            traceparent=traceparent if isinstance(traceparent, str) else None,
+        )
+
+    def open(
+        self,
+        request: Request,
+        *,
+        interface: Interface = "native",
+        observed: Observed | None = None,
+    ) -> Run:
         """Hold a record for the run until it ends. Raises `TraceIdInUse`, counted and logged,
         when another in-flight run holds the trace id; the engine never sees that request.
-        `interface` labels the run's `chassis.requests` count and `chassis.run` span.
+        `interface` labels the run's `chassis.requests` count and `chassis.run` span; `observed`
+        adds the caller's session, user, and `traceparent` to the span.
         """
         ctx = self.context_for(request)
         telemetry = self.ports.telemetry
@@ -222,7 +292,7 @@ class RunPipeline:
                 holder=exc.request_id,
             )
             raise
-        return Run(self, request, ctx, record, interface=interface)
+        return Run(self, request, ctx, record, interface=interface, observed=observed)
 
 
 class Run:
@@ -236,11 +306,13 @@ class Run:
         record: RunRecord,
         *,
         interface: Interface = "native",
+        observed: Observed | None = None,
     ) -> None:
         self.request = request
         self.ctx = ctx
         self.record = record
         self.interface: Interface = interface
+        self.observed = observed or Observed()
         self._pipeline = pipeline
         self._seen: list[Event] = []
         self._started = False
@@ -268,12 +340,15 @@ class Run:
     async def _stream(self) -> AsyncGenerator[Event]:
         request, ports, interface = self.request, self._pipeline.ports, self.interface
         telemetry = ports.telemetry
+        trace_id = trace_id_hex(request.trace_id)
         try:
             with telemetry.span(
                 "chassis.run",
                 request_id=request.request_id,
+                trace_id=trace_id,
                 agent=request.agent,
                 interface=interface,
+                **self.observed.span_attributes(trace_id),
             ) as span:
                 telemetry.counter("chassis.requests", agent=request.agent, interface=interface)
                 guards = self._pipeline.config.spec.guardrails

@@ -215,6 +215,15 @@ forbidden_modules = ["valkey", "aiokafka", "minio"]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
+name = "the OpenTelemetry SDK is imported only under chassis.adapters (PoC-7)"
+# `chassis.profiles` reaches `chassis.adapters.otel` through `profiles.lazy` (importlib); the A2A
+# connector reads `propagation_headers()` through `getattr`, so neither imports it.
+type = "forbidden"
+source_modules = ["chassis.core", "chassis.ports", "chassis.fakes", "chassis.server", "chassis.profiles"]
+forbidden_modules = ["opentelemetry"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
 name = "testcontainers is a test tool: never imported by the chassis"
 type = "forbidden"
 source_modules = ["chassis"]

@@ -19,3 +19,9 @@ module-name = "workload_a2a"
 
 [project.scripts]
 workload-a2a = "workload_a2a.cli:main"
+
+[project.optional-dependencies]
+otel = [
+    "opentelemetry-exporter-otlp-proto-http>=1.45,<2",
+    "opentelemetry-sdk>=1.45,<2",
+]

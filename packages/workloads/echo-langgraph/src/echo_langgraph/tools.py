@@ -24,6 +24,7 @@ import httpx2
 from langchain_core.tools import BaseTool, StructuredTool, ToolException
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from workload_a2a.telemetry import inject_trace_headers
 
 TOOL_URL_VAR = "CHASSIS_TOOL_URL"
 DEFAULT_TOOL_URL = "http://127.0.0.1:8090/mcp"
@@ -41,7 +42,12 @@ list_failures = 0
 async def _session(headers: dict[str, str], timeout_s: float) -> AsyncIterator[ClientSession]:
     url = os.environ.get(TOOL_URL_VAR, DEFAULT_TOOL_URL)
     async with (
-        httpx2.AsyncClient(headers=headers, timeout=timeout_s, transport=transport) as http,
+        httpx2.AsyncClient(
+            headers=headers,
+            timeout=timeout_s,
+            transport=transport,
+            event_hooks={"request": [inject_trace_headers]},
+        ) as http,
         streamable_http_client(url, http_client=http) as (read, write),
         ClientSession(read, write) as session,
     ):
