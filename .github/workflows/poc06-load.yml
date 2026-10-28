@@ -5,12 +5,15 @@
 # What it runs: `deploy/compose/scale.sh build`, then `run_matrix.py` (`make load-test`) with the
 # `main` scenarios (64 users at 1, 2, and 4 pairs) and the `rate` scenario (10 users at 1 call per
 # second, 1 pair) for each engine, on the fake model server. Then a check fails the job when a
-# scenario is missing, sent no request, or had a failed request. The results JSON is printed
-# between markers, so it can be recorded in pocs/poc-06a-bake-off-sidecar-lane/notes/.
+# scenario is missing, sent no request, or failed more than 0.1% of its calls (suggested: about
+# three times the worst scenario of PoC-4's accepted quiet pass, 4 of 11,596; the same bar as
+# tests/test_poc06a_criteria.py). The results JSON is printed between markers, so it can be
+# recorded in pocs/poc-06a-bake-off-sidecar-lane/notes/ (the first record:
+# notes/2026-10-28-sidecar-load-in-ci.md).
 #
 # Trigger: push and pull_request on the paths below, and workflow_dispatch. Never
 # pull_request_target. A shared GitHub runner is noisy: the numbers show the engines pass the load
-# suite with no failed call; growth with pairs is recorded, not asserted.
+# suite; growth with pairs is recorded, not asserted (4 pairs do not fit a 4-CPU runner).
 #
 # No secret is used: scale.sh generates the stack's passwords into .env.poc04 (mode 600) and never
 # prints them; `down` deletes the file. Every action is pinned by a full commit SHA, the same as
@@ -67,7 +70,7 @@ jobs:
           uv run python pocs/poc-04-stateless-scalable/load/run_matrix.py \
             --engine echo-openai-agents --engine echo-typescript \
             --only main --only rate --results "$RUNNER_TEMP/poc06-load.json"
-      - name: Check every scenario ran with no failed call
+      - name: Check every scenario ran, with at most 0.1% failed calls
         run: |
           uv run python - <<'EOF'
           import json, os, sys
@@ -81,7 +84,7 @@ jobs:
                   bad.append(f"{name}: missing")
                   continue
               print(f"{name}: {r['requests']} requests, {r['failures']} failures, {r['rps']} rps, p50 {r['p50_ms']} ms, p95 {r['p95_ms']} ms")
-              if r["requests"] == 0 or r["failures"] != 0:
+              if r["requests"] == 0 or r["failures"] / r["requests"] > 0.001:
                   bad.append(f"{name}: {r['failures']}/{r['requests']} failed")
           if bad:
               print("::error::" + "; ".join(bad))
@@ -94,11 +97,6 @@ jobs:
           echo "=== poc06-load results begin ==="
           cat "$RUNNER_TEMP/poc06-load.json" 2>/dev/null || echo "(no results file)"
           echo "=== poc06-load results end ==="
-      - name: Compose state
-        if: failure()
-        run: |
-          set -uo pipefail
-          deploy/compose/scale.sh ps
       - name: Down
         if: always()
         run: deploy/compose/scale.sh down
