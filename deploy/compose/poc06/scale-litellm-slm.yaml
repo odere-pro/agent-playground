@@ -29,6 +29,9 @@ services:
     command: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    # Docker Desktop resolves host.docker.internal itself; Linux Docker needs this entry (the
+    # bridge gateway), with llama-server bound to 0.0.0.0 (POC06_LLAMA_HOST, scripts/poc06_mac.sh).
+    extra_hosts: ["host.docker.internal:host-gateway"]
     mem_limit: 768m
     volumes:
       - ./poc06/litellm.config.yaml:/etc/litellm/config.yaml:ro

@@ -505,6 +505,26 @@ def test_the_model_download_is_https_only_and_the_names_are_validated(tmp_path: 
     assert "resolve/abc123/" in done.stdout
 
 
+def test_the_llama_server_binds_loopback_unless_told_0_0_0_0(tmp_path: Path) -> None:
+    """Loopback by default (Docker Desktop reaches it through host.docker.internal). A Linux host,
+    such as the poc06-slm.yml CI job, sets POC06_LLAMA_HOST=0.0.0.0; no other value is taken."""
+    done = run_script(tmp_path, "--dry-run", "--only", "slm")
+    assert done.returncode == 0, done.stderr
+    assert "--host 127.0.0.1 --port 8089" in done.stdout
+    done = run_script(tmp_path, "--dry-run", "--only", "slm", POC06_LLAMA_HOST="0.0.0.0")
+    assert done.returncode == 0, done.stderr
+    assert "--host 0.0.0.0 --port 8089" in done.stdout
+    for value in ("10.0.0.5", "localhost", "0.0.0.0;rm"):
+        assert run_script(tmp_path, "--dry-run", POC06_LLAMA_HOST=value).returncode == 2, value
+
+
+@pytest.mark.parametrize("path", [HOSTED_COMPOSE, SCALE_OVERLAY], ids=lambda p: p.name)
+def test_host_docker_internal_resolves_on_linux_docker_too(path: Path) -> None:
+    """Docker Desktop resolves host.docker.internal itself; Linux Docker needs host-gateway."""
+    litellm = load(path)["services"]["litellm"]
+    assert litellm["extra_hosts"] == ["host.docker.internal:host-gateway"]
+
+
 def test_push_refuses_other_unpushed_commits_and_the_teardown_ignores_signals() -> None:
     code = _code()
     assert "@{u}..HEAD" in code

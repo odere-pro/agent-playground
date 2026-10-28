@@ -1,0 +1,133 @@
+# PoC-6c on a GitHub runner: the `slm` and `scale` steps of scripts/poc06_mac.sh (the one PoC-6
+# command), on Linux, CPU only. Plan: docs/planning/poc/006c-PoC-6c-pretrained-slm.md.
+#
+# What it runs: llama.cpp's llama-server on the runner (a pinned release binary, CPU), with
+# Qwen3-1.7B (Q8_0 GGUF, thinking off) behind LiteLLM route `local-small`, then
+#   POC06_LLAMA_HOST=0.0.0.0 scripts/poc06_mac.sh --only slm --only scale
+# `slm`: the five trusted engines run smoke, simplifier, and lookup in the inprocess and sidecar
+# lanes, only `--route` changed. `scale`: the PoC-4 scale stack with 1, 2, and 4 pairs sharing the
+# one llama-server. The script writes dated notes in pocs/poc-06c-pretrained-slm/notes/; this job
+# prints them between markers, so they can be recorded. The hosted step does not run: it needs the
+# provider key, which never comes here. The untrusted engines never run here (the script refuses
+# them outside kind).
+#
+# Why 0.0.0.0: Linux Docker reaches the host through host-gateway (the bridge address), not
+# loopback. The runner is a throwaway VM that takes no inbound connections.
+#
+# Pins. Trust on first use, then pinned, the same rule as the script's model.sha256:
+#   LLAMA_CPP_TAG and LLAMA_CPP_SHA256 below. Empty means "first run": the job takes the latest
+#   llama.cpp release, checks the asset against the digest GitHub lists for it, and prints the tag
+#   and sha256 to pin. Set, the job downloads that tag and fails closed on any other sha256.
+#   The model: deploy/compose/poc06/model.sha256 (written by the script on its first run, printed
+#   below) and POC06_GGUF_REV (the Hugging Face revision; `main` until pinned, printed below).
+#
+# Trigger: push and pull_request on the paths below, and workflow_dispatch. Never
+# pull_request_target. No secret is used: the LiteLLM key is generated per run by the script.
+# Every action is pinned by a full commit SHA, the same as ci.yml.
+name: poc06-slm
+
+on:
+  push:
+    paths:
+      - .github/workflows/poc06-slm.yml
+      - scripts/poc06_mac.sh
+      - deploy/compose/poc06/**
+  pull_request:
+    paths:
+      - .github/workflows/poc06-slm.yml
+      - scripts/poc06_mac.sh
+      - deploy/compose/poc06/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  poc06-slm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      LLAMA_CPP_TAG: ""
+      LLAMA_CPP_SHA256: ""
+      POC06_GGUF_REV: main
+      POC06_LLAMA_HOST: 0.0.0.0
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # PR code runs the script: it gets no stored token.
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0
+        with:
+          # No uv cache on pull_request: PR code cannot poison what a push run restores.
+          enable-cache: ${{ github.event_name != 'pull_request' }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          # The image is node:24-slim (packages/workloads/echo-typescript/Dockerfile).
+          node-version: "24"
+      - name: Sync
+        run: uv sync --all-packages --frozen
+      - name: Host
+        run: |
+          nproc
+          free -m
+          grep -m 1 'model name' /proc/cpuinfo
+          docker version --format '{{.Server.Version}}'
+          docker compose version
+      - name: Install llama.cpp (release binary, CPU)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          api=https://api.github.com/repos/ggml-org/llama.cpp/releases
+          if [[ -n "$LLAMA_CPP_TAG" ]]; then
+            [[ "$LLAMA_CPP_SHA256" =~ ^[0-9a-f]{64}$ ]] ||
+              { echo "::error::LLAMA_CPP_TAG is set but LLAMA_CPP_SHA256 is not a sha256"; exit 1; }
+            release=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "$api/tags/$LLAMA_CPP_TAG")
+          else
+            release=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "$api/latest")
+          fi
+          tag=$(jq -r .tag_name <<<"$release")
+          asset=$(jq -c --arg n "llama-$tag-bin-ubuntu-x64.zip" '.assets[] | select(.name == $n)' <<<"$release")
+          if [[ -z "$asset" ]]; then
+            echo "::error::no llama-$tag-bin-ubuntu-x64.zip in release $tag; assets:"
+            jq -r '.assets[].name' <<<"$release"
+            exit 1
+          fi
+          url=$(jq -r .browser_download_url <<<"$asset")
+          listed=$(jq -r '.digest // ""' <<<"$asset")
+          cd "$RUNNER_TEMP"
+          curl -fsSL --proto =https --proto-redir =https --retry 3 -o llama.zip "$url"
+          got=$(sha256sum llama.zip | awk '{print $1}')
+          if [[ -n "$LLAMA_CPP_SHA256" ]]; then
+            [[ "$got" == "$LLAMA_CPP_SHA256" ]] ||
+              { echo "::error::llama.cpp $tag sha256 $got does not match the pin"; exit 1; }
+            echo "llama.cpp $tag: sha256 matches the pin"
+          else
+            [[ -z "$listed" || "$listed" == "sha256:$got" ]] ||
+              { echo "::error::llama.cpp $tag sha256 $got differs from the listed $listed"; exit 1; }
+            echo "PIN llama.cpp: LLAMA_CPP_TAG=$tag LLAMA_CPP_SHA256=$got (listed digest: ${listed:-none})"
+          fi
+          unzip -q llama.zip -d llama
+          server=$(find "$RUNNER_TEMP/llama" -type f -name llama-server | head -n 1)
+          [[ -n "$server" ]] || { echo "::error::no llama-server in the zip"; exit 1; }
+          bin=$(dirname "$server")
+          echo "$bin" >>"$GITHUB_PATH"
+          echo "LD_LIBRARY_PATH=$bin" >>"$GITHUB_ENV"
+          LD_LIBRARY_PATH=$bin "$server" --version
+      - name: Model revision
+        run: |
+          set -euo pipefail
+          sha=$(curl -fsSL "https://huggingface.co/api/models/Qwen/Qwen3-1.7B-GGUF/revision/$POC06_GGUF_REV" | jq -r .sha)
+          echo "PIN model: POC06_GGUF_REV=$sha (resolved from $POC06_GGUF_REV)"
+      - name: slm and scale steps
+        run: |
+          POC06_CACHE="$RUNNER_TEMP/poc06-cache" scripts/poc06_mac.sh --only slm --only scale
+      - name: Notes
+        if: always()
+        run: |
+          set -uo pipefail
+          for f in $(git status --porcelain --untracked-files=all -- pocs/poc-06c-pretrained-slm/notes deploy/compose/poc06/model.sha256 | awk '{print $2}'); do
+            echo "=== poc06-slm file begin: $f ==="
+            cat "$f"
+            echo "=== poc06-slm file end: $f ==="
+          done
