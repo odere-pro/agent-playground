@@ -186,7 +186,14 @@ def test_the_scale_chassis_config_differs_from_poc04_only_in_the_route() -> None
 # ---- the script -------------------------------------------------------------------------------
 
 
+def pin_state() -> bytes | None:
+    """model.sha256's bytes, or None when it does not exist."""
+    pin = POC06 / "model.sha256"
+    return pin.read_bytes() if pin.exists() else None
+
+
 def test_the_dry_run_exits_0_and_prints_every_step(tmp_path: Path) -> None:
+    pin_before = pin_state()
     done = run_script(tmp_path, "--dry-run")
     assert done.returncode == 0, done.stdout + done.stderr
     out = done.stdout
@@ -210,7 +217,7 @@ def test_the_dry_run_exits_0_and_prints_every_step(tmp_path: Path) -> None:
     ):
         assert needle in out, needle
     assert "MISSING" not in out
-    assert not (POC06 / "model.sha256").exists(), "a dry run records nothing"
+    assert pin_state() == pin_before, "a dry run neither creates nor changes model.sha256"
 
 
 def test_the_dry_run_runs_and_writes_nothing(tmp_path: Path) -> None:
@@ -503,6 +510,26 @@ def test_the_model_download_is_https_only_and_the_names_are_validated(tmp_path: 
     done = run_script(tmp_path, "--dry-run", POC06_GGUF_REV="abc123")
     assert done.returncode == 0
     assert "resolve/abc123/" in done.stdout
+
+
+def test_the_llama_server_binds_loopback_unless_told_0_0_0_0(tmp_path: Path) -> None:
+    """Loopback by default (Docker Desktop reaches it through host.docker.internal). A Linux host,
+    such as the poc06-slm.yml CI job, sets POC06_LLAMA_HOST=0.0.0.0; no other value is taken."""
+    done = run_script(tmp_path, "--dry-run", "--only", "slm")
+    assert done.returncode == 0, done.stderr
+    assert "--host 127.0.0.1 --port 8089" in done.stdout
+    done = run_script(tmp_path, "--dry-run", "--only", "slm", POC06_LLAMA_HOST="0.0.0.0")
+    assert done.returncode == 0, done.stderr
+    assert "--host 0.0.0.0 --port 8089" in done.stdout
+    for value in ("10.0.0.5", "localhost", "0.0.0.0;rm"):
+        assert run_script(tmp_path, "--dry-run", POC06_LLAMA_HOST=value).returncode == 2, value
+
+
+@pytest.mark.parametrize("path", [HOSTED_COMPOSE, SCALE_OVERLAY], ids=lambda p: p.name)
+def test_host_docker_internal_resolves_on_linux_docker_too(path: Path) -> None:
+    """Docker Desktop resolves host.docker.internal itself; Linux Docker needs host-gateway."""
+    litellm = load(path)["services"]["litellm"]
+    assert litellm["extra_hosts"] == ["host.docker.internal:host-gateway"]
 
 
 def test_push_refuses_other_unpushed_commits_and_the_teardown_ignores_signals() -> None:

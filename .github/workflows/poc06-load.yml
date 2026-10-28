@@ -1,0 +1,102 @@
+# PoC-6a criterion 4, the load half: the PoC-4 load matrix on the Compose scale stack for the new
+# sidecar engines, echo-openai-agents and echo-typescript (the full agent of PoC-6a). The other
+# sidecar engines have PoC-4's quiet pass (pocs/poc-04-stateless-scalable/notes/load/results.json).
+#
+# What it runs: `deploy/compose/scale.sh build`, then `run_matrix.py` (`make load-test`) with the
+# `main` scenarios (64 users at 1, 2, and 4 pairs) and the `rate` scenario (10 users at 1 call per
+# second, 1 pair) for each engine, on the fake model server. Then a check fails the job when a
+# scenario is missing, sent no request, or failed more than 0.1% of its calls (suggested: about
+# three times the worst scenario of PoC-4's accepted quiet pass, 4 of 11,596; the same bar as
+# tests/test_poc06a_criteria.py). The results JSON is printed between markers, so it can be
+# recorded in pocs/poc-06a-bake-off-sidecar-lane/notes/ (the first record:
+# notes/2026-10-28-sidecar-load-in-ci.md).
+#
+# Trigger: push and pull_request on the paths below, and workflow_dispatch. Never
+# pull_request_target. A shared GitHub runner is noisy: the numbers show the engines pass the load
+# suite; growth with pairs is recorded, not asserted (4 pairs do not fit a 4-CPU runner).
+#
+# No secret is used: scale.sh generates the stack's passwords into .env.poc04 (mode 600) and never
+# prints them; `down` deletes the file. Every action is pinned by a full commit SHA, the same as
+# ci.yml.
+name: poc06-load
+
+on:
+  push:
+    paths:
+      - .github/workflows/poc06-load.yml
+      - deploy/compose/scale.sh
+      - deploy/compose/docker-compose.scale.yaml
+      - pocs/poc-04-stateless-scalable/load/**
+      - packages/workloads/echo-openai-agents/**
+      - packages/workloads/echo-typescript/**
+  pull_request:
+    paths:
+      - .github/workflows/poc06-load.yml
+      - deploy/compose/scale.sh
+      - deploy/compose/docker-compose.scale.yaml
+      - pocs/poc-04-stateless-scalable/load/**
+      - packages/workloads/echo-openai-agents/**
+      - packages/workloads/echo-typescript/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  poc06-load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # PR code runs `scale.sh`: it gets no stored token.
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0
+        with:
+          # No uv cache on pull_request: PR code cannot poison what a push run restores.
+          enable-cache: ${{ github.event_name != 'pull_request' }}
+      - name: Sync
+        run: uv sync --all-packages --frozen
+      - name: Host
+        run: |
+          nproc
+          free -m
+          docker version --format '{{.Server.Version}}'
+          docker compose version
+      - name: Build the scale stack images
+        run: deploy/compose/scale.sh build
+      - name: Load matrix
+        run: |
+          uv run python pocs/poc-04-stateless-scalable/load/run_matrix.py \
+            --engine echo-openai-agents --engine echo-typescript \
+            --only main --only rate --results "$RUNNER_TEMP/poc06-load.json"
+      - name: Check every scenario ran, with at most 0.1% failed calls
+        run: |
+          uv run python - <<'EOF'
+          import json, os, sys
+          d = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "poc06-load.json")))
+          engines = ("echo-openai-agents", "echo-typescript")
+          runs = [(f"{e} {p}p", d.get("engines", {}).get(e, {}).get(p)) for e in engines for p in ("1", "2", "4")]
+          runs += [(f"{e} rate10", d.get("rate", {}).get(e)) for e in engines]
+          bad = []
+          for name, r in runs:
+              if r is None:
+                  bad.append(f"{name}: missing")
+                  continue
+              print(f"{name}: {r['requests']} requests, {r['failures']} failures, {r['rps']} rps, p50 {r['p50_ms']} ms, p95 {r['p95_ms']} ms")
+              if r["requests"] == 0 or r["failures"] / r["requests"] > 0.001:
+                  bad.append(f"{name}: {r['failures']}/{r['requests']} failed")
+          if bad:
+              print("::error::" + "; ".join(bad))
+              sys.exit(1)
+          print("every scenario ok")
+          EOF
+      - name: Results JSON
+        if: always()
+        run: |
+          echo "=== poc06-load results begin ==="
+          cat "$RUNNER_TEMP/poc06-load.json" 2>/dev/null || echo "(no results file)"
+          echo "=== poc06-load results end ==="
+      - name: Down
+        if: always()
+        run: deploy/compose/scale.sh down

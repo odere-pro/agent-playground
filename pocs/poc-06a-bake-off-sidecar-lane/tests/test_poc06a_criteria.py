@@ -10,10 +10,12 @@ criteria and check the rest: the load-matrix registration and the chassis core.
 
 from __future__ import annotations
 
+import json
 import socket
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 from poc06_harness import ENGINES, SMOKE
@@ -32,6 +34,11 @@ TESTS = Path(__file__).resolve().parent
 MATRIX = ROOT / "pocs/poc-04-stateless-scalable/load/run_matrix.py"
 SCALE_SH = ROOT / "deploy/compose/scale.sh"
 CORE = ROOT / "packages/chassis/src/chassis/core"
+LOAD_CI = TESTS.parent / "notes/load/2026-10-28-poc06-load.json"
+LOAD_POC04 = ROOT / "pocs/poc-04-stateless-scalable/notes/load/results.json"
+MAX_FAILED_SHARE = 0.001
+"""suggested: at most 0.1% failed calls per scenario, about three times the worst scenario of
+PoC-4's accepted quiet pass (4 of 11,596 at 4 pairs). The same bar as `poc06-load.yml`."""
 
 
 def _collected(*files: str) -> str:
@@ -169,9 +176,48 @@ def test_criterion_4_the_scale_stack_builds_and_names_every_sidecar_engine() -> 
 
 
 def test_criterion_4_the_hostile_suite_on_kind() -> None:
-    """Criterion 4 (hostile suite): the PoC-5 sidecar kind suite for each engine. Skipped: it
-    needs a kind cluster (CI's kind job and the Mac run, plan A4), not this offline task."""
-    pytest.skip("the PoC-5 sidecar kind suite runs on kind (plan A4, kind CI job); not offline")
+    """Criterion 4 (hostile suite): the PoC-5 sidecar kind suite for each new sidecar engine. It
+    lives in 6b, `test_poc06b_kind_sidecar_controls.py`, and passed on kind (`poc06-kind.yml` run
+    38010290978). Skipped here: it needs a kind cluster, not this offline gate."""
+    pytest.skip("runs on kind: 6b test_poc06b_kind_sidecar_controls.py (poc06-kind.yml)")
+
+
+def _load_run(engine: str, pairs: str) -> tuple[str, dict[str, Any]]:
+    """The recorded load run for one sidecar engine: PoC-6a's CI run for the engines it added or
+    changed, else PoC-4's quiet pass. Returns the source file's name and the run."""
+    for path in (LOAD_CI, LOAD_POC04):
+        run = json.loads(path.read_text(encoding="utf-8")).get("engines", {}).get(engine, {})
+        if pairs in run:
+            return path.name, run[pairs]
+    pytest.fail(f"{engine} at {pairs} pairs: no recorded load run")
+
+
+@pytest.mark.parametrize("pairs", ["1", "2", "4"])
+@pytest.mark.parametrize("name", list(sidecar_engines()))
+def test_criterion_4_every_sidecar_engine_passed_the_load_matrix(name: str, pairs: str) -> None:
+    """Criterion 4 (load suite): every sidecar engine ran the PoC-4 load matrix at 1, 2, and 4
+    pairs, 64 users for 60 s, with at most `MAX_FAILED_SHARE` failed calls. `echo-openai-agents`
+    and the full `echo-typescript` agent ran in CI (`poc06-load.yml` run 40691016893,
+    notes/2026-10-28-sidecar-load-in-ci.md); the others are PoC-4's quiet pass. It reads the
+    records and runs no load."""
+    source, run = _load_run(name, pairs)
+    requests, failures = int(run["requests"]), int(run["failures"])
+    assert requests > 0, (source, name, pairs)
+    assert failures / requests <= MAX_FAILED_SHARE, (source, name, pairs, failures, requests)
+    assert run["users"] == 64 and run["duration_s"] == 60, (source, name, pairs)
+
+
+def test_criterion_4_the_new_engines_come_from_the_ci_run() -> None:
+    """Criterion 4 (load suite): the engines PoC-6a added or changed are measured in its own run,
+    not in PoC-4's: the TypeScript echo of PoC-4 is not the full agent. Each also has the `rate`
+    scenario (10 users at 1 call per second, 1 pair)."""
+    record = json.loads(LOAD_CI.read_text(encoding="utf-8"))
+    assert record["source"]["run_id"] == 40691016893
+    for name in ("echo-openai-agents", "echo-typescript"):
+        assert set(record["engines"][name]) == {"1", "2", "4"}, name
+        rate = record["rate"][name]
+        assert rate["requests"] > 0 and rate["failures"] / rate["requests"] <= MAX_FAILED_SHARE
+        assert rate["users"] == 10 and rate["env"] == {"LOAD_RATE_PER_USER": "1"}, name
 
 
 # --- Criterion 5 to 8 ---

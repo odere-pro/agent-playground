@@ -38,6 +38,10 @@
 #   POC06_REPEAT (5)  POC06_SCALE_PAIRS ("1 2 4")  POC06_SCALE_ENGINES ("echo-python echo-openai-agents")
 #   POC06_LOAD_ENGINES ("echo-openai-agents echo-typescript")  POC06_SCALE_USERS (16)
 #   POC06_LLAMA_PORT (8089)  POC06_LITELLM_PORT (14000)  POC06_LLAMA_CTX (16384)
+#   POC06_LLAMA_HOST (127.0.0.1)  The llama-server bind address: 127.0.0.1 or 0.0.0.0, nothing else.
+#                          Docker Desktop reaches a loopback-bound server through
+#                          host.docker.internal; Linux Docker does not (host-gateway is the bridge
+#                          address), so a Linux host, such as the poc06-slm.yml CI job, sets 0.0.0.0.
 #   POC06_LLAMA_PARALLEL (4: slots; the scale run's shared-server limit)
 #   POC06_KIND_MIN_MIB (6000)  Docker memory floor for the kind step. suggested: the PoC-5 stack
 #                          measured about 3.3 GiB working set on the node in a 7.75 GiB VM
@@ -61,7 +65,8 @@
 #     It touches no other project's container, and prunes nothing.
 #
 # Works with the bash 3.2 macOS ships. Needs on the Mac: Docker Desktop (about 7.75 GiB), uv, node,
-# npm, make, and for slm and scale `brew install llama.cpp`. Time: suggested 60 to 90 minutes,
+# npm, make, and for slm and scale `brew install llama.cpp`. On Linux (the poc06-slm.yml CI job), a
+# llama.cpp release binary on PATH and POC06_LLAMA_HOST=0.0.0.0. Time: suggested 60 to 90 minutes,
 # mostly the scale and load steps; the first run also builds the images and downloads about 1.8 GB.
 set -euo pipefail
 
@@ -101,11 +106,12 @@ LLAMA_PORT=${POC06_LLAMA_PORT:-8089}
 LITELLM_PORT=${POC06_LITELLM_PORT:-14000}
 LLAMA_CTX=${POC06_LLAMA_CTX:-16384}
 LLAMA_PARALLEL=${POC06_LLAMA_PARALLEL:-4}
+LLAMA_HOST=${POC06_LLAMA_HOST:-127.0.0.1}
 KIND_MIN_MIB=${POC06_KIND_MIN_MIB:-6000}
 # Qwen3 thinking off: the model's own chat-template switch, passed to llama.cpp's Jinja engine.
 # Recorded in every slm note. The alternative is `--reasoning-budget 0` (llama.cpp's own switch).
 LLAMA_ARGS=(--jinja --chat-template-kwargs '{"enable_thinking":false}' -c "$LLAMA_CTX" -np "$LLAMA_PARALLEL"
-  --host 127.0.0.1 --port "$LLAMA_PORT" --alias local-small)
+  --host "$LLAMA_HOST" --port "$LLAMA_PORT" --alias local-small)
 LLAMA_FLAGS="${LLAMA_ARGS[*]}"   # for display and the notes
 GGUF_PATH="$CACHE/$GGUF_FILE"
 
@@ -189,6 +195,7 @@ want() { case " $ONLY " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 [[ "$GGUF_REV" =~ ^[A-Za-z0-9._-]+$ ]] || die "POC06_GGUF_REV must match [A-Za-z0-9._-]+"
 [[ "$REPEAT" =~ ^[0-9]+$ ]] || die "POC06_REPEAT must be a number"
 [[ "$KIND_MIN_MIB" =~ ^[0-9]+$ ]] || die "POC06_KIND_MIN_MIB must be a number"
+case "$LLAMA_HOST" in 127.0.0.1 | 0.0.0.0) ;; *) die "POC06_LLAMA_HOST must be 127.0.0.1 or 0.0.0.0" ;; esac
 
 # ---- teardown --------------------------------------------------------------------------------
 
@@ -370,7 +377,7 @@ preflight_real() {
     say "  $HOSTED_KEY_ENV: set in deploy/compose/.env (value not shown); model $HOSTED_MODEL"
   fi
   if want slm || want scale; then
-    command -v llama-server >/dev/null 2>&1 || die "llama-server not found; run: brew install llama.cpp" 1
+    command -v llama-server >/dev/null 2>&1 || die "llama-server not found; run: brew install llama.cpp (Linux: put a llama.cpp release on PATH)" 1
     local help version
     help=$(llama-server --help 2>&1 || true)
     case "$help" in
@@ -453,11 +460,26 @@ start_llama() {
   done
   say "  llama-server is healthy (pid $LLAMA_PID)"
   : >"$WORK/llama-cpu.txt"
+  # Linux: CPU over each 2 s interval from /proc (utime + stime). `ps -o %cpu` there is the
+  # average over the process's whole life, which hides load. macOS has no /proc; its `ps` %cpu
+  # is a recent, decaying average, so it stays.
   (
-    while kill -0 "$LLAMA_PID" 2>/dev/null; do
-      ps -o %cpu= -p "$LLAMA_PID" >>"$WORK/llama-cpu.txt" 2>/dev/null || true
-      sleep 2
-    done
+    local stat="/proc/$LLAMA_PID/stat" hz prev now
+    if [[ -r "$stat" ]]; then
+      hz=$(getconf CLK_TCK 2>/dev/null || echo 100)
+      prev=$(awk '{print $14 + $15}' "$stat" 2>/dev/null || echo 0)
+      while kill -0 "$LLAMA_PID" 2>/dev/null; do
+        sleep 2
+        now=$(awk '{print $14 + $15}' "$stat" 2>/dev/null) || break
+        awk -v d=$((now - prev)) -v hz="$hz" 'BEGIN {printf "%.1f\n", d * 100 / (hz * 2)}' >>"$WORK/llama-cpu.txt"
+        prev=$now
+      done
+    else
+      while kill -0 "$LLAMA_PID" 2>/dev/null; do
+        ps -o %cpu= -p "$LLAMA_PID" >>"$WORK/llama-cpu.txt" 2>/dev/null || true
+        sleep 2
+      done
+    fi
   ) &
   SAMPLER_PID=$!
 }
@@ -475,7 +497,11 @@ cpu_summary() {
 env_block() {
   local commit machine
   commit=$(git -C "$ROOT" rev-parse --short HEAD)
-  machine="$(uname -srm); $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'cpu unknown'); macOS $(sw_vers -productVersion 2>/dev/null || echo '?')"
+  if [[ "$(uname -s)" == Darwin ]]; then
+    machine="$(uname -srm); $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'cpu unknown'); macOS $(sw_vers -productVersion 2>/dev/null || echo '?')"
+  else
+    machine="$(uname -srm); $(grep -m 1 'model name' /proc/cpuinfo 2>/dev/null | sed 's/.*: //' || echo 'cpu unknown'), $(nproc 2>/dev/null || echo '?') CPUs, no GPU offload; $(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME" || echo 'Linux')"
+  fi
   cat <<EOF
 - Commit: $commit$START_DIRTY
 - Machine: $machine
