@@ -1,0 +1,552 @@
+# Generated from packages/bakeoff/src/bakeoff/golden/cases.yaml. Do not edit.
+# Regenerate: uv run python -m bakeoff.golden.generate --write
+- description: g01 simplifier
+  vars:
+    input: 'simplify: The SLM, released in 2026 by Acme, cut costs by 30 percent.'
+    expected_tool_calls: []
+  metadata:
+    case_id: g01
+    task: simplifier
+    label: pass
+  assert:
+  - type: icontains
+    value: '2026'
+    metric: contains
+  - type: icontains
+    value: Acme
+    metric: contains
+  - type: icontains
+    value: 30 percent
+    metric: contains
+  - type: not-icontains
+    value: utilize
+    metric: banned
+  - type: not-icontains
+    value: leverage
+    metric: banned
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer keeps the year 2026, the maker Acme, and the 30 percent cost cut, in plain words,
+      and adds no new claim.
+    metric: rubric
+- description: g02 simplifier
+  vars:
+    input: 'simplify: Pursuant to the policy, employees must utilize the portal to submit expenses within
+      14 days.'
+    expected_tool_calls: []
+  metadata:
+    case_id: g02
+    task: simplifier
+    label: pass
+  assert:
+  - type: icontains
+    value: portal
+    metric: contains
+  - type: icontains
+    value: expenses
+    metric: contains
+  - type: icontains
+    value: 14 days
+    metric: contains
+  - type: not-icontains
+    value: pursuant
+    metric: banned
+  - type: not-icontains
+    value: utilize
+    metric: banned
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer says staff use the portal to send expenses within 14 days, in plain words, and adds
+      no new claim.
+    metric: rubric
+- description: g03 simplifier
+  vars:
+    input: 'simplify: The aforementioned server will be decommissioned on 3 March owing to elevated maintenance
+      expenditure.'
+    expected_tool_calls: []
+  metadata:
+    case_id: g03
+    task: simplifier
+    label: pass
+  assert:
+  - type: icontains
+    value: server
+    metric: contains
+  - type: icontains
+    value: 3 March
+    metric: contains
+  - type: not-icontains
+    value: aforementioned
+    metric: banned
+  - type: not-icontains
+    value: decommissioned
+    metric: banned
+  - type: not-icontains
+    value: expenditure
+    metric: banned
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer says the server stops on 3 March because upkeep costs too much, in plain words,
+      and adds no new claim.
+    metric: rubric
+- description: g04 simplifier
+  vars:
+    input: 'simplify: In order to facilitate onboarding, the team will commence weekly sessions of 45
+      minutes.'
+    expected_tool_calls: []
+  metadata:
+    case_id: g04
+    task: simplifier
+    label: pass
+  assert:
+  - type: icontains
+    value: weekly
+    metric: contains
+  - type: icontains
+    value: 45 minutes
+    metric: contains
+  - type: not-icontains
+    value: facilitate
+    metric: banned
+  - type: not-icontains
+    value: commence
+    metric: banned
+  - type: not-icontains
+    value: in order to
+    metric: banned
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer says the team holds weekly 45 minute sessions to help new people start, in plain
+      words, and adds no new claim.
+    metric: rubric
+- description: g05 simplifier
+  vars:
+    input: 'simplify: Customers who have not remitted payment by 30 June will incur a late fee of 5 percent.'
+    expected_tool_calls: []
+  metadata:
+    case_id: g05
+    task: simplifier
+    label: pass
+  assert:
+  - type: icontains
+    value: 30 June
+    metric: contains
+  - type: icontains
+    value: 5 percent
+    metric: contains
+  - type: not-icontains
+    value: remitted
+    metric: banned
+  - type: not-icontains
+    value: incur
+    metric: banned
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer says customers who have not paid by 30 June pay a 5 percent late fee, in plain words,
+      and adds no new claim.
+    metric: rubric
+- description: g06 simplifier
+  vars:
+    input: 'simplify: The committee reached a consensus to allocate 2 million euros to the Berlin office.'
+    expected_tool_calls: []
+  metadata:
+    case_id: g06
+    task: simplifier
+    label: pass
+  assert:
+  - type: icontains
+    value: 2 million euros
+    metric: contains
+  - type: icontains
+    value: Berlin
+    metric: contains
+  - type: not-icontains
+    value: consensus
+    metric: banned
+  - type: not-icontains
+    value: allocate
+    metric: banned
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer says the committee agreed to give 2 million euros to the Berlin office, in plain
+      words, and adds no new claim.
+    metric: rubric
+- description: g07 simplifier
+  vars:
+    input: 'simplify: Notwithstanding the outage, the platform maintained 99.9 percent availability in
+      Q3.'
+    expected_tool_calls: []
+  metadata:
+    case_id: g07
+    task: simplifier
+    label: pass
+  assert:
+  - type: icontains
+    value: 99.9 percent
+    metric: contains
+  - type: icontains
+    value: Q3
+    metric: contains
+  - type: not-icontains
+    value: notwithstanding
+    metric: banned
+  - type: not-icontains
+    value: availability
+    metric: banned
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer says the platform was up 99.9 percent of the time in Q3 despite the outage, in plain
+      words, and adds no new claim.
+    metric: rubric
+- description: g08 simplifier
+  vars:
+    input: 'simplify: The model was trained on 12 billion tokens and evaluated on 3 benchmarks.'
+    expected_tool_calls: []
+  metadata:
+    case_id: g08
+    task: simplifier
+    label: pass
+  assert:
+  - type: icontains
+    value: 12 billion tokens
+    metric: contains
+  - type: icontains
+    value: 3 benchmarks
+    metric: contains
+  - type: not-icontains
+    value: utilize
+    metric: banned
+  - type: not-icontains
+    value: leverage
+    metric: banned
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer says the model was trained on 12 billion tokens and tested on 3 benchmarks, in plain
+      words, and adds no new claim.
+    metric: rubric
+- description: g09 simplifier
+  vars:
+    input: 'simplify: The library opens at 9 am, closes at 6 pm, and is closed on Sundays.'
+    expected_tool_calls: []
+  metadata:
+    case_id: g09
+    task: simplifier
+    label: fail
+  assert:
+  - type: icontains
+    value: 9 am
+    metric: contains
+  - type: icontains
+    value: 6 pm
+    metric: contains
+  - type: icontains
+    value: Sundays
+    metric: contains
+  - type: not-icontains
+    value: utilize
+    metric: banned
+  - type: not-icontains
+    value: leverage
+    metric: banned
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: 'The answer keeps all three facts: opens at 9 am, closes at 6 pm, closed on Sundays, in plain
+      words.'
+    metric: rubric
+- description: g10 simplifier
+  vars:
+    input: 'simplify: Staff should leverage the new dashboard to monitor the 4 regional sites.'
+    expected_tool_calls: []
+  metadata:
+    case_id: g10
+    task: simplifier
+    label: fail
+  assert:
+  - type: icontains
+    value: dashboard
+    metric: contains
+  - type: icontains
+    value: 4 regional sites
+    metric: contains
+  - type: not-icontains
+    value: leverage
+    metric: banned
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer says staff use the new dashboard to watch the 4 regional sites, with no jargon such
+      as leverage.
+    metric: rubric
+- description: g11 simplifier
+  vars:
+    input: 'simplify: The bridge, built in 1932, carries 40000 vehicles per day.'
+    expected_tool_calls: []
+  metadata:
+    case_id: g11
+    task: simplifier
+    label: fail
+  assert:
+  - type: icontains
+    value: '1932'
+    metric: contains
+  - type: icontains
+    value: '40000'
+    metric: contains
+  - type: not-icontains
+    value: utilize
+    metric: banned
+  - type: not-icontains
+    value: leverage
+    metric: banned
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer keeps the year 1932 and the number 40000 vehicles a day exactly, in plain words.
+    metric: rubric
+- description: g12 simplifier
+  vars:
+    input: 'simplify: The clinic moved to Elm Street in 2024.'
+    expected_tool_calls: []
+  metadata:
+    case_id: g12
+    task: simplifier
+    label: fail
+  assert:
+  - type: icontains
+    value: Elm Street
+    metric: contains
+  - type: icontains
+    value: '2024'
+    metric: contains
+  - type: not-icontains
+    value: utilize
+    metric: banned
+  - type: not-icontains
+    value: leverage
+    metric: banned
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer says the clinic moved to Elm Street in 2024 and adds no new claim, such as a reason
+      for the move.
+    metric: rubric
+- description: g13 lookup
+  vars:
+    input: 'lookup: What is a sidecar? Also expand RAG.'
+    expected_tool_calls:
+    - name: glossary_lookup
+      arguments:
+        term: sidecar
+    - name: acronym_expand
+      arguments:
+        acronym: RAG
+  metadata:
+    case_id: g13
+    task: lookup
+    label: pass
+  assert:
+  - type: icontains
+    value: own container
+    metric: contains
+  - type: icontains
+    value: retrieval-augmented generation
+    metric: contains
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer defines a sidecar from the glossary and expands RAG, using only what the tools returned.
+    metric: rubric
+- description: g14 lookup
+  vars:
+    input: 'lookup: Define LiteLLM and expand LLM.'
+    expected_tool_calls:
+    - name: glossary_lookup
+      arguments:
+        term: LiteLLM
+    - name: acronym_expand
+      arguments:
+        acronym: LLM
+  metadata:
+    case_id: g14
+    task: lookup
+    label: pass
+  assert:
+  - type: icontains
+    value: model router
+    metric: contains
+  - type: icontains
+    value: large language model
+    metric: contains
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer defines LiteLLM from the glossary and expands LLM, using only what the tools returned.
+    metric: rubric
+- description: g15 lookup
+  vars:
+    input: 'lookup: Define traceparent and expand TTFT.'
+    expected_tool_calls:
+    - name: glossary_lookup
+      arguments:
+        term: traceparent
+    - name: acronym_expand
+      arguments:
+        acronym: TTFT
+  metadata:
+    case_id: g15
+    task: lookup
+    label: pass
+  assert:
+  - type: icontains
+    value: trace id
+    metric: contains
+  - type: icontains
+    value: time to first token
+    metric: contains
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer defines traceparent from the glossary and expands TTFT, using only what the tools
+      returned.
+    metric: rubric
+- description: g16 lookup
+  vars:
+    input: 'lookup: What is a lane?'
+    expected_tool_calls:
+    - name: glossary_lookup
+      arguments:
+        term: lane
+  metadata:
+    case_id: g16
+    task: lookup
+    label: pass
+  assert:
+  - type: icontains
+    value: inprocess
+    metric: contains
+  - type: icontains
+    value: sidecar
+    metric: contains
+  - type: icontains
+    value: remote
+    metric: contains
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer defines a lane from the glossary and names the three lanes.
+    metric: rubric
+- description: g17 lookup
+  vars:
+    input: 'lookup: What is a port in the chassis?'
+    expected_tool_calls:
+    - name: glossary_lookup
+      arguments:
+        term: port
+  metadata:
+    case_id: g17
+    task: lookup
+    label: pass
+  assert:
+  - type: icontains
+    value: typed interface
+    metric: contains
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer defines a port from the glossary, using only what the tool returned.
+    metric: rubric
+- description: g18 lookup
+  vars:
+    input: 'lookup: Expand MCP.'
+    expected_tool_calls:
+    - name: acronym_expand
+      arguments:
+        acronym: MCP
+  metadata:
+    case_id: g18
+    task: lookup
+    label: pass
+  assert:
+  - type: icontains
+    value: Model Context Protocol
+    metric: contains
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer expands MCP, using only what the tool returned.
+    metric: rubric
+- description: g19 lookup
+  vars:
+    input: 'lookup: Define fake and expand A2A.'
+    expected_tool_calls:
+    - name: glossary_lookup
+      arguments:
+        term: fake
+    - name: acronym_expand
+      arguments:
+        acronym: A2A
+  metadata:
+    case_id: g19
+    task: lookup
+    label: fail
+  assert:
+  - type: icontains
+    value: in-memory stand-in
+    metric: contains
+  - type: icontains
+    value: Agent-to-Agent
+    metric: contains
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer defines a fake from the glossary and expands A2A, using only what the tools returned.
+    metric: rubric
+- description: g20 lookup
+  vars:
+    input: 'lookup: Define workload.'
+    expected_tool_calls:
+    - name: glossary_lookup
+      arguments:
+        term: workload
+  metadata:
+    case_id: g20
+    task: lookup
+    label: fail
+  assert:
+  - type: icontains
+    value: agent code
+    metric: contains
+  - type: javascript
+    value: file://tool_calls.js
+    metric: tools
+  - type: llm-rubric
+    value: The answer defines a workload from the glossary, using only what the tool returned.
+    metric: rubric

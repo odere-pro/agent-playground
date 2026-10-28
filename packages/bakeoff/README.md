@@ -76,3 +76,13 @@ Pass checks (plan): smoke is `end{status: ok}` after at least one `delta`; simpl
 ## Tests
 
 `scripts/check_offline.sh packages/bakeoff -q` runs the unit tests offline. `test_bakeoff_smoke_network.py` is marked `network`: it runs `bakeoff smoke` for `echo-python` in `inprocess` and `sidecar`.
+
+## PoC-7: the eval tool trial
+
+```bash
+uv run python -m bakeoff.evaltrial --tool deepeval --out /tmp/evals     # or --tool promptfoo; --offline
+uv run python -m bakeoff.golden.generate --check                        # generated files in sync
+uv run python -m bakeoff.langfuse_datasets --report /tmp/evals/deepeval-echo-python.json
+```
+
+`evaltrial` starts the stack per engine (default `echo-python,echo-langgraph`, sidecar lane) with the golden model script and a scripted judge, runs the tool (configs in `evals/`), and writes `<tool>-<engine>.json` (`eval-report.v0`) and `<tool>-<engine>.raw.json`. Results and the pick: `pocs/poc-07-cross-cutting-decisions/notes/2026-10-28-eval-tool-trial.md`.

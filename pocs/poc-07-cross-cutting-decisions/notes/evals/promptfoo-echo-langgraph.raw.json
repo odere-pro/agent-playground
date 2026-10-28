@@ -1,0 +1,6090 @@
+{
+ "evalId": "eval-IP3-2026-10-28T16:31:43",
+ "results": {
+  "version": 3,
+  "timestamp": "2026-10-28T16:31:43.021Z",
+  "prompts": [
+   {
+    "id": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "raw": "{{input}}",
+    "label": "{{input}}",
+    "provider": "chassis",
+    "metrics": {
+     "score": 16.897619047619045,
+     "testPassCount": 13,
+     "testFailCount": 7,
+     "testErrorCount": 0,
+     "testCacheHitCount": 0,
+     "assertPassCount": 92,
+     "assertFailCount": 14,
+     "totalLatencyMs": 1521,
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 20,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 300,
+       "prompt": 200,
+       "completion": 100,
+       "cached": 0,
+       "numRequests": 20,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     },
+     "namedScores": {
+      "contains": 37,
+      "banned": 24,
+      "tools": 18,
+      "rubric": 13
+     },
+     "namedScoresCount": {
+      "contains": 41,
+      "banned": 25,
+      "tools": 20,
+      "rubric": 20
+     },
+     "namedScoreWeights": {
+      "contains": 41,
+      "banned": 25,
+      "tools": 20,
+      "rubric": 20
+     },
+     "cost": 0
+    }
+   }
+  ],
+  "results": [
+   {
+    "cost": 0,
+    "gradingResult": {
+     "pass": true,
+     "score": 1,
+     "reason": "All assertions passed",
+     "namedScores": {
+      "contains": 1,
+      "banned": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "namedScoreWeights": {
+      "contains": 3,
+      "banned": 2,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "2026",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "Acme",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "30 percent",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "utilize",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "leverage",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer keeps the year 2026, the maker Acme, and the 30 percent cost cut, in plain words, and adds no new claim.",
+        "metric": "rubric"
+       },
+       "pass": true,
+       "score": 1,
+       "reason": "The answer meets the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "335",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "b17a5f55-236c-4b46-a1b9-8539ccb5b5d8",
+    "latencyMs": 239,
+    "namedScores": {
+     "contains": 1,
+     "banned": 1,
+     "tools": 1,
+     "rubric": 1
+    },
+    "prompt": {
+     "raw": "simplify: The SLM, released in 2026 by Acme, cut costs by 30 percent.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"4c464cb5f6e84e2dbd4838a46e75714d\",\"trace_id\":\"412b183f6eb4440290b9f7593b006e8e\",\"idempotency_key\":\"e5cf2b83dd62456d8ed5112539afe3e9\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"Acme put out the SLM in 2026. It cut costs by 30 percent.\"},\"metrics\":{\"input_tokens\":10,\"output_tokens\":5,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 239,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [],
+      "trace_id": "412b183f6eb4440290b9f7593b006e8e",
+      "status": "ok"
+     },
+     "output": "Acme put out the SLM in 2026. It cut costs by 30 percent.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 1,
+    "success": true,
+    "testCase": {
+     "description": "g01 simplifier",
+     "vars": {
+      "input": "simplify: The SLM, released in 2026 by Acme, cut costs by 30 percent.",
+      "expected_tool_calls": []
+     },
+     "metadata": {
+      "case_id": "g01",
+      "task": "simplifier",
+      "label": "pass"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "2026",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "Acme",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "30 percent",
+       "metric": "contains"
+      },
+      {
+       "type": "not-icontains",
+       "value": "utilize",
+       "metric": "banned"
+      },
+      {
+       "type": "not-icontains",
+       "value": "leverage",
+       "metric": "banned"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer keeps the year 2026, the maker Acme, and the 30 percent cost cut, in plain words, and adds no new claim.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 0,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "simplify: The SLM, released in 2026 by Acme, cut costs by 30 percent.",
+     "expected_tool_calls": []
+    },
+    "metadata": {
+     "case_id": "g01",
+     "task": "simplifier",
+     "label": "pass",
+     "tool_calls": [],
+     "trace_id": "412b183f6eb4440290b9f7593b006e8e",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 0
+   },
+   {
+    "cost": 0,
+    "gradingResult": {
+     "pass": true,
+     "score": 1,
+     "reason": "All assertions passed",
+     "namedScores": {
+      "contains": 1,
+      "banned": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "namedScoreWeights": {
+      "contains": 3,
+      "banned": 2,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "portal",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "expenses",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "14 days",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "pursuant",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "utilize",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer says staff use the portal to send expenses within 14 days, in plain words, and adds no new claim.",
+        "metric": "rubric"
+       },
+       "pass": true,
+       "score": 1,
+       "reason": "The answer meets the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "335",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "c9283b53-85bb-4068-bf03-bdefa32c3a36",
+    "latencyMs": 52,
+    "namedScores": {
+     "contains": 1,
+     "banned": 1,
+     "tools": 1,
+     "rubric": 1
+    },
+    "prompt": {
+     "raw": "simplify: Pursuant to the policy, employees must utilize the portal to submit expenses within 14 days.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"a72dcc93a5b0485aa77a7de9bd966c2a\",\"trace_id\":\"9dd8c22f3ec546ba96df6a6dd7c328e6\",\"idempotency_key\":\"2a998d9774434141ad3acc4c0a245ec3\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"Staff must use the portal to send in expenses within 14 days.\"},\"metrics\":{\"input_tokens\":10,\"output_tokens\":5,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 52,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [],
+      "trace_id": "9dd8c22f3ec546ba96df6a6dd7c328e6",
+      "status": "ok"
+     },
+     "output": "Staff must use the portal to send in expenses within 14 days.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 1,
+    "success": true,
+    "testCase": {
+     "description": "g02 simplifier",
+     "vars": {
+      "input": "simplify: Pursuant to the policy, employees must utilize the portal to submit expenses within 14 days.",
+      "expected_tool_calls": []
+     },
+     "metadata": {
+      "case_id": "g02",
+      "task": "simplifier",
+      "label": "pass"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "portal",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "expenses",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "14 days",
+       "metric": "contains"
+      },
+      {
+       "type": "not-icontains",
+       "value": "pursuant",
+       "metric": "banned"
+      },
+      {
+       "type": "not-icontains",
+       "value": "utilize",
+       "metric": "banned"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer says staff use the portal to send expenses within 14 days, in plain words, and adds no new claim.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 1,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "simplify: Pursuant to the policy, employees must utilize the portal to submit expenses within 14 days.",
+     "expected_tool_calls": []
+    },
+    "metadata": {
+     "case_id": "g02",
+     "task": "simplifier",
+     "label": "pass",
+     "tool_calls": [],
+     "trace_id": "9dd8c22f3ec546ba96df6a6dd7c328e6",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 0
+   },
+   {
+    "cost": 0,
+    "gradingResult": {
+     "pass": true,
+     "score": 1,
+     "reason": "All assertions passed",
+     "namedScores": {
+      "contains": 1,
+      "banned": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "namedScoreWeights": {
+      "contains": 2,
+      "banned": 3,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "server",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "3 March",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "aforementioned",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "decommissioned",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "expenditure",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer says the server stops on 3 March because upkeep costs too much, in plain words, and adds no new claim.",
+        "metric": "rubric"
+       },
+       "pass": true,
+       "score": 1,
+       "reason": "The answer meets the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "335",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "6975d7ce-9e2c-4f27-ad93-ffc910df5181",
+    "latencyMs": 67,
+    "namedScores": {
+     "contains": 1,
+     "banned": 1,
+     "tools": 1,
+     "rubric": 1
+    },
+    "prompt": {
+     "raw": "simplify: The aforementioned server will be decommissioned on 3 March owing to elevated maintenance expenditure.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"2d1b4caad26d4dacbd1a69bda86d6054\",\"trace_id\":\"49c1878d4ca943168f55458fd2261c43\",\"idempotency_key\":\"44e8de24cdad41b38e04a63b430a2ee4\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"The server will be shut down on 3 March because it costs too much to maintain.\"},\"metrics\":{\"input_tokens\":10,\"output_tokens\":5,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 67,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [],
+      "trace_id": "49c1878d4ca943168f55458fd2261c43",
+      "status": "ok"
+     },
+     "output": "The server will be shut down on 3 March because it costs too much to maintain.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 1,
+    "success": true,
+    "testCase": {
+     "description": "g03 simplifier",
+     "vars": {
+      "input": "simplify: The aforementioned server will be decommissioned on 3 March owing to elevated maintenance expenditure.",
+      "expected_tool_calls": []
+     },
+     "metadata": {
+      "case_id": "g03",
+      "task": "simplifier",
+      "label": "pass"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "server",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "3 March",
+       "metric": "contains"
+      },
+      {
+       "type": "not-icontains",
+       "value": "aforementioned",
+       "metric": "banned"
+      },
+      {
+       "type": "not-icontains",
+       "value": "decommissioned",
+       "metric": "banned"
+      },
+      {
+       "type": "not-icontains",
+       "value": "expenditure",
+       "metric": "banned"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer says the server stops on 3 March because upkeep costs too much, in plain words, and adds no new claim.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 2,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "simplify: The aforementioned server will be decommissioned on 3 March owing to elevated maintenance expenditure.",
+     "expected_tool_calls": []
+    },
+    "metadata": {
+     "case_id": "g03",
+     "task": "simplifier",
+     "label": "pass",
+     "tool_calls": [],
+     "trace_id": "49c1878d4ca943168f55458fd2261c43",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 0
+   },
+   {
+    "cost": 0,
+    "gradingResult": {
+     "pass": true,
+     "score": 1,
+     "reason": "All assertions passed",
+     "namedScores": {
+      "contains": 1,
+      "banned": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "namedScoreWeights": {
+      "contains": 2,
+      "banned": 3,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "weekly",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "45 minutes",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "facilitate",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "commence",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "in order to",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer says the team holds weekly 45 minute sessions to help new people start, in plain words, and adds no new claim.",
+        "metric": "rubric"
+       },
+       "pass": true,
+       "score": 1,
+       "reason": "The answer meets the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "335",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "af6ddfa5-6522-4372-aa6b-a949f97fd1f2",
+    "latencyMs": 46,
+    "namedScores": {
+     "contains": 1,
+     "banned": 1,
+     "tools": 1,
+     "rubric": 1
+    },
+    "prompt": {
+     "raw": "simplify: In order to facilitate onboarding, the team will commence weekly sessions of 45 minutes.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"e9e38c5ea3554be7ad0f33ad9eb9d34d\",\"trace_id\":\"239f0bd3f33d45abb0b08de2b0ce05be\",\"idempotency_key\":\"d4b5864091f34b6c8c079e028dbc58dc\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"To help new people start, the team will hold weekly sessions of 45 minutes.\"},\"metrics\":{\"input_tokens\":10,\"output_tokens\":5,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 46,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [],
+      "trace_id": "239f0bd3f33d45abb0b08de2b0ce05be",
+      "status": "ok"
+     },
+     "output": "To help new people start, the team will hold weekly sessions of 45 minutes.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 1,
+    "success": true,
+    "testCase": {
+     "description": "g04 simplifier",
+     "vars": {
+      "input": "simplify: In order to facilitate onboarding, the team will commence weekly sessions of 45 minutes.",
+      "expected_tool_calls": []
+     },
+     "metadata": {
+      "case_id": "g04",
+      "task": "simplifier",
+      "label": "pass"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "weekly",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "45 minutes",
+       "metric": "contains"
+      },
+      {
+       "type": "not-icontains",
+       "value": "facilitate",
+       "metric": "banned"
+      },
+      {
+       "type": "not-icontains",
+       "value": "commence",
+       "metric": "banned"
+      },
+      {
+       "type": "not-icontains",
+       "value": "in order to",
+       "metric": "banned"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer says the team holds weekly 45 minute sessions to help new people start, in plain words, and adds no new claim.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 3,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "simplify: In order to facilitate onboarding, the team will commence weekly sessions of 45 minutes.",
+     "expected_tool_calls": []
+    },
+    "metadata": {
+     "case_id": "g04",
+     "task": "simplifier",
+     "label": "pass",
+     "tool_calls": [],
+     "trace_id": "239f0bd3f33d45abb0b08de2b0ce05be",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 0
+   },
+   {
+    "cost": 0,
+    "gradingResult": {
+     "pass": true,
+     "score": 1,
+     "reason": "All assertions passed",
+     "namedScores": {
+      "contains": 1,
+      "banned": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "namedScoreWeights": {
+      "contains": 2,
+      "banned": 2,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "30 June",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "5 percent",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "remitted",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "incur",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer says customers who have not paid by 30 June pay a 5 percent late fee, in plain words, and adds no new claim.",
+        "metric": "rubric"
+       },
+       "pass": true,
+       "score": 1,
+       "reason": "The answer meets the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "335",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "144aca6f-f691-4bed-b1bf-82f9119c9318",
+    "latencyMs": 159,
+    "namedScores": {
+     "contains": 1,
+     "banned": 1,
+     "tools": 1,
+     "rubric": 1
+    },
+    "prompt": {
+     "raw": "simplify: Customers who have not remitted payment by 30 June will incur a late fee of 5 percent.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"4e2187c31a6742179a8b88d63efc6894\",\"trace_id\":\"95a085e2bf21413a8011e036f88feffd\",\"idempotency_key\":\"d7ae8323aede413b86f95f1c4a805dcd\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"Customers who have not paid by 30 June will pay a late fee of 5 percent.\"},\"metrics\":{\"input_tokens\":10,\"output_tokens\":5,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 159,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [],
+      "trace_id": "95a085e2bf21413a8011e036f88feffd",
+      "status": "ok"
+     },
+     "output": "Customers who have not paid by 30 June will pay a late fee of 5 percent.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 1,
+    "success": true,
+    "testCase": {
+     "description": "g05 simplifier",
+     "vars": {
+      "input": "simplify: Customers who have not remitted payment by 30 June will incur a late fee of 5 percent.",
+      "expected_tool_calls": []
+     },
+     "metadata": {
+      "case_id": "g05",
+      "task": "simplifier",
+      "label": "pass"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "30 June",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "5 percent",
+       "metric": "contains"
+      },
+      {
+       "type": "not-icontains",
+       "value": "remitted",
+       "metric": "banned"
+      },
+      {
+       "type": "not-icontains",
+       "value": "incur",
+       "metric": "banned"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer says customers who have not paid by 30 June pay a 5 percent late fee, in plain words, and adds no new claim.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 4,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "simplify: Customers who have not remitted payment by 30 June will incur a late fee of 5 percent.",
+     "expected_tool_calls": []
+    },
+    "metadata": {
+     "case_id": "g05",
+     "task": "simplifier",
+     "label": "pass",
+     "tool_calls": [],
+     "trace_id": "95a085e2bf21413a8011e036f88feffd",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 0
+   },
+   {
+    "cost": 0,
+    "gradingResult": {
+     "pass": true,
+     "score": 1,
+     "reason": "All assertions passed",
+     "namedScores": {
+      "contains": 1,
+      "banned": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "namedScoreWeights": {
+      "contains": 2,
+      "banned": 2,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "2 million euros",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "Berlin",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "consensus",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "allocate",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer says the committee agreed to give 2 million euros to the Berlin office, in plain words, and adds no new claim.",
+        "metric": "rubric"
+       },
+       "pass": true,
+       "score": 1,
+       "reason": "The answer meets the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "335",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "a54340e5-9de3-44e5-8b1c-2175b3379ceb",
+    "latencyMs": 37,
+    "namedScores": {
+     "contains": 1,
+     "banned": 1,
+     "tools": 1,
+     "rubric": 1
+    },
+    "prompt": {
+     "raw": "simplify: The committee reached a consensus to allocate 2 million euros to the Berlin office.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"7a6ec004c7e946b3939383e8bf5ab9a2\",\"trace_id\":\"54421f1aab2f4dfdb1f3445684db9e79\",\"idempotency_key\":\"13bfaf71f0854de9a17f43fb506db094\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"The committee agreed to give 2 million euros to the Berlin office.\"},\"metrics\":{\"input_tokens\":10,\"output_tokens\":5,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 37,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [],
+      "trace_id": "54421f1aab2f4dfdb1f3445684db9e79",
+      "status": "ok"
+     },
+     "output": "The committee agreed to give 2 million euros to the Berlin office.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 1,
+    "success": true,
+    "testCase": {
+     "description": "g06 simplifier",
+     "vars": {
+      "input": "simplify: The committee reached a consensus to allocate 2 million euros to the Berlin office.",
+      "expected_tool_calls": []
+     },
+     "metadata": {
+      "case_id": "g06",
+      "task": "simplifier",
+      "label": "pass"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "2 million euros",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "Berlin",
+       "metric": "contains"
+      },
+      {
+       "type": "not-icontains",
+       "value": "consensus",
+       "metric": "banned"
+      },
+      {
+       "type": "not-icontains",
+       "value": "allocate",
+       "metric": "banned"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer says the committee agreed to give 2 million euros to the Berlin office, in plain words, and adds no new claim.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 5,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "simplify: The committee reached a consensus to allocate 2 million euros to the Berlin office.",
+     "expected_tool_calls": []
+    },
+    "metadata": {
+     "case_id": "g06",
+     "task": "simplifier",
+     "label": "pass",
+     "tool_calls": [],
+     "trace_id": "54421f1aab2f4dfdb1f3445684db9e79",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 0
+   },
+   {
+    "cost": 0,
+    "gradingResult": {
+     "pass": true,
+     "score": 1,
+     "reason": "All assertions passed",
+     "namedScores": {
+      "contains": 1,
+      "banned": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "namedScoreWeights": {
+      "contains": 2,
+      "banned": 2,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "99.9 percent",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "Q3",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "notwithstanding",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "availability",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer says the platform was up 99.9 percent of the time in Q3 despite the outage, in plain words, and adds no new claim.",
+        "metric": "rubric"
+       },
+       "pass": true,
+       "score": 1,
+       "reason": "The answer meets the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "335",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "ab9eef40-485d-46ff-a76d-d2d6dc923e13",
+    "latencyMs": 47,
+    "namedScores": {
+     "contains": 1,
+     "banned": 1,
+     "tools": 1,
+     "rubric": 1
+    },
+    "prompt": {
+     "raw": "simplify: Notwithstanding the outage, the platform maintained 99.9 percent availability in Q3.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"1b87372f050d41a5af573496687981e6\",\"trace_id\":\"72fb7a3de8e64ccaaf2562ae9b6890dc\",\"idempotency_key\":\"40820cb1e19a4d728749222e4002b801\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"Despite the outage, the platform was up 99.9 percent of the time in Q3.\"},\"metrics\":{\"input_tokens\":10,\"output_tokens\":5,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 47,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [],
+      "trace_id": "72fb7a3de8e64ccaaf2562ae9b6890dc",
+      "status": "ok"
+     },
+     "output": "Despite the outage, the platform was up 99.9 percent of the time in Q3.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 1,
+    "success": true,
+    "testCase": {
+     "description": "g07 simplifier",
+     "vars": {
+      "input": "simplify: Notwithstanding the outage, the platform maintained 99.9 percent availability in Q3.",
+      "expected_tool_calls": []
+     },
+     "metadata": {
+      "case_id": "g07",
+      "task": "simplifier",
+      "label": "pass"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "99.9 percent",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "Q3",
+       "metric": "contains"
+      },
+      {
+       "type": "not-icontains",
+       "value": "notwithstanding",
+       "metric": "banned"
+      },
+      {
+       "type": "not-icontains",
+       "value": "availability",
+       "metric": "banned"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer says the platform was up 99.9 percent of the time in Q3 despite the outage, in plain words, and adds no new claim.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 6,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "simplify: Notwithstanding the outage, the platform maintained 99.9 percent availability in Q3.",
+     "expected_tool_calls": []
+    },
+    "metadata": {
+     "case_id": "g07",
+     "task": "simplifier",
+     "label": "pass",
+     "tool_calls": [],
+     "trace_id": "72fb7a3de8e64ccaaf2562ae9b6890dc",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 0
+   },
+   {
+    "cost": 0,
+    "error": "Learned from is not the same claim as trained on.",
+    "gradingResult": {
+     "pass": false,
+     "score": 0.8333333333333334,
+     "reason": "Learned from is not the same claim as trained on.",
+     "namedScores": {
+      "contains": 1,
+      "banned": 1,
+      "tools": 1,
+      "rubric": 0
+     },
+     "namedScoreWeights": {
+      "contains": 2,
+      "banned": 2,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "12 billion tokens",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "3 benchmarks",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "utilize",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "leverage",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer says the model was trained on 12 billion tokens and tested on 3 benchmarks, in plain words, and adds no new claim.",
+        "metric": "rubric"
+       },
+       "pass": false,
+       "score": 0,
+       "reason": "Learned from is not the same claim as trained on.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "357",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "3463f9a4-a513-4074-b5c0-a87bf10b6b57",
+    "latencyMs": 38,
+    "namedScores": {
+     "contains": 1,
+     "banned": 1,
+     "tools": 1,
+     "rubric": 0
+    },
+    "prompt": {
+     "raw": "simplify: The model was trained on 12 billion tokens and evaluated on 3 benchmarks.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"82c7bf7782884ceba7bb1f988d079883\",\"trace_id\":\"353b73b3a8d8471eb72796f3111e0a1a\",\"idempotency_key\":\"868fa38a09a84cf68297d20b93aecebc\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"The model learned from 12 billion tokens. It was tested on 3 benchmarks.\"},\"metrics\":{\"input_tokens\":10,\"output_tokens\":5,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 38,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [],
+      "trace_id": "353b73b3a8d8471eb72796f3111e0a1a",
+      "status": "ok"
+     },
+     "output": "The model learned from 12 billion tokens. It was tested on 3 benchmarks.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 0.8333333333333334,
+    "success": false,
+    "testCase": {
+     "description": "g08 simplifier",
+     "vars": {
+      "input": "simplify: The model was trained on 12 billion tokens and evaluated on 3 benchmarks.",
+      "expected_tool_calls": []
+     },
+     "metadata": {
+      "case_id": "g08",
+      "task": "simplifier",
+      "label": "pass"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "12 billion tokens",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "3 benchmarks",
+       "metric": "contains"
+      },
+      {
+       "type": "not-icontains",
+       "value": "utilize",
+       "metric": "banned"
+      },
+      {
+       "type": "not-icontains",
+       "value": "leverage",
+       "metric": "banned"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer says the model was trained on 12 billion tokens and tested on 3 benchmarks, in plain words, and adds no new claim.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 7,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "simplify: The model was trained on 12 billion tokens and evaluated on 3 benchmarks.",
+     "expected_tool_calls": []
+    },
+    "metadata": {
+     "case_id": "g08",
+     "task": "simplifier",
+     "label": "pass",
+     "tool_calls": [],
+     "trace_id": "353b73b3a8d8471eb72796f3111e0a1a",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 1
+   },
+   {
+    "cost": 0,
+    "error": "The answer misses the rubric.",
+    "gradingResult": {
+     "pass": false,
+     "score": 0.7142857142857143,
+     "reason": "The answer misses the rubric.",
+     "namedScores": {
+      "contains": 0.6666666666666666,
+      "banned": 1,
+      "tools": 1,
+      "rubric": 0
+     },
+     "namedScoreWeights": {
+      "contains": 3,
+      "banned": 2,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "9 am",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "6 pm",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": false,
+       "score": 0,
+       "reason": "Expected output to contain \"Sundays\"",
+       "assertion": {
+        "type": "icontains",
+        "value": "Sundays",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "utilize",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "leverage",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer keeps all three facts: opens at 9 am, closes at 6 pm, closed on Sundays, in plain words.",
+        "metric": "rubric"
+       },
+       "pass": false,
+       "score": 0,
+       "reason": "The answer misses the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "337",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "4ce2e87a-7910-42eb-a6f7-64babdeb8816",
+    "latencyMs": 46,
+    "namedScores": {
+     "contains": 0.6666666666666666,
+     "banned": 1,
+     "tools": 1,
+     "rubric": 0
+    },
+    "prompt": {
+     "raw": "simplify: The library opens at 9 am, closes at 6 pm, and is closed on Sundays.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"56a99dcf6cd14b808bcf6ac325c16a30\",\"trace_id\":\"24c0e9a4b86244eab23676d651456e96\",\"idempotency_key\":\"e632eb7bbd6945909be2e730438d09f6\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"The library opens at 9 am and closes at 6 pm.\"},\"metrics\":{\"input_tokens\":10,\"output_tokens\":5,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 46,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [],
+      "trace_id": "24c0e9a4b86244eab23676d651456e96",
+      "status": "ok"
+     },
+     "output": "The library opens at 9 am and closes at 6 pm.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 0.7142857142857143,
+    "success": false,
+    "testCase": {
+     "description": "g09 simplifier",
+     "vars": {
+      "input": "simplify: The library opens at 9 am, closes at 6 pm, and is closed on Sundays.",
+      "expected_tool_calls": []
+     },
+     "metadata": {
+      "case_id": "g09",
+      "task": "simplifier",
+      "label": "fail"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "9 am",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "6 pm",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "Sundays",
+       "metric": "contains"
+      },
+      {
+       "type": "not-icontains",
+       "value": "utilize",
+       "metric": "banned"
+      },
+      {
+       "type": "not-icontains",
+       "value": "leverage",
+       "metric": "banned"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer keeps all three facts: opens at 9 am, closes at 6 pm, closed on Sundays, in plain words.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 8,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "simplify: The library opens at 9 am, closes at 6 pm, and is closed on Sundays.",
+     "expected_tool_calls": []
+    },
+    "metadata": {
+     "case_id": "g09",
+     "task": "simplifier",
+     "label": "fail",
+     "tool_calls": [],
+     "trace_id": "24c0e9a4b86244eab23676d651456e96",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 1
+   },
+   {
+    "cost": 0,
+    "error": "The answer misses the rubric.",
+    "gradingResult": {
+     "pass": false,
+     "score": 0.6,
+     "reason": "The answer misses the rubric.",
+     "namedScores": {
+      "contains": 1,
+      "banned": 0,
+      "tools": 1,
+      "rubric": 0
+     },
+     "namedScoreWeights": {
+      "contains": 2,
+      "banned": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "dashboard",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "4 regional sites",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": false,
+       "score": 0,
+       "reason": "Expected output to not contain \"leverage\"",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "leverage",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer says staff use the new dashboard to watch the 4 regional sites, with no jargon such as leverage.",
+        "metric": "rubric"
+       },
+       "pass": false,
+       "score": 0,
+       "reason": "The answer misses the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "337",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "f35eba43-b3c5-4853-b03b-2e2da374fcdd",
+    "latencyMs": 129,
+    "namedScores": {
+     "contains": 1,
+     "banned": 0,
+     "tools": 1,
+     "rubric": 0
+    },
+    "prompt": {
+     "raw": "simplify: Staff should leverage the new dashboard to monitor the 4 regional sites.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"4067f615f08f439da7bb30770b75414f\",\"trace_id\":\"d69ce07b7caa42f09b0d58458abe33f6\",\"idempotency_key\":\"75a7b1243c9b4d2f9c0ca8855b6d500d\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"Staff should leverage the new dashboard to watch the 4 regional sites.\"},\"metrics\":{\"input_tokens\":10,\"output_tokens\":5,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 129,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [],
+      "trace_id": "d69ce07b7caa42f09b0d58458abe33f6",
+      "status": "ok"
+     },
+     "output": "Staff should leverage the new dashboard to watch the 4 regional sites.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 0.6,
+    "success": false,
+    "testCase": {
+     "description": "g10 simplifier",
+     "vars": {
+      "input": "simplify: Staff should leverage the new dashboard to monitor the 4 regional sites.",
+      "expected_tool_calls": []
+     },
+     "metadata": {
+      "case_id": "g10",
+      "task": "simplifier",
+      "label": "fail"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "dashboard",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "4 regional sites",
+       "metric": "contains"
+      },
+      {
+       "type": "not-icontains",
+       "value": "leverage",
+       "metric": "banned"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer says staff use the new dashboard to watch the 4 regional sites, with no jargon such as leverage.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 9,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "simplify: Staff should leverage the new dashboard to monitor the 4 regional sites.",
+     "expected_tool_calls": []
+    },
+    "metadata": {
+     "case_id": "g10",
+     "task": "simplifier",
+     "label": "fail",
+     "tool_calls": [],
+     "trace_id": "d69ce07b7caa42f09b0d58458abe33f6",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 1
+   },
+   {
+    "cost": 0,
+    "error": "The answer misses the rubric.",
+    "gradingResult": {
+     "pass": false,
+     "score": 0.6666666666666666,
+     "reason": "The answer misses the rubric.",
+     "namedScores": {
+      "contains": 0.5,
+      "banned": 1,
+      "tools": 1,
+      "rubric": 0
+     },
+     "namedScoreWeights": {
+      "contains": 2,
+      "banned": 2,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "1932",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": false,
+       "score": 0,
+       "reason": "Expected output to contain \"40000\"",
+       "assertion": {
+        "type": "icontains",
+        "value": "40000",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "utilize",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "leverage",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer keeps the year 1932 and the number 40000 vehicles a day exactly, in plain words.",
+        "metric": "rubric"
+       },
+       "pass": false,
+       "score": 0,
+       "reason": "The answer misses the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "337",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "ba50414a-6c50-4c7a-8efa-80895a17645a",
+    "latencyMs": 42,
+    "namedScores": {
+     "contains": 0.5,
+     "banned": 1,
+     "tools": 1,
+     "rubric": 0
+    },
+    "prompt": {
+     "raw": "simplify: The bridge, built in 1932, carries 40000 vehicles per day.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"56f305d6782f4b4a9401e311dc781416\",\"trace_id\":\"2f155c9de13b41e4a328bbc444990e3b\",\"idempotency_key\":\"7c464d6cefb44b238195c354fd9ff2ed\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"The bridge was built in 1932. It carries 4000 vehicles a day.\"},\"metrics\":{\"input_tokens\":10,\"output_tokens\":5,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 42,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [],
+      "trace_id": "2f155c9de13b41e4a328bbc444990e3b",
+      "status": "ok"
+     },
+     "output": "The bridge was built in 1932. It carries 4000 vehicles a day.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 0.6666666666666666,
+    "success": false,
+    "testCase": {
+     "description": "g11 simplifier",
+     "vars": {
+      "input": "simplify: The bridge, built in 1932, carries 40000 vehicles per day.",
+      "expected_tool_calls": []
+     },
+     "metadata": {
+      "case_id": "g11",
+      "task": "simplifier",
+      "label": "fail"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "1932",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "40000",
+       "metric": "contains"
+      },
+      {
+       "type": "not-icontains",
+       "value": "utilize",
+       "metric": "banned"
+      },
+      {
+       "type": "not-icontains",
+       "value": "leverage",
+       "metric": "banned"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer keeps the year 1932 and the number 40000 vehicles a day exactly, in plain words.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 10,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "simplify: The bridge, built in 1932, carries 40000 vehicles per day.",
+     "expected_tool_calls": []
+    },
+    "metadata": {
+     "case_id": "g11",
+     "task": "simplifier",
+     "label": "fail",
+     "tool_calls": [],
+     "trace_id": "2f155c9de13b41e4a328bbc444990e3b",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 1
+   },
+   {
+    "cost": 0,
+    "error": "The answer misses the rubric.",
+    "gradingResult": {
+     "pass": false,
+     "score": 0.8333333333333334,
+     "reason": "The answer misses the rubric.",
+     "namedScores": {
+      "contains": 1,
+      "banned": 1,
+      "tools": 1,
+      "rubric": 0
+     },
+     "namedScoreWeights": {
+      "contains": 2,
+      "banned": 2,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "Elm Street",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "2024",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "utilize",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "not-icontains",
+        "value": "leverage",
+        "metric": "banned"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer says the clinic moved to Elm Street in 2024 and adds no new claim, such as a reason for the move.",
+        "metric": "rubric"
+       },
+       "pass": false,
+       "score": 0,
+       "reason": "The answer misses the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "337",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "c186d0da-a52d-4b09-acdd-ce6065c1d8c8",
+    "latencyMs": 40,
+    "namedScores": {
+     "contains": 1,
+     "banned": 1,
+     "tools": 1,
+     "rubric": 0
+    },
+    "prompt": {
+     "raw": "simplify: The clinic moved to Elm Street in 2024.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"add80c5e128344618f0e0d48f9ef1d7f\",\"trace_id\":\"e3a3412ed7da4dc998515d3c34354328\",\"idempotency_key\":\"3eeb65521271405a84659dd72c52acff\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"The clinic moved to Elm Street in 2024 to be closer to the hospital.\"},\"metrics\":{\"input_tokens\":10,\"output_tokens\":5,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 40,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [],
+      "trace_id": "e3a3412ed7da4dc998515d3c34354328",
+      "status": "ok"
+     },
+     "output": "The clinic moved to Elm Street in 2024 to be closer to the hospital.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 0.8333333333333334,
+    "success": false,
+    "testCase": {
+     "description": "g12 simplifier",
+     "vars": {
+      "input": "simplify: The clinic moved to Elm Street in 2024.",
+      "expected_tool_calls": []
+     },
+     "metadata": {
+      "case_id": "g12",
+      "task": "simplifier",
+      "label": "fail"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "Elm Street",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "2024",
+       "metric": "contains"
+      },
+      {
+       "type": "not-icontains",
+       "value": "utilize",
+       "metric": "banned"
+      },
+      {
+       "type": "not-icontains",
+       "value": "leverage",
+       "metric": "banned"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer says the clinic moved to Elm Street in 2024 and adds no new claim, such as a reason for the move.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 11,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "simplify: The clinic moved to Elm Street in 2024.",
+     "expected_tool_calls": []
+    },
+    "metadata": {
+     "case_id": "g12",
+     "task": "simplifier",
+     "label": "fail",
+     "tool_calls": [],
+     "trace_id": "e3a3412ed7da4dc998515d3c34354328",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 1
+   },
+   {
+    "cost": 0,
+    "gradingResult": {
+     "pass": true,
+     "score": 1,
+     "reason": "All assertions passed",
+     "namedScores": {
+      "contains": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "namedScoreWeights": {
+      "contains": 2,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "own container",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "retrieval-augmented generation",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer defines a sidecar from the glossary and expands RAG, using only what the tools returned.",
+        "metric": "rubric"
+       },
+       "pass": true,
+       "score": 1,
+       "reason": "The answer meets the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "335",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "17d5a4aa-d9d8-4a06-b845-3933ebd9bf52",
+    "latencyMs": 97,
+    "namedScores": {
+     "contains": 1,
+     "tools": 1,
+     "rubric": 1
+    },
+    "prompt": {
+     "raw": "lookup: What is a sidecar? Also expand RAG.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"03b2cdd8cd7140b9a19c62e6885fbd91\",\"trace_id\":\"fe4818ec33204f488130169141d0c2c6\",\"idempotency_key\":\"bac7b31ff7ca490186aeb7a1fc910b44\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"A sidecar is a lane where the workload runs in its own container next to the chassis. RAG stands for retrieval-augmented generation.\",\"tool_calls\":[{\"call_id\":\"call_6e89b1b1\",\"name\":\"glossary_lookup\",\"arguments\":{\"term\":\"sidecar\"},\"result\":{\"term\":\"sidecar\",\"definition\":\"A lane where the workload runs in its own container next to the chassis.\"}},{\"call_id\":\"call_f17d6569\",\"name\":\"acronym_expand\",\"arguments\":{\"acronym\":\"RAG\"},\"result\":{\"acronym\":\"RAG\",\"expansion\":\"retrieval-augmented generation\"}}]},\"metrics\":{\"input_tokens\":30,\"output_tokens\":15,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 97,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [
+       {
+        "call_id": "call_6e89b1b1",
+        "name": "glossary_lookup",
+        "arguments": {
+         "term": "sidecar"
+        },
+        "result": {
+         "term": "sidecar",
+         "definition": "A lane where the workload runs in its own container next to the chassis."
+        }
+       },
+       {
+        "call_id": "call_f17d6569",
+        "name": "acronym_expand",
+        "arguments": {
+         "acronym": "RAG"
+        },
+        "result": {
+         "acronym": "RAG",
+         "expansion": "retrieval-augmented generation"
+        }
+       }
+      ],
+      "trace_id": "fe4818ec33204f488130169141d0c2c6",
+      "status": "ok"
+     },
+     "output": "A sidecar is a lane where the workload runs in its own container next to the chassis. RAG stands for retrieval-augmented generation.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 1,
+    "success": true,
+    "testCase": {
+     "description": "g13 lookup",
+     "vars": {
+      "input": "lookup: What is a sidecar? Also expand RAG.",
+      "expected_tool_calls": [
+       {
+        "name": "glossary_lookup",
+        "arguments": {
+         "term": "sidecar"
+        }
+       },
+       {
+        "name": "acronym_expand",
+        "arguments": {
+         "acronym": "RAG"
+        }
+       }
+      ]
+     },
+     "metadata": {
+      "case_id": "g13",
+      "task": "lookup",
+      "label": "pass"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "own container",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "retrieval-augmented generation",
+       "metric": "contains"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer defines a sidecar from the glossary and expands RAG, using only what the tools returned.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 12,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "lookup: What is a sidecar? Also expand RAG.",
+     "expected_tool_calls": [
+      {
+       "name": "glossary_lookup",
+       "arguments": {
+        "term": "sidecar"
+       }
+      },
+      {
+       "name": "acronym_expand",
+       "arguments": {
+        "acronym": "RAG"
+       }
+      }
+     ]
+    },
+    "metadata": {
+     "case_id": "g13",
+     "task": "lookup",
+     "label": "pass",
+     "tool_calls": [
+      {
+       "call_id": "call_6e89b1b1",
+       "name": "glossary_lookup",
+       "arguments": {
+        "term": "sidecar"
+       },
+       "result": {
+        "term": "sidecar",
+        "definition": "A lane where the workload runs in its own container next to the chassis."
+       }
+      },
+      {
+       "call_id": "call_f17d6569",
+       "name": "acronym_expand",
+       "arguments": {
+        "acronym": "RAG"
+       },
+       "result": {
+        "acronym": "RAG",
+        "expansion": "retrieval-augmented generation"
+       }
+      }
+     ],
+     "trace_id": "fe4818ec33204f488130169141d0c2c6",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 0
+   },
+   {
+    "cost": 0,
+    "gradingResult": {
+     "pass": true,
+     "score": 1,
+     "reason": "All assertions passed",
+     "namedScores": {
+      "contains": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "namedScoreWeights": {
+      "contains": 2,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "model router",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "large language model",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer defines LiteLLM from the glossary and expands LLM, using only what the tools returned.",
+        "metric": "rubric"
+       },
+       "pass": true,
+       "score": 1,
+       "reason": "The answer meets the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "335",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "7b66361e-e1ce-43bc-a109-3509dad3e66d",
+    "latencyMs": 94,
+    "namedScores": {
+     "contains": 1,
+     "tools": 1,
+     "rubric": 1
+    },
+    "prompt": {
+     "raw": "lookup: Define LiteLLM and expand LLM.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"6f17bdb69e264ba2b336d14bb0370d7f\",\"trace_id\":\"e5ad026779f0409f926fd4cf5a4a6aca\",\"idempotency_key\":\"2123a36af8e84c81aa39b4ef0cda3ce7\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"LiteLLM is the model router the chassis calls. LLM stands for large language model.\",\"tool_calls\":[{\"call_id\":\"call_0b4ae0ae\",\"name\":\"glossary_lookup\",\"arguments\":{\"term\":\"LiteLLM\"},\"result\":{\"term\":\"LiteLLM\",\"definition\":\"The model router the chassis calls; it holds routes, keys, and budgets.\"}},{\"call_id\":\"call_2d687fbd\",\"name\":\"acronym_expand\",\"arguments\":{\"acronym\":\"LLM\"},\"result\":{\"acronym\":\"LLM\",\"expansion\":\"large language model\"}}]},\"metrics\":{\"input_tokens\":30,\"output_tokens\":15,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 94,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [
+       {
+        "call_id": "call_0b4ae0ae",
+        "name": "glossary_lookup",
+        "arguments": {
+         "term": "LiteLLM"
+        },
+        "result": {
+         "term": "LiteLLM",
+         "definition": "The model router the chassis calls; it holds routes, keys, and budgets."
+        }
+       },
+       {
+        "call_id": "call_2d687fbd",
+        "name": "acronym_expand",
+        "arguments": {
+         "acronym": "LLM"
+        },
+        "result": {
+         "acronym": "LLM",
+         "expansion": "large language model"
+        }
+       }
+      ],
+      "trace_id": "e5ad026779f0409f926fd4cf5a4a6aca",
+      "status": "ok"
+     },
+     "output": "LiteLLM is the model router the chassis calls. LLM stands for large language model.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 1,
+    "success": true,
+    "testCase": {
+     "description": "g14 lookup",
+     "vars": {
+      "input": "lookup: Define LiteLLM and expand LLM.",
+      "expected_tool_calls": [
+       {
+        "name": "glossary_lookup",
+        "arguments": {
+         "term": "LiteLLM"
+        }
+       },
+       {
+        "name": "acronym_expand",
+        "arguments": {
+         "acronym": "LLM"
+        }
+       }
+      ]
+     },
+     "metadata": {
+      "case_id": "g14",
+      "task": "lookup",
+      "label": "pass"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "model router",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "large language model",
+       "metric": "contains"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer defines LiteLLM from the glossary and expands LLM, using only what the tools returned.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 13,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "lookup: Define LiteLLM and expand LLM.",
+     "expected_tool_calls": [
+      {
+       "name": "glossary_lookup",
+       "arguments": {
+        "term": "LiteLLM"
+       }
+      },
+      {
+       "name": "acronym_expand",
+       "arguments": {
+        "acronym": "LLM"
+       }
+      }
+     ]
+    },
+    "metadata": {
+     "case_id": "g14",
+     "task": "lookup",
+     "label": "pass",
+     "tool_calls": [
+      {
+       "call_id": "call_0b4ae0ae",
+       "name": "glossary_lookup",
+       "arguments": {
+        "term": "LiteLLM"
+       },
+       "result": {
+        "term": "LiteLLM",
+        "definition": "The model router the chassis calls; it holds routes, keys, and budgets."
+       }
+      },
+      {
+       "call_id": "call_2d687fbd",
+       "name": "acronym_expand",
+       "arguments": {
+        "acronym": "LLM"
+       },
+       "result": {
+        "acronym": "LLM",
+        "expansion": "large language model"
+       }
+      }
+     ],
+     "trace_id": "e5ad026779f0409f926fd4cf5a4a6aca",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 0
+   },
+   {
+    "cost": 0,
+    "gradingResult": {
+     "pass": true,
+     "score": 1,
+     "reason": "All assertions passed",
+     "namedScores": {
+      "contains": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "namedScoreWeights": {
+      "contains": 2,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "trace id",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "time to first token",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer defines traceparent from the glossary and expands TTFT, using only what the tools returned.",
+        "metric": "rubric"
+       },
+       "pass": true,
+       "score": 1,
+       "reason": "The answer meets the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "335",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "b717ad26-312c-47d3-a3fa-ae2fa2d407fe",
+    "latencyMs": 88,
+    "namedScores": {
+     "contains": 1,
+     "tools": 1,
+     "rubric": 1
+    },
+    "prompt": {
+     "raw": "lookup: Define traceparent and expand TTFT.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"1777ccb1a019402fa5448b69374eb863\",\"trace_id\":\"b2d4bdfb98bd44459357604d52a3a69a\",\"idempotency_key\":\"5b43aa8d2ecd40df9273e135fe8fab2b\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"traceparent is the W3C header that carries the trace id. TTFT stands for time to first token.\",\"tool_calls\":[{\"call_id\":\"call_3970a49f\",\"name\":\"glossary_lookup\",\"arguments\":{\"term\":\"traceparent\"},\"result\":{\"term\":\"traceparent\",\"definition\":\"The W3C header that carries the trace id from one call to the next.\"}},{\"call_id\":\"call_dec59524\",\"name\":\"acronym_expand\",\"arguments\":{\"acronym\":\"TTFT\"},\"result\":{\"acronym\":\"TTFT\",\"expansion\":\"time to first token\"}}]},\"metrics\":{\"input_tokens\":30,\"output_tokens\":15,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 88,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [
+       {
+        "call_id": "call_3970a49f",
+        "name": "glossary_lookup",
+        "arguments": {
+         "term": "traceparent"
+        },
+        "result": {
+         "term": "traceparent",
+         "definition": "The W3C header that carries the trace id from one call to the next."
+        }
+       },
+       {
+        "call_id": "call_dec59524",
+        "name": "acronym_expand",
+        "arguments": {
+         "acronym": "TTFT"
+        },
+        "result": {
+         "acronym": "TTFT",
+         "expansion": "time to first token"
+        }
+       }
+      ],
+      "trace_id": "b2d4bdfb98bd44459357604d52a3a69a",
+      "status": "ok"
+     },
+     "output": "traceparent is the W3C header that carries the trace id. TTFT stands for time to first token.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 1,
+    "success": true,
+    "testCase": {
+     "description": "g15 lookup",
+     "vars": {
+      "input": "lookup: Define traceparent and expand TTFT.",
+      "expected_tool_calls": [
+       {
+        "name": "glossary_lookup",
+        "arguments": {
+         "term": "traceparent"
+        }
+       },
+       {
+        "name": "acronym_expand",
+        "arguments": {
+         "acronym": "TTFT"
+        }
+       }
+      ]
+     },
+     "metadata": {
+      "case_id": "g15",
+      "task": "lookup",
+      "label": "pass"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "trace id",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "time to first token",
+       "metric": "contains"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer defines traceparent from the glossary and expands TTFT, using only what the tools returned.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 14,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "lookup: Define traceparent and expand TTFT.",
+     "expected_tool_calls": [
+      {
+       "name": "glossary_lookup",
+       "arguments": {
+        "term": "traceparent"
+       }
+      },
+      {
+       "name": "acronym_expand",
+       "arguments": {
+        "acronym": "TTFT"
+       }
+      }
+     ]
+    },
+    "metadata": {
+     "case_id": "g15",
+     "task": "lookup",
+     "label": "pass",
+     "tool_calls": [
+      {
+       "call_id": "call_3970a49f",
+       "name": "glossary_lookup",
+       "arguments": {
+        "term": "traceparent"
+       },
+       "result": {
+        "term": "traceparent",
+        "definition": "The W3C header that carries the trace id from one call to the next."
+       }
+      },
+      {
+       "call_id": "call_dec59524",
+       "name": "acronym_expand",
+       "arguments": {
+        "acronym": "TTFT"
+       },
+       "result": {
+        "acronym": "TTFT",
+        "expansion": "time to first token"
+       }
+      }
+     ],
+     "trace_id": "b2d4bdfb98bd44459357604d52a3a69a",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 0
+   },
+   {
+    "cost": 0,
+    "gradingResult": {
+     "pass": true,
+     "score": 1,
+     "reason": "All assertions passed",
+     "namedScores": {
+      "contains": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "namedScoreWeights": {
+      "contains": 3,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "inprocess",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "sidecar",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "remote",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer defines a lane from the glossary and names the three lanes.",
+        "metric": "rubric"
+       },
+       "pass": true,
+       "score": 1,
+       "reason": "The answer meets the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "335",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "c7671c83-0f5a-46e1-8850-3e4c8f13108c",
+    "latencyMs": 64,
+    "namedScores": {
+     "contains": 1,
+     "tools": 1,
+     "rubric": 1
+    },
+    "prompt": {
+     "raw": "lookup: What is a lane?",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"cc9f6d8cd7df455f8993bdb0f07b9404\",\"trace_id\":\"d23c2884036f4c249c4b848ada062e81\",\"idempotency_key\":\"f0b24d0e784e4a249e3fda46b5350a2e\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"A lane is how the chassis reaches a workload: inprocess, sidecar, or remote.\",\"tool_calls\":[{\"call_id\":\"call_17526fee\",\"name\":\"glossary_lookup\",\"arguments\":{\"term\":\"lane\"},\"result\":{\"term\":\"lane\",\"definition\":\"How the chassis reaches a workload: inprocess, sidecar, or remote.\"}}]},\"metrics\":{\"input_tokens\":20,\"output_tokens\":10,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 64,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [
+       {
+        "call_id": "call_17526fee",
+        "name": "glossary_lookup",
+        "arguments": {
+         "term": "lane"
+        },
+        "result": {
+         "term": "lane",
+         "definition": "How the chassis reaches a workload: inprocess, sidecar, or remote."
+        }
+       }
+      ],
+      "trace_id": "d23c2884036f4c249c4b848ada062e81",
+      "status": "ok"
+     },
+     "output": "A lane is how the chassis reaches a workload: inprocess, sidecar, or remote.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 1,
+    "success": true,
+    "testCase": {
+     "description": "g16 lookup",
+     "vars": {
+      "input": "lookup: What is a lane?",
+      "expected_tool_calls": [
+       {
+        "name": "glossary_lookup",
+        "arguments": {
+         "term": "lane"
+        }
+       }
+      ]
+     },
+     "metadata": {
+      "case_id": "g16",
+      "task": "lookup",
+      "label": "pass"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "inprocess",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "sidecar",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "remote",
+       "metric": "contains"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer defines a lane from the glossary and names the three lanes.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 15,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "lookup: What is a lane?",
+     "expected_tool_calls": [
+      {
+       "name": "glossary_lookup",
+       "arguments": {
+        "term": "lane"
+       }
+      }
+     ]
+    },
+    "metadata": {
+     "case_id": "g16",
+     "task": "lookup",
+     "label": "pass",
+     "tool_calls": [
+      {
+       "call_id": "call_17526fee",
+       "name": "glossary_lookup",
+       "arguments": {
+        "term": "lane"
+       },
+       "result": {
+        "term": "lane",
+        "definition": "How the chassis reaches a workload: inprocess, sidecar, or remote."
+       }
+      }
+     ],
+     "trace_id": "d23c2884036f4c249c4b848ada062e81",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 0
+   },
+   {
+    "cost": 0,
+    "gradingResult": {
+     "pass": true,
+     "score": 1,
+     "reason": "All assertions passed",
+     "namedScores": {
+      "contains": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "namedScoreWeights": {
+      "contains": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "typed interface",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer defines a port from the glossary, using only what the tool returned.",
+        "metric": "rubric"
+       },
+       "pass": true,
+       "score": 1,
+       "reason": "The answer meets the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "335",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "f4ec5d76-0493-4de1-b23a-e0f5e6237c87",
+    "latencyMs": 59,
+    "namedScores": {
+     "contains": 1,
+     "tools": 1,
+     "rubric": 1
+    },
+    "prompt": {
+     "raw": "lookup: What is a port in the chassis?",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"259ef088ea9d4757b4edd9e3f3ab53ee\",\"trace_id\":\"da62c75a2aff4131bdd8805590695129\",\"idempotency_key\":\"94824f3e5bf240f9aea9210a0f609a79\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"A port is a typed interface the chassis uses for one outside dependency.\",\"tool_calls\":[{\"call_id\":\"call_26634eb9\",\"name\":\"glossary_lookup\",\"arguments\":{\"term\":\"port\"},\"result\":{\"term\":\"port\",\"definition\":\"A typed interface the chassis uses for one outside dependency.\"}}]},\"metrics\":{\"input_tokens\":20,\"output_tokens\":10,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 59,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [
+       {
+        "call_id": "call_26634eb9",
+        "name": "glossary_lookup",
+        "arguments": {
+         "term": "port"
+        },
+        "result": {
+         "term": "port",
+         "definition": "A typed interface the chassis uses for one outside dependency."
+        }
+       }
+      ],
+      "trace_id": "da62c75a2aff4131bdd8805590695129",
+      "status": "ok"
+     },
+     "output": "A port is a typed interface the chassis uses for one outside dependency.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 1,
+    "success": true,
+    "testCase": {
+     "description": "g17 lookup",
+     "vars": {
+      "input": "lookup: What is a port in the chassis?",
+      "expected_tool_calls": [
+       {
+        "name": "glossary_lookup",
+        "arguments": {
+         "term": "port"
+        }
+       }
+      ]
+     },
+     "metadata": {
+      "case_id": "g17",
+      "task": "lookup",
+      "label": "pass"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "typed interface",
+       "metric": "contains"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer defines a port from the glossary, using only what the tool returned.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 16,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "lookup: What is a port in the chassis?",
+     "expected_tool_calls": [
+      {
+       "name": "glossary_lookup",
+       "arguments": {
+        "term": "port"
+       }
+      }
+     ]
+    },
+    "metadata": {
+     "case_id": "g17",
+     "task": "lookup",
+     "label": "pass",
+     "tool_calls": [
+      {
+       "call_id": "call_26634eb9",
+       "name": "glossary_lookup",
+       "arguments": {
+        "term": "port"
+       },
+       "result": {
+        "term": "port",
+        "definition": "A typed interface the chassis uses for one outside dependency."
+       }
+      }
+     ],
+     "trace_id": "da62c75a2aff4131bdd8805590695129",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 0
+   },
+   {
+    "cost": 0,
+    "gradingResult": {
+     "pass": true,
+     "score": 1,
+     "reason": "All assertions passed",
+     "namedScores": {
+      "contains": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "namedScoreWeights": {
+      "contains": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "Model Context Protocol",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "tool calls match",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer expands MCP, using only what the tool returned.",
+        "metric": "rubric"
+       },
+       "pass": true,
+       "score": 1,
+       "reason": "The answer meets the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "335",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "a34af7e5-d7c5-4b49-b48e-3244aefe0fbc",
+    "latencyMs": 54,
+    "namedScores": {
+     "contains": 1,
+     "tools": 1,
+     "rubric": 1
+    },
+    "prompt": {
+     "raw": "lookup: Expand MCP.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"a7bc17a9f64b4e4380760d1214c6a938\",\"trace_id\":\"21edc0d55f9544f7bc02d28ccb6d3ca5\",\"idempotency_key\":\"02133cfd95074482b3e25827f77bc67e\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"MCP stands for Model Context Protocol.\",\"tool_calls\":[{\"call_id\":\"call_da42a40d\",\"name\":\"acronym_expand\",\"arguments\":{\"acronym\":\"MCP\"},\"result\":{\"acronym\":\"MCP\",\"expansion\":\"Model Context Protocol\"}}]},\"metrics\":{\"input_tokens\":20,\"output_tokens\":10,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 54,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [
+       {
+        "call_id": "call_da42a40d",
+        "name": "acronym_expand",
+        "arguments": {
+         "acronym": "MCP"
+        },
+        "result": {
+         "acronym": "MCP",
+         "expansion": "Model Context Protocol"
+        }
+       }
+      ],
+      "trace_id": "21edc0d55f9544f7bc02d28ccb6d3ca5",
+      "status": "ok"
+     },
+     "output": "MCP stands for Model Context Protocol.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 1,
+    "success": true,
+    "testCase": {
+     "description": "g18 lookup",
+     "vars": {
+      "input": "lookup: Expand MCP.",
+      "expected_tool_calls": [
+       {
+        "name": "acronym_expand",
+        "arguments": {
+         "acronym": "MCP"
+        }
+       }
+      ]
+     },
+     "metadata": {
+      "case_id": "g18",
+      "task": "lookup",
+      "label": "pass"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "Model Context Protocol",
+       "metric": "contains"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer expands MCP, using only what the tool returned.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 17,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "lookup: Expand MCP.",
+     "expected_tool_calls": [
+      {
+       "name": "acronym_expand",
+       "arguments": {
+        "acronym": "MCP"
+       }
+      }
+     ]
+    },
+    "metadata": {
+     "case_id": "g18",
+     "task": "lookup",
+     "label": "pass",
+     "tool_calls": [
+      {
+       "call_id": "call_da42a40d",
+       "name": "acronym_expand",
+       "arguments": {
+        "acronym": "MCP"
+       },
+       "result": {
+        "acronym": "MCP",
+        "expansion": "Model Context Protocol"
+       }
+      }
+     ],
+     "trace_id": "21edc0d55f9544f7bc02d28ccb6d3ca5",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 0
+   },
+   {
+    "cost": 0,
+    "error": "The answer misses the rubric.",
+    "gradingResult": {
+     "pass": false,
+     "score": 0.25,
+     "reason": "The answer misses the rubric.",
+     "namedScores": {
+      "contains": 0.5,
+      "tools": 0,
+      "rubric": 0
+     },
+     "namedScoreWeights": {
+      "contains": 2,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": true,
+       "score": 1,
+       "reason": "Assertion passed",
+       "assertion": {
+        "type": "icontains",
+        "value": "in-memory stand-in",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": false,
+       "score": 0,
+       "reason": "Expected output to contain \"Agent-to-Agent\"",
+       "assertion": {
+        "type": "icontains",
+        "value": "Agent-to-Agent",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": false,
+       "score": 0,
+       "reason": "tool calls [{\"name\":\"glossary_lookup\",\"arguments\":{\"term\":\"fake\"}}], expected [{\"name\":\"glossary_lookup\",\"arguments\":{\"term\":\"fake\"}},{\"name\":\"acronym_expand\",\"arguments\":{\"acronym\":\"A2A\"}}]",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer defines a fake from the glossary and expands A2A, using only what the tools returned.",
+        "metric": "rubric"
+       },
+       "pass": false,
+       "score": 0,
+       "reason": "The answer misses the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "337",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "d0ce4ae1-56b9-4c07-8f9c-a578903da989",
+    "latencyMs": 59,
+    "namedScores": {
+     "contains": 0.5,
+     "tools": 0,
+     "rubric": 0
+    },
+    "prompt": {
+     "raw": "lookup: Define fake and expand A2A.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"4efc75d0aaee4300b2433af448a28fa4\",\"trace_id\":\"445223163a7341398ba1ee478c8c9c7b\",\"idempotency_key\":\"f2087d58f79248719f1195dcee5ac465\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"A fake is an in-memory stand-in used in tests.\",\"tool_calls\":[{\"call_id\":\"call_a9836fa6\",\"name\":\"glossary_lookup\",\"arguments\":{\"term\":\"fake\"},\"result\":{\"term\":\"fake\",\"definition\":\"An in-memory stand-in for a port, used in tests and the fake profile.\"}}]},\"metrics\":{\"input_tokens\":20,\"output_tokens\":10,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 59,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [
+       {
+        "call_id": "call_a9836fa6",
+        "name": "glossary_lookup",
+        "arguments": {
+         "term": "fake"
+        },
+        "result": {
+         "term": "fake",
+         "definition": "An in-memory stand-in for a port, used in tests and the fake profile."
+        }
+       }
+      ],
+      "trace_id": "445223163a7341398ba1ee478c8c9c7b",
+      "status": "ok"
+     },
+     "output": "A fake is an in-memory stand-in used in tests.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 0.25,
+    "success": false,
+    "testCase": {
+     "description": "g19 lookup",
+     "vars": {
+      "input": "lookup: Define fake and expand A2A.",
+      "expected_tool_calls": [
+       {
+        "name": "glossary_lookup",
+        "arguments": {
+         "term": "fake"
+        }
+       },
+       {
+        "name": "acronym_expand",
+        "arguments": {
+         "acronym": "A2A"
+        }
+       }
+      ]
+     },
+     "metadata": {
+      "case_id": "g19",
+      "task": "lookup",
+      "label": "fail"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "in-memory stand-in",
+       "metric": "contains"
+      },
+      {
+       "type": "icontains",
+       "value": "Agent-to-Agent",
+       "metric": "contains"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer defines a fake from the glossary and expands A2A, using only what the tools returned.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 18,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "lookup: Define fake and expand A2A.",
+     "expected_tool_calls": [
+      {
+       "name": "glossary_lookup",
+       "arguments": {
+        "term": "fake"
+       }
+      },
+      {
+       "name": "acronym_expand",
+       "arguments": {
+        "acronym": "A2A"
+       }
+      }
+     ]
+    },
+    "metadata": {
+     "case_id": "g19",
+     "task": "lookup",
+     "label": "fail",
+     "tool_calls": [
+      {
+       "call_id": "call_a9836fa6",
+       "name": "glossary_lookup",
+       "arguments": {
+        "term": "fake"
+       },
+       "result": {
+        "term": "fake",
+        "definition": "An in-memory stand-in for a port, used in tests and the fake profile."
+       }
+      }
+     ],
+     "trace_id": "445223163a7341398ba1ee478c8c9c7b",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 1
+   },
+   {
+    "cost": 0,
+    "error": "The answer misses the rubric.",
+    "gradingResult": {
+     "pass": false,
+     "score": 0,
+     "reason": "The answer misses the rubric.",
+     "namedScores": {
+      "contains": 0,
+      "tools": 0,
+      "rubric": 0
+     },
+     "namedScoreWeights": {
+      "contains": 1,
+      "tools": 1,
+      "rubric": 1
+     },
+     "tokensUsed": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     },
+     "componentResults": [
+      {
+       "pass": false,
+       "score": 0,
+       "reason": "Expected output to contain \"agent code\"",
+       "assertion": {
+        "type": "icontains",
+        "value": "agent code",
+        "metric": "contains"
+       }
+      },
+      {
+       "pass": false,
+       "score": 0,
+       "reason": "tool calls [{\"name\":\"acronym_expand\",\"arguments\":{\"acronym\":\"workload\"}}], expected [{\"name\":\"glossary_lookup\",\"arguments\":{\"term\":\"workload\"}}]",
+       "assertion": {
+        "type": "javascript",
+        "value": "file://tool_calls.js",
+        "metric": "tools"
+       }
+      },
+      {
+       "assertion": {
+        "type": "llm-rubric",
+        "value": "The answer defines a workload from the glossary, using only what the tool returned.",
+        "metric": "rubric"
+       },
+       "pass": false,
+       "score": 0,
+       "reason": "The answer misses the rubric.",
+       "tokensUsed": {
+        "total": 15,
+        "prompt": 10,
+        "completion": 5,
+        "cached": 0,
+        "numRequests": 1,
+        "completionDetails": {
+         "reasoning": 0,
+         "acceptedPrediction": 0,
+         "rejectedPrediction": 0
+        }
+       },
+       "metadata": {
+        "http": {
+         "status": 200,
+         "statusText": "OK",
+         "headers": {
+          "content-length": "337",
+          "content-type": "application/json",
+          "date": "Wed, 28 Oct 2026 16:31:44 GMT",
+          "server": "uvicorn"
+         }
+        }
+       }
+      }
+     ]
+    },
+    "id": "548848da-f5a2-460f-b0f1-28321ed3790f",
+    "latencyMs": 64,
+    "namedScores": {
+     "contains": 0,
+     "tools": 0,
+     "rubric": 0
+    },
+    "prompt": {
+     "raw": "lookup: Define workload.",
+     "label": "{{input}}",
+     "config": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "promptId": "146b33ced217be53420a9244c0ad8ec843483bbab4f32ac28e803b45b42891ba",
+    "promptIdx": 0,
+    "provider": {
+     "id": "http://127.0.0.1:58539/v1/run",
+     "label": "chassis"
+    },
+    "response": {
+     "raw": "{\"request_id\":\"523c525924a44296a8caaaf5270f594e\",\"trace_id\":\"64530bb78e5549fa8599d0d69992a909\",\"idempotency_key\":\"97629b6f92da40968c4da05a80bb1c6e\",\"agent\":\"echo\",\"agent_version\":\"0.0.1\",\"output\":{\"text\":\"I could not find the word workload.\",\"tool_calls\":[{\"call_id\":\"call_9fd295e1\",\"name\":\"acronym_expand\",\"arguments\":{\"acronym\":\"workload\"},\"result\":{\"acronym\":\"workload\",\"expansion\":null}}]},\"metrics\":{\"input_tokens\":20,\"output_tokens\":10,\"attempts\":1,\"model_route\":\"big-default\"},\"status\":\"ok\",\"versions\":{\"chassis\":\"0.1.0\",\"config\":\"6bb368aa29a9\",\"prompt\":\"simplifier-v1\",\"model_route\":\"big-default\"},\"context_ref\":null}",
+     "latencyMs": 64,
+     "cached": false,
+     "metadata": {
+      "tool_calls": [
+       {
+        "call_id": "call_9fd295e1",
+        "name": "acronym_expand",
+        "arguments": {
+         "acronym": "workload"
+        },
+        "result": {
+         "acronym": "workload",
+         "expansion": null
+        }
+       }
+      ],
+      "trace_id": "64530bb78e5549fa8599d0d69992a909",
+      "status": "ok"
+     },
+     "output": "I could not find the word workload.",
+     "tokenUsage": {
+      "prompt": 0,
+      "completion": 0,
+      "cached": 0,
+      "total": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      },
+      "assertions": {
+       "total": 0,
+       "prompt": 0,
+       "completion": 0,
+       "cached": 0,
+       "numRequests": 0,
+       "completionDetails": {
+        "reasoning": 0,
+        "acceptedPrediction": 0,
+        "rejectedPrediction": 0,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+       }
+      }
+     }
+    },
+    "score": 0,
+    "success": false,
+    "testCase": {
+     "description": "g20 lookup",
+     "vars": {
+      "input": "lookup: Define workload.",
+      "expected_tool_calls": [
+       {
+        "name": "glossary_lookup",
+        "arguments": {
+         "term": "workload"
+        }
+       }
+      ]
+     },
+     "metadata": {
+      "case_id": "g20",
+      "task": "lookup",
+      "label": "fail"
+     },
+     "assert": [
+      {
+       "type": "icontains",
+       "value": "agent code",
+       "metric": "contains"
+      },
+      {
+       "type": "javascript",
+       "value": "file://tool_calls.js",
+       "metric": "tools"
+      },
+      {
+       "type": "llm-rubric",
+       "value": "The answer defines a workload from the glossary, using only what the tool returned.",
+       "metric": "rubric"
+      }
+     ],
+     "options": {
+      "provider": {
+       "id": "openai:chat:fake-judge",
+       "config": {
+        "apiBaseUrl": "http://127.0.0.1:44591/v1",
+        "apiKey": "[REDACTED]",
+        "temperature": 0
+       }
+      }
+     }
+    },
+    "testIdx": 19,
+    "tokenUsage": {
+     "prompt": 0,
+     "completion": 0,
+     "cached": 0,
+     "total": 0,
+     "numRequests": 1,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     },
+     "assertions": {
+      "total": 15,
+      "prompt": 10,
+      "completion": 5,
+      "cached": 0,
+      "numRequests": 1,
+      "completionDetails": {
+       "reasoning": 0,
+       "acceptedPrediction": 0,
+       "rejectedPrediction": 0,
+       "cacheReadInputTokens": 0,
+       "cacheCreationInputTokens": 0
+      }
+     }
+    },
+    "vars": {
+     "input": "lookup: Define workload.",
+     "expected_tool_calls": [
+      {
+       "name": "glossary_lookup",
+       "arguments": {
+        "term": "workload"
+       }
+      }
+     ]
+    },
+    "metadata": {
+     "case_id": "g20",
+     "task": "lookup",
+     "label": "fail",
+     "tool_calls": [
+      {
+       "call_id": "call_9fd295e1",
+       "name": "acronym_expand",
+       "arguments": {
+        "acronym": "workload"
+       },
+       "result": {
+        "acronym": "workload",
+        "expansion": null
+       }
+      }
+     ],
+     "trace_id": "64530bb78e5549fa8599d0d69992a909",
+     "status": "ok",
+     "_promptfooFileMetadata": {}
+    },
+    "failureReason": 1
+   }
+  ],
+  "stats": {
+   "successes": 13,
+   "failures": 7,
+   "errors": 0,
+   "tokenUsage": {
+    "prompt": 0,
+    "completion": 0,
+    "cached": 0,
+    "total": 0,
+    "numRequests": 20,
+    "completionDetails": {
+     "reasoning": 0,
+     "acceptedPrediction": 0,
+     "rejectedPrediction": 0,
+     "cacheReadInputTokens": 0,
+     "cacheCreationInputTokens": 0
+    },
+    "assertions": {
+     "total": 300,
+     "prompt": 200,
+     "completion": 100,
+     "cached": 0,
+     "numRequests": 20,
+     "completionDetails": {
+      "reasoning": 0,
+      "acceptedPrediction": 0,
+      "rejectedPrediction": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+     }
+    }
+   },
+   "durationMs": 1793,
+   "evaluationDurationMs": 1793
+  }
+ },
+ "config": {
+  "tags": {},
+  "description": "PoC-7 golden set via /v1/run (echo-langgraph)",
+  "prompts": [
+   "{{input}}"
+  ],
+  "providers": [
+   {
+    "id": "http",
+    "label": "chassis",
+    "config": {
+     "url": "http://127.0.0.1:58539/v1/run",
+     "method": "POST",
+     "headers": {
+      "Content-Type": "application/json"
+     },
+     "body": {
+      "input": {
+       "text": "{{prompt}}"
+      },
+      "stream": false
+     },
+     "transformResponse": "file://transform.js"
+    }
+   }
+  ],
+  "env": {},
+  "sharing": false,
+  "extensions": [],
+  "metadata": {},
+  "evaluateOptions": {
+   "maxConcurrency": 1
+  },
+  "defaultTest": {
+   "options": {
+    "provider": {
+     "id": "openai:chat:fake-judge",
+     "config": {
+      "apiBaseUrl": "http://127.0.0.1:44591/v1",
+      "apiKey": "[REDACTED]",
+      "temperature": 0
+     }
+    }
+   },
+   "vars": {},
+   "assert": [],
+   "metadata": {}
+  },
+  "basePath": "evals/promptfoo"
+ },
+ "shareableUrl": null,
+ "metadata": {
+  "promptfooVersion": "0.125.1",
+  "nodeVersion": "v22.22.0",
+  "platform": "linux",
+  "arch": "x64",
+  "exportedAt": "2026-10-28T16:31:44.832Z",
+  "evaluationCreatedAt": "2026-10-28T16:31:43.021Z"
+ },
+ "vars": [
+  "input",
+  "expected_tool_calls"
+ ],
+ "runtimeOptions": {
+  "eventSource": "cli",
+  "maxConcurrency": 1,
+  "showProgressBar": false,
+  "repeat": 1,
+  "cache": false
+ }
+}
