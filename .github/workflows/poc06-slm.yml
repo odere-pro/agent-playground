@@ -79,25 +79,35 @@ jobs:
         run: |
           set -euo pipefail
           api=https://api.github.com/repos/ggml-org/llama.cpp/releases
+          # The CPU build for Ubuntu x64. Not every release carries binaries (v0.8.0 held only
+          # nightly-tag.txt), so with no pin, take the newest release that has one.
+          pick='[.assets[] | select(.name | test("^llama-.*-bin-ubuntu-x64[.](zip|tar[.]gz)$"))][0] // empty'
           if [[ -n "$LLAMA_CPP_TAG" ]]; then
             [[ "$LLAMA_CPP_SHA256" =~ ^[0-9a-f]{64}$ ]] ||
               { echo "::error::LLAMA_CPP_TAG is set but LLAMA_CPP_SHA256 is not a sha256"; exit 1; }
             release=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "$api/tags/$LLAMA_CPP_TAG")
           else
-            release=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "$api/latest")
+            release=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "$api?per_page=30" |
+              jq -c '[.[] | select(.draft | not) | select([.assets[] | select(.name | test("^llama-.*-bin-ubuntu-x64[.](zip|tar[.]gz)$"))] | length > 0)][0] // empty')
+          fi
+          if [[ -z "$release" ]]; then
+            echo "::error::no llama.cpp release with an Ubuntu x64 CPU build in the last 30; tags and assets:"
+            curl -fsSL -H "Authorization: Bearer $GH_TOKEN" "$api?per_page=5" | jq -r '.[] | .tag_name, (.assets[].name | "  " + .)'
+            exit 1
           fi
           tag=$(jq -r .tag_name <<<"$release")
-          asset=$(jq -c --arg n "llama-$tag-bin-ubuntu-x64.zip" '.assets[] | select(.name == $n)' <<<"$release")
+          asset=$(jq -c "$pick" <<<"$release")
           if [[ -z "$asset" ]]; then
-            echo "::error::no llama-$tag-bin-ubuntu-x64.zip in release $tag; assets:"
+            echo "::error::no Ubuntu x64 CPU build in release $tag; assets:"
             jq -r '.assets[].name' <<<"$release"
             exit 1
           fi
+          name=$(jq -r .name <<<"$asset")
           url=$(jq -r .browser_download_url <<<"$asset")
           listed=$(jq -r '.digest // ""' <<<"$asset")
           cd "$RUNNER_TEMP"
-          curl -fsSL --proto =https --proto-redir =https --retry 3 -o llama.zip "$url"
-          got=$(sha256sum llama.zip | awk '{print $1}')
+          curl -fsSL --proto =https --proto-redir =https --retry 3 -o "$name" "$url"
+          got=$(sha256sum "$name" | awk '{print $1}')
           if [[ -n "$LLAMA_CPP_SHA256" ]]; then
             [[ "$got" == "$LLAMA_CPP_SHA256" ]] ||
               { echo "::error::llama.cpp $tag sha256 $got does not match the pin"; exit 1; }
@@ -105,9 +115,13 @@ jobs:
           else
             [[ -z "$listed" || "$listed" == "sha256:$got" ]] ||
               { echo "::error::llama.cpp $tag sha256 $got differs from the listed $listed"; exit 1; }
-            echo "PIN llama.cpp: LLAMA_CPP_TAG=$tag LLAMA_CPP_SHA256=$got (listed digest: ${listed:-none})"
+            echo "PIN llama.cpp: LLAMA_CPP_TAG=$tag LLAMA_CPP_SHA256=$got asset=$name (listed digest: ${listed:-none})"
           fi
-          unzip -q llama.zip -d llama
+          mkdir -p llama
+          case "$name" in
+            *.zip) unzip -q "$name" -d llama ;;
+            *) tar -xzf "$name" -C llama ;;
+          esac
           server=$(find "$RUNNER_TEMP/llama" -type f -name llama-server | head -n 1)
           [[ -n "$server" ]] || { echo "::error::no llama-server in the zip"; exit 1; }
           bin=$(dirname "$server")
