@@ -9,7 +9,9 @@
 // that is not loopback through; `--previous-token-env NAME` (only with it) also accepts the token
 // in $NAME during a rotation. A bad flag, or an unset or blank $NAME, is refused at start (exit 2).
 // On SIGTERM it drains (`drainOnSignals`): in-flight calls finish, then exit 0; a call that outlives
-// DRAIN_TIMEOUT_MS (suggested default 30000) forces exit 1. A bad DRAIN_TIMEOUT_MS is refused at
+// DRAIN_TIMEOUT_MS (suggested default 30000) forces exit 1. `--drain-timeout-s N`, the flag of the
+// Python workloads' `workload-a2a serve`, sets the same bound in seconds and wins over the variable;
+// the PoC-4 scale stack passes it to every workload image. A bad value of either is refused at
 // start (exit 2).
 
 import { lstatSync, rmSync } from "node:fs";
@@ -27,7 +29,7 @@ let serve: ServeOptions;
 try {
   serve = parseServeOptions(process.argv.slice(2), process.env);
   host = uds ? "127.0.0.1" : bindHost(process.env, serve.token !== undefined);
-  drainMs = drainTimeoutMs(process.env);
+  drainMs = serve.drainTimeoutS !== undefined ? serve.drainTimeoutS * 1000 : drainTimeoutMs(process.env);
 } catch (err) {
   console.error(`echo-typescript: ${err instanceof Error ? err.message : String(err)}`);
   process.exit(2);

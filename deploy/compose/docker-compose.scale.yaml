@@ -136,10 +136,11 @@ x-workload: &workload
     CHASSIS_TOOL_URL: http://127.0.0.1:8090/mcp
     HOST: 127.0.0.1
     PORT: "9000"
-    # The TypeScript image's drain bound (suggested: 30000); the Python images ignore it.
+    # The TypeScript image's drain bound (suggested: 30000); the Python images ignore it, and
+    # the flag below wins over it.
     DRAIN_TIMEOUT_MS: "30000"
   # Appended to `workload-a2a serve` by the Python images' entrypoint (suggested default 30).
-  # The TypeScript image ignores its arguments and reads DRAIN_TIMEOUT_MS.
+  # The TypeScript image takes the same flag (`src/auth.ts`); its strict parser refuses any other.
   command: ["--drain-timeout-s", "30"]
 
 services:

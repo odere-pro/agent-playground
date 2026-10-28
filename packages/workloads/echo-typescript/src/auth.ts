@@ -19,6 +19,8 @@ export interface ServeOptions {
   token: string | undefined;
   /** The extra token accepted during a rotation, or `undefined`. */
   previous: string | undefined;
+  /** `--drain-timeout-s`, as workload_a2a's flag; `undefined` leaves DRAIN_TIMEOUT_MS in charge. */
+  drainTimeoutS: number | undefined;
 }
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -39,11 +41,19 @@ export function readPreviousToken(name: string, env: Env): string | undefined {
 
 /** Parse the flags of the entry point and read the token variables. */
 export function parseServeOptions(argv: readonly string[], env: Env): ServeOptions {
-  let values: { "require-token-env"?: string | undefined; "previous-token-env"?: string | undefined };
+  let values: {
+    "require-token-env"?: string | undefined;
+    "previous-token-env"?: string | undefined;
+    "drain-timeout-s"?: string | undefined;
+  };
   try {
     ({ values } = parseArgs({
       args: [...argv],
-      options: { "require-token-env": { type: "string" }, "previous-token-env": { type: "string" } },
+      options: {
+        "require-token-env": { type: "string" },
+        "previous-token-env": { type: "string" },
+        "drain-timeout-s": { type: "string" },
+      },
       strict: true,
       allowPositionals: false,
     }));
@@ -56,7 +66,18 @@ export function parseServeOptions(argv: readonly string[], env: Env): ServeOptio
   return {
     token: requireName ? readToken(requireName, env) : undefined,
     previous: previousName ? readPreviousToken(previousName, env) : undefined,
+    drainTimeoutS: parseDrainTimeoutS(values["drain-timeout-s"]),
   };
+}
+
+/** `--drain-timeout-s`: whole seconds, 0 or more, as workload_a2a's `type=int` flag. */
+function parseDrainTimeoutS(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const seconds = raw.trim() === "" ? Number.NaN : Number(raw);
+  if (!Number.isInteger(seconds) || seconds < 0) {
+    throw new StartupError(`--drain-timeout-s must be a whole number of seconds, 0 or more; got ${JSON.stringify(raw)}`);
+  }
+  return seconds;
 }
 
 const digest = (value: string): Buffer => createHash("sha256").update(value).digest();
