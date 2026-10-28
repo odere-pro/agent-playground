@@ -1,6 +1,7 @@
 # PoC-7 cross-cutting decisions: work plan
 
 Status: in progress
+State (2026-10-28): built and verified offline and in CI; waits on ADR acceptance, the Mac run, and a `SNYK_TOKEN`.
 Date: 2026-10-28
 Source: [007-PoC-7-cross-cutting-decisions.md](../planning/poc/007-PoC-7-cross-cutting-decisions.md). Tracking: [PoC-7 README](../../pocs/poc-07-cross-cutting-decisions/README.md).
 Backlog informed: [022 H-6](../planning/issues/022-H-6-security-middleware.md), [014 H-7](../planning/issues/014-H-7-observability.md), [017 H-4](../planning/issues/017-H-4-harness-features.md), [037 M-2](../planning/issues/037-M-2-eval-gate-ci.md), [023 C-5](../planning/issues/023-C-5-ai-generated-marking.md).

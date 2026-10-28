@@ -33,8 +33,8 @@ for _tests in (
 
 import pytest  # noqa: E402  (MonkeyPatch only, for the harnesses' hooks)
 
-CALLER_TRACE = "0af7651916cd43dd8448eb211c80319c"
-CALLER_SPAN = "b7ad6b7169203331"
+CALLER_TRACE = "0af7651916cd43dd8448eb211c80319c"  # pragma: allowlist secret
+CALLER_SPAN = "b7ad6b7169203331"  # pragma: allowlist secret
 SIDECAR_URL = "http://127.0.0.1:9100"
 SESSION = "sess-poc07-demo"
 ENGINES = {

@@ -152,7 +152,7 @@ class FeedbackPort(Protocol):
 | `memory` | `InMemoryFeedback` | One record per id |
 | `langfuse` | `chassis.adapters.langfuse:LangfuseFeedback.from_env` | Default in `cloud`. Langfuse `POST /api/public/scores`, a JSON list with one score, HTTP Basic auth. Score id = `feedback_id`, trace id = the W3C trace id, `label` in the score's `metadata` with `request_id` and `subject`. Env: `LANGFUSE_BASE_URL` (or the older `LANGFUSE_HOST`), `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`. Suite: `packages/chassis/tests/test_langfuse_feedback.py::TestLangfuseFeedback`, offline against `fake-langfuse` |
 
-Suite: `FeedbackPortContract` (submitted feedback is stored; optional fields may be empty; a timestamp is kept; the same id twice is one record; an outage is retryable). Waits on: the `poc07-stack.yml` CI run for the binding against a real Langfuse (`pocs/poc-07-cross-cutting-decisions/tests/test_poc07_stack.py::TestLangfuseFeedbackOnTheStack`).
+Suite: `FeedbackPortContract` (submitted feedback is stored; optional fields may be empty; a timestamp is kept; the same id twice is one record; an outage is retryable). Bound against a real Langfuse v4 in `poc07-stack` run 40735435727 on `dd1d594`: 4 passed, the outage case skipped (`pocs/poc-07-cross-cutting-decisions/tests/test_poc07_stack.py::TestLangfuseFeedbackOnTheStack`).
 
 ### A.5 `TelemetryPort`: the `otel` adapter
 
