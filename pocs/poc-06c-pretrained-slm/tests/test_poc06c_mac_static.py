@@ -186,7 +186,14 @@ def test_the_scale_chassis_config_differs_from_poc04_only_in_the_route() -> None
 # ---- the script -------------------------------------------------------------------------------
 
 
+def pin_state() -> bytes | None:
+    """model.sha256's bytes, or None when it does not exist."""
+    pin = POC06 / "model.sha256"
+    return pin.read_bytes() if pin.exists() else None
+
+
 def test_the_dry_run_exits_0_and_prints_every_step(tmp_path: Path) -> None:
+    pin_before = pin_state()
     done = run_script(tmp_path, "--dry-run")
     assert done.returncode == 0, done.stdout + done.stderr
     out = done.stdout
@@ -210,7 +217,7 @@ def test_the_dry_run_exits_0_and_prints_every_step(tmp_path: Path) -> None:
     ):
         assert needle in out, needle
     assert "MISSING" not in out
-    assert not (POC06 / "model.sha256").exists(), "a dry run records nothing"
+    assert pin_state() == pin_before, "a dry run neither creates nor changes model.sha256"
 
 
 def test_the_dry_run_runs_and_writes_nothing(tmp_path: Path) -> None:
