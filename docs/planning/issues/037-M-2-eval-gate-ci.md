@@ -22,6 +22,7 @@ This is P0 because of the epic principle: nothing ships without an eval. The gat
 - On fail: promotion is blocked, with a report.
 - The golden set location as config, so the Phase 4 golden set replaces the S-4 test set with no code change.
 - Eval results for both models attached to the CI run and to the MLflow model version.
+- Proposed in PoC-7 ([ADR-010](../adr/010-evals-offline-tool-online-gate.md); the user accepts it at the PoC-7 pull request): one offline eval tool for CI, promptfoo or DeepEval, picked by a trial on the same 20 golden cases on two engines; it calls the agent through the chassis, so the report format is the same for every engine; Langfuse datasets hold the cases and experiments the results. The pick is added when PoC-7 closes.
 
 ## Out of scope
 

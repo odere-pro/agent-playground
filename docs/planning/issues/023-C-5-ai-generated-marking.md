@@ -23,6 +23,7 @@ Agents with `limited` risk and above must mark every output as AI-generated (E.4
 - A disclosure flag for client apps that tells them to show the user they are dealing with AI (suggested name: `disclosure_required`).
 - The same flag on result events, so stored records keep it.
 - A short guide for client app teams: how to read the flags and show a disclosure.
+- Proposed in PoC-7 ([ADR-008](../adr/008-security-identity-guardrails-defense-in-depth.md), [contract v6](../../contracts/contract-v6.md); the user accepts it at the PoC-7 pull request): the marking is two response headers, `X-AI-Generated` and `X-AI-Disclosure-Required`, on every public interface, complete and streaming, because `Response` is frozen (contract v5, part C). Still open here: a body field in the OpenAI and Anthropic formats, and the flag on result events (suggested: a CloudEvent extension attribute).
 
 ## Out of scope
 
