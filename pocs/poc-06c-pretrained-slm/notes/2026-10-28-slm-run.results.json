@@ -1,0 +1,491 @@
+{
+  "cells": [
+    {
+      "engine": "echo-python",
+      "lane": "inprocess",
+      "mapping_code_lines": 243,
+      "mapping_files": [
+        "packages/workloads/echo-python/src/echo_python/handle.py",
+        "packages/workloads/echo-python/src/echo_python/tools.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 675.0,
+          "latency_p50_ms": 9650.814308000008,
+          "latency_p95_ms": 9903.491558999986,
+          "model_calls": [],
+          "output_tokens": 89.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 9769.704562999948
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 296.0,
+          "latency_p50_ms": 1864.170678999983,
+          "latency_p95_ms": 2454.064738199997,
+          "model_calls": [],
+          "output_tokens": 24.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 1907.2444729999916
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 275.0,
+          "latency_p50_ms": 290.2085569999997,
+          "latency_p95_ms": 290.79936979998706,
+          "model_calls": [],
+          "output_tokens": 3.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 288.41606899999306
+        }
+      }
+    },
+    {
+      "engine": "echo-python",
+      "lane": "sidecar",
+      "mapping_code_lines": 243,
+      "mapping_files": [
+        "packages/workloads/echo-python/src/echo_python/handle.py",
+        "packages/workloads/echo-python/src/echo_python/tools.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 675.0,
+          "latency_p50_ms": 9544.665313000052,
+          "latency_p95_ms": 9854.522992999979,
+          "model_calls": [],
+          "output_tokens": 89.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 6272.18590199999
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 296.0,
+          "latency_p50_ms": 1955.574683000009,
+          "latency_p95_ms": 2527.5383818000023,
+          "model_calls": [],
+          "output_tokens": 24.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 139.99371099998825
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 275.0,
+          "latency_p50_ms": 296.2800090000428,
+          "latency_p95_ms": 308.5717099999897,
+          "model_calls": [],
+          "output_tokens": 3.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 136.37360999996417
+        }
+      }
+    },
+    {
+      "engine": "echo-pydanticai",
+      "lane": "inprocess",
+      "mapping_code_lines": 181,
+      "mapping_files": [
+        "packages/workloads/echo-pydanticai/src/echo_pydanticai/mapping.py",
+        "packages/workloads/echo-pydanticai/src/echo_pydanticai/handle.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 669.0,
+          "latency_p50_ms": 9487.204491000057,
+          "latency_p95_ms": 9788.827102200003,
+          "model_calls": [],
+          "output_tokens": 89.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 9435.20102299999
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 296.0,
+          "latency_p50_ms": 1938.179120999962,
+          "latency_p95_ms": 2596.575384400012,
+          "model_calls": [],
+          "output_tokens": 24.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 1927.435623000008
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 275.0,
+          "latency_p50_ms": 288.88753199998973,
+          "latency_p95_ms": 296.8630663999875,
+          "model_calls": [],
+          "output_tokens": 3.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 285.309452999968
+        }
+      }
+    },
+    {
+      "engine": "echo-pydanticai",
+      "lane": "sidecar",
+      "mapping_code_lines": 181,
+      "mapping_files": [
+        "packages/workloads/echo-pydanticai/src/echo_pydanticai/mapping.py",
+        "packages/workloads/echo-pydanticai/src/echo_pydanticai/handle.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 669.0,
+          "latency_p50_ms": 9514.1870650001,
+          "latency_p95_ms": 9813.063193799939,
+          "model_calls": [],
+          "output_tokens": 89.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 6078.612662000069
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 296.0,
+          "latency_p50_ms": 1916.6829710000002,
+          "latency_p95_ms": 2484.1188519999605,
+          "model_calls": [],
+          "output_tokens": 24.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 124.93073300004198
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 275.0,
+          "latency_p50_ms": 287.8385569999864,
+          "latency_p95_ms": 292.56999419999374,
+          "model_calls": [],
+          "output_tokens": 3.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 127.00812699995367
+        }
+      }
+    },
+    {
+      "engine": "echo-langgraph",
+      "lane": "inprocess",
+      "mapping_code_lines": 224,
+      "mapping_files": [
+        "packages/workloads/echo-langgraph/src/echo_langgraph/mapping.py",
+        "packages/workloads/echo-langgraph/src/echo_langgraph/handle.py",
+        "packages/workloads/echo-langgraph/src/echo_langgraph/tools.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 675.0,
+          "latency_p50_ms": 9520.66716899992,
+          "latency_p95_ms": 9916.983130199991,
+          "model_calls": [],
+          "output_tokens": 89.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 9351.329989000078
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 296.0,
+          "latency_p50_ms": 1970.196245000011,
+          "latency_p95_ms": 2485.365273799971,
+          "model_calls": [],
+          "output_tokens": 24.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 1948.9702050000233
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 275.0,
+          "latency_p50_ms": 288.4958390000065,
+          "latency_p95_ms": 291.4759654000136,
+          "model_calls": [],
+          "output_tokens": 3.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 287.55820399999266
+        }
+      }
+    },
+    {
+      "engine": "echo-langgraph",
+      "lane": "sidecar",
+      "mapping_code_lines": 224,
+      "mapping_files": [
+        "packages/workloads/echo-langgraph/src/echo_langgraph/mapping.py",
+        "packages/workloads/echo-langgraph/src/echo_langgraph/handle.py",
+        "packages/workloads/echo-langgraph/src/echo_langgraph/tools.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 675.0,
+          "latency_p50_ms": 9393.229763000021,
+          "latency_p95_ms": 9594.799254599957,
+          "model_calls": [],
+          "output_tokens": 89.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 6195.629788000019
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 296.0,
+          "latency_p50_ms": 1869.1795830000046,
+          "latency_p95_ms": 2366.850872200007,
+          "model_calls": [],
+          "output_tokens": 24.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 122.76769300001433
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 275.0,
+          "latency_p50_ms": 270.89490800005933,
+          "latency_p95_ms": 298.6076135999838,
+          "model_calls": [],
+          "output_tokens": 3.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 119.21035299997129
+        }
+      }
+    },
+    {
+      "engine": "echo-openai-agents",
+      "lane": "inprocess",
+      "mapping_code_lines": 295,
+      "mapping_files": [
+        "packages/workloads/echo-openai-agents/src/echo_openai_agents/mapping.py",
+        "packages/workloads/echo-openai-agents/src/echo_openai_agents/handle.py",
+        "packages/workloads/echo-openai-agents/src/echo_openai_agents/tools.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 675.0,
+          "latency_p50_ms": 9513.40254999991,
+          "latency_p95_ms": 9764.906443799919,
+          "model_calls": [],
+          "output_tokens": 89.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 9418.860021
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 296.0,
+          "latency_p50_ms": 1877.358887000014,
+          "latency_p95_ms": 2401.690714399956,
+          "model_calls": [],
+          "output_tokens": 24.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 1888.0466330000445
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 275.0,
+          "latency_p50_ms": 282.04479299995455,
+          "latency_p95_ms": 283.2037883999874,
+          "model_calls": [],
+          "output_tokens": 3.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 275.59971499999847
+        }
+      }
+    },
+    {
+      "engine": "echo-openai-agents",
+      "lane": "sidecar",
+      "mapping_code_lines": 295,
+      "mapping_files": [
+        "packages/workloads/echo-openai-agents/src/echo_openai_agents/mapping.py",
+        "packages/workloads/echo-openai-agents/src/echo_openai_agents/handle.py",
+        "packages/workloads/echo-openai-agents/src/echo_openai_agents/tools.py"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 675.0,
+          "latency_p50_ms": 9444.780521999974,
+          "latency_p95_ms": 9760.215588599976,
+          "model_calls": [],
+          "output_tokens": 89.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 6146.304526999984
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 296.0,
+          "latency_p50_ms": 1899.1716600000927,
+          "latency_p95_ms": 2402.0142591999956,
+          "model_calls": [],
+          "output_tokens": 24.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 115.85290800007897
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 275.0,
+          "latency_p50_ms": 279.54015899990736,
+          "latency_p95_ms": 285.87682779989336,
+          "model_calls": [],
+          "output_tokens": 3.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 116.80042300008608
+        }
+      }
+    },
+    {
+      "engine": "echo-typescript",
+      "lane": "sidecar",
+      "mapping_code_lines": 551,
+      "mapping_files": [
+        "packages/workloads/echo-typescript/src/a2a_server.ts",
+        "packages/workloads/echo-typescript/src/handle.ts",
+        "packages/workloads/echo-typescript/src/schema.ts",
+        "packages/workloads/echo-typescript/src/tools.ts"
+      ],
+      "reason": "",
+      "status": "ok",
+      "tasks": {
+        "lookup": {
+          "failures": [],
+          "input_tokens": 669.0,
+          "latency_p50_ms": 9324.957654999935,
+          "latency_p95_ms": 9608.769766800015,
+          "model_calls": [],
+          "output_tokens": 89.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": 1.0,
+          "ttft_p50_ms": 6020.207289000155
+        },
+        "simplifier": {
+          "failures": [],
+          "input_tokens": 296.0,
+          "latency_p50_ms": 1909.5837840000058,
+          "latency_p95_ms": 2506.092526399925,
+          "model_calls": [],
+          "output_tokens": 24.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 117.42197800003851
+        },
+        "smoke": {
+          "failures": [],
+          "input_tokens": 275.0,
+          "latency_p50_ms": 272.50155100000484,
+          "latency_p95_ms": 277.7632695999273,
+          "model_calls": [],
+          "output_tokens": 3.0,
+          "pass_rate": 1.0,
+          "passed": 5,
+          "runs": 5,
+          "tool_call_pass_rate": null,
+          "ttft_p50_ms": 112.77234500016675
+        }
+      }
+    }
+  ],
+  "meta": {
+    "generated": "2026-10-28T16:35:59Z",
+    "hosted": true,
+    "model": "hosted via LiteLLM at http://127.0.0.1:14000, route local-small",
+    "repeat": 5,
+    "route": "local-small",
+    "target_mode": false,
+    "tasks": [
+      "smoke",
+      "simplifier",
+      "lookup"
+    ]
+  }
+}

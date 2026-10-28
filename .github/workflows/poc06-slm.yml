@@ -47,9 +47,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
-      LLAMA_CPP_TAG: ""
-      LLAMA_CPP_SHA256: ""
-      POC06_GGUF_REV: main
+      # Pinned from the first run, 40724222330 (asset llama-b11963-bin-ubuntu-x64.tar.gz, the digest
+      # GitHub listed for it matched). Bump on purpose, in its own commit.
+      LLAMA_CPP_TAG: b11963
+      LLAMA_CPP_SHA256: c117406e0eaaaeca0ac4a081b1e94152754fa79bcfc7f8af7016aace40defadf  # pragma: allowlist secret (public sha256)
+      # Qwen/Qwen3-1.7B-GGUF at the commit `main` resolved to in run 40724222330.
+      POC06_GGUF_REV: 90862c4b9d2787eaed51d12237eafdfe7c5f6077  # pragma: allowlist secret (public git commit)
       POC06_LLAMA_HOST: 0.0.0.0
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

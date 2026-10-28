@@ -460,11 +460,26 @@ start_llama() {
   done
   say "  llama-server is healthy (pid $LLAMA_PID)"
   : >"$WORK/llama-cpu.txt"
+  # Linux: CPU over each 2 s interval from /proc (utime + stime). `ps -o %cpu` there is the
+  # average over the process's whole life, which hides load. macOS has no /proc; its `ps` %cpu
+  # is a recent, decaying average, so it stays.
   (
-    while kill -0 "$LLAMA_PID" 2>/dev/null; do
-      ps -o %cpu= -p "$LLAMA_PID" >>"$WORK/llama-cpu.txt" 2>/dev/null || true
-      sleep 2
-    done
+    local stat="/proc/$LLAMA_PID/stat" hz prev now
+    if [[ -r "$stat" ]]; then
+      hz=$(getconf CLK_TCK 2>/dev/null || echo 100)
+      prev=$(awk '{print $14 + $15}' "$stat" 2>/dev/null || echo 0)
+      while kill -0 "$LLAMA_PID" 2>/dev/null; do
+        sleep 2
+        now=$(awk '{print $14 + $15}' "$stat" 2>/dev/null) || break
+        awk -v d=$((now - prev)) -v hz="$hz" 'BEGIN {printf "%.1f\n", d * 100 / (hz * 2)}' >>"$WORK/llama-cpu.txt"
+        prev=$now
+      done
+    else
+      while kill -0 "$LLAMA_PID" 2>/dev/null; do
+        ps -o %cpu= -p "$LLAMA_PID" >>"$WORK/llama-cpu.txt" 2>/dev/null || true
+        sleep 2
+      done
+    fi
   ) &
   SAMPLER_PID=$!
 }
