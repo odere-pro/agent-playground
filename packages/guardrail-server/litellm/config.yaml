@@ -1,0 +1,24 @@
+# suggested: the LiteLLM guardrails the PoC-7 chassis names (LiteLLMGuardrails' stage defaults).
+# NOT run against a real LiteLLM here (no image registry in the PoC-7 container); the offline tests
+# use guardrail_server.litellm_stub, which has this shape. Check field names on the Compose run.
+guardrails:
+  - guardrail_name: pii-mask
+    litellm_params:
+      guardrail: presidio
+      mode: pre_call
+      presidio_analyzer_api_base: os.environ/PRESIDIO_ANALYZER_API_BASE
+      presidio_anonymizer_api_base: os.environ/PRESIDIO_ANONYMIZER_API_BASE
+  - guardrail_name: prompt-guard
+    litellm_params:
+      guardrail: generic_guardrail_api
+      mode: pre_call
+      api_base: http://guardrail-server:8095
+      additional_provider_specific_params:
+        checks: [injection]
+  - guardrail_name: secret-guard
+    litellm_params:
+      guardrail: generic_guardrail_api
+      mode: post_call
+      api_base: http://guardrail-server:8095
+      additional_provider_specific_params:
+        checks: [secrets]

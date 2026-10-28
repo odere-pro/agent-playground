@@ -9,6 +9,10 @@ id. A trace id another in-flight run holds raises `TraceIdInUse` before the engi
 counts the refusal (`chassis.requests_refused`, `reason=trace_id_in_use`) and logs a warning, and
 the adapter answers in its own format.
 
+PoC-7 guard stages (`chassis.server.guard`): `input` runs before the engine, and a block is the
+run's one `error` event (the engine never runs); `output` runs on a complete call's events after
+the engine ends and may replace `Run.seen` (masked, or blocked with a closing `error`).
+
 `Run.events()` runs the engine once, inside one `chassis.run` span with one `chassis.requests`
 count, both labeled with the `interface` the run was opened for (`open(request, interface=...)`,
 default `native`); an engine exception becomes one `engine_error` event, never a 500. Every
@@ -47,6 +51,7 @@ from chassis.core.events import Error, Event
 from chassis.core.inbound import Interface, Served
 from chassis.ports.bundle import PortBundle
 from chassis.redaction import redact
+from chassis.server import guard
 from chassis.server.config import ChassisConfig
 from chassis.server.correlation import RunRecord, RunRegistry, TraceIdInUse
 from chassis.server.idempotency import Idempotency
@@ -271,11 +276,32 @@ class Run:
                 interface=interface,
             ) as span:
                 telemetry.counter("chassis.requests", agent=request.agent, interface=interface)
+                guards = self._pipeline.config.spec.guardrails
+                refused = await guard.check_input(
+                    ports, guards, request.input, request_id=request.request_id
+                )
+                if refused is not None:  # the engine never runs
+                    self._seen.append(refused)
+                    self._record_error(span.attributes, refused)
+                    yield refused
+                    self._done = True
+                    self.close()
+                    return
                 async for event in _guarded(ports.engine.run(request, self.ctx)):
                     self._seen.append(event)
                     if isinstance(event, Error):
                         self._record_error(span.attributes, event)
                     yield event
+                if not request.stream:  # the `output` stage: complete calls only
+                    checked = await guard.check_output(
+                        ports, guards, self._seen, request_id=request.request_id
+                    )
+                    if checked is not None:
+                        self._seen = checked
+                        last = checked[-1]
+                        if isinstance(last, Error):
+                            self._record_error(span.attributes, last)
+                            yield last
                 self._done = True
                 self.close()  # the run is over; a trailing frame is not part of it
         finally:

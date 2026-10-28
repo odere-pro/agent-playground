@@ -1,0 +1,20 @@
+[project]
+name = "guardrail-server"
+version = "0.1.0"
+description = "The injection classifier behind LiteLLM's generic guardrail API (Llama Prompt Guard 2, or a pattern stand-in offline), and a stub of LiteLLM's apply_guardrail API for offline tests; never imports the chassis (PoC-7)"
+requires-python = ">=3.12,<3.13"
+dependencies = ["fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.11,<3", "httpx>=0.28"]
+
+[project.optional-dependencies]
+# Prompt Guard 2 is a gated model on Hugging Face; this extra is for a host that can reach it.
+promptguard = ["transformers>=4.46", "torch>=2.4"]
+
+[project.scripts]
+guardrail-server = "guardrail_server.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "guardrail_server"
