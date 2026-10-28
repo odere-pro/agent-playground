@@ -24,6 +24,8 @@ COPY packages/workloads/echo-smolagents/pyproject.toml packages/workloads/echo-s
 COPY packages/bakeoff/pyproject.toml packages/bakeoff/
 COPY packages/fake-mcp-server/pyproject.toml packages/fake-mcp-server/
 COPY packages/code-runner/pyproject.toml packages/code-runner/
+COPY packages/fake-langfuse/pyproject.toml packages/fake-langfuse/
+COPY packages/guardrail-server/pyproject.toml packages/guardrail-server/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package code-runner --no-install-workspace
 COPY packages/code-runner/src packages/code-runner/src
