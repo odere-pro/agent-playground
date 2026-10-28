@@ -1,0 +1,65 @@
+# PoC-7 OTel Collector (otel/opentelemetry-collector-contrib 0.163.2), exit criterion 1: the same
+# spans reach Langfuse and a second OpenTelemetry backend (Jaeger) by exporter config only.
+#
+# The chassis and the workload export OTLP/HTTP to this Collector on 4318. The traces pipeline
+# fans every span out to both exporters. Swapping or adding a backend is an edit to `exporters`
+# and the pipeline list here; no code changes.
+#
+# Langfuse: OTLP/HTTP at /api/public/otel (the exporter appends /v1/traces), HTTP Basic auth
+# `public:secret`, base64 in LANGFUSE_AUTH (made by stack.sh, never in this file). Langfuse v4
+# processes OTLP in real time only with `x-langfuse-ingestion-version: 4` (langfuse 5.0.4,
+# langfuse/api/opentelemetry/raw_client.py).
+#
+# Logs: the chassis redacts its own logs with regexes only (emails, phones, ids). Named-entity
+# redaction runs here, never in the chassis (ADR-001 memory estimate). The Presidio-grade
+# redaction is PoC-8 work; for now this pipeline masks emails and phone numbers by regex. The
+# patterns hold no `$`, since the Collector expands `$` in its config.
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+  transform/redact:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - replace_pattern(body, "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}", "<EMAIL>")
+          - replace_pattern(body, "([+][0-9][0-9 ().-]{7,}[0-9]|[0-9]{3}[-. ][0-9]{3}[-. ][0-9]{4})", "<PHONE>")
+          - replace_all_patterns(attributes, "value", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}", "<EMAIL>")
+          - replace_all_patterns(attributes, "value", "([+][0-9][0-9 ().-]{7,}[0-9]|[0-9]{3}[-. ][0-9]{3}[-. ][0-9]{4})", "<PHONE>")
+
+exporters:
+  otlphttp/langfuse:
+    endpoint: http://langfuse-web:3000/api/public/otel
+    headers:
+      Authorization: Basic ${env:LANGFUSE_AUTH}
+      x-langfuse-ingestion-version: "4"
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+  # suggested: the logs backend is a PoC-8 pick; until then redacted logs go to the Collector's
+  # own output at basic verbosity (counts only, no bodies).
+  debug/logs:
+    verbosity: basic
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/langfuse, otlp/jaeger]
+    logs:
+      receivers: [otlp]
+      processors: [transform/redact, batch]
+      exporters: [debug/logs]

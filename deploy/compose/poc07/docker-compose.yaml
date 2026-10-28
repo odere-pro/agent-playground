@@ -124,6 +124,9 @@ services:
       timeout: 3s
       retries: 20
 
+  # The jaeger and collector images ship no shell or wget, so they have no in-container
+  # healthcheck; `stack.sh wait` polls the Jaeger UI and the Collector's health_check extension
+  # (13133) from the host instead. Jaeger v2's all-in-one config takes OTLP gRPC on 4317.
   jaeger:
     image: docker.io/jaegertracing/jaeger:2.21.0
     ports:
@@ -135,9 +138,12 @@ services:
     depends_on:
       langfuse-web:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     environment:
       LANGFUSE_AUTH: ${LANGFUSE_AUTH:?}
     volumes:
       - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
     ports:
       - 127.0.0.1:4318:4318
+      - 127.0.0.1:13133:13133
