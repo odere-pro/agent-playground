@@ -8,7 +8,7 @@ import httpx
 from fake_langfuse import FakeLangfuse, create_app
 
 PK, SK = "pk-lf-test", "sk-lf-test"
-TRACE = "0af7651916cd43dd8448eb211c80319c"
+TRACE = "0af7651916cd43dd8448eb211c80319c"  # pragma: allowlist secret
 
 
 def client(state: FakeLangfuse, auth: tuple[str, str] | None = (PK, SK)) -> httpx.AsyncClient:

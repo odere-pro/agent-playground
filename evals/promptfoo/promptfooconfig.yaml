@@ -27,7 +27,7 @@ defaultTest:
       id: openai:chat:fake-judge
       config:
         apiBaseUrl: "{{ env.JUDGE_URL }}"
-        apiKey: not-a-key
+        apiKey: not-a-key  # pragma: allowlist secret
         temperature: 0
 tests: file://tests.yaml
 evaluateOptions:

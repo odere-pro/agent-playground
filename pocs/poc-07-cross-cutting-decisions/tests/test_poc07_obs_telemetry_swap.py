@@ -50,7 +50,7 @@ from workload_a2a import telemetry as workload_telemetry
 
 ROOT = Path(__file__).resolve().parents[3]
 COLLECTOR = ROOT / "deploy/compose/poc07/otel-collector.yaml"
-TRACE = "5b8aa5a2d2c872e8321cf37308d69df2"
+TRACE = "5b8aa5a2d2c872e8321cf37308d69df2"  # pragma: allowlist secret
 LANGFUSE_HOST = "langfuse.invalid"
 TEMPO_HOST = "tempo.invalid"
 LANGFUSE_PATH = "/api/public/otel/v1/traces"

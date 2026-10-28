@@ -112,12 +112,12 @@ def test_compose_ports_bind_localhost_only() -> None:
 def test_compose_collector_starts_after_its_backends() -> None:
     collector = _yaml(COMPOSE)["services"]["otel-collector"]
     depends = collector["depends_on"]
-    assert depends["langfuse-web"]["condition"] == "service_healthy"
-    assert "jaeger" in depends
-    # The collector and jaeger images have no shell: no in-container healthcheck that cannot run.
+    assert {"langfuse-web", "jaeger"} <= set(depends)
+    # None of these images is known to hold a shell or wget (the first CI run's wget check on
+    # langfuse-web never passed): no in-container healthcheck; `stack.sh wait` polls the host.
     services = _yaml(COMPOSE)["services"]
-    assert "healthcheck" not in services["otel-collector"]
-    assert "healthcheck" not in services["jaeger"]
+    for name in ("otel-collector", "jaeger", "langfuse-web"):
+        assert "healthcheck" not in services[name], name
 
 
 def test_stack_sh_has_a_host_side_wait() -> None:

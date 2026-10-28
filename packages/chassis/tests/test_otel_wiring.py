@@ -28,7 +28,7 @@ from chassis_contracts.helpers import make_context, make_request
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-CALLER_TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"
+CALLER_TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"  # pragma: allowlist secret
 CALLER_SPAN = "00f067aa0ba902b7"
 CONFIG: dict[str, Any] = {
     "version": "cfg-1",

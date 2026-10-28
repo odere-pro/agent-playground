@@ -103,7 +103,9 @@ class ToolCallsInOrder(_Deterministic):
 
 
 def judge() -> LocalModel:
-    return LocalModel(model="fake-judge", base_url=JUDGE_URL, api_key="not-a-key")
+    return LocalModel(
+        model="fake-judge", base_url=JUDGE_URL, api_key="not-a-key"
+    )  # pragma: allowlist secret
 
 
 def rubric_metric(case: dict[str, Any]) -> GEval:

@@ -20,7 +20,7 @@ from chassis.ports.guardrail import (
 )
 from chassis.redaction import redact
 
-SECRET = "secret"
+SECRET = "secret"  # pragma: allowlist secret
 
 INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     re.compile(p, re.I)

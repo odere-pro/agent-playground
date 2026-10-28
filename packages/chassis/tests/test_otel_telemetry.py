@@ -24,7 +24,7 @@ from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode
 
-TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"
+TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"  # pragma: allowlist secret
 PARENT = "00f067aa0ba902b7"
 
 

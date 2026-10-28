@@ -167,7 +167,12 @@ async def _trace_and_feedback(engine: str, mp: pytest.MonkeyPatch) -> int:
     _print_tree(spans)
     traces = sorted({_ids(s)[0] for s in spans})
     names = [s.name for s in spans]
-    framework = [s for s in spans if (s.instrumentation_scope.name or "").startswith("openinf")]
+    framework = [
+        s
+        for s in spans
+        if s.instrumentation_scope is not None
+        and (s.instrumentation_scope.name or "").startswith("openinf")
+    ]
     print()
     print(f"spans: {len(spans)}  trace ids: {traces}")
     counts = {
@@ -185,7 +190,9 @@ async def _trace_and_feedback(engine: str, mp: pytest.MonkeyPatch) -> int:
     print(f"  http {feedback.status_code}  {json.dumps(feedback.json())}")
     (score,) = langfuse.scores.values()
     print("fake Langfuse score:")
-    shown = {k: score[k] for k in ("id", "traceId", "name", "value", "dataType") if k in score}
+    shown: dict[str, Any] = {
+        k: score[k] for k in ("id", "traceId", "name", "value", "dataType") if k in score
+    }
     shown["metadata.request_id"] = score["metadata"]["request_id"]
     print(f"  {json.dumps(shown)}")
     (event,) = [e for t, e in bus.published if t == FEEDBACK_RECEIVED]

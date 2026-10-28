@@ -59,6 +59,9 @@ services:
 
   langfuse-web:
     image: docker.langfuse.com/langfuse/langfuse:4
+    # No in-container healthcheck: the image's tools are not ours to assume (the first CI run's
+    # wget check never passed while Langfuse logged "Ready"). `stack.sh wait` polls
+    # /api/public/health from the host instead.
     depends_on: *langfuse-depends
     ports:
       - 127.0.0.1:3000:3000
@@ -71,11 +74,6 @@ services:
       LANGFUSE_INIT_PROJECT_NAME: poc07
       LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:?}
       LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?}
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://$$(hostname):3000/api/public/health || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 60
 
   clickhouse:
     image: docker.io/clickhouse/clickhouse-server:25.12
@@ -137,7 +135,7 @@ services:
     command: ["--config=/etc/otelcol/config.yaml"]
     depends_on:
       langfuse-web:
-        condition: service_healthy
+        condition: service_started
       jaeger:
         condition: service_started
     environment:

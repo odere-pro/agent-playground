@@ -51,8 +51,8 @@ from workload_a2a import telemetry as workload_telemetry
 
 ROOT = Path(__file__).resolve().parents[3]
 CHASSIS_SRC = ROOT / "packages/chassis/src/chassis"
-CALLER_TRACE = "0af7651916cd43dd8448eb211c80319c"
-CALLER_SPAN = "b7ad6b7169203331"
+CALLER_TRACE = "0af7651916cd43dd8448eb211c80319c"  # pragma: allowlist secret
+CALLER_SPAN = "b7ad6b7169203331"  # pragma: allowlist secret
 SIDECAR_URL = "http://127.0.0.1:9100"
 SESSION = "sess-poc07"
 ENGINES = {
