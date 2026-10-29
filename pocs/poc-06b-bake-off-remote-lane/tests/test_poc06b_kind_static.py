@@ -507,7 +507,7 @@ def test_kagent_is_built_from_a_pinned_commit() -> None:
     `kagent/source.commit`, and fails closed unless HEAD equals it. The pod runs the loaded image
     with `imagePullPolicy: Never`, in the remote lane only."""
     c = _pod("remote-kagent-adk").containers()[0]
-    assert c["image"] == "kind.local/agent-platform/kagent-adk:poc06"
+    assert c["image"] == "kind.local/agent-platform/kagent-adk:kind"
     assert c["imagePullPolicy"] == "Never"
     assert _pod("remote-kagent-adk").labels[LANE] == "remote"
     commits = [
@@ -523,7 +523,7 @@ def test_kagent_is_built_from_a_pinned_commit() -> None:
     assert '[[ $head == "$commit" ]] || die' in body
     assert body.index("rev-parse HEAD") < body.index("docker build")
     assert '-f "$dir/kagent/python/Dockerfile"' in body and '-t "$KAGENT_IMAGE"' in body
-    assert "KAGENT_IMAGE=kind.local/agent-platform/kagent-adk:poc06" in run
+    assert "KAGENT_IMAGE=$REGISTRY/kagent-adk:$TAG" in run
     assert 'kind load docker-image "$KAGENT_IMAGE"' in run
     assert "apply_kagent" in run.split("apply_all() {")[1].split("}")[0]
 
@@ -569,13 +569,12 @@ def test_every_workload_image_is_loaded_by_run_sh_or_poc05() -> None:
     for pod in PODS:
         for c in pod.containers():
             image = c["image"]
-            if image == "kind.local/agent-platform/kagent-adk:poc06":
-                assert "KAGENT_IMAGE=" + image in RUN_SH.read_text()
+            if image == "kind.local/agent-platform/kagent-adk:kind":
+                assert "KAGENT_IMAGE=$REGISTRY/kagent-adk:$TAG" in run
                 continue
             assert image.startswith("kind.local/agent-platform/"), image
-            assert f'"$REGISTRY/{image.split("/")[-1]}|' in run + poc05, (
-                f"{image}: nobody builds it"
-            )
+            name = image.split("/")[-1].replace(":kind", ":$TAG")
+            assert f'"$REGISTRY/{name}|' in run + poc05, f"{image}: nobody builds it"
             assert c["imagePullPolicy"] == "Never", f"{pod.id}: rule 8"
 
 
@@ -623,7 +622,7 @@ def test_a_sidecar_pod_with_an_unlisted_workload_image_breaks_rule_4() -> None:
     pod = _pod("agent-openai-agents")
     doc = copy.deepcopy(pod.doc)
     doc["spec"]["template"]["spec"]["containers"][0]["image"] = (
-        "kind.local/agent-platform/other:poc06"
+        "kind.local/agent-platform/other:kind"
     )
     assert "4" in broken_rules(doc, _params(PARAMS6), pod.namespace)
     assert "4" in broken_rules(pod.doc, _params(PARAMS5), pod.namespace), "PoC-5's list lacks it"
@@ -1066,3 +1065,64 @@ def test_only_the_four_gvisor_pods_reference_the_profile() -> None:
         assert template["spec"].get("runtimeClassName") == "gvisor", where
         users.add(name)
     assert users == PROFILE_PODS, users
+
+
+def _function(text: str, name: str) -> str:
+    return text[text.index(f"{name}() {{") :].split("\n}\n")[0]
+
+
+def test_hosted_up_undoes_itself_unless_it_finishes() -> None:
+    """R6-27: `up` writes the provider Secret and the egress policy. From before the first write
+    until its last line, an EXIT trap runs `down`; `up` clears it when it finishes."""
+    text = (POC06 / "hosted.sh").read_text()
+    up = _function(text, "up")
+    arm, disarm = "trap up_undo EXIT", "trap stop_forward EXIT"
+    assert arm in up and disarm in up
+    assert up.index(arm) < up.index("put_secret") < up.index("network-policy.yaml")
+    assert up.index("up done") < up.rindex(disarm)
+    undo = _function(text, "up_undo")
+    assert "trap - EXIT" in undo and "stop_forward" in undo
+    assert re.search(r"^\s*\( down \) \|\| log", undo, re.M), "down runs, and its failure is logged"
+
+
+def test_hosted_scrub_redacts_the_exact_provider_key() -> None:
+    """R6-27: `scrub` removes the provider key's exact value, as poc06_mac.sh `redact` does, not
+    only the `sk-`, `Bearer`, and 64-hex shapes. `up` keeps `key` until it finishes, so every
+    scrub it calls sees it."""
+    text = (POC06 / "hosted.sh").read_text()
+    scrub = _function(text, "scrub")
+    assert '${text//"$key"/[redacted]}' in scrub
+    up = _function(text, "up")
+    after_put = up[up.index("put_secret") :]
+    assert after_put.count("unset key") == 1, "key stays set while up can still scrub"
+    assert after_put.index("up done") < after_put.index("unset key")
+
+
+def test_kagent_build_pins_every_base_image_by_digest() -> None:
+    """R6-28: kagent's python/Dockerfile names `ghcr.io/astral-sh/uv:${UV_VERSION}` and
+    `debian:bookworm-slim` by tag. `build_kagent` overrides both with a multi-arch index digest,
+    without editing the Dockerfile: a `UV_VERSION` build arg and a BuildKit named context."""
+    run = RUN_SH.read_text()
+    digest = r"@sha256:[0-9a-f]{64}"
+    uv = re.search(r"^KAGENT_UV_VERSION=(\S+)$", run, re.M)
+    debian = re.search(r"^KAGENT_DEBIAN=(\S+)$", run, re.M)
+    assert uv and re.fullmatch(rf"0\.12\.3{digest}", uv.group(1))
+    assert debian and re.fullmatch(rf"debian:bookworm-slim{digest}", debian.group(1))
+    body = _function(run, "build_kagent")
+    assert "DOCKER_BUILDKIT=1 docker build" in body
+    assert '--build-arg "UV_VERSION=$KAGENT_UV_VERSION"' in body
+    assert '--build-context "debian:bookworm-slim=docker-image://$KAGENT_DEBIAN"' in body
+    assert "not pin its base images" not in run
+
+
+def test_poc06_local_images_carry_the_kind_tag() -> None:
+    """R6-29: one tag for the PoC-6 images, set once in run.sh; no file names a PoC number tag."""
+    run = RUN_SH.read_text()
+    assert re.search(r"^TAG=kind$", run, re.M)
+    files = [RUN_SH, *sorted(POC06.rglob("*.yaml"))]
+    hits = [f"{f.relative_to(ROOT)}" for f in files if ":poc06" in f.read_text()]
+    assert not hits, hits
+    for pod in PODS:
+        for c in pod.containers():
+            if c["image"].startswith("kind.local/agent-platform/echo-") or "kagent" in c["image"]:
+                assert c["image"].endswith((":kind", ":poc05")), c["image"]
