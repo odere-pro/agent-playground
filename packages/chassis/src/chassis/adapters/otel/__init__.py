@@ -136,6 +136,15 @@ def _attribute(key: str, value: Any) -> Any:
     return text if key in ID_KEYS else redact(text)
 
 
+def _record_exception(otel_span: trace.Span, exc: BaseException) -> None:
+    """The `exception` event with the type and the redacted message, never `str(exc)` raw."""
+    # No stack trace: its source lines can quote the raw message, which redaction may miss.
+    otel_span.add_event(
+        "exception",
+        {"exception.type": type(exc).__name__, "exception.message": redact(str(exc))},
+    )
+
+
 def _hex_span_id(context: trace.SpanContext | None) -> str | None:
     if context is None or not context.is_valid:
         return None
@@ -226,7 +235,7 @@ class OtelTelemetry:
         try:
             yield port_span
         except Exception as exc:
-            otel_span.record_exception(exc)
+            _record_exception(otel_span, exc)
             otel_span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
             raise
         finally:
