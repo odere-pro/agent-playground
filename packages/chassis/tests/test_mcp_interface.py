@@ -25,6 +25,8 @@ from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Delta, End, Error, Event
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.auth import StaticTokens
+from chassis.ports.auth import NoAuth, Principal
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.interfaces.mcp import MCP_PATH
@@ -50,12 +52,17 @@ def _config(**interfaces: bool) -> ChassisConfig:
     return ChassisConfig.model_validate({**CONFIG, "spec": spec})
 
 
-def _app(engine: FakeEngine | None = None, config: ChassisConfig | None = None) -> FastAPI:
+def _app(
+    engine: FakeEngine | None = None,
+    config: ChassisConfig | None = None,
+    auth: StaticTokens | None = None,
+) -> FastAPI:
     ports = PortBundle(
         model=ScriptedModel(),
         engine=engine or FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        auth=auth or NoAuth(),
     )
     return create_app(config or _config(), ports)
 
@@ -285,9 +292,18 @@ async def test_503_after_the_lifespan_ends() -> None:
 async def test_the_app_serves_twice() -> None:
     """The lifespan builds a fresh streamable HTTP app each time (a session manager runs once)."""
     app = _app()
-    for _ in range(2):
-        async with _serving(app) as client:
-            assert [t.name for t in await client.list_tools()] == ["echo"]
+
+    first = await _tool_names_served(app)
+    second = await _tool_names_served(app)
+
+    assert first == ["echo"]
+    assert second == ["echo"]
+
+
+async def _tool_names_served(app: FastAPI) -> list[str]:
+    """Run the app's lifespan once and list the tools an MCP client sees."""
+    async with _serving(app) as client:
+        return [t.name for t in await client.list_tools()]
 
 
 async def test_the_tool_call_has_no_client_timeout() -> None:
@@ -371,8 +387,7 @@ def test_the_tool_spec_is_the_run_operation_of_the_app_spec() -> None:
     assert spec["paths"] == {"/v1/run": whole["paths"]["/v1/run"]}
     components = spec["components"]["schemas"]
     assert {"RunRequest", "Response", "TaskInput", "Budget"} <= set(components)
-    for name, schema in components.items():
-        assert whole["components"]["schemas"][name] == schema, name
+    assert {name: whole["components"]["schemas"][name] for name in components} == components
 
 
 async def test_the_tool_is_described_from_the_config() -> None:
@@ -387,8 +402,8 @@ async def test_the_tool_is_described_from_the_config() -> None:
     operation = app.openapi()["paths"]["/v1/run"]["post"]
     assert tool.description == operation["description"]
     assert "summarizer" in operation["summary"]
-    for part in ("summarizer", "2.1.0", "input.text", "input.data"):
-        assert part in tool.description, part
+    parts = ("summarizer", "2.1.0", "input.text", "input.data")
+    assert [part for part in parts if part not in tool.description] == []
     assert tool.description != "Run"
 
 
@@ -475,34 +490,63 @@ async def test_an_mcp_caller_cannot_override_the_interface_marker(claimed: str) 
     assert telemetry.counter_value("chassis.trace_id_reminted", interface="mcp") == 1
 
 
-async def test_the_inner_hop_forwards_only_the_correlation_headers() -> None:
+CALLER_TRACEPARENT = f"00-{TRACE}-00f067aa0ba902b7-01"
+NOISY_CALLER = {
+    "traceparent": CALLER_TRACEPARENT,
+    "idempotency-key": "idem-1",
+    "x-forwarded-for": "10.0.0.9",
+    "x-api-key": "sk-caller",
+    "x-chassis-interface": "native",
+    "x-custom": "nope",
+}
+"""An MCP caller that sends the correlation headers and headers the inner hop must drop."""
+RUNNER_TOKEN = "tok-runner"
+RUNNER = Principal("user-run", frozenset({"agent:run"}))
+
+
+async def _call_through_mcp(
+    app: FastAPI, caller: dict[str, str]
+) -> tuple[dict[str, str], dict[str, Any] | None]:
+    """Call the tool once as `caller`: the inner `/v1/run` request's headers and the envelope."""
+    seen = _record_run_headers(app)
+    client = _mcp_client_with_headers(app, caller)
+    async with app.router.lifespan_context(app), client:
+        result = await client.call_tool("echo", {"input": {"text": "x"}})
+    assert result.is_error is False, result.content
+    (inner,) = seen
+    return inner, result.structured_content
+
+
+@pytest.mark.parametrize(
+    "dropped", ["x-forwarded-for", "x-api-key", "x-custom", "mcp-protocol-version"]
+)
+async def test_the_inner_hop_forwards_only_the_correlation_headers(dropped: str) -> None:
     """The tool's call to `/v1/run` carries `traceparent` and `Idempotency-Key` from the MCP
     request, its own marker, and nothing else the caller sent.
     """
     app = _app()
-    seen = _record_run_headers(app)
-    traceparent = f"00-{TRACE}-00f067aa0ba902b7-01"
-    caller = {
-        "traceparent": traceparent,
-        "idempotency-key": "idem-1",
-        "x-forwarded-for": "10.0.0.9",
-        "x-api-key": "sk-caller",
-        "x-chassis-interface": "native",
-        "x-custom": "nope",
-    }
-    client = _mcp_client_with_headers(app, caller)
-    async with app.router.lifespan_context(app), client:
-        result = await client.call_tool("echo", {"input": {"text": "x"}})
-    assert result.is_error is False
-    (inner,) = seen
+
+    inner, envelope = await _call_through_mcp(app, NOISY_CALLER)
+
     assert inner["x-chassis-interface"] == "mcp"
-    assert inner["traceparent"] == traceparent
+    assert inner["traceparent"] == CALLER_TRACEPARENT
     assert inner["idempotency-key"] == "idem-1"
-    for name in ("x-forwarded-for", "x-api-key", "x-custom", "mcp-protocol-version"):
-        assert name not in inner, name
-    envelope = result.structured_content
+    assert dropped not in inner
     assert envelope is not None
     assert envelope["trace_id"] == TRACE
+
+
+async def test_the_inner_hop_carries_the_callers_bearer_when_the_caller_also_sends_an_api_key() -> (
+    None
+):
+    """Given a bearer and an x-api-key, the inner `/v1/run` call has the same bearer, no key."""
+    app = _app(auth=StaticTokens({RUNNER_TOKEN: RUNNER}))
+    caller = {"Authorization": f"Bearer {RUNNER_TOKEN}", "x-api-key": "sk-caller"}
+
+    inner, _ = await _call_through_mcp(app, caller)
+
+    assert inner["authorization"] == f"Bearer {RUNNER_TOKEN}"
+    assert "x-api-key" not in inner
 
 
 async def test_the_tool_client_forces_the_marker_over_a_header_set_on_the_request() -> None:
