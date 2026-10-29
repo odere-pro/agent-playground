@@ -33,3 +33,13 @@ PoC-6 ran eight engines on the same three tasks behind one chassis, using the `b
 ## PoC-7: cross-cutting decisions (R7)
 
 PoC-7 added security, observability, feedback, and evals once, at the chassis and LiteLLM: guardrail stages with a guardrail server, OTel export to Langfuse and Jaeger, a feedback route, and an evaluator gate, each behind a port with a fake and a contract suite. It builds on PoC-6's engines in every lane, its bake-off harness, and its eval trial, and it shows each concern on at least two engines with no engine-specific code. It hands PoC-8 four proposed ADRs (007 to 010), the Compose stack, and the open work: Langfuse scores from the gate, LiteLLM's Presidio hook, and a checked streamed answer. The rule later PoCs must keep: a cross-cutting concern lives in the chassis or a shared service, never in an engine, and only the workload's event mapping may differ per engine. Text that leaves the chassis, in spans, errors, or feedback, is redacted first.
+
+## Story gaps (R8)
+
+The full list is in [fix-plan.md](fix-plan.md#story-gaps).
+
+- No PoC README on `main` has a `Builds on:` or `Hands to:` line, and the template has none (R0-25). Wave 1 and wave 2 add them.
+- Each contract step has its PoC (v0 is PoC-1, through v6, PoC-7). But the PoC-5 README never links v4, `docs/contracts/` has no index, and v1 to v3 have no "Superseded" banner.
+- PoC-2's `poc02_harness.py` is handed on as a hidden library. Each later PoC adds its tests folder to a `sys.path` chain, up to the PoC-7 demo, which reaches PoC-2 to PoC-7 (R0-02).
+- PoC-4 hands on the kind setup, but PoC-5 and PoC-6 copy its shell block into seven scripts (R5b-12).
+- Later PoCs break early rules: no PoC number in names, pinned images, one suite for the fake and the real adapter, `public_message(code)` on errors, and redaction of text that leaves the chassis.
