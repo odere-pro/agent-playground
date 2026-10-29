@@ -43,9 +43,9 @@ REMOTE_TESTS = (
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_shm.py",
-    "pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_sidecar_controls.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_runtime_hardening.py",
+    "pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py",
 )
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -167,7 +167,7 @@ def test_poc05_run_sh_test_remote_selects_by_file_path() -> None:
     assert re.search(r"^\s*test-remote\)", text, re.M), "run.sh has no test-remote verb"
     selection = _remote_selection(text)
     assert selection == list(REMOTE_TESTS)
-    assert "pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py" in selection
+    assert selection[-1] == "pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py"
     assert "pocs/poc-05-sandboxed/tests/test_poc05_kind_sidecar_controls.py" in selection
     body = _function(text, "run_tests_remote")
     assert "POC05_KIND=1" in body and '"${REMOTE_TESTS[@]}"' in body

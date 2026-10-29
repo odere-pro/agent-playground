@@ -465,6 +465,7 @@ esac
 """
 _LIST_EMPTY = '{"keys": [], "total_count": 0}'
 _LIST_LEFT = '{"keys": ["0f1e2d3c4b5a6978"], "total_count": 1}'
+_LIST_ODD = '{"detail": "x"}'
 
 
 def _rotate(tmp_path: Path, delete_code: str, listing: str) -> tuple[int, list[str], str]:
@@ -501,8 +502,20 @@ def _has_jq() -> bool:
 @pytest.mark.skipif(not _has_jq(), reason="no jq")
 @pytest.mark.parametrize(
     ("delete_code", "listing"),
-    [("500", _LIST_EMPTY), ("401", _LIST_EMPTY), ("200", _LIST_LEFT), ("404", _LIST_LEFT)],
-    ids=["delete-500", "delete-401", "deleted-but-key-left", "miss-but-key-left"],
+    [
+        ("500", _LIST_EMPTY),
+        ("401", _LIST_EMPTY),
+        ("200", _LIST_LEFT),
+        ("404", _LIST_LEFT),
+        ("200", _LIST_ODD),
+    ],
+    ids=[
+        "delete-500",
+        "delete-401",
+        "deleted-but-key-left",
+        "miss-but-key-left",
+        "list-no-keys-field",
+    ],
 )
 def test_seed_rotate_mints_no_key_when_the_old_key_may_still_be_live(
     tmp_path: Path, delete_code: str, listing: str

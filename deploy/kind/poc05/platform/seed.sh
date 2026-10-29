@@ -188,7 +188,7 @@ drop_old_key() {
   [[ $status =~ ^(2[0-9][0-9]|400|404)$ ]] || die "LiteLLM /key/delete failed for svc-$1; no key minted"
   left=$(printf 'Authorization: Bearer %s\n' "$master" | curl -fsS -H @- --get --data-urlencode "key_alias=svc-$1" "$LITELLM/key/list" 2>/dev/null) ||
     die "LiteLLM /key/list failed for svc-$1; no key minted"
-  printf '%s' "$left" | jq -e '(.keys | length) == 0' >/dev/null 2>&1 ||
+  printf '%s' "$left" | jq -e '(.keys | type) == "array" and (.keys | length) == 0' >/dev/null 2>&1 ||
     die "a key with alias svc-$1 is still live after /key/delete; no key minted"
   unset status left
 }
