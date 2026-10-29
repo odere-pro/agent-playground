@@ -79,6 +79,14 @@ model router refuses a route the key does not list) answers 403 `model_route_den
 both routes. On the OpenAI route only the complete call changes status; a stream keeps its 200 and
 its error frame. The call is counted as `chassis.model_upstream_denied{route}` and logged once.
 
+The router span and usage (PoC-8, 014 H-7). Every admitted call opens `chassis.model.route` with
+the call's span attributes plus `route.requested` (the `model` the workload named), `route` (the
+one called), and `route.forced` (the run's fallback route won). It is the chassis's routing
+choice; the provider call itself is LiteLLM's own span. A call that reported usage counts
+`chassis.model_tokens{route, direction}` and, with a price in `spec.observability.prices`,
+`chassis.model_cost_microusd{route}` (`chassis.server.observability.count_usage`). A charge with
+no usage (a whole reservation) counts no tokens.
+
 This is the model proxy (`POST /v1/chat/completions` on the proxy port). The router is mounted
 on the proxy app (`chassis.server.proxy_app`), a localhost-only listener,
 never on the public port (`deploy/CLAUDE.md`). The public port's route of the same path is the
@@ -117,10 +125,12 @@ from chassis.ports.model import (
 )
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server.correlation import RunRecord, RunRegistry, parse_traceparent
+from chassis.server.observability import count_usage
 from chassis.tracecontext import continued
 
 log = logging.getLogger("chassis.model_proxy")
 SPAN = "chassis.model.call"
+ROUTE_SPAN = "chassis.model.route"  # suggested: the routing choice (PoC-8)
 DENIED = "chassis.model_upstream_denied"  # suggested
 FORCED = "chassis.model_route_forced"  # suggested: a call sent to the run's fallback route
 WINDOW_S = 60.0
@@ -425,12 +435,16 @@ class _Hold:
         # (Known gap 004 G-2).
         self.charge_abandoned = False
         self.seen: list[Usage] = []
+        self.on_usage: Callable[[Usage], None] | None = None
+        """Called once with the usage a call reported (PoC-8 metrics)."""
         self._done = False
 
-    def settle(self, usage: Usage | None) -> None:
+    def settle(self, usage: Usage | None, *, reported: bool = True) -> None:
         if self._done:
             return
         self._done = True
+        if usage is not None and reported and self.on_usage is not None:
+            self.on_usage(usage)
         if self.record is not None:
             self.record.settle(self.tokens, usage)
         elif self.cap is not None:
@@ -444,7 +458,10 @@ class _Hold:
             return
         if self.record is not None and self.charge_abandoned and self.started:
             # Usage unknown: charge the whole reservation, the most the upstream can produce.
-            self.settle(self.seen[-1] if self.seen else Usage(output_tokens=self.tokens))
+            if self.seen:
+                self.settle(self.seen[-1])
+            else:
+                self.settle(Usage(output_tokens=self.tokens), reported=False)
             return
         self._done = True
         if self.record is not None:
@@ -549,6 +566,7 @@ def admit(
     bundle: PortBundle = app.state.ports
     telemetry = bundle.telemetry
     telemetry.counter("chassis.model_calls", route=route)
+    requested = route
     trace_id = parse_traceparent(traceparent)
     runs: RunRegistry = app.state.runs
     record = runs.lookup(trace_id) if trace_id is not None else None
@@ -579,6 +597,11 @@ def admit(
     # An uncorrelated call's reservation is already on the cap.
     hold = _Hold(record, wanted, cap, worst)
     attributes = _span_attributes(route, trace_id, record, fmt, traceparent)
+    price = app.state.config.spec.observability.prices.get(route)
+    hold.on_usage = lambda usage: count_usage(telemetry, route, usage, price)
+    choice = {"route.requested": requested, "route.forced": route != requested}
+    with telemetry.span(ROUTE_SPAN, **attributes, **choice):
+        pass  # the choice is made above; the span records it in the call's trace
     return Admission(hold, attributes, bundle, route)
 
 

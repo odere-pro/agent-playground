@@ -554,6 +554,26 @@
       "title": "LimitsSpec",
       "type": "object"
     },
+    "ModelPrice": {
+      "additionalProperties": false,
+      "description": "One route's price in USD per million tokens (PoC-8). suggested: the unit. LiteLLM's own\nspend stays the bill; this is the dashboard's estimate.",
+      "properties": {
+        "input_per_mtok": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Input Per Mtok",
+          "type": "number"
+        },
+        "output_per_mtok": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Output Per Mtok",
+          "type": "number"
+        }
+      },
+      "title": "ModelPrice",
+      "type": "object"
+    },
     "ModelSpec": {
       "additionalProperties": false,
       "properties": {
@@ -580,8 +600,38 @@
     },
     "ObservabilitySpec": {
       "additionalProperties": false,
-      "description": "`spec.observability` (PoC-7, 014 H-7). suggested: every name and default. Restart-only.\n\n- `session_header: x-session-id`: the request header whose value is the session id on spans\n  and in baggage. The user id is the caller's `Principal.subject`, never a header.",
+      "description": "`spec.observability` (PoC-7, 014 H-7). suggested: every name and default. Restart-only.\n\n- `session_header: x-session-id`: the request header whose value is the session id on spans\n  and in baggage. The user id is the caller's `Principal.subject`, never a header.\n- `log_level: info` (PoC-8): the level of the chassis's JSON log lines (`chassis.logs`).\n- `metrics_scope: null` (PoC-8): the scope `GET /metrics` needs. Unset, a scraper needs no\n  token, as for `/health`; set, the caller needs a valid token with that scope.\n- `prices` (PoC-8): USD per million tokens per model route, for\n  `chassis_model_cost_microusd_total`. A route with no price counts no cost.",
       "properties": {
+        "log_level": {
+          "default": "info",
+          "enum": [
+            "debug",
+            "info",
+            "warning",
+            "error"
+          ],
+          "title": "Log Level",
+          "type": "string"
+        },
+        "metrics_scope": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Metrics Scope"
+        },
+        "prices": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ModelPrice"
+          },
+          "title": "Prices",
+          "type": "object"
+        },
         "session_header": {
           "default": "x-session-id",
           "title": "Session Header",

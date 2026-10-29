@@ -41,7 +41,11 @@ draining: `state.ready` stays the pipeline's "engine set up" flag. While drainin
 response carries `Connection: close` (`chassis.server.lifecycle.CloseWhenDraining`).
 
 With `spec.governance.marking` on, every response of a run route carries `X-AI-Generated` and
-`X-AI-Disclosure-Required` (`chassis.server.marking.MarkOutputs`, the outermost middleware).
+`X-AI-Disclosure-Required` (`chassis.server.marking.MarkOutputs`).
+
+`GET /metrics` (PoC-8, `chassis.server.observability`) is the Prometheus text format of the
+telemetry adapter's registry. Its `OpenMetrics` middleware is the outermost one, so with no
+`spec.observability.metrics_scope` a scraper needs no token.
 """
 
 from __future__ import annotations
@@ -72,6 +76,7 @@ from chassis.server.interfaces import mount_interfaces
 from chassis.server.lifecycle import CloseWhenDraining
 from chassis.server.manifest import mount_manifest
 from chassis.server.marking import MarkOutputs
+from chassis.server.observability import mount_metrics
 from chassis.server.pipeline import RunPipeline
 from chassis.server.readiness import ProbeSettings, ReadinessMonitor, Reason, not_ready_reason
 from chassis.server.results import ResultPublisher
@@ -241,5 +246,6 @@ def create_app(
     mount_interfaces(app, config)  # last
     install_security(app)  # PoC-7: caller auth and scopes, outside the body limit
     app.add_middleware(CloseWhenDraining, state=app.state)  # public only, never the proxy app
-    app.add_middleware(MarkOutputs, state=app.state)  # outermost: a refusal is marked too
+    app.add_middleware(MarkOutputs, state=app.state)  # a refusal is marked too
+    mount_metrics(app)  # last: its open path is outside caller auth
     return app
