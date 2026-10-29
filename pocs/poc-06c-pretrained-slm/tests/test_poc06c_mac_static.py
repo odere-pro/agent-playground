@@ -128,6 +128,15 @@ def test_the_litellm_config_routes_big_default_hosted_and_local_small_to_the_hos
     assert config["litellm_settings"]["turn_off_message_logging"] is True
 
 
+def test_the_litellm_config_caps_the_proxy_spend_with_a_budget() -> None:
+    """The master key has no scope, so a proxy-wide budget bounds the provider spend."""
+    config = load(LITELLM_CONFIG)
+
+    budget = config["litellm_settings"].get("max_budget")
+
+    assert isinstance(budget, int | float) and budget > 0
+
+
 @pytest.mark.parametrize("path", [HOSTED_COMPOSE, SCALE_OVERLAY], ids=lambda p: p.name)
 def test_litellm_reaches_the_llama_server_through_host_docker_internal(path: Path) -> None:
     litellm = load(path)["services"]["litellm"]

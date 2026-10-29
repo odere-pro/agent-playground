@@ -28,6 +28,10 @@ litellm_settings:
   callbacks: token_log.handler
   # llama.cpp ignores or rejects some OpenAI parameters; LiteLLM drops what a route cannot take.
   drop_params: true
+  # The chassis holds the master key on this step, and that key has no route scope or budget.
+  # A proxy-wide budget in USD bounds what one run can spend on the provider key.
+  # suggested: 5, a few times what the hosted bake-off costs.
+  max_budget: 5
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
