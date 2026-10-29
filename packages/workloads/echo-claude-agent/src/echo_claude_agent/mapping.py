@@ -14,7 +14,8 @@ wire form, `schema_version: "0"` on each.
   `error` instead.
 - Error codes: `http_<status>` (the status the CLI saw from the model route), `tool_loop_exceeded`
   (`error_max_turns`), `model_error`, `timeout`, and `cli_error` (the CLI did not start or died).
-  `env_not_clean` comes from the guard in `handle.py`.
+  `env_not_clean` comes from the guard in `handle.py`. An `error` message here is not cut;
+  `handle` scrubs the token from it, then cuts it to `MAX_MESSAGE`.
 """
 
 from __future__ import annotations
@@ -33,8 +34,13 @@ from claude_agent_sdk import (
     UserMessage,
 )
 from claude_agent_sdk._errors import ResultError
-from workload_a2a.events import error as _error
 from workload_a2a.events import event
+
+
+def _error(code: str, message: str, retryable: bool) -> dict[str, Any]:
+    """An `error` with the full message. `handle` removes the token, then cuts it to
+    `MAX_MESSAGE`, so no part of the token is left at the edge of the cut."""
+    return event("error", code=code, message=message, retryable=retryable)
 
 
 def tool_name(name: str) -> str:

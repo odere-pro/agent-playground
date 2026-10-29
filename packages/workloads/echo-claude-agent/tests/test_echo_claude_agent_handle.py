@@ -546,3 +546,43 @@ async def test_a_late_exit_error_after_the_result_changes_nothing(
     events = await run()
     check_shape(events)
     assert [e["type"] for e in events] == ["start", "delta", "metrics", "end"]
+
+
+async def test_no_part_of_the_token_survives_the_cut_to_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A CLI error with the token across char 500: it is scrubbed on the full text, then cut."""
+    monkeypatch.setenv("CHASSIS_API_TOKEN", TOKEN)
+    install(monkeypatch, FakeQuery(raises=ProcessError("x" * 495 + TOKEN + " tail")))
+
+    events = await run()
+
+    check_shape(events)
+    message = events[-1]["message"]
+    assert events[-1]["code"] == "cli_error"
+    assert TOKEN[:5] not in message
+    assert len(message) <= 500
+
+
+async def test_a_token_split_across_delta_chunks_is_scrubbed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two stream chunks that split the token: the joined delta text never rebuilds it."""
+    monkeypatch.setenv("CHASSIS_API_TOKEN", TOKEN)
+
+    def chunk(text: str) -> StreamEvent:
+        delta = {"type": "text_delta", "text": text}
+        event = {"type": "content_block_delta", "index": 0, "delta": delta}
+        return StreamEvent(uuid="u", session_id="s-1", event=event)
+
+    full = f"see {TOKEN} now"
+    messages = [chunk(full[:10]), chunk(full[10:]), say(full), result()]
+    install(monkeypatch, FakeQuery(messages))
+
+    events = await run()
+
+    check_shape(events)
+    assert TOKEN not in json.dumps(events)
+    assert text_of(events) == full.replace(TOKEN, "[redacted]")
+    kinds = [e["type"] for e in events]
+    assert kinds.index("metrics") > max(i for i, k in enumerate(kinds) if k == "delta")

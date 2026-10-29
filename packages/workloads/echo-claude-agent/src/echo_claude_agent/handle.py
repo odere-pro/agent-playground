@@ -38,7 +38,7 @@ import os
 import shutil
 import tempfile
 from collections import deque
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import aclosing, suppress
 from pathlib import Path
 from typing import Any
@@ -174,14 +174,46 @@ async def handle(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[di
         return
     token = os.environ.get(TOKEN_VAR) or None
     # The shell tool can print the CLI's env, so the token can be in any event, not just errors.
-    async with aclosing(_run(input, ctx, token)) as events:
+    async with aclosing(_scrubbed(_run(input, ctx, token), token)) as events:
         async for out in events:
-            yield _scrub(out, token)
+            yield out
+
+
+async def _scrubbed(
+    events: AsyncGenerator[dict[str, Any], None], token: str | None
+) -> AsyncGenerator[dict[str, Any], None]:
+    """The events with the token removed. An `error` message is scrubbed on its full text, then
+    cut to `MAX_MESSAGE`. Delta text is scrubbed across chunks: the last `len(token) - 1` chars
+    are held back and sent, scrubbed, before the next other event. The joined delta text and the
+    order of events are kept; only where the text is split into deltas can change."""
+    keep = len(token) - 1 if token else 0
+    held = ""
+    async with aclosing(events) as stream:
+        async for out in stream:
+            if out["type"] == "delta" and keep:
+                text = _scrub(held + str(out["text"]), token)
+                held = text[-keep:]
+                if text[:-keep]:
+                    yield {**out, "text": text[:-keep]}
+                continue
+            if held:
+                yield event("delta", text=held)
+                held = ""
+            yield _final(_scrub(out, token))
+    if held:
+        yield event("delta", text=held)
+
+
+def _final(out: dict[str, Any]) -> dict[str, Any]:
+    """An `error` gets its (already scrubbed) message cut to `MAX_MESSAGE`; others pass."""
+    if out["type"] != "error":
+        return out
+    return {**out, "message": str(out["message"])[:MAX_MESSAGE]}
 
 
 async def _run(
     input: dict[str, Any], ctx: dict[str, Any], token: str | None
-) -> AsyncIterator[dict[str, Any]]:
+) -> AsyncGenerator[dict[str, Any], None]:
     """One CLI run in a fresh home: the mapped events, then at most one `error`."""
     route = str(ctx.get("model_route") or DEFAULT_ROUTE)
     mapper = EventMapper(route)
@@ -227,7 +259,7 @@ def _options(
 
 async def _mapped(
     stream: AsyncIterator[Any], mapper: EventMapper, seconds: float
-) -> AsyncIterator[dict[str, Any]]:
+) -> AsyncGenerator[dict[str, Any], None]:
     """The events for each SDK message until the stream ends or the deadline passes."""
     deadline = asyncio.get_running_loop().time() + seconds
     # Read to the end of the stream, also after the result: the CLI then exits by itself and
@@ -247,15 +279,14 @@ async def _mapped(
 
 
 def _failure(exc: BaseException, stderr_tail: deque[str], token: str | None) -> dict[str, Any]:
-    """The `error` for an exception; a `cli_error` gets the last stderr lines. The token is
-    removed before the cut to `MAX_MESSAGE`, so no part of it is left at the edge."""
+    """The `error` for an exception; a `cli_error` gets the last stderr lines. The message is not
+    cut here: `_scrubbed` removes the token from the full text, then cuts it to `MAX_MESSAGE`."""
     error = error_event(exc)
     if error["code"] != "cli_error" or not stderr_tail:
         return error
     tail = [_scrub(line, token) for line in stderr_tail]
     log.warning("the CLI failed; its last stderr lines: %s", " | ".join(tail))
-    message = _scrub(str(error["message"]), token) + " | " + " | ".join(tail)
-    return {**error, "message": message[:MAX_MESSAGE]}
+    return {**error, "message": str(error["message"]) + " | " + " | ".join(stderr_tail)}
 
 
 def _make_home() -> Path:
