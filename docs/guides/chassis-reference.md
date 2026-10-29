@@ -472,7 +472,7 @@ Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 
 | `chassis/server/feedback.py` | `POST /v1/feedback`, the request-to-trace lookup in `StatePort`, the event `agents.feedback.received.v1` | B, C |
 | `chassis/server/evaluator_gate.py` | `GatedEngine`: sync and async gating, retry, fallback, sample rate | G |
 | `chassis/redaction.py` | Regex redaction of the chassis's logs and events. Never a named-entity model | B.6, ADR-008 item 6 |
-| `chassis/tracecontext.py` | A checked inbound `traceparent` for the model proxy and the tool endpoint to continue | A.5 |
+| `chassis/core/trace.py` (`continued`, `parent_span_id`) | A checked inbound `traceparent` for the model proxy and the tool endpoint to continue | A.5 |
 
 - The model proxy also sends every call of the gate's fallback attempt to the fallback route (`chassis.model_route_forced`).
 - Tests: the fake bindings are in `tests/test_contracts_poc07.py`; each real adapter binds the same suite in its own file (`test_oidc_adapter.py`, `test_litellm_guardrails.py`, `test_evaluators.py`, `test_langfuse_feedback.py`, `test_otel_telemetry.py`), offline against a stub. The scenarios are in `pocs/poc-07-cross-cutting-decisions/tests/`.

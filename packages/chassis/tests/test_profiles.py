@@ -239,3 +239,19 @@ def test_importing_profiles_loads_no_store_sdk() -> None:
         "assert not loaded, loaded\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_importing_profiles_loads_no_a2a_or_litellm_adapter_when_none_is_named() -> None:
+    """A fresh interpreter importing `chassis.profiles` loads neither the A2A SDK nor the A2A or
+    LiteLLM adapter modules; they load when `resolve` names them.
+    """
+    code = (
+        "import sys, chassis.profiles\n"
+        "watched = {'a2a', 'chassis.adapters.a2a', 'chassis.adapters.litellm'}\n"
+        "loaded = watched & set(sys.modules)\n"
+        "assert not loaded, loaded\n"
+    )
+
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr

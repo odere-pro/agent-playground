@@ -33,4 +33,4 @@ Contract classes are named `*Contract` so pytest does not collect them on their 
 
 ## Test
 
-`uv run pytest packages/contract-suites` runs the suites against the chassis fakes.
+`uv run pytest packages/contract-suites` runs the self-tests of the suites themselves (inbound, interface, lane, recording). Each fake is bound once, in `packages/chassis/tests/`; run `uv run pytest packages/chassis` for the fake bindings.

@@ -13,8 +13,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
+from chassis.core.trace import parent_span_id
 from chassis.ports.telemetry import Span
-from chassis.tracecontext import parent_span_id
 
 _current: contextvars.ContextVar[Span | None] = contextvars.ContextVar("span", default=None)
 
