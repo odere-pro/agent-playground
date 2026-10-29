@@ -5,11 +5,12 @@ The rule: every external dependency sits behind a port with an in-memory fake, a
 ## A new port
 
 1. **Interface.** `packages/chassis/src/chassis/ports/<name>.py`: a `typing.Protocol` with its data types as Pydantic models. No network code, no product SDK (`make lint` enforces it). Export it from `ports/__init__.py`; add a field to `PortBundle`.
-2. **Fake.** `packages/chassis/src/chassis/fakes/<name>.py`: in memory, scripted answers and scripted errors, records calls so tests can assert.
-3. **Suite.** `packages/contract-suites/src/chassis_contracts/<name>.py`: a class `<Name>PortContract` (not `Test*`). Fixture methods the binder must provide raise `NotImplementedError`; optional case fixtures `pytest.skip` with a hint. Test methods cover the port's promise: happy path, error path, and the behavior it guarantees (ordering, versions, cancel).
+2. **Fake.** `packages/chassis/src/chassis/fakes/<name>.py`: in memory, scripted answers and scripted errors, records calls so tests can assert. Export it from `fakes/__init__.py`.
+3. **Suite.** `packages/contract-suites/src/chassis_contracts/<name>.py`: a class `<Name>PortContract` (not `Test*`). Fixture methods the binder must provide raise `NotImplementedError`; optional case fixtures `pytest.skip` with a hint. Test methods cover the port's promise: happy path, error path, and the behavior it guarantees (ordering, versions, cancel). Export the class from `chassis_contracts/__init__.py`.
 4. **Bind the fake.** `packages/chassis/tests/test_contracts.py`, or since PoC-4 a file of its own such as `tests/test_state_contract.py`: `class TestX(<Name>PortContract)` with the fixtures.
-5. **Register.** `chassis/profiles.py`: add the port to `PORTS`, `AdapterSpec`, and `PROFILE_DEFAULTS`, and its adapters to `REGISTRY`. Give `PortBundle` a default so bundles that tests build still build (PoC-4: `state` defaults to `InMemoryState`, `events` to `NoEvents`).
-6. **Document.** `docs/contracts/contract-v0.md` and `packages/chassis/CLAUDE.md`.
+5. **Register.** `chassis/profiles.py`: add the port to `PORTS`, a field to `AdapterSpec`, and a value to each profile in `PROFILE_DEFAULTS`. Add its adapters to `REGISTRY`; a real one is a `lazy(...)` factory (see below). Add one `resolve(...)` line for the port in `build_ports`. If the fake's adapter name is new, add it to `IN_MEMORY`, so the `cloud` profile refuses it. Give `PortBundle` a default so bundles that tests build still build (PoC-4: `state` defaults to `InMemoryState`, `events` to `NoEvents`; PoC-7: each new port has a no-op default such as `NoAuth`).
+6. **Schemas.** `make schemas`: `AdapterSpec` is part of the published `chassis-config` schema, and a test fails on drift.
+7. **Document.** Add the port to the contract in force: the `Spec:` line of [packages/chassis/CLAUDE.md](../../packages/chassis/CLAUDE.md) names it. A port that changes the contract needs a new contract version (ask `chassis-architect`). Add the module detail to [the chassis reference](chassis-reference.md).
 
 ## A new real adapter
 

@@ -113,6 +113,7 @@ from starlette.types import Receive, Scope, Send
 
 from chassis.adapters.anthropic_compat.model_wire import DENIED_TEXT
 from chassis.adapters.openai_compat.messages import UnsupportedMessage, to_port_message
+from chassis.core.trace import continued
 from chassis.ports.bundle import PortBundle
 from chassis.ports.model import (
     ModelChunk,
@@ -126,7 +127,6 @@ from chassis.ports.model import (
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server.correlation import RunRecord, RunRegistry, parse_traceparent
 from chassis.server.observability import count_usage
-from chassis.tracecontext import continued
 
 log = logging.getLogger("chassis.model_proxy")
 SPAN = "chassis.model.call"
@@ -370,7 +370,7 @@ async def _refused_stream(body: dict[str, Any]) -> AsyncIterator[str]:
 def _span_attributes(
     route: str, trace_id: str | None, record: RunRecord | None, fmt: str, traceparent: str | None
 ) -> dict[str, Any]:
-    """The call's span attributes. `traceparent` (checked, `chassis.tracecontext.continued`) makes
+    """The call's span attributes. `traceparent` (checked, `chassis.core.trace.continued`) makes
     the span a child of the workload's call that sent it (PoC-7)."""
     parent = {"traceparent": continued(traceparent)} if continued(traceparent) else {}
     if record is None:
