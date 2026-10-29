@@ -171,3 +171,37 @@ def test_workflow_runs_the_stack_and_always_tears_it_down(workflow: dict[str, An
     assert logs and "logs" in logs[0] and "redact" in logs[0]
     # The env file path comes from `stack.sh env`; the workflow never names or reads it.
     assert ".env.poc07" not in WORKFLOW.read_text()
+
+
+_DIGEST = re.compile(r"^[^@]+:[^@]+@sha256:[0-9a-f]{64}$")
+_SERVICES: dict[str, Any] = _yaml(COMPOSE)["services"]
+
+
+@pytest.mark.parametrize("service", sorted(_SERVICES))
+def test_compose_image_is_pinned_by_digest_when_the_service_names_an_image(service: str) -> None:
+    """Every image is `name:tag@sha256:<digest>` (SECURITY.md, section 2)."""
+    image = _SERVICES[service]["image"]
+
+    pinned = _DIGEST.match(image)
+
+    assert pinned, f"{service}: {image}"
+
+
+COMPOSE_README = ROOT / "deploy/compose/README.md"
+
+
+def _readme_deviations() -> set[str]:
+    """The service names listed as `- \\`name\\`` in the README's "PoC-7 stack" section."""
+    text = COMPOSE_README.read_text()
+    section = text.partition("## PoC-7 stack")[2].partition("\n## ")[0]
+    return set(re.findall(r"^- `([a-z0-9-]+)`", section, re.MULTILINE))
+
+
+@pytest.mark.parametrize("service", sorted(_SERVICES))
+def test_compose_service_drops_all_capabilities_when_not_a_listed_deviation(service: str) -> None:
+    """A service has `cap_drop: [ALL]`, or the compose README names it as a deviation."""
+    cap_drop = _SERVICES[service].get("cap_drop")
+
+    hardened_or_listed = cap_drop == ["ALL"] or service in _readme_deviations()
+
+    assert hardened_or_listed, f"{service}: no cap_drop [ALL] and not in the README deviations"
