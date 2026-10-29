@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 import httpx
 import pytest
 from chassis import CHASSIS_VERSION
+from chassis.adapters.anthropic_compat.model_wire import BODY_CAP_BYTES
 from chassis.adapters.litellm import LiteLLMModel
 from chassis.core.envelope import Budget, Context, Request, TaskInput, Versions
 from chassis.core.handle import echo
@@ -21,6 +23,7 @@ from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, Scripte
 from chassis.ports.bundle import PortBundle
 from chassis.ports.model import (
     ModelChunk,
+    ModelError,
     ModelMessage,
     ModelPort,
     ModelResult,
@@ -29,8 +32,10 @@ from chassis.ports.model import (
     Usage,
 )
 from chassis.server import ChassisConfig, create_app
-from chassis.server.model_proxy import DEFAULT_UNCORRELATED_MAX_TOKENS
+from chassis.server.correlation import RunRecord
+from chassis.server.model_admission import DEFAULT_UNCORRELATED_MAX_TOKENS
 from chassis.server.proxy_app import create_proxy_app
+from chassis.server.remote_auth import create_remote_proxy_app
 
 CONFIG: dict[str, Any] = {
     "profile": "fake",
@@ -590,3 +595,194 @@ async def test_an_unsupported_message_is_400_before_the_model_is_called(
     assert isinstance(model, ScriptedModel) and model.calls == [], (
         "never a 200 on a changed message"
     )
+
+
+# --- The body cap: the same `BODY_CAP_BYTES` as the Anthropic proxy route ---
+
+REMOTE_TOKEN = "remote-token-canary-chat-0123456789"  # pragma: allowlist secret (canary)
+
+
+def _oversized_body() -> bytes:
+    """A valid chat body of exactly `BODY_CAP_BYTES + 1` bytes, which the model would answer."""
+    empty = json.dumps({**BODY, "messages": [{"role": "user", "content": "simplify: "}]})
+    pad = BODY_CAP_BYTES + 1 - len(empty)
+    content = "simplify: " + "x" * pad
+    raw = json.dumps({**BODY, "messages": [{"role": "user", "content": content}]}).encode()
+    assert len(raw) == BODY_CAP_BYTES + 1
+    return raw
+
+
+def _listener(kind: str, app: Any) -> Any:
+    return (
+        create_proxy_app(app) if kind == "proxy" else create_remote_proxy_app(app, (REMOTE_TOKEN,))
+    )
+
+
+@pytest.mark.parametrize("kind", ["proxy", "remote"])
+async def test_chat_proxy_answers_413_without_calling_the_model_when_the_body_is_over_the_cap(
+    kind: str,
+) -> None:
+    """A correlated chat body one byte over the cap is 413 on both listeners; the model is idle."""
+    ports = _ports()
+    app = create_app(ChassisConfig.model_validate(CONFIG), ports)
+    headers = {"traceparent": TRACEPARENT, "authorization": f"Bearer {REMOTE_TOKEN}"}
+    request, ctx = _run_ctx(max_tokens=100)
+
+    async with (
+        _client(_listener(kind, app)) as client,
+        app.router.lifespan_context(app),
+        app.state.runs.register(request, ctx) as record,
+    ):
+        res = await client.post(
+            "/v1/chat/completions",
+            content=_oversized_body(),
+            headers={**headers, "content-type": "application/json"},
+        )
+
+    assert res.status_code == 413, res.text
+    assert res.json()["error"]["code"] == "body_too_large"
+    model = ports.model
+    assert isinstance(model, ScriptedModel) and model.calls == []
+    assert record.model_calls == 0
+
+
+# --- Model errors: fixed text per code in the body, the upstream text only in the log ---
+
+UPSTREAM_TEXT = "api_base=https://litellm.internal:4000/v1 deployment=big-default-eu said no"
+
+
+class OutcomeModel:
+    """Fails with `http_500`, waits until cancelled, or answers, on every call."""
+
+    name = "outcome"
+
+    def __init__(self, outcome: str) -> None:
+        self.outcome = outcome
+        self.entered = asyncio.Event()
+
+    async def complete(self, messages: Sequence[ModelMessage], **_: Any) -> ModelResult:
+        self.entered.set()
+        if self.outcome == "error":
+            raise ModelError("http_500", UPSTREAM_TEXT)
+        if self.outcome == "cancel":
+            await asyncio.Event().wait()
+        return ModelResult(text="ok", usage=Usage(input_tokens=3, output_tokens=2))
+
+    async def stream(self, messages: Sequence[ModelMessage], **_: Any) -> AsyncIterator[ModelChunk]:
+        raise ModelError("http_500", UPSTREAM_TEXT)
+        yield ModelChunk()
+
+
+def _error_of(res: httpx.Response) -> Any:
+    """The OpenAI error object of a complete answer, or of a stream's error frame."""
+    if res.headers["content-type"].startswith("text/event-stream"):
+        return _chunks(res.text)[-2]["error"]
+    return res.json()["error"]
+
+
+@pytest.mark.parametrize("stream", [False, True], ids=["complete", "stream"])
+async def test_chat_proxy_sends_fixed_text_when_the_model_fails(stream: bool) -> None:
+    """The error body keeps its code and `retryable` and carries a fixed text, never upstream's."""
+    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(OutcomeModel("error")))
+
+    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+        res = await client.post("/v1/chat/completions", json={**BODY, "stream": stream})
+
+    assert _error_of(res) == {
+        "message": "the model call failed",
+        "type": "model_error",
+        "code": "http_500",
+        "retryable": False,
+    }
+    assert "litellm.internal" not in res.text
+
+
+@pytest.mark.parametrize("stream", [False, True], ids=["complete", "stream"])
+async def test_chat_proxy_logs_the_upstream_text_when_the_model_fails(
+    stream: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The upstream's own text stays at the chassis, in the `chassis.model_proxy` log."""
+    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(OutcomeModel("error")))
+    caplog.set_level(logging.WARNING, logger="chassis.model_proxy")
+
+    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+        await client.post("/v1/chat/completions", json={**BODY, "stream": stream})
+
+    assert UPSTREAM_TEXT in caplog.text
+
+
+# --- The hold: a complete call settles its reservation exactly once, on either route ---
+
+ROUTES = {
+    "openai": ("/v1/chat/completions", BODY),
+    "anthropic": (
+        "/v1/messages",
+        {"model": "big-default", "max_tokens": 64, "messages": [{"role": "user", "content": "x"}]},
+    ),
+}
+
+
+def _count_settles(monkeypatch: pytest.MonkeyPatch) -> list[Usage | None]:
+    """Record every `RunRecord.settle` call's usage, and still settle."""
+    calls: list[Usage | None] = []
+    settle = RunRecord.settle
+
+    def counting(self: RunRecord, held: int, usage: Usage | None) -> bool:
+        calls.append(usage)
+        return settle(self, held, usage)
+
+    monkeypatch.setattr(RunRecord, "settle", counting)
+    return calls
+
+
+@pytest.mark.parametrize(
+    ("outcome", "usage"),
+    [("error", None), ("success", Usage(input_tokens=3, output_tokens=2))],
+)
+@pytest.mark.parametrize("route", sorted(ROUTES))
+async def test_complete_call_settles_its_hold_once_when_the_model_answers_or_fails(
+    route: str, outcome: str, usage: Usage | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A model error settles with no usage, a success with its usage; once each."""
+    settles = _count_settles(monkeypatch)
+    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(OutcomeModel(outcome)))
+    path, body = ROUTES[route]
+    request, ctx = _run_ctx(max_tokens=100)
+
+    async with (
+        _client(create_proxy_app(app)) as client,
+        app.router.lifespan_context(app),
+        app.state.runs.register(request, ctx) as record,
+    ):
+        await client.post(path, json=body, headers={"traceparent": TRACEPARENT})
+
+    assert settles == [usage]
+    assert record.reserved_tokens == 0
+
+
+@pytest.mark.parametrize("route", sorted(ROUTES))
+async def test_complete_call_settles_its_hold_once_when_it_is_cancelled(
+    route: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cancel while the model works settles the hold with no usage, once."""
+    settles = _count_settles(monkeypatch)
+    model = OutcomeModel("cancel")
+    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(model))
+    path, body = ROUTES[route]
+    request, ctx = _run_ctx(max_tokens=100)
+
+    async with (
+        _client(create_proxy_app(app)) as client,
+        app.router.lifespan_context(app),
+        app.state.runs.register(request, ctx) as record,
+    ):
+        call = asyncio.create_task(
+            client.post(path, json=body, headers={"traceparent": TRACEPARENT})
+        )
+        await asyncio.wait_for(model.entered.wait(), timeout=5)
+        call.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await call
+
+    assert settles == [None]
+    assert record.reserved_tokens == 0

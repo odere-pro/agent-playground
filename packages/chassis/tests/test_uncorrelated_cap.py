@@ -26,7 +26,7 @@ from chassis.ports.model import (
     Usage,
 )
 from chassis.server import ChassisConfig, create_app
-from chassis.server.model_proxy import (
+from chassis.server.model_admission import (
     DEFAULT_UNCORRELATED_MAX_TOKENS,
     WINDOW_S,
     UncorrelatedCap,

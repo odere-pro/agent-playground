@@ -65,9 +65,15 @@ The cap is read from `state.config` per call, so a reload applies on the next ad
 this process only, by design: a limit per replica. The remote listener shares it through
 `app.state.uncorrelated_cap`. A correlated call never touches it.
 
-Two routes share one admission step (`admit`): the OpenAI route above and the Anthropic proxy route
-(`POST /v1/messages` on the proxy port, `chassis.server.model_proxy_messages`, contract v5 part A).
-Same run lookup, same budget reservation, same uncorrelated cap. Neither route forwards a header.
+Two routes share one admission step (`admit`, `chassis.server.model_admission`): the OpenAI route
+above and the Anthropic proxy route (`POST /v1/messages` on the proxy port,
+`chassis.server.model_proxy_messages`, contract v5 part A). Same run lookup, same budget
+reservation, same uncorrelated cap, same body cap (`BODY_CAP_BYTES`, read before anything is
+parsed; over it the OpenAI route answers 413 `body_too_large` in its own error shape). Neither
+route forwards a header.
+
+A model error on the OpenAI route keeps its `code`, `retryable`, and status, and sends the fixed
+text of the Anthropic route's row for it (`model_error_to_wire`); the upstream text is logged.
 
 The fallback route (PoC-7, 017 H-4). When the evaluator gate runs its fallback attempt it sets the
 run's `RunRecord.model_route`; `admit` then sends every call of that run to it, whatever `model` the
@@ -89,23 +95,24 @@ reaches `ports.model` directly.
 from __future__ import annotations
 
 import json
-import logging
-import threading
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable, Sequence
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
 from typing import Any
 
 from fastapi import APIRouter, FastAPI
 from fastapi import Request as HTTPRequest
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field
-from starlette.types import Receive, Scope, Send
+from starlette.types import Message, Receive, Scope, Send
 
-from chassis.adapters.anthropic_compat.model_wire import DENIED_TEXT
+from chassis.adapters.anthropic_compat.model_wire import (
+    DENIED_TEXT,
+    TOO_LARGE,
+    model_error_to_wire,
+)
 from chassis.adapters.openai_compat.messages import UnsupportedMessage, to_port_message
-from chassis.ports.bundle import PortBundle
 from chassis.ports.model import (
     ModelChunk,
     ModelError,
@@ -116,79 +123,21 @@ from chassis.ports.model import (
     Usage,
 )
 from chassis.ports.telemetry import TelemetryPort
-from chassis.server.correlation import RunRecord, RunRegistry, parse_traceparent
-from chassis.tracecontext import continued
-
-log = logging.getLogger("chassis.model_proxy")
-SPAN = "chassis.model.call"
-DENIED = "chassis.model_upstream_denied"  # suggested
-FORCED = "chassis.model_route_forced"  # suggested: a call sent to the run's fallback route
-WINDOW_S = 60.0
-# suggested: the worst case reserved, and forwarded, for an uncorrelated call that sets no
-# `max_tokens`; never more than the cap itself. The epic gives no value.
-DEFAULT_UNCORRELATED_MAX_TOKENS = 1024
-
-
-class UncorrelatedCap:
-    """Uncorrelated tokens spent in the current fixed window of `WINDOW_S` seconds, and reserved by
-    the calls in flight (the module docstring has the rule and the bound).
-
-    `clock` returns seconds (monotonic); a test passes its own, so nothing sleeps. Each method holds
-    a lock, so a check and its reservation are one step even across threads.
-    """
-
-    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
-        self._clock = clock
-        self._lock = threading.Lock()
-        self._start = clock()
-        self._spent = 0
-        self._reserved = 0
-
-    def _roll(self) -> None:
-        now = self._clock()
-        if now - self._start >= WINDOW_S:
-            self._start = now
-            self._spent = 0  # reservations in flight carry over
-
-    @property
-    def spent(self) -> int:
-        with self._lock:
-            self._roll()
-            return self._spent
-
-    @property
-    def reserved(self) -> int:
-        with self._lock:
-            return self._reserved
-
-    @staticmethod
-    def worst_case(wanted: int | None, limit: int) -> int:
-        """The tokens a call reserves and is forwarded as `max_tokens`."""
-        if wanted is None:
-            return max(1, min(DEFAULT_UNCORRELATED_MAX_TOKENS, limit))
-        return max(1, wanted)
-
-    def reserve(self, worst: int, limit: int) -> bool:
-        """Hold `worst` tokens when they fit in `limit` with what is spent and held; else False."""
-        with self._lock:
-            self._roll()
-            if self._spent + self._reserved + worst > limit:
-                return False
-            self._reserved += worst
-            return True
-
-    def release(self, held: int) -> None:
-        """Give back a reservation without charging: the call never reached the model."""
-        with self._lock:
-            self._reserved = max(0, self._reserved - held)
-
-    def settle(self, held: int, usage: Usage | None) -> None:
-        """Replace a reservation by the call's usage, or charge all of it when there is none."""
-        with self._lock:
-            self._roll()
-            self._reserved = max(0, self._reserved - held)
-            self._spent += held if usage is None else usage.input_tokens + usage.output_tokens
-
+from chassis.server.model_admission import (
+    DEFAULT_UNCORRELATED_MAX_TOKENS,
+    SPAN,
+    WINDOW_S,
+    Admission,
+    Hold,
+    Refusal,
+    UncorrelatedCap,
+    admit,
+    is_ready,
+    note_denied,
+    note_failed,
+    read_capped,
+)
+from chassis.server.model_proxy_messages import add_messages_route
 
 __all__ = [
     "DEFAULT_UNCORRELATED_MAX_TOKENS",
@@ -269,34 +218,16 @@ def _tool_call(call: ToolCallRequest, index: int | None = None) -> dict[str, Any
 
 
 def _error_body(exc: ModelError) -> dict[str, Any]:
+    """The OpenAI error of a failed model call: its `code` and `retryable`, and the fixed text
+    of the Anthropic route's row for it (`model_error_to_wire`). The upstream text is logged."""
     return {
         "error": {
-            "message": exc.message,
+            "message": model_error_to_wire(exc).message,
             "type": "model_error",
             "code": exc.code,
             "retryable": exc.retryable,
         }
     }
-
-
-@dataclass(frozen=True)
-class Refusal:
-    """A call refused at admission: 429 `budget_exhausted`, before the model is called."""
-
-    code: str
-    message: str
-    retryable: bool
-    status: int = 429
-
-    def chat_body(self) -> dict[str, Any]:
-        return {
-            "error": {
-                "message": self.message,
-                "type": self.code,
-                "code": self.code,
-                "retryable": self.retryable,
-            }
-        }
 
 
 def _denied(exc: ModelError) -> bool:
@@ -314,66 +245,51 @@ def _denied_body() -> dict[str, Any]:
     }
 
 
-def note_rejected(telemetry: TelemetryPort, route: str, exc: ModelError) -> None:
-    """Log the upstream's own text for a 400-class rejection at the chassis. The adapter has
-    already redacted and capped it. It never reaches the response."""
-    log.warning(
-        "model route rejected the request: route=%s code=%s upstream=%s",
-        route,
-        exc.code,
-        exc.message,
-    )
+def _too_large_body() -> dict[str, Any]:
+    """The 413 of a body over `BODY_CAP_BYTES`, in the OpenAI error shape of the other 4xx."""
+    return {
+        "error": {
+            "message": TOO_LARGE.message,
+            "type": "invalid_request_error",
+            "code": TOO_LARGE.code,
+            "retryable": TOO_LARGE.retryable,
+        }
+    }
 
 
-def note_denied(telemetry: TelemetryPort, route: str, exc: ModelError) -> None:
-    """Count and log a refused model route once. The caller cannot tell a route outside its key
-    from a chassis key that is itself invalid; the operator can, from this."""
-    telemetry.counter(DENIED, route=route)
-    log.warning("model route refused by the upstream: route=%s code=%s", route, exc.code)
+def _replay(body: bytes, receive: Receive) -> Receive:
+    """`receive` with the body already read sent first, as one message."""
+    sent = False
+
+    async def replay() -> Message:
+        nonlocal sent
+        if sent:
+            return await receive()
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    return replay
 
 
-def _budget_error(record: RunRecord) -> Refusal:
-    held = record.reserved_tokens
-    message = (
-        f"request {record.request_id} has spent {record.spent_tokens} of its "
-        f"{record.budget.max_tokens} tokens"
-    )
-    if held:
-        message += f"; {held} more are held by its in-flight model calls"
-    # Retryable only when in-flight calls hold the rest: they may settle for less.
-    return Refusal("budget_exhausted", message, not record.exhausted)
+class _CappedRoute(APIRoute):
+    """Reads the body through `read_capped` before FastAPI parses it: 413 when it is over the
+    cap. A body under the cap is replayed, so the parse and its 422 are FastAPI's own."""
 
+    def get_route_handler(self) -> Callable[[HTTPRequest], Coroutine[Any, Any, Response]]:
+        handler = super().get_route_handler()
 
-def _uncorrelated_error(limit: int, worst: int) -> Refusal:
-    message = f"uncorrelated model calls are capped at {limit} tokens per minute"
-    if 0 < limit < worst:
-        message += f"; this call asks for {worst}"
-    # Retryable only when the call would fit an empty window.
-    return Refusal("budget_exhausted", message, worst <= limit)
+        async def capped(http: HTTPRequest) -> Response:
+            body = await read_capped(http)
+            if body is None:
+                return JSONResponse(_too_large_body(), status_code=413)
+            return await handler(HTTPRequest(http.scope, _replay(body, http.receive)))
+
+        return capped
 
 
 async def _refused_stream(body: dict[str, Any]) -> AsyncIterator[str]:
     yield f"data: {json.dumps(body)}\n\n"
     yield "data: [DONE]\n\n"
-
-
-def _span_attributes(
-    route: str, trace_id: str | None, record: RunRecord | None, fmt: str, traceparent: str | None
-) -> dict[str, Any]:
-    """The call's span attributes. `traceparent` (checked, `chassis.tracecontext.continued`) makes
-    the span a child of the workload's call that sent it (PoC-7)."""
-    parent = {"traceparent": continued(traceparent)} if continued(traceparent) else {}
-    if record is None:
-        return {"route": route, "trace_id": trace_id, "correlated": False, "format": fmt, **parent}
-    return {
-        "format": fmt,
-        "route": route,
-        "trace_id": record.trace_id,
-        "request_id": record.request_id,
-        "agent": record.agent,
-        "correlated": True,
-        **parent,
-    }
 
 
 def _completion(
@@ -398,61 +314,6 @@ def _completion(
     }
 
 
-class _Hold:
-    """One call's reservation, on its run or on the replica's `UncorrelatedCap`, given back exactly
-    once. `settle` charges the usage. `release` runs when a stream response ends: if the body never
-    started, the model was never called and nothing is charged; an uncorrelated stream that started
-    is charged its last usage seen, or its whole reservation (the module docstring says why).
-    """
-
-    def __init__(
-        self,
-        record: RunRecord | None,
-        wanted: int | None,
-        cap: UncorrelatedCap | None = None,
-        held: int = 0,
-    ) -> None:
-        self.record = record
-        self.cap = cap if record is None else None
-        if record is not None:
-            self.tokens = record.reserve(wanted)
-        else:
-            self.tokens = held  # the router reserved it on the cap
-        self.max_tokens = self.tokens if record is not None or cap is not None else wanted
-        self.started = False
-        # The Anthropic route sets this: a correlated stream whose client left after the model
-        # call started is charged too (contract v5 review, item 1). The chat route does not
-        # (Known gap 004 G-2).
-        self.charge_abandoned = False
-        self.seen: list[Usage] = []
-        self._done = False
-
-    def settle(self, usage: Usage | None) -> None:
-        if self._done:
-            return
-        self._done = True
-        if self.record is not None:
-            self.record.settle(self.tokens, usage)
-        elif self.cap is not None:
-            self.cap.settle(self.tokens, usage)
-
-    def release(self) -> None:
-        if self._done:
-            return
-        if self.cap is not None and self.started:
-            self.settle(self.seen[-1] if self.seen else None)
-            return
-        if self.record is not None and self.charge_abandoned and self.started:
-            # Usage unknown: charge the whole reservation, the most the upstream can produce.
-            self.settle(self.seen[-1] if self.seen else Usage(output_tokens=self.tokens))
-            return
-        self._done = True
-        if self.record is not None:
-            self.record.release(self.tokens)
-        elif self.cap is not None:
-            self.cap.release(self.tokens)
-
-
 async def _sse(
     chunks: AsyncIterator[ModelChunk],
     route: str,
@@ -460,7 +321,7 @@ async def _sse(
     created: int,
     telemetry: TelemetryPort,
     attributes: dict[str, Any],
-    hold: _Hold,
+    hold: Hold,
 ) -> AsyncIterator[str]:
     """The stream inside its span; the run is charged with the usage seen, even on an error."""
     hold.started = True  # from here the model may be called
@@ -479,7 +340,7 @@ class _HeldStream(StreamingResponse):
     """
 
     def __init__(
-        self, body: AsyncIterator[str], hold: _Hold, headers: dict[str, str] | None = None
+        self, body: AsyncIterator[str], hold: Hold, headers: dict[str, str] | None = None
     ) -> None:
         super().__init__(body, media_type="text/event-stream", headers=headers)
         self._hold = hold
@@ -524,66 +385,10 @@ async def _frames(
                 seen_usage.append(usage)
         yield frame({}, "tool_calls" if tool_index else "stop", usage=_usage(usage))
     except ModelError as exc:
+        if not _denied(exc):
+            note_failed(route, exc)
         yield f"data: {json.dumps(_error_body(exc))}\n\n"
     yield "data: [DONE]\n\n"
-
-
-@dataclass
-class Admission:
-    """A call let through: its reservation (`hold.max_tokens` is what to forward), and the span
-    attributes. Settle or release the hold exactly as `_Hold` says."""
-
-    hold: _Hold
-    attributes: dict[str, Any]
-    bundle: PortBundle
-    route: str
-
-
-def admit(
-    app: FastAPI, *, route: str, wanted: int | None, traceparent: str | None, fmt: str
-) -> Admission | Refusal:
-    """Steps 3 to 7 of the shared admission (contract v5, A.6): count the call, find its run,
-    refuse a spent run or a full uncorrelated cap with 429, else reserve. `fmt` is `openai` or
-    `anthropic`. The caller has checked `app.state.ready` and parsed the body.
-    """
-    bundle: PortBundle = app.state.ports
-    telemetry = bundle.telemetry
-    telemetry.counter("chassis.model_calls", route=route)
-    trace_id = parse_traceparent(traceparent)
-    runs: RunRegistry = app.state.runs
-    record = runs.lookup(trace_id) if trace_id is not None else None
-    if record is not None and record.model_route and record.model_route != route:
-        # PoC-7: the evaluator gate's fallback attempt; the run's route wins.
-        route = record.model_route
-        telemetry.counter(FORCED, route=route)
-    cap: UncorrelatedCap = app.state.uncorrelated_cap
-    worst = 0
-    if record is None:
-        telemetry.counter("chassis.model_calls_uncorrelated", route=route)
-        telemetry.log(
-            "warning",
-            "model call names no in-flight run; served uncorrelated",
-            route=route,
-            trace_id=trace_id,
-            reason="no traceparent" if trace_id is None else "no in-flight run",
-        )
-        limit = app.state.config.spec.limits.uncorrelated_tokens_per_minute
-        worst = cap.worst_case(wanted, limit)
-        if not cap.reserve(worst, limit):
-            telemetry.counter("chassis.model_calls_refused", route=route)
-            return _uncorrelated_error(limit, worst)
-    elif record.remaining_tokens == 0:
-        telemetry.counter("chassis.model_calls_refused", route=route)
-        return _budget_error(record)
-    # No await between the check above and the reservation: one step on the event loop.
-    # An uncorrelated call's reservation is already on the cap.
-    hold = _Hold(record, wanted, cap, worst)
-    attributes = _span_attributes(route, trace_id, record, fmt, traceparent)
-    return Admission(hold, attributes, bundle, route)
-
-
-def is_ready(app: FastAPI) -> bool:
-    return bool(getattr(app.state, "ready", False))
 
 
 def model_proxy_router(app: FastAPI, *, clock: Callable[[], float] | None = None) -> APIRouter:
@@ -592,13 +397,10 @@ def model_proxy_router(app: FastAPI, *, clock: Callable[[], float] | None = None
     `clock` feeds the `UncorrelatedCap` the router makes; the cap is also at
     `app.state.uncorrelated_cap`, which a test may replace.
     """
-    from chassis.server.model_proxy_messages import add_messages_route
-
     router = APIRouter()
     if clock is not None or getattr(app.state, "uncorrelated_cap", None) is None:
         app.state.uncorrelated_cap = UncorrelatedCap(clock or time.monotonic)
 
-    @router.post("/v1/chat/completions")
     async def chat_completions(body: ChatCompletionRequest, http: HTTPRequest) -> Any:
         if not is_ready(app):
             return JSONResponse({"detail": "model proxy not ready"}, status_code=503)
@@ -638,7 +440,7 @@ def model_proxy_router(app: FastAPI, *, clock: Callable[[], float] | None = None
             return _HeldStream(
                 _sse(chunks, route, completion_id, created, telemetry, attributes, hold), hold
             )
-        with telemetry.span(SPAN, **attributes):
+        with telemetry.span(SPAN, **attributes), hold.settled():
             try:
                 result = await bundle.model.complete(
                     messages,
@@ -648,16 +450,20 @@ def model_proxy_router(app: FastAPI, *, clock: Callable[[], float] | None = None
                     max_tokens=hold.max_tokens,
                 )
             except ModelError as exc:
-                hold.settle(None)
                 if _denied(exc):
                     note_denied(telemetry, route, exc)
                     return JSONResponse(_denied_body(), status_code=403)
+                note_failed(route, exc)
                 return JSONResponse(_error_body(exc), status_code=502 if exc.retryable else 500)
-            except BaseException:
-                hold.settle(None)
-                raise
             hold.settle(result.usage)
         return JSONResponse(_completion(result, route, completion_id, created))
 
+    # The cap reads the body before FastAPI parses it into `ChatCompletionRequest`.
+    router.add_api_route(
+        "/v1/chat/completions",
+        chat_completions,
+        methods=["POST"],
+        route_class_override=_CappedRoute,
+    )
     add_messages_route(router, app)
     return router
