@@ -36,7 +36,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from chassis.core.envelope import Request
-from chassis.core.inbound import InboundAdapter, Refused, ReplyMeta
+from chassis.core.inbound import InboundAdapter, Refused, ReplyMeta, over_cap
 from chassis.server.config import ChassisConfig, LimitsSpec
 from chassis.server.interfaces.ids import resolve_ids
 
@@ -47,6 +47,7 @@ __all__ = [
     "enforce_limits",
     "install_body_limit",
     "limit_problem",
+    "live_messages_max",
     "messages_over",
 ]
 
@@ -55,10 +56,16 @@ LIMIT_EXCEEDED = "limit_exceeded"
 
 
 def messages_over(count: int, limits: LimitsSpec, what: str = "messages") -> str | None:
-    """Why `count` turns are too many, or None."""
-    if count > limits.messages_max:
-        return f"{what}: {count} is more than the limit of {limits.messages_max}"
-    return None
+    """Why `count` turns are too many, or None. The text is `over_cap`'s, the one the chat
+    adapters send for their raw `messages`."""
+    return over_cap(count, limits.messages_max, what)
+
+
+def live_messages_max(config: ChassisConfig | None) -> int | None:
+    """`spec.limits.messages_max` of `config`, or None with no config. The chat routes set it on
+    their adapter at mount and again per request from the live config, so a reload applies to
+    the next request."""
+    return None if config is None else config.spec.limits.messages_max
 
 
 def limit_problem(request: Request, limits: LimitsSpec) -> str | None:

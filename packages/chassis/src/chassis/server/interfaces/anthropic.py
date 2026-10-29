@@ -7,9 +7,10 @@ Not to be confused with the model proxy (`POST /v1/chat/completions` on the prox
 how a workload calls a model; this is how a client calls the agent.
 
 - The body is the SDK's `MessageCreateParams`, so the OpenAPI 3.1 spec carries Anthropic's own
-  request schema. FastAPI drops top-level keys the SDK type does not list; the router merges them
-  back from the raw JSON, so `mcp_servers` is still refused and `temperature`, `top_p`, and
-  `top_k` (not in the 1.11 type) are still counted as ignored.
+  request schema. FastAPI drops top-level keys the SDK type does not list; the router merges back
+  from the raw JSON only the ones the adapter reads (`RAW_ONLY_PARAMS`), so `mcp_servers` is still
+  refused and `temperature`, `top_p`, and `top_k` (not in the 1.11 type) are still counted as
+  ignored. Any other unlisted key is dropped unread, however deeply it nests.
 - A body FastAPI cannot validate is 400 `invalid_request_error` (`register_validation_format`),
   and so is a `ValidationError` raised while the lazy `messages` iterator is read (the adapter
   reads it), not 422 or 500. A 422 here is only idempotency's `idempotency_conflict`.
@@ -28,11 +29,11 @@ from typing import Any
 from fastapi import APIRouter, FastAPI
 from fastapi import Request as HTTPRequest
 
-from chassis.adapters.anthropic_compat.inbound import AnthropicInbound
+from chassis.adapters.anthropic_compat.inbound import RAW_ONLY_PARAMS, AnthropicInbound
 from chassis.adapters.anthropic_compat.types import ErrorResponse, Message, MessageCreateParams
-from chassis.server.config import ChassisConfig
 from chassis.server.interfaces.errors import INTERFACE_KEY, register_validation_format
 from chassis.server.interfaces.ids import resolve_ids
+from chassis.server.interfaces.limits import live_messages_max
 from chassis.server.interfaces.serve import event_stream_content, serve
 from chassis.server.pipeline import RunPipeline
 
@@ -104,10 +105,8 @@ def _add_route(
     async def messages(body: MessageCreateParams, http: HTTPRequest) -> Any:
         raw = await http.json()  # cached: FastAPI already parsed it
         if live_limits:
-            adapter.messages_max = pipeline.config.spec.limits.messages_max
-        merged: dict[str, Any] = dict(body)
-        if isinstance(raw, dict):
-            merged = {**{k: v for k, v in raw.items() if k not in merged}, **merged}
+            adapter.messages_max = live_messages_max(pipeline.config)
+        merged = _with_raw_only(body, raw)
         return await serve(
             adapter,
             merged,
@@ -120,14 +119,21 @@ def _add_route(
         )
 
 
+def _with_raw_only(body: MessageCreateParams, raw: Any) -> dict[str, Any]:
+    """`body` plus the `RAW_ONLY_PARAMS` the raw JSON sets: keys the adapter reads that the SDK
+    type drops. The parsed body wins; no other raw key is taken."""
+    merged: dict[str, Any] = dict(body)
+    if isinstance(raw, dict):
+        extra = {k: raw[k] for k in RAW_ONLY_PARAMS if k in raw and k not in merged}
+        merged = {**extra, **merged}
+    return merged
+
+
 def mount_anthropic(app: FastAPI) -> None:
     """Add the route to `app` itself, over `app.state.pipeline`, and answer its validation errors
     in the Anthropic shape. On the app's own router, not included: FastAPI 0.141 analyzes an
     included route a second time, and the SDK body type makes each analysis cost.
     """
-    config: ChassisConfig | None = getattr(app.state, "config", None)
-    inbound = AnthropicInbound(
-        messages_max=None if config is None else config.spec.limits.messages_max
-    )
+    inbound = AnthropicInbound(messages_max=live_messages_max(getattr(app.state, "config", None)))
     _add_route(app.router, app.state.pipeline, inbound, live_limits=True)
     register_validation_format(app, inbound)

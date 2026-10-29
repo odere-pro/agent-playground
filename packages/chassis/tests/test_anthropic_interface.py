@@ -13,13 +13,14 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, get_args, get_type_hints
 
 import anthropic
 import httpx
 import httpx2
 import pytest
-from anthropic.types import ErrorResponse, Message
+from anthropic.types import ErrorResponse, Message, MessageCreateParams
+from chassis.adapters.anthropic_compat.inbound import RAW_ONLY_PARAMS, READ_PARAMS
 from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Delta, End, Error, Event, Metrics, Start
 from chassis.core.inbound import public_message
@@ -569,3 +570,29 @@ def test_openapi_declares_the_messages_operation() -> None:
         assert name == "ErrorResponse" and {"type", "error"} <= set(schemas[name]["properties"])
     for header in ("anthropic-version", "x-api-key", "anthropic-beta"):
         assert header not in json.dumps(op.get("parameters", [])), "headers are not parameters"
+
+
+async def test_messages_route_drops_an_unknown_key_when_it_is_deeply_nested() -> None:
+    """An unread key is never walked, so no depth of nesting can raise `RecursionError`."""
+    nested: Any = "x"
+    for _ in range(2000):
+        nested = {"a": nested}
+    app = _app()
+
+    async with _http(app) as client, app.router.lifespan_context(app):
+        res = await client.post(
+            "/v1/messages",
+            content=json.dumps(_body(unknown=nested)),
+            headers={"content-type": "application/json"},
+        )
+
+    assert res.status_code == 200, res.text
+    assert Message.model_validate(res.json()).content[0].type == "text"
+
+
+def test_raw_only_params_are_the_read_keys_when_the_sdk_type_drops_them() -> None:
+    """The router merges back exactly the keys the adapter reads and `MessageCreateParams` drops."""
+    listed = set().union(*(get_type_hints(member) for member in get_args(MessageCreateParams)))
+
+    assert READ_PARAMS - listed == RAW_ONLY_PARAMS
+    assert sorted(RAW_ONLY_PARAMS) == ["mcp_servers", "temperature", "top_k", "top_p"]
