@@ -72,6 +72,7 @@ from starlette.responses import JSONResponse, StreamingResponse
 from starlette.responses import Response as HTTPResponse
 
 from chassis.adapters.ai_marking import MARKING_OPTION
+from chassis.core.envelope import Request
 from chassis.core.events import Error, Event
 from chassis.core.inbound import (
     InboundAdapter,
@@ -176,6 +177,48 @@ async def serve[BodyT](
     if pipeline.config.spec.governance.marking:  # PoC-8: the body field (`adapters.ai_marking`)
         options[MARKING_OPTION] = True
     meta = ReplyMeta(ids.ids, pipeline.served, int(time.time()), options=options)
+    request = _request_or_refuse(adapter, body, headers, meta, pipeline, ids)
+    if isinstance(request, HTTPResponse):
+        return request
+    begun = await _begin_idempotency(adapter, request, meta, pipeline, ids)
+    if isinstance(begun, HTTPResponse):
+        return begun
+    request, claim = begun
+    opened = await _open_or_refuse(adapter, request, headers, meta, pipeline, ids, claim)
+    if isinstance(opened, HTTPResponse):
+        return opened
+    run = opened
+    meta = meta.for_request(run.request)
+    ending = _Ending(pipeline, run, claim)
+    try:
+        return await _answer(
+            adapter,
+            run,
+            meta,
+            pipeline,
+            ending,
+            errors_as_http=errors_as_http,
+            ignored=ignored,
+            disconnected=disconnected,
+        )
+    except Exception as exc:  # never Starlette's plain 500: an SDK would run the agent again
+        return await _internal_error(adapter, run, meta, pipeline, ending, exc)
+    except BaseException:
+        run.close()
+        await asyncio.shield(ending.failed())
+        raise
+
+
+def _request_or_refuse[BodyT](
+    adapter: InboundAdapter[BodyT],
+    body: BodyT,
+    headers: Mapping[str, str],
+    meta: ReplyMeta,
+    pipeline: RunPipeline,
+    ids: ResolvedIds,
+) -> Request | HTTPResponse:
+    """Steps 1 and 2 of the module docstring: the canonical request within `spec.limits`, or the
+    answer when the chassis is not ready or the body is refused."""
     if not pipeline.ready:
         return to_response(adapter.error("not_ready", NOT_READY_MESSAGE, True, meta))
     try:
@@ -183,25 +226,50 @@ async def serve[BodyT](
         enforce_limits(adapter, request, pipeline.config.spec.limits, meta)
     except Refused as refused:
         return to_response(refused.reply)
-    interface = adapter.interface
-    claim: Claim | None = None
+    return request
+
+
+async def _begin_idempotency[BodyT](
+    adapter: InboundAdapter[BodyT],
+    request: Request,
+    meta: ReplyMeta,
+    pipeline: RunPipeline,
+    ids: ResolvedIds,
+) -> tuple[Request, Claim | None] | HTTPResponse:
+    """Step 3 of the module docstring: the request to run and its claim (None with no client
+    key), or the answer when there is nothing to run (a `Refusal`, or a `Replay`)."""
     idempotency = pipeline.idempotency
-    if idempotency.applies(ids.key_from):
-        outcome = await idempotency.begin(request, wait_ms=request.budget.timeout_ms)
-        if isinstance(outcome, Refusal):
-            return to_response(
-                adapter.error(
-                    outcome.code, outcome.message, outcome.retryable, meta.for_request(request)
-                )
+    if not idempotency.applies(ids.key_from):
+        return request, None
+    outcome = await idempotency.begin(request, wait_ms=request.budget.timeout_ms)
+    if isinstance(outcome, Refusal):
+        return to_response(
+            adapter.error(
+                outcome.code, outcome.message, outcome.retryable, meta.for_request(request)
             )
-        if isinstance(outcome, Replay):
-            return _replay(adapter, outcome, meta, pipeline, stream=request.stream)
-        claim = outcome
-        if claim.timeout_ms is not None:  # it waited: only what is left of its own budget
-            budget = request.budget.model_copy(update={"timeout_ms": claim.timeout_ms})
-            request = request.model_copy(update={"budget": budget})
+        )
+    if isinstance(outcome, Replay):
+        return _replay(adapter, outcome, meta, pipeline, stream=request.stream)
+    if outcome.timeout_ms is not None:  # it waited: only what is left of its own budget
+        budget = request.budget.model_copy(update={"timeout_ms": outcome.timeout_ms})
+        request = request.model_copy(update={"budget": budget})
+    return request, outcome
+
+
+async def _open_or_refuse[BodyT](
+    adapter: InboundAdapter[BodyT],
+    request: Request,
+    headers: Mapping[str, str],
+    meta: ReplyMeta,
+    pipeline: RunPipeline,
+    ids: ResolvedIds,
+    claim: Claim | None,
+) -> Run | HTTPResponse:
+    """Step 4 of the module docstring: the opened run, or 409 `trace_id_in_use`. When no run
+    opens, the claim is released."""
+    interface = adapter.interface
     try:
-        run = open_run(
+        return open_run(
             pipeline,
             request,
             interface=interface,
@@ -219,29 +287,23 @@ async def serve[BodyT](
         if claim is not None:
             await claim.release()
         raise
-    meta = meta.for_request(run.request)
-    ending = _Ending(pipeline, run, claim)
-    try:
-        return await _answer(
-            adapter,
-            run,
-            meta,
-            pipeline,
-            ending,
-            errors_as_http=errors_as_http,
-            ignored=ignored,
-            disconnected=disconnected,
-        )
-    except Exception as exc:  # never Starlette's plain 500: an SDK would run the agent again
-        run.close()
-        _log_internal(pipeline, run, exc)
-        await ending.failed()
-        message = public_message(INTERNAL_ERROR)
-        return to_response(adapter.error(INTERNAL_ERROR, message, False, meta))
-    except BaseException:
-        run.close()
-        await asyncio.shield(ending.failed())
-        raise
+
+
+async def _internal_error[BodyT](
+    adapter: InboundAdapter[BodyT],
+    run: Run,
+    meta: ReplyMeta,
+    pipeline: RunPipeline,
+    ending: _Ending,
+    exc: Exception,
+) -> HTTPResponse:
+    """Step 8 of the module docstring: the run is closed, the detail logged, the claim released,
+    and the answer is 500 `internal_error` with the fixed message, not retryable."""
+    run.close()
+    _log_internal(pipeline, run, exc)
+    await ending.failed()
+    message = public_message(INTERNAL_ERROR)
+    return to_response(adapter.error(INTERNAL_ERROR, message, False, meta))
 
 
 class _Ending:
@@ -415,34 +477,45 @@ async def _fenced(events: AsyncGenerator[Event], claim: Claim | None) -> AsyncGe
         return
     async with aclosing(events):
         while not claim.lost:
-            task = asyncio.current_task()
-            fired = False
-
-            def cancel(task: asyncio.Task[Any] | None = task) -> None:
-                nonlocal fired
-                fired = True
-                if task is not None:
-                    task.cancel()
-
-            remove = claim.on_lost(cancel)
             try:
-                event = await anext(events)
+                found = await _next_or_lost(events, claim)
             except StopAsyncIteration:
                 return
-            except asyncio.CancelledError:
-                if not fired:
-                    raise
-                if task is not None:
-                    task.uncancel()
+            if found is None:
                 break
-            finally:
-                remove()
-            if fired:  # the engine swallowed the cancel; the claim is lost all the same
-                if task is not None:
-                    task.uncancel()
-                break
-            yield event
+            yield found
     yield _lost_event()
+
+
+async def _next_or_lost(events: AsyncGenerator[Event], claim: Claim) -> Event | None:
+    """The next event, or None when `claim` was lost while waiting for it. The loss cancels the
+    waiting task; that cancel is taken back (`uncancel`), whether the engine raised it or swallowed
+    it. A cancel from elsewhere goes on. `StopAsyncIteration` goes on when the events end."""
+    task = asyncio.current_task()
+    fired = False
+
+    def cancel() -> None:
+        nonlocal fired
+        fired = True
+        if task is not None:
+            task.cancel()
+
+    remove = claim.on_lost(cancel)
+    try:
+        event = await anext(events)
+    except asyncio.CancelledError:
+        if not fired:
+            raise
+        if task is not None:
+            task.uncancel()
+        return None
+    finally:
+        remove()
+    if fired:  # the engine swallowed the cancel; the claim is lost all the same
+        if task is not None:
+            task.uncancel()
+        return None
+    return event
 
 
 async def _drain(run: Run, claim: Claim | None = None) -> Error | None:

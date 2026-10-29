@@ -27,9 +27,9 @@ from chassis.adapters.openai_compat.types import (
     CompletionCreateParams,
     OpenAIErrorResponse,
 )
-from chassis.server.config import ChassisConfig
 from chassis.server.interfaces.errors import INTERFACE_KEY, register_validation_format
 from chassis.server.interfaces.ids import resolve_ids
+from chassis.server.interfaces.limits import live_messages_max
 from chassis.server.interfaces.serve import event_stream_content, serve
 from chassis.server.pipeline import RunPipeline
 
@@ -93,7 +93,7 @@ def _add_route(
     )
     async def chat_completions(body: CompletionCreateParams, http: HTTPRequest) -> Any:
         if live_limits:
-            adapter.messages_max = pipeline.config.spec.limits.messages_max
+            adapter.messages_max = live_messages_max(pipeline.config)
         return await serve(
             adapter,
             body,
@@ -107,17 +107,11 @@ def _add_route(
         )
 
 
-def _messages_max(app: FastAPI) -> int | None:
-    """`spec.limits.messages_max` of the app's config, or None with no config."""
-    config: ChassisConfig | None = getattr(app.state, "config", None)
-    return None if config is None else config.spec.limits.messages_max
-
-
 def mount_openai(app: FastAPI) -> None:
     """Add the route to `app` itself (its `state.pipeline`) and answer its validation errors in
     OpenAI's shape. On the app's own router, not included: FastAPI 0.141 analyzes an included
     route a second time, and the SDK body type makes each analysis cost (`create_app`'s start-up).
     """
-    adapter = OpenAIInbound(messages_max=_messages_max(app))
+    adapter = OpenAIInbound(messages_max=live_messages_max(getattr(app.state, "config", None)))
     _add_route(app.router, app.state.pipeline, adapter, live_limits=True)
     register_validation_format(app, adapter)

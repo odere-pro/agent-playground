@@ -505,3 +505,28 @@ def test_error_status_type_and_should_retry_per_code(
     assert error.error.message == f"{code}: why"
     assert reply.headers["x-should-retry"] == should_retry
     assert (reply.headers["x-request-id"], reply.headers["x-trace-id"]) == ("r1", "t1")
+
+
+async def test_stream_sends_the_official_frames_when_two_deltas_then_end() -> None:
+    """Two deltas then end: one block opened, two deltas, closed, then the message end."""
+    _, frames = await _stream([Delta(text="a"), Delta(text="b"), End()])
+
+    assert [name for name, _ in frames] == [
+        "message_start",
+        "content_block_start",
+        "content_block_delta",
+        "content_block_delta",
+        "content_block_stop",
+        "message_delta",
+        "message_stop",
+    ]
+
+
+async def test_stream_drops_events_when_they_come_after_end() -> None:
+    """Nothing after `end` is part of the run: no late text, no late error."""
+    late: list[Event] = [Delta(text="late"), Error(code="a2a.timeout", message="x")]
+
+    _, frames = await _stream([Delta(text="a"), End(), *late])
+
+    assert [name for name, _ in frames][-2:] == ["message_delta", "message_stop"]
+    assert [d["delta"]["text"] for n, d in frames if n == "content_block_delta"] == ["a"]
