@@ -11,7 +11,10 @@ handlers. Each reads the matched route's interface; when an adapter was register
   UTF-8, a method the route does not allow) keeps its status and headers (`Allow` on a 405), with
   the body of `adapter.error("invalid_body", <detail>, False, meta)`.
 
-Any other route, native `/v1/run` included, keeps FastAPI's answers: 422 and `{"detail": str}`.
+Any other route, native `/v1/run` included, keeps FastAPI's status codes: 422 for a body that
+fails validation, with each `detail` item cut to `loc`, `msg`, and `type` (`validation_issues`,
+the declared `DetailIssues`; pydantic's `input` and `ctx` would echo the caller's values), and
+FastAPI's own answer to an `HTTPException`.
 """
 
 from __future__ import annotations
@@ -20,13 +23,12 @@ import time
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.exception_handlers import (
-    http_exception_handler,
-    request_validation_exception_handler,
-)
+from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException
 from starlette.requests import Request as HTTPRequest
+from starlette.responses import JSONResponse
 from starlette.responses import Response as HTTPResponse
 
 from chassis.core.inbound import InboundAdapter, Reply, ReplyMeta
@@ -39,6 +41,7 @@ __all__ = [
     "install_validation_errors",
     "register_validation_format",
     "route_interface",
+    "validation_issues",
     "validation_message",
 ]
 
@@ -64,6 +67,19 @@ def validation_message(exc: RequestValidationError) -> str:
     return "; ".join(parts) or "invalid body"
 
 
+ISSUE_KEYS = ("loc", "msg", "type")
+"""The keys of one 422 detail item: `DetailIssues` in `native`. Pydantic's `input` and `ctx`
+are dropped, so the caller's own values are never echoed."""
+
+
+def validation_issues(exc: RequestValidationError) -> list[dict[str, Any]]:
+    """FastAPI's 422 `detail` list with only `loc`, `msg`, and `type` in each item."""
+    return [
+        {key: jsonable_encoder(error[key]) for key in ISSUE_KEYS if key in error}
+        for error in exc.errors()
+    ]
+
+
 def install_validation_errors(app: FastAPI) -> None:
     """Add the handlers once. Done by `mount_interfaces`."""
     if hasattr(app.state, _FORMATS):
@@ -83,7 +99,7 @@ def install_validation_errors(app: FastAPI) -> None:
         assert isinstance(exc, RequestValidationError)
         adapter = format_of(http)
         if adapter is None:
-            return await request_validation_exception_handler(http, exc)
+            return JSONResponse({"detail": validation_issues(exc)}, status_code=422)
         return to_response(invalid_body(adapter, http, validation_message(exc)))
 
     async def on_http(http: HTTPRequest, exc: Exception) -> HTTPResponse:
