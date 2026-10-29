@@ -41,6 +41,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from chassis.adapters.ai_marking import marked, with_marking
 from chassis.adapters.openai_compat.messages import (
     UnsupportedMessage,
     is_empty,
@@ -344,7 +345,8 @@ class OpenAIInbound:
             usage=_usage(response.metrics),
         )
         headers = {**_id_headers(meta.ids), "x-chassis-status": response.status}
-        return Reply(200, headers, completion.model_dump(mode="json", exclude_unset=True))
+        body = with_marking(completion.model_dump(mode="json", exclude_unset=True), meta)
+        return Reply(200, headers, body)
 
     def stream(self, events: AsyncIterator[Event], meta: ReplyMeta) -> StreamReply:
         include_usage = meta.options.get(INCLUDE_USAGE) is True
@@ -451,4 +453,7 @@ def _chunk_frame(
         choices=choices,
         **fields,
     )
-    return f"data: {chunk.model_dump_json(exclude_unset=True)}\n\n"
+    if not marked(meta):
+        return f"data: {chunk.model_dump_json(exclude_unset=True)}\n\n"
+    body = with_marking(chunk.model_dump(mode="json", exclude_unset=True), meta)
+    return f"data: {json.dumps(body, separators=(',', ':'), ensure_ascii=False)}\n\n"

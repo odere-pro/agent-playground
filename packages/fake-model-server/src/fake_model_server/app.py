@@ -12,6 +12,7 @@ import time
 import uuid
 from collections import deque
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -72,6 +73,69 @@ def _tool_calls(rule: Rule, offered: list[str]) -> list[dict[str, Any]] | None:
     ]
 
 
+@dataclass(frozen=True)
+class _Turn:
+    """What one chat call answers: the values every body and chunk of the reply share."""
+
+    completion_id: str
+    created: int
+    model: str
+    reply: str
+    tool_calls: list[dict[str, Any]] | None
+    usage: dict[str, int]
+
+    @property
+    def finish(self) -> str:
+        return "tool_calls" if self.tool_calls else "stop"
+
+
+def _usage(rule: Rule) -> dict[str, int]:
+    return {
+        "prompt_tokens": rule.usage.prompt_tokens,
+        "completion_tokens": rule.usage.completion_tokens,
+        "total_tokens": rule.usage.prompt_tokens + rule.usage.completion_tokens,
+    }
+
+
+def _completion_body(turn: _Turn) -> dict[str, Any]:
+    message: dict[str, Any] = {"role": "assistant", "content": turn.reply or None}
+    if turn.tool_calls:
+        message["tool_calls"] = turn.tool_calls
+    return {
+        "id": turn.completion_id,
+        "object": "chat.completion",
+        "created": turn.created,
+        "model": turn.model,
+        "choices": [{"index": 0, "message": message, "finish_reason": turn.finish}],
+        "usage": turn.usage,
+    }
+
+
+def _chunk(
+    turn: _Turn, delta: dict[str, Any], finish_reason: str | None = None, **extra: Any
+) -> str:
+    payload = {
+        "id": turn.completion_id,
+        "object": "chat.completion.chunk",
+        "created": turn.created,
+        "model": turn.model,
+        "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+        **extra,
+    }
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+async def _stream(turn: _Turn) -> AsyncIterator[str]:
+    yield _chunk(turn, {"role": "assistant", "content": ""})
+    for piece in _pieces(turn.reply):
+        yield _chunk(turn, {"content": piece})
+    if turn.tool_calls:
+        streamed = [{"index": i, **tc} for i, tc in enumerate(turn.tool_calls)]
+        yield _chunk(turn, {"tool_calls": streamed})
+    yield _chunk(turn, {}, turn.finish, usage=turn.usage)
+    yield "data: [DONE]\n\n"
+
+
 MAX_CALLS = 1000
 """suggested: how many request bodies `app.state.calls` keeps."""
 
@@ -97,58 +161,21 @@ def create_app(script: Script, *, max_calls: int = MAX_CALLS) -> FastAPI:
     async def chat(request: Request) -> Any:
         body = await request.json()
         messages: list[dict[str, Any]] = body.get("messages", [])
-        model = body.get("model") or script.model
         app.state.calls.append(body)
         app.state.calls_total += 1
         rule = script.pick(messages, body.get("model"))
         if rule.error is not None:
             raise HTTPException(status_code=rule.error.status, detail=rule.error.message)
-        completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
-        created = int(time.time())
-        usage = {
-            "prompt_tokens": rule.usage.prompt_tokens,
-            "completion_tokens": rule.usage.completion_tokens,
-            "total_tokens": rule.usage.prompt_tokens + rule.usage.completion_tokens,
-        }
-        tool_calls = _tool_calls(rule, _offered_names(body))
-        finish = "tool_calls" if tool_calls else "stop"
-
+        turn = _Turn(
+            completion_id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
+            created=int(time.time()),
+            model=body.get("model") or script.model,
+            reply=rule.reply,
+            tool_calls=_tool_calls(rule, _offered_names(body)),
+            usage=_usage(rule),
+        )
         if not body.get("stream"):
-            message: dict[str, Any] = {"role": "assistant", "content": rule.reply or None}
-            if tool_calls:
-                message["tool_calls"] = tool_calls
-            return JSONResponse(
-                {
-                    "id": completion_id,
-                    "object": "chat.completion",
-                    "created": created,
-                    "model": model,
-                    "choices": [{"index": 0, "message": message, "finish_reason": finish}],
-                    "usage": usage,
-                }
-            )
-
-        def chunk(delta: dict[str, Any], finish_reason: str | None = None, **extra: Any) -> str:
-            payload = {
-                "id": completion_id,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "model": model,
-                "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
-                **extra,
-            }
-            return f"data: {json.dumps(payload)}\n\n"
-
-        async def stream() -> AsyncIterator[str]:
-            yield chunk({"role": "assistant", "content": ""})
-            for piece in _pieces(rule.reply):
-                yield chunk({"content": piece})
-            if tool_calls:
-                streamed = [{"index": i, **tc} for i, tc in enumerate(tool_calls)]
-                yield chunk({"tool_calls": streamed})
-            yield chunk({}, finish, usage=usage)
-            yield "data: [DONE]\n\n"
-
-        return StreamingResponse(stream(), media_type="text/event-stream")
+            return JSONResponse(_completion_body(turn))
+        return StreamingResponse(_stream(turn), media_type="text/event-stream")
 
     return app

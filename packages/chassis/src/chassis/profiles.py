@@ -13,6 +13,10 @@ builds `LiteLLMModel` from the environment. Every other adapter that is not buil
 `AdapterNotAvailable` and names the PoC that adds it. suggested: the `cloud` profile refuses a
 `fake` or `memory` adapter (`AdapterNotAllowed`); `local` allows any mix.
 
+The lanes and the LiteLLM model are lazy too: `inprocess` and `sidecar` are `lazy` entries, and
+`_litellm_from_env` imports `chassis.adapters.litellm` inside the call so its error text stays
+its own. Importing `chassis.profiles` loads no A2A or LiteLLM adapter module.
+
 PoC-4 adapters are lazy (`lazy`): the factory imports its module only when the adapter is named,
 so an unused SDK (valkey, aiokafka, minio) is never loaded. A module that is not there yet names
 PoC-4; an adapter whose `from_env` raises `LookupError` is "not configured".
@@ -36,8 +40,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from chassis.adapters.a2a import InProcessConnector, SidecarConnector
-from chassis.adapters.litellm import LiteLLMModel
 from chassis.fakes.config import InMemoryConfig
 from chassis.fakes.evaluator import ScriptedEvaluator
 from chassis.fakes.feedback import InMemoryFeedback
@@ -167,6 +169,8 @@ def _litellm_from_env(agent: str | None = None) -> object:
     """`LITELLM_BASE_URL` picks the router; `LITELLM_API_KEY` is optional at build time.
     `agent` becomes the `agent:<name>` tag on every router call.
     """
+    from chassis.adapters.litellm import LiteLLMModel  # lazy: loaded only when it is named
+
     try:
         return LiteLLMModel.from_env(agent=agent)
     except LookupError as exc:
@@ -213,8 +217,10 @@ REGISTRY: dict[str, dict[str, Factory | str]] = {
         "vllm": "backlog 012 H-3",
     },
     "engine": {
-        "inprocess": InProcessConnector,
-        "sidecar": SidecarConnector,
+        "inprocess": lazy(
+            "engine", "inprocess", "chassis.adapters.a2a:InProcessConnector", "PoC-1"
+        ),
+        "sidecar": lazy("engine", "sidecar", "chassis.adapters.a2a:SidecarConnector", "PoC-2"),
         "remote": lazy("engine", "remote", "chassis.adapters.a2a.remote:RemoteConnector", "PoC-5"),
     },
     "config": {

@@ -19,7 +19,7 @@ It binds to loopback by default (`--host`).
 
 ## Classifiers
 
-- `prompt-guard`: `meta-llama/Llama-Prompt-Guard-2-86M` with transformers. It reads 512 tokens, so text is cut into 512-token windows that overlap. A text is blocked when any window scores at or over the threshold (suggested: 0.5). The model is gated on Hugging Face.
+- `prompt-guard`: `meta-llama/Llama-Prompt-Guard-2-86M` with transformers. It reads 512 tokens, so text is cut into 512-token windows, 64 tokens shared (`WINDOW`, `OVERLAP` in `classifier.py`). The chassis's `split_for_classifier` (384 and 32) is not used here. A text is blocked when any window scores at or over the threshold (suggested: 0.5). The model is gated on Hugging Face.
 - `pattern`: a regex stand-in for offline tests. It windows on words (512 words, 64 shared). It is not a model, and its numbers say nothing about Prompt Guard 2.
 
 The secret check is regex (`secret_scan.py`), on any text, in both modes.

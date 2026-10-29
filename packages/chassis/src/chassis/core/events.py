@@ -7,6 +7,7 @@ and `remote` lanes and in memory in `inprocess`. The published JSON Schema lives
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
@@ -68,16 +69,27 @@ Event = Annotated[Start | Delta | ToolCall | Metrics | End | Error, Field(discri
 _ADAPTER: TypeAdapter[Event] = TypeAdapter(Event)
 
 
+_VERSION_TEXT_CAP = 40
+"""suggested: the most characters of an unknown `schema_version` that an error message repeats."""
+
+
 class UnsupportedSchemaVersion(ValueError):
     """The event names a schema version this chassis does not accept."""
 
 
 def parse_event(data: dict[str, Any]) -> Event:
-    """Validate one event from the wire. Refuses an unknown schema version with a clear error."""
+    """Validate one event from the wire. Refuses an unknown schema version with a clear error.
+
+    A value that is not a JSON object (a mapping) raises `TypeError`, never `AttributeError`; the
+    idempotency replay and the A2A server already treat `TypeError` as a bad event. The version in
+    the error text is cut to `_VERSION_TEXT_CAP` characters.
+    """
+    if not isinstance(data, Mapping):
+        raise TypeError(f"event must be a JSON object, not {type(data).__name__}")
     version = data.get("schema_version", SCHEMA_VERSION)
     if version not in SUPPORTED_SCHEMA_VERSIONS:
         raise UnsupportedSchemaVersion(
-            f"event schema version {version!r} is not supported; "
+            f"event schema version {repr(version)[:_VERSION_TEXT_CAP]} is not supported; "
             f"this chassis accepts {', '.join(SUPPORTED_SCHEMA_VERSIONS)}"
         )
     return _ADAPTER.validate_python(data)

@@ -13,8 +13,9 @@ way out, after the workload's events came back and were mapped, so a workload ca
 flags: any header of the same name the response already holds is dropped first. The config is read
 per request from `state.config`, so the flags follow the config the chassis serves now. Nothing in
 the envelope, the events, or the wire bodies changes (the contract-v5 surface is frozen); the
-metadata field in the body and the flag on result events that 023 C-5 also asks for are left to a
-later change.
+PoC-8 adds the rest of 023 C-5: `Access-Control-Expose-Headers` names the two flags on every
+marked response; the body field is `chassis.adapters.ai_marking` (OpenAI and Anthropic); the flag
+on result events is the CloudEvent extension `aigenerated` (`chassis.server.results`).
 """
 
 from __future__ import annotations
@@ -48,6 +49,23 @@ RUN_PATHS: tuple[str, ...] = ("/v1/run", "/v1/chat/completions", "/v1/messages",
 
 _NAMES = frozenset({AI_GENERATED_HEADER.encode(), DISCLOSURE_HEADER.encode()})
 _FLAGS = [(AI_GENERATED_HEADER.encode(), b"true"), (DISCLOSURE_HEADER.encode(), b"true")]
+EXPOSE_HEADER = b"access-control-expose-headers"
+"""PoC-8: names the two flags, so a browser client of a CORS-enabled ingress may read them."""
+_EXPOSED = ("X-AI-Generated", "X-AI-Disclosure-Required")
+
+
+def _expose(headers: list[tuple[bytes, bytes]]) -> list[tuple[bytes, bytes]]:
+    """`headers` with the flags added to `Access-Control-Expose-Headers` (merged, one header)."""
+    names: list[str] = []
+    rest = []
+    for key, value in headers:
+        if bytes(key).lower() == EXPOSE_HEADER:
+            names.extend(n.strip() for n in bytes(value).decode("latin-1").split(",") if n.strip())
+        else:
+            rest.append((key, value))
+    lower = {n.lower() for n in names}
+    names.extend(n for n in _EXPOSED if n.lower() not in lower)
+    return [*rest, (EXPOSE_HEADER, ", ".join(names).encode("latin-1"))]
 
 
 def is_run_path(path: str) -> bool:
@@ -83,7 +101,7 @@ class MarkOutputs:
                 headers = [
                     (k, v) for k, v in message.get("headers", ()) if bytes(k).lower() not in _NAMES
                 ]
-                message = {**message, "headers": [*headers, *_FLAGS]}
+                message = {**message, "headers": _expose([*headers, *_FLAGS])}
             await send(message)
 
         await self.app(scope, receive, marked)

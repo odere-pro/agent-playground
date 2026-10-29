@@ -86,3 +86,19 @@ uv run python -m bakeoff.langfuse_datasets --report /tmp/evals/deepeval-echo-pyt
 ```
 
 `evaltrial` starts the stack per engine (default `echo-python,echo-langgraph`, sidecar lane) with the golden model script and a scripted judge, runs the tool (configs in `evals/`), and writes `<tool>-<engine>.json` (`eval-report.v0`) and `<tool>-<engine>.raw.json`. Results and the pick: `pocs/poc-07-cross-cutting-decisions/notes/2026-10-28-eval-tool-trial.md`.
+
+## PoC-8: the eval gate and the red team in CI
+
+```bash
+make evals               # DeepEval on the 50 gate cases, every engine and lane, then the gate
+make evals-regression    # the drop-facts business logic must fail the gate (exit 1)
+make redteam             # the PoC-7 red-team set, every engine, lane, and guardrail stack
+uv run python -m bakeoff.evalrun --engine echo-python --lane sidecar --logic drop-facts --out /tmp/e
+uv run python -m bakeoff.evalgate --report /tmp/e --engine echo-python --lane sidecar
+```
+
+- Gate set: `golden/cases.yaml` (the PoC-7 20) plus `golden/cases-gate.yaml` (30 more): 40 labelled `pass`, 10 `fail`. The model scripts per logic and the judge are generated (`golden-gate*.yaml`, `generate --check`).
+- `evalrun` writes `deepeval-<engine>-<lane>[-<logic>].json` (`eval-report.v0`, with `meta.lane` and `meta.logic`). Engines that read a script another way get it rewritten (`dialects.py`: Claude CLI tool-name prefix, smolagents code blocks).
+- `evalgate` checks each report against `evals/gate/baseline.json`: the pass rate per engine and lane, the `must_pass` ids, and the `must_fail` ids (wrong answers on purpose: one that passes means a check stopped checking). Exit 0 pass, 1 regression or missing report, 2 bad input. `--record` rewrites the baseline from real reports.
+- `redteam` starts each stack with `guardrails: litellm` (the LiteLLM stub and the pattern stand-in, on the fake model's base URL) or `guardrails: fake`, and `tools: mcp` against an MCP tool server in a thread. Stop rules and the baseline format: `chassis_contracts.redteam.live`. Baseline: `evals/redteam/baseline.json`.
+- `evalcheck` scores the gate set offline (no engine, no eval tool) for the tests; it agrees with DeepEval on every PoC-7 case and assertion.

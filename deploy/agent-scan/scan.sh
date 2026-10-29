@@ -4,8 +4,10 @@
 #   deploy/agent-scan/scan.sh            # reports go to $AGENT_SCAN_OUT (default /tmp/agent-scan)
 #
 # Two runs of one image (Dockerfile here), each with a read-only root, no capabilities, no new
-# privileges, uid 65534, a small noexec /tmp, PID and memory limits, and the repo mounted
-# read-only at /repo. No repo secret and no env file goes in.
+# privileges, uid 65534, a small noexec /tmp, and PID and memory limits. Only the scan inputs are
+# mounted, read-only, at their paths under /repo: deploy/agent-scan (mcp.json, the launcher) and
+# the src folders of fake-mcp-server and code-runner. Never the whole checkout, so no git-ignored
+# file (a generated .env, for one) is in reach. No repo secret and no env file goes in.
 #
 # 1. inspect: starts each server in mcp.json over stdio and lists its tools, prompts, and
 #    resources. --network=none and no token: the repo's server code never runs with either.
@@ -37,7 +39,10 @@ DOCKER_BUILDKIT=1 docker build -q -f "$repo/deploy/agent-scan/Dockerfile" -t "$i
 echo "agent-scan: inspect (no network, no token) -> $out/inspect.json"
 docker run --rm --network=none --read-only --cap-drop=ALL --security-opt no-new-privileges \
   --user 65534:65534 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --pids-limit=256 --memory=1g \
-  -v "$repo:/repo:ro" -w /repo --hostname agent-scan \
+  -v "$repo/deploy/agent-scan:/repo/deploy/agent-scan:ro" \
+  -v "$repo/packages/fake-mcp-server/src:/repo/packages/fake-mcp-server/src:ro" \
+  -v "$repo/packages/code-runner/src:/repo/packages/code-runner/src:ro" \
+  -w /repo --hostname agent-scan \
   "$image" inspect --json --no-skills --dangerously-run-mcp-servers \
   --suppress-mcpserver-io true --server-timeout 30 "$config" >"$out/inspect.json"
 
@@ -50,7 +55,10 @@ echo "agent-scan: scan (egress for api.snyk.io, SNYK_TOKEN) -> $out/scan.json"
 rc=0
 docker run --rm --network=bridge --read-only --cap-drop=ALL --security-opt no-new-privileges \
   --user 65534:65534 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --pids-limit=256 --memory=1g \
-  -v "$repo:/repo:ro" -w /repo --hostname agent-scan -e SNYK_TOKEN \
+  -v "$repo/deploy/agent-scan:/repo/deploy/agent-scan:ro" \
+  -v "$repo/packages/fake-mcp-server/src:/repo/packages/fake-mcp-server/src:ro" \
+  -v "$repo/packages/code-runner/src:/repo/packages/code-runner/src:ro" \
+  -w /repo --hostname agent-scan -e SNYK_TOKEN \
   "$image" scan --json --ci --no-skills --dangerously-run-mcp-servers \
   --suppress-mcpserver-io true --server-timeout 30 "$config" >"$out/scan.json" || rc=$?
 echo "agent-scan: scan exit code $rc"

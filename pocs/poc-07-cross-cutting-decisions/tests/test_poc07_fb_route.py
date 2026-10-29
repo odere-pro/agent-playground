@@ -20,6 +20,7 @@ from poc07_fb_harness import chassis, client, fake_langfuse, run
 
 
 async def test_poc07_fb_a_repeat_is_one_score_on_the_trace() -> None:
+    """Feedback scope: "onto the call's trace"; a repeat is one score, not two."""
     fake = fake_langfuse()
     async with client(chassis(fake)) as http:
         answer = await run(http)
@@ -35,6 +36,7 @@ async def test_poc07_fb_a_repeat_is_one_score_on_the_trace() -> None:
 
 
 async def test_poc07_fb_an_unknown_request_id_is_404() -> None:
+    """Feedback scope: "onto the call's trace"; an unknown request id is 404, no score."""
     fake = fake_langfuse()
     async with client(chassis(fake)) as http:
         answer = await http.post("/v1/feedback", json={"request_id": "never-ran", "score": 1})
@@ -44,6 +46,7 @@ async def test_poc07_fb_an_unknown_request_id_is_404() -> None:
 
 
 async def test_poc07_fb_a_second_replica_sharing_only_state_takes_the_feedback() -> None:
+    """Feedback scope: "onto the call's trace"; a replica sharing only state finds it."""
     fake, shared = fake_langfuse(), InMemoryState()
     one, two = chassis(fake, state=shared), chassis(fake, state=shared)
     async with client(one) as http_one:
@@ -59,6 +62,7 @@ async def test_poc07_fb_a_second_replica_sharing_only_state_takes_the_feedback()
 
 
 async def test_poc07_fb_the_event_is_published_redacted_and_valid() -> None:
+    """Feedback scope: "a new event `agents.feedback.received.v1`", redacted and valid."""
     fake, bus = fake_langfuse(), InMemoryBus()
     app = chassis(fake, bus=bus, events=True)
     async with client(app) as http:

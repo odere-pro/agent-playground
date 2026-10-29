@@ -13,7 +13,10 @@ This server never rewrites a text, so it answers `NONE` or `BLOCKED`.
 `checks` (suggested; from the guardrail's params in LiteLLM's config) picks what runs: `injection`
 (the `Classifier`, over its windows; blocked at or over `threshold`) and `secrets` (regex, any
 match). Both by default. `blocked_reason` starts with the reason (`prompt_injection`, `secret`) and
-never holds the text.
+never holds the text or a score; the score is logged on the server.
+
+Both POST routes refuse more than `MAX_TEXTS` texts or `MAX_TOTAL_CHARS` characters with 413, and
+answer a fixed 503 when the classifier raises. A 422 names the field, never the value sent.
 
 `POST /v1/check` (`{"text", "input_type"?, "checks"?}` -> `{"allowed", "reasons"}`) is a
 convenience for a caller that is not LiteLLM (a smoke test, the red-team runner's report).
@@ -22,20 +25,32 @@ convenience for a caller that is not LiteLLM (a smoke test, the red-team runner'
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 from guardrail_server.classifier import Classifier
 from guardrail_server.secret_scan import find_secret
 
-__all__ = ["GENERIC_PATH", "THRESHOLD", "create_app"]
+__all__ = ["GENERIC_PATH", "MAX_TEXTS", "MAX_TOTAL_CHARS", "THRESHOLD", "create_app"]
+
+log = logging.getLogger("guardrail_server")
 
 GENERIC_PATH = "/beta/litellm_basic_guardrail_api"
 THRESHOLD = 0.5
 """suggested: the injection probability that blocks."""
+MAX_TEXTS = 256
+"""suggested: texts in one request. The chassis sends one per call; LiteLLM one per message."""
+MAX_TOTAL_CHARS = 4 * 1024 * 1024
+"""suggested: characters over all texts. Admits the chassis's 1 MiB input with room for history."""
+TOO_LARGE = "guardrail request too large"
+UNAVAILABLE = "guardrail classifier unavailable"
 
 Check = Literal["injection", "secrets"]
 DEFAULT_CHECKS: tuple[Check, ...] = ("injection", "secrets")
@@ -76,9 +91,34 @@ class CheckResponse(BaseModel):
     reasons: list[str]
 
 
+def _refuse_if_too_large(texts: list[str]) -> None:
+    """413 when the request has too many texts or too many characters."""
+    if len(texts) > MAX_TEXTS or sum(len(t) for t in texts) > MAX_TOTAL_CHARS:
+        raise HTTPException(status_code=413, detail=TOO_LARGE)
+
+
+async def _validation_error(_: Request, exc: Exception) -> JSONResponse:
+    """FastAPI's 422 without `input` and `ctx`, so a rejected value never comes back."""
+    errors = exc.errors() if isinstance(exc, RequestValidationError) else []
+    detail = [{k: v for k, v in e.items() if k not in ("input", "ctx")} for e in errors]
+    return JSONResponse({"detail": jsonable_encoder(detail)}, status_code=422)
+
+
 def create_app(classifier: Classifier, *, threshold: float = THRESHOLD) -> FastAPI:
     """The server over `classifier`. `threshold` is the injection probability that blocks."""
     app = FastAPI(title="guardrail-server", version="0.1.0")
+    app.add_exception_handler(RequestValidationError, _validation_error)
+
+    async def top_score(text: str) -> float:
+        """The text's highest window score, or a fixed 503 when the classifier raises."""
+        try:
+            chunks = await run_in_threadpool(classifier.chunks, text)
+            scores = await run_in_threadpool(classifier.score, chunks)
+        except Exception as exc:
+            # The type only: an exception message may hold the text.
+            log.error("classifier %s failed: %s", classifier.name, type(exc).__name__)
+            raise HTTPException(status_code=503, detail=UNAVAILABLE) from None
+        return max(scores, default=0.0)
 
     async def reasons_for(texts: list[str], checks: list[Check]) -> list[str]:
         reasons: list[str] = []
@@ -92,16 +132,16 @@ def create_app(classifier: Classifier, *, threshold: float = THRESHOLD) -> FastA
             for text in texts:
                 if not text.strip():
                     continue
-                chunks = await run_in_threadpool(classifier.chunks, text)
-                scores = await run_in_threadpool(classifier.score, chunks)
-                top = max(scores, default=0.0)
+                top = await top_score(text)
                 if top >= threshold:
-                    reasons.append(f"prompt_injection (score {top:.2f}, {classifier.name})")
+                    log.info("prompt_injection: score %.2f (%s)", top, classifier.name)
+                    reasons.append("prompt_injection")
                     break
         return reasons
 
     @app.post(GENERIC_PATH, response_model=GenericResponse, response_model_exclude_none=True)
     async def generic(body: GenericRequest) -> GenericResponse:
+        _refuse_if_too_large(body.texts)
         params = body.additional_provider_specific_params or ProviderParams()
         reasons = await reasons_for(body.texts, params.checks)
         if reasons:
@@ -110,6 +150,7 @@ def create_app(classifier: Classifier, *, threshold: float = THRESHOLD) -> FastA
 
     @app.post("/v1/check", response_model=CheckResponse)
     async def check(body: CheckRequest) -> CheckResponse:
+        _refuse_if_too_large([body.text])
         reasons = await reasons_for([body.text], body.checks)
         return CheckResponse(allowed=not reasons, reasons=[r.split(" ", 1)[0] for r in reasons])
 
