@@ -426,6 +426,11 @@ class Idempotency:
         self.sleep = sleep
         self.renew_sleep = renew_sleep or sleep
 
+    def reload(self, spec: IdempotencySpec) -> None:
+        """Take a reloaded `spec.idempotency`. Only `ttl_s` reloads (`RELOADABLE`); a claim
+        already open reads the new spec from here on."""
+        self.spec = spec
+
     def applies(self, key_from: str) -> bool:
         """True when idempotency is on and the client sent the key (`header` or `body`)."""
         return self.spec.enabled and key_from in ("header", "body")

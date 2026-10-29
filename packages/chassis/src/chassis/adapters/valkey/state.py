@@ -48,13 +48,20 @@ return 1
 
 _ERRORS = (ValkeyError, OSError)
 
+TTL_MS_MAX: Final = 2**62
+"""suggested: the largest `PX`. Far past any real TTL, and below the 64-bit limit Valkey checks
+`now + PX` against, so a TTL Valkey would refuse fails here as `ValueError` instead."""
+
 
 def ttl_ms(ttl_s: float | None) -> int | None:
-    """Seconds to whole milliseconds, rounded up, at least 1. `None` stays `None`."""
+    """Seconds to whole milliseconds, rounded up, at least 1. `None` stays `None`. `ValueError`
+    for a TTL that is not finite, not above 0, or past `TTL_MS_MAX`."""
     if ttl_s is None:
         return None
-    if ttl_s <= 0:
-        raise ValueError("ttl_s must be greater than 0")
+    if not math.isfinite(ttl_s) or ttl_s <= 0:
+        raise ValueError("ttl_s must be a finite number greater than 0")
+    if ttl_s * 1000 > TTL_MS_MAX:
+        raise ValueError(f"ttl_s must be at most {TTL_MS_MAX // 1000}")
     return max(1, math.ceil(ttl_s * 1000))
 
 

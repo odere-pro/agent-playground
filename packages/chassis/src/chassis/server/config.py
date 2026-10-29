@@ -204,20 +204,28 @@ class LimitsSpec(BaseModel):
     uncorrelated_tokens_per_minute: int = Field(default=20_000, ge=0)
 
 
+TTL_S_MAX = 2_592_000
+"""suggested: 30 days, the longest `spec.idempotency.ttl_s`. A finite cap keeps a reloaded
+document from setting `.inf` or a `PX` the store refuses."""
+LEASE_S_MAX = 3_600
+"""suggested: one hour, the longest `spec.idempotency.lease_s`."""
+
+
 class IdempotencySpec(BaseModel):
     """`spec.idempotency` (PoC-4, 018 H-18): the cache of a finished run under a key the client
     sent, in `StatePort`. suggested: every name and default.
     - `enabled: true`. Restart-only.
-    - `ttl_s: 86400`: a cached result lives one day. Reloadable.
-    - `lease_s: 5`: a claim expires 5 s after its owner stops renewing it. Restart-only.
+    - `ttl_s: 86400`: a cached result lives one day. Reloadable. At most 2592000 (30 days).
+    - `lease_s: 5`: a claim expires 5 s after its owner stops renewing it. Restart-only. At most
+      3600 (one hour).
     - `wait_poll_ms: 100`: how often a duplicate in flight checks for the first result.
     - `max_entry_bytes: 1048576`: a bigger result is not cached.
     """
 
     model_config = ConfigDict(extra="forbid")
     enabled: bool = True
-    ttl_s: float = Field(default=86_400, gt=0)
-    lease_s: float = Field(default=5, gt=0)
+    ttl_s: float = Field(default=86_400, gt=0, le=TTL_S_MAX, allow_inf_nan=False)
+    lease_s: float = Field(default=5, gt=0, le=LEASE_S_MAX, allow_inf_nan=False)
     wait_poll_ms: int = Field(default=100, ge=1)
     max_entry_bytes: int = Field(default=1_048_576, ge=1)
 
@@ -428,26 +436,7 @@ RELOADABLE: tuple[str, ...] = (
     "spec.harness.evaluator_sample_rate",
 )
 """The field paths a config reload may change (PoC-4 plan, section 3). A change anywhere else is
-refused with `restart_required` and the last good config stays.
-"""
-RESTART_ONLY: tuple[str, ...] = (
-    "profile",
-    "agent",
-    "spec.trust",
-    "spec.adapters",
-    "spec.engine",
-    "spec.interfaces",
-    "spec.events",
-    "spec.idempotency.enabled",
-    "spec.idempotency.lease_s",
-    "spec.security",
-    "spec.guardrails",
-    "spec.feedback",
-    "spec.observability",
-    "spec.governance",
-)
-"""The field paths the plan names as restart-only. Not the complete list: any path outside
-`RELOADABLE` (for example `spec.idempotency.wait_poll_ms`) is refused too.
+refused with `restart_required` and the last good config stays: every other path is restart-only.
 """
 
 

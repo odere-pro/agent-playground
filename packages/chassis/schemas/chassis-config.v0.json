@@ -458,7 +458,7 @@
     },
     "IdempotencySpec": {
       "additionalProperties": false,
-      "description": "`spec.idempotency` (PoC-4, 018 H-18): the cache of a finished run under a key the client\nsent, in `StatePort`. suggested: every name and default.\n- `enabled: true`. Restart-only.\n- `ttl_s: 86400`: a cached result lives one day. Reloadable.\n- `lease_s: 5`: a claim expires 5 s after its owner stops renewing it. Restart-only.\n- `wait_poll_ms: 100`: how often a duplicate in flight checks for the first result.\n- `max_entry_bytes: 1048576`: a bigger result is not cached.",
+      "description": "`spec.idempotency` (PoC-4, 018 H-18): the cache of a finished run under a key the client\nsent, in `StatePort`. suggested: every name and default.\n- `enabled: true`. Restart-only.\n- `ttl_s: 86400`: a cached result lives one day. Reloadable. At most 2592000 (30 days).\n- `lease_s: 5`: a claim expires 5 s after its owner stops renewing it. Restart-only. At most\n  3600 (one hour).\n- `wait_poll_ms: 100`: how often a duplicate in flight checks for the first result.\n- `max_entry_bytes: 1048576`: a bigger result is not cached.",
       "properties": {
         "enabled": {
           "default": true,
@@ -468,6 +468,7 @@
         "lease_s": {
           "default": 5,
           "exclusiveMinimum": 0,
+          "maximum": 3600,
           "title": "Lease S",
           "type": "number"
         },
@@ -480,6 +481,7 @@
         "ttl_s": {
           "default": 86400,
           "exclusiveMinimum": 0,
+          "maximum": 2592000,
           "title": "Ttl S",
           "type": "number"
         },
