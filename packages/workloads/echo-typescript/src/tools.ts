@@ -11,6 +11,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
+import { log } from "./log.js";
+
 export const DEFAULT_TOOL_URL = "http://127.0.0.1:8090/mcp";
 
 export type Json = Record<string, unknown>;
@@ -74,7 +76,7 @@ export async function listOpenAiTools(opts: McpOptions): Promise<Json[]> {
     toolStats.listFailures += 1;
     const url = opts.url ?? process.env["CHASSIS_TOOL_URL"] ?? DEFAULT_TOOL_URL;
     const why = exc instanceof Error ? exc.message : String(exc);
-    console.warn(`echo-typescript: tool endpoint ${url} unreachable, running without tools: ${why}`);
+    log("warning", "echo_typescript.tools", `tool endpoint ${url} unreachable, running without tools: ${why}`);
     return [];
   }
 }
