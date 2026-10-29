@@ -9,7 +9,7 @@ are read here (`materialize`); a `ValidationError` raised while reading one is 4
 
 - `model` must equal the agent's name, else 404 `not_found_error` (`model_not_found`).
 - The last message must be `role: user`; it is `input.text`, text blocks joined with `"\n"` (the
-  model proxy's rule, `openai_compat.messages.text_of`). Assistant prefill is 400.
+  model proxy's rule, `chat_common.text_of`). Assistant prefill is 400.
 - `system`, a string or text blocks, then any `role: system` messages in order, joined with
   `"\n"`, is `input.data.system`. Earlier `user` and `assistant` turns are `input.data.history`.
   Each is set only when not empty.
@@ -59,10 +59,12 @@ from chassis.adapters.anthropic_compat.types import (
     TextDelta,
     Usage,
 )
-from chassis.adapters.openai_compat.messages import UnsupportedMessage, is_empty, text_of
-from chassis.core.envelope import Budget, Request, Response, TaskInput
+from chassis.adapters.chat_common import UnsupportedMessage, is_empty, text_of
+from chassis.core.envelope import Budget, Request, Response
 from chassis.core.events import Delta, End, Error, Event
 from chassis.core.inbound import (
+    ENGINE_ERROR,
+    NO_END_MESSAGE,
     Ids,
     Interface,
     Refused,
@@ -71,14 +73,22 @@ from chassis.core.inbound import (
     Served,
     StreamReply,
     answer_text,
+    id_headers,
+    over_cap,
     public_message,
     rest_of_answer,
+    retry_header,
+    run_failure,
     status_for,
+    task_input,
+    token_counts,
 )
 
 __all__ = [
     "DROPPED_PARAMS",
     "IGNORED_PARAMS",
+    "RAW_ONLY_PARAMS",
+    "READ_PARAMS",
     "AnthropicInbound",
     "InvalidBody",
     "answer_text",
@@ -113,6 +123,18 @@ _PARAMS = frozenset(
 )
 """Refused top-level params: `unsupported_parameter`. A refused message or block is
 `unsupported_message`."""
+
+READ_PARAMS = IGNORED_PARAMS | frozenset(
+    {"model", "messages", "system", "max_tokens", "stream"}
+    | {"tools", "tool_choice", "mcp_servers", "container", "output_config"}
+)
+"""Every top-level key `to_request` or `ignored` reads. Any other key is never read."""
+
+RAW_ONLY_PARAMS = frozenset({"mcp_servers", "temperature", "top_p", "top_k"})
+"""The keys in `READ_PARAMS` that the 1.11 `MessageCreateParams` does not list, so FastAPI drops
+them: the router merges exactly these back from the raw JSON. `mcp_servers` is refused and the
+other three are counted as ignored. Nothing else is merged, so an unread key, however deep, is
+never walked by `materialize`."""
 
 ErrorKind = Literal[
     "invalid_request_error", "not_found_error", "overloaded_error", "timeout_error", "api_error"
@@ -170,21 +192,12 @@ def _ids_headers(ids: Ids) -> dict[str, str]:
     """The id headers on every answer. The Anthropic SDK reads `request-id` (`_request_id`, an
     error's `request_id`); `x-request-id` is the one every chassis format sends.
     """
-    return {
-        "request-id": ids.request_id,
-        "x-request-id": ids.request_id,
-        "x-trace-id": ids.trace_id,
-    }
+    return {"request-id": ids.request_id, **id_headers(ids)}
 
 
 def _frame(name: str, payload: BaseModel, *, exclude: set[str] | None = None) -> str:
     data = payload.model_dump(mode="json", exclude=exclude)
     return f"event: {name}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
-
-
-def _usage(response: Response) -> tuple[int, int]:
-    metrics = response.metrics
-    return int(metrics.get("input_tokens", 0)), int(metrics.get("output_tokens", 0))
 
 
 def _message(
@@ -204,10 +217,6 @@ def _message(
         stop_sequence=None,
         usage=Usage(input_tokens=usage[0], output_tokens=usage[1]),
     )
-
-
-ENGINE_ERROR = "engine_error"
-NO_END_MESSAGE = "the run ended without an end event"
 
 
 def _error_response(code: str, message: str, status: int, request_id: str | None) -> ErrorResponse:
@@ -248,6 +257,32 @@ class AnthropicInbound:
     def to_request(
         self, body: Mapping[str, Any], headers: Mapping[str, str], *, ids: Ids, served: Served
     ) -> Request:
+        raw = self._read(body, ids, served)
+        try:
+            self._refuse_params(raw)
+            system = self._system(raw.get("system"))
+            text, system_turns, history = self._messages(raw.get("messages"))
+        except UnsupportedMessage as exc:
+            code = "unsupported_parameter" if exc.param in _PARAMS else "unsupported_message"
+            raise self._refused(code, str(exc), ids, served) from None
+        max_tokens = self._check_max_tokens(raw, ids, served)
+        stream = self._check_stream(raw, ids, served)
+        system_parts = [part for part in [system, *system_turns] if part]
+        return Request(
+            request_id=ids.request_id,
+            trace_id=ids.trace_id,
+            idempotency_key=ids.idempotency_key,
+            agent=served.agent,
+            agent_version=served.agent_version,
+            input=task_input(text, system_parts, history),
+            context_ref=None,
+            stream=stream,
+            budget=Budget(max_tokens=max_tokens),
+        )
+
+    def _read(self, body: Mapping[str, Any], ids: Ids, served: Served) -> dict[str, Any]:
+        """The body read into plain values, naming the agent, with at most `messages_max`
+        messages; else `Refused`."""
         try:
             raw = materialize(body)
         except InvalidBody as exc:
@@ -263,42 +298,25 @@ class AnthropicInbound:
                 served,
             )
         messages = raw.get("messages")
-        cap = self.messages_max
-        if cap is not None and isinstance(messages, list) and len(messages) > cap:
-            why = f"messages: {len(messages)} is more than the limit of {cap}"
-            raise self._refused("limit_exceeded", why, ids, served)
-        try:
-            self._refuse_params(raw)
-            system = self._system(raw.get("system"))
-            text, system_turns, history = self._messages(raw.get("messages"))
-        except UnsupportedMessage as exc:
-            code = "unsupported_parameter" if exc.param in _PARAMS else "unsupported_message"
-            raise self._refused(code, str(exc), ids, served) from None
+        if isinstance(messages, list):
+            why = over_cap(len(messages), self.messages_max, "messages")
+            if why is not None:
+                raise self._refused("limit_exceeded", why, ids, served)
+        return raw
+
+    def _check_max_tokens(self, raw: dict[str, Any], ids: Ids, served: Served) -> int:
         max_tokens = raw.get("max_tokens")
         if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens <= 0:
             raise self._refused(
                 "invalid_body", "max_tokens: a positive integer is required", ids, served
             )
+        return max_tokens
+
+    def _check_stream(self, raw: dict[str, Any], ids: Ids, served: Served) -> bool:
         stream = raw.get("stream")
         if stream is not None and not isinstance(stream, bool):
             raise self._refused("invalid_body", "stream: a boolean is required", ids, served)
-        data: dict[str, Any] = {}
-        joined = "\n".join(part for part in [system, *system_turns] if part)
-        if joined:
-            data["system"] = joined
-        if history:
-            data["history"] = history
-        return Request(
-            request_id=ids.request_id,
-            trace_id=ids.trace_id,
-            idempotency_key=ids.idempotency_key,
-            agent=served.agent,
-            agent_version=served.agent_version,
-            input=TaskInput(text=text, data=data),
-            context_ref=None,
-            stream=bool(stream),
-            budget=Budget(max_tokens=max_tokens),
-        )
+        return bool(stream)
 
     def _refused(self, code: str, message: str, ids: Ids, served: Served) -> Refused:
         reply = self.error(code, message, False, ReplyMeta(ids, served, 0))
@@ -367,96 +385,99 @@ class AnthropicInbound:
         with no `error` event) is an HTTP error, as in the OpenAI format.
         """
         if response.status == "error":
-            found = response.output.get("error")
-            if isinstance(found, Mapping):
-                code = str(found.get("code") or ENGINE_ERROR)
-                return self.error(code, public_message(code), False, meta)
-            return self.error(ENGINE_ERROR, NO_END_MESSAGE, False, meta)
-        message = _message(
-            meta, answer_text(response.output), stop_reason="end_turn", usage=_usage(response)
-        )
+            code, why = run_failure(response)
+            return self.error(code, why, False, meta)
+        usage = token_counts(response.metrics)
+        message = _message(meta, answer_text(response.output), stop_reason="end_turn", usage=usage)
         headers = {**_ids_headers(meta.ids), "x-chassis-status": response.status}
         return Reply(200, headers, with_marking(message.model_dump(mode="json"), meta))
 
     def stream(self, events: AsyncIterator[Event], meta: ReplyMeta) -> StreamReply:
-        async def frames() -> AsyncIterator[str]:
-            start = _message(meta, "", stop_reason=None, usage=(0, 0))
-            started = RawMessageStartEvent(type="message_start", message=start).model_dump(
-                mode="json"
-            )
-            started["message"] = with_marking(started["message"], meta)
-            yield f"event: message_start\ndata: {json.dumps(started, separators=(',', ':'))}\n\n"
-            seen: list[Event] = []
-            sent: list[str] = []
-            opened = False
-            ended = False
-
-            def text_frames(text: str) -> list[str]:
-                nonlocal opened
-                out = []
-                if not opened:
-                    opened = True
-                    block = TextBlock(type="text", text="")
-                    out.append(
-                        _frame(
-                            "content_block_start",
-                            RawContentBlockStartEvent(
-                                type="content_block_start", index=0, content_block=block
-                            ),
-                        )
-                    )
-                sent.append(text)
-                delta = TextDelta(type="text_delta", text=text)
-                out.append(
-                    _frame(
-                        "content_block_delta",
-                        RawContentBlockDeltaEvent(type="content_block_delta", index=0, delta=delta),
-                    )
-                )
-                return out
-
-            async for event in events:
-                if ended:
-                    continue  # the run is over; nothing after `end` is part of it
-                seen.append(event)
-                if isinstance(event, Delta) and event.text:
-                    for frame in text_frames(event.text):
-                        yield frame
-                elif isinstance(event, Error):
-                    status = status_for(event.code, event.retryable)
-                    # The fixed text for the code; the run's message stays in the log and span.
-                    message = public_message(event.code)
-                    error = _error_response(event.code, message, status, None)
-                    yield _frame("error", error, exclude={"request_id"})
-                    return
-                elif isinstance(event, End):
-                    ended = True
-            response = await meta.collect(seen)
-            if response.status == "error":  # no `end` and no `error`: the run did not finish
-                status = status_for(ENGINE_ERROR, False)
-                error = _error_response(ENGINE_ERROR, NO_END_MESSAGE, status, None)
-                yield _frame("error", error, exclude={"request_id"})
-                return
-            rest = rest_of_answer(response.output, "".join(sent))
-            if rest:
-                for frame in text_frames(rest):
-                    yield frame
-            if opened:
-                stop = RawContentBlockStopEvent(type="content_block_stop", index=0)
-                yield _frame("content_block_stop", stop)
-            input_tokens, output_tokens = _usage(response)
-            delta = RawMessageDeltaEvent(
-                type="message_delta",
-                delta=MessageDelta(stop_reason="end_turn", stop_sequence=None),
-                usage=MessageDeltaUsage(input_tokens=input_tokens, output_tokens=output_tokens),
-            )
-            yield _frame("message_delta", delta)
-            yield _frame("message_stop", RawMessageStopEvent(type="message_stop"))
-
-        return StreamReply(frames(), _ids_headers(meta.ids))
+        return StreamReply(_frames(events, meta), _ids_headers(meta.ids))
 
     def error(self, code: str, message: str, retryable: bool, meta: ReplyMeta) -> Reply:
         status = status_for(code, retryable)
         body = _error_response(code, message, status, meta.ids.request_id)
-        headers = {**_ids_headers(meta.ids), "x-should-retry": "true" if retryable else "false"}
+        headers = {**_ids_headers(meta.ids), **retry_header(retryable)}
         return Reply(status, headers, body.model_dump(mode="json"))
+
+
+async def _frames(events: AsyncIterator[Event], meta: ReplyMeta) -> AsyncIterator[str]:
+    """The stream (module docstring). A block is open once any text was sent. Events after `end`
+    are read and dropped: the run is over, nothing after it is part of it.
+    """
+    yield _message_start_frame(meta)
+    seen: list[Event] = []
+    sent: list[str] = []
+    ended = False
+    async for event in events:
+        if ended:
+            continue
+        ended = isinstance(event, End)
+        seen.append(event)
+        if isinstance(event, Delta) and event.text:
+            for frame in _text_frames(bool(sent), event.text):
+                yield frame
+            sent.append(event.text)
+        elif isinstance(event, Error):
+            # The fixed text for the code; the run's message stays in the log and span.
+            yield _error_frame(event.code, public_message(event.code), event.retryable)
+            return
+    response = await meta.collect(seen)
+    if response.status == "error":  # no `end` and no `error`: the run did not finish
+        yield _error_frame(ENGINE_ERROR, NO_END_MESSAGE, False)
+        return
+    rest = rest_of_answer(response.output, "".join(sent))
+    if rest:
+        for frame in _text_frames(bool(sent), rest):
+            yield frame
+        sent.append(rest)
+    for frame in _closing_frames(bool(sent), token_counts(response.metrics)):
+        yield frame
+
+
+def _message_start_frame(meta: ReplyMeta) -> str:
+    """`message_start` with an empty message; it carries the AI marking when on (PoC-8)."""
+    start = _message(meta, "", stop_reason=None, usage=(0, 0))
+    started = RawMessageStartEvent(type="message_start", message=start).model_dump(mode="json")
+    started["message"] = with_marking(started["message"], meta)
+    return f"event: message_start\ndata: {json.dumps(started, separators=(',', ':'))}\n\n"
+
+
+def _start_frame() -> str:
+    """`content_block_start` of the one text block, index 0."""
+    block = TextBlock(type="text", text="")
+    start = RawContentBlockStartEvent(type="content_block_start", index=0, content_block=block)
+    return _frame("content_block_start", start)
+
+
+def _text_frames(opened: bool, text: str) -> list[str]:
+    """One `content_block_delta` for `text`, after `content_block_start` when no block is open."""
+    delta = TextDelta(type="text_delta", text=text)
+    frame = _frame(
+        "content_block_delta",
+        RawContentBlockDeltaEvent(type="content_block_delta", index=0, delta=delta),
+    )
+    return [frame] if opened else [_start_frame(), frame]
+
+
+def _closing_frames(opened: bool, usage: tuple[int, int]) -> list[str]:
+    """`content_block_stop` when a block is open, `message_delta` with `usage`, `message_stop`."""
+    delta = RawMessageDeltaEvent(
+        type="message_delta",
+        delta=MessageDelta(stop_reason="end_turn", stop_sequence=None),
+        usage=MessageDeltaUsage(input_tokens=usage[0], output_tokens=usage[1]),
+    )
+    stop = RawContentBlockStopEvent(type="content_block_stop", index=0)
+    closing = [_frame("content_block_stop", stop)] if opened else []
+    return [
+        *closing,
+        _frame("message_delta", delta),
+        _frame("message_stop", RawMessageStopEvent(type="message_stop")),
+    ]
+
+
+def _error_frame(code: str, message: str, retryable: bool) -> str:
+    """`event: error` mid-stream: the error body with no `request_id`."""
+    error = _error_response(code, message, status_for(code, retryable), None)
+    return _frame("error", error, exclude={"request_id"})
