@@ -322,15 +322,32 @@ class FeedbackSpec(BaseModel):
     score_name: str = "user-feedback"
 
 
+class ModelPrice(BaseModel):
+    """One route's price in USD per million tokens (PoC-8). suggested: the unit. LiteLLM's own
+    spend stays the bill; this is the dashboard's estimate."""
+
+    model_config = ConfigDict(extra="forbid")
+    input_per_mtok: float = Field(default=0, ge=0)
+    output_per_mtok: float = Field(default=0, ge=0)
+
+
 class ObservabilitySpec(BaseModel):
     """`spec.observability` (PoC-7, 014 H-7). suggested: every name and default. Restart-only.
 
     - `session_header: x-session-id`: the request header whose value is the session id on spans
       and in baggage. The user id is the caller's `Principal.subject`, never a header.
+    - `log_level: info` (PoC-8): the level of the chassis's JSON log lines (`chassis.logs`).
+    - `metrics_scope: null` (PoC-8): the scope `GET /metrics` needs. Unset, a scraper needs no
+      token, as for `/health`; set, the caller needs a valid token with that scope.
+    - `prices` (PoC-8): USD per million tokens per model route, for
+      `chassis_model_cost_microusd_total`. A route with no price counts no cost.
     """
 
     model_config = ConfigDict(extra="forbid")
     session_header: str = "x-session-id"
+    log_level: Literal["debug", "info", "warning", "error"] = "info"
+    metrics_scope: str | None = None
+    prices: dict[str, ModelPrice] = Field(default_factory=dict)
 
 
 RiskClass = Literal["minimal", "limited", "high"]

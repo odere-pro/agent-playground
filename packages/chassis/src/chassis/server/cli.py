@@ -24,6 +24,10 @@ The chassis handles SIGTERM and SIGINT itself (`chassis.server.lifecycle`): `/re
 once, the public listener closes after `--drain-delay-s` (suggested: 5), in-flight runs get up to
 `--drain-timeout-s` (suggested: 30), and the proxy listeners stop last. A second signal exits at
 once.
+
+Logs (PoC-8): one JSON object per line on stderr, at `spec.observability.log_level`
+(`chassis.logs.configure_logging`). uvicorn gets no log config of its own (`log_config=None`), so
+its lines take the same format.
 """
 
 from __future__ import annotations
@@ -38,6 +42,7 @@ from typing import NamedTuple
 
 import uvicorn
 
+from chassis.logs import configure_logging
 from chassis.server.app import create_app
 from chassis.server.config import ChassisConfig, load_config
 from chassis.server.lifecycle import (
@@ -182,6 +187,7 @@ def build_all(args: argparse.Namespace) -> Servers:
     server when `--remote-proxy-host` is given (neither proxy has a lifespan).
     """
     config = load_config(args.config)
+    configure_logging(agent=config.agent.name, level=config.spec.observability.log_level)
     public_app = create_app(config)
     proxy_app = create_proxy_app(public_app)
     remote: uvicorn.Server | None = None
@@ -195,6 +201,7 @@ def build_all(args: argparse.Namespace) -> Servers:
                 host=args.remote_proxy_host,
                 port=args.remote_proxy_port,
                 lifespan="off",
+                log_config=None,
             )
         )
     startup = DeferredStartup(public_app, StartupWait(timeout_s=args.startup_wait_s))
@@ -206,11 +213,14 @@ def build_all(args: argparse.Namespace) -> Servers:
             port=args.port,
             lifespan="on",
             timeout_graceful_shutdown=math.ceil(args.drain_timeout_s),  # whole seconds
+            log_config=None,
         )
     )
     startup.server = public
     proxy = QuietServer(
-        uvicorn.Config(proxy_app, host=args.proxy_host, port=args.proxy_port, lifespan="off")
+        uvicorn.Config(
+            proxy_app, host=args.proxy_host, port=args.proxy_port, lifespan="off", log_config=None
+        )
     )
     return Servers(public, proxy, remote, startup)
 
