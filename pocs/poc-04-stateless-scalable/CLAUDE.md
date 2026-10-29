@@ -4,7 +4,7 @@ Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still appl
 
 ## Read first
 
-`docs/planning/poc/004-PoC-4-stateless-scalable.md` (question, exit criteria), then `docs/plans/2026-10-01-poc-04-stateless-scalable.md` (every decision; the code wins where they differ), then `docs/guides/poc-04-how-it-works.md` (the diagrams), then `README.md` here.
+`docs/planning/poc/004-PoC-4-stateless-scalable.md` (question and what is left; the exit criteria are in `README.md`), then `docs/plans/2026-10-01-poc-04-stateless-scalable.md` (every decision; the code wins where they differ), then `docs/guides/poc-04-how-it-works.md` (the diagrams), then `README.md` here.
 
 ## What is here
 
