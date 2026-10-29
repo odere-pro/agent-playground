@@ -33,13 +33,8 @@ from claude_agent_sdk import (
     UserMessage,
 )
 from claude_agent_sdk._errors import ResultError
-
-SCHEMA_VERSION = "0"
-MAX_MESSAGE = 500
-
-
-def event(kind: str, **fields: Any) -> dict[str, Any]:
-    return {"schema_version": SCHEMA_VERSION, "type": kind, **fields}
+from workload_a2a.events import error as _error
+from workload_a2a.events import event
 
 
 def tool_name(name: str) -> str:
@@ -161,10 +156,6 @@ def _result(block: ToolResultBlock) -> dict[str, Any]:
     except ValueError:
         return {"text": text}
     return parsed if isinstance(parsed, dict) else {"text": text}
-
-
-def _error(code: str, message: str, retryable: bool) -> dict[str, Any]:
-    return event("error", code=code, message=message[:MAX_MESSAGE], retryable=retryable)
 
 
 def _classify(

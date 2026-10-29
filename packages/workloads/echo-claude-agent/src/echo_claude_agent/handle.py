@@ -45,8 +45,11 @@ from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions, query
 from claude_agent_sdk.types import McpHttpServerConfig
+from workload_a2a.events import DEFAULT_TIMEOUT_S as DEFAULT_TIMEOUT_S
+from workload_a2a.events import MAX_MESSAGE, event
+from workload_a2a.events import timeout_s as timeout_s
 
-from echo_claude_agent.mapping import MAX_MESSAGE, EventMapper, error_event, event
+from echo_claude_agent.mapping import EventMapper, error_event
 
 PROMPT_VERSION = "simplifier-v1"
 SYSTEM_PROMPT = "Rewrite in plain words. Short sentences. Keep every fact."
@@ -59,8 +62,6 @@ DEFAULT_TOOL_URL = "http://127.0.0.1:8090/mcp"
 HOME_BASE_VAR = "CLAUDE_AGENT_HOME_BASE"
 DEFAULT_HOME_BASE = "/tmp"
 MCP_SERVER = "chassis"
-# suggested: 30 s when `ctx.budget.timeout_ms` is not set; the epic gives none.
-DEFAULT_TIMEOUT_S = 30.0
 # suggested: 3 tool rounds and the answer.
 MAX_TURNS = 4
 # The CLI refuses to start without a credential. The loopback proxy ignores it; the remote lane
@@ -94,13 +95,6 @@ query_fn: Callable[..., AsyncIterator[Any]] = query
 """Test-only hook: the SDK's `query`. A test replaces it with a fake that yields SDK message
 objects, so no CLI starts. (This replaces the skeleton's `transport` hooks: the CLI is the HTTP
 client here, and this process makes no model or MCP request of its own.)"""
-
-
-def timeout_s(ctx: dict[str, Any]) -> float:
-    budget = ctx.get("budget")
-    if isinstance(budget, dict) and budget.get("timeout_ms"):
-        return float(budget["timeout_ms"]) / 1000
-    return DEFAULT_TIMEOUT_S
 
 
 def unclean_names() -> list[str]:
