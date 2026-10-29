@@ -8,8 +8,8 @@ sees come from the repo's MCP servers, and CI scans those descriptions. What the
   `permissions`, every action pinned by a full commit SHA, the scan run through `scan.sh`, the
   token only in the scan step's env, a skip notice when it is missing, and the report uploaded.
 - `deploy/agent-scan/scan.sh`: every `docker run` is sandboxed (read-only root, no capabilities,
-  no new privileges, uid 65534, the repo mounted read-only); the inspect phase, which starts the
-  repo's MCP servers, has no network and no token.
+  no new privileges, uid 65534, only the scan inputs mounted, read-only, never the repo root);
+  the inspect phase, which starts the repo's MCP servers, has no network and no token.
 - `deploy/agent-scan/mcp.json`: every MCP server package in the repo is in the scan config, and
   the stdio launcher serves each one's real tool list (in memory, no socket).
 """
@@ -164,13 +164,45 @@ def test_every_docker_run_is_sandboxed() -> None:
         assert "no-new-privileges" in _flag_values(tokens, "--security-opt")
         assert _flag_values(tokens, "--user") == ["65534:65534"]
         assert _flag_values(tokens, "--network"), "every run names its network"
-        mounts = _flag_values(tokens, "-v") + _flag_values(tokens, "--volume")
-        repo = [m for m in mounts if m.split(":")[1:2] == ["/repo"]]
-        assert repo and all(m.endswith(":ro") for m in repo)
+        assert _mounts(tokens), "the scan inputs are mounted"
         # Only the token is passed in, by name; no env file, no other variable.
         assert _flag_values(tokens, "--env-file") == []
         assert set(_flag_values(tokens, "-e") + _flag_values(tokens, "--env")) <= {TOKEN}
         assert "--privileged" not in tokens
+
+
+# What the scan reads at run time: mcp.json and the launcher, and the two servers' sources.
+SCAN_INPUTS = {
+    "$repo/deploy/agent-scan:/repo/deploy/agent-scan:ro",
+    "$repo/packages/fake-mcp-server/src:/repo/packages/fake-mcp-server/src:ro",
+    "$repo/packages/code-runner/src:/repo/packages/code-runner/src:ro",
+}
+REPO_ROOT_SOURCES = {"$repo", "${repo}", ".", "$PWD", "${PWD}", "$(pwd)"}
+RUN_IDS = ["inspect", "scan"]
+
+
+def _mounts(tokens: list[str]) -> list[str]:
+    return _flag_values(tokens, "-v") + _flag_values(tokens, "--volume")
+
+
+@pytest.mark.parametrize("run", range(len(RUN_IDS)), ids=RUN_IDS)
+def test_scan_sh_mounts_no_repo_root_when_a_docker_run_starts(run: int) -> None:
+    """A run never mounts the whole checkout, so git-ignored files stay out."""
+    tokens = _docker_runs()[run]
+
+    sources = {m.split(":")[0].rstrip("/") for m in _mounts(tokens)}
+
+    assert sources.isdisjoint(REPO_ROOT_SOURCES)
+
+
+@pytest.mark.parametrize("run", range(len(RUN_IDS)), ids=RUN_IDS)
+def test_scan_sh_mounts_only_the_scan_inputs_read_only_when_a_docker_run_starts(run: int) -> None:
+    """A run mounts exactly the scan inputs, each `:ro`, at its path under /repo."""
+    tokens = _docker_runs()[run]
+
+    mounts = set(_mounts(tokens))
+
+    assert mounts == SCAN_INPUTS
 
 
 def test_the_inspect_phase_has_no_network_and_no_token() -> None:

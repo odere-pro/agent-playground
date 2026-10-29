@@ -1,14 +1,13 @@
 """PoC-1 walking skeleton: the first real adapter, `ModelPort` over OpenAI-compatible HTTP.
 
 Each test names the exit criterion in docs/planning/poc/001-PoC-1-walking-skeleton.md it covers.
-No network: the adapter talks to the fake model server over an ASGI transport.
+No network: the adapter talks to the fake model server over an ASGI transport. The contract-suite
+binding of the real adapter is `packages/chassis/tests/test_contracts.py::TestLiteLLMModel`.
 """
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
-from types import ModuleType
 
 import httpx
 import pytest
@@ -16,36 +15,15 @@ from chassis.adapters.litellm import LiteLLMModel
 from chassis.fakes import ScriptedModel
 from chassis.ports.model import ModelMessage
 from chassis.profiles import AdapterNotAvailable, AdapterSpec, build_ports
-from chassis_contracts import ModelPortContract
 from fake_model_server import Script, create_app
 
 ROOT = Path(__file__).resolve().parents[3]
 EXAMPLE_SCRIPT = ROOT / "packages/fake-model-server/scripts/example.yaml"
 
 
-def _load(path: Path) -> ModuleType:
-    """Import a test module by path; the chassis tests folder is not a package."""
-    spec = importlib.util.spec_from_file_location(f"_poc01_{path.stem}", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def _litellm_over_fake_server() -> LiteLLMModel:
     app = create_app(Script.from_yaml(EXAMPLE_SCRIPT))
     return LiteLLMModel("http://fake/v1", agent="poc-01", transport=httpx.ASGITransport(app=app))
-
-
-def test_real_adapter_binds_the_same_contract_suite_as_the_fake() -> None:
-    """Exit criterion: the real `ModelPort` adapter passes the same contract suite as its fake.
-
-    The bindings live in packages/chassis/tests/test_contracts.py; this checks both derive from
-    one suite class.
-    """
-    bindings = _load(ROOT / "packages/chassis/tests/test_contracts.py")
-    assert issubclass(bindings.TestScriptedModel, ModelPortContract)
-    assert issubclass(bindings.TestLiteLLMModel, ModelPortContract)
 
 
 async def test_real_adapter_streams_and_completes_the_same_text() -> None:

@@ -34,6 +34,7 @@ def backends() -> Iterator[Backends]:
 async def test_poc07_fb_feedback_lands_on_the_runs_trace_in_the_sidecar_lane(
     engine_name: str, backends: Backends, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Criterion 5: "Each concern works on at least two engines": feedback."""
     backends.reset()
     engine = ENGINES[engine_name]
     wire_python_engine(monkeypatch, engine, backends)

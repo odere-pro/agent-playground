@@ -17,10 +17,12 @@ import httpx
 import httpx2
 import pytest
 from chassis.core.handle import echo
+from chassis.core.inbound import over_cap
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.config import LimitsSpec
+from chassis.server.interfaces.limits import live_messages_max, messages_over
 from chassis.server.interfaces.mcp import MCP_PATH
 from fastapi import FastAPI
 from fastmcp import Client
@@ -312,3 +314,56 @@ async def test_native_history_over_the_cap_is_refused() -> None:
         )
     assert reply.status_code == 400
     assert "history" in reply.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    ("interface", "message"),
+    [
+        ("openai", "messages: 5 is more than the limit of 4"),
+        ("anthropic", "limit_exceeded: messages: 5 is more than the limit of 4"),
+    ],
+)
+async def test_chat_route_refuses_with_one_text_when_messages_are_over_the_cap(
+    interface: str, message: str
+) -> None:
+    """Both chat routes say the same thing for 5 messages over a cap of 4."""
+    path = "/v1/chat/completions" if interface == "openai" else "/v1/messages"
+    body = {"model": AGENT, "max_tokens": 10, "messages": _messages(5)}
+
+    async with _client(_app(messages_max=4)) as client:
+        reply = await client.post(path, json=body)
+
+    assert reply.status_code == 400
+    error = reply.json()["error"]
+    assert error["message"] == message
+    if interface == "openai":
+        assert error["code"] == "limit_exceeded"
+
+
+@pytest.mark.parametrize(
+    ("count", "cap", "why"),
+    [(5, 4, "messages: 5 is more than the limit of 4"), (4, 4, None), (99, None, None)],
+)
+def test_over_cap_says_why_when_the_count_is_above_the_cap(
+    count: int, cap: int | None, why: str | None
+) -> None:
+    """`over_cap` names the count and the cap, and None is no cap."""
+    assert over_cap(count, cap, "messages") == why
+
+
+def test_messages_over_gives_the_over_cap_text_when_over_the_limit() -> None:
+    """The config check and the adapters' check share one text."""
+    limits = LimitsSpec(messages_max=4)
+
+    assert messages_over(5, limits, "turns") == over_cap(5, 4, "turns")
+    assert messages_over(4, limits) is None
+
+
+def test_live_messages_max_reads_the_config_when_there_is_one() -> None:
+    """`spec.limits.messages_max` of a config, or None with no config."""
+    config = ChassisConfig.model_validate(
+        {**CONFIG, "spec": {**CONFIG["spec"], "limits": {"messages_max": 3}}}
+    )
+
+    assert live_messages_max(config) == 3
+    assert live_messages_max(None) is None

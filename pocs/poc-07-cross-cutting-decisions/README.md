@@ -1,5 +1,9 @@
 # PoC-7: Confirm the cross-cutting stack: security, observability, feedback, and evals
 
+Builds on: PoC-1 (ports), PoC-5, PoC-6
+Hands to: PoC-8
+Run: `make test-poc POC=07`
+
 Status: in progress: offline and CI evidence complete; waiting on the user's acceptance of ADR-007 to ADR-010 (criterion 3), the Mac run (Prompt Guard 2, the encoder, hosted judge numbers), and a `SNYK_TOKEN` repo secret (the real agent scan). Plan: [docs/plans/2026-10-28-poc-07-cross-cutting.md](../../docs/plans/2026-10-28-poc-07-cross-cutting.md)
 Planning doc: [007-PoC-7-cross-cutting-decisions.md](../../docs/planning/poc/007-PoC-7-cross-cutting-decisions.md)
 Time box: 2–3 weeks

@@ -110,16 +110,29 @@ with urllib.request.urlopen(req, timeout=60) as r:
 
 def remote_calls_served(chassis: dict[str, Any], remote_ip: str) -> dict[str, int]:
     """How many calls from the remote's IP the listener answered 200, per path, from the chassis's
-    access log lines (method, path, status; no header is logged). Only counts leave here."""
+    access log lines (method, path, status; no header is logged). Only counts leave here. Since
+    PoC-8 the chassis logs one JSON object per line, and uvicorn's access line is its `message`
+    (logger `uvicorn.access`)."""
     got = kubectl("logs", "-n", AGENTS_NS, chassis["metadata"]["name"], "-c", CHASSIS)
     assert got.returncode == 0, got.stderr[-300:]
     line = re.compile(
-        rf'^INFO:\s+{re.escape(remote_ip)}:\d+ - "POST (/v1/chat/completions|/mcp) HTTP/1.1" 200 '
+        rf'^{re.escape(remote_ip)}:\d+ - "POST (/v1/chat/completions|/mcp) HTTP/1.1" 200\b'
     )
     counts = {"/v1/chat/completions": 0, "/mcp": 0}
-    for match in filter(None, map(line.match, got.stdout.splitlines())):
+    for match in filter(None, map(line.match, _access_lines(got.stdout))):
         counts[match.group(1)] += 1
     return counts
+
+
+def _access_lines(logs: str) -> Iterator[str]:
+    """The `message` of each `uvicorn.access` JSON log line."""
+    for raw in logs.splitlines():
+        try:
+            record = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(record, dict) and record.get("logger") == "uvicorn.access":
+            yield str(record.get("message", ""))
 
 
 def test_h17_listener_answers_only_the_remote_token_inside_a_run(

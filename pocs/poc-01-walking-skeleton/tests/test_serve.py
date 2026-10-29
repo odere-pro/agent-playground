@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 import tomllib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,7 @@ from chassis.server.proxy_app import create_proxy_app
 ROOT = Path(__file__).resolve().parents[3]
 FAKE_CONFIG = ROOT / "packages/chassis/configs/fake.yaml"
 CHASSIS_SRC = ROOT / "packages/chassis/src/chassis"
+READY_TIMEOUT_S = 15.0
 
 
 @pytest.fixture
@@ -131,6 +132,23 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+def wait_until_ready(probe: Callable[[], bool], timeout_s: float, interval_s: float = 0.2) -> bool:
+    """Call `probe` until it returns true or the deadline passes; return its last answer."""
+    deadline = time.monotonic() + timeout_s
+    ready = probe()
+    while not ready and time.monotonic() < deadline:
+        time.sleep(interval_s)
+        ready = probe()
+    return ready
+
+
+def _is_ready(port: int) -> bool:
+    try:
+        return httpx.get(f"http://127.0.0.1:{port}/ready", timeout=1.0).status_code == 200
+    except httpx.HTTPError:
+        return False
+
+
 @pytest.mark.network
 @pytest.mark.slow
 def test_chassis_serve_subprocess_answers_health(request: pytest.FixtureRequest) -> None:
@@ -162,20 +180,10 @@ def test_chassis_serve_subprocess_answers_health(request: pytest.FixtureRequest)
         text=True,
     )
     try:
-        deadline = time.monotonic() + 15
-        last: Exception | None = None
-        while time.monotonic() < deadline:
-            try:
-                ready = httpx.get(f"http://127.0.0.1:{port}/ready", timeout=1.0)
-                if ready.status_code == 200:
-                    break
-            except httpx.HTTPError as exc:
-                last = exc
-            time.sleep(0.2)
-        else:
+        if not wait_until_ready(lambda: _is_ready(port), READY_TIMEOUT_S):
             proc.kill()
             out = proc.communicate(timeout=5)[0]
-            pytest.fail(f"chassis serve did not become ready: {last!r}\n{out}")
+            pytest.fail(f"chassis serve did not become ready in {READY_TIMEOUT_S}s\n{out}")
         health = httpx.get(f"http://127.0.0.1:{port}/health", timeout=1.0)
         assert health.json() == {"status": "ok"}
         chat = {"model": "fake-route", "messages": [{"role": "user", "content": "hi"}]}

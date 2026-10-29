@@ -21,7 +21,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from chassis.adapters.openai_compat.messages import is_empty
+from chassis.adapters.chat_common import is_empty
 from chassis.ports.model import (
     ModelChunk,
     ModelError,
