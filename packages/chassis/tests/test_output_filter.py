@@ -88,7 +88,7 @@ async def _run(app: FastAPI, *, stream: bool) -> httpx.Response:
 
 def test_find_secret_names_the_kind_never_the_value() -> None:
     assert find_secret(f"the key is {KEY}") == "api_key"
-    assert find_secret("AKIAABCDEFGHIJKLMNOP") == "aws_access_key"
+    assert find_secret("AKIAABCDEFGHIJKLMNOP") == "aws_access_key"  # pragma: allowlist secret
     assert find_secret("LITELLM_API_KEY=abcdefgh12") == "key_assignment"
     assert find_secret("nothing to see") is None
 

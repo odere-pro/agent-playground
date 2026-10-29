@@ -25,7 +25,7 @@ CONFIG: dict[str, Any] = {
 }
 _METRIC = re.compile(r"\b(chassis_[a-z0-9_]+)\b")
 _HISTOGRAM_PARTS = ("_bucket", "_count", "_sum")
-TOPICS = ("requests", "latency", "errors", "tokens", "cost", "fallback")
+TOPICS = ("requests", "latency", "errors", "tokens", "cost", "fallback", "feedback")
 
 
 async def _exported() -> dict[str, str]:
@@ -60,7 +60,7 @@ async def test_every_panel_names_a_metric_the_chassis_exports() -> None:
             assert _family(name, exported), f"{name} in {expr!r} is not exported"
 
 
-def test_the_dashboard_covers_the_six_topics_for_its_agent_only() -> None:
+def test_the_dashboard_covers_every_topic_for_its_agent_only() -> None:
     board = dashboard("echo-openai-agents")
     titles = " ".join(p["title"].lower() for p in board["panels"])
     for topic in TOPICS:

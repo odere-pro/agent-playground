@@ -1,9 +1,10 @@
 """One Grafana dashboard per agent, from one template (PoC-8, 014 H-7, epic G.2).
 
-`dashboard(agent)` is the dashboard JSON: requests, latency, errors, tokens, cost, and the
-evaluator gate's fallback rate, each query filtered on `agent="<agent>"`, the label every sample of
-`GET /metrics` carries. Every metric a query names is one the chassis exports (`chassis.metrics`);
-`tests/test_dashboards.py` checks it against a real scrape.
+`dashboard(agent)` is the dashboard JSON: requests, latency, errors, tokens, cost, the
+evaluator gate's fallback rate, and user feedback by label, each query filtered on
+`agent="<agent>"`, the label every sample of `GET /metrics` carries. Every metric a query names
+is one the chassis exports (`chassis.metrics`); `tests/test_dashboards.py` checks it against a
+real scrape.
 
 `python -m chassis.dashboards [--out DIR] [AGENT ...]` writes `<agent>.json` per agent into
 `DASHBOARD_DIR` (run it from the repository root), by default for the agents listed in its
@@ -95,6 +96,16 @@ def _panels(agent: str) -> list[tuple[str, str, list[tuple[str, str]]]]:
                     f"sum(rate(chassis_gate_fallbacks_total{{{a}}}[{w}])) / "
                     f'sum(rate(chassis_gate_runs_total{{{a},mode="sync"}}[{w}]))',
                     "fallback rate",
+                )
+            ],
+        ),
+        (
+            "User feedback by label",
+            "short",
+            [
+                (
+                    f"sum by (label) (increase(chassis_feedback_total{{{a}}}[1h]))",
+                    "{{label}}",
                 )
             ],
         ),

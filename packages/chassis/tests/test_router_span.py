@@ -27,7 +27,7 @@ CONFIG: dict[str, Any] = {
     "agent": {"name": "echo", "version": "0.0.1"},
     "spec": {"engine": {"connector": "inprocess", "handle": "chassis.core.handle:echo_wire"}},
 }
-TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"
+TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"  # pragma: allowlist secret
 PARENT = "00f067aa0ba902b7"
 TRACEPARENT = f"00-{TRACE}-{PARENT}-01"
 CHAT = {"model": "big-default", "messages": [{"role": "user", "content": "hello"}]}

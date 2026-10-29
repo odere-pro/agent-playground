@@ -30,7 +30,7 @@ CONFIG: dict[str, Any] = {
     "agent": {"name": "echo", "version": "0.0.1"},
     "spec": {"engine": {"connector": "inprocess", "handle": "chassis.core.handle:echo_wire"}},
 }
-HEX32 = "0123456789abcdef0123456789abcdef"
+HEX32 = "0123456789abcdef0123456789abcdef"  # pragma: allowlist secret
 
 
 @pytest.fixture

@@ -195,6 +195,34 @@
           "legendFormat": "fallback rate"
         }
       ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "User feedback by label",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (label) (increase(chassis_feedback_total{agent=\"echo\"}[1h]))",
+          "legendFormat": "{{label}}"
+        }
+      ]
     }
   ]
 }

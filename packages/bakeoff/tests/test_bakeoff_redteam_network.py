@@ -41,4 +41,6 @@ def test_redteam_on_echo_python_inprocess_meets_the_baseline(tmp_path: Path) -> 
     assert done.returncode == 0, done.stdout + done.stderr
     assert "PASS keyword echo-python/inprocess" in done.stdout
     summary = json.loads(out.read_text())["summary"]["keyword"]["echo-python/inprocess"]
-    assert summary["stopped"] == 11 and summary["cases"] == 18
+    baseline = json.loads((ROOT / "evals/redteam/baseline.json").read_text())
+    recorded = baseline["configs"]["keyword"]["echo-python/inprocess"]
+    assert summary["stopped"] == recorded["stopped"] and summary["cases"] == recorded["cases"]

@@ -67,6 +67,7 @@ DECLARED: Mapping[str, tuple[str, str]] = {
     "chassis_gate_runs_total": ("counter", "Runs the evaluator gate checked, by mode."),
     "chassis_gate_retries_total": ("counter", "Evaluator gate retries."),
     "chassis_gate_fallbacks_total": ("counter", "Runs the evaluator gate sent to the fallback."),
+    "chassis_feedback_total": ("counter", "Feedback stored on a run's trace, by label."),
 }
 _BAD = re.compile(r"[^a-zA-Z0-9_]")
 LabelKey = tuple[tuple[str, str], ...]
