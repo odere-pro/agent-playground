@@ -448,6 +448,60 @@ async def test_the_error_message_never_holds_the_token(monkeypatch: pytest.Monke
     assert TOKEN not in json.dumps(events)
 
 
+async def test_handle_scrubs_the_token_from_every_event_when_bash_prints_the_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Bash `env` puts the token in a tool result and the model echoes it: no event holds it."""
+    monkeypatch.setenv("CHASSIS_API_TOKEN", "t0k")
+    delta = {"type": "text_delta", "text": "token t0k"}
+    chunk = {"type": "content_block_delta", "index": 0, "delta": delta}
+    messages = [
+        use("tu_1", "Bash", command="env; echo t0k"),
+        UserMessage(content=[ToolResultBlock("tu_1", "ANTHROPIC_AUTH_TOKEN=t0k\n", False)]),
+        use("tu_2", "mcp__chassis__glossary_lookup", term="t0k"),
+        returned("tu_2", {"term": "t0k", "seen": ["t0k"]}),
+        StreamEvent(uuid="u", session_id="s-1", event=chunk),
+        say("token t0k"),
+        result(),
+    ]
+    install(monkeypatch, FakeQuery(messages))
+
+    events = await run()
+
+    check_shape(events)
+    assert "t0k" not in json.dumps(events)
+    assert [e["type"] for e in events].count("tool_call") == 2
+
+
+class StderrQuery(FakeQuery):
+    """A `FakeQuery` whose CLI writes lines to stderr before the scripted messages."""
+
+    def __init__(self, lines: Iterable[str], **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.lines = list(lines)
+
+    async def _run(self, options: ClaudeAgentOptions) -> AsyncIterator[Any]:
+        assert options.stderr is not None
+        for line in self.lines:
+            options.stderr(line)
+        async for message in super()._run(options):
+            yield message
+
+
+async def test_handle_cuts_the_cli_error_message_after_the_stderr_tail_is_added(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A CLI that dies with three long stderr lines: the `error` message is 500 chars at most."""
+    lines = [c * 400 for c in "xyz"]
+    install(monkeypatch, StderrQuery(lines, raises=ProcessError("died", exit_code=1)))
+
+    events = await run()
+
+    check_shape(events)
+    assert events[-1]["code"] == "cli_error"
+    assert len(events[-1]["message"]) <= 500
+
+
 # --- the environment guard -----------------------------------------------------------------
 
 

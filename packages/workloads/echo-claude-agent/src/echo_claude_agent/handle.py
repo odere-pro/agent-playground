@@ -33,19 +33,20 @@ so it is `untrusted` and runs in the `remote` lane only.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import shutil
 import tempfile
 from collections import deque
 from collections.abc import AsyncIterator, Callable
-from contextlib import suppress
+from contextlib import aclosing, suppress
 from pathlib import Path
 from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions, query
 from claude_agent_sdk.types import McpHttpServerConfig
 
-from echo_claude_agent.mapping import EventMapper, error_event, event
+from echo_claude_agent.mapping import MAX_MESSAGE, EventMapper, error_event, event
 
 PROMPT_VERSION = "simplifier-v1"
 SYSTEM_PROMPT = "Rewrite in plain words. Short sentences. Keep every fact."
@@ -86,6 +87,8 @@ OVERRIDDEN = frozenset(
     }
 )
 GUARDED_PREFIXES = ("ANTHROPIC_", "CLAUDE_")
+
+log = logging.getLogger(__name__)
 
 query_fn: Callable[..., AsyncIterator[Any]] = query
 """Test-only hook: the SDK's `query`. A test replaces it with a fake that yields SDK message
@@ -175,8 +178,18 @@ async def handle(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[di
             retryable=False,
         )
         return
-    route = str(ctx.get("model_route") or DEFAULT_ROUTE)
     token = os.environ.get(TOKEN_VAR) or None
+    # The shell tool can print the CLI's env, so the token can be in any event, not just errors.
+    async with aclosing(_run(input, ctx, token)) as events:
+        async for out in events:
+            yield _scrub(out, token)
+
+
+async def _run(
+    input: dict[str, Any], ctx: dict[str, Any], token: str | None
+) -> AsyncIterator[dict[str, Any]]:
+    """One CLI run in a fresh home: the mapped events, then at most one `error`."""
+    route = str(ctx.get("model_route") or DEFAULT_ROUTE)
     mapper = EventMapper(route)
     stderr_tail: deque[str] = deque(maxlen=3)
     home: Path | None = None
@@ -184,42 +197,71 @@ async def handle(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[di
     final: dict[str, Any] | None = None
     try:
         home = _make_home()
-        cwd = home / "work"
-        cwd.mkdir()
-        options = build_options(ctx, route, token, home, cwd, stderr_tail.append)
+        options = _options(ctx, route, token, home, stderr_tail.append)
         stream = query_fn(prompt=str(input.get("text") or ""), options=options)
-        deadline = asyncio.get_running_loop().time() + timeout_s(ctx)
-        # Read to the end of the stream, also after the result: the CLI then exits by itself and
-        # has written its last files before the run dir is removed.
-        while True:
-            try:
-                async with asyncio.timeout_at(deadline):
-                    message = await anext(stream)
-            except StopAsyncIteration:
-                break
-            except Exception:
-                if mapper.done:  # the result is in; a late exit error adds nothing
-                    break
-                raise
-            for out in mapper.map(message):
+        async with aclosing(_mapped(stream, mapper, timeout_s(ctx))) as events:
+            async for out in events:
                 if out["type"] == "error":
                     final = out
                 else:
                     yield out
     except Exception as exc:
-        final = error_event(exc)
-        if final["code"] == "cli_error" and stderr_tail:
-            final["message"] += " | " + " | ".join(stderr_tail)
+        final = _failure(exc, stderr_tail, token)
     finally:
         await _close(stream)
         if home is not None:
             shutil.rmtree(home, ignore_errors=True)
     if final is not None:
-        yield _scrub(final, token)
+        yield final
     elif not mapper.done:
         yield event(
             "error", code="model_error", message="the run ended with no result", retryable=False
         )
+
+
+def _options(
+    ctx: dict[str, Any],
+    route: str,
+    token: str | None,
+    home: Path,
+    stderr: Callable[[str], None],
+) -> ClaudeAgentOptions:
+    cwd = home / "work"
+    cwd.mkdir()
+    return build_options(ctx, route, token, home, cwd, stderr)
+
+
+async def _mapped(
+    stream: AsyncIterator[Any], mapper: EventMapper, seconds: float
+) -> AsyncIterator[dict[str, Any]]:
+    """The events for each SDK message until the stream ends or the deadline passes."""
+    deadline = asyncio.get_running_loop().time() + seconds
+    # Read to the end of the stream, also after the result: the CLI then exits by itself and
+    # has written its last files before the run dir is removed.
+    while True:
+        try:
+            async with asyncio.timeout_at(deadline):
+                message = await anext(stream)
+        except StopAsyncIteration:
+            return
+        except Exception:
+            if mapper.done:  # the result is in; a late exit error adds nothing
+                return
+            raise
+        for out in mapper.map(message):
+            yield out
+
+
+def _failure(exc: BaseException, stderr_tail: deque[str], token: str | None) -> dict[str, Any]:
+    """The `error` for an exception; a `cli_error` gets the last stderr lines. The token is
+    removed before the cut to `MAX_MESSAGE`, so no part of it is left at the edge."""
+    error = error_event(exc)
+    if error["code"] != "cli_error" or not stderr_tail:
+        return error
+    tail = [_scrub(line, token) for line in stderr_tail]
+    log.warning("the CLI failed; its last stderr lines: %s", " | ".join(tail))
+    message = _scrub(str(error["message"]), token) + " | " + " | ".join(tail)
+    return {**error, "message": message[:MAX_MESSAGE]}
 
 
 def _make_home() -> Path:
@@ -236,7 +278,14 @@ async def _close(stream: AsyncIterator[Any] | None) -> None:
             await aclose()
 
 
-def _scrub(error: dict[str, Any], token: str | None) -> dict[str, Any]:
-    if token:
-        error["message"] = str(error["message"]).replace(token, "[redacted]")
-    return error
+def _scrub(value: Any, token: str | None) -> Any:
+    """A copy of `value` with the token replaced in every string, at any depth."""
+    if not token:
+        return value
+    if isinstance(value, str):
+        return value.replace(token, "[redacted]")
+    if isinstance(value, dict):
+        return {_scrub(key, token): _scrub(item, token) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_scrub(item, token) for item in value]
+    return value
