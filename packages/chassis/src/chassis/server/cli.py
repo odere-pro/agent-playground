@@ -38,6 +38,7 @@ from typing import NamedTuple
 
 import uvicorn
 
+from chassis.adapters.a2a.loopback import is_loopback_host
 from chassis.server.app import create_app
 from chassis.server.config import ChassisConfig, load_config
 from chassis.server.lifecycle import (
@@ -60,15 +61,6 @@ DEFAULT_PROXY_PORT = 8090  # suggested: the epic gives no port for the proxies
 DRAIN = DrainSettings()  # suggested: delay 5 s, timeout 30 s
 WAIT = StartupWait()  # suggested: 120 s, one attempt a second
 STARTUP_FAILURE = 3  # what `uvicorn.run` exits with when the lifespan fails
-
-
-def _is_loopback(host: str) -> bool:
-    if host == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -152,7 +144,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = _parser()
     args = parser.parse_args(argv)
     if args.command == "serve":
-        if not _is_loopback(args.proxy_host) and not args.allow_any_proxy_host:
+        if not is_loopback_host(args.proxy_host) and not args.allow_any_proxy_host:
             parser.error(
                 f"--proxy-host {args.proxy_host} is not loopback. The model proxy spends with "
                 "the chassis key, so it listens on localhost only (deploy/CLAUDE.md). Pass "

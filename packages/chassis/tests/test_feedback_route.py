@@ -22,7 +22,7 @@ from chassis.fakes.events import InMemoryBus
 from chassis.fakes.feedback import InMemoryFeedback
 from chassis.ports.auth import NoAuth, Principal
 from chassis.ports.bundle import PortBundle
-from chassis.ports.feedback import FeedbackPort, NoFeedback
+from chassis.ports.feedback import Feedback, FeedbackError, FeedbackPort, NoFeedback
 from chassis.ports.state import InMemoryState, StatePort
 from chassis.schemas import SCHEMA_DIR
 from chassis.server import ChassisConfig, create_app
@@ -342,3 +342,60 @@ async def test_the_score_name_from_the_spec_reaches_the_adapter() -> None:
     store.score_name = "default"  # type: ignore[attr-defined]
     async with _client(_app(feedback=store, config=_config(score_name="thumbs"))):
         assert store.score_name == "thumbs"  # type: ignore[attr-defined]
+
+
+ALICE = "tok-alice"
+BOB = "tok-bob"
+RATERS = frozenset({"agent:run", "agent:feedback"})
+"""R2-10: two callers who both hold the feedback scope."""
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="R2-10 proposal: feedback lookup is not scoped to the caller; open user question in "
+    "contract-v6 and ADR-009",
+)
+async def test_feedback_refuses_another_caller_with_404_when_the_run_ended_for_alice() -> None:
+    """Bob cannot score a call that ended for alice: 404 unknown_request, nothing stored."""
+    store = InMemoryFeedback()
+    tokens = {ALICE: Principal("alice", RATERS), BOB: Principal("bob", RATERS)}
+    app = _app(feedback=store, auth=StaticTokens(tokens))
+
+    async with _client(app) as client:
+        ran = await client.post(
+            "/v1/run",
+            json={"input": {"text": "hello"}},
+            headers={"Authorization": f"Bearer {ALICE}"},
+        )
+        answer = await client.post(
+            FEEDBACK_PATH,
+            json={"request_id": ran.json()["request_id"], "score": 0},
+            headers={"Authorization": f"Bearer {BOB}"},
+        )
+
+    assert answer.status_code == 404
+    assert answer.json()["detail"]["code"] == "unknown_request"
+    assert store.records == {}
+
+
+class _OddFeedback:
+    """A feedback port that fails with a code the route does not know."""
+
+    name = "odd"
+
+    async def submit(self, feedback: Feedback) -> None:
+        raise FeedbackError("weird_code", "the store said something odd")
+
+
+async def test_feedback_answers_502_rejected_when_the_store_fails_with_an_unknown_code() -> None:
+    """An unknown FeedbackError code is 502 feedback_rejected."""
+    app = _app(feedback=_OddFeedback())
+
+    async with _client(app) as client:
+        run = await _run(client)
+        answer = await client.post(
+            FEEDBACK_PATH, json={"request_id": run["request_id"], "score": 1}
+        )
+
+    assert answer.status_code == 502
+    assert answer.json()["detail"]["code"] == "feedback_rejected"

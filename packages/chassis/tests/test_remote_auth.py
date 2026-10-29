@@ -70,11 +70,11 @@ def _client(app: Any) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://chassis")
 
 
-def _run() -> tuple[Request, Context]:
+def _run(request_id: str = "req-remote", trace: str = TRACE) -> tuple[Request, Context]:
     request = Request(
-        request_id="req-remote",
-        trace_id=TRACE,
-        idempotency_key="idem-remote",
+        request_id=request_id,
+        trace_id=trace,
+        idempotency_key=f"idem-{request_id}",
         agent="echo",
         agent_version="0.0.1",
         input=TaskInput(text="x"),
@@ -443,3 +443,31 @@ async def test_lifespan_scope_passes_through() -> None:
     for middleware in _wrapped(inner := _Recorder()):
         await _drive(middleware, {"type": "lifespan"})
     assert inner.scopes == ["lifespan", "lifespan"]
+
+
+RUN_B_TRACE = "0af7651916cd43dd8448eb211c80319c"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="R2-02 proposal: one shared bearer lets a remote act under any in-flight run; "
+    "needs a per-run secret",
+)
+async def test_require_run_refuses_another_runs_traceparent_when_two_runs_share_one_remote() -> (
+    None
+):
+    """A remote serving run A cannot spend under run B with the shared bearer and B's trace."""
+    public, remote, _ = _app()
+    run_a, ctx_a = _run("req-a", TRACE)
+    run_b, ctx_b = _run("req-b", RUN_B_TRACE)
+    headers = {"Authorization": f"Bearer {CURRENT}", "traceparent": OTHER}
+
+    async with (
+        _client(remote) as client,
+        public.router.lifespan_context(public),
+        public.state.runs.register(run_a, ctx_a),
+        public.state.runs.register(run_b, ctx_b),
+    ):
+        answer = await client.post("/v1/chat/completions", json=BODY, headers=headers)
+
+    assert answer.status_code == 403

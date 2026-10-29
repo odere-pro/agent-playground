@@ -23,10 +23,11 @@ from chassis.ports.auth import Principal
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.interfaces.mcp import MCP_PATH
-from chassis.server.security import AUTH_REFUSED, path_class, principal_of
+from chassis.server.security import AUTH_REFUSED, CallerAuth, path_class, principal_of
 from fastapi import FastAPI, Request
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
+from starlette.types import Receive, Scope, Send
 
 CONFIG: dict[str, Any] = {
     "version": "cfg-1",
@@ -290,3 +291,63 @@ async def test_auth_off_puts_no_user_id_on_the_run_span() -> None:
         assert (await client.post("/v1/run", json=RUN_BODY)).status_code == 200
     runs = [s for s in ports.telemetry.spans if s.name == "chassis.run"]  # type: ignore[attr-defined]
     assert "user.id" not in runs[-1].attributes
+
+
+class _Recorder:
+    """An inner ASGI app that records the type of every scope it is called with."""
+
+    def __init__(self) -> None:
+        self.scopes: list[str] = []
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        self.scopes.append(scope["type"])
+
+
+async def _drive(app: Any, scope: Scope) -> list[dict[str, Any]]:
+    sent: list[dict[str, Any]] = []
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "websocket.connect"}
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    await app(scope, receive, send)
+    return sent
+
+
+async def test_caller_auth_closes_with_1008_when_a_websocket_handshake_arrives() -> None:
+    """R2-29: a websocket to the public app is closed with 1008 before accept."""
+    inner = _Recorder()
+    middleware = CallerAuth(inner, public=_app())
+    scope: Scope = {"type": "websocket", "path": "/v1/run", "headers": _ws_headers()}
+
+    sent = await _drive(middleware, scope)
+
+    assert sent == [{"type": "websocket.close", "code": 1008}]
+    assert inner.scopes == []
+
+
+@pytest.mark.parametrize("kind", ["webtransport", "something-else"])
+async def test_caller_auth_drops_the_scope_when_its_type_is_not_http(kind: str) -> None:
+    """R2-29: a scope type that is neither http nor lifespan never reaches the app."""
+    inner = _Recorder()
+    middleware = CallerAuth(inner, public=_app())
+
+    sent = await _drive(middleware, {"type": kind, "path": "/v1/run", "headers": []})
+
+    assert (sent, inner.scopes) == ([], [])
+
+
+async def test_caller_auth_passes_the_lifespan_through_when_the_server_starts() -> None:
+    """R2-29: the lifespan scope still reaches the app."""
+    inner = _Recorder()
+    middleware = CallerAuth(inner, public=_app())
+
+    await _drive(middleware, {"type": "lifespan"})
+
+    assert inner.scopes == ["lifespan"]
+
+
+def _ws_headers() -> list[tuple[bytes, bytes]]:
+    return [(b"authorization", f"Bearer {RUNNER}".encode())]

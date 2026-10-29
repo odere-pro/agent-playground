@@ -26,6 +26,7 @@ from typing import Any
 import httpx
 import pytest
 import uvicorn
+from chassis.adapters.a2a.loopback import is_loopback_host
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.ports.bundle import PortBundle
@@ -357,3 +358,23 @@ async def test_the_remote_listener_stops_after_the_public_one_with_the_proxy() -
     order = drain.order
     assert order[:3] == ["draining", "public closing", "public stopped"]
     assert set(order[3:]) == {"proxy stopped", "remote proxy stopped"}
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("localhost", True),
+        ("127.0.0.2", True),
+        ("::1", True),
+        ("10.0.0.1", False),
+        ("not-an-ip", False),
+        ("[::1]", False),
+    ],
+)
+def test_is_loopback_host_tells_a_loopback_host_when_given_a_name_or_address(
+    host: str, expected: bool
+) -> None:
+    """R2-30: one loopback check for the CLI and the sidecar; a bracketed IPv6 is not one."""
+    result = is_loopback_host(host)
+
+    assert result is expected
