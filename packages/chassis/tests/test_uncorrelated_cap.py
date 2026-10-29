@@ -8,23 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, MutableMapping, Sequence
+from collections.abc import MutableMapping
 from typing import Any
 
-import httpx
-from chassis import CHASSIS_VERSION
-from chassis.core.envelope import Budget, Context, Request, TaskInput, Versions
-from chassis.core.handle import echo
-from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel, ScriptRule
+from chassis.fakes import InMemoryTelemetry, ScriptedModel
 from chassis.ports.bundle import PortBundle
-from chassis.ports.model import (
-    ModelChunk,
-    ModelError,
-    ModelMessage,
-    ModelResult,
-    ToolSpec,
-    Usage,
-)
 from chassis.server import ChassisConfig, create_app
 from chassis.server.model_admission import (
     DEFAULT_UNCORRELATED_MAX_TOKENS,
@@ -32,9 +20,15 @@ from chassis.server.model_admission import (
     UncorrelatedCap,
 )
 from chassis.server.proxy_app import create_proxy_app
+from proxy_fakes import (
+    PLAIN_WORDS,
+    TRACEPARENT,
+    GatedModel,
+    asgi_client,
+    proxy_ports,
+    run_request,
+)
 
-TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"
-TRACEPARENT = f"00-{TRACE}-00f067aa0ba902b7-01"
 BODY: dict[str, Any] = {
     "model": "big-default",
     "messages": [{"role": "user", "content": "simplify: the quick brown fox"}],
@@ -61,18 +55,9 @@ def _config(cap: int | None) -> ChassisConfig:
     )
 
 
-def _ports(model: Any = None) -> PortBundle:
-    return PortBundle(
-        model=model or ScriptedModel([ScriptRule(match="simplify", reply="Plain words.")]),
-        engine=FakeEngine(handle=echo),
-        config=InMemoryConfig(),
-        telemetry=InMemoryTelemetry(),
-    )
-
-
 def _build(cap: int | None, model: Any = None) -> tuple[Any, Clock, PortBundle]:
     clock = Clock()
-    ports = _ports(model)
+    ports = proxy_ports(model or ScriptedModel(PLAIN_WORDS))
     app = create_app(_config(cap), ports)
     proxy = create_proxy_app(app)
     # The router was built with the real clock; swap the cap for one on the fake clock.
@@ -80,35 +65,9 @@ def _build(cap: int | None, model: Any = None) -> tuple[Any, Clock, PortBundle]:
     return (app, proxy), clock, ports
 
 
-def _client(proxy: Any) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=proxy), base_url="http://chassis")
-
-
-def _run_ctx(max_tokens: int) -> tuple[Request, Context]:
-    request = Request(
-        request_id="req-1",
-        trace_id=TRACE,
-        idempotency_key="idem-1",
-        agent="echo",
-        agent_version="0.0.1",
-        input=TaskInput(text="x"),
-        budget=Budget(max_tokens=max_tokens),
-    )
-    ctx = Context(
-        request_id=request.request_id,
-        trace_id=request.trace_id,
-        idempotency_key=request.idempotency_key,
-        agent=request.agent,
-        agent_version=request.agent_version,
-        budget=request.budget,
-        versions=Versions(chassis=CHASSIS_VERSION),
-    )
-    return request, ctx
-
-
 async def test_calls_are_served_until_the_window_has_spent_the_cap() -> None:
     (app, proxy), _, ports = _build(30)  # two calls of 15 tokens
-    async with _client(proxy) as client, app.router.lifespan_context(app):
+    async with asgi_client(proxy) as client, app.router.lifespan_context(app):
         first = await client.post("/v1/chat/completions", json=BODY)
         second = await client.post("/v1/chat/completions", json=BODY)
         third = await client.post("/v1/chat/completions", json=BODY)
@@ -127,7 +86,7 @@ async def test_calls_are_served_until_the_window_has_spent_the_cap() -> None:
 async def test_a_streamed_call_is_charged_and_refused_as_one_error_frame() -> None:
     (app, proxy), _, _ = _build(15)
     stream = {**BODY, "stream": True}
-    async with _client(proxy) as client, app.router.lifespan_context(app):
+    async with asgi_client(proxy) as client, app.router.lifespan_context(app):
         first = await client.post("/v1/chat/completions", json=stream)
         second = await client.post("/v1/chat/completions", json=stream)
     assert first.status_code == 200 and second.status_code == 429
@@ -138,7 +97,7 @@ async def test_a_streamed_call_is_charged_and_refused_as_one_error_frame() -> No
 
 async def test_the_window_resets_after_a_minute() -> None:
     (app, proxy), clock, _ = _build(15)
-    async with _client(proxy) as client, app.router.lifespan_context(app):
+    async with asgi_client(proxy) as client, app.router.lifespan_context(app):
         assert (await client.post("/v1/chat/completions", json=BODY)).status_code == 200
         assert (await client.post("/v1/chat/completions", json=BODY)).status_code == 429
         clock.now += WINDOW_S - 1
@@ -149,7 +108,7 @@ async def test_the_window_resets_after_a_minute() -> None:
 
 async def test_zero_refuses_every_uncorrelated_call_and_never_reaches_the_model() -> None:
     (app, proxy), _, ports = _build(0)
-    async with _client(proxy) as client, app.router.lifespan_context(app):
+    async with asgi_client(proxy) as client, app.router.lifespan_context(app):
         res = await client.post("/v1/chat/completions", json=BODY)
     assert res.status_code == 429
     error = res.json()["error"]
@@ -160,14 +119,14 @@ async def test_zero_refuses_every_uncorrelated_call_and_never_reaches_the_model(
 
 async def test_the_default_cap_serves_a_first_call() -> None:
     (app, proxy), _, _ = _build(None)
-    async with _client(proxy) as client, app.router.lifespan_context(app):
+    async with asgi_client(proxy) as client, app.router.lifespan_context(app):
         res = await client.post("/v1/chat/completions", json=BODY)
     assert res.status_code == 200
 
 
 async def test_a_reload_changes_the_cap_without_a_restart() -> None:
     (app, proxy), _, _ = _build(15)
-    async with _client(proxy) as client, app.router.lifespan_context(app):
+    async with asgi_client(proxy) as client, app.router.lifespan_context(app):
         assert (await client.post("/v1/chat/completions", json=BODY)).status_code == 200
         assert (await client.post("/v1/chat/completions", json=BODY)).status_code == 429
         app.state.config = _config(100)  # what an accepted reload does: one assignment
@@ -178,9 +137,9 @@ async def test_a_reload_changes_the_cap_without_a_restart() -> None:
 
 async def test_a_correlated_call_is_never_touched_by_the_cap() -> None:
     (app, proxy), _, _ = _build(0)
-    request, ctx = _run_ctx(max_tokens=100)
+    request, ctx = run_request(max_tokens=100)
     async with (
-        _client(proxy) as client,
+        asgi_client(proxy) as client,
         app.router.lifespan_context(app),
         app.state.runs.register(request, ctx) as record,
     ):
@@ -196,56 +155,11 @@ async def test_a_correlated_call_is_never_touched_by_the_cap() -> None:
 
 async def test_a_traceparent_naming_no_run_in_flight_counts_as_uncorrelated() -> None:
     (app, proxy), _, _ = _build(0)
-    async with _client(proxy) as client, app.router.lifespan_context(app):
+    async with asgi_client(proxy) as client, app.router.lifespan_context(app):
         res = await client.post(
             "/v1/chat/completions", json=BODY, headers={"traceparent": TRACEPARENT}
         )
     assert res.status_code == 429
-
-
-class GatedModel:
-    """A model whose calls wait for `gate`. Usage is 10 input tokens plus the full `max_tokens`
-    as output: the worst case an upstream that honors `max_tokens` can report.
-    """
-
-    PROMPT = 10
-
-    def __init__(self, *, fail: bool = False) -> None:
-        self.gate = asyncio.Event()
-        self.max_tokens: list[int | None] = []
-        self.fail = fail
-
-    async def complete(
-        self,
-        messages: Sequence[ModelMessage],
-        *,
-        route: str,
-        tools: Sequence[ToolSpec] | None = None,
-        temperature: float = 0.0,
-        max_tokens: int | None = None,
-    ) -> ModelResult:
-        self.max_tokens.append(max_tokens)
-        await self.gate.wait()
-        if self.fail:
-            raise ModelError("upstream_error", "the upstream failed", retryable=True)
-        return ModelResult(text="ok", usage=self._usage(max_tokens))
-
-    async def stream(
-        self,
-        messages: Sequence[ModelMessage],
-        *,
-        route: str,
-        tools: Sequence[ToolSpec] | None = None,
-        temperature: float = 0.0,
-        max_tokens: int | None = None,
-    ) -> AsyncIterator[ModelChunk]:
-        self.max_tokens.append(max_tokens)
-        yield ModelChunk(text="first")
-        await self.gate.wait()
-        yield ModelChunk(usage=self._usage(max_tokens), finish=True)
-
-    def _usage(self, max_tokens: int | None) -> Usage:
-        return Usage(input_tokens=self.PROMPT, output_tokens=max_tokens or 0)
 
 
 async def _until(predicate: Any) -> None:
@@ -261,7 +175,7 @@ async def test_concurrent_calls_admit_only_what_fits_and_the_overshoot_is_the_pr
     model = GatedModel()
     (app, proxy), _, _ = _build(100, model)
     body = {**BODY, "max_tokens": 20}  # 100 / 20: five calls fit
-    async with _client(proxy) as client, app.router.lifespan_context(app):
+    async with asgi_client(proxy) as client, app.router.lifespan_context(app):
         calls = [
             asyncio.ensure_future(client.post("/v1/chat/completions", json=body)) for _ in range(8)
         ]
@@ -287,7 +201,7 @@ async def test_a_call_larger_than_the_cap_alone_is_refused_and_never_reaches_the
     model = GatedModel()
     model.gate.set()
     (app, proxy), _, _ = _build(100, model)
-    async with _client(proxy) as client, app.router.lifespan_context(app):
+    async with asgi_client(proxy) as client, app.router.lifespan_context(app):
         res = await client.post("/v1/chat/completions", json={**BODY, "max_tokens": 101})
         assert res.status_code == 429
         error = res.json()["error"]
@@ -359,7 +273,7 @@ async def test_an_upstream_error_with_no_usage_is_charged_its_reservation() -> N
     model = GatedModel(fail=True)
     model.gate.set()
     (app, proxy), _, _ = _build(100, model)
-    async with _client(proxy) as client, app.router.lifespan_context(app):
+    async with asgi_client(proxy) as client, app.router.lifespan_context(app):
         res = await client.post("/v1/chat/completions", json={**BODY, "max_tokens": 40})
         assert res.status_code == 502
         assert app.state.uncorrelated_cap.spent == 40
@@ -369,7 +283,7 @@ async def test_a_reload_mid_window_applies_to_the_next_admission_not_to_calls_in
     model = GatedModel()
     (app, proxy), _, _ = _build(100, model)
     body = {**BODY, "max_tokens": 60}
-    async with _client(proxy) as client, app.router.lifespan_context(app):
+    async with asgi_client(proxy) as client, app.router.lifespan_context(app):
         held = asyncio.ensure_future(client.post("/v1/chat/completions", json=body))
         small = {**BODY, "max_tokens": 10}
         try:

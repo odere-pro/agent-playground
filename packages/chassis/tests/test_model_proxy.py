@@ -14,21 +14,16 @@ from typing import Any
 
 import httpx
 import pytest
-from chassis import CHASSIS_VERSION
 from chassis.adapters.anthropic_compat.model_wire import BODY_CAP_BYTES
 from chassis.adapters.litellm import LiteLLMModel
-from chassis.core.envelope import Budget, Context, Request, TaskInput, Versions
-from chassis.core.handle import echo
-from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel, ScriptRule
+from chassis.fakes import InMemoryTelemetry, ScriptedModel, ScriptRule
 from chassis.ports.bundle import PortBundle
 from chassis.ports.model import (
     ModelChunk,
     ModelError,
     ModelMessage,
-    ModelPort,
     ModelResult,
     ToolCallRequest,
-    ToolSpec,
     Usage,
 )
 from chassis.server import ChassisConfig, create_app
@@ -36,6 +31,19 @@ from chassis.server.correlation import RunRecord
 from chassis.server.model_admission import DEFAULT_UNCORRELATED_MAX_TOKENS
 from chassis.server.proxy_app import create_proxy_app
 from chassis.server.remote_auth import create_remote_proxy_app
+from proxy_fakes import (
+    ANTHROPIC_BODY,
+    PLAIN_WORDS,
+    TRACE,
+    TRACEPARENT,
+    FailingModel,
+    GatedModel,
+    RecordingModel,
+    abandon_stream,
+    asgi_client,
+    proxy_ports,
+    run_request,
+)
 
 CONFIG: dict[str, Any] = {
     "profile": "fake",
@@ -54,26 +62,16 @@ BODY: dict[str, Any] = {
 }
 
 
-def _ports(model: ModelPort | None = None) -> PortBundle:
-    return PortBundle(
-        model=model
-        or ScriptedModel(
-            [
-                ScriptRule(
-                    match="lookup", tool_call=ToolCallRequest(call_id="c1", name="glossary_lookup")
-                ),
-                ScriptRule(match="fail", error="upstream_down", retryable=True),
-                ScriptRule(match="simplify", reply="Plain words. Short sentences."),
-            ]
-        ),
-        engine=FakeEngine(handle=echo),
-        config=InMemoryConfig(),
-        telemetry=InMemoryTelemetry(),
-    )
+CHAT_RULES = [
+    ScriptRule(match="lookup", tool_call=ToolCallRequest(call_id="c1", name="glossary_lookup")),
+    ScriptRule(match="fail", error="upstream_down", retryable=True),
+    ScriptRule(match="simplify", reply="Plain words. Short sentences."),
+]
+"""A tool call for `lookup`, a retryable failure for `fail`, and a plain reply."""
 
 
-def _client(app: Any) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://chassis")
+def _chat_ports() -> PortBundle:
+    return proxy_ports(ScriptedModel(CHAT_RULES))
 
 
 def _chunks(text: str) -> list[Any]:
@@ -86,9 +84,9 @@ def _chunks(text: str) -> list[Any]:
 
 
 async def test_complete_maps_the_openai_shape_both_ways() -> None:
-    ports = _ports()
+    ports = _chat_ports()
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
-    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+    async with asgi_client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
         res = await client.post("/v1/chat/completions", json=BODY)
     assert res.status_code == 200, res.text
     data = res.json()
@@ -109,8 +107,8 @@ async def test_complete_maps_the_openai_shape_both_ways() -> None:
 
 
 async def test_stream_ends_with_usage_and_done() -> None:
-    app = create_app(ChassisConfig.model_validate(CONFIG), _ports())
-    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+    app = create_app(ChassisConfig.model_validate(CONFIG), _chat_ports())
+    async with asgi_client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
         res = await client.post("/v1/chat/completions", json={**BODY, "stream": True})
     assert res.status_code == 200
     assert res.headers["content-type"].startswith("text/event-stream")
@@ -126,13 +124,13 @@ async def test_stream_ends_with_usage_and_done() -> None:
 
 
 async def test_tool_calls_cross_in_both_modes() -> None:
-    app = create_app(ChassisConfig.model_validate(CONFIG), _ports())
+    app = create_app(ChassisConfig.model_validate(CONFIG), _chat_ports())
     body = {
         **BODY,
         "messages": [{"role": "user", "content": "lookup SLM"}],
         "tools": [{"type": "function", "function": {"name": "glossary_lookup", "parameters": {}}}],
     }
-    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+    async with asgi_client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
         complete = (await client.post("/v1/chat/completions", json=body)).json()
         streamed = _chunks(
             (await client.post("/v1/chat/completions", json={**body, "stream": True})).text
@@ -146,9 +144,9 @@ async def test_tool_calls_cross_in_both_modes() -> None:
 
 
 async def test_model_error_is_an_openai_error_body() -> None:
-    app = create_app(ChassisConfig.model_validate(CONFIG), _ports())
+    app = create_app(ChassisConfig.model_validate(CONFIG), _chat_ports())
     body = {**BODY, "messages": [{"role": "user", "content": "fail"}]}
-    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+    async with asgi_client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
         complete = await client.post("/v1/chat/completions", json=body)
         streamed = await client.post("/v1/chat/completions", json={**body, "stream": True})
     assert complete.status_code == 502
@@ -172,8 +170,8 @@ async def test_inbound_authorization_is_never_forwarded() -> None:
         )
 
     model = LiteLLMModel("http://router/v1", transport=httpx.MockTransport(record))
-    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(model))
-    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+    app = create_app(ChassisConfig.model_validate(CONFIG), proxy_ports(model))
+    async with asgi_client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
         res = await client.post(
             "/v1/chat/completions", json=BODY, headers={"Authorization": "Bearer leaked-key"}
         )
@@ -183,44 +181,18 @@ async def test_inbound_authorization_is_never_forwarded() -> None:
 
 
 async def test_not_ready_is_503() -> None:
-    app = create_app(ChassisConfig.model_validate(CONFIG), _ports())
-    async with _client(create_proxy_app(app)) as client:
+    app = create_app(ChassisConfig.model_validate(CONFIG), _chat_ports())
+    async with asgi_client(create_proxy_app(app)) as client:
         assert (await client.post("/v1/chat/completions", json=BODY)).status_code == 503
 
 
-TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"
-TRACEPARENT = f"00-{TRACE}-00f067aa0ba902b7-01"
-
-
-def _run_ctx(max_tokens: int) -> tuple[Request, Context]:
-    request = Request(
-        request_id="req-1",
-        trace_id=TRACE,
-        idempotency_key="idem-1",
-        agent="echo",
-        agent_version="0.0.1",
-        input=TaskInput(text="x"),
-        budget=Budget(max_tokens=max_tokens),
-    )
-    ctx = Context(
-        request_id=request.request_id,
-        trace_id=request.trace_id,
-        idempotency_key=request.idempotency_key,
-        agent=request.agent,
-        agent_version=request.agent_version,
-        budget=request.budget,
-        versions=Versions(chassis=CHASSIS_VERSION),
-    )
-    return request, ctx
-
-
 async def test_a_call_of_an_in_flight_run_gets_a_span_and_is_charged() -> None:
-    ports = _ports()
+    ports = _chat_ports()
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
     headers = {"traceparent": TRACEPARENT}
-    request, ctx = _run_ctx(max_tokens=100)
+    request, ctx = run_request(max_tokens=100)
     async with (
-        _client(create_proxy_app(app)) as client,
+        asgi_client(create_proxy_app(app)) as client,
         app.router.lifespan_context(app),
         app.state.runs.register(request, ctx) as record,
     ):
@@ -251,11 +223,11 @@ async def test_a_call_of_an_in_flight_run_gets_a_span_and_is_charged() -> None:
 async def test_a_call_without_an_in_flight_run_is_served_and_counted(
     headers: dict[str, str],
 ) -> None:
-    ports = _ports()
+    ports = _chat_ports()
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
-    request, ctx = _run_ctx(max_tokens=100)
+    request, ctx = run_request(max_tokens=100)
     async with (
-        _client(create_proxy_app(app)) as client,
+        asgi_client(create_proxy_app(app)) as client,
         app.router.lifespan_context(app),
         app.state.runs.register(request, ctx) as record,
     ):
@@ -271,12 +243,12 @@ async def test_a_call_without_an_in_flight_run_is_served_and_counted(
 
 
 async def test_an_exhausted_run_is_refused_with_429_complete_and_streamed() -> None:
-    ports = _ports()
+    ports = _chat_ports()
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
     headers = {"traceparent": TRACEPARENT}
-    request, ctx = _run_ctx(max_tokens=15)
+    request, ctx = run_request(max_tokens=15)
     async with (
-        _client(create_proxy_app(app)) as client,
+        asgi_client(create_proxy_app(app)) as client,
         app.router.lifespan_context(app),
         app.state.runs.register(request, ctx) as record,
     ):
@@ -304,12 +276,12 @@ async def test_an_exhausted_run_is_refused_with_429_complete_and_streamed() -> N
 
 
 async def test_a_failed_stream_is_charged_with_what_it_reported() -> None:
-    ports = _ports()
+    ports = _chat_ports()
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
     body = {**BODY, "messages": [{"role": "user", "content": "fail"}], "stream": True}
-    request, ctx = _run_ctx(max_tokens=100)
+    request, ctx = run_request(max_tokens=100)
     async with (
-        _client(create_proxy_app(app)) as client,
+        asgi_client(create_proxy_app(app)) as client,
         app.router.lifespan_context(app),
         app.state.runs.register(request, ctx) as record,
     ):
@@ -323,50 +295,6 @@ async def test_a_failed_stream_is_charged_with_what_it_reported() -> None:
 # --- The forwarded `max_tokens`: capped at what the run has left, reserved while the call runs ---
 
 
-class RecordingModel(ScriptedModel):
-    """`ScriptedModel` that also records the `max_tokens` each call was given, and can hold a
-    stream open until `gate` is set.
-    """
-
-    def __init__(self, gate: asyncio.Event | None = None) -> None:
-        super().__init__([ScriptRule(match="simplify", reply="Plain words.")])
-        self.max_tokens: list[int | None] = []
-        self.gate = gate
-        self.streaming = asyncio.Event()
-
-    async def complete(
-        self,
-        messages: Sequence[ModelMessage],
-        *,
-        route: str,
-        tools: Sequence[ToolSpec] | None = None,
-        temperature: float = 0.0,
-        max_tokens: int | None = None,
-    ) -> ModelResult:
-        self.max_tokens.append(max_tokens)
-        return await super().complete(
-            messages, route=route, tools=tools, temperature=temperature, max_tokens=max_tokens
-        )
-
-    async def stream(
-        self,
-        messages: Sequence[ModelMessage],
-        *,
-        route: str,
-        tools: Sequence[ToolSpec] | None = None,
-        temperature: float = 0.0,
-        max_tokens: int | None = None,
-    ) -> AsyncIterator[ModelChunk]:
-        self.max_tokens.append(max_tokens)
-        self.streaming.set()
-        if self.gate is not None:
-            await asyncio.wait_for(self.gate.wait(), timeout=5)
-        async for chunk in super().stream(
-            messages, route=route, tools=tools, temperature=temperature, max_tokens=max_tokens
-        ):
-            yield chunk
-
-
 @pytest.mark.parametrize("stream", [False, True], ids=["complete", "stream"])
 @pytest.mark.parametrize(
     ("asked", "forwarded"),
@@ -377,15 +305,15 @@ async def test_the_forwarded_max_tokens_is_capped_at_the_remainder(
     stream: bool, asked: int | None, forwarded: int
 ) -> None:
     """A run with `max_tokens: 20` that has spent 15 forwards at most 5; unset is the remainder."""
-    model = RecordingModel()
-    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(model))
+    model = RecordingModel(PLAIN_WORDS)
+    app = create_app(ChassisConfig.model_validate(CONFIG), proxy_ports(model))
     body: dict[str, Any] = {**BODY, "stream": stream}
     body.pop("max_tokens")
     if asked is not None:
         body["max_tokens"] = asked
-    request, ctx = _run_ctx(max_tokens=20)
+    request, ctx = run_request(max_tokens=20)
     async with (
-        _client(create_proxy_app(app)) as client,
+        asgi_client(create_proxy_app(app)) as client,
         app.router.lifespan_context(app),
         app.state.runs.register(request, ctx) as record,
     ):
@@ -406,10 +334,10 @@ async def test_an_uncorrelated_call_forwards_its_max_tokens_or_the_default_ceili
 ) -> None:
     """PoC-5: an uncorrelated call with no `max_tokens` is forwarded with the default ceiling,
     so the per-replica cap can reserve its worst case."""
-    model = RecordingModel()
-    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(model))
+    model = RecordingModel(PLAIN_WORDS)
+    app = create_app(ChassisConfig.model_validate(CONFIG), proxy_ports(model))
     body = {**BODY, "max_tokens": asked}
-    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+    async with asgi_client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
         assert (await client.post("/v1/chat/completions", json=body)).status_code == 200
     assert model.max_tokens == [DEFAULT_UNCORRELATED_MAX_TOKENS if asked is None else asked]
 
@@ -421,13 +349,13 @@ async def test_a_concurrent_call_cannot_be_given_tokens_another_call_holds() -> 
     left.
     """
     gate = asyncio.Event()
-    model = RecordingModel(gate)
-    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(model))
+    model = RecordingModel(PLAIN_WORDS, gate=gate)
+    app = create_app(ChassisConfig.model_validate(CONFIG), proxy_ports(model))
     headers = {"traceparent": TRACEPARENT}
     unset = {k: v for k, v in BODY.items() if k != "max_tokens"}
-    request, ctx = _run_ctx(max_tokens=40)
+    request, ctx = run_request(max_tokens=40)
     async with (
-        _client(create_proxy_app(app)) as client,
+        asgi_client(create_proxy_app(app)) as client,
         app.router.lifespan_context(app),
         app.state.runs.register(request, ctx) as record,
     ):
@@ -490,10 +418,10 @@ TOOL_LOOP_PORT = [
 
 @pytest.mark.parametrize("stream", [False, True], ids=["complete", "stream"])
 async def test_a_tool_loop_reaches_the_port_intact(stream: bool) -> None:
-    ports = _ports()
+    ports = _chat_ports()
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
     body = {**BODY, "messages": TOOL_LOOP, "stream": stream}
-    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+    async with asgi_client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
         res = await client.post("/v1/chat/completions", json=body)
     assert res.status_code == 200, res.text
     model = ports.model
@@ -580,10 +508,10 @@ UNSUPPORTED: list[tuple[str, list[dict[str, Any]], str]] = [
 async def test_an_unsupported_message_is_400_before_the_model_is_called(
     messages: list[dict[str, Any]], param: str, stream: bool
 ) -> None:
-    ports = _ports()
+    ports = _chat_ports()
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
     body = {**BODY, "messages": messages, "stream": stream}
-    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+    async with asgi_client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
         res = await client.post("/v1/chat/completions", json=body)
     assert res.status_code == 400, res.text
     error = res.json()["error"]
@@ -623,13 +551,13 @@ async def test_chat_proxy_answers_413_without_calling_the_model_when_the_body_is
     kind: str,
 ) -> None:
     """A correlated chat body one byte over the cap is 413 on both listeners; the model is idle."""
-    ports = _ports()
+    ports = _chat_ports()
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
     headers = {"traceparent": TRACEPARENT, "authorization": f"Bearer {REMOTE_TOKEN}"}
-    request, ctx = _run_ctx(max_tokens=100)
+    request, ctx = run_request(max_tokens=100)
 
     async with (
-        _client(_listener(kind, app)) as client,
+        asgi_client(_listener(kind, app)) as client,
         app.router.lifespan_context(app),
         app.state.runs.register(request, ctx) as record,
     ):
@@ -683,9 +611,9 @@ def _error_of(res: httpx.Response) -> Any:
 @pytest.mark.parametrize("stream", [False, True], ids=["complete", "stream"])
 async def test_chat_proxy_sends_fixed_text_when_the_model_fails(stream: bool) -> None:
     """The error body keeps its code and `retryable` and carries a fixed text, never upstream's."""
-    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(OutcomeModel("error")))
+    app = create_app(ChassisConfig.model_validate(CONFIG), proxy_ports(OutcomeModel("error")))
 
-    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+    async with asgi_client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
         res = await client.post("/v1/chat/completions", json={**BODY, "stream": stream})
 
     assert _error_of(res) == {
@@ -702,10 +630,10 @@ async def test_chat_proxy_logs_the_upstream_text_when_the_model_fails(
     stream: bool, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The upstream's own text stays at the chassis, in the `chassis.model_proxy` log."""
-    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(OutcomeModel("error")))
+    app = create_app(ChassisConfig.model_validate(CONFIG), proxy_ports(OutcomeModel("error")))
     caplog.set_level(logging.WARNING, logger="chassis.model_proxy")
 
-    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+    async with asgi_client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
         await client.post("/v1/chat/completions", json={**BODY, "stream": stream})
 
     assert UPSTREAM_TEXT in caplog.text
@@ -745,12 +673,12 @@ async def test_complete_call_settles_its_hold_once_when_the_model_answers_or_fai
 ) -> None:
     """A model error settles with no usage, a success with its usage; once each."""
     settles = _count_settles(monkeypatch)
-    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(OutcomeModel(outcome)))
+    app = create_app(ChassisConfig.model_validate(CONFIG), proxy_ports(OutcomeModel(outcome)))
     path, body = ROUTES[route]
-    request, ctx = _run_ctx(max_tokens=100)
+    request, ctx = run_request(max_tokens=100)
 
     async with (
-        _client(create_proxy_app(app)) as client,
+        asgi_client(create_proxy_app(app)) as client,
         app.router.lifespan_context(app),
         app.state.runs.register(request, ctx) as record,
     ):
@@ -767,12 +695,12 @@ async def test_complete_call_settles_its_hold_once_when_it_is_cancelled(
     """A cancel while the model works settles the hold with no usage, once."""
     settles = _count_settles(monkeypatch)
     model = OutcomeModel("cancel")
-    app = create_app(ChassisConfig.model_validate(CONFIG), _ports(model))
+    app = create_app(ChassisConfig.model_validate(CONFIG), proxy_ports(model))
     path, body = ROUTES[route]
-    request, ctx = _run_ctx(max_tokens=100)
+    request, ctx = run_request(max_tokens=100)
 
     async with (
-        _client(create_proxy_app(app)) as client,
+        asgi_client(create_proxy_app(app)) as client,
         app.router.lifespan_context(app),
         app.state.runs.register(request, ctx) as record,
     ):
@@ -786,3 +714,35 @@ async def test_complete_call_settles_its_hold_once_when_it_is_cancelled(
 
     assert settles == [None]
     assert record.reserved_tokens == 0
+
+
+async def test_chat_proxy_charges_nothing_when_a_correlated_stream_is_abandoned() -> None:
+    """Known gap 004 G-2 stays: only the Anthropic proxy route charges an abandoned stream."""
+    model = GatedModel()
+    body = {**ANTHROPIC_BODY, "max_tokens": 30, "stream": True}
+
+    record = await abandon_stream(model, "/v1/chat/completions", body, b'"content": "first"')
+
+    assert (record.spent_tokens, record.reserved_tokens) == (0, 0)
+
+
+@pytest.mark.parametrize("code", ["http_401", "http_403"])
+async def test_chat_proxy_answers_403_model_route_denied_when_the_upstream_answers_401_or_403(
+    code: str,
+) -> None:
+    """An upstream 401 or 403 is a 403 `model_route_denied` in the OpenAI error shape."""
+    model = FailingModel(ModelError(code, "denied"))
+    app = create_app(ChassisConfig.model_validate(CONFIG), proxy_ports(model))
+
+    async with asgi_client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+        res = await client.post("/v1/chat/completions", json=ANTHROPIC_BODY)
+
+    assert res.status_code == 403, res.text
+    assert res.json() == {
+        "error": {
+            "message": "this model route is not allowed for this service",
+            "type": "permission_error",
+            "code": "model_route_denied",
+            "retryable": False,
+        }
+    }
