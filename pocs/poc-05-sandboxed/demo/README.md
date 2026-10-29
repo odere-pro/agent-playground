@@ -25,7 +25,7 @@ It stops non-zero on the first failed step. The last line of a good run is `resu
 | 1, 3 | A normal request through `agent-echo` (sidecar) and `chassis-echo-remote` (remote), before and after the probe | `run.sh request` |
 | 2 | The remote probe: H25, H19, H21, H23, H08, H17 | the named tests in `test_poc05_kind_remote_controls.py` and `test_poc05_kind_tool_gateway.py` |
 | 4 | The sidecar probe: H05, H07 from the workload; then the in-pod probe suite | `test_poc05_kind_hardreq1.py`, `test_poc05_kind_probe.py` |
-| 5 | Admission: every fixture through a server dry run | `test_poc05_kind_admission.py::test_fixture_outcome_matches_its_header` |
+| 5 | Admission: every fixture through a server dry run | `test_poc05_kind_admission.py::test_rejected_fixture_is_refused_with_its_rule_message`, `::test_admitted_twin_is_admitted` |
 | 6 | One `run_python` call on gVisor, with no egress | `test_poc05_kind_code_runner.py::test_code_runs_on_gvisor_with_no_egress` |
 | 7 | H11, Kafka with SASL | `test_poc05_kind_hardreq1.py -k kafka` |
 | 8 | Where it was logged: `probe.check`, `remote_unauthenticated`, LiteLLM's 401 lines | `run.sh logs`, counted |
