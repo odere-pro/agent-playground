@@ -1,16 +1,18 @@
 # PoC-2: Two engines, one contract, two lanes: prove the chassis is framework-agnostic
 
 Status: done (2026-10-01)
+Builds on: [PoC-1](../poc-01-walking-skeleton/)
+Hands to: [PoC-3](../poc-03-one-interface-every-client/)
 Planning doc: [002-PoC-2-two-engines-one-contract.md](../../docs/planning/poc/002-PoC-2-two-engines-one-contract.md)
 Time box: 2 weeks
 
 ## Question
 
-Can two very different frameworks run as workloads behind the same `handle` contract, over A2A in the `sidecar` lane and over A2A in memory in the chassis's tests, with no framework code in the chassis and no key in any workload? Does a workload that is not Python pass the same contract?
+Can two very different frameworks run as workloads behind the same `handle` contract? Can they run over A2A in the `sidecar` lane, and over A2A in memory in the chassis's tests? Can they do it with no framework code in the chassis and no key in any workload? Does a workload that is not Python pass the same contract?
 
 ## What we built
 
-In one line: the same chassis now runs four workloads in four styles behind one contract, either next to it over A2A on localhost or in memory for tests, and every model and tool call a workload makes comes back through the chassis.
+In short: the same chassis now runs four workloads in four styles behind one contract. Each runs next to it over A2A on localhost, or in memory for tests. Every model and tool call a workload makes comes back through the chassis. To run it: `make test-poc POC=02` (more under "How to run").
 
 ```
                 public 127.0.0.1:8080
