@@ -229,7 +229,10 @@ class _MessagesStream(StreamingResponse):
             await _close(pending, chunks)
             if timed_out:
                 # The upstream may have produced tokens we never saw: charge the reservation.
-                hold.settle(hold.seen[-1] if hold.seen else Usage(output_tokens=hold.tokens))
+                if hold.seen:
+                    hold.settle(hold.seen[-1])
+                else:  # no usage seen: the whole reservation, not counted as tokens
+                    hold.settle(Usage(output_tokens=hold.tokens), reported=False)
             elif ended or failed:
                 hold.settle(hold.seen[-1] if hold.seen else None)
             # Otherwise the client left: `release` in `__call__` charges the abandoned stream.

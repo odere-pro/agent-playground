@@ -38,7 +38,11 @@ attribute, or an exception out of the block, sets the span status to error.
 current `trace_id` and `span_id` (outside a span, `trace_id_hex` of a `trace_id` field). Every
 string except the ids is redacted (regex only; named-entity redaction runs in the Collector's log
 pipeline, never here). The record goes to `log_sink`, by default one JSON line on the `chassis`
-logger.
+logger. The record rides on the log record as `chassis_record`, so the chassis's JSON formatter
+(`chassis.logs`) writes its fields as fields, not JSON inside `message` (PoC-8).
+
+**Metrics (PoC-8).** `metrics` is the chassis's `MetricsRegistry`: every counter and every timed
+span feeds it as well as the OTel meter, and `GET /metrics` renders it (`chassis.metrics`).
 """
 
 from __future__ import annotations
@@ -68,6 +72,7 @@ from opentelemetry.trace import Status, StatusCode
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from chassis.core.trace import parse_traceparent, trace_id_hex
+from chassis.metrics import MetricsRegistry, observe_span
 from chassis.ports.telemetry import Span
 from chassis.redaction import redact, redact_value
 
@@ -121,7 +126,7 @@ class _RunTraceIds(RandomIdGenerator):
 
 def _write_log(record: dict[str, Any]) -> None:
     level = _LEVELS.get(str(record.get("level", "info")).lower(), logging.INFO)
-    _logger.log(level, json.dumps(record, default=str))
+    _logger.log(level, json.dumps(record, default=str), extra={"chassis_record": record})
 
 
 def _attribute(key: str, value: Any) -> Any:
@@ -181,6 +186,7 @@ class OtelTelemetry:
         self._meter = self.meter_provider.get_meter(SCOPE)
         self._counters: dict[str, Counter] = {}
         self._log_sink: LogSink = log_sink or _write_log
+        self.metrics = MetricsRegistry()
 
     @classmethod
     def from_env(cls) -> OtelTelemetry:
@@ -233,7 +239,8 @@ class OtelTelemetry:
         )
         token = otel_context.attach(trace.set_span_in_context(otel_span, context))
         try:
-            yield port_span
+            with observe_span(self.metrics, name, port_span.attributes):
+                yield port_span
         except Exception as exc:
             _record_exception(otel_span, exc)
             otel_span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
@@ -248,6 +255,7 @@ class OtelTelemetry:
             counter = self._counters[name] = self._meter.create_counter(name)
         clean = {k: _attribute(k, v) for k, v in labels.items()}
         counter.add(value, {k: v for k, v in clean.items() if v is not None})
+        self.metrics.count(name, value, labels)
 
     def log(self, level: str, message: str, **fields: Any) -> None:
         record: dict[str, Any] = {

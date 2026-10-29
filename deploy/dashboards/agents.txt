@@ -1,0 +1,11 @@
+# The agents a dashboard is generated for: the agent.name values of the chassis configs under
+# deploy/. One per line. Regenerate: uv run python -m chassis.dashboards
+echo
+echo-claude-agent-remote
+echo-events
+echo-kagent-adk-remote
+echo-openai-agents
+echo-remote
+echo-smolagents-remote
+echo-typescript
+echo-typescript-remote

@@ -38,7 +38,8 @@ REPORT_SCHEMA: dict[str, Any] = {
     "properties": {
         "schema": {"const": SCHEMA_ID},
         "engine": {"type": "string"},
-        "tool": {"enum": ["promptfoo", "deepeval"]},
+        # `offline`: the reference scorer `bakeoff.evalcheck` (PoC-8, tests only).
+        "tool": {"enum": ["promptfoo", "deepeval", "offline"]},
         "cases": {
             "type": "array",
             "items": {

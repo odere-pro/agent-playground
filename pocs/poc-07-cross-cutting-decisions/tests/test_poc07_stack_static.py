@@ -79,8 +79,9 @@ def test_collector_logs_pipeline_masks_emails_and_phones() -> None:
         for block in config["processors"][redactors[0]]["log_statements"]
         for s in block["statements"]
     )
-    assert "<EMAIL>" in statements
-    assert "<PHONE>" in statements
+    # PoC-8: the chassis's entity set and tokens (`chassis.redaction`, ADR-008).
+    for token in ("<EMAIL_ADDRESS>", "<PHONE_NUMBER>", "<CREDIT_CARD>", "<IBAN_CODE>", "<US_SSN>"):
+        assert token in statements, token
     # The Collector expands `$`; a literal regex `$` would need `$$`. Keep the patterns `$`-free.
     assert "$" not in statements.replace("$$", "")
 
