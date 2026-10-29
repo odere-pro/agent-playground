@@ -32,8 +32,6 @@ NON_FAKE_CONFIGS = (COMPOSE_LITELLM / "config.local.yaml", KIND_LITELLM)
 MASTER_KEY_REF = "os.environ/LITELLM_MASTER_KEY"
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
 LOCAL_IMAGE = re.compile(r"^kind\.local/agent-platform/[a-z0-9-]+:poc05$")
-UNPINNED_UNTIL_T19 = {"postgres:17.6-alpine"}
-"""Third-party images whose digest is not in the repo yet. Each carries `TODO(T19)` in its file."""
 
 SERVICES = (
     "litellm",
@@ -211,18 +209,32 @@ def test_every_platform_service_has_a_workload() -> None:
     assert set(SERVICES) <= set(_workloads()), sorted(_workloads())
 
 
-def test_platform_images_are_pinned() -> None:
-    """Third-party images by digest; ours are the local `:poc05` builds, never pulled."""
-    for name, doc in _workloads().items():
-        spec = _pod_spec(doc)
-        for c in spec.get("initContainers", []) + spec["containers"]:
-            image = c["image"]
-            if LOCAL_IMAGE.match(image):
-                assert c.get("imagePullPolicy") == "Never", f"{name}: {image}"
-            elif image in UNPINNED_UNTIL_T19:
-                assert f"{image}  # TODO(T19): pin by digest" in _all_platform_text(), image
-            else:
-                assert DIGEST.search(image), f"{name}: {image} is not pinned by digest"
+@pytest.mark.parametrize(
+    "image",
+    [
+        pytest.param(c, id=f"{name}/{c['name']}")
+        for name, doc in _workloads().items()
+        for c in _pod_spec(doc).get("initContainers", []) + _pod_spec(doc)["containers"]
+        if LOCAL_IMAGE.match(c["image"])
+    ],
+)
+def test_platform_images_are_never_pulled_when_they_are_our_builds(image: dict[str, Any]) -> None:
+    """Section 2.11: our images are the local `:poc05` builds, with imagePullPolicy Never."""
+    assert image.get("imagePullPolicy") == "Never", image["image"]
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        pytest.param(c["image"], id=f"{name}/{c['name']}")
+        for name, doc in _workloads().items()
+        for c in _pod_spec(doc).get("initContainers", []) + _pod_spec(doc)["containers"]
+        if not LOCAL_IMAGE.match(c["image"])
+    ],
+)
+def test_platform_images_are_pinned(image: str) -> None:
+    """Section 2.11: each third-party platform image is pinned by an @sha256 digest."""
+    assert DIGEST.search(image), f"{image} is not pinned by digest"
 
 
 def test_platform_pods_are_hardened() -> None:
