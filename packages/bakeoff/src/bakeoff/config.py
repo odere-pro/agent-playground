@@ -54,11 +54,17 @@ class Hosted:
 
 
 def chassis_config(
-    engine: Engine, lane: Lane, *, workload_port: int | None, route: Route = "big-default"
+    engine: Engine,
+    lane: Lane,
+    *,
+    workload_port: int | None,
+    route: Route = "big-default",
+    adapters: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """The `ChassisConfig` mapping for `engine` in `lane`. The trust rule is checked first.
 
-    `route` is `spec.model.route`, the only field a model switch changes."""
+    `route` is `spec.model.route`, the only field a model switch changes. `adapters` override
+    `spec.adapters` field by field (the red-team run sets `guardrails` and `tools: mcp`)."""
     check_lane(engine, lane)
     section: dict[str, Any]
     if lane == "inprocess":
@@ -80,6 +86,7 @@ def chassis_config(
                 "telemetry": "memory",
                 "tools": "fake",
                 "state": "memory",
+                **(adapters or {}),
             },
             "engine": section,
             "model": {"route": route},

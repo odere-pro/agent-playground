@@ -14,6 +14,7 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
 - Spec: [contract v3](../contracts/contract-v3.md), PoC-4's additive changes. Read v2 and v1 for what v3 does not name.
 - How PoC-4 works: [the PoC-4 guide](poc-04-how-it-works.md).
 - PoC-7 adds security, observability, feedback, and the evaluator gate. Spec: [contract v6](../contracts/contract-v6.md). See [PoC-7 modules](#poc-7-modules).
+- PoC-8 adds `/metrics`, JSON logs, the router span, dashboards, rate limits, the stream secret check, the output URL allow-list, and the rest of the marking. Spec: [contract v7](../contracts/contract-v7.md). See [PoC-8 modules](#poc-8-modules).
 
 ## core
 
@@ -193,6 +194,9 @@ Each is built by `from_env()` and loaded lazily.
 - `ChassisConfig` and `load_config`.
 - `spec.interfaces` is `{openai, anthropic, mcp}`. Each is on by default. Unknown keys are refused.
 - `spec.limits` is `LimitsSpec`: `max_tokens_max`, `timeout_ms_max`, `messages_max`, `body_bytes_max`. Each is at least 1.
+  - PoC-8 adds the rate limit: `rate_limit` (`true`), `requests_per_minute` (`600`), `request_burst` (`100`), `rate_limit_on_unavailable` (`fail_open` or `fail_closed`). All reload with `spec.limits`.
+- `spec.observability` (PoC-7: `session_header`) gains `log_level` (`info`), `metrics_scope` (unset: `/metrics` needs no token), and `prices` (USD per million tokens per route, `ModelPrice`). Restart-only.
+- `spec.guardrails` (PoC-7: the three stages, `on_unavailable`) gains `stream_secrets` (`true`) and `output_url_allow` (`[]`, default deny; `*` turns it off). Restart-only.
 - `spec.idempotency` is `IdempotencySpec`: `enabled`, `ttl_s`, `lease_s`, `wait_poll_ms`, `max_entry_bytes`.
 - `spec.events` is `EventsSpec` with `result_events`. A non-null `consume` is refused at load until event-triggered runs exist.
 - `spec.engine.protocol` is `chassis` (the default) or `a2a`. `a2a` is for `connector: remote` only. `spec.engine.a2a` is `{usage_key: null, context_id: omit | trace_id}`. It needs `protocol: a2a`. Both are restart-only. `as_mapping()` leaves them out for `sidecar` and `inprocess`. suggested: the names and defaults.
@@ -399,6 +403,26 @@ Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 
 
 - The model proxy also sends every call of the gate's fallback attempt to the fallback route (`chassis.model_route_forced`).
 - Tests: the fake bindings are in `tests/test_contracts_poc07.py`; each real adapter binds the same suite in its own file (`test_oidc_adapter.py`, `test_litellm_guardrails.py`, `test_evaluators.py`, `test_langfuse_feedback.py`, `test_otel_telemetry.py`), offline against a stub. The scenarios are in `pocs/poc-07-cross-cutting-decisions/tests/`.
+
+## PoC-8 modules
+
+Spec: [contract v7](../contracts/contract-v7.md). Decisions: ADR-007 and ADR-008 in `docs/planning/adr/`. No new port.
+
+| Module | What it does | Contract v7 |
+| ------ | ------------ | ----------- |
+| `chassis/metrics.py` | `MetricsRegistry`: counters and span histograms in memory, the Prometheus text format, the declared families. Both telemetry adapters hold one at `.metrics` | A.3 |
+| `chassis/logs.py` | `configure_logging`, `JsonFormatter`, `run_context`: one redacted JSON line with `request_id` and `trace_id` | B |
+| `chassis/dashboards/` | `python -m chassis.dashboards`: one Grafana dashboard per agent in `agents.txt`, written to `deploy/dashboards/` | B |
+| `chassis/server/observability.py` | `GET /metrics` and `OpenMetrics` (open when no `metrics_scope`); `count_usage` for tokens and cost | A |
+| `chassis/server/rate_limit.py` | The per-caller token bucket in `StatePort`, 429 `rate_limited` with `Retry-After` | C |
+| `chassis/server/stream_guard.py` | The stream secret check and URL masking on every streamed run | D.1 |
+| `chassis/server/output_filter.py` | `find_secret`, `mask_urls`, `mask_answer`: the secret patterns and the URL allow-list | D |
+| `chassis/adapters/ai_marking.py` | The `ai_marking` body field on the OpenAI and Anthropic formats | E.1 |
+
+- The model proxy opens `chassis.model.route` per admitted call and counts tokens and cost (B, A.3).
+- `server/marking.py` adds `Access-Control-Expose-Headers`; `server/results.py` sets the `aigenerated` CloudEvent extension (E.2, E.3).
+- `chassis serve` calls `configure_logging` and gives uvicorn `log_config=None`, so every line is JSON.
+- Tests: `test_metrics.py`, `test_json_logs.py`, `test_router_span.py`, `test_dashboards.py`, `test_collector_log_redaction.py`, `test_rate_limit.py`, `test_output_filter.py`, `test_marking_body.py`. The red-team controls: `packages/contract-suites/tests/test_redteam_controls.py`. The scenarios are in `pocs/poc-08-cross-cutting-build/tests/`.
 
 ## profiles.py
 

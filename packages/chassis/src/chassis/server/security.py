@@ -58,6 +58,8 @@ __all__ = [
     "install_security",
     "path_class",
     "principal_of",
+    "refusal_body",
+    "send_json",
 ]
 
 AUTH_REFUSED = "chassis.auth_refused"
@@ -127,21 +129,24 @@ def principal_of(scope: Scope) -> Principal | None:
     return found if isinstance(found, Principal) else None
 
 
-def _body(path: str, code: str, message: str, status: int) -> dict[str, Any]:
+_KINDS = {401: "authentication_error", 403: "permission_error", 429: "rate_limit_error"}
+"""The error `type` per status in the OpenAI and Anthropic shapes; suggested for 429."""
+
+
+def refusal_body(path: str, code: str, message: str, status: int) -> dict[str, Any]:
+    """A refusal before the route runs, in the shape of the route's format: OpenAI's on its
+    route, Anthropic's on its route, `{"detail": {"code", "message"}}` elsewhere. Shared by
+    `CallerAuth` and the rate limit (`chassis.server.rate_limit`)."""
     if path == OPENAI_PATH:
-        kind = {401: "authentication_error", 403: "permission_error"}.get(status, "server_error")
+        kind = _KINDS.get(status, "server_error")
         return {"error": {"message": message, "type": kind, "param": None, "code": code}}
     if path == ANTHROPIC_PATH:
-        kind = {401: "authentication_error", 403: "permission_error"}.get(
-            status, "overloaded_error"
-        )
+        kind = _KINDS.get(status, "overloaded_error")
         return {"type": "error", "error": {"type": kind, "message": message}}
     return {"detail": {"code": code, "message": message}}
 
 
-async def _send_json(
-    send: Send, status: int, body: dict[str, Any], headers: dict[str, str]
-) -> None:
+async def send_json(send: Send, status: int, body: dict[str, Any], headers: dict[str, str]) -> None:
     raw = json.dumps(body, separators=(",", ":")).encode()
     out = [
         (b"content-type", b"application/json"),
@@ -243,7 +248,7 @@ class CallerAuth:
             headers["WWW-Authenticate"] = f'Bearer error="insufficient_scope", scope="{needed}"'
         elif status == 503:
             headers["Retry-After"] = RETRY_AFTER_S
-        await _send_json(send, status, _body(path, code, MESSAGES[code], status), headers)
+        await send_json(send, status, refusal_body(path, code, MESSAGES[code], status), headers)
 
 
 def install_security(app: FastAPI) -> None:

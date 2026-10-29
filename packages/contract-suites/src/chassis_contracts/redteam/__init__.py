@@ -23,7 +23,13 @@ Where a case enters (`kind`) and what "stopped" means:
 - `workload_env`: the `workload-*` services of the named Compose files; stopped (passes) when no
   environment variable name looks like a credential and no `env_file` is set.
 
-`python -m chassis_contracts.redteam [--write PATH]` prints the table and writes the results JSON.
+`controls` picks the chassis settings the cases run against (`CONTROLS`): `poc07` (the default)
+turns off what PoC-8 added (the stream secret check, the output URL allow-list), so the PoC-7
+record (`pocs/poc-07-cross-cutting-decisions/notes/2026-10-28-redteam-results.json`) still
+reproduces; `poc08` runs the chassis defaults as they are now.
+
+`python -m chassis_contracts.redteam [--controls poc08] [--write PATH]` prints the table and
+writes the results JSON.
 """
 
 from __future__ import annotations
@@ -56,6 +62,7 @@ __all__ = [
     "CASES",
     "CATEGORIES",
     "CONFIGS",
+    "CONTROLS",
     "Case",
     "Outcome",
     "load_cases",
@@ -138,6 +145,18 @@ _CONFIG: dict[str, Any] = {
 }
 
 
+CONTROLS: dict[str, dict[str, Any]] = {
+    "poc07": {"guardrails": {"stream_secrets": False, "output_url_allow": ["*"]}},
+    "poc08": {},
+}
+"""`spec` overrides per set of controls: `poc07` as PoC-7 ran, `poc08` the chassis defaults."""
+
+
+def _config(controls: str) -> ChassisConfig:
+    spec = {**_CONFIG["spec"], **CONTROLS[controls]}
+    return ChassisConfig.model_validate({**_CONFIG, "spec": spec})
+
+
 def _answering(text: str) -> Callable[[TaskInput, Context], AsyncIterator[Event]]:
     async def handle(task: TaskInput, ctx: Context) -> AsyncIterator[Event]:
         yield Delta(text=text)
@@ -146,7 +165,12 @@ def _answering(text: str) -> Callable[[TaskInput, Context], AsyncIterator[Event]
     return handle
 
 
-def _app(answer: str, guardrails: GuardrailPort, tools: InMemoryTools | None = None) -> Any:
+def _app(
+    answer: str,
+    guardrails: GuardrailPort,
+    tools: InMemoryTools | None = None,
+    controls: str = "poc07",
+) -> Any:
     extra: dict[str, Any] = {} if tools is None else {"tools": tools}
     ports = PortBundle(
         model=ScriptedModel(),
@@ -156,7 +180,7 @@ def _app(answer: str, guardrails: GuardrailPort, tools: InMemoryTools | None = N
         guardrails=guardrails,
         **extra,
     )
-    return create_app(ChassisConfig.model_validate(_CONFIG), ports)
+    return create_app(_config(controls), ports)
 
 
 async def _run(app: Any, text: str, *, stream: bool = False) -> httpx.Response:
@@ -195,9 +219,9 @@ def _tools(output: str) -> InMemoryTools:
     return InMemoryTools([(definition, lambda text="": output)])
 
 
-async def _tool_call(case: Case, guardrails: GuardrailPort) -> bool:
+async def _tool_call(case: Case, guardrails: GuardrailPort, controls: str) -> bool:
     tools = _tools(case.payload if case.kind == "tool_output" else "stored")
-    app = _app("unused", guardrails, tools)
+    app = _app("unused", guardrails, tools, controls)
     proxy = create_proxy_app(app)
     arguments = case.tool_arguments if case.kind == "tool_args" else {"text": "page"}
     async with app.router.lifespan_context(app), _mcp(proxy) as client:
@@ -223,16 +247,18 @@ def _env_holds_no_credential(case: Case, root: Path) -> bool:
     return True
 
 
-async def run_case(case: Case, guardrails: GuardrailPort, root: Path) -> bool:
+async def run_case(
+    case: Case, guardrails: GuardrailPort, root: Path, controls: str = "poc07"
+) -> bool:
     """True when the chassis stopped the case (see the module docstring)."""
     if case.kind == "input":
-        response = await _run(_app("fine", guardrails), case.payload)
+        response = await _run(_app("fine", guardrails, controls=controls), case.payload)
         error = response.json().get("output", {}).get("error") or {}
         return bool(error.get("code") == "guardrail_blocked")
     if case.kind in ("tool_output", "tool_args"):
-        return await _tool_call(case, guardrails)
+        return await _tool_call(case, guardrails, controls)
     if case.kind in ("output", "output_stream"):
-        app = _app(case.payload, guardrails)
+        app = _app(case.payload, guardrails, controls=controls)
         response = await _run(app, "answer please", stream=case.kind == "output_stream")
         return case.text.split()[-1].rstrip(".") not in response.text
     if case.kind == "workload_env":
@@ -241,12 +267,16 @@ async def run_case(case: Case, guardrails: GuardrailPort, root: Path) -> bool:
 
 
 async def run_all(
-    config: str, cases: list[Case] | None = None, root: Path | None = None
+    config: str,
+    cases: list[Case] | None = None,
+    root: Path | None = None,
+    *,
+    controls: str = "poc07",
 ) -> list[Outcome]:
     root = root or ROOT
     outcomes = []
     for case in cases or load_cases():
-        stopped = await run_case(case, CONFIGS[config](), root)
+        stopped = await run_case(case, CONFIGS[config](), root, controls)
         outcomes.append(Outcome(case.id, case.category, case.kind, config, stopped))
     return outcomes
 

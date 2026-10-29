@@ -39,7 +39,8 @@ inner connector.
 
 **Counters** (suggested names): `chassis.evaluator_calls{evaluator, mode, outcome}` with outcome
 `pass`, `fail`, or `error`; `chassis.gate_retries`; `chassis.gate_fallbacks`;
-`chassis.gate_failed_open`.
+`chassis.gate_failed_open`; `chassis.gate_runs{mode}` (PoC-8), each sampled call, so the fallback
+rate is `chassis.gate_fallbacks` over `chassis.gate_runs{mode="sync"}`.
 
 **Known gaps.** The gate does not shrink `budget.timeout_ms` across attempts: each attempt gets the
 whole budget (the H-4 timeout stage). The judge's tokens are in `metrics` but not charged to the
@@ -76,6 +77,7 @@ __all__ = [
     "GATE_FAILED_OPEN",
     "GATE_FALLBACKS",
     "GATE_RETRIES",
+    "GATE_RUNS",
     "SCORE_SPAN",
     "SHUTDOWN_WAIT_S",
     "GateNotConfigured",
@@ -87,6 +89,7 @@ __all__ = [
 EVALUATOR_CALLS = "chassis.evaluator_calls"
 GATE_RETRIES = "chassis.gate_retries"
 GATE_FALLBACKS = "chassis.gate_fallbacks"
+GATE_RUNS = "chassis.gate_runs"
 GATE_FAILED_OPEN = "chassis.gate_failed_open"
 EVALUATOR_DROPPED = "chassis.evaluator_dropped"
 EVALUATOR_ABANDONED = "chassis.evaluator_abandoned"
@@ -201,7 +204,9 @@ class GatedEngine:
         if not sampled(request.request_id, harness.evaluator_sample_rate):
             return self._passthrough(request, ctx, score=False)
         if request.stream or harness.evaluator_mode == "async":
+            self._telemetry.counter(GATE_RUNS, mode="async")
             return self._passthrough(request, ctx, score=True)
+        self._telemetry.counter(GATE_RUNS, mode="sync")
         return self._sync(request, ctx)
 
     async def _passthrough(

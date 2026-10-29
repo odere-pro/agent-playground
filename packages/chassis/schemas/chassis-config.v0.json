@@ -404,6 +404,18 @@
           "title": "Output",
           "type": "boolean"
         },
+        "output_url_allow": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Url Allow",
+          "type": "array"
+        },
+        "stream_secrets": {
+          "default": true,
+          "title": "Stream Secrets",
+          "type": "boolean"
+        },
         "tool_output": {
           "default": true,
           "title": "Tool Output",
@@ -518,7 +530,7 @@
     },
     "LimitsSpec": {
       "additionalProperties": false,
-      "description": "`spec.limits`: what one call on a public interface may ask for. The interfaces have no auth\nyet (PoC-8), so the caller sets the run budget; these bound it. A value above a ceiling\nis refused (400 `limit_exceeded` in the format's shape), never clamped; a budget below 1 is\nrefused earlier (422 on native, 400 `invalid_body` on the chat formats); a body over\n`body_bytes_max` is 413 before it is read (`chassis.server.interfaces.limits`).\n\nsuggested: every name and default.\n- `max_tokens_max: 8000`: the most `budget.max_tokens` (OpenAI `max_completion_tokens` or\n  `max_tokens`, Anthropic `max_tokens`) one run may ask for.\n- `timeout_ms_max: 120000`: the most `budget.timeout_ms`.\n- `body_bytes_max: 1048576`: the largest request body, 1 MiB.\n- `messages_max: 256`: the most chat `messages`, and on native the most turns\n  (`input.data.history` plus the input), per call.\n- `uncorrelated_tokens_per_minute: 20000` (PoC-5, plan section 2.12, H16): the per-replica\n  token bucket for model calls on the loopback model proxy that name no run in flight; past\n  it, 429 `budget_exhausted`. `0` refuses every uncorrelated call. Reloadable.",
+      "description": "`spec.limits`: what one call on a public interface may ask for. The interfaces have no auth\nyet (PoC-8), so the caller sets the run budget; these bound it. A value above a ceiling\nis refused (400 `limit_exceeded` in the format's shape), never clamped; a budget below 1 is\nrefused earlier (422 on native, 400 `invalid_body` on the chat formats); a body over\n`body_bytes_max` is 413 before it is read (`chassis.server.interfaces.limits`).\n\nsuggested: every name and default.\n- `max_tokens_max: 8000`: the most `budget.max_tokens` (OpenAI `max_completion_tokens` or\n  `max_tokens`, Anthropic `max_tokens`) one run may ask for.\n- `timeout_ms_max: 120000`: the most `budget.timeout_ms`.\n- `body_bytes_max: 1048576`: the largest request body, 1 MiB.\n- `messages_max: 256`: the most chat `messages`, and on native the most turns\n  (`input.data.history` plus the input), per call.\n- `uncorrelated_tokens_per_minute: 20000` (PoC-5, plan section 2.12, H16): the per-replica\n  token bucket for model calls on the loopback model proxy that name no run in flight; past\n  it, 429 `budget_exhausted`. `0` refuses every uncorrelated call. Reloadable.\n- The rate limit per caller (PoC-8, 022 H-6; `chassis.server.rate_limit`): a token bucket per\n  agent and per caller (the `Principal` subject) in `StatePort`, so every replica shares it.\n  `rate_limit: true` (on by default: the defaults are generous, and it counts only callers\n  with a checked identity, so auth off changes nothing), `requests_per_minute: 600` (the\n  refill rate), `request_burst: 100` (the bucket size), `rate_limit_on_unavailable:\n  fail_open` (a store outage lets the call through and is counted; `fail_closed` answers 503\n  `state_unavailable`). Past it, 429 `rate_limited` with `Retry-After`. Reloadable.",
       "properties": {
         "body_bytes_max": {
           "default": 1048576,
@@ -538,6 +550,32 @@
           "title": "Messages Max",
           "type": "integer"
         },
+        "rate_limit": {
+          "default": true,
+          "title": "Rate Limit",
+          "type": "boolean"
+        },
+        "rate_limit_on_unavailable": {
+          "default": "fail_open",
+          "enum": [
+            "fail_open",
+            "fail_closed"
+          ],
+          "title": "Rate Limit On Unavailable",
+          "type": "string"
+        },
+        "request_burst": {
+          "default": 100,
+          "minimum": 1,
+          "title": "Request Burst",
+          "type": "integer"
+        },
+        "requests_per_minute": {
+          "default": 600,
+          "minimum": 1,
+          "title": "Requests Per Minute",
+          "type": "integer"
+        },
         "timeout_ms_max": {
           "default": 120000,
           "minimum": 1,
@@ -552,6 +590,26 @@
         }
       },
       "title": "LimitsSpec",
+      "type": "object"
+    },
+    "ModelPrice": {
+      "additionalProperties": false,
+      "description": "One route's price in USD per million tokens (PoC-8). suggested: the unit. LiteLLM's own\nspend stays the bill; this is the dashboard's estimate.",
+      "properties": {
+        "input_per_mtok": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Input Per Mtok",
+          "type": "number"
+        },
+        "output_per_mtok": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Output Per Mtok",
+          "type": "number"
+        }
+      },
+      "title": "ModelPrice",
       "type": "object"
     },
     "ModelSpec": {
@@ -580,8 +638,38 @@
     },
     "ObservabilitySpec": {
       "additionalProperties": false,
-      "description": "`spec.observability` (PoC-7, 014 H-7). suggested: every name and default. Restart-only.\n\n- `session_header: x-session-id`: the request header whose value is the session id on spans\n  and in baggage. The user id is the caller's `Principal.subject`, never a header.",
+      "description": "`spec.observability` (PoC-7, 014 H-7). suggested: every name and default. Restart-only.\n\n- `session_header: x-session-id`: the request header whose value is the session id on spans\n  and in baggage. The user id is the caller's `Principal.subject`, never a header.\n- `log_level: info` (PoC-8): the level of the chassis's JSON log lines (`chassis.logs`).\n- `metrics_scope: null` (PoC-8): the scope `GET /metrics` needs. Unset, a scraper needs no\n  token, as for `/health`; set, the caller needs a valid token with that scope.\n- `prices` (PoC-8): USD per million tokens per model route, for\n  `chassis_model_cost_microusd_total`. A route with no price counts no cost.",
       "properties": {
+        "log_level": {
+          "default": "info",
+          "enum": [
+            "debug",
+            "info",
+            "warning",
+            "error"
+          ],
+          "title": "Log Level",
+          "type": "string"
+        },
+        "metrics_scope": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Metrics Scope"
+        },
+        "prices": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ModelPrice"
+          },
+          "title": "Prices",
+          "type": "object"
+        },
         "session_header": {
           "default": "x-session-id",
           "title": "Session Header",
