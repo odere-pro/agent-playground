@@ -68,6 +68,7 @@ def remote_yaml(tmp_path: Path) -> str:
 def test_remote_proxy_host_is_refused_outside_the_remote_lane(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """`--remote-proxy-host` is a usage error outside the `remote` lane."""
     monkeypatch.setenv("REMOTE_TOKEN", TOKEN)
     with pytest.raises(SystemExit) as exc:
         cli.parse_args(["serve", "--config", FAKE_YAML, "--remote-proxy-host", "10.0.0.5"])
@@ -75,17 +76,21 @@ def test_remote_proxy_host_is_refused_outside_the_remote_lane(
     assert "connector is 'inprocess'" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("value", [None, ""], ids=["unset", "empty"])
 def test_remote_proxy_host_is_refused_without_the_token_variable(
-    remote_yaml: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    value: str | None,
+    remote_yaml: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """`--remote-proxy-host` is a usage error when the token variable is unset or empty."""
     monkeypatch.delenv("REMOTE_TOKEN", raising=False)
-    for value in (None, ""):
-        if value is not None:
-            monkeypatch.setenv("REMOTE_TOKEN", value)
-        with pytest.raises(SystemExit) as exc:
-            cli.parse_args(["serve", "--config", remote_yaml, "--remote-proxy-host", "10.0.0.5"])
-        assert exc.value.code == 2
-        assert "REMOTE_TOKEN is not set" in capsys.readouterr().err
+    if value is not None:
+        monkeypatch.setenv("REMOTE_TOKEN", value)
+    with pytest.raises(SystemExit) as exc:
+        cli.parse_args(["serve", "--config", remote_yaml, "--remote-proxy-host", "10.0.0.5"])
+    assert exc.value.code == 2
+    assert "REMOTE_TOKEN is not set" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -97,6 +102,7 @@ def test_remote_proxy_host_must_be_one_address_off_loopback(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """`--remote-proxy-host` must be one address, not loopback and not a wildcard."""
     monkeypatch.setenv("REMOTE_TOKEN", TOKEN)
     with pytest.raises(SystemExit) as exc:
         cli.parse_args(["serve", "--config", remote_yaml, "--remote-proxy-host", host])
@@ -104,20 +110,25 @@ def test_remote_proxy_host_must_be_one_address_off_loopback(
     assert "--remote-proxy-host" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("port", ["8080", "8090"], ids=["public", "proxy"])
 def test_remote_proxy_port_must_differ_from_the_other_two(
-    remote_yaml: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    port: str,
+    remote_yaml: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """`--remote-proxy-port` must differ from the public and proxy ports."""
     monkeypatch.setenv("REMOTE_TOKEN", TOKEN)
     base = ["serve", "--config", remote_yaml, "--remote-proxy-host", "10.0.0.5"]
-    for port in ("8080", "8090"):
-        with pytest.raises(SystemExit):
-            cli.parse_args([*base, "--remote-proxy-port", port])
-        assert "--remote-proxy-port" in capsys.readouterr().err
+    with pytest.raises(SystemExit, match=r"^2$"):
+        cli.parse_args([*base, "--remote-proxy-port", port])
+    assert "--remote-proxy-port" in capsys.readouterr().err
 
 
 def test_the_remote_flags_are_ignored_and_the_listener_absent_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """By default there is no remote listener and the port defaults to 8091."""
     args = cli.parse_args(["serve", "--config", FAKE_YAML])
     assert args.remote_proxy_host is None and args.remote_proxy_port == 8091
     servers = cli.build_all(args)
@@ -127,6 +138,7 @@ def test_the_remote_flags_are_ignored_and_the_listener_absent_by_default(
 def test_serve_builds_the_remote_listener_on_the_pod_ip(
     remote_yaml: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """`serve` builds the remote listener on the pod IP behind `BearerAuth`."""
     monkeypatch.setenv("REMOTE_TOKEN", TOKEN)
     args = cli.parse_args(["serve", "--config", remote_yaml, "--remote-proxy-host", "10.0.0.5"])
     servers = cli.build_all(args)
@@ -147,7 +159,8 @@ def test_serve_builds_the_remote_listener_on_the_pod_ip(
 def test_allow_any_proxy_host_help_says_it_is_not_the_remote_lane(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with pytest.raises(SystemExit):
+    """The `--allow-any-proxy-host` help says it is not the remote lane."""
+    with pytest.raises(SystemExit, match=r"^0$"):
         cli.parse_args(["serve", "--help"])
     out = " ".join(capsys.readouterr().out.split())
     assert "not the remote lane" in out and "--remote-proxy-host" in out
@@ -159,9 +172,7 @@ def test_allow_any_proxy_host_help_says_it_is_not_the_remote_lane(
 def test_serve_exits_non_zero_when_the_proxy_port_is_taken(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """H14: the chassis never runs without its proxy. The public listener never starts and the
-    ports are never built (no workload wait) when 8090 is taken.
-    """
+    """A taken proxy port exits non-zero before the public bind or any wait (H14)."""
     calls: list[tuple[str, int]] = []
     original = asyncio.base_events.BaseEventLoop.create_server
 
@@ -265,9 +276,7 @@ async def _until(check: Any, what: str) -> None:
 
 
 async def test_the_proxy_binds_before_the_wait_and_the_wait_is_readiness() -> None:
-    """H14: the proxy is up at the first engine setup; while the workload is not reachable the
-    public port answers `/health` 200 and `/ready` 503 `starting`; once it is, `/ready` is 200.
-    """
+    """The proxy binds before the workload wait, and the wait is `/ready` 503 (H14)."""
     proxy_ref: list[uvicorn.Server] = []
     engine = WaitingEngine(proxy_ref)
     with _sockets() as socks:
@@ -289,6 +298,8 @@ async def test_the_proxy_binds_before_the_wait_and_the_wait_is_readiness() -> No
 
 
 async def test_a_startup_error_that_is_not_a_connection_fails_at_once() -> None:
+    """A startup error that is not a connection error fails at once."""
+
     class Broken(FakeEngine):
         async def setup(self, config: Mapping[str, Any], ports: PortBundle) -> None:
             raise ValueError("engine.url is not a URL")
@@ -302,6 +313,7 @@ async def test_a_startup_error_that_is_not_a_connection_fails_at_once() -> None:
 
 
 async def test_the_workload_wait_gives_up_after_its_timeout() -> None:
+    """The workload wait gives up after its timeout."""
     proxy_ref: list[uvicorn.Server] = []
     engine = WaitingEngine(proxy_ref)
     with _sockets() as socks:
@@ -313,6 +325,8 @@ async def test_the_workload_wait_gives_up_after_its_timeout() -> None:
 
 
 def test_main_exits_3_when_the_deferred_startup_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`main` exits with STARTUP_FAILURE when the deferred startup fails."""
+
     async def fake_serve(self: uvicorn.Server, sockets: Any = None) -> None:
         self.started = True
 
@@ -327,9 +341,10 @@ def test_main_exits_3_when_the_deferred_startup_fails(monkeypatch: pytest.Monkey
 
 
 def test_the_startup_wait_flag(capsys: pytest.CaptureFixture[str]) -> None:
+    """`--startup-wait-s` defaults to 120 and refuses a negative value."""
     args = cli.parse_args(["serve", "--config", FAKE_YAML])
     assert args.startup_wait_s == 120.0
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit, match=r"^2$"):
         cli.parse_args(["serve", "--config", FAKE_YAML, "--startup-wait-s", "-1"])
     assert "--startup-wait-s" in capsys.readouterr().err
 
@@ -338,6 +353,7 @@ def test_the_startup_wait_flag(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 async def test_the_remote_listener_stops_after_the_public_one_with_the_proxy() -> None:
+    """The remote listener stops after the public one, with the proxy."""
     with _sockets() as socks:
         drain, deferred = _drain(
             FakeEngine(handle=echo), socks, StartupWait(timeout_s=5), remote=True

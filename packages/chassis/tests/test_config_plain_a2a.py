@@ -30,6 +30,7 @@ REMOTE: dict[str, Any] = {
 
 
 def test_protocol_defaults_to_chassis_and_a2a_is_unset() -> None:
+    """`protocol` defaults to `chassis` and the `a2a` block is unset."""
     engine = _config(REMOTE).spec.engine
     assert engine.protocol == "chassis" and engine.a2a is None
     assert engine.as_mapping()["protocol"] == "chassis"
@@ -37,22 +38,27 @@ def test_protocol_defaults_to_chassis_and_a2a_is_unset() -> None:
 
 
 def test_the_a2a_block_has_its_defaults() -> None:
+    """An empty `a2a` block has no usage key and `context_id: omit`."""
     engine = _config({**REMOTE, "protocol": "a2a", "a2a": {}}).spec.engine
     assert engine.a2a is not None
     assert engine.a2a.usage_key is None and engine.a2a.context_id == "omit"
 
 
 def test_a_full_plain_mapping_reaches_setup() -> None:
+    """A full plain-A2A block reaches the connector mapping as is."""
     a2a = {"usage_key": "kagent.dev/a2a/usage", "context_id": "trace_id"}
     mapping = _config({**REMOTE, "protocol": "a2a", "a2a": a2a}).spec.engine.as_mapping()
     assert mapping["protocol"] == "a2a" and mapping["a2a"] == a2a
 
 
-@pytest.mark.parametrize("lane", ["sidecar", "inprocess"])
-def test_protocol_a2a_is_refused_outside_remote(lane: str) -> None:
-    engine: dict[str, Any] = {"connector": lane, "protocol": "a2a"}
-    if lane == "inprocess":
-        engine["handle"] = "chassis.core.handle:echo_wire"
+@pytest.mark.parametrize(
+    ("lane", "extra"),
+    [("sidecar", {}), ("inprocess", {"handle": "chassis.core.handle:echo_wire"})],
+    ids=["sidecar", "inprocess"],
+)
+def test_protocol_a2a_is_refused_outside_remote(lane: str, extra: dict[str, Any]) -> None:
+    """`protocol: a2a` is refused for any lane but `remote`."""
+    engine: dict[str, Any] = {"connector": lane, "protocol": "a2a", **extra}
     with pytest.raises(ValidationError) as caught:
         _config(engine)
     assert (
@@ -62,6 +68,7 @@ def test_protocol_a2a_is_refused_outside_remote(lane: str) -> None:
 
 
 def test_the_a2a_block_needs_protocol_a2a() -> None:
+    """An `a2a` block without `protocol: a2a` is refused."""
     with pytest.raises(
         ValidationError, match=r"spec\.engine\.a2a needs spec\.engine\.protocol: a2a"
     ):
@@ -69,11 +76,13 @@ def test_the_a2a_block_needs_protocol_a2a() -> None:
 
 
 def test_an_unknown_protocol_is_refused() -> None:
+    """An unknown `protocol` is refused."""
     with pytest.raises(ValidationError, match="protocol"):
         _config({**REMOTE, "protocol": "grpc"})
 
 
 def test_the_a2a_block_forbids_extra_keys_and_bad_values() -> None:
+    """The `a2a` block refuses extra keys and a bad `context_id`."""
     with pytest.raises(ValidationError, match="extra"):
         _config({**REMOTE, "protocol": "a2a", "a2a": {"nope": 1}})
     with pytest.raises(ValidationError, match="context_id"):
@@ -81,5 +90,6 @@ def test_the_a2a_block_forbids_extra_keys_and_bad_values() -> None:
 
 
 def test_other_lanes_see_the_v4_mapping() -> None:
+    """Other lanes get the v4 mapping with no `protocol` or `a2a`."""
     mapping = _config({"connector": "sidecar", "url": "http://127.0.0.1:9100"}).spec.engine
     assert "protocol" not in mapping.as_mapping() and "a2a" not in mapping.as_mapping()
