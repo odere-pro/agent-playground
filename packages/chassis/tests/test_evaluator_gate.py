@@ -8,12 +8,13 @@ lanes (sidecar over a Unix socket, two engines) are in `pocs/poc-07-cross-cuttin
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 import httpx
 import pytest
-from chassis.core.envelope import Context, TaskInput
+from chassis.core.envelope import Context, Request, TaskInput
 from chassis.core.events import Delta, End, Error, Event, Metrics, Start
 from chassis.fakes import (
     FakeEngine,
@@ -25,11 +26,12 @@ from chassis.fakes import (
     ScriptRule,
 )
 from chassis.ports.bundle import PortBundle
-from chassis.ports.evaluator import EvaluatorPort, NoEvaluator
+from chassis.ports.evaluator import EvalCase, EvaluatorError, EvaluatorPort, NoEvaluator, Score
 from chassis.ports.model import ModelChunk, ModelMessage, ModelResult, ToolSpec
 from chassis.server import ChassisConfig, create_app
 from chassis.server.evaluator_gate import (
     EVALUATOR_CALLS,
+    EVALUATOR_DROPPED,
     GATE_FAILED_OPEN,
     GATE_FALLBACKS,
     GATE_RETRIES,
@@ -180,6 +182,84 @@ async def test_an_evaluator_outage_fails_open() -> None:
     assert body["status"] == "ok" and body["output"]["text"] == BAD
     assert engine.routes == ["big-default"]
     assert telemetry(bundle).counter_value(GATE_FAILED_OPEN) == 1
+
+
+class FailsOnRetry(ScriptedEvaluator):
+    """Scores the first answer, then is unavailable."""
+
+    async def score(self, case: EvalCase) -> Score:
+        if self.cases:
+            self.cases.append(case)
+            raise EvaluatorError("evaluator_unavailable", "scripted outage", retryable=True)
+        return await super().score(case)
+
+
+class StalledEvaluator(ScriptedEvaluator):
+    """Never answers until `release` is set."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.release = asyncio.Event()
+
+    async def score(self, case: EvalCase) -> Score:
+        await self.release.wait()
+        return await super().score(case)
+
+
+async def test_gate_sends_the_retry_answer_and_fails_open_when_the_evaluator_fails_on_it() -> None:
+    """An evaluator outage on the retry sends the retry's answer as it is."""
+    engine = RouteEngine(answers=[BAD, GOOD])
+    ev = FailsOnRetry([ScoreRule(match=BAD, score=0.2)], default=0.9)
+    bundle = ports(engine, ev)
+
+    res, _ = await run(config(), bundle)
+
+    body = res.json()
+    assert body["status"] == "ok" and body["output"]["text"] == GOOD
+    assert engine.routes == ["big-default", "big-default"]
+    assert telemetry(bundle).counter_value(GATE_FAILED_OPEN) == 1
+    assert telemetry(bundle).counter_value(GATE_FALLBACKS) == 0
+
+
+@pytest.mark.parametrize(
+    ("harness", "body"),
+    [({"evaluator_mode": "async"}, {}), ({}, {"stream": True})],
+    ids=["async", "stream"],
+)
+async def test_gate_records_an_error_outcome_and_keeps_the_answer_when_async_scoring_fails(
+    harness: dict[str, Any], body: dict[str, Any]
+) -> None:
+    """A background scoring that fails is counted as `error`; the answer already went out."""
+    engine, ev = RouteEngine(), evaluator()
+    ev.unavailable = True
+    bundle = ports(engine, ev)
+
+    res, _ = await run(config(**harness), bundle, **body)
+
+    assert res.status_code == 200 and BAD in res.text
+    t = telemetry(bundle)
+    assert t.counter_value(EVALUATOR_CALLS, evaluator="fake", mode="async", outcome="error") == 1
+    assert t.counter_value(GATE_FAILED_OPEN) == 0
+
+
+async def test_gate_drops_a_background_score_when_the_pending_cap_is_full(
+    request_: Request, context: Context
+) -> None:
+    """With `max_pending=1` and one score stalled, the next score is dropped and counted."""
+    ev = StalledEvaluator()
+    t = InMemoryTelemetry()
+    cfg = config(evaluator_mode="async")
+    gate = GatedEngine(RouteEngine(), ev, config=lambda: cfg, telemetry=t, max_pending=1)
+
+    first = [e async for e in gate.run(request_, context)]
+    await asyncio.sleep(0)
+    second = [e async for e in gate.run(request_, context)]
+
+    assert t.counter_value(EVALUATOR_DROPPED) == 1
+    assert gate.pending == 1 and len(ev.cases) == 0
+    assert first == second
+    ev.release.set()
+    assert await gate.wait(5) == 0
 
 
 async def test_an_engine_error_is_sent_as_is_and_not_scored() -> None:
