@@ -307,7 +307,7 @@ def _sse_frames(lines: Iterable[str]) -> list[tuple[str, dict[str, Any]]]:
     return frames
 
 
-def wait_until_ready[T](
+def poll_until[T](
     probe: Callable[[], T | None], timeout_s: float, interval_s: float = 1.0
 ) -> T | None:
     """Call `probe` until it returns a value or the deadline passes; return the last value."""
@@ -362,7 +362,7 @@ def router_logs(
         line = next((ln for ln in logs.splitlines() if "token_log status=ok" in ln), None)
         return None if line is None else (logs, line)
 
-    found = wait_until_ready(token_line, LOG_TIMEOUT_S)
+    found = poll_until(token_line, LOG_TIMEOUT_S)
     if found is None:
         return _compose("logs", "--no-color", "litellm", check=False).stdout, None
     return found

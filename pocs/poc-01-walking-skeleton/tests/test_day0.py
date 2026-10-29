@@ -18,6 +18,7 @@ from typing import Any
 import httpx
 import pytest
 from chassis.adapters.a2a import InProcessConnector
+from chassis.adapters.litellm import LiteLLMModel
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.ports.bundle import PortBundle
@@ -38,7 +39,7 @@ ROOT = Path(__file__).resolve().parents[3]
 EXAMPLE_SCRIPT = ROOT / "packages/fake-model-server/scripts/example.yaml"
 
 
-CHASSIS_TESTS = ROOT / "packages/chassis/tests"
+CONTRACT_BINDINGS = ROOT / "packages/chassis/tests/test_contracts.py"
 
 
 @pytest.fixture
@@ -76,18 +77,22 @@ def test_fake_profile_builds_the_four_day0_ports() -> None:
 
 
 def _contract_bindings() -> dict[str, tuple[set[str], set[str]]]:
-    """Every `Test*` class under packages/chassis/tests: its base names and the names it uses.
+    """Every `Test*` class in packages/chassis/tests/test_contracts.py: its base names and the
+    names it calls (what it builds). Annotations and other bare names do not count.
 
     Read with `ast`, not imported: the chassis tests folder is not a package, and pytest runs
     the bindings themselves in the same gate.
     """
     found: dict[str, tuple[set[str], set[str]]] = {}
-    for path in sorted(CHASSIS_TESTS.rglob("test_*.py")):
-        for node in ast.walk(ast.parse(path.read_text())):
-            if isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
-                bases = {b.id for b in node.bases if isinstance(b, ast.Name)}
-                used = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
-                found[node.name] = (bases, used)
+    for node in ast.walk(ast.parse(CONTRACT_BINDINGS.read_text())):
+        if isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
+            bases = {b.id for b in node.bases if isinstance(b, ast.Name)}
+            built = {
+                n.func.id
+                for n in ast.walk(node)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+            }
+            found[node.name] = (bases, built)
     return found
 
 
@@ -110,10 +115,22 @@ def test_each_day0_fake_is_bound_to_its_contract_suite_by_name(
     """
     bindings = _contract_bindings()
 
-    bases, used = bindings.get(binding, (set(), set()))
-
+    assert binding in bindings, f"{binding} is not in {CONTRACT_BINDINGS.name}"
+    bases, built = bindings[binding]
     assert suite.__name__ in bases, f"{binding} does not bind {suite.__name__}"
-    assert fake.__name__ in used, f"{binding} does not build {fake.__name__}"
+    assert fake.__name__ in built, f"{binding} does not build {fake.__name__}"
+
+
+def test_real_model_adapter_is_bound_to_the_model_suite_by_name() -> None:
+    """Exit criterion: the real `ModelPort` adapter passes the same contract suite as its fake.
+    `TestLiteLLMModel` subclasses `ModelPortContract` and builds `LiteLLMModel`.
+    """
+    bindings = _contract_bindings()
+
+    assert "TestLiteLLMModel" in bindings, f"TestLiteLLMModel is not in {CONTRACT_BINDINGS.name}"
+    bases, built = bindings["TestLiteLLMModel"]
+    assert ModelPortContract.__name__ in bases, "TestLiteLLMModel does not bind ModelPortContract"
+    assert LiteLLMModel.__name__ in built, "TestLiteLLMModel does not build LiteLLMModel"
 
 
 def _config(profile: str, engine: dict[str, Any], adapters: dict[str, Any] | None = None) -> Any:

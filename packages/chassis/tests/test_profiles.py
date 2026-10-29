@@ -243,7 +243,7 @@ def test_importing_profiles_loads_no_store_sdk() -> None:
 
 def test_importing_profiles_loads_no_a2a_or_litellm_adapter_when_none_is_named() -> None:
     """A fresh interpreter importing `chassis.profiles` loads neither the A2A SDK nor the A2A or
-    LiteLLM adapter modules; they load when `resolve` names them.
+    LiteLLM adapter modules.
     """
     code = (
         "import sys, chassis.profiles\n"
