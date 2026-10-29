@@ -59,17 +59,17 @@ import pytest
 
 from chassis_contracts.inbound import Logical
 
-# Names only re-exported are marked; binders import them from `chassis_contracts.interface`.
+# Binders import these names from `chassis_contracts.interface`; `__all__` re-exports them.
 from chassis_contracts.interface_harness import (
-    BASE_URL,  # noqa: F401 (re-exported)
-    CALL_TIMEOUT_S,  # noqa: F401 (re-exported)
-    HOLD_S,  # noqa: F401 (re-exported)
+    BASE_URL,
+    CALL_TIMEOUT_S,
+    HOLD_S,
     HOLD_TEXT,
     INTERFACES,
     MCP_PATH,
     MCP_STREAM_SKIP,
-    PER_RUN_CTX,  # noqa: F401 (re-exported)
-    PLACEHOLDER_KEY,  # noqa: F401 (re-exported)
+    PER_RUN_CTX,
+    PLACEHOLDER_KEY,
     Answer,
     Chassis,
     ChassisFor,
@@ -79,24 +79,29 @@ from chassis_contracts.interface_harness import (
     _get_json,
     _resolve,
     _uncorrelated,
-    answer_text,  # noqa: F401 (re-exported)
-    anthropic_client,  # noqa: F401 (re-exported)
-    anthropic_messages,  # noqa: F401 (re-exported)
+    answer_text,
+    anthropic_client,
+    anthropic_messages,
     call,
     canonical_input,
     mcp_client,
     native_body,
-    openai_client,  # noqa: F401 (re-exported)
-    openai_messages,  # noqa: F401 (re-exported)
+    openai_client,
+    openai_messages,
     probe_handle,
     serve_on_unix_sockets,
 )
 
 __all__ = [
+    "BASE_URL",
+    "CALL_TIMEOUT_S",
     "ERROR_HANDLE",
+    "HOLD_S",
     "INTERFACES",
     "LOGICAL",
     "MODES",
+    "PER_RUN_CTX",
+    "PLACEHOLDER_KEY",
     "PROBE",
     "Answer",
     "Chassis",
@@ -105,8 +110,14 @@ __all__ = [
     "ExpectedAnswer",
     "InterfaceContract",
     "UnixApp",
+    "answer_text",
+    "anthropic_client",
+    "anthropic_messages",
     "call",
+    "mcp_client",
     "native_body",
+    "openai_client",
+    "openai_messages",
     "probe_handle",
     "serve_on_unix_sockets",
 ]
