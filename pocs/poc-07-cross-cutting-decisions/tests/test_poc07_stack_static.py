@@ -45,6 +45,7 @@ def _exporter(config: dict[str, Any], kind: str) -> list[tuple[str, dict[str, An
 
 
 def test_collector_traces_go_to_langfuse_and_jaeger() -> None:
+    """Criterion 1: "by exporter config only": one exporter to Langfuse, one to Jaeger."""
     config = _yaml(COLLECTOR)
     langfuse = _exporter(config, "otlphttp")
     jaeger = _exporter(config, "otlp")
@@ -62,6 +63,7 @@ def test_collector_traces_go_to_langfuse_and_jaeger() -> None:
 
 
 def test_collector_receives_otlp_http_and_reports_health() -> None:
+    """The Collector takes OTLP/HTTP on 4318 and serves a health check on 13133."""
     config = _yaml(COLLECTOR)
     assert config["receivers"]["otlp"]["protocols"]["http"]["endpoint"] == "0.0.0.0:4318"
     assert config["extensions"]["health_check"]["endpoint"] == "0.0.0.0:13133"
@@ -70,6 +72,7 @@ def test_collector_receives_otlp_http_and_reports_health() -> None:
 
 
 def test_collector_logs_pipeline_masks_emails_and_phones() -> None:
+    """Redaction scope: "the OpenTelemetry Collector log pipeline" masks each entity."""
     config = _yaml(COLLECTOR)
     logs = config["service"]["pipelines"]["logs"]
     redactors = [p for p in logs["processors"] if p.startswith("transform/")]
@@ -87,12 +90,14 @@ def test_collector_logs_pipeline_masks_emails_and_phones() -> None:
 
 
 def test_collector_has_no_literal_credential() -> None:
+    """The Collector config holds no Langfuse key, only `${env:LANGFUSE_AUTH}`."""
     text = _code(COLLECTOR)
     assert "Basic " not in text.replace("Basic ${env:LANGFUSE_AUTH}", "")
     assert not re.search(r"(pk|sk)-lf-", text)
 
 
 def test_compose_has_no_default_secret() -> None:
+    """Every variable in the Compose file is `${NAME:?}`, so none has a default."""
     text = COMPOSE.read_text()
     found = _VAR.findall(text)
     assert found, "the compose file reads its secrets from the env file"
@@ -101,6 +106,7 @@ def test_compose_has_no_default_secret() -> None:
 
 
 def test_compose_ports_bind_localhost_only() -> None:
+    """Every published port binds 127.0.0.1 only."""
     services = _yaml(COMPOSE)["services"]
     published = [p for svc in services.values() for p in svc.get("ports", [])]
     assert published
@@ -111,6 +117,7 @@ def test_compose_ports_bind_localhost_only() -> None:
 
 
 def test_compose_collector_starts_after_its_backends() -> None:
+    """The Collector starts after Langfuse and Jaeger; `stack.sh wait` does the health polls."""
     collector = _yaml(COMPOSE)["services"]["otel-collector"]
     depends = collector["depends_on"]
     assert {"langfuse-web", "jaeger"} <= set(depends)
@@ -122,6 +129,7 @@ def test_compose_collector_starts_after_its_backends() -> None:
 
 
 def test_stack_sh_has_a_host_side_wait() -> None:
+    """`stack.sh wait` polls Langfuse, Jaeger, and the Collector from the host."""
     text = STACK_SH.read_text()
     assert re.search(r"^\s*wait\)", text, re.MULTILINE)
     for url in (
@@ -138,6 +146,7 @@ def workflow() -> dict[str, Any]:
 
 
 def test_workflow_triggers_and_permissions(workflow: dict[Any, Any]) -> None:
+    """The stack workflow never uses `pull_request_target` and reads only."""
     text = _code(WORKFLOW)
     assert "pull_request_target" not in text
     assert "secrets." not in text
@@ -148,6 +157,7 @@ def test_workflow_triggers_and_permissions(workflow: dict[Any, Any]) -> None:
 
 
 def test_workflow_pins_every_action_by_sha(workflow: dict[str, Any]) -> None:
+    """The stack workflow pins every action by a full commit SHA."""
     uses = [
         step["uses"] for job in workflow["jobs"].values() for step in job["steps"] if "uses" in step
     ]
@@ -157,6 +167,7 @@ def test_workflow_pins_every_action_by_sha(workflow: dict[str, Any]) -> None:
 
 
 def test_workflow_runs_the_stack_and_always_tears_it_down(workflow: dict[str, Any]) -> None:
+    """The workflow runs the stack tests and always tears the stack down."""
     (job,) = workflow["jobs"].values()
     assert job["timeout-minutes"] <= 30
     runs = [(step.get("if"), step.get("run", "")) for step in job["steps"]]
