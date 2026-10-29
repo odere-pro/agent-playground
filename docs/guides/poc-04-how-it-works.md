@@ -1,6 +1,6 @@
 # PoC-4: how stateless and scalable works
 
-Status: written 2026-10-01 and refreshed the same day after the review fixes. ADR-004 status updated 2026-10-29. The code wins where this guide and the code differ.
+Status: written 2026-10-01 and refreshed the same day after the review fixes. ADR-004 status updated 2026-10-29. Checked against the code 2026-10-29 after the R4 review fixes. The code wins where this guide and the code differ.
 Contract: [contract v3](../contracts/contract-v3.md). Design: [the PoC-4 plan](../plans/2026-10-01-poc-04-stateless-scalable.md). Tracking: [the PoC-4 README](../../pocs/poc-04-stateless-scalable/README.md). Events decision: [ADR-004](../planning/adr/004-events-through-a-broker-client.md) (accepted 2026-10-08). Evidence: [drills](../../pocs/poc-04-stateless-scalable/notes/2026-10-01-drills.md), [load results](../../pocs/poc-04-stateless-scalable/notes/2026-10-01-load-results.md), [container roles](../../pocs/poc-04-stateless-scalable/notes/2026-10-01-container-roles.md), [Dapr against the broker client](../../pocs/poc-04-stateless-scalable/notes/2026-10-01-dapr-vs-broker.md). Open items: [the debt note](../../pocs/poc-04-stateless-scalable/notes/2026-10-01-debt.md).
 
 ## What PoC-4 adds
@@ -15,11 +15,11 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`.
 | ----- | ---- | --------------------- |
 | Key-value state | `chassis/ports/state.py` (`StatePort`, `InMemoryState`, `StateUnavailable`) | `spec.adapters.state`: `memory`, `valkey` |
 | Valkey adapter | `chassis/adapters/valkey/state.py` (`ValkeyState`) | `VALKEY_URL`, `VALKEY_USERNAME`, `VALKEY_PASSWORD` |
-| Events | `chassis/ports/events.py` (`EventPort`, `CloudEvent`, `NoEvents`, `PublishFailed`), `chassis/fakes/events.py` (`InMemoryBus`) | `spec.adapters.events`: `none`, `memory`, `kafka`, `dapr` |
+| Events | `chassis/ports/events.py` (`EventPort`, `CloudEvent`, `NoEvents`, `PublishFailed`), `chassis/fakes/events.py` (`InMemoryBus`), `chassis/adapters/publish_retry.py` (the publish retry Kafka and Dapr share) | `spec.adapters.events`: `none`, `memory`, `kafka`, `dapr` |
 | Kafka adapter | `chassis/adapters/kafka/events.py` (`KafkaEvents`, aiokafka) | `KAFKA_BOOTSTRAP_SERVERS` |
 | Dapr adapter | `chassis/adapters/dapr/events.py` (`DaprEvents`, httpx to daprd) | `DAPR_API_TOKEN`, `APP_API_TOKEN` |
 | Config store | `chassis/adapters/s3/config.py` (`S3Config`, registered as `minio` and `s3`) | `spec.adapters.config`, `CONFIG_S3_*`, `CONFIG_POLL_INTERVAL_S` |
-| Config reload | `chassis/server/config_loader.py` (`ConfigReloader`), `RELOADABLE` and `RESTART_ONLY` in `chassis/server/config.py` | the store document `agents/<agent.name>.yaml` |
+| Config reload | `chassis/server/config_loader.py` (`ConfigReloader`), `RELOADABLE` in `chassis/server/config.py` (every other path is restart-only) | the store document `agents/<agent.name>.yaml` |
 | Idempotency | `chassis/server/idempotency.py` (`Idempotency`, `Claim`, `Replay`, `Refusal`), wired in `chassis/server/interfaces/serve.py` | `spec.idempotency`; header `Idempotent-Replayed: true` |
 | Client disconnect | `chassis/server/interfaces/serve.py` (`DISCONNECT_POLL_S` 0.25) | complete mode on native, OpenAI, Anthropic |
 | Readiness | `chassis/server/readiness.py` (`ReadinessMonitor`, `ProbeSettings`), `EngineConnector.probe()` | `GET /ready` with `reason` |
@@ -121,7 +121,7 @@ sequenceDiagram
     end
 ```
 
-Idempotency applies only to a key the client sent: the `Idempotency-Key` header or the native body's `idempotency_key`. A call with no key never touches `StatePort`. A replay opens no run, calls neither the engine nor the model, and charges nothing. It works on native, OpenAI, and Anthropic, complete and stream. MCP clients get the same envelope but cannot see the header. The rules are in [contract v3, "Idempotency"](../contracts/contract-v3.md#idempotency): the store key and the fingerprint, what is cached, the too-large marker, the takeover budget, the refusals, and the defaults.
+Idempotency applies only to a key the client sent: the `Idempotency-Key` header or the native body's `idempotency_key`. A call with no key never touches `StatePort`. A replay opens no run, calls neither the engine nor the model, and charges nothing. It works on native, OpenAI, and Anthropic, complete and stream. MCP clients get the same envelope but cannot see the header. The rules are in [contract v3, "Idempotency"](../contracts/contract-v3.md#idempotency): the store key and the fingerprint, what is cached, the too-large marker, the takeover budget, the refusals, and the defaults. Since 2026-10-29 `ttl_s` is capped at 30 days and `lease_s` at one hour (`IdempotencySpec` in `chassis/server/config.py`).
 
 A complete call whose client hangs up is cancelled. A watcher polls `is_disconnected` every 0.25 s; on a disconnect the run's events close, which cancels the A2A task, frees the run's budget, and releases the claim. MCP has no watcher: its inner hop does not see the client leave.
 
@@ -180,7 +180,7 @@ sequenceDiagram
     Note over L,St: Refused. The last good config stays. chassis.config.rejected with reason invalid or restart_required
 ```
 
-The bootstrap file (`chassis serve --config`) names the profile, the agent, `spec.adapters`, and `spec.engine`. With a real config adapter, the store document `agents/<agent.name>.yaml` is a whole `ChassisConfig`; a missing or invalid one fails startup. With `config: memory` the bootstrap file is the config. Only `version`, `spec.limits`, `spec.model.route`, `spec.prompt`, and `spec.idempotency.ttl_s` reload. Any other changed path is refused with `restart_required`. The log names field paths, never values. A run keeps the context it opened with; the next request reads the new config. A store document's `versions.config` names its content: `<version>+<hash12>` when the document sets `version`, else `<hash12>` (the first 12 hex of the sha256 of the parsed document), so every replica that reads the same bytes reports the same value. `BodyLimit` reads the live `body_bytes_max` per request. `/openapi.json` still shows the limits from startup. suggested: poll every 5 s with ±10% jitter. The live drill took a new limit within one poll and refused a bad document by path, on both replicas, with no restart (`load/reload_drill.py`; `notes/2026-10-01-drills.md`, section 4 and "Rerun after the review fixes").
+The bootstrap file (`chassis serve --config`) names the profile, the agent, `spec.adapters`, and `spec.engine`. With a real config adapter, the store document `agents/<agent.name>.yaml` is a whole `ChassisConfig`; a missing or invalid one fails startup. The S3 adapter refuses a document over 256 KiB, one with a YAML alias, and one nested deeper than 64 (`MAX_DOCUMENT_BYTES` and `MAX_DEPTH` in `chassis/adapters/s3/config.py`). With `config: memory` the bootstrap file is the config. Only the paths in `RELOADABLE` reload. In PoC-4 they were `version`, `spec.limits`, `spec.model.route`, `spec.prompt`, and `spec.idempotency.ttl_s`. Any other changed path is refused with `restart_required`. The log names field paths, never values. A run keeps the context it opened with; the next request reads the new config. A store document's `versions.config` names its content: `<version>+<hash12>` when the document sets `version`, else `<hash12>` (the first 12 hex of the sha256 of the parsed document), so every replica that reads the same bytes reports the same value. `BodyLimit` reads the live `body_bytes_max` per request. `/openapi.json` still shows the limits from startup. suggested: poll every 5 s with ±10% jitter. The live drill took a new limit within one poll and refused a bad document by path, on both replicas, with no restart (`load/reload_drill.py`; `notes/2026-10-01-drills.md`, section 4 and "Rerun after the review fixes").
 
 ## Readiness
 
