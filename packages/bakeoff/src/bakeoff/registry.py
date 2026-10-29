@@ -27,6 +27,9 @@ __all__ = [
 Lane = Literal["inprocess", "sidecar", "remote"]
 LANES: tuple[Lane, ...] = ("inprocess", "sidecar", "remote")
 Runner = Literal["python", "node", "kind"]
+Dialect = Literal["openai", "claude", "smolagents"]
+"""How the engine reads a fake-model script (`bakeoff.dialects`): OpenAI tool calls as they are,
+tool names with the Claude CLI's `mcp__chassis__` prefix, or smolagents code blocks."""
 
 ROOT = Path(__file__).resolve().parents[4]
 """The repo root: packages/bakeoff/src/bakeoff/registry.py is four levels down."""
@@ -56,6 +59,8 @@ class Engine:
     mapping_files: tuple[str, ...] = field(default_factory=tuple)
     """The source files counted as the engine's mapping (`bakeoff.lines`)."""
     always_skip: str | None = None
+    dialect: Dialect = "openai"
+    """How a generated script (golden set, red-team set) is rewritten for this engine."""
 
     def skip_reason(self) -> str | None:
         """Why the engine cannot run here, or None."""
@@ -119,6 +124,7 @@ ENGINES: tuple[Engine, ...] = (
         trusted=False,
         handle="echo_smolagents:handle",
         script=SMOLAGENTS_SCRIPT,
+        dialect="smolagents",
         mapping_files=_py(
             "echo-smolagents", "echo_smolagents", "mapping.py", "handle.py", "tools.py", "agent.py"
         ),
@@ -129,6 +135,7 @@ ENGINES: tuple[Engine, ...] = (
         trusted=False,
         handle="echo_claude_agent:handle",
         script=CLAUDE_SCRIPT,
+        dialect="claude",
         mapping_files=_py("echo-claude-agent", "echo_claude_agent", "mapping.py", "handle.py"),
     ),
     Engine(

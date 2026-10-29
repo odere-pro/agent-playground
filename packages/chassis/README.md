@@ -2,7 +2,7 @@
 
 The service chassis: it serves one workload's `handle` behind the public interfaces and holds every credential. It exists so that every service gets the same wire contract, budget, and security, and no service holds a key ([ADR-001](../../docs/planning/adr/001-chassis-delivery-model.md)). Run its tests with `uv run pytest packages/chassis`, and serve it offline with `uv run chassis serve --config packages/chassis/configs/fake.yaml`.
 
-The layout and rules are in [CLAUDE.md](CLAUDE.md). Its `Spec:` line names the contract in force. Today that is [contract v6](../../docs/contracts/contract-v6.md), a draft with PoC-7's additive changes, and [v5](../../docs/contracts/contract-v5.md) and earlier for the rest. Per-module detail is in [the chassis reference](../../docs/guides/chassis-reference.md).
+The layout and rules are in [CLAUDE.md](CLAUDE.md). Its `Spec:` line names the contract in force. Today that is [contract v7](../../docs/contracts/contract-v7.md), a draft with PoC-8's additive changes, and [v6](../../docs/contracts/contract-v6.md) and earlier for the rest. Per-module detail is in [the chassis reference](../../docs/guides/chassis-reference.md).
 
 ```bash
 uv run pytest packages/chassis   # unit tests and contract bindings
