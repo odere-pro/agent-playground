@@ -139,6 +139,7 @@ def run(text: str) -> dict[str, Any]:
 
 @pytest.mark.parametrize("case", CASES, ids=[c["id"] for c in CASES])
 def test_golden(case: dict[str, Any]) -> None:
+    """One golden case via `/v1/run`. Offline, the fake model server scripts the rubric score."""
     data = run(case["input"])
     output = data.get("output") or {}
     calls = [

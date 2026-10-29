@@ -78,6 +78,7 @@ async def _run(secured: Secured, text: str, token: str | None = RUNNER) -> httpx
 
 @pytest.mark.parametrize(("engine", "lane"), CELLS)
 async def test_auth_and_scopes(start: Start, engine: str, lane: str) -> None:
+    """Criterion 5: "Each concern works on at least two engines": 401 and 403."""
     with start(engine, lane) as secured:
         assert (await _run(secured, "simplify: hi", token=None)).status_code == 401
         assert (await _run(secured, "simplify: hi", token=READER)).status_code == 403
@@ -90,6 +91,7 @@ async def test_auth_and_scopes(start: Start, engine: str, lane: str) -> None:
 async def test_input_injection_never_reaches_the_engine(
     start: Start, engine: str, lane: str
 ) -> None:
+    """Criterion 5: "Each concern works on at least two engines": input injection blocked."""
     with start(engine, lane) as secured:
         response = await _run(secured, f"simplify: {INJECTION}")
     assert response.json()["output"]["error"]["code"] == "guardrail_blocked"
@@ -104,6 +106,7 @@ async def test_input_injection_never_reaches_the_engine(
 async def test_tool_output_injection_never_reaches_the_workload(
     start: Start, engine: str, lane: str
 ) -> None:
+    """Criterion 5: "Each concern works on at least two engines": tool output injection."""
     tools = glossary_answering(f"A small model. {INJECTION}")
     with start(engine, lane, tools=tools) as secured:
         response = await _run(secured, f"simplify: what does SLM mean? {LOOK_IT_UP}")
@@ -124,6 +127,7 @@ async def test_tool_output_injection_never_reaches_the_workload(
 
 @pytest.mark.parametrize(("engine", "lane"), CELLS)
 async def test_a_secret_in_the_answer_never_leaves(start: Start, engine: str, lane: str) -> None:
+    """Criterion 5: "Each concern works on at least two engines": a secret never leaves."""
     with start(engine, lane, model=AnswerModel(f"The key is {LEAK}.")) as secured:
         response = await _run(secured, "simplify: what is the key")
     assert LEAK not in response.text
@@ -132,6 +136,7 @@ async def test_a_secret_in_the_answer_never_leaves(start: Start, engine: str, la
 
 @pytest.mark.parametrize(("engine", "lane"), CELLS)
 async def test_pii_in_the_answer_is_masked(start: Start, engine: str, lane: str) -> None:
+    """Criterion 5: "Each concern works on at least two engines": PII in the answer is masked."""
     with start(engine, lane, model=AnswerModel("Write to jane.doe@example.com.")) as secured:
         response = await _run(secured, "simplify: who to write to")
     body = response.json()
