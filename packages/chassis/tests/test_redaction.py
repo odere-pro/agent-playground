@@ -166,3 +166,35 @@ def test_redact_masks_a_card_number_when_it_is_sixteen_digits_in_groups_of_four(
     out = redact(text)
 
     assert out == "card <CREDIT_CARD>."
+
+
+@pytest.mark.parametrize(
+    "phone",
+    [
+        "123.456.789",
+        "612.345.678",
+        "1.800.555.019",
+        "06.12.34.56",
+        "020.794.095",
+        "1234-56-78",
+        "0171-12-34",
+        "8800-55-35",
+    ],
+    ids=[
+        "three-dotted-triples",
+        "nine-digit-dotted",
+        "toll-free-dotted",
+        "fr-short-dotted",
+        "leading-zero-dotted",
+        "invalid-date-month",
+        "dashed-landline",
+        "dashed-toll-free",
+    ],
+)
+def test_redact_masks_a_phone_number_when_it_looks_dotted_or_dated_but_is_not(phone: str) -> None:
+    """A dotted or dashed run that is not a valid date, IPv4 address, or x.y.z version is masked."""
+    text = f"call {phone} now"
+
+    out = redact(text)
+
+    assert out == "call <PHONE_NUMBER> now"

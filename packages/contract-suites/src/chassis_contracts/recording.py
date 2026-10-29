@@ -31,6 +31,7 @@ import re
 from collections.abc import AsyncIterator, Callable, Mapping
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 from vcr import VCR
@@ -58,14 +59,35 @@ KEPT_HEADERS = frozenset({"content-type"})
 """The only header stored on a request or a response. `content-type` lets the `body` matcher
 compare JSON bodies as JSON."""
 
-# suggested: the query parameter and JSON body field names that carry a key.
-KEY_FIELDS = ("key", "api_key", "apikey", "access_token", "token")
-"""Dropped from a stored query string; replaced by `REDACTED` in a stored JSON body, at any
-depth. The same scrub runs on replay, so matching is unchanged."""
+# suggested: the query parameter and JSON body field names that carry a key or a secret.
+KEY_FIELDS = (
+    "key",
+    "api_key",
+    "apikey",
+    "access_token",
+    "token",
+    "authorization",
+    "client_secret",
+    "password",
+    "refresh_token",
+    "secret",
+    "x-api-key",
+)
+"""Dropped from a stored query string; replaced by `REDACTED` in a stored JSON request or
+response body, at any depth. Names match case-insensitively with `-` and `_` removed, so
+`API_KEY`, `api-key`, and `apiKey` all count. The same scrub runs on replay, so matching is
+unchanged."""
 
-KEY_SHAPED = re.compile(r"sk-[A-Za-z0-9]{8,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}")
-"""A key-shaped string (OpenAI-style, AWS access key, GitHub token). A request that still holds
-one after the scrub stops `save()`, and a miss message shows `REDACTED` in its place."""
+# suggested: the key shapes (OpenAI and Anthropic `sk-`, AWS, GitHub, Google API key, Slack,
+# Google OAuth access token).
+KEY_SHAPED = re.compile(
+    r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{8,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{35}"
+    r"|xox[abposr]-[A-Za-z0-9-]{10,}|ya29\.[0-9A-Za-z_-]{20,}"
+)
+"""A key-shaped string. It is replaced by `REDACTED` in a stored response body and in a miss
+message. A request or response that still holds one at save time stops `save()`."""
+
+_KEY_SHAPED_BYTES = re.compile(KEY_SHAPED.pattern.encode())
 
 REDACTED = "[redacted]"
 
@@ -83,54 +105,94 @@ _CASSETTE_KWARGS = (
 )
 
 
+def _normal_name(name: str) -> str:
+    return name.lower().replace("-", "").replace("_", "")
+
+
+_KEY_NAMES = frozenset(_normal_name(name) for name in KEY_FIELDS)
+
+
+def _is_key_name(name: object) -> bool:
+    """True when `name` is a `KEY_FIELDS` name in any case, with `-` and `_` ignored."""
+    return isinstance(name, str) and _normal_name(name) in _KEY_NAMES
+
+
 def _scrub(node: Any) -> Any:
     """`node` with the value of every `KEY_FIELDS` key replaced by `REDACTED`, at any depth."""
     if isinstance(node, dict):
-        return {k: REDACTED if k in KEY_FIELDS else _scrub(v) for k, v in node.items()}
+        return {k: REDACTED if _is_key_name(k) else _scrub(v) for k, v in node.items()}
     if isinstance(node, list):
         return [_scrub(v) for v in node]
     return node
 
 
 def _scrub_body(body: bytes | str | None) -> bytes | str | None:
-    """A JSON body with its key fields scrubbed; any other body, or one with none, as it is."""
+    """A JSON body with its key fields scrubbed; any other body, or one with none, as it is. A
+    body nested too deep to parse is opaque and kept as it is."""
     if not body:
         return body
     try:
         data = json.loads(body)
-    except (ValueError, UnicodeDecodeError):
+        scrubbed = _scrub(data)
+        if scrubbed == data:
+            return body
+        return json.dumps(scrubbed, separators=(",", ":")).encode()
+    except (ValueError, UnicodeDecodeError, RecursionError):
         return body
-    scrubbed = _scrub(data)
-    if scrubbed == data:
-        return body
-    return json.dumps(scrubbed, separators=(",", ":")).encode()
+
+
+def _drop_key_params(uri: str) -> str:
+    """`uri` without the query parameters whose names are `KEY_FIELDS` names."""
+    parts = urlsplit(uri)
+    params = parse_qsl(parts.query, keep_blank_values=True)
+    kept = [(k, v) for k, v in params if not _is_key_name(k)]
+    if len(kept) == len(params):
+        return uri
+    return urlunsplit(parts._replace(query=urlencode(kept)))
 
 
 def _keep_request_headers(request: Any) -> Any:
-    """Keep only `KEPT_HEADERS` and scrub the JSON body's key fields."""
+    """Keep only `KEPT_HEADERS`, drop key query parameters, and scrub the JSON body."""
     kept = copy.copy(request)
     kept.headers = {k: v for k, v in request.headers.items() if k.lower() in KEPT_HEADERS}
+    kept.uri = _drop_key_params(request.uri)
     kept.body = _scrub_body(request.body)
     return kept
 
 
-def _keep_response_headers(response: dict[str, Any]) -> dict[str, Any]:
+def _redact_body(body: bytes | str | None) -> bytes | str | None:
+    """`body` with key fields scrubbed if it is JSON, then every `KEY_SHAPED` match redacted."""
+    scrubbed = _scrub_body(body)
+    if isinstance(scrubbed, bytes):
+        return _KEY_SHAPED_BYTES.sub(REDACTED.encode(), scrubbed)
+    if isinstance(scrubbed, str):
+        return KEY_SHAPED.sub(REDACTED, scrubbed)
+    return scrubbed
+
+
+def _keep_response(response: dict[str, Any]) -> dict[str, Any]:
+    """Keep only `KEPT_HEADERS` and redact keys in the body. Returns a new dict."""
     headers = response.get("headers") or {}
-    response["headers"] = {k: v for k, v in headers.items() if k.lower() in KEPT_HEADERS}
-    return response
+    body = response.get("body") or {}
+    return {
+        **response,
+        "headers": {k: v for k, v in headers.items() if k.lower() in KEPT_HEADERS},
+        "body": {**body, "string": _redact_body(body.get("string"))},
+    }
 
 
 def default_vcr_config() -> dict[str, Any]:
     """The shared config: match on everything but headers, store only `content-type`, drop auth
-    headers as a second guard, drop `KEY_FIELDS` query parameters, and scrub `KEY_FIELDS` in a
-    JSON body. Return it from a `vcr_config` fixture or pass it directly.
+    headers as a second guard, drop `KEY_FIELDS` query parameters, scrub `KEY_FIELDS` in a JSON
+    request or response body, and redact `KEY_SHAPED` strings in a response body. Return it from
+    a `vcr_config` fixture or pass it directly.
     """
     return {
         "match_on": ["method", "scheme", "host", "port", "path", "query", "body"],
         "allow_playback_repeats": True,
         "decode_compressed_response": True,
         "before_record_request": _keep_request_headers,
-        "before_record_response": _keep_response_headers,
+        "before_record_response": _keep_response,
         "filter_headers": [
             "authorization",
             "x-api-key",
@@ -144,7 +206,8 @@ def default_vcr_config() -> dict[str, Any]:
 
 
 class CassetteSecretError(RuntimeError):
-    """A request about to be saved still holds a key-shaped string; nothing is written."""
+    """A request or response about to be saved still holds a key-shaped string; nothing is
+    written."""
 
 
 class CassetteMiss(httpx.TransportError):
@@ -154,7 +217,7 @@ class CassetteMiss(httpx.TransportError):
         text = _redact(_scrub_body(body) or b"")
         if len(text) > MISS_BODY_CAP:
             text = text[:MISS_BODY_CAP] + "...[truncated]"
-        url = str(request.url.copy_with(query=None))
+        url = _redact(str(request.url.copy_with(userinfo=b"", query=None, fragment=None)))
         if request.url.query:
             url = f"{url}?{REDACTED}"
         super().__init__(
@@ -172,16 +235,29 @@ def _redact(text: bytes | str) -> str:
     return KEY_SHAPED.sub(REDACTED, decoded)
 
 
-def _check_no_key(requests: list[Any]) -> None:
-    """Raise `CassetteSecretError` if a request to be saved still holds a key-shaped string."""
+def _has_key(parts: list[Any]) -> bool:
+    texts = (p.decode(errors="replace") if isinstance(p, bytes) else str(p) for p in parts)
+    return any(KEY_SHAPED.search(text) for text in texts)
+
+
+def _check_no_key(requests: list[Any], responses: list[Mapping[str, Any]]) -> None:
+    """Raise `CassetteSecretError` if a request or response to be saved still holds a key-shaped
+    string."""
     for index, request in enumerate(requests):
-        body = request.body or b""
-        seen = [request.uri, body.decode(errors="replace") if isinstance(body, bytes) else body]
+        seen = [request.uri, request.body or b""]
         seen.extend(f"{k}: {v}" for k, v in request.headers.items())
-        if any(KEY_SHAPED.search(str(part)) for part in seen):
+        if _has_key(seen):
             raise CassetteSecretError(
                 f"request {index} ({request.method} {_redact(request.uri)}) still holds a"
                 " key-shaped string after the scrub; the cassette is not saved"
+            )
+    for index, response in enumerate(responses):
+        seen = [(response.get("body") or {}).get("string") or b""]
+        seen.extend(f"{k}: {v}" for k, v in (response.get("headers") or {}).items())
+        if _has_key(seen):
+            raise CassetteSecretError(
+                f"response {index} still holds a key-shaped string after the scrub;"
+                " the cassette is not saved"
             )
 
 
@@ -343,11 +419,11 @@ class CassetteTransport(httpx.AsyncBaseTransport):
     def save(self) -> None:
         """Write the cassette if anything was recorded; `rewrite` always overwrites the file.
         `none` never writes. Raises `CassetteSecretError`, and writes nothing, if a recorded
-        request still holds a key-shaped string after the scrub.
+        request or response still holds a key-shaped string after the scrub.
         """
         if self.record_mode == "none":
             return
-        _check_no_key(list(self._cassette.requests))
+        _check_no_key(list(self._cassette.requests), list(self._cassette.responses))
         self._cassette._save(force=self.record_mode == "rewrite")
 
     def assert_no_misses(self) -> None:

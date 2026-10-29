@@ -8,8 +8,10 @@ about 0.5 to 1 GiB per replica and breaks ADR-001's memory estimate. Standard li
 Each match becomes `<ENTITY>`, the form Presidio's anonymizer uses by default, so a record reads
 the same whichever layer redacted it. suggested: the entity names and the patterns.
 
-A phone match is kept as it is when it is an ISO date or a dotted run like an IPv4 address or a
-version. The email pattern starts only where a local part can start, so a long run stays linear.
+A phone match is kept as it is only when the whole match is a valid ISO date (`2026-10-29`), an
+IPv4 address (four groups of 0 to 255), or an x.y.z version (three groups of 1 or 2 digits). Any
+other dotted or dashed run (`612.345.678`, `0171-12-34`) is still masked. The email pattern starts
+only where a local part can start, so a long run stays linear.
 """
 
 from __future__ import annotations
@@ -35,8 +37,14 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 """Ordered: an IBAN or a card number is replaced before the phone pattern could take part of it."""
 
-_NOT_A_PHONE = re.compile(r"\d{4}-\d{2}-\d{2}|\d{1,3}(?:\.\d{1,3}){1,3}")
-"""An ISO date, or 2 to 4 dot-separated groups of 1 to 3 digits (an IPv4 address or a version)."""
+_ISO_DATE = r"\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])"
+_IPV4_GROUP = r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
+_IPV4 = rf"{_IPV4_GROUP}(?:\.{_IPV4_GROUP}){{3}}"
+_VERSION = r"\d{1,2}(?:\.\d{1,2}){2}"
+_NOT_A_PHONE = re.compile(rf"{_ISO_DATE}|{_IPV4}|{_VERSION}")
+"""Exactly one of: an ISO date with a valid month and day, an IPv4 address (four groups of 0 to
+255, no leading zero), or a version of three groups of 1 or 2 digits. Used with `fullmatch` only;
+it never widens beyond these shapes, so a phone the plain pattern masks stays masked."""
 
 
 def _phone_or_kept(match: re.Match[str]) -> str:

@@ -12,7 +12,13 @@ from typing import Any
 import httpx
 import pytest
 import yaml
-from chassis_contracts.recording import CassetteMiss, CassetteSecretError, CassetteTransport
+from chassis_contracts.recording import KEY_SHAPED as KEY_SHAPED_PATTERN
+from chassis_contracts.recording import (
+    CassetteMiss,
+    CassetteSecretError,
+    CassetteTransport,
+    default_vcr_config,
+)
 
 KEY = "cassette-key-not-real"
 BASE = "http://model.invalid/v1"
@@ -269,6 +275,11 @@ KEY_SHAPED = {
     "openai-style": FAKE_SK,
     "aws-access-key": "AKIA" + "ABCDEFGHIJKLMNOP",
     "github-token": "ghp_" + "abcdefghijklmnopqrstuvwx",
+    "anthropic-style": "sk-ant-api03-" + "ABCDEFGHIJKLMNOP1234567890",
+    "openai-project": "sk-proj-" + "ABCDEFGHIJKLMNOP1234567890",
+    "google-api-key": "AIza" + "SyABCDEFGHIJKLMNOPQRSTUVWXYZ0123456",
+    "slack-token": "xoxb-" + "1234567890-abcdefghij",
+    "google-oauth": "ya29." + "a0ABCDEFGHIJKLMNOPQRSTUV",
 }
 KEY_NAMES = ("key", "api_key", "apikey", "access_token", "token")
 
@@ -365,3 +376,145 @@ async def test_a_miss_message_redacts_the_query_and_key_shaped_strings(tmp_path:
     assert "key=" not in message
     assert "https://x/v1?[redacted]" in message
     assert "use [redacted]" in message
+
+
+# --- Response bodies, name variants, and miss URLs (security review of 051b9c5) ---
+
+OPAQUE = "opaque-value-123"
+"""A secret that is not key-shaped, so only the field name can catch it."""
+
+
+class FixedReply(httpx.AsyncBaseTransport):
+    """An upstream that answers every request with the same JSON body."""
+
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, headers={"content-type": "application/json"}, content=self._body, request=request
+        )
+
+
+async def _record_reply(
+    path: Path, reply: bytes, request_body: bytes = b'{"q":"hi"}', **kwargs: Any
+) -> None:
+    transport = CassetteTransport(FixedReply(reply), path, "rewrite", **kwargs)
+    async with httpx.AsyncClient(transport=transport) as client:
+        await client.post(
+            "https://x/v1", content=request_body, headers={"content-type": "application/json"}
+        )
+    await transport.aclose()
+
+
+async def test_save_redacts_a_response_when_it_echoes_a_key_shaped_string(tmp_path: Path) -> None:
+    """A 200 response that quotes a key is stored with the key replaced by `[redacted]`."""
+    path = tmp_path / "c.yaml"
+    reply = json.dumps(
+        {"error": {"message": "Incorrect API key provided: sk-" + "ABCDEFGH1234567890"}}
+    ).encode()
+
+    await _record_reply(path, reply)
+
+    text = path.read_text()
+    assert "sk-" not in text
+    assert "Incorrect API key provided: [redacted]" in text
+
+
+async def test_save_scrubs_a_response_body_field_when_its_name_is_key_like(tmp_path: Path) -> None:
+    """A key-like field in a JSON response is stored as `[redacted]`; the others are kept."""
+    path = tmp_path / "c.yaml"
+
+    await _record_reply(path, json.dumps({"access_token": OPAQUE, "n": 1}).encode())
+
+    (interaction,) = yaml.safe_load(path.read_text())["interactions"]
+    stored = json.loads(interaction["response"]["body"]["string"])
+    assert stored == {"access_token": "[redacted]", "n": 1}
+
+
+async def test_save_raises_when_a_response_still_holds_a_key_shaped_string(tmp_path: Path) -> None:
+    """With no response scrub configured, a key-shaped response body stops the save."""
+    path = tmp_path / "c.yaml"
+    config = {**default_vcr_config(), "before_record_response": None}
+
+    with pytest.raises(CassetteSecretError, match="response 0"):
+        await _record_reply(path, b'{"echo":"' + FAKE_SK.encode() + b'"}', vcr_config=config)
+
+    assert not path.exists()
+
+
+NAME_VARIANTS = (
+    "API_KEY",
+    "api-key",
+    "apiKey",
+    "authorization",
+    "client_secret",
+    "password",
+    "refresh_token",
+    "secret",
+    "x-api-key",
+)
+
+
+@pytest.mark.parametrize("name", NAME_VARIANTS, ids=NAME_VARIANTS)
+async def test_save_scrubs_a_body_field_when_its_name_is_a_key_name_variant(
+    tmp_path: Path, name: str
+) -> None:
+    """A body field named like a key in any case, with `-` or `_`, is stored as `[redacted]`."""
+    path = tmp_path / "c.yaml"
+
+    await _record_url(path, "https://x/v1", {"q": "hi", name: OPAQUE})
+
+    assert OPAQUE not in path.read_text()
+
+
+@pytest.mark.parametrize("name", ("API_KEY", "apiKey", "api-key"), ids=("upper", "camel", "dash"))
+async def test_save_drops_a_query_parameter_when_its_name_is_a_key_name_variant(
+    tmp_path: Path, name: str
+) -> None:
+    """A query parameter named like a key in any case, with `-` or `_`, is not stored."""
+    path = tmp_path / "c.yaml"
+
+    await _record_url(path, f"https://x/v1?{name}={OPAQUE}&page=2", {"q": "hi"})
+
+    (interaction,) = yaml.safe_load(path.read_text())["interactions"]
+    assert interaction["request"]["uri"] == "https://x/v1?page=2"
+
+
+async def test_a_miss_message_drops_userinfo_and_fragment_when_the_url_has_them(
+    tmp_path: Path,
+) -> None:
+    """A miss URL shows no userinfo, no fragment, and no key-shaped string in the path."""
+    path = tmp_path / "c.yaml"
+    await _record_url(path, "https://x/v1", {"q": "recorded"})
+    replayer = CassetteTransport(None, path, "none")
+
+    with pytest.raises(CassetteMiss) as exc:
+        async with httpx.AsyncClient(transport=replayer) as client:
+            await client.post(f"https://user:hunter2@x/v1/{FAKE_SK}#frag", json={"q": "new"})
+
+    message = str(exc.value)
+    assert "https://x/v1/[redacted] is not in" in message
+    assert "hunter2" not in message
+    assert "#frag" not in message
+
+
+async def test_save_keeps_a_body_opaque_when_it_nests_too_deep_to_parse(tmp_path: Path) -> None:
+    """A JSON body nested past the recursion limit is stored as it is, not a crash."""
+    path = tmp_path / "c.yaml"
+    deep = b"[" * 100_000 + b"]" * 100_000
+
+    await _record_reply(path, b'{"n":1}', request_body=deep)
+
+    (interaction,) = yaml.safe_load(path.read_text())["interactions"]
+    assert len(interaction["request"]["body"]) == len(deep)
+
+
+@pytest.mark.parametrize(
+    "text", ["task-oriented work", "a risk-assessment note"], ids=["task", "risk"]
+)
+def test_key_shape_ignores_sk_when_it_ends_a_longer_word(text: str) -> None:
+    """`sk-` inside a word such as `task-oriented` is not a key."""
+    match = KEY_SHAPED_PATTERN.search(text)
+
+    assert match is None
