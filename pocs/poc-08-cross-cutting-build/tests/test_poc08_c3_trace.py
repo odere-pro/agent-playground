@@ -7,16 +7,32 @@ is complete when it has one `chassis.run` span, a `chassis.model.call` span (the
 each model call the workload made, and a `chassis.tool.call` span (the tool proxy, `/mcp`) when
 the tool is called, all with the run's one trace id. A call with no tool has no tool span.
 
-The metrics and JSON-log parts wait on the observability branch: see the skipped placeholder.
+Metrics and logs: after a tool-calling run, `GET /metrics` (Prometheus text, no token by default)
+counts the request, the model calls, their tokens, and the tool call for the agent. The chassis log
+lines, captured with the chassis's own `JsonFormatter` on the root logger, are JSON, and the lines
+logged during the run carry the run's `request_id` and 32-hex `trace_id`. The router span
+(`chassis.model.route`) is in the run's trace, one per model call. The lines come from the fake
+ports (`PORT_LOGGER`), which log inside the run, proxy, and tool spans the way a real adapter does.
 """
 
 from __future__ import annotations
 
+import io
+import json
+import logging
+from collections.abc import Callable, Iterator
+from typing import Any
+
 import pytest
 from chassis.core.trace import trace_id_hex
-from poc08_harness import LOOK_IT_UP, PLAIN, cell_params, full_stack
+from chassis.logs import JsonFormatter
+from poc08_harness import LOOK_IT_UP, PLAIN, PORT_LOGGER, ROUTE, cell_params, full_stack
+from promtext import value
 
 RUN, MODEL, TOOL = "chassis.run", "chassis.model.call", "chassis.tool.call"
+AGENT = "simplifier"
+ROUTER = "chassis.model.route"
+"""The router span's name, pinned here: a rename in the chassis must fail this test."""
 
 
 @pytest.mark.parametrize(("engine", "lane"), cell_params())
@@ -62,19 +78,64 @@ async def test_a_call_without_a_tool_has_no_tool_span(
     assert {s.attributes.get("trace_id") for s in spans} == {trace}
 
 
-@pytest.mark.skip(reason="waits on the observability branch merge")
+@pytest.fixture
+def log_lines() -> Iterator[Callable[[], list[str]]]:
+    """The raw lines written so far by a root handler with the chassis's `JsonFormatter`."""
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(JsonFormatter(agent=AGENT))
+    root = logging.getLogger()
+    old_level = root.level
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+    try:
+        yield lambda: stream.getvalue().splitlines()
+    finally:
+        root.removeHandler(handler)
+        root.setLevel(old_level)
+
+
 @pytest.mark.parametrize(("engine", "lane"), cell_params())
 async def test_every_call_has_metrics_and_json_logs_with_the_trace_id(
-    engine: str, lane: str, monkeypatch: pytest.MonkeyPatch
+    engine: str,
+    lane: str,
+    monkeypatch: pytest.MonkeyPatch,
+    log_lines: Callable[[], list[str]],
 ) -> None:
-    """Criterion 3 (metrics and logs): placeholder until the observability branch lands.
-
-    TODO(observability): after one call per cell, `GET /metrics` holds the request, latency,
-    error, token, cost, and fallback-rate series for the agent, labeled by agent.
-    TODO(observability): every chassis log line of the call is JSON with `request_id` and
-    `trace_id`, and `trace_id` equals the run's trace id.
-    """
+    """Criterion 3 (metrics and logs): `/metrics` counts the run's request, model calls, tokens,
+    and tool call; every captured log line is JSON; the run's lines carry its ids; the router
+    span is on the run's trace."""
     with full_stack(engine, lane, monkeypatch) as stack:
-        response = await stack.run("simplify: Hello.")
-    assert response.status_code == 200
-    raise AssertionError("fill in the metrics and log asserts")
+        response = await stack.run(f"simplify: what does SLM mean? {LOOK_IT_UP}")
+        async with stack.client() as client:
+            metrics = await client.get("/metrics")
+    body = response.json()
+    assert body["status"] == "ok", body
+    trace, request_id = trace_id_hex(body["trace_id"]), body["request_id"]
+    calls = len(stack.spans(MODEL))
+    assert calls >= 2
+
+    assert metrics.status_code == 200, metrics.text
+    text = metrics.text
+    assert value(text, "chassis_requests_total", agent=AGENT, interface="native") == 1
+    assert value(text, "chassis_model_calls_total", agent=AGENT, route=ROUTE) == calls
+    for direction, per_call in (("input", 10), ("output", 5)):
+        tokens = value(
+            text, "chassis_model_tokens_total", agent=AGENT, route=ROUTE, direction=direction
+        )
+        assert tokens == per_call * calls, direction
+    assert value(text, "chassis_tool_calls_total", agent=AGENT, tool="glossary_lookup") == 1
+
+    lines: list[dict[str, Any]] = [json.loads(line) for line in log_lines()]
+    mine = [x for x in lines if x["logger"] == PORT_LOGGER]
+    assert {x.get("stage") for x in mine} >= {"input", "tool_output", "output"}
+    assert len([x for x in mine if x["message"] == "model call"]) == calls
+    for line in mine:
+        assert line["agent"] == AGENT
+        assert (line.get("trace_id"), line.get("request_id")) == (trace, request_id), line
+    assert all(len(x["trace_id"]) == 32 for x in lines if "trace_id" in x)
+
+    routes = stack.spans(ROUTER)
+    assert len(routes) == calls
+    assert {s.attributes.get("trace_id") for s in routes} == {trace}
+    assert {s.attributes.get("route") for s in routes} == {ROUTE}

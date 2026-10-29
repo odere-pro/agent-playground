@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -113,6 +114,10 @@ GATE_MARK = "gate-check"
 """A task with this gets `BAD` on the main route; the evaluator scores `BAD` below threshold."""
 BAD = "The report was signed."
 GOOD = "Dana Ruiz signed the report on 4 May 2025."
+PORT_LOGGER = "chassis.poc08.ports"
+"""The fake ports log one line per call here, as a real adapter would, so a test can read the
+chassis's JSON log lines of a run in every lane (the workload's own logs never pass the chassis)."""
+log = logging.getLogger(PORT_LOGGER)
 FETCH_PAGE = ToolDefinition(
     name="fetch_page",
     description="Fetch a page, or store a note",
@@ -196,6 +201,7 @@ class StageModel:
         self, messages: Sequence[ModelMessage], tools: Sequence[ToolSpec] | None, route: str
     ) -> ModelResult:
         self.routes.append(route)
+        log.info("model call", extra={"route": route})
         self.seen.extend(m.content or "" for m in messages)
         text, call = self._decide(messages, tools, route)
         usage = Usage(input_tokens=10, output_tokens=5)
@@ -263,6 +269,7 @@ class RecordingGuardrails:
 
     async def check(self, text: str, stage: Stage) -> Verdict:
         self.stages.append(stage)
+        log.info("guardrail check", extra={"stage": stage})
         return await self.inner.check(text, stage)
 
 

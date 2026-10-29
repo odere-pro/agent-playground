@@ -1,4 +1,5 @@
-"""Puts the earlier PoC test folders on `sys.path`, so a PoC-8 test can build on their harnesses.
+"""Puts the earlier PoC test folders and the chassis test folder on `sys.path`, so a PoC-8 test can
+build on their harnesses.
 Excluded from mypy (pyproject.toml), like the other PoC conftests: a second top-level `conftest`
 module would clash with the chassis one.
 """
@@ -15,6 +16,7 @@ for _tests in (
     POCS / "poc-05-sandboxed" / "tests",
     POCS / "poc-06a-bake-off-sidecar-lane" / "tests",
     POCS / "poc-07-cross-cutting-decisions" / "tests",
+    POCS.parent / "packages" / "chassis" / "tests",  # `promtext`, the Prometheus text reader
 ):
     if str(_tests) not in sys.path:
         sys.path.insert(0, str(_tests))
