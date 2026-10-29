@@ -1,12 +1,19 @@
 """Files generated from the golden set, and the check that they are in sync.
 
-    uv run python -m bakeoff.golden.generate --write    # rewrite the three files
+    uv run python -m bakeoff.golden.generate --write    # rewrite the six files
     uv run python -m bakeoff.golden.generate --check    # exit 1 when one is stale
 
-| File                                                   | What                                   |
-| packages/fake-model-server/scripts/golden.yaml         | the engines' model: each case's answer |
-| packages/fake-model-server/scripts/golden-judge.yaml   | the judge: a JSON verdict per answer   |
-| evals/promptfoo/tests.yaml                             | the promptfoo test cases               |
+| File                                                             | What                        |
+| packages/fake-model-server/scripts/golden.yaml                   | PoC-7: each case's answer   |
+| packages/fake-model-server/scripts/golden-judge.yaml             | PoC-7: a verdict per answer |
+| evals/promptfoo/tests.yaml                                       | PoC-7: the promptfoo cases  |
+| packages/fake-model-server/scripts/golden-gate.yaml              | PoC-8 gate, `normal` logic  |
+| packages/fake-model-server/scripts/golden-gate-drop-facts.yaml   | PoC-8 gate, `drop-facts`    |
+| packages/fake-model-server/scripts/golden-gate-judge.yaml        | PoC-8 gate: the judge       |
+
+The gate files come from the 50 gate cases (`load_gate_cases`). The two gate model scripts differ
+only in the answers (`bakeoff.golden.logic`). One judge serves both: an answer it has no rule for,
+as every changed `drop-facts` answer, gets the failing default.
 
 The model script: a plain rule per case matches its input. A case whose model calls tools gets
 `after_tool` rules keyed on a distinctive text of each tool result (the definition or the
@@ -35,10 +42,15 @@ import yaml
 from chassis.fakes.tool import acronym_expand, glossary_lookup
 from fake_model_server import Script
 
-from bakeoff.golden import Case, ToolCallSpec, load_cases
+from bakeoff.golden import Case, ToolCallSpec, load_cases, load_gate_cases
+from bakeoff.golden.logic import apply_logic
 from bakeoff.registry import ROOT
 
 __all__ = [
+    "GATE_DROP_FACTS_SCRIPT",
+    "GATE_JUDGE_SCRIPT",
+    "GATE_MODEL_SCRIPT",
+    "GATE_SCRIPTS",
     "JUDGE_DEFAULT",
     "JUDGE_SCRIPT",
     "MODEL_SCRIPT",
@@ -48,6 +60,7 @@ __all__ = [
     "model_script",
     "promptfoo_tests",
     "rendered",
+    "rendered_gate",
     "simulate",
     "tool_result",
 ]
@@ -55,6 +68,11 @@ __all__ = [
 MODEL_SCRIPT = Path("packages/fake-model-server/scripts/golden.yaml")
 JUDGE_SCRIPT = Path("packages/fake-model-server/scripts/golden-judge.yaml")
 PROMPTFOO_TESTS = Path("evals/promptfoo/tests.yaml")
+GATE_MODEL_SCRIPT = Path("packages/fake-model-server/scripts/golden-gate.yaml")
+GATE_DROP_FACTS_SCRIPT = Path("packages/fake-model-server/scripts/golden-gate-drop-facts.yaml")
+GATE_JUDGE_SCRIPT = Path("packages/fake-model-server/scripts/golden-gate-judge.yaml")
+GATE_SCRIPTS: dict[str, Path] = {"normal": GATE_MODEL_SCRIPT, "drop-facts": GATE_DROP_FACTS_SCRIPT}
+"""The engines' model script per business logic (`bakeoff.golden.logic.LOGICS`)."""
 JUDGE_DEFAULT = {"reason": "The judge has no verdict for this answer.", "pass": False, "score": 0}
 
 _TOOLS: dict[str, Callable[..., dict[str, str | None]]] = {
@@ -63,6 +81,10 @@ _TOOLS: dict[str, Callable[..., dict[str, str | None]]] = {
 }
 _HEADER = "# Generated from packages/bakeoff/src/bakeoff/golden/cases.yaml. Do not edit.\n"
 _REGEN = "# Regenerate: uv run python -m bakeoff.golden.generate --write\n"
+_GATE_HEADER = (
+    "# Generated from packages/bakeoff/src/bakeoff/golden/cases.yaml and cases-gate.yaml."
+    " Do not edit.\n"
+)
 
 
 def tool_result(call: ToolCallSpec) -> dict[str, str | None]:
@@ -168,8 +190,8 @@ def _dump(data: Any) -> str:
     return yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=100)
 
 
-def rendered(cases: Sequence[Case]) -> dict[Path, str]:
-    """The text of each generated file, keyed by its path relative to the repo root."""
+def _checked_model_script(cases: Sequence[Case]) -> dict[str, Any]:
+    """`model_script(cases)`, after replaying every case through it (`simulate`)."""
     model = model_script(cases)
     script = Script.model_validate(model)
     for case in cases:
@@ -178,6 +200,12 @@ def rendered(cases: Sequence[Case]) -> dict[Path, str]:
             want = [c.as_dict() for c in case.model_calls]
             if calls != want or reply != case.reference:
                 raise ValueError(f"{case.id}: the script gives {calls} {reply!r}")
+    return model
+
+
+def rendered(cases: Sequence[Case]) -> dict[Path, str]:
+    """The text of each PoC-7 generated file, keyed by its path relative to the repo root."""
+    model = _checked_model_script(cases)
     return {
         MODEL_SCRIPT: _HEADER
         + _REGEN
@@ -191,6 +219,22 @@ def rendered(cases: Sequence[Case]) -> dict[Path, str]:
     }
 
 
+def rendered_gate(cases: Sequence[Case]) -> dict[Path, str]:
+    """The text of each PoC-8 gate file: one model script per logic, and the judge."""
+    out: dict[Path, str] = {}
+    for logic, path in GATE_SCRIPTS.items():
+        model = _checked_model_script(apply_logic(cases, logic))
+        title = f"# The engines' model for the PoC-8 gate set, logic `{logic}`.\n"
+        out[path] = _GATE_HEADER + _REGEN + title + _dump(model)
+    out[GATE_JUDGE_SCRIPT] = (
+        _GATE_HEADER
+        + _REGEN
+        + "# The scripted judge for the PoC-8 gate set (every logic).\n"
+        + _dump(judge_script(cases))
+    )
+    return out
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m bakeoff.golden.generate")
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -198,7 +242,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     mode.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)
     stale = []
-    for rel, text in rendered(load_cases()).items():
+    files = rendered(load_cases()) | rendered_gate(load_gate_cases())
+    for rel, text in files.items():
         path = ROOT / rel
         if args.write:
             path.parent.mkdir(parents=True, exist_ok=True)

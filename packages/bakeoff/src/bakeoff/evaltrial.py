@@ -26,16 +26,19 @@ import subprocess
 import sys
 import time
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
+import yaml
+
+from bakeoff.dialects import for_engine
 from bakeoff.envs import build_env, is_secret_name
 from bakeoff.evalreport import normalize, trim_raw
 from bakeoff.golden import CASES_FILE
 from bakeoff.golden.generate import JUDGE_SCRIPT, MODEL_SCRIPT
 from bakeoff.procs import Cleanup, free_port, install_signal_handlers
-from bakeoff.registry import ROOT, get_engine
+from bakeoff.registry import ROOT, Engine, get_engine
 from bakeoff.stack import FakeModel, StackError, running_stack
 
 __all__ = [
@@ -135,13 +138,20 @@ def _caches() -> dict[str, str]:
 
 
 def tool_env(
-    home: Path, work: Path, *, engine: str, chassis_url: str, judge_url: str, offline: bool
+    home: Path,
+    work: Path,
+    *,
+    engine: str,
+    chassis_url: str,
+    judge_url: str,
+    offline: bool,
+    cases_file: Path = CASES_FILE,
 ) -> dict[str, str]:
     extra = {
         "CHASSIS_URL": chassis_url,
         "JUDGE_URL": judge_url,
         "EVAL_ENGINE": engine,
-        "GOLDEN_CASES": str(CASES_FILE),
+        "GOLDEN_CASES": str(cases_file),
         "DEEPEVAL_RESULTS_FOLDER": str(work / "deepeval-results"),
         **TELEMETRY_OFF,
         **_caches(),
@@ -165,15 +175,49 @@ def _raw_report(tool: Tool, work: Path) -> Path | None:
     return found[-1] if found else None
 
 
+@dataclass(frozen=True)
+class Golden:
+    """Which golden set a run uses: the cases file the tool reads, the engines' model script and
+    the judge's (paths relative to the repo root, or absolute), and extra `meta` for the report."""
+
+    cases_file: Path = CASES_FILE
+    model_script: Path = MODEL_SCRIPT
+    judge_script: Path = JUDGE_SCRIPT
+    meta: tuple[tuple[str, str], ...] = ()
+
+
+POC07 = Golden()
+"""The PoC-7 trial: 20 cases, `golden.yaml`, `golden-judge.yaml`."""
+
+
+def _engine_script(engine: Engine, script: Path, work: Path) -> Path:
+    """`script` as `engine` reads it: the same file, or its dialect written into `work`."""
+    if engine.dialect == "openai":
+        return script
+    data = yaml.safe_load((ROOT / script).read_text(encoding="utf-8"))
+    path = work / f"model-{engine.dialect}.yaml"
+    path.write_text(yaml.safe_dump(for_engine(engine, data), sort_keys=False), encoding="utf-8")
+    return path
+
+
 def run_one(
-    tool: Tool, engine_name: str, lane: str, out: Path, *, offline: bool, cleanup: Cleanup
+    tool: Tool,
+    engine_name: str,
+    lane: str,
+    out: Path,
+    *,
+    offline: bool,
+    cleanup: Cleanup,
+    golden: Golden = POC07,
+    stem: str | None = None,
 ) -> dict[str, object]:
     """One tool against one engine: the summary line's data. Raises `StackError`."""
-    engine = replace(get_engine(engine_name), script=MODEL_SCRIPT)
     work = cleanup.tempdir()
     home = work / "home"
     home.mkdir()
-    judge = FakeModel(ROOT / JUDGE_SCRIPT, free_port())
+    base = get_engine(engine_name)
+    engine = replace(base, script=_engine_script(base, golden.model_script, work))
+    judge = FakeModel(ROOT / golden.judge_script, free_port())
     judge.start()
     try:
         started = time.perf_counter()
@@ -186,6 +230,7 @@ def run_one(
                 chassis_url=stack.url,
                 judge_url=f"http://127.0.0.1:{judge.port}/v1",
                 offline=offline,
+                cases_file=golden.cases_file,
             )
             began = time.perf_counter()
             done = subprocess.run(
@@ -202,7 +247,7 @@ def run_one(
         judge_calls = judge.calls_total
     finally:
         judge.stop()
-    stem = f"{tool}-{engine_name}"
+    stem = stem or f"{tool}-{engine_name}"
     out.mkdir(parents=True, exist_ok=True)
     (out / f"{stem}.log").write_text(done.stdout + done.stderr, encoding="utf-8")
     raw = _raw_report(tool, work)
@@ -221,6 +266,7 @@ def run_one(
         "model_calls": model_calls,
         "judge_calls": judge_calls,
         "offline": offline,
+        **dict(golden.meta),
     }
     (out / f"{stem}.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     cleanup.remove_dir(work)

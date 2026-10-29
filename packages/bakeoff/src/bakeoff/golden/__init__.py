@@ -1,9 +1,13 @@
-"""The PoC-7 golden set: 20 cases for the eval tool trial (`cases.yaml`, package data).
+"""The golden set: the PoC-7 20 cases (`cases.yaml`) and the PoC-8 gate set of 50 (package data).
 
 `load_cases()` reads and validates the file: a JSON Schema check (`CASES_SCHEMA`), then the rules
 a schema cannot say (unique ids, unique inputs, unique references, the case count). The same file
 feeds the fake model server's script, the scripted judge, the promptfoo tests, the DeepEval test
 file, and the Langfuse dataset, so every tool and every engine sees the same cases.
+
+PoC-8: `load_gate_cases()` is the CI eval gate's set, `cases.yaml` then `cases-gate.yaml` (30
+more), 50 cases. `cases.yaml` is not changed, so the PoC-7 trial keeps its 20. `gate_data()` is the
+same 50 as one mapping, for the eval tool that reads one file (`GOLDEN_CASES`).
 """
 
 from __future__ import annotations
@@ -20,16 +24,23 @@ import yaml
 __all__ = [
     "CASES_FILE",
     "CASES_SCHEMA",
+    "GATE_FILE",
+    "GATE_SIZE",
     "GOLDEN_SIZE",
     "Case",
     "ToolCallSpec",
+    "gate_data",
     "load_cases",
+    "load_gate_cases",
     "parse_cases",
 ]
 
 GOLDEN_SIZE = 20
 """The planning doc's number: "the same 20 golden cases on two engines"."""
 CASES_FILE = Path(str(files("bakeoff.golden").joinpath("cases.yaml")))
+GATE_SIZE = 50
+"""The planning doc's number: "a small golden set (about 50 cases per agent)" (PoC-8)."""
+GATE_FILE = Path(str(files("bakeoff.golden").joinpath("cases-gate.yaml")))
 
 Task = Literal["simplifier", "lookup"]
 Label = Literal["pass", "fail"]
@@ -184,3 +195,20 @@ def parse_cases(data: Any, *, size: int | None = GOLDEN_SIZE) -> list[Case]:
 def load_cases(path: Path | None = None) -> list[Case]:
     """The golden set from `path`, by default the packaged `cases.yaml`."""
     return parse_cases(yaml.safe_load((path or CASES_FILE).read_text(encoding="utf-8")))
+
+
+def _read(path: Path) -> dict[str, Any]:
+    data: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return data
+
+
+def gate_data() -> dict[str, Any]:
+    """The 50 gate cases as one parsed YAML mapping: the PoC-7 cases, then the PoC-8 ones."""
+    first, extra = _read(CASES_FILE), _read(GATE_FILE)
+    return {"version": first["version"], "cases": [*first["cases"], *extra["cases"]]}
+
+
+def load_gate_cases() -> list[Case]:
+    """The PoC-8 gate set: 50 cases, validated like `load_cases` (ids, inputs, references unique
+    across both files)."""
+    return parse_cases(gate_data(), size=GATE_SIZE)
