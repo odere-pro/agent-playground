@@ -115,6 +115,25 @@ kagent_commit() {
   printf '%s\n' "$commit"
 }
 
+# check_kagent_bases: every FROM base in the Dockerfile is one `build_kagent` pins (the uv image
+# by the UV_VERSION build arg, debian:bookworm-slim by the named context) or the internal stage
+# `base`. Fails closed on any other base, and on a Dockerfile with no FROM line, so a new kagent
+# commit that adds or renames a base cannot build from an unpinned tag.
+check_kagent_bases() {
+  local dockerfile=$1 image count=0
+  while read -r image; do
+    count=$((count + 1))
+    # shellcheck disable=SC2016 # the Dockerfile's literal text, not expanded here
+    case $image in
+      'ghcr.io/astral-sh/uv:${UV_VERSION}' | debian:bookworm-slim | base) ;;
+      *) die "kagent: unpinned base image '$image' in python/Dockerfile; refusing to build" ;;
+    esac
+  done < <(awk 'toupper($1) == "FROM" {
+    for (i = 2; i <= NF; i++) if ($i !~ /^--/) { print $i; break }
+  }' "$dockerfile")
+  ((count > 0)) || die "kagent: no FROM line in python/Dockerfile; refusing to build"
+}
+
 # build_kagent: kagent-adk from kagent's source at the pinned commit. The clone goes to its own
 # new empty directory, and its path is an argument to git and docker; nothing runs from inside it.
 # Fails closed unless HEAD is exactly the pinned commit. --build-context needs BuildKit, so it is
@@ -129,6 +148,7 @@ build_kagent() {
   git -C "$dir/kagent" checkout --quiet --detach "$commit"
   head=$(git -C "$dir/kagent" rev-parse HEAD)
   [[ $head == "$commit" ]] || die "kagent: HEAD is $head, want $commit; refusing to build"
+  check_kagent_bases "$dir/kagent/python/Dockerfile"
   DOCKER_BUILDKIT=1 docker build -f "$dir/kagent/python/Dockerfile" -t "$KAGENT_IMAGE" \
     --build-arg "UV_VERSION=$KAGENT_UV_VERSION" \
     --build-context "debian:bookworm-slim=docker-image://$KAGENT_DEBIAN" \

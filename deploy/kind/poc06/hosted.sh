@@ -449,22 +449,26 @@ run() {
 }
 
 down() {
-  local pair svc orig k
+  local pair svc orig k reverted=1
   if ! kctl get namespace "$PLATFORM" >/dev/null 2>&1; then
     log "down: no cluster or no $PLATFORM in $CONTEXT; nothing to undo"
     return 0
   fi
   # The security reverts come first (egress, provider key, chassis keys), so a teardown that is
   # cut short leaves no key and no egress behind. The route restores and their rollouts come last.
+  # Each security revert runs even if the one before it fails; `down` then fails at the end.
   log "1/5 NetworkPolicy litellm-hosted-egress"
-  kctl -n "$PLATFORM" delete networkpolicy litellm-hosted-egress --ignore-not-found >/dev/null
+  kctl -n "$PLATFORM" delete networkpolicy litellm-hosted-egress --ignore-not-found >/dev/null ||
+    { log "error: could not delete NetworkPolicy litellm-hosted-egress"; reverted=0; }
   log "2/5 LiteLLM: drop $PROVIDER_ENV and the Secret $PROVIDER_SECRET, config back to PoC-5's"
   orig=$(original_config)
   if [[ -n $orig ]] && { provider_env_present || [[ $(litellm_config_cm) == "$HOSTED_CM" ]]; }; then
-    unpatch_litellm "$orig"
+    ( unpatch_litellm "$orig" ) ||
+      { log "error: could not drop $PROVIDER_ENV from LiteLLM"; reverted=0; }
     kctl -n "$PLATFORM" annotate deployment litellm "$ORIGINAL_ANNOTATION-" >/dev/null 2>&1 || true
   fi
-  kctl -n "$PLATFORM" delete secret "$PROVIDER_SECRET" --ignore-not-found >/dev/null
+  kctl -n "$PLATFORM" delete secret "$PROVIDER_SECRET" --ignore-not-found >/dev/null ||
+    { log "error: could not delete Secret $PROVIDER_SECRET"; reverted=0; }
   if [[ -n $orig ]]; then
     ( wait_rollout "$PLATFORM" litellm ) || log "warning: litellm did not settle"
   fi
@@ -489,6 +493,10 @@ down() {
   fi
   log "5/5 ConfigMap $HOSTED_CM"
   kctl -n "$PLATFORM" delete configmap "$HOSTED_CM" --ignore-not-found >/dev/null
+  if ((reverted == 0)); then
+    log "down: a security revert failed (see the errors above); rerun: $0 down"
+    return 1
+  fi
   log "down done"
 }
 
