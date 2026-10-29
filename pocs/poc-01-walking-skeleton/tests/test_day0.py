@@ -5,8 +5,11 @@ Each test names the exit criterion in docs/planning/poc/001-PoC-1-walking-skelet
 
 from __future__ import annotations
 
+import ast
 import json
+import os
 import re
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -22,21 +25,95 @@ from chassis.profiles import AdapterNotAllowed, AdapterNotAvailable, LaneNotAllo
 from chassis.schemas import SCHEMA_DIR, drift
 from chassis.server import create_app as create_chassis_app
 from chassis.server import load_config
+from chassis_contracts import (
+    ConfigPortContract,
+    EngineConnectorContract,
+    ModelPortContract,
+    TelemetryPortContract,
+)
 from fake_model_server import Script, create_app
+from pytest_socket import SocketBlockedError
 
 ROOT = Path(__file__).resolve().parents[3]
 EXAMPLE_SCRIPT = ROOT / "packages/fake-model-server/scripts/example.yaml"
 
 
+CHASSIS_TESTS = ROOT / "packages/chassis/tests"
+
+
+@pytest.fixture
+def offline_gate(request: pytest.FixtureRequest) -> None:
+    """Skip unless pytest runs the way `make test` runs it: `scripts/check_offline.sh`."""
+    if not request.config.getoption("--disable-socket", default=False):
+        pytest.skip("not under the offline gate; run `make test` or `make test-poc POC=01`")
+
+
+def test_fake_profile_reaches_no_socket_when_the_offline_gate_runs(offline_gate: None) -> None:
+    """Exit criterion: `make test` passes offline with the `fake` profile: no network."""
+    build_ports("fake")
+
+    with pytest.raises(SocketBlockedError):
+        socket.create_connection(("127.0.0.1", 9), timeout=1.0)
+
+
+def test_fake_profile_sees_no_api_key_when_the_offline_gate_runs(offline_gate: None) -> None:
+    """Exit criterion: `make test` passes offline with the `fake` profile: no keys."""
+    build_ports("fake")
+
+    keys = [name for name in os.environ if name.endswith("_API_KEY")]
+
+    assert keys == []
+
+
 def test_fake_profile_builds_the_four_day0_ports() -> None:
-    """Exit criterion: every port has an interface, a fake, and a contract suite that the fake
-    passes.
-    """
+    """Exit criterion: each of the four ports has a fake; the `fake` profile builds all four."""
     ports = build_ports("fake", connector="inprocess")
+
     assert isinstance(ports.model, ScriptedModel)
     assert isinstance(ports.engine, InProcessConnector)
     assert isinstance(ports.config, InMemoryConfig)
     assert isinstance(ports.telemetry, InMemoryTelemetry)
+
+
+def _contract_bindings() -> dict[str, tuple[set[str], set[str]]]:
+    """Every `Test*` class under packages/chassis/tests: its base names and the names it uses.
+
+    Read with `ast`, not imported: the chassis tests folder is not a package, and pytest runs
+    the bindings themselves in the same gate.
+    """
+    found: dict[str, tuple[set[str], set[str]]] = {}
+    for path in sorted(CHASSIS_TESTS.rglob("test_*.py")):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
+                bases = {b.id for b in node.bases if isinstance(b, ast.Name)}
+                used = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+                found[node.name] = (bases, used)
+    return found
+
+
+@pytest.mark.parametrize(
+    ("binding", "suite", "fake"),
+    [
+        ("TestScriptedModel", ModelPortContract, ScriptedModel),
+        ("TestFakeEngineHandle", EngineConnectorContract, FakeEngine),
+        ("TestInMemoryConfig", ConfigPortContract, InMemoryConfig),
+        ("TestInMemoryTelemetry", TelemetryPortContract, InMemoryTelemetry),
+    ],
+    ids=["model", "engine", "config", "telemetry"],
+)
+def test_each_day0_fake_is_bound_to_its_contract_suite_by_name(
+    binding: str, suite: type, fake: type
+) -> None:
+    """Exit criterion: each of the four ports has an interface, a fake, and a contract suite that
+    the fake passes. The named binding subclasses the suite and builds the fake; `make test` runs
+    it in the same gate.
+    """
+    bindings = _contract_bindings()
+
+    bases, used = bindings.get(binding, (set(), set()))
+
+    assert suite.__name__ in bases, f"{binding} does not bind {suite.__name__}"
+    assert fake.__name__ in used, f"{binding} does not build {fake.__name__}"
 
 
 def _config(profile: str, engine: dict[str, Any], adapters: dict[str, Any] | None = None) -> Any:
@@ -49,25 +126,37 @@ def _config(profile: str, engine: dict[str, Any], adapters: dict[str, Any] | Non
 INPROCESS = {"connector": "inprocess", "handle": "chassis.core.handle:echo_wire"}
 
 
-def test_inprocess_is_refused_outside_fake_and_local() -> None:
+@pytest.mark.parametrize("profile", ["fake", "local"])
+def test_inprocess_lane_builds_when_the_profile_is_fake_or_local(profile: str) -> None:
     """Exit criterion (ADR-001 item 4): `inprocess` is for the chassis's tests and local runs.
     Through the loader and `build_ports`, the way `chassis serve` reaches them.
     """
-    for profile in ("fake", "local"):
-        adapters = {
-            "model": "fake",
-            "config": "memory",
-            "telemetry": "memory",
-            "tools": "fake",
-            "state": "memory",  # PoC-4: `local` defaults to `valkey`
-        }
-        config = load_config(_config(profile, INPROCESS, adapters))
-        ports = build_ports(
-            config.profile, config.spec.adapters, connector=config.spec.engine.connector
-        )
-        assert isinstance(ports.engine, InProcessConnector)
+    adapters = {
+        "model": "fake",
+        "config": "memory",
+        "telemetry": "memory",
+        "tools": "fake",
+        "state": "memory",  # PoC-4: `local` defaults to `valkey`
+    }
+    config = load_config(_config(profile, INPROCESS, adapters))
+
+    ports = build_ports(
+        config.profile, config.spec.adapters, connector=config.spec.engine.connector
+    )
+
+    assert isinstance(ports.engine, InProcessConnector)
+
+
+def test_inprocess_lane_is_refused_by_the_loader_when_the_profile_is_cloud() -> None:
+    """Exit criterion (ADR-001 item 4): `inprocess` is refused outside `fake` and `local`."""
+    config = _config("cloud", INPROCESS)
+
     with pytest.raises(ValueError, match="'inprocess' is for the chassis's own tests"):
-        load_config(_config("cloud", INPROCESS))  # `LaneNotAllowed`, inside pydantic's error
+        load_config(config)  # `LaneNotAllowed`, inside pydantic's error
+
+
+def test_inprocess_lane_is_refused_by_build_ports_when_the_profile_is_cloud() -> None:
+    """Exit criterion (ADR-001 item 4): `build_ports` refuses `inprocess` in `cloud` too."""
     with pytest.raises(LaneNotAllowed):
         build_ports("cloud", connector="inprocess")
 

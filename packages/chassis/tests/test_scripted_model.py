@@ -5,6 +5,8 @@ the loop when nothing matches.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from chassis.fakes import ScriptedModel, ScriptRule
 from chassis.ports.model import ModelMessage, ToolCallRequest
@@ -18,22 +20,39 @@ LOOP = [
 ]
 
 
-def test_a_message_refuses_what_the_port_cannot_carry() -> None:
-    with pytest.raises(ValueError, match="content"):
-        ModelMessage(role="user")
-    with pytest.raises(ValueError, match="content"):
-        ModelMessage(role="assistant")
-    with pytest.raises(ValueError, match="tool_call_id"):
-        ModelMessage(role="tool", content="x")
-    with pytest.raises(ValueError, match="tool_calls"):
-        ModelMessage(role="user", content="x", tool_calls=[CALL])
-    with pytest.raises(ValueError, match="tool_call_id"):
-        ModelMessage(role="user", content="x", tool_call_id="c1")
-    with pytest.raises(ValueError):
-        ModelMessage(role="developer", content="x")
-    with pytest.raises(ValueError):
-        ModelMessage.model_validate({"role": "user", "content": "x", "refusal": None})
+@pytest.mark.parametrize(
+    ("fields", "named"),
+    [
+        ({"role": "user"}, "content"),
+        ({"role": "assistant"}, "content"),
+        ({"role": "tool", "content": "x"}, "tool_call_id"),
+        ({"role": "user", "content": "x", "tool_calls": [CALL]}, "tool_calls"),
+        ({"role": "user", "content": "x", "tool_call_id": "c1"}, "tool_call_id"),
+        ({"role": "developer", "content": "x"}, "role"),
+        ({"role": "user", "content": "x", "refusal": None}, "refusal"),
+    ],
+    ids=[
+        "user-without-content",
+        "assistant-without-content-or-tool-calls",
+        "tool-without-tool-call-id",
+        "user-with-tool-calls",
+        "user-with-tool-call-id",
+        "unknown-role",
+        "unknown-field",
+    ],
+)
+def test_a_message_is_refused_when_the_port_cannot_carry_its_shape(
+    fields: dict[str, Any], named: str
+) -> None:
+    """A message the port cannot carry is refused at construction, naming the bad field."""
+    with pytest.raises(ValueError, match=named):
+        ModelMessage.model_validate(fields)
+
+
+def test_a_message_refuses_a_change_after_it_is_built() -> None:
+    """A message is frozen: assigning to a field raises."""
     message = ModelMessage(role="user", content="x")
+
     with pytest.raises(ValueError):
         message.content = "y"  # type: ignore[misc]
 

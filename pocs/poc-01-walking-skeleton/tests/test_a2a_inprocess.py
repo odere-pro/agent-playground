@@ -31,6 +31,16 @@ ROOT = Path(__file__).resolve().parents[3]
 FAKE_CONFIG = ROOT / "packages/chassis/configs/fake.yaml"
 CONTRACT = ROOT / "docs/contracts/contract-v0.md"
 SIMPLIFIED = "Plain words. Short sentences. Same facts."
+CONTRACT_SECTIONS = (
+    "## The `handle` contract",
+    "## Events (`events.v0.json`)",
+    "## Envelope",
+    "## Ports (day 0)",
+    "## `EngineConnector`, draft",
+    "## Chassis events over A2A",
+    "## Where the template A2A server lives",
+)
+CONTRACT_EVENTS = ("`start`", "`delta`", "`tool_call`", "`metrics`", "`end`", "`error`")
 
 CONFIG: dict[str, Any] = {
     "version": "cfg-poc1",
@@ -134,19 +144,22 @@ async def test_a2a_messages_validate_against_the_sdk_types(app: Any) -> None:
             json_format.ParseDict(json_format.MessageToDict(r), StreamResponse())
             async for r in connector._client.send_message(wire_request)
         ]
-    assert responses[0].HasField("task")
-    assert responses[0].task.context_id == "trace-poc1"
-    events = []
-    for r in responses[1:]:
-        raw = update_to_event(r)
-        assert raw is not None, "every update after the task carries one chassis event"
-        events.append(parse_event(raw))
-        holder = (
+    updates = responses[1:]
+    raws = [update_to_event(r) for r in updates]
+    holders = [
+        json_format.MessageToDict(
             r.status_update.metadata
             if r.HasField("status_update")
             else r.artifact_update.artifact.metadata
         )
-        assert EVENT_KEY in json_format.MessageToDict(holder)
+        for r in updates
+    ]
+
+    assert responses[0].HasField("task")
+    assert responses[0].task.context_id == "trace-poc1"
+    assert None not in raws, "every update after the task carries one chassis event"
+    assert [h for h in holders if EVENT_KEY not in h] == []
+    events = [parse_event(raw) for raw in raws if raw is not None]
     assert events[0].type == "start" and events[0].request_id == "req-poc1"
     assert events[-1].type == "end"
     assert responses[-1].status_update.status.state == TaskState.TASK_STATE_COMPLETED
@@ -158,19 +171,10 @@ def test_contract_v0_is_written_down() -> None:
     A2A; the fake profile names the `inprocess` lane and the plug-in.
     """
     text = CONTRACT.read_text()
-    for section in (
-        "## The `handle` contract",
-        "## Events (`events.v0.json`)",
-        "## Envelope",
-        "## Ports (day 0)",
-        "## `EngineConnector`, draft",
-        "## Chassis events over A2A",
-        "## Where the template A2A server lives",
-    ):
-        assert section in text, section
-    for name in ("`start`", "`delta`", "`tool_call`", "`metrics`", "`end`", "`error`"):
-        assert name in text
     config = yaml.safe_load(FAKE_CONFIG.read_text())
+
+    assert [section for section in CONTRACT_SECTIONS if section not in text] == []
+    assert [name for name in CONTRACT_EVENTS if name not in text] == []
     assert "engine" not in config["spec"]["adapters"], "the lane is named once (v1 decision 2)"
     assert config["spec"]["engine"]["connector"] == "inprocess"
     assert config["spec"]["engine"]["handle"] == "echo_python:handle"
