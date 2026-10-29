@@ -71,6 +71,7 @@ from typing import Any
 from starlette.responses import JSONResponse, StreamingResponse
 from starlette.responses import Response as HTTPResponse
 
+from chassis.adapters.ai_marking import MARKING_OPTION
 from chassis.core.events import Error, Event
 from chassis.core.inbound import (
     InboundAdapter,
@@ -171,7 +172,10 @@ async def serve[BodyT](
     `ReplyMeta.options`; `ignored` names the accepted-and-ignored params the body set;
     `disconnected` tells a complete call that its client left (the route's `is_disconnected`).
     """
-    meta = ReplyMeta(ids.ids, pipeline.served, int(time.time()), options=dict(options or {}))
+    options = dict(options or {})
+    if pipeline.config.spec.governance.marking:  # PoC-8: the body field (`adapters.ai_marking`)
+        options[MARKING_OPTION] = True
+    meta = ReplyMeta(ids.ids, pipeline.served, int(time.time()), options=options)
     if not pipeline.ready:
         return to_response(adapter.error("not_ready", NOT_READY_MESSAGE, True, meta))
     try:
