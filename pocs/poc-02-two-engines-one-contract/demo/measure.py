@@ -543,14 +543,12 @@ def environment(load: tuple[tuple[float, ...], tuple[float, ...]]) -> list[str]:
     ]
 
 
-def render(
-    results: dict[str, Any],
-    args: argparse.Namespace,
-    took_s: float,
-    load: tuple[tuple[float, ...], tuple[float, ...]],
-) -> str:
+def _intro(
+    args: argparse.Namespace, took_s: float, load: tuple[tuple[float, ...], tuple[float, ...]]
+) -> list[str]:
+    """The title, the exit criterion, the command, and the environment."""
     today = date.today().isoformat()
-    lines: list[str] = [
+    return [
         f"# PoC-2 measurements ({today})",
         "",
         "Exit criterion: event mapping size (lines of code), token overhead against plain Python, "
@@ -571,6 +569,11 @@ def render(
         "",
         *environment(load),
         "",
+    ]
+
+
+def _caveats() -> list[str]:
+    return [
         "## Caveats",
         "",
         f"Every number below is from a {CAVEAT}. Read them as orders of magnitude, not as a "
@@ -599,8 +602,9 @@ def render(
         "",
     ]
 
-    # 1
-    lines += [
+
+def _mapping_size() -> list[str]:
+    lines = [
         "## Event mapping size",
         "",
         "Lines per engine: the code that turns the framework's output into chassis events, and "
@@ -627,9 +631,13 @@ def render(
     ]
     for c in per_file:
         lines.append(f"| `{c.path}` | {c.total} | {c.blank} | {c.comment} | {c.code} |")
+    return lines + _mapping_meaning(engine_code)
+
+
+def _mapping_meaning(engine_code: dict[str, int]) -> list[str]:
     shared = engine_code.pop(SHARED)
     own = list(engine_code.values())
-    lines += [
+    return [
         "",
         f"What it means: each engine's own mapping is {min(own)} to {max(own)} code lines, in "
         f"the workload; the shared runtime ({shared} code lines) is written once and every "
@@ -642,11 +650,11 @@ def render(
         "",
     ]
 
-    # 2
-    shapes: list[EngineShape] = results["shapes"]
+
+def _token_overhead(shapes: list[EngineShape]) -> list[str]:
     plain = next(s for s in shapes if s.engine == PLAIN)
     plain_total = _sent(plain)
-    lines += [
+    lines = [
         "## Token overhead against plain Python",
         "",
         f"The same request (`{GLOSSARY}`), which calls `glossary_lookup` once, through each "
@@ -673,10 +681,15 @@ def render(
             f"{'baseline' if s is plain else rel} | {s.usage[0]} / {s.usage[1]} | "
             f"{s.mcp_requests} |"
         )
+    return lines + _token_meaning(shapes, plain)
+
+
+def _token_meaning(shapes: list[EngineShape], plain: EngineShape) -> list[str]:
+    plain_total = _sent(plain)
     spread = ", ".join(
         f"{s.engine.split(' (')[0]} {_sent(s) - plain_total:+d}" for s in shapes if s is not plain
     )
-    lines += [
+    lines = [
         "",
         "Request body keys each engine sent (first call):",
         "",
@@ -695,10 +708,11 @@ def render(
         "logs them per call); that run is not done here.",
         "",
     ]
+    return lines
 
-    # 3
-    lane: dict[str, Samples] = results["lanes"]
-    lines += [
+
+def _lane_latency(lane: dict[str, Samples]) -> list[str]:
+    lines = [
         "## The local hop's extra latency",
         "",
         f"`echo_python:handle` on `{SIMPLIFY}`, wall time from `run()` (first event requested) to "
@@ -716,7 +730,10 @@ def render(
         p50, p95 = _p(samples.end)
         c50, c95 = _p(samples.cpu)
         lines.append(f"| {name} | {p50} | {p95} | {c50} | {c95} |")
+    return lines + _lane_extra(lane)
 
+
+def _lane_extra(lane: dict[str, Samples]) -> list[str]:
     def q(path: str, values: str) -> tuple[float, float]:
         series: list[float] = getattr(lane[path], values)
         return percentile(series, 50), percentile(series, 95)
@@ -727,7 +744,7 @@ def render(
     (ic50, ic95), (sc50, sc95), (dc50, dc95) = (
         q(p, "cpu") for p in ("inprocess", "sidecar", "direct handle")
     )
-    lines += [
+    return [
         f"| extra: `sidecar` minus `inprocess` | {ms(sp50 - ip50)} | {ms(sp95 - ip95)} | "
         f"{ms(sc50 - ic50)} | {ms(sc95 - ic95)} |",
         f"| extra: `sidecar` minus direct `handle` | {ms(sp50 - dp50)} | {ms(sp95 - dp95)} | "
@@ -747,10 +764,9 @@ def render(
         "",
     ]
 
-    # 4
-    per_n: dict[str, dict[int, Samples]] = results["deltas"]
-    top = DELTA_COUNTS[-1]
-    lines += [
+
+def _delta_overhead(per_n: dict[str, dict[int, Samples]]) -> list[str]:
+    lines = [
         "## Overhead per streamed delta",
         "",
         "A handle that yields `start`, N one-character `delta`s, and `end`, with no model call, "
@@ -767,19 +783,30 @@ def render(
     ]
     per_delta: dict[str, float] = {}
     for name, by_n in per_n.items():
-        cells = []
-        for n in DELTA_COUNTS:
-            p50, p95 = _p(by_n[n].end)
-            cells += [p50, p95]
-        for values in ("end", "cpu"):
-            tops: list[float] = getattr(by_n[top], values)
-            ones: list[float] = getattr(by_n[1], values)
-            per = [(a - b) / (top - 1) for a, b in zip(tops, ones, strict=True)]
-            per50 = percentile(per, 50) * 1e6
-            cells += [f"{per50:.1f}", f"{percentile(per, 95) * 1e6:.1f}"]
-            per_delta[f"{name}:{values}"] = per50
-        lines.append(f"| {name} | {' | '.join(cells)} |")
-    lines += [
+        lines.append(f"| {name} | {' | '.join(_delta_cells(name, by_n, per_delta))} |")
+    return lines + _delta_meaning(per_delta)
+
+
+def _delta_cells(name: str, by_n: dict[int, Samples], per_delta: dict[str, float]) -> list[str]:
+    """One row's cells; records the p50 per-delta cost of `name` in `per_delta`."""
+    top = DELTA_COUNTS[-1]
+    cells = []
+    for n in DELTA_COUNTS:
+        p50, p95 = _p(by_n[n].end)
+        cells += [p50, p95]
+    for values in ("end", "cpu"):
+        tops: list[float] = getattr(by_n[top], values)
+        ones: list[float] = getattr(by_n[1], values)
+        per = [(a - b) / (top - 1) for a, b in zip(tops, ones, strict=True)]
+        per50 = percentile(per, 50) * 1e6
+        cells += [f"{per50:.1f}", f"{percentile(per, 95) * 1e6:.1f}"]
+        per_delta[f"{name}:{values}"] = per50
+    return cells
+
+
+def _delta_meaning(per_delta: dict[str, float]) -> list[str]:
+    top = DELTA_COUNTS[-1]
+    return [
         "",
         f"The per-delta columns use N = {top} against N = 1. What it means: each `delta` is one "
         "A2A `TaskArtifactUpdateEvent` with the chassis event in its metadata, validated on the "
@@ -793,9 +820,19 @@ def render(
         "",
     ]
 
-    # 5
-    engines: dict[str, Samples] = results["engines"]
-    lines += [
+
+def _first_rows(samples_by_name: dict[str, Samples]) -> list[str]:
+    rows = []
+    for name, samples in samples_by_name.items():
+        f50, f95 = _p(samples.first)
+        e50, e95 = _p(samples.end)
+        rows.append(f"| {name} | {f50} | {f95} | {e50} | {e95} |")
+    return rows
+
+
+def _first_token(lane: dict[str, Samples], engines: dict[str, Samples]) -> list[str]:
+    first50 = {name: percentile(samples.first, 50) for name, samples in engines.items()}
+    return [
         "## Time to first token",
         "",
         f"`{SIMPLIFY}`, time from the call to the first `delta`, and to the last event.",
@@ -804,12 +841,7 @@ def render(
         "",
         "| Path | First delta p50 ms | First delta p95 ms | End p50 ms | End p95 ms |",
         "| ---- | -----------------: | -----------------: | ---------: | ---------: |",
-    ]
-    for name, samples in lane.items():
-        f50, f95 = _p(samples.first)
-        e50, e95 = _p(samples.end)
-        lines.append(f"| {name} | {f50} | {f95} | {e50} | {e95} |")
-    lines += [
+        *_first_rows(lane),
         "",
         "Per engine, in process, each engine's own `handle` called directly (no lane), so the "
         "framework's own overhead before the first delta is visible. Each run lists the MCP tools "
@@ -817,13 +849,7 @@ def render(
         "",
         "| Engine | First delta p50 ms | First delta p95 ms | End p50 ms | End p95 ms |",
         "| ------ | -----------------: | -----------------: | ---------: | ---------: |",
-    ]
-    first50 = {name: percentile(samples.first, 50) for name, samples in engines.items()}
-    for name, samples in engines.items():
-        f50, f95 = _p(samples.first)
-        e50, e95 = _p(samples.end)
-        lines.append(f"| {name} | {f50} | {f95} | {e50} | {e95} |")
-    lines += [
+        *_first_rows(engines),
         "",
         "What it means: with a model that answers at once, the time to the first `delta` is all "
         "stack: the MCP tool listing, building the framework's client or graph, and the first "
@@ -837,6 +863,24 @@ def render(
         "only the `sidecar` lane streams it early. A real model's first-token time adds to all "
         "of these.",
         "",
+    ]
+
+
+def render(
+    results: dict[str, Any],
+    args: argparse.Namespace,
+    took_s: float,
+    load: tuple[tuple[float, ...], tuple[float, ...]],
+) -> str:
+    """The note: one function per section, in order."""
+    lines = [
+        *_intro(args, took_s, load),
+        *_caveats(),
+        *_mapping_size(),
+        *_token_overhead(results["shapes"]),
+        *_lane_latency(results["lanes"]),
+        *_delta_overhead(results["deltas"]),
+        *_first_token(results["lanes"], results["engines"]),
     ]
     return "\n".join(lines)
 
