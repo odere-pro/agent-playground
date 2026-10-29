@@ -78,6 +78,7 @@ from chassis.server.manifest import mount_manifest
 from chassis.server.marking import MarkOutputs
 from chassis.server.observability import mount_metrics
 from chassis.server.pipeline import RunPipeline
+from chassis.server.rate_limit import install_rate_limit
 from chassis.server.readiness import ProbeSettings, ReadinessMonitor, Reason, not_ready_reason
 from chassis.server.results import ResultPublisher
 from chassis.server.security import install_security
@@ -244,6 +245,7 @@ def create_app(
     if feedback_route:
         mount_feedback(app)  # not an interface: no `x-chassis-interface`, not in the manifest
     mount_interfaces(app, config)  # last
+    install_rate_limit(app)  # PoC-8: per caller, inside auth (it reads the principal)
     install_security(app)  # PoC-7: caller auth and scopes, outside the body limit
     app.add_middleware(CloseWhenDraining, state=app.state)  # public only, never the proxy app
     app.add_middleware(MarkOutputs, state=app.state)  # a refusal is marked too

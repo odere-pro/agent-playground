@@ -32,6 +32,9 @@ data). Regex only (emails, phone numbers, card numbers, IBANs, US social securit
 match becomes `<ENTITY>`. The answer to the caller is not redacted: it is not a record. Ids,
 hashes, versions, and usage counts are not free text and stay as they are.
 
+**Marked (PoC-8, 023 C-5).** With `spec.governance` marking on, the event carries the CloudEvent
+extension `aigenerated: true`, so a stored record keeps the flag.
+
 At shutdown the lifespan awaits `aclose()` before the ports close: it waits for pending publishes
 up to `SHUTDOWN_WAIT_S` (suggested: 5 s), then cancels the rest and counts them as
 `chassis.events.publish_abandoned`.
@@ -93,9 +96,9 @@ DATASCHEMA = "task-result.v1.json"
 """suggested: the `dataschema` of a result event (`schemas/task-result.v1.json`)."""
 
 
-async def result_event(run: Run) -> tuple[str, CloudEvent]:
+async def result_event(run: Run, *, marked: bool = False) -> tuple[str, CloudEvent]:
     """The topic and the CloudEvent for a finished run, its free text redacted (module
-    docstring). The run must be `done`."""
+    docstring). The run must be `done`. `marked`: the `aigenerated` extension is `true`."""
     response = await run.response()
     request = run.request
     topic = TASK_FAILED if response.status == "error" else TASK_COMPLETED
@@ -124,6 +127,7 @@ async def result_event(run: Run) -> tuple[str, CloudEvent]:
         configversion=response.versions.config,
         modelroute=response.versions.model_route,
         partitionkey=hashed,
+        aigenerated=True if marked else None,
     )
     return topic, event
 
@@ -149,7 +153,8 @@ class ResultPublisher:
     async def __call__(self, run: Run) -> None:
         if not run.done:
             return  # the run did not finish: there is no result to report
-        topic, event = await result_event(run)
+        marked = bool(self._state.config.spec.governance.marking)
+        topic, event = await result_event(run, marked=marked)
         task = asyncio.create_task(self._publish(topic, event), name=f"result-event:{event.id}")
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)

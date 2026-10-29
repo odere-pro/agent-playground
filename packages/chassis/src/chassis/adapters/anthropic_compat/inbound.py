@@ -43,6 +43,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ValidationError
 
+from chassis.adapters.ai_marking import with_marking
 from chassis.adapters.anthropic_compat.types import (
     ErrorResponse,
     Message,
@@ -375,12 +376,16 @@ class AnthropicInbound:
             meta, answer_text(response.output), stop_reason="end_turn", usage=_usage(response)
         )
         headers = {**_ids_headers(meta.ids), "x-chassis-status": response.status}
-        return Reply(200, headers, message.model_dump(mode="json"))
+        return Reply(200, headers, with_marking(message.model_dump(mode="json"), meta))
 
     def stream(self, events: AsyncIterator[Event], meta: ReplyMeta) -> StreamReply:
         async def frames() -> AsyncIterator[str]:
             start = _message(meta, "", stop_reason=None, usage=(0, 0))
-            yield _frame("message_start", RawMessageStartEvent(type="message_start", message=start))
+            started = RawMessageStartEvent(type="message_start", message=start).model_dump(
+                mode="json"
+            )
+            started["message"] = with_marking(started["message"], meta)
+            yield f"event: message_start\ndata: {json.dumps(started, separators=(',', ':'))}\n\n"
             seen: list[Event] = []
             sent: list[str] = []
             opened = False
