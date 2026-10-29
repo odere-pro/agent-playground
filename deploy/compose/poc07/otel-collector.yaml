@@ -30,6 +30,26 @@ receivers:
 processors:
   batch:
     timeout: 1s
+  # Spans: the same attribute rules as the logs pipeline below, on span and span-event attributes.
+  # Workload spans never pass the chassis's own redaction. Keep both lists equal:
+  # test_poc07_stack_static.py checks it.
+  transform/redact_spans:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          - replace_all_patterns(attributes, "value", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}", "<EMAIL_ADDRESS>")
+          - replace_all_patterns(attributes, "value", "[A-Z]{2}[0-9]{2}( ?[A-Z0-9]{4}){2,7}( ?[A-Z0-9]{1,4})?", "<IBAN_CODE>")
+          - replace_all_patterns(attributes, "value", "[0-9]{4}([ -]?[0-9]{4}){2}[ -]?[0-9]{1,7}", "<CREDIT_CARD>")
+          - replace_all_patterns(attributes, "value", "[0-9]{3}-[0-9]{2}-[0-9]{4}", "<US_SSN>")
+          - replace_all_patterns(attributes, "value", "([+][0-9][0-9 ().-]{7,}[0-9]|[0-9]{3}[-. ][0-9]{3}[-. ][0-9]{4})", "<PHONE_NUMBER>")
+      - context: spanevent
+        statements:
+          - replace_all_patterns(attributes, "value", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}", "<EMAIL_ADDRESS>")
+          - replace_all_patterns(attributes, "value", "[A-Z]{2}[0-9]{2}( ?[A-Z0-9]{4}){2,7}( ?[A-Z0-9]{1,4})?", "<IBAN_CODE>")
+          - replace_all_patterns(attributes, "value", "[0-9]{4}([ -]?[0-9]{4}){2}[ -]?[0-9]{1,7}", "<CREDIT_CARD>")
+          - replace_all_patterns(attributes, "value", "[0-9]{3}-[0-9]{2}-[0-9]{4}", "<US_SSN>")
+          - replace_all_patterns(attributes, "value", "([+][0-9][0-9 ().-]{7,}[0-9]|[0-9]{3}[-. ][0-9]{3}[-. ][0-9]{4})", "<PHONE_NUMBER>")
   transform/redact:
     error_mode: ignore
     log_statements:
@@ -66,7 +86,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
+      processors: [transform/redact_spans, batch]
       exporters: [otlphttp/langfuse, otlp/jaeger]
     logs:
       receivers: [otlp]

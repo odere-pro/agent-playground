@@ -206,3 +206,31 @@ def test_compose_service_drops_all_capabilities_when_not_a_listed_deviation(serv
     hardened_or_listed = cap_drop == ["ALL"] or service in _readme_deviations()
 
     assert hardened_or_listed, f"{service}: no cap_drop [ALL] and not in the README deviations"
+
+
+def _statements(block: list[dict[str, Any]], context: str) -> list[str]:
+    """The statements of one OTTL context in a transform's statement list."""
+    return [s for b in block if b["context"] == context for s in b["statements"]]
+
+
+def test_collector_traces_pipeline_redacts_before_the_batch() -> None:
+    """Spans pass a redaction transform before `batch`, as logs do (review R7-10)."""
+    processors = _yaml(COLLECTOR)["service"]["pipelines"]["traces"]["processors"]
+
+    redactors = [p for p in processors if p.startswith("transform/")]
+
+    assert redactors == ["transform/redact_spans"]
+    assert processors.index("transform/redact_spans") < processors.index("batch")
+
+
+@pytest.mark.parametrize("context", ["span", "spanevent"])
+def test_collector_span_rules_match_the_log_attribute_rules(context: str) -> None:
+    """Span and span-event attributes get the same masking rules as log attributes."""
+    processors = _yaml(COLLECTOR)["processors"]
+    logs = _statements(processors["transform/redact"]["log_statements"], "log")
+    log_attributes = [s for s in logs if s.startswith("replace_all_patterns(attributes")]
+
+    spans = _statements(processors["transform/redact_spans"]["trace_statements"], context)
+
+    assert log_attributes
+    assert spans == log_attributes
