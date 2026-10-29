@@ -99,12 +99,12 @@ Whether an untrusted workload can be held in its own sandbox while the chassis k
 make kind-poc05 ARGS="up"            # from nothing: create, smoke, admission, build, load, seed, apply, request
 make kind-poc05 ARGS="status"        # nodes, RuntimeClass, namespaces, policies, controller
 make kind-poc05 ARGS="test"          # every PoC-5 kind test (POC05_KIND=1, -m network)
-make kind-poc05 ARGS="test-remote"   # the remote lane and the code runner only (the CI job)
+make kind-poc05 ARGS="test-remote"   # the CI job: remote lane, code runner, /dev/shm, admission, sidecar controls, runtime hardening
 make kind-poc05 ARGS="pods logs"     # every pod, Sandbox, and claim; logs through the redaction filter
 make kind-poc05 ARGS="delete"        # kind delete cluster --name poc05
 ```
 
-`make kind-poc05 ARGS="<verb>"` calls `kind/poc05/run.sh`; several verbs run in order. The header of `run.sh` lists every verb. It touches only the cluster `poc05`: every kubectl call passes `--context kind-poc05`, every kind call `--name poc05`. It refuses to create while `poc04` runs. Stop other Docker stacks first: the VM has 7.75 GiB. `.github/workflows/remote-lane.yml` runs `up test-remote` on push and pull request.
+`make kind-poc05 ARGS="<verb>"` calls `kind/poc05/run.sh`; several verbs run in order. The header of `run.sh` lists every verb. It touches only the cluster `poc05`, and it refuses to create while `poc04` runs. The rules for the shared Docker VM are in [CLAUDE.md](CLAUDE.md). `.github/workflows/remote-lane.yml` runs `up test-remote` on push and pull request.
 
 What runs:
 

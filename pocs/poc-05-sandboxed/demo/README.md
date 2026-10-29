@@ -6,7 +6,7 @@
 
 - The cluster is up: `make kind-poc05 ARGS=up`. The demo brings nothing up or down.
 - `kind`, `kubectl`, `uv`, `python3`, and `jq` on the path (the same as `run.sh up`).
-- No other agent or stack on the Docker VM uses kind (`pocs/poc-05-sandboxed/CLAUDE.md`).
+- The rules for the shared Docker VM and the kind context hold ([deploy/CLAUDE.md](../../../deploy/CLAUDE.md)).
 
 ## How to run
 
@@ -32,7 +32,7 @@ It stops non-zero on the first failed step. The last line of a good run is `resu
 
 Every pytest step runs through `run.sh with-gateway` with `POC05_KIND=1` and prints one line per check: id, attempt, outcome, control. A failed, skipped, or deselected check fails the step. A test file that does not exist yet fails the step by name.
 
-Every check is an existing kind test or a `run.sh` verb; the demo has no probe logic of its own. All captured output goes through `run.sh redact`. The gateway key reaches pytest only through `run.sh with-gateway`: in its environment, never in argv or the record. Every `kubectl` call passes `--context kind-poc05`.
+Every check is an existing kind test or a `run.sh` verb; the demo has no probe logic of its own. All captured output goes through `run.sh redact`. The gateway key reaches pytest only through `run.sh with-gateway`: in its environment, never in argv or the record. Every `kubectl` call passes the cluster's context.
 
 ## Recorded
 

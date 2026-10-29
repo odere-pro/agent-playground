@@ -1,5 +1,7 @@
 # PoC-5 kickoff: what is left to finish
 
+**Update, 2026-10-09: T10 is no longer dropped.** It is a recorded exception, work in progress, owned by the user ([the T10 note](notes/2026-10-09-t10-probe-exception.md)). The rest is kept as written on 2026-10-02.
+
 > Superseded on 2026-10-02 by `notes/2026-10-02-mac-kickoff.md`. The offline steps below are done and T10 is decided (dropped). Use the Mac kickoff.
 
 Paste the prompt below into a new Claude Code session opened at the repository root. It is self-contained: it names every file the session needs and the order of work. Background and evidence for what is already done are in `pocs/poc-05-sandboxed/notes/2026-10-02-handoff.md`.
