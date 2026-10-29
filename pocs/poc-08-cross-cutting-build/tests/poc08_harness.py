@@ -30,6 +30,7 @@ import importlib
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 import threading
@@ -92,9 +93,12 @@ ROUTE = "big-default"
 FALLBACK_ROUTE = "fallback-route"
 RUNNER = "tok-poc08-runner"
 READER = "tok-poc08-reader"
+OTHER = "tok-poc08-other"
+"""A second caller with the run and feedback scopes: the rate limit is per caller."""
 TOKENS = {
     RUNNER: Principal("user-run", frozenset({"agent:run", "agent:feedback"})),
     READER: Principal("user-read", frozenset({"agent:read"})),
+    OTHER: Principal("user-other", frozenset({"agent:run", "agent:feedback"})),
 }
 STUB_KEY = "poc08-stub-key-not-real"  # pragma: allowlist secret (a test value)
 PROXY_URL = "http://chassis-proxy"
@@ -232,8 +236,8 @@ class StageModel:
         max_tokens: int | None = None,
     ) -> AsyncIterator[ModelChunk]:
         result = self._result(messages, tools, route)
-        if result.text:
-            yield ModelChunk(text=result.text)
+        for word in re.findall(r"\S+\s*", result.text or ""):  # word by word, as a model streams
+            yield ModelChunk(text=word)
         for call in result.tool_calls:
             yield ModelChunk(tool_call=call)
         yield ModelChunk(usage=result.usage, finish=True)
@@ -398,7 +402,11 @@ def _remote_workload(handle: str, folder: str) -> Iterator[str]:
 
 
 def _config(
-    engine: dict[str, Any], trust: str, harness: dict[str, Any], fallback: str | None
+    engine: dict[str, Any],
+    trust: str,
+    harness: dict[str, Any],
+    fallback: str | None,
+    overrides: dict[str, Any],
 ) -> Any:
     return ChassisConfig.model_validate(
         {
@@ -419,6 +427,7 @@ def _config(
                 "prompt": {"version": "simplifier-v1"},
                 "harness": {"evaluator_gate": True, **harness},
                 "governance": {"risk_class": "limited"},
+                **overrides,
             },
         }
     )
@@ -492,8 +501,12 @@ def full_stack(
     retries: int = 1,
     threshold: float = 0.7,
     fallback_route: str | None = FALLBACK_ROUTE,
+    limits: dict[str, Any] | None = None,
+    guardrails_spec: dict[str, Any] | None = None,
 ) -> Iterator[Stack]:
-    """The chassis with every stage on for `engine` in `lane` (see the module docstring)."""
+    """The chassis with every stage on for `engine` in `lane` (see the module docstring).
+    `limits` and `guardrails_spec` set `spec.limits` and `spec.guardrails`; unset, the chassis
+    defaults apply (the PoC-8 controls: rate limit, stream secret check, URL allow-list on)."""
     if (engine, lane) not in CELLS:
         raise ValueError(f"{engine} in {lane} is not a PoC-8 cell")
     folder = tempfile.mkdtemp(prefix="p8-")  # short: macOS caps a socket path at 104 bytes
@@ -506,7 +519,12 @@ def full_stack(
         spec, connector = _engine_spec(stack, engine, lane, folder)
         trust = "untrusted" if lane == "remote" else "trusted"
         harness = {"retries": retries, "threshold": threshold}
-        config = _config(spec, trust, harness, fallback_route)
+        overrides = {
+            key: value
+            for key, value in (("limits", limits), ("guardrails", guardrails_spec))
+            if value is not None
+        }
+        config = _config(spec, trust, harness, fallback_route, overrides)
         model, toolbox, telemetry = StageModel(), ToolBox(), InMemoryTelemetry()
         guardrails = RecordingGuardrails(litellm_guardrails())
         evaluator = ScriptedEvaluator([ScoreRule(match=BAD, score=0.1)], default=1.0)
