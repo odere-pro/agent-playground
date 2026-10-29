@@ -76,17 +76,17 @@ Off Linux (a developer's Mac) there is no subreaper and no `/proc`. Only the pro
 Per call:
 
 1. Take a slot (2 concurrent claims, suggested); wait for one up to 20 s.
-2. `POST` a `SandboxClaim`: `generateName: call-`, `warmPoolRef` the pool, `lifecycle` with `shutdownPolicy: Delete` and `shutdownTime` now + 60 s (suggested). No `env`, no labels, nothing from the caller.
+2. `POST` a `SandboxClaim`: `name: call-<uuid>` (chosen by the dispatcher, so a create whose answer was lost is still deleted), `warmPoolRef` the pool, `lifecycle` with `shutdownPolicy: Delete` and `shutdownTime` now + 60 s (suggested). No `env`, no labels, nothing from the caller.
 3. `GET` it every 100 ms (suggested) until `Ready` is `True` and `status.sandbox.podIPs` is set, for up to 20 s.
 4. Parse `podIPs[0]` as an IP address (loopback, link-local, multicast, and unspecified are refused), then send one stateless `tools/call` to `http://<podIP>:8000/mcp` with the code, `timeout_s`, and the key in `_meta`. A refused connect is retried for up to 2 s (suggested), since `Ready` may come before the server listens.
-5. `DELETE` the claim (background propagation) on every path, also on cancel. A failed delete is counted and logged; `shutdownTime` removes the claim later.
+5. `DELETE` the claim by name (background propagation) after every create attempt, also on cancel. A failed delete is tried up to 3 times (suggested), then counted and logged; `shutdownTime` removes the claim later.
 
 A pod is never reused. The idempotency cache lives in the dispatcher: a repeated key returns the first result without a claim. A failed call frees its key.
 
 Two `httpx` clients, never shared, and no Kubernetes SDK:
 
 - **API client:** base URL fixed at start from `KUBERNETES_SERVICE_HOST` and `KUBERNETES_SERVICE_PORT` (an IP and a port, else it refuses to start); the cluster CA (`--ca-file`) verifies the server; no redirects; nothing taken from the environment (`trust_env=False`). It is the only client that sends the token, read from `--token-file` on each request, since the projected token rotates. It sends only `create`, `get`, and `delete` on `sandboxclaims` in one namespace.
-- **Sandbox client:** no auth of any kind, no redirects, `trust_env=False`; the response body is cut off at 256 KiB (suggested), which ends the call with `sandbox_lost`.
+- **Sandbox client:** no auth of any kind, no redirects, `trust_env=False`; it asks for `Accept-Encoding: identity` and refuses any other `Content-Encoding`, and the raw body is cut off at 256 KiB (suggested); both end the call with `sandbox_lost`.
 
 `GET /health` never calls the API, so a slow API server cannot get the dispatcher restarted.
 

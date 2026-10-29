@@ -7,7 +7,9 @@ sandbox forwards to the real runner server in process unless a test gives it ano
 from __future__ import annotations
 
 import asyncio
+import gzip
 import json
+import tracemalloc
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,6 +27,7 @@ from code_runner.dispatch import (
     create_dispatch_server,
     sandbox_client,
 )
+from code_runner.runner import RunnerError
 from code_runner.server import TOOL_NAME, create_server
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
@@ -56,22 +59,28 @@ class FakeApi:
         self.deleted: list[str] = []
         self.gets = 0
         self.create_answer: httpx.Response | None = None
+        self.create_times_out = False
         self.delete_status = 200
+        self.delete_answers: list[int] = []
 
     async def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         if request.method == "POST":
             if self.create_answer is not None:
                 return self.create_answer
-            name = f"call-{len(self.claims)}"
             claim = json.loads(request.content)
+            # Like the API server: a client-chosen name is kept, else one is generated.
+            name = claim["metadata"].get("name") or f"call-{len(self.claims)}"
             claim["metadata"] = {"name": name, "namespace": NS}
             self.claims[name] = claim
+            if self.create_times_out:
+                raise httpx.ReadTimeout("applied, answer lost", request=request)
             return httpx.Response(201, json=claim)
         name = request.url.path.rsplit("/", 1)[-1]
         if request.method == "DELETE":
             self.deleted.append(name)
-            return httpx.Response(self.delete_status, json={"kind": "Status"})
+            status = self.delete_answers.pop(0) if self.delete_answers else self.delete_status
+            return httpx.Response(status, json={"kind": "Status"})
         self.gets += 1
         claim = dict(self.claims[name])
         if self.ready_after is not None and self.gets >= self.ready_after:
@@ -96,13 +105,17 @@ class FakeSandbox:
     async def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         if self.answer is not None:
-            return await self.answer(request)
+            answer = await self.answer(request)
+            # As a real transport does: the raw bytes as a stream, not yet read or decoded.
+            return httpx.Response(answer.status_code, headers=answer.headers, stream=answer.stream)
         # A fresh app per request: each claimed pod is a fresh server.
         app = self._server.http_app(path="/mcp", stateless_http=True)
         async with app.router.lifespan_context(app):
             response = await httpx.ASGITransport(app=app).handle_async_request(request)
             body = await response.aread()
-        return httpx.Response(response.status_code, headers=response.headers, content=body)
+        return httpx.Response(
+            response.status_code, headers=response.headers, stream=httpx.ByteStream(body)
+        )
 
 
 @pytest.fixture
@@ -150,7 +163,7 @@ async def test_code_runner_dispatch_claims_waits_runs_and_deletes_in_order(
     result = await _call(dispatcher, "print(6 * 7)", "k-1")
     assert result.structured_content["stdout"] == "42\n"
     assert fake_api.methods() == ["POST", "GET", "DELETE"]
-    assert fake_api.deleted == ["call-0"]
+    assert fake_api.deleted == list(fake_api.claims)
     assert [str(r.url) for r in fake_sandbox.requests] == ["http://10.244.0.7:8000/mcp"]
     delete = fake_api.requests[-1]
     assert delete.url.params["propagationPolicy"] == "Background"
@@ -164,7 +177,7 @@ async def test_code_runner_dispatch_claim_holds_no_caller_data(
     assert body == {
         "apiVersion": "extensions.agents.x-k8s.io/v1beta1",
         "kind": "SandboxClaim",
-        "metadata": {"generateName": "call-"},
+        "metadata": {"name": body["metadata"]["name"]},
         "spec": {
             "warmPoolRef": {"name": "code-runner"},
             "lifecycle": {"shutdownTime": "2026-10-09T12:01:00Z", "shutdownPolicy": "Delete"},
@@ -216,7 +229,7 @@ async def test_code_runner_dispatch_ready_timeout_is_unavailable_and_deletes(
     fake_api.ready_after = None
     with pytest.raises(ToolError, match=r"^sandbox_unavailable"):
         await _call(dispatcher, "print(1)", "k-1")
-    assert fake_api.deleted == ["call-0"]
+    assert fake_api.deleted == list(fake_api.claims)
     assert fake_sandbox.requests == []
 
 
@@ -253,7 +266,7 @@ async def test_code_runner_dispatch_pod_ip_that_is_not_a_pod_address_sends_nothi
     with pytest.raises(ToolError, match=r"^sandbox_unavailable"):
         await _call(dispatcher, "print(1)", "k-1")
     assert fake_sandbox.requests == []
-    assert fake_api.deleted == ["call-0"]
+    assert fake_api.deleted == list(fake_api.claims)
 
 
 async def test_code_runner_dispatch_ipv6_pod_address_is_bracketed(
@@ -289,7 +302,7 @@ async def test_code_runner_dispatch_response_over_the_cap_is_lost_and_frees_the_
     fake_sandbox.answer = big
     with pytest.raises(ToolError, match=r"^sandbox_lost"):
         await _call(dispatcher, "print(1)", "k-big")
-    assert fake_api.deleted == ["call-0"]
+    assert fake_api.deleted == list(fake_api.claims)
     fake_sandbox.answer = None
     result = await _call(dispatcher, "print(1)", "k-big")
     assert result.structured_content["stdout"] == "1\n"
@@ -305,7 +318,7 @@ async def test_code_runner_dispatch_dropped_session_is_lost_and_frees_the_key(
     fake_sandbox.answer = dropped
     with pytest.raises(ToolError, match=r"^sandbox_lost"):
         await _call(dispatcher, "print(1)", "k-drop")
-    assert fake_api.deleted == ["call-0"]
+    assert fake_api.deleted == list(fake_api.claims)
     fake_sandbox.answer = None
     await _call(dispatcher, "print(1)", "k-drop")
     assert fake_api.methods().count("POST") == 2
@@ -324,7 +337,7 @@ async def test_code_runner_dispatch_no_answer_in_time_is_lost_and_deletes(
     dispatcher = _dispatcher(fake_api, fake_sandbox, token_file, config)
     with pytest.raises(ToolError, match=r"^sandbox_lost"):
         await _call(dispatcher, "print(1)", "k-slow", timeout_s=1)
-    assert fake_api.deleted == ["call-0"]
+    assert fake_api.deleted == list(fake_api.claims)
 
 
 async def test_code_runner_dispatch_retries_the_connect_until_the_server_listens(
@@ -396,7 +409,7 @@ async def test_code_runner_dispatch_connect_timeout_for_the_whole_window_is_lost
     fake_sandbox.answer = never_listens
     with pytest.raises(ToolError, match=r"^sandbox_lost"):
         await _call(dispatcher, "print(1)", "k-ct-all")
-    assert fake_api.deleted == ["call-0"]
+    assert fake_api.deleted == list(fake_api.claims)
     assert "error=ConnectTimeout" in caplog.text
     assert "10.244.0.7" not in caplog.text
 
@@ -422,7 +435,11 @@ async def test_code_runner_dispatch_api_redirect_is_not_followed(
     fake_api.create_answer = httpx.Response(307, headers={"location": "https://10.0.0.99/steal"})
     with pytest.raises(ToolError, match=r"^sandbox_unavailable"):
         await _call(dispatcher, "print(1)", "k-1")
-    assert [(r.method, r.url.host) for r in fake_api.requests] == [("POST", "10.96.0.1")]
+    # The cleanup delete goes to the API server by name; nothing goes to the redirect target.
+    assert [(r.method, r.url.host) for r in fake_api.requests] == [
+        ("POST", "10.96.0.1"),
+        ("DELETE", "10.96.0.1"),
+    ]
     assert fake_sandbox.requests == []
 
 
@@ -436,7 +453,7 @@ async def test_code_runner_dispatch_sandbox_redirect_is_not_followed(
     with pytest.raises(ToolError, match=r"^sandbox_lost"):
         await _call(dispatcher, "print(1)", "k-1")
     assert len(fake_sandbox.requests) == 1
-    assert fake_api.deleted == ["call-0"]
+    assert fake_api.deleted == list(fake_api.claims)
 
 
 async def test_code_runner_dispatch_errors_never_carry_upstream_bodies_or_the_token(
@@ -462,7 +479,7 @@ async def test_code_runner_dispatch_sandbox_tool_error_keeps_only_its_code(
     with pytest.raises(ToolError) as raised:
         await _call(dispatcher, "print(1)", "k-1")
     assert str(raised.value) == "run_failed: the sandbox could not run the call"
-    assert fake_api.deleted == ["call-0"]
+    assert fake_api.deleted == list(fake_api.claims)
 
 
 async def test_code_runner_dispatch_malformed_sandbox_answer_is_lost(
@@ -531,3 +548,104 @@ def test_code_runner_cli_dispatch_mode_parses_and_serve_stays_the_default() -> N
     args = cli.dispatch_parser().parse_args(["--pool", "code-runner", "--namespace", NS])
     assert (args.pool, args.namespace, args.port) == ("code-runner", NS, 8000)
     assert cli.serve_parser().parse_args(["--port", "8000"]).port == 8000
+
+
+async def test_code_runner_dispatch_claim_name_is_chosen_by_the_dispatcher_when_it_creates(
+    dispatcher: Dispatcher, fake_api: FakeApi
+) -> None:
+    """Each claim gets its own `call-<uuid>` name, so cleanup never waits for the answer."""
+    await _call(dispatcher, "print(1)", "k-1")
+    await _call(dispatcher, "print(2)", "k-2")
+
+    names = [json.loads(r.content)["metadata"]["name"] for r in fake_api.requests if r.content]
+    assert [n.startswith("call-") and len(n) == 37 for n in names] == [True, True]
+    assert names[0] != names[1]
+    assert fake_api.deleted == names
+
+
+async def test_code_runner_dispatch_claim_is_deleted_by_name_when_the_create_answer_times_out(
+    dispatcher: Dispatcher, fake_api: FakeApi
+) -> None:
+    """A create the API server applied but whose answer was lost still gets its delete."""
+    fake_api.create_times_out = True
+
+    with pytest.raises(ToolError, match=r"^sandbox_unavailable"):
+        await _call(dispatcher, "print(1)", "k-1")
+
+    assert len(fake_api.claims) == 1
+    assert fake_api.deleted == list(fake_api.claims)
+
+
+async def test_code_runner_dispatch_delete_is_retried_when_the_first_delete_fails(
+    dispatcher: Dispatcher, fake_api: FakeApi
+) -> None:
+    """A failed delete is tried again; one that then works is not counted as a failure."""
+    fake_api.delete_answers = [500]
+
+    await _call(dispatcher, "print(1)", "k-1")
+
+    assert fake_api.deleted == list(fake_api.claims) * 2
+    assert dispatcher.delete_failures == 0
+
+
+async def test_code_runner_dispatch_deeply_nested_answer_is_lost_with_the_fixed_text_when_parsed(
+    dispatcher: Dispatcher, fake_sandbox: FakeSandbox
+) -> None:
+    """100 KB of nested `[` ends `sandbox_lost` with the fixed text, no interpreter text."""
+
+    async def nested(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=b"[" * 100_000, headers={"content-type": "application/json"}
+        )
+
+    fake_sandbox.answer = nested
+
+    with pytest.raises(ToolError) as raised:
+        await _call(dispatcher, "print(1)", "k-1")
+
+    assert str(raised.value) == "sandbox_lost: the sandbox gave no usable answer"
+
+
+async def test_code_runner_dispatch_gzip_answer_is_lost_holding_little_when_it_inflates_past_cap(
+    dispatcher: Dispatcher, fake_sandbox: FakeSandbox
+) -> None:
+    """An answer that gunzips to 50 MB ends `sandbox_lost` and is never inflated."""
+    bomb = gzip.compress(b"0" * (50 * 1024 * 1024))
+
+    async def compressed(_request: httpx.Request) -> httpx.Response:
+        headers = {"content-type": "application/json", "content-encoding": "gzip"}
+        return httpx.Response(200, stream=httpx.ByteStream(bomb), headers=headers)
+
+    fake_sandbox.answer = compressed
+    tracemalloc.start()
+
+    try:
+        with pytest.raises(RunnerError) as raised:
+            await dispatcher.run("print(1)", 2, "k-1")
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert raised.value.code == "sandbox_lost"
+    assert peak < 8 * 1024 * 1024
+
+
+async def test_code_runner_dispatch_asks_the_sandbox_for_an_uncompressed_answer(
+    dispatcher: Dispatcher, fake_sandbox: FakeSandbox
+) -> None:
+    """The sandbox call accepts only `identity`, so the size cap counts what is held."""
+    await _call(dispatcher, "print(1)", "k-1")
+
+    assert fake_sandbox.requests[0].headers["accept-encoding"] == "identity"
+
+
+async def test_code_runner_dispatch_lists_the_same_run_python_as_the_in_pod_server_when_listed(
+    dispatcher: Dispatcher, tmp_path: Path
+) -> None:
+    """The dispatcher and the in-pod server show LiteLLM one tool definition."""
+    async with Client(create_dispatch_server(dispatcher)) as client:
+        dispatched = await client.list_tools()
+    async with Client(create_server(tmp_root=tmp_path)) as client:
+        in_pod = await client.list_tools()
+
+    assert [t.model_dump() for t in dispatched] == [t.model_dump() for t in in_pod]
