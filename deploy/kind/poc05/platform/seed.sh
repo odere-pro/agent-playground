@@ -176,18 +176,33 @@ key_body() {
        object_permission: {mcp_servers: ($perm | keys), mcp_tool_permissions: $perm}}'
 }
 
-# make_keys ENTRY...: needs LITELLM up. Each old key with the same alias is deleted first, so a
-# rotate, or a Secret lost while Postgres kept the key, never leaves two live keys.
+# drop_old_key SVC: delete every key with the alias svc-SVC, and fail closed. Reads `master` from
+# make_keys (bash dynamic scope), so the master key is never a function argument. /key/delete by
+# `key_aliases` (verified on v1.103.0). How it answers a miss is not recorded, so a 2xx, 400, or
+# 404 counts only once /key/list shows no key left under the alias; any other status (401, 403,
+# 5xx, no answer) stops the run before a new key is minted (code review R5a-09).
+drop_old_key() {
+  local gone status left
+  gone=$(jq -nc --arg alias "svc-$1" '{key_aliases: [$alias]}')
+  status=$(printf 'Authorization: Bearer %s\n' "$master" | curl -sS -o /dev/null -w '%{http_code}' -H @- -H 'Content-Type: application/json' --data-binary "$gone" "$LITELLM/key/delete" 2>/dev/null) || status=000
+  [[ $status =~ ^(2[0-9][0-9]|400|404)$ ]] || die "LiteLLM /key/delete failed for svc-$1; no key minted"
+  left=$(printf 'Authorization: Bearer %s\n' "$master" | curl -fsS -H @- --get --data-urlencode "key_alias=svc-$1" "$LITELLM/key/list" 2>/dev/null) ||
+    die "LiteLLM /key/list failed for svc-$1; no key minted"
+  printf '%s' "$left" | jq -e '(.keys | length) == 0' >/dev/null 2>&1 ||
+    die "a key with alias svc-$1 is still live after /key/delete; no key minted"
+  unset status left
+}
+
+# make_keys ENTRY...: needs LITELLM up. Each old key with the same alias is deleted first, and
+# checked gone, so a rotate, or a Secret lost while Postgres kept the key, never leaves two live keys.
 make_keys() {
-  local entry svc fake code master body resp key gone
+  local entry svc fake code master body resp key
   start_forward
   master=$(read_secret "$PLATFORM" litellm-master LITELLM_MASTER_KEY)
   [[ -n $master ]] || die "$PLATFORM/litellm-master is empty; run: seed.sh base"
   for entry in "$@"; do
     IFS='|' read -r svc fake code <<<"$entry"
-    gone=$(jq -nc --arg alias "svc-$svc" '{key_aliases: [$alias]}')
-    # /key/delete by `key_aliases` (verified on v1.103.0). A miss (no such key) is fine.
-    printf 'Authorization: Bearer %s\n' "$master" | curl -sS -o /dev/null -H @- -H 'Content-Type: application/json' --data-binary "$gone" "$LITELLM/key/delete" 2>/dev/null || true
+    drop_old_key "$svc"
     body=$(key_body "$svc" "$fake" "$code")
     resp=$(printf 'Authorization: Bearer %s\n' "$master" | curl -sS -H @- -H 'Content-Type: application/json' --data-binary "$body" "$LITELLM/key/generate")
     if ! key=$(printf '%s' "$resp" | jq -er .key); then
