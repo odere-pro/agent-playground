@@ -15,4 +15,9 @@ Evidence: the [scorecard](2026-10-09-scorecard.md), [ADR-006](../../../docs/plan
 ## Not applied: waits on the Mac run
 
 - Hosted-model tokens, latency, and time to first token per engine (criterion 5). When they exist, update the scorecard and the default in ADR-006, then 058 CH-8 and 008 H-14.
-- The load run per sidecar engine (Docker) and the kind hostile suite (CI). Record them with skill `record-measurement`.
+- Done on 2026-10-28, no longer waiting: the load run per new sidecar engine ran in CI (`poc06-load.yml`, [notes/2026-10-28-sidecar-load-in-ci.md](2026-10-28-sidecar-load-in-ci.md)), and the kind hostile suite passed (`poc06-kind.yml` run 38010290978).
+
+## Proposed
+
+- **Rare 502 under load at 4 pairs, not diagnosed.** 1 in 4,611 calls on `echo-typescript` at 4 pairs in CI; PoC-4 had 4 in 11,596 on the TypeScript echo and 1 in 4,512 on `echo-python` at 2 pairs. The chassis answers 502 for a non-retryable workload failure, and Traefik answers 502 for a broken backend connection; no run kept the container logs. Suggested: a follow-up under the PoC-4 debt (keep chassis and Traefik logs for a failed scenario in `run_matrix.py`, then find the source). It does not block a criterion: the load suites accept up to 0.1% failed calls (suggested).
+- **The workload flag contract.** The scale stack passes `--drain-timeout-s` to every workload image. The TypeScript agent refused it from `764a25c` until `ce9274d`, and no offline test ran the image with the stack's command. Suggested: a static test that every workload image's entry point accepts the Compose `command` of `docker-compose.scale.yaml` (the TypeScript side is now `test/auth.test.ts`, "starts with the PoC-4 scale stack's command").

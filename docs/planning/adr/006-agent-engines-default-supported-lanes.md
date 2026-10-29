@@ -11,7 +11,7 @@ Proposed, 2026-10-09. The user accepts it at the PoC-6 pull request.
 
 Two parts of the evidence are not in yet:
 
-- **The hosted-model and SLM numbers.** Every number below is offline: the fake model server, processes on localhost, no key. Real tokens, real latency, and real time to first token come from the Mac run (`make poc06-mac`). The SLM numbers are PoC-6c.
+- **The hosted-model numbers.** The numbers in Context are offline: the fake model server, processes on localhost, no key. Real hosted tokens, latency, and time to first token come from the Mac run (`make poc06-mac`). The SLM numbers are in, from CI on CPU (PoC-6c, see [SLM (PoC-6c)](#slm-poc-6c)). They do not reopen the default. The side by side with the hosted model and the Mac latency are still open.
 - **The kind numbers for `kagent-adk`.** They come from the `poc06-kind.yml` CI run.
 
 Both can reopen the default (see Revisit). PoC-6c lists this reopening as an exit criterion.
@@ -105,12 +105,94 @@ Options for the default engine:
 - Each supported engine is an image to build, scan, and run in the CI matrix: the engine contract suite in its lane, the load test, and the PoC-5 hostile suites.
 - The TypeScript agent carries its own A2A server (551 lines), which the Python engines get from `workload-a2a`.
 
+## SLM (PoC-6c)
+
+PoC-6c ran the five trusted engines on a pre-trained SLM. It is the second Revisit trigger below. The run is CI only: a 4-core GitHub runner, CPU, no GPU. It is GitHub Actions run 40724222330 (`poc06-slm.yml`, commit `bad1a45`). The notes are `pocs/poc-06c-pretrained-slm/notes/2026-10-28-slm-run.md` and `2026-10-28-scale-run.md`, each with its `.results.json`.
+
+### Model and pins
+
+| Item | Value |
+| ---- | ----- |
+| Model | Qwen3-1.7B, not fine-tuned, the epic's default student SLM ([I](../slm-agent-platform-epic-v3.md#app-i)) |
+| File | `Qwen3-1.7B-Q8_0.gguf` from `Qwen/Qwen3-1.7B-GGUF`, revision `90862c4b9d2787eaed51d12237eafdfe7c5f6077` |
+| File sha256 | `061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a` (`deploy/compose/poc06/model.sha256`) |
+| Runtime | llama.cpp `llama-server`, release `b11963` (`version: 0.8.0-dev (build 11963, commit 39febd2ad)`), asset `llama-b11963-bin-ubuntu-x64.tar.gz`, sha256 `c117406e0eaaaeca0ac4a081b1e94152754fa79bcfc7f8af7016aace40defadf` |
+| Server flags | `--jinja --chat-template-kwargs '{"enable_thinking":false}' -c 16384 -np 4 --alias local-small` (suggested: context and slots) |
+| Route | LiteLLM `local-small`, `drop_params: true`. Only `spec.model.route` changed from `big-default` |
+| Host | GitHub `ubuntu-latest`: AMD EPYC 7763, 4 CPUs, 15983 MiB for Docker, Ubuntu 24.04.5, CPU only, no GPU offload |
+| Runs per cell | 5 (suggested: the script's `POC06_REPEAT` default), lanes `inprocess` and `sidecar` (TypeScript: `sidecar` only) |
+
+### Result per engine
+
+Sidecar lane. Pass is runs passed of runs made. Latency is per run, on CPU. Tokens are the mean per run of the lookup.
+
+| Engine | Simplifier pass | Lookup pass | Tool-call success | Simplifier p50 / p95 ms | Lookup p50 / p95 ms | Lookup tokens in / out |
+| ------ | --------------- | ----------- | ----------------- | ----------------------- | ------------------- | ---------------------- |
+| Plain Python (baseline) | 5/5 | 5/5 | 5/5 | 1955.6 / 2527.5 | 9544.7 / 9854.5 | 675 / 89 |
+| PydanticAI (default) | 5/5 | 5/5 | 5/5 | 1916.7 / 2484.1 | 9514.2 / 9813.1 | 669 / 89 |
+| LangGraph | 5/5 | 5/5 | 5/5 | 1869.2 / 2366.9 | 9393.2 / 9594.8 | 675 / 89 |
+| OpenAI Agents SDK | 5/5 | 5/5 | 5/5 | 1899.2 / 2402.0 | 9444.8 / 9760.2 | 675 / 89 |
+| TypeScript | 5/5 | 5/5 | 5/5 | 1909.6 / 2506.1 | 9325.0 / 9608.8 | 669 / 89 |
+
+The `inprocess` lane gives the same picture: every cell passes 5 of 5, smoke included. The smoke task passes 5 of 5 in the sidecar lane too.
+
+Token overhead against plain Python on the SLM: none on the simplifier (296 in, 24 out for every engine). On the lookup, PydanticAI and TypeScript send 6 fewer input tokens (-0.9%). The other engines match plain Python.
+
+Read the latency as CPU latency. It is not the Mac's, and not a GPU's. The engines are within about 5% of each other on both tasks, so the model dominates the time.
+
+The checks use no judge model. The simplifier passes when it keeps the facts listed with its input (suggested: numbers and names, matched as strings). The lookup passes when it calls the right tool, with arguments valid against the tool's schema, and its answer holds the looked-up value.
+
+Request features: the chassis proxy sends only six keys on (`model`, `messages`, `temperature`, `max_tokens`, `tools`, `stream`), so no engine feature reaches llama-server unchecked. It drops `stream_options` and PydanticAI's `tool_choice`. That `tool_choice` is `auto`, which is the server default. Details are in the slm-run note, "Request features". No request was rejected: every run passed.
+
+### Fallback share
+
+The share of failed runs is the share that would need the big-model fallback. The epic's target is a fallback rate under 10%: "Fallback rate | Share of requests sent to the big model | < 10%", with targets "to confirm in Phase 1" ([success metrics](../slm-agent-platform-epic-v3.md#success-metrics)).
+
+| Engine | Failed runs, simplifier and lookup, both lanes | Fallback share | Under 10%? |
+| ------ | ---------------------------------------------- | -------------- | ---------- |
+| Plain Python | 0 of 20 | 0% | yes |
+| PydanticAI | 0 of 20 | 0% | yes |
+| LangGraph | 0 of 20 | 0% | yes |
+| OpenAI Agents SDK | 0 of 20 | 0% | yes |
+| TypeScript | 0 of 10 (sidecar only) | 0% | yes |
+
+This is an upper bound on a base model. The epic's target is for the platform with routing and a fine-tuned SLM (063 S-8). The sample is small: 20 runs per engine (10 for TypeScript), so one failure is 5% (10% for TypeScript).
+
+### The default
+
+The rule, from Revisit: if PydanticAI fails the lookup task on Qwen3-1.7B where another engine passes, the default is reopened. suggested: an engine fails a task when fewer than 4 of its 5 runs pass.
+
+Verdict: PydanticAI passes the lookup 5 of 5 in both lanes, as every engine does. The SLM does not reopen the default. The hosted-model trigger in Revisit is still open.
+
+### Scale
+
+N agent pairs share one llama-server with 4 slots (N = 1, 2, 4, suggested), engines `echo-python` and `echo-openai-agents`, 16 users, 60 s each.
+
+| Engine | OK RPS, 1 pair | OK RPS, 2 pairs | OK RPS, 4 pairs | p50 ms |
+| ------ | -------------- | --------------- | --------------- | ------ |
+| `echo-python` | 1.84 | 2.34 | 2.03 | 6000 to 7900 |
+| `echo-openai-agents` | 2.16 | 2.44 | 1.94 | 6400 to 8300 |
+
+- **Throughput stops growing at 2 pairs**, at about 2.3 to 2.4 requests per second. It dips at 4 pairs.
+- **The model server is the limit.** Each chassis uses 0.19 to 0.25 vCPU and each workload 0.09 to 0.17 vCPU, far under their 1-vCPU caps. llama-server has 4 slots, decodes on CPU, and shares the 4 CPUs with the stack.
+- **`echo-python` at 1 pair had 13 failures in 124 requests.** The envelope status was `error`, and p95 was 30000 ms: the run budget timeout, while 16 users queue for 4 slots. There were no failures at 2 or 4 pairs.
+- **The llama-server CPU line understates load.** It used `ps -o %cpu`, which on Linux is a lifetime average. `scripts/poc06_mac.sh` now samples per interval from `/proc` on Linux.
+
+On a 4-core runner, llama-server and the agent pods share the same CPUs. So the limit seen here may be the runner, not the design.
+
+### Still open
+
+- **The big-model side by side.** The hosted numbers need the user's Mac and the provider key (`make poc06-mac`, the `hosted` step). Until then, there is no SLM-against-big-model comparison of success, tokens, or latency.
+- **Mac Metal latency and time to first token.** The CPU numbers here are not what a Mac with Metal or a GPU gives. The `slm` step on the Mac fills them.
+- **The untrusted engines on the SLM.** smolagents' `<code>` format and the Claude Agent SDK's 15k-token tool list on a small context run only on kind.
+- **The default.** It stands only if the hosted numbers and the SLM numbers both agree (Decision 1). The SLM half agrees.
+
 ## Revisit
 
 Reopen the default, or an engine's place in the set, on any of these:
 
 - **The Mac run (`make poc06-mac`).** If the real prompt tokens per call for PydanticAI exceed the OpenAI Agents SDK's by more than 10% (suggested), or if either fails a task on the hosted model that plain Python passes.
-- **PoC-6c, the SLM.** If PydanticAI fails the lookup task on Qwen3-1.7B where another engine passes, because `tool_choice` is dropped by the llama.cpp path or the model needs a forced tool call, the default is reopened. The same run shows whether smolagents' `<code>` format and the Claude Agent SDK's 15k-token tool list work on a small context.
+- **PoC-6c, the SLM.** If PydanticAI fails the lookup task on Qwen3-1.7B where another engine passes, because `tool_choice` is dropped by the llama.cpp path or the model needs a forced tool call, the default is reopened. The same run shows whether smolagents' `<code>` format and the Claude Agent SDK's 15k-token tool list work on a small context. Checked 2026-10-28 in CI: not triggered (see [SLM (PoC-6c)](#slm-poc-6c)). The untrusted engines' part is still open.
 - **The `poc06-kind.yml` run.** If `kagent-adk` fails the lane contract's observable subset on kind, or does not fit the memory budget, drop it from the supported set. The remote solution slot is then open again, and the owner is asked before another is picked.
 - **A second plain agent.** When one passes, freeze the plain-A2A mode.
 - **A breaking change in a pinned framework**, or a licence change (the Claude CLI's own terms are not verified).

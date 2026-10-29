@@ -18,7 +18,7 @@ Which untrusted frameworks and which remote solution does the chassis front in t
 - [ ] Run every task on a hosted big model, through the chassis model proxy and the router. · waits on: the Mac run, `make poc06-mac`. The SLM runs are [PoC-6c](../poc-06c-pretrained-slm/README.md).
 - [x] Score each engine against the bake-off criteria. · evidence: [scorecard](../poc-06a-bake-off-sidecar-lane/notes/2026-10-09-scorecard.md) (offline). The `kagent-adk` cells say "not measured: kind, from CI" and fill in from the `poc06-kind.yml` run.
 - [x] Check router compatibility per engine. · evidence: [scorecard](../poc-06a-bake-off-sidecar-lane/notes/2026-10-09-scorecard.md), "Router compatibility"; `packages/workloads/echo-smolagents/tests/test_echo_smolagents_wire.py::test_lookup_passes_when_the_router_drops_stop`. Claude: the route drops `thinking`, `cache_control`, and others, and counts them (contract v5, A.5).
-- [ ] Rerun the PoC-3 contract suite, the PoC-4 load test, and the PoC-5 hostile suite on each new engine, in its lane. · see criterion 4.
+- [x] Rerun the PoC-3 contract suite, the PoC-4 load test, and the PoC-5 hostile suite on each new engine, in its lane. · evidence: criterion 4 (contract and hostile on kind, run 38010290978; load on kind, runs 38064809801 and 38064813425).
 - [x] List what the chassis cannot see or control for the remote solution. · evidence: [contract v5](../../docs/contracts/contract-v5.md) B.8; [notes/2026-10-09-lanes-b-kind.md](notes/2026-10-09-lanes-b-kind.md), "What the chassis cannot see or control for kagent-adk"
 - [x] Freeze the `handle` contract and the chassis event schema as v1. · see criterion 8.
 
@@ -44,7 +44,7 @@ make kind-poc06 ARGS=up        # then ARGS=test; kind and Docker, see deploy/kin
 
 ## Demo
 
-Not recorded yet. The offline bake-off demo is [in 6a](../poc-06a-bake-off-sidecar-lane/demo/README.md). The kind record is the CI run table in [notes/2026-10-09-lanes-b-kind.md](notes/2026-10-09-lanes-b-kind.md); no separate kind demo is recorded.
+Offline demo of the `remote` lane: `demo/demo.sh`. The record is linked from [demo/README.md](demo/README.md) (every step ok, 2026-10-28). The kind record is the CI run table in [notes/2026-10-09-lanes-b-kind.md](notes/2026-10-09-lanes-b-kind.md); no separate kind demo is recorded. The hosted-model demo comes from the Mac run.
 
 ## Findings from the kind work
 

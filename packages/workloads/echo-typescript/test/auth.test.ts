@@ -184,9 +184,10 @@ test("bearerAllowed: unequal lengths are safe, and a missing header is refused",
 
 test("parseServeOptions: the flags read the named variables", () => {
   const env = { A: TOKEN, B: OLD, BLANK: "  " };
-  assert.deepEqual(parseServeOptions([], env), { token: undefined, previous: undefined });
-  assert.deepEqual(parseServeOptions(["--require-token-env", "A"], env), { token: TOKEN, previous: undefined });
-  assert.deepEqual(parseServeOptions(["--require-token-env", "A", "--previous-token-env", "B"], env), { token: TOKEN, previous: OLD });
+  const none = { drainTimeoutS: undefined };
+  assert.deepEqual(parseServeOptions([], env), { token: undefined, previous: undefined, ...none });
+  assert.deepEqual(parseServeOptions(["--require-token-env", "A"], env), { token: TOKEN, previous: undefined, ...none });
+  assert.deepEqual(parseServeOptions(["--require-token-env", "A", "--previous-token-env", "B"], env), { token: TOKEN, previous: OLD, ...none });
   // an unset or blank previous token is ignored, as in workload_a2a
   assert.equal(parseServeOptions(["--require-token-env", "A", "--previous-token-env", "BLANK"], env).previous, undefined);
   assert.equal(parseServeOptions(["--require-token-env", "A", "--previous-token-env", "NOPE"], env).previous, undefined);
@@ -204,6 +205,16 @@ test("parseServeOptions: start-up errors name only the variable", () => {
   }
   assert.throws(() => parseServeOptions(["--bogus"], env), StartupError);
   assert.throws(() => parseServeOptions(["--require-token-env"], env), StartupError);
+});
+
+test("parseServeOptions: --drain-timeout-s, as workload_a2a; whole seconds, 0 or more", () => {
+  // The PoC-4 scale stack passes `--drain-timeout-s 30` to every workload image.
+  assert.equal(parseServeOptions(["--drain-timeout-s", "30"], {}).drainTimeoutS, 30);
+  assert.equal(parseServeOptions(["--drain-timeout-s", "0"], {}).drainTimeoutS, 0);
+  assert.equal(parseServeOptions([], {}).drainTimeoutS, undefined);
+  for (const bad of ["-1", "1.5", "abc", ""]) {
+    assert.throws(() => parseServeOptions(["--drain-timeout-s", bad], {}), StartupError, bad);
+  }
 });
 
 test("bindHost: a token lifts the loopback guard; without it the guard stands", () => {
@@ -229,6 +240,7 @@ test("main: a start-up error exits 2 before listening, naming only the variable"
     [["--require-token-env", "T"], {}, /T is unset or empty/],
     [["--require-token-env", "T"], { T: "   " }, /T is unset or empty/],
     [["--nope"], {}, /nope/],
+    [["--drain-timeout-s", "-1"], {}, /--drain-timeout-s/],
   ];
   for (const [args, env, pattern] of cases) {
     const { status, stderr } = startUp(args, env);
@@ -238,4 +250,22 @@ test("main: a start-up error exits 2 before listening, naming only the variable"
   }
   // a non-loopback HOST with no token is still refused
   assert.equal(startUp([], { HOST: "0.0.0.0" }).status, 2);
+});
+
+test("main: starts with the PoC-4 scale stack's command, `--drain-timeout-s 30`", () => {
+  // Regression: the strict flag parser refused it with exit 2, so no TypeScript pair started.
+  const folder = mkdtempSync(join(tmpdir(), "ts-main-"));
+  try {
+    const main = new URL("../src/main.ts", import.meta.url).pathname;
+    const result = spawnSync(process.execPath, ["--import", "tsx", main, "--drain-timeout-s", "30"], {
+      env: { PATH: process.env["PATH"] ?? "", UDS: join(folder, "a2a.sock") },
+      encoding: "utf8",
+      timeout: 8_000,
+      killSignal: "SIGKILL",
+    });
+    assert.equal(result.status, null, result.stderr);
+    assert.match(result.stdout, /A2A on unix:/);
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
 });
