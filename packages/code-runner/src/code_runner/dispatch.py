@@ -267,6 +267,7 @@ class Dispatcher:
         self._now = now
         self._claims = f"{API_GROUP_PATH}/namespaces/{config.namespace}/sandboxclaims"
         self.delete_failures = 0
+        self._deleting: set[asyncio.Future[None]] = set()
 
     async def call(self, code: str, timeout_s: int, key: str) -> RunResult:
         """A repeated key returns the first result without a claim; a failure frees the key."""
@@ -307,7 +308,11 @@ class Dispatcher:
                 return await self._call_sandbox(host, code, timeout_s, key)
             finally:
                 # Shielded: a cancelled call still deletes its claim. shutdownTime is the backstop.
-                await asyncio.shield(self._delete(name))
+                # The set holds the task, so a cancelled caller does not leave it unreferenced.
+                deleting = asyncio.ensure_future(self._delete(name))
+                self._deleting.add(deleting)
+                deleting.add_done_callback(self._deleting.discard)
+                await asyncio.shield(deleting)
         finally:
             self._slots.release()
 
@@ -369,7 +374,7 @@ class Dispatcher:
             response = await self._api.delete(
                 f"{self._claims}/{name}", params={"propagationPolicy": "Background"}
             )
-        except (httpx.HTTPError, OSError):
+        except (httpx.HTTPError, OSError, ValueError):
             return False
         return response.status_code in (200, 202, 404)
 

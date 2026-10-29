@@ -588,6 +588,22 @@ async def test_code_runner_dispatch_delete_is_retried_when_the_first_delete_fail
     assert dispatcher.delete_failures == 0
 
 
+async def test_code_runner_dispatch_delete_error_is_counted_when_the_token_cannot_be_read(
+    dispatcher: Dispatcher, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A delete that raises ValueError (an unreadable token) is retried and counted, not raised."""
+
+    async def broken(*_args: object, **_kwargs: object) -> httpx.Response:
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(dispatcher._api, "delete", broken)
+
+    result = await _call(dispatcher, "print(1)", "k-1")
+
+    assert result.structured_content["stdout"] == "1\n"
+    assert dispatcher.delete_failures == 1
+
+
 async def test_code_runner_dispatch_deeply_nested_answer_is_lost_with_the_fixed_text_when_parsed(
     dispatcher: Dispatcher, fake_sandbox: FakeSandbox
 ) -> None:
