@@ -156,6 +156,8 @@ def check_remote_url(url: str) -> None:
 class ModelSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
     route: str = "fake-route"
+    fallback_route: str | None = None
+    """PoC-7 (017 H-4): the route of the evaluator gate's last attempt. Null: no fallback."""
 
 
 class PromptSpec(BaseModel):
@@ -252,6 +254,112 @@ class EventsSpec(BaseModel):
         return self
 
 
+class SecuritySpec(BaseModel):
+    """`spec.security` (PoC-7, 022 H-6): the scope each public route needs, checked against the
+    caller's `Principal` from `AuthPort`. `/health` and `/ready` need none. suggested: the names.
+    Restart-only.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    run_scope: str = "agent:run"
+    """Every interface that runs the agent: native, OpenAI, Anthropic, MCP."""
+    feedback_scope: str = "agent:feedback"
+    """`POST /v1/feedback`."""
+    read_scope: str = "agent:read"
+    """`GET /manifest` and the OpenAPI documents."""
+
+
+class GuardrailsSpec(BaseModel):
+    """`spec.guardrails` (PoC-7, 022 H-6): which chassis stages call `GuardrailPort`, and what a
+    guardrail outage does. The hard control is LiteLLM's guardrails on every model call; these
+    stages add what LiteLLM cannot see. suggested: every name and default. Restart-only.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    input: bool = True
+    """The caller's text, before the engine runs. Blocked: `guardrail_blocked`, no run."""
+    tool_output: bool = True
+    """A tool's result on the proxy port, before the workload reads it."""
+    output: bool = True
+    """The answer of a complete call, before it leaves. A stream is checked by LiteLLM only."""
+    on_unavailable: Literal["fail_closed", "fail_open"] = "fail_closed"
+
+
+class HarnessSpec(BaseModel):
+    """`spec.harness` (PoC-7, 017 H-4): the evaluator gate. suggested: every name and default.
+
+    - `evaluator_gate: false`: off makes no evaluator call.
+    - `threshold: 0.7`: a score below it fails the attempt.
+    - `retries: 1`: attempts after the first, before the fallback.
+    - `evaluator_sample_rate: 1.0`: the share of calls that are gated. Reloadable.
+    - `evaluator_mode: sync`: `sync` scores before the answer leaves, then retries or falls back;
+      `async` scores after, never changes the answer, and records the score. A stream is async.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    evaluator_gate: bool = False
+    threshold: float = Field(default=0.7, ge=0, le=1)
+    retries: int = Field(default=1, ge=0, le=5)
+    evaluator_sample_rate: float = Field(default=1.0, ge=0, le=1)
+    evaluator_mode: Literal["sync", "async"] = "sync"
+
+
+class FeedbackSpec(BaseModel):
+    """`spec.feedback` (PoC-7): `POST /v1/feedback`. suggested: every name and default.
+
+    - `enabled: true`: the route is mounted.
+    - `lookup_ttl_s: 604800`: how long a finished run's `request_id` can take feedback (seven
+      days), kept in `StatePort`.
+    - `events: false`: publish `agents.feedback.received.v1` on `EventPort`.
+    - `score_name: user-feedback`: the score's name on the trace.
+    Restart-only.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = True
+    lookup_ttl_s: float = Field(default=604_800, gt=0)
+    events: bool = False
+    score_name: str = "user-feedback"
+
+
+class ObservabilitySpec(BaseModel):
+    """`spec.observability` (PoC-7, 014 H-7). suggested: every name and default. Restart-only.
+
+    - `session_header: x-session-id`: the request header whose value is the session id on spans
+      and in baggage. The user id is the caller's `Principal.subject`, never a header.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    session_header: str = "x-session-id"
+
+
+RiskClass = Literal["minimal", "limited", "high"]
+
+
+class GovernanceSpec(BaseModel):
+    """`spec.governance` (PoC-7, 023 C-5): AI-generated marking. Marking is on when
+    `risk_class` is `limited` or `high`, or when `ai_generated_marking` is true. A `limited` or
+    `high` agent with `ai_generated_marking: false` is refused. suggested: the defaults.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    risk_class: RiskClass = "minimal"
+    ai_generated_marking: bool | None = None
+
+    @model_validator(mode="after")
+    def _marking_fits_risk(self) -> GovernanceSpec:
+        if self.risk_class != "minimal" and self.ai_generated_marking is False:
+            raise ValueError(
+                f"spec.governance.ai_generated_marking: false is refused for risk_class "
+                f"{self.risk_class!r}"
+            )
+        return self
+
+    @property
+    def marking(self) -> bool:
+        return self.risk_class != "minimal" or bool(self.ai_generated_marking)
+
+
 class Spec(BaseModel):
     model_config = ConfigDict(extra="forbid")
     trust: Trust = DEFAULT_TRUST
@@ -266,6 +374,12 @@ class Spec(BaseModel):
     limits: LimitsSpec = Field(default_factory=LimitsSpec)
     idempotency: IdempotencySpec = Field(default_factory=IdempotencySpec)
     events: EventsSpec = Field(default_factory=EventsSpec)
+    security: SecuritySpec = Field(default_factory=SecuritySpec)
+    guardrails: GuardrailsSpec = Field(default_factory=GuardrailsSpec)
+    harness: HarnessSpec = Field(default_factory=HarnessSpec)
+    feedback: FeedbackSpec = Field(default_factory=FeedbackSpec)
+    observability: ObservabilitySpec = Field(default_factory=ObservabilitySpec)
+    governance: GovernanceSpec = Field(default_factory=GovernanceSpec)
 
 
 class ChassisConfig(BaseModel):
@@ -311,6 +425,7 @@ RELOADABLE: tuple[str, ...] = (
     "spec.model.route",
     "spec.prompt",
     "spec.idempotency.ttl_s",
+    "spec.harness.evaluator_sample_rate",
 )
 """The field paths a config reload may change (PoC-4 plan, section 3). A change anywhere else is
 refused with `restart_required` and the last good config stays.
@@ -325,6 +440,11 @@ RESTART_ONLY: tuple[str, ...] = (
     "spec.events",
     "spec.idempotency.enabled",
     "spec.idempotency.lease_s",
+    "spec.security",
+    "spec.guardrails",
+    "spec.feedback",
+    "spec.observability",
+    "spec.governance",
 )
 """The field paths the plan names as restart-only. Not the complete list: any path outside
 `RELOADABLE` (for example `spec.idempotency.wait_poll_ms`) is refused too.

@@ -47,6 +47,8 @@ members = [
   "packages/bakeoff",
   "packages/fake-mcp-server",
   "packages/code-runner",
+  "packages/fake-langfuse",
+  "packages/guardrail-server",
 ]
 
 [tool.uv.sources]
@@ -63,6 +65,8 @@ echo-smolagents = { workspace = true }
 bakeoff = { workspace = true }
 fake-mcp-server = { workspace = true }
 code-runner = { workspace = true }
+fake-langfuse = { workspace = true }
+guardrail-server = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["packages", "pocs"]
@@ -98,12 +102,13 @@ exclude = [
   "pocs/poc-06a-bake-off-sidecar-lane/tests/conftest\\.py$",
   "pocs/poc-06b-bake-off-remote-lane/tests/conftest\\.py$",
   "pocs/poc-06c-pretrained-slm/tests/conftest\\.py$",
+  "pocs/poc-07-cross-cutting-decisions/tests/conftest\\.py$",
   "pocs/[^/]+/notes/",
 ]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["pytest_socket.*", "google.protobuf.*", "vcr.*", "aiokafka.*"]
+module = ["pytest_socket.*", "google.protobuf.*", "vcr.*", "aiokafka.*", "torch.*", "transformers.*"]
 ignore_missing_imports = true
 
 [tool.importlinter]
@@ -119,6 +124,8 @@ root_packages = [
   "bakeoff",
   "fake_mcp_server",
   "code_runner",
+  "fake_langfuse",
+  "guardrail_server",
 ]
 include_external_packages = true
 
@@ -143,6 +150,18 @@ source_modules = ["fake_mcp_server", "code_runner"]
 forbidden_modules = ["chassis", "chassis_contracts"]
 
 [[tool.importlinter.contracts]]
+name = "the fake Langfuse API never imports the chassis (PoC-7)"
+type = "forbidden"
+source_modules = ["fake_langfuse"]
+forbidden_modules = ["chassis", "chassis_contracts"]
+
+[[tool.importlinter.contracts]]
+name = "the guardrail server never imports the chassis (it sits behind LiteLLM, PoC-7)"
+type = "forbidden"
+source_modules = ["guardrail_server"]
+forbidden_modules = ["chassis", "chassis_contracts"]
+
+[[tool.importlinter.contracts]]
 name = "the chassis never imports a workload (no business logic in the chassis)"
 type = "forbidden"
 source_modules = ["chassis"]
@@ -157,6 +176,8 @@ forbidden_modules = [
   "bakeoff",
   "fake_mcp_server",
   "code_runner",
+  "fake_langfuse",
+  "guardrail_server",
 ]
 # `allow_indirect_imports` stays unset so an indirect import counts too. The connector loads
 # `spec.engine.handle` by dotted path at runtime through `importlib`, which this does not see.
@@ -191,6 +212,15 @@ name = "valkey, aiokafka, and minio are imported only under chassis.adapters (Po
 type = "forbidden"
 source_modules = ["chassis.core", "chassis.ports", "chassis.fakes", "chassis.server", "chassis.profiles"]
 forbidden_modules = ["valkey", "aiokafka", "minio"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "the OpenTelemetry SDK is imported only under chassis.adapters (PoC-7)"
+# `chassis.profiles` reaches `chassis.adapters.otel` through `profiles.lazy` (importlib); the A2A
+# connector reads `propagation_headers()` through `getattr`, so neither imports it.
+type = "forbidden"
+source_modules = ["chassis.core", "chassis.ports", "chassis.fakes", "chassis.server", "chassis.profiles"]
+forbidden_modules = ["opentelemetry"]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]

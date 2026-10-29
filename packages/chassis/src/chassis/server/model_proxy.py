@@ -69,6 +69,11 @@ Two routes share one admission step (`admit`): the OpenAI route above and the An
 (`POST /v1/messages` on the proxy port, `chassis.server.model_proxy_messages`, contract v5 part A).
 Same run lookup, same budget reservation, same uncorrelated cap. Neither route forwards a header.
 
+The fallback route (PoC-7, 017 H-4). When the evaluator gate runs its fallback attempt it sets the
+run's `RunRecord.model_route`; `admit` then sends every call of that run to it, whatever `model` the
+workload names, and counts `chassis.model_route_forced{route}` (suggested). `Admission.route` is the
+route to call, on both routes. `chassis.model_calls` still counts the route the workload named.
+
 A refused model route (contract v5, A.9). A `ModelError` with code `http_401` or `http_403` (the
 model router refuses a route the key does not list) answers 403 `model_route_denied`, not 500, on
 both routes. On the OpenAI route only the complete call changes status; a stream keeps its 200 and
@@ -112,10 +117,12 @@ from chassis.ports.model import (
 )
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server.correlation import RunRecord, RunRegistry, parse_traceparent
+from chassis.tracecontext import continued
 
 log = logging.getLogger("chassis.model_proxy")
 SPAN = "chassis.model.call"
 DENIED = "chassis.model_upstream_denied"  # suggested
+FORCED = "chassis.model_route_forced"  # suggested: a call sent to the run's fallback route
 WINDOW_S = 60.0
 # suggested: the worst case reserved, and forwarded, for an uncorrelated call that sets no
 # `max_tokens`; never more than the cap itself. The epic gives no value.
@@ -351,10 +358,13 @@ async def _refused_stream(body: dict[str, Any]) -> AsyncIterator[str]:
 
 
 def _span_attributes(
-    route: str, trace_id: str | None, record: RunRecord | None, fmt: str
+    route: str, trace_id: str | None, record: RunRecord | None, fmt: str, traceparent: str | None
 ) -> dict[str, Any]:
+    """The call's span attributes. `traceparent` (checked, `chassis.tracecontext.continued`) makes
+    the span a child of the workload's call that sent it (PoC-7)."""
+    parent = {"traceparent": continued(traceparent)} if continued(traceparent) else {}
     if record is None:
-        return {"route": route, "trace_id": trace_id, "correlated": False, "format": fmt}
+        return {"route": route, "trace_id": trace_id, "correlated": False, "format": fmt, **parent}
     return {
         "format": fmt,
         "route": route,
@@ -362,6 +372,7 @@ def _span_attributes(
         "request_id": record.request_id,
         "agent": record.agent,
         "correlated": True,
+        **parent,
     }
 
 
@@ -541,6 +552,10 @@ def admit(
     trace_id = parse_traceparent(traceparent)
     runs: RunRegistry = app.state.runs
     record = runs.lookup(trace_id) if trace_id is not None else None
+    if record is not None and record.model_route and record.model_route != route:
+        # PoC-7: the evaluator gate's fallback attempt; the run's route wins.
+        route = record.model_route
+        telemetry.counter(FORCED, route=route)
     cap: UncorrelatedCap = app.state.uncorrelated_cap
     worst = 0
     if record is None:
@@ -563,7 +578,8 @@ def admit(
     # No await between the check above and the reservation: one step on the event loop.
     # An uncorrelated call's reservation is already on the cap.
     hold = _Hold(record, wanted, cap, worst)
-    return Admission(hold, _span_attributes(route, trace_id, record, fmt), bundle, route)
+    attributes = _span_attributes(route, trace_id, record, fmt, traceparent)
+    return Admission(hold, attributes, bundle, route)
 
 
 def is_ready(app: FastAPI) -> bool:

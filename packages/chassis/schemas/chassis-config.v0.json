@@ -4,6 +4,18 @@
       "additionalProperties": false,
       "description": "The `spec.adapters` block: the adapter per port. An unset field takes the profile default.",
       "properties": {
+        "auth": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Auth"
+        },
         "config": {
           "anyOf": [
             {
@@ -16,6 +28,18 @@
           "default": null,
           "title": "Config"
         },
+        "evaluator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evaluator"
+        },
         "events": {
           "anyOf": [
             {
@@ -27,6 +51,30 @@
           ],
           "default": null,
           "title": "Events"
+        },
+        "feedback": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Feedback"
+        },
+        "guardrails": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Guardrails"
         },
         "model": {
           "anyOf": [
@@ -274,6 +322,140 @@
       "title": "EventsSpec",
       "type": "object"
     },
+    "FeedbackSpec": {
+      "additionalProperties": false,
+      "description": "`spec.feedback` (PoC-7): `POST /v1/feedback`. suggested: every name and default.\n\n- `enabled: true`: the route is mounted.\n- `lookup_ttl_s: 604800`: how long a finished run's `request_id` can take feedback (seven\n  days), kept in `StatePort`.\n- `events: false`: publish `agents.feedback.received.v1` on `EventPort`.\n- `score_name: user-feedback`: the score's name on the trace.\nRestart-only.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "events": {
+          "default": false,
+          "title": "Events",
+          "type": "boolean"
+        },
+        "lookup_ttl_s": {
+          "default": 604800,
+          "exclusiveMinimum": 0,
+          "title": "Lookup Ttl S",
+          "type": "number"
+        },
+        "score_name": {
+          "default": "user-feedback",
+          "title": "Score Name",
+          "type": "string"
+        }
+      },
+      "title": "FeedbackSpec",
+      "type": "object"
+    },
+    "GovernanceSpec": {
+      "additionalProperties": false,
+      "description": "`spec.governance` (PoC-7, 023 C-5): AI-generated marking. Marking is on when\n`risk_class` is `limited` or `high`, or when `ai_generated_marking` is true. A `limited` or\n`high` agent with `ai_generated_marking: false` is refused. suggested: the defaults.",
+      "properties": {
+        "ai_generated_marking": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ai Generated Marking"
+        },
+        "risk_class": {
+          "default": "minimal",
+          "enum": [
+            "minimal",
+            "limited",
+            "high"
+          ],
+          "title": "Risk Class",
+          "type": "string"
+        }
+      },
+      "title": "GovernanceSpec",
+      "type": "object"
+    },
+    "GuardrailsSpec": {
+      "additionalProperties": false,
+      "description": "`spec.guardrails` (PoC-7, 022 H-6): which chassis stages call `GuardrailPort`, and what a\nguardrail outage does. The hard control is LiteLLM's guardrails on every model call; these\nstages add what LiteLLM cannot see. suggested: every name and default. Restart-only.",
+      "properties": {
+        "input": {
+          "default": true,
+          "title": "Input",
+          "type": "boolean"
+        },
+        "on_unavailable": {
+          "default": "fail_closed",
+          "enum": [
+            "fail_closed",
+            "fail_open"
+          ],
+          "title": "On Unavailable",
+          "type": "string"
+        },
+        "output": {
+          "default": true,
+          "title": "Output",
+          "type": "boolean"
+        },
+        "tool_output": {
+          "default": true,
+          "title": "Tool Output",
+          "type": "boolean"
+        }
+      },
+      "title": "GuardrailsSpec",
+      "type": "object"
+    },
+    "HarnessSpec": {
+      "additionalProperties": false,
+      "description": "`spec.harness` (PoC-7, 017 H-4): the evaluator gate. suggested: every name and default.\n\n- `evaluator_gate: false`: off makes no evaluator call.\n- `threshold: 0.7`: a score below it fails the attempt.\n- `retries: 1`: attempts after the first, before the fallback.\n- `evaluator_sample_rate: 1.0`: the share of calls that are gated. Reloadable.\n- `evaluator_mode: sync`: `sync` scores before the answer leaves, then retries or falls back;\n  `async` scores after, never changes the answer, and records the score. A stream is async.",
+      "properties": {
+        "evaluator_gate": {
+          "default": false,
+          "title": "Evaluator Gate",
+          "type": "boolean"
+        },
+        "evaluator_mode": {
+          "default": "sync",
+          "enum": [
+            "sync",
+            "async"
+          ],
+          "title": "Evaluator Mode",
+          "type": "string"
+        },
+        "evaluator_sample_rate": {
+          "default": 1.0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Evaluator Sample Rate",
+          "type": "number"
+        },
+        "retries": {
+          "default": 1,
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Retries",
+          "type": "integer"
+        },
+        "threshold": {
+          "default": 0.7,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Threshold",
+          "type": "number"
+        }
+      },
+      "title": "HarnessSpec",
+      "type": "object"
+    },
     "IdempotencySpec": {
       "additionalProperties": false,
       "description": "`spec.idempotency` (PoC-4, 018 H-18): the cache of a finished run under a key the client\nsent, in `StatePort`. suggested: every name and default.\n- `enabled: true`. Restart-only.\n- `ttl_s: 86400`: a cached result lives one day. Reloadable.\n- `lease_s: 5`: a claim expires 5 s after its owner stops renewing it. Restart-only.\n- `wait_poll_ms: 100`: how often a duplicate in flight checks for the first result.\n- `max_entry_bytes: 1048576`: a bigger result is not cached.",
@@ -375,6 +557,18 @@
     "ModelSpec": {
       "additionalProperties": false,
       "properties": {
+        "fallback_route": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fallback Route"
+        },
         "route": {
           "default": "fake-route",
           "title": "Route",
@@ -382,6 +576,19 @@
         }
       },
       "title": "ModelSpec",
+      "type": "object"
+    },
+    "ObservabilitySpec": {
+      "additionalProperties": false,
+      "description": "`spec.observability` (PoC-7, 014 H-7). suggested: every name and default. Restart-only.\n\n- `session_header: x-session-id`: the request header whose value is the session id on spans\n  and in baggage. The user id is the caller's `Principal.subject`, never a header.",
+      "properties": {
+        "session_header": {
+          "default": "x-session-id",
+          "title": "Session Header",
+          "type": "string"
+        }
+      },
+      "title": "ObservabilitySpec",
       "type": "object"
     },
     "PlainA2ASpec": {
@@ -432,6 +639,29 @@
       "title": "PromptSpec",
       "type": "object"
     },
+    "SecuritySpec": {
+      "additionalProperties": false,
+      "description": "`spec.security` (PoC-7, 022 H-6): the scope each public route needs, checked against the\ncaller's `Principal` from `AuthPort`. `/health` and `/ready` need none. suggested: the names.\nRestart-only.",
+      "properties": {
+        "feedback_scope": {
+          "default": "agent:feedback",
+          "title": "Feedback Scope",
+          "type": "string"
+        },
+        "read_scope": {
+          "default": "agent:read",
+          "title": "Read Scope",
+          "type": "string"
+        },
+        "run_scope": {
+          "default": "agent:run",
+          "title": "Run Scope",
+          "type": "string"
+        }
+      },
+      "title": "SecuritySpec",
+      "type": "object"
+    },
     "Spec": {
       "additionalProperties": false,
       "properties": {
@@ -452,6 +682,18 @@
         "events": {
           "$ref": "#/$defs/EventsSpec"
         },
+        "feedback": {
+          "$ref": "#/$defs/FeedbackSpec"
+        },
+        "governance": {
+          "$ref": "#/$defs/GovernanceSpec"
+        },
+        "guardrails": {
+          "$ref": "#/$defs/GuardrailsSpec"
+        },
+        "harness": {
+          "$ref": "#/$defs/HarnessSpec"
+        },
         "idempotency": {
           "$ref": "#/$defs/IdempotencySpec"
         },
@@ -464,8 +706,14 @@
         "model": {
           "$ref": "#/$defs/ModelSpec"
         },
+        "observability": {
+          "$ref": "#/$defs/ObservabilitySpec"
+        },
         "prompt": {
           "$ref": "#/$defs/PromptSpec"
+        },
+        "security": {
+          "$ref": "#/$defs/SecuritySpec"
         },
         "trust": {
           "default": "trusted",

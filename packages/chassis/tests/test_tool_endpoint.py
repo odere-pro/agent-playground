@@ -145,7 +145,8 @@ async def test_unknown_tool_is_a_tool_error_not_a_500() -> None:
 
 
 async def test_one_span_per_call_with_the_tool_and_the_inbound_trace_id() -> None:
-    """A valid `traceparent` is parsed; the span gets its 32-hex `trace_id`, not the raw header."""
+    """A valid `traceparent` is parsed; the span gets its 32-hex `trace_id` and the checked header
+    to continue (PoC-7), never a raw one."""
     ports = _ports()
     headers = {"traceparent": TRACEPARENT}
     async with _serving(ports) as app, _mcp_client(app, headers) as client:
@@ -154,7 +155,11 @@ async def test_one_span_per_call_with_the_tool_and_the_inbound_trace_id() -> Non
     assert isinstance(telemetry, InMemoryTelemetry)
     spans = [s for s in telemetry.spans if s.name == "chassis.tool.call"]
     assert len(spans) == 1 and spans[0].ended
-    assert spans[0].attributes == {"tool": "glossary_lookup", "trace_id": TRACE}
+    assert spans[0].attributes == {
+        "tool": "glossary_lookup",
+        "trace_id": TRACE,
+        "traceparent": TRACEPARENT,
+    }
     assert telemetry.counter_value("chassis.tool_calls", tool="glossary_lookup") == 1
     tools = ports.tools
     assert isinstance(tools, InMemoryTools)
@@ -213,6 +218,7 @@ async def test_a_call_of_an_in_flight_run_names_its_request_id() -> None:
     assert span.attributes == {
         "tool": "glossary_lookup",
         "trace_id": TRACE,
+        "traceparent": TRACEPARENT,
         "request_id": "req-mcp",
     }
     assert (record.model_calls, record.spent_tokens) == (0, 0), "tool calls are not charged"

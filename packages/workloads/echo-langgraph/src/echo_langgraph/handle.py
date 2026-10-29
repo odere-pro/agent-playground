@@ -9,7 +9,10 @@ input text is its own human message, never merged into the system prompt.
 
 `traceparent`: `ctx["traceparent"]`, when set, is a plain header on every call (contract v1,
 item 4): `default_headers` on the chat model's openai client, and the headers of the httpx2
-client every MCP session runs on. No OpenTelemetry instrumentation.
+client every MCP session runs on. PoC-7: when the workload's tracing is on
+(`workload_a2a.telemetry`), the OpenInference LangChain instrumentor runs (`telemetry.py`), and a
+request hook on both clients replaces that header with the current span's `traceparent` and
+`baggage`, so the chassis's spans join this workload's.
 
 Remote lane: `CHASSIS_API_TOKEN`, when set and not empty, is the chat model's `api_key` (so
 `Authorization: Bearer <token>` on every model call) and an `authorization` header on every MCP
@@ -34,7 +37,9 @@ from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 from pydantic import SecretStr
+from workload_a2a import telemetry as workload_telemetry
 
+from echo_langgraph import telemetry as engine_telemetry
 from echo_langgraph import tools as mcp_tools
 from echo_langgraph.mapping import EventMapper, error_event, event
 
@@ -52,6 +57,8 @@ RECURSION_LIMIT = 10
 # chassis model proxy ignores `Authorization` and adds the real key itself. No `*_API_KEY`
 # variable is ever read here; passing `api_key` stops ChatOpenAI reading `OPENAI_API_KEY`.
 PLACEHOLDER_KEY = "not-a-key"
+
+workload_telemetry.register_instrumentor(engine_telemetry.instrument)
 
 model_transport: httpx2.AsyncBaseTransport | None = None
 """Test-only hook. When set, model calls go through this transport (for example an
@@ -98,7 +105,11 @@ async def handle(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[di
     tool_headers = {**headers, "authorization": f"Bearer {token}"} if token else headers
     mapper = EventMapper(route)
     try:
-        async with httpx2.AsyncClient(transport=model_transport, timeout=timeout_s) as http:
+        async with httpx2.AsyncClient(
+            transport=model_transport,
+            timeout=timeout_s,
+            event_hooks={"request": [workload_telemetry.inject_trace_headers]},
+        ) as http:
             tools = await mcp_tools.load_tools(tool_headers, timeout_s)
             model = ChatOpenAI(
                 model=route,

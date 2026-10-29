@@ -1,0 +1,126 @@
+# Generated from packages/bakeoff/src/bakeoff/golden/cases.yaml. Do not edit.
+# Regenerate: uv run python -m bakeoff.golden.generate --write
+# The engines' model for the PoC-7 golden set.
+model: fake-model
+rules:
+- match: 'simplify: The SLM, released in 2026 by Acme, cut costs by 30 percent.'
+  reply: Acme put out the SLM in 2026. It cut costs by 30 percent.
+- match: 'simplify: Pursuant to the policy, employees must utilize the portal to submit expenses within
+    14 days.'
+  reply: Staff must use the portal to send in expenses within 14 days.
+- match: 'simplify: The aforementioned server will be decommissioned on 3 March owing to elevated maintenance
+    expenditure.'
+  reply: The server will be shut down on 3 March because it costs too much to maintain.
+- match: 'simplify: In order to facilitate onboarding, the team will commence weekly sessions of 45 minutes.'
+  reply: To help new people start, the team will hold weekly sessions of 45 minutes.
+- match: 'simplify: Customers who have not remitted payment by 30 June will incur a late fee of 5 percent.'
+  reply: Customers who have not paid by 30 June will pay a late fee of 5 percent.
+- match: 'simplify: The committee reached a consensus to allocate 2 million euros to the Berlin office.'
+  reply: The committee agreed to give 2 million euros to the Berlin office.
+- match: 'simplify: Notwithstanding the outage, the platform maintained 99.9 percent availability in Q3.'
+  reply: Despite the outage, the platform was up 99.9 percent of the time in Q3.
+- match: 'simplify: The model was trained on 12 billion tokens and evaluated on 3 benchmarks.'
+  reply: The model learned from 12 billion tokens. It was tested on 3 benchmarks.
+- match: 'simplify: The library opens at 9 am, closes at 6 pm, and is closed on Sundays.'
+  reply: The library opens at 9 am and closes at 6 pm.
+- match: 'simplify: Staff should leverage the new dashboard to monitor the 4 regional sites.'
+  reply: Staff should leverage the new dashboard to watch the 4 regional sites.
+- match: 'simplify: The bridge, built in 1932, carries 40000 vehicles per day.'
+  reply: The bridge was built in 1932. It carries 4000 vehicles a day.
+- match: 'simplify: The clinic moved to Elm Street in 2024.'
+  reply: The clinic moved to Elm Street in 2024 to be closer to the hospital.
+- match: 'lookup: What is a sidecar? Also expand RAG.'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: sidecar
+- match: 'lookup: Define LiteLLM and expand LLM.'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: LiteLLM
+- match: 'lookup: Define traceparent and expand TTFT.'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: traceparent
+- match: 'lookup: What is a lane?'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: lane
+- match: 'lookup: What is a port in the chassis?'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: port
+- match: 'lookup: Expand MCP.'
+  reply: ''
+  tool_call:
+    name: acronym_expand
+    arguments:
+      acronym: MCP
+- match: 'lookup: Define fake and expand A2A.'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: fake
+- match: 'lookup: Define workload.'
+  reply: ''
+  tool_call:
+    name: acronym_expand
+    arguments:
+      acronym: workload
+- after_tool: true
+  match: A lane where the workload runs in its own container next to the chassis.
+  reply: ''
+  tool_call:
+    name: acronym_expand
+    arguments:
+      acronym: RAG
+- after_tool: true
+  match: The model router the chassis calls; it holds routes, keys, and budgets.
+  reply: ''
+  tool_call:
+    name: acronym_expand
+    arguments:
+      acronym: LLM
+- after_tool: true
+  match: An in-memory stand-in for a port, used in tests and the fake profile.
+  reply: A fake is an in-memory stand-in used in tests.
+- after_tool: true
+  match: The W3C header that carries the trace id from one call to the next.
+  reply: ''
+  tool_call:
+    name: acronym_expand
+    arguments:
+      acronym: TTFT
+- after_tool: true
+  match: 'How the chassis reaches a workload: inprocess, sidecar, or remote.'
+  reply: 'A lane is how the chassis reaches a workload: inprocess, sidecar, or remote.'
+- after_tool: true
+  match: A typed interface the chassis uses for one outside dependency.
+  reply: A port is a typed interface the chassis uses for one outside dependency.
+- after_tool: true
+  match: retrieval-augmented generation
+  reply: A sidecar is a lane where the workload runs in its own container next to the chassis. RAG stands
+    for retrieval-augmented generation.
+- after_tool: true
+  match: Model Context Protocol
+  reply: MCP stands for Model Context Protocol.
+- after_tool: true
+  match: large language model
+  reply: LiteLLM is the model router the chassis calls. LLM stands for large language model.
+- after_tool: true
+  match: time to first token
+  reply: traceparent is the W3C header that carries the trace id. TTFT stands for time to first token.
+- after_tool: true
+  match: workload
+  reply: I could not find the word workload.
+default_reply: ok

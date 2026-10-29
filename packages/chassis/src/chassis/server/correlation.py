@@ -68,6 +68,10 @@ class RunRecord:
     `keyed_run_key(request)`. The tool endpoint derives write keys from it while idempotency is
     on, so a replay under a new `request_id` dedups its writes. Neither the raw key nor its bare
     hash is held here."""
+    model_route: str | None = None
+    """PoC-7: set by the evaluator gate for its fallback attempt. The model proxy sends every
+    model call of the run to this route, whatever route the workload names
+    (`chassis.server.evaluator_gate`)."""
 
     @property
     def spent_tokens(self) -> int:

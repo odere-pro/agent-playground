@@ -1,0 +1,9 @@
+# BuildKit uses this file, not the repo-root .dockerignore, for deploy/agent-scan/Dockerfile.
+# An allowlist: the image needs only the workspace manifests, the lock, and the scanner's lock.
+# No source, no .env, no .git enters the context.
+*
+!pyproject.toml
+!uv.lock
+!packages/*/pyproject.toml
+!packages/workloads/*/pyproject.toml
+!deploy/agent-scan/requirements.txt

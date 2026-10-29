@@ -1,7 +1,7 @@
 # packages/chassis
 
 The service chassis. It serves one workload's `handle` behind the public interfaces and holds every credential.
-Spec: `docs/contracts/contract-v4.md` (PoC-5's additive changes; v3 and earlier for the rest). Per-module detail: `docs/guides/chassis-reference.md`. Read it before you change a module.
+Spec: `docs/contracts/contract-v6.md` (PoC-7's additive changes; v5 and earlier for the rest). Per-module detail: `docs/guides/chassis-reference.md`. Read it before you change a module.
 
 ## Where things live
 
@@ -50,4 +50,5 @@ Under `packages/chassis/`: `configs/` the bundled specs, `schemas/` the publishe
 - `make lint` checks the import rules. `make quick` before every commit.
 - PoC-5 adds the `remote` lane (`adapters/a2a/remote.py`), the remote proxy listener (`server/remote_auth.py`), `ToolPort` write mode and the MCP gateway adapter (`adapters/mcp/gateway.py`), the uncorrelated cap, and `spec.trust`. Its scenarios are in `pocs/poc-05-sandboxed/tests/`; the kind ones run with `POC05_KIND=1`.
 - PoC-6 adds the plain-A2A mode of the `remote` lane (`spec.engine.protocol: a2a`, `adapters/a2a/plain.py`) for third-party agents that send no `chassis.event`. It is chassis-only: never edit `mapping.py` for it. It cannot show `tool_call`; the remote's own error text never reaches a `Response`.
+- PoC-7 adds four ports (`AuthPort`, `GuardrailPort`, `EvaluatorPort`, `FeedbackPort`; fakes bound in `tests/test_contracts_poc07.py`) and real adapters: `adapters/otel` (`OtelTelemetry`), `adapters/oidc`, `adapters/litellm/guardrails.py`, `adapters/langfuse`, `adapters/evaluators.py`. In the server: `server/security.py` (caller auth, scopes), `server/guard.py` (the three guard stages), `server/marking.py`, `server/feedback.py`, `server/evaluator_gate.py`. Plus `redaction.py` (regex only, never a named-entity model) and `tracecontext.py`. The OpenTelemetry SDK and pyjwt are imported only in their adapters. Scenarios: `pocs/poc-07-cross-cutting-decisions/tests/`; the stack drills run with `POC07_STACK=1`.
 - The full test map is in `docs/guides/chassis-reference.md`.

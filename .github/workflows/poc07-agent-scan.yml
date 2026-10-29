@@ -1,0 +1,47 @@
+# PoC-7 Security line: Snyk Agent Scan in CI, run in a sandbox (plan W5).
+#
+# What it runs: deploy/agent-scan/scan.sh. It builds the scan image, then (1) inspects the repo's
+# MCP servers (deploy/agent-scan/mcp.json) in a container with no network and no token, and
+# (2) with SNYK_TOKEN, scans them: the tool descriptions go to Snyk's analysis API at
+# api.snyk.io for scoring. Both containers have a read-only root, no capabilities, no new
+# privileges, uid 65534, and the repo mounted read-only. With --ci the scan step fails on a
+# finding.
+#
+# Trigger: push, pull_request, and workflow_dispatch. Never pull_request_target.
+# Secret: SNYK_TOKEN only, only in the scan step's env. GitHub gives no secret to a fork PR, so
+# there it is empty and scan.sh prints a notice and stops after the inspect run (exit 0). The
+# same happens until the repo has the secret.
+# The reports (inspect.json, scan.json) are uploaded as one artifact, also when the scan fails.
+# Every action is pinned by a full commit SHA, the same as ci.yml.
+name: poc07-agent-scan
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  agent-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # The scan runs PR code (the MCP servers): it gets no stored token.
+          persist-credentials: false
+      - name: Agent Scan
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          AGENT_SCAN_OUT: ${{ runner.temp }}/agent-scan
+        run: deploy/agent-scan/scan.sh
+      - name: Upload the reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: agent-scan
+          path: ${{ runner.temp }}/agent-scan
+          if-no-files-found: warn
+          retention-days: 14

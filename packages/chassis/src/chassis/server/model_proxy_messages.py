@@ -130,7 +130,7 @@ class _MessagesStream(StreamingResponse):
                 hold.charge_abandoned = True
                 chunks = self._admission.bundle.model.stream(
                     self._parsed.messages,
-                    route=self._parsed.route,
+                    route=self._admission.route,
                     tools=self._parsed.tools,
                     temperature=self._parsed.temperature,
                     max_tokens=hold.max_tokens,
@@ -364,7 +364,7 @@ async def _complete(
         try:
             result = await admission.bundle.model.complete(
                 parsed.messages,
-                route=parsed.route,
+                route=admission.route,
                 tools=parsed.tools,
                 temperature=parsed.temperature,
                 max_tokens=hold.max_tokens,

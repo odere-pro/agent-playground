@@ -100,7 +100,7 @@ def create_app(script: Script, *, max_calls: int = MAX_CALLS) -> FastAPI:
         model = body.get("model") or script.model
         app.state.calls.append(body)
         app.state.calls_total += 1
-        rule = script.pick(messages)
+        rule = script.pick(messages, body.get("model"))
         if rule.error is not None:
             raise HTTPException(status_code=rule.error.status, detail=rule.error.message)
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"

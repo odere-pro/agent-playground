@@ -242,12 +242,17 @@ PUBLIC_MESSAGES: Mapping[str, str] = {
     "idempotency_conflict": "this Idempotency-Key was already used with a different request",
     "idempotency_in_progress": "a request with this Idempotency-Key is still running; retry later",
     "state_unavailable": "the chassis cannot reach its state store; retry later",
+    # PoC-7: every attempt failed the evaluator gate and there is no fallback route.
+    "evaluator_gate_failed": "the answer did not pass the quality check",
     # Tool codes (PoC-5, plan section 2.6): the text of an MCP tool error on `/mcp`.
     "unknown_tool": "no such tool",
     "bad_arguments": "the tool arguments do not match the tool's input schema",
     "idempotency_key_required": "this is a write tool; call it inside a run",
     "tool_denied": "this tool is not allowed for this service",
     "tool_unavailable": "the tool could not be reached; retry later",
+    # Guardrail codes (PoC-7, 022 H-6): a guard stage refused the text, or could not check it.
+    "guardrail_blocked": "a guardrail blocked this content",
+    "guardrail_unavailable": "the guardrails cannot check content now; retry later",
 }
 """suggested: the fixed text the OpenAI and Anthropic interfaces send for a run error. An exception
 or a connector message can carry internal URLs or an upstream body, so it stays in the log and the

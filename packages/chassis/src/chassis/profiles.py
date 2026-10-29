@@ -21,6 +21,11 @@ PoC-5 entries are lazy too and name PoC-5 until their module lands: `engine: rem
 `chassis.adapters.a2a.remote:RemoteConnector` (built with no arguments, set up with
 `spec.engine` like the other lanes), `tools: mcp` is
 `chassis.adapters.mcp.gateway:McpGatewayTools.from_env`.
+
+PoC-7 adds four ports, each with `none` (off, the `fake` and `local` default) and a fake: `auth`
+(`static`, `oidc`), `guardrails` (`fake`, `litellm`), `evaluator` (`fake`, `judge`, `encoder`),
+`feedback` (`memory`, `langfuse`). `telemetry: otel` is `OtelTelemetry.from_env`. The real ones
+are lazy and name PoC-7 until their module lands.
 """
 
 from __future__ import annotations
@@ -34,21 +39,39 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from chassis.adapters.a2a import InProcessConnector, SidecarConnector
 from chassis.adapters.litellm import LiteLLMModel
 from chassis.fakes.config import InMemoryConfig
+from chassis.fakes.evaluator import ScriptedEvaluator
+from chassis.fakes.feedback import InMemoryFeedback
+from chassis.fakes.guardrail import KeywordGuardrails
 from chassis.fakes.model import ScriptedModel
 from chassis.fakes.telemetry import InMemoryTelemetry
 from chassis.fakes.tool import default_tools
+from chassis.ports.auth import NoAuth
 from chassis.ports.bundle import PortBundle
 from chassis.ports.engine import LANES, Lane
+from chassis.ports.evaluator import NoEvaluator
 from chassis.ports.events import NoEvents
+from chassis.ports.feedback import NoFeedback
+from chassis.ports.guardrail import NoGuardrails
 from chassis.ports.state import InMemoryState
 
 Profile = Literal["fake", "local", "cloud"]
 PROFILES: tuple[Profile, ...] = ("fake", "local", "cloud")
-PORTS: tuple[str, ...] = ("model", "config", "telemetry", "tools", "state", "events")
+PORTS: tuple[str, ...] = (
+    "model",
+    "config",
+    "telemetry",
+    "tools",
+    "state",
+    "events",
+    "auth",
+    "guardrails",
+    "evaluator",
+    "feedback",
+)
 """The ports `spec.adapters` names. The engine is not one of them: `spec.engine.connector`."""
 DEFAULT_LANE: Lane = "sidecar"
 """ADR-001 item 4. `spec.engine.connector` defaults to it too (`chassis.server.config`)."""
-IN_MEMORY = frozenset({"fake", "memory"})
+IN_MEMORY = frozenset({"fake", "memory", "static"})
 """suggested: the adapter names the `cloud` profile refuses."""
 
 
@@ -64,6 +87,14 @@ class AdapterSpec(BaseModel):
     """`memory` or `valkey` (PoC-4)."""
     events: str | None = None
     """`none`, `memory`, `kafka`, or `dapr` (PoC-4). suggested: `none` in every profile."""
+    auth: str | None = None
+    """PoC-7: `none`, `static` (fake), or `oidc`."""
+    guardrails: str | None = None
+    """PoC-7: `none`, `fake`, or `litellm`."""
+    evaluator: str | None = None
+    """PoC-7: `none`, `fake`, `judge`, or `encoder`."""
+    feedback: str | None = None
+    """PoC-7: `none`, `memory`, or `langfuse`."""
 
     @model_validator(mode="before")
     @classmethod
@@ -76,6 +107,9 @@ class AdapterSpec(BaseModel):
         return data
 
 
+_POC07_OFF = {"auth": "none", "guardrails": "none", "evaluator": "none", "feedback": "none"}
+"""suggested: the four PoC-7 ports are off in `fake` and `local` until an agent names them."""
+
 PROFILE_DEFAULTS: dict[Profile, AdapterSpec] = {
     "fake": AdapterSpec(
         model="fake",
@@ -84,6 +118,7 @@ PROFILE_DEFAULTS: dict[Profile, AdapterSpec] = {
         tools="fake",
         state="memory",
         events="none",
+        **_POC07_OFF,
     ),
     "local": AdapterSpec(
         model="litellm",
@@ -92,9 +127,19 @@ PROFILE_DEFAULTS: dict[Profile, AdapterSpec] = {
         tools="mcp",
         state="valkey",
         events="none",
+        **_POC07_OFF,
     ),
     "cloud": AdapterSpec(
-        model="litellm", config="s3", telemetry="otel", tools="mcp", state="valkey", events="none"
+        model="litellm",
+        config="s3",
+        telemetry="otel",
+        tools="mcp",
+        state="valkey",
+        events="none",
+        auth="oidc",
+        guardrails="litellm",
+        evaluator="none",
+        feedback="langfuse",
     ),
 }
 
@@ -177,7 +222,10 @@ REGISTRY: dict[str, dict[str, Factory | str]] = {
         "minio": lazy("config", "minio", "chassis.adapters.s3.config:S3Config.from_env"),
         "s3": lazy("config", "s3", "chassis.adapters.s3.config:S3Config.from_env"),
     },
-    "telemetry": {"memory": InMemoryTelemetry, "otel": "PoC-7"},
+    "telemetry": {
+        "memory": InMemoryTelemetry,
+        "otel": lazy("telemetry", "otel", "chassis.adapters.otel:OtelTelemetry.from_env", "PoC-7"),
+    },
     "tools": {
         "fake": default_tools,
         "mcp": lazy(
@@ -193,6 +241,38 @@ REGISTRY: dict[str, dict[str, Factory | str]] = {
         "memory": lazy("events", "memory", "chassis.fakes.events:InMemoryBus"),
         "kafka": lazy("events", "kafka", "chassis.adapters.kafka.events:KafkaEvents.from_env"),
         "dapr": lazy("events", "dapr", "chassis.adapters.dapr.events:DaprEvents.from_env"),
+    },
+    "auth": {
+        "none": NoAuth,
+        "static": lazy("auth", "static", "chassis.fakes.auth:StaticTokens.from_env", "PoC-7"),
+        "oidc": lazy("auth", "oidc", "chassis.adapters.oidc:OidcAuth.from_env", "PoC-7"),
+    },
+    "guardrails": {
+        "none": NoGuardrails,
+        "fake": KeywordGuardrails,
+        "litellm": lazy(
+            "guardrails",
+            "litellm",
+            "chassis.adapters.litellm.guardrails:LiteLLMGuardrails.from_env",
+            "PoC-7",
+        ),
+    },
+    "evaluator": {
+        "none": NoEvaluator,
+        "fake": ScriptedEvaluator,
+        "judge": lazy(
+            "evaluator", "judge", "chassis.adapters.evaluators:JudgeEvaluator.from_env", "PoC-7"
+        ),
+        "encoder": lazy(
+            "evaluator", "encoder", "chassis.adapters.evaluators:EncoderEvaluator.from_env", "PoC-7"
+        ),
+    },
+    "feedback": {
+        "none": NoFeedback,
+        "memory": InMemoryFeedback,
+        "langfuse": lazy(
+            "feedback", "langfuse", "chassis.adapters.langfuse:LangfuseFeedback.from_env", "PoC-7"
+        ),
     },
 }
 
@@ -276,4 +356,8 @@ def build_ports(
         tools=resolve("tools", _named(spec, "tools")),  # type: ignore[arg-type]
         state=resolve("state", _named(spec, "state")),  # type: ignore[arg-type]
         events=resolve("events", _named(spec, "events")),  # type: ignore[arg-type]
+        auth=resolve("auth", _named(spec, "auth")),  # type: ignore[arg-type]
+        guardrails=resolve("guardrails", _named(spec, "guardrails")),  # type: ignore[arg-type]
+        evaluator=resolve("evaluator", _named(spec, "evaluator")),  # type: ignore[arg-type]
+        feedback=resolve("feedback", _named(spec, "feedback")),  # type: ignore[arg-type]
     )

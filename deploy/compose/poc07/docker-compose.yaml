@@ -1,0 +1,147 @@
+# PoC-7 observability and feedback stack: Langfuse v4, an OTel Collector, and Jaeger v2 as the
+# second OTLP backend (plan docs/plans/2026-10-28-poc-07-cross-cutting.md, criterion 1).
+#
+# Run only through ./stack.sh (project `poc07`). It makes every credential into .env.poc07
+# (mode 600, git-ignored); nothing here has a default secret, so `${VAR:?}` fails closed.
+# The chassis exports OTLP to the Collector; the Collector fans the same spans out to Langfuse
+# (otlphttp with Basic auth) and to Jaeger (otlp). The swap is exporter config only
+# (otel-collector.yaml). Ports bind 127.0.0.1 only.
+#
+# Images: Langfuse's own compose file (github.com/langfuse/langfuse, docker-compose.yml at
+# b51b3966, 2026-10-28) names these tags. suggested: pin each by digest after the first CI run
+# prints them (`stack.sh digests`); deploy/CLAUDE.md asks for digests.
+name: poc07
+
+x-langfuse-env: &langfuse-env
+  NEXTAUTH_URL: http://localhost:3000
+  DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?}@postgres:5432/postgres
+  SALT: ${LANGFUSE_SALT:?}
+  ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?}
+  TELEMETRY_ENABLED: "false"
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?}
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?}
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?}
+  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_AUTH: ${REDIS_AUTH:?}
+
+x-depends: &langfuse-depends
+  postgres:
+    condition: service_healthy
+  minio:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+  clickhouse:
+    condition: service_healthy
+
+services:
+  langfuse-worker:
+    image: docker.langfuse.com/langfuse/langfuse-worker:4
+    depends_on: *langfuse-depends
+    environment: *langfuse-env
+
+  langfuse-web:
+    image: docker.langfuse.com/langfuse/langfuse:4
+    # No in-container healthcheck: the image's tools are not ours to assume (the first CI run's
+    # wget check never passed while Langfuse logged "Ready"). `stack.sh wait` polls
+    # /api/public/health from the host instead.
+    depends_on: *langfuse-depends
+    ports:
+      - 127.0.0.1:3000:3000
+    environment:
+      <<: *langfuse-env
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?}
+      LANGFUSE_INIT_ORG_ID: poc07
+      LANGFUSE_INIT_ORG_NAME: poc07
+      LANGFUSE_INIT_PROJECT_ID: poc07
+      LANGFUSE_INIT_PROJECT_NAME: poc07
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:?}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?}
+
+  clickhouse:
+    image: docker.io/clickhouse/clickhouse-server:25.12
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?}
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: cgr.dev/chainguard/minio
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: docker.io/redis:7
+    command: --requirepass ${REDIS_AUTH:?} --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_AUTH:?}", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+
+  postgres:
+    image: docker.io/postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # The jaeger and collector images ship no shell or wget, so they have no in-container
+  # healthcheck; `stack.sh wait` polls the Jaeger UI and the Collector's health_check extension
+  # (13133) from the host instead. Jaeger v2's all-in-one config takes OTLP gRPC on 4317.
+  jaeger:
+    image: docker.io/jaegertracing/jaeger:2.21.0
+    ports:
+      - 127.0.0.1:16686:16686
+
+  otel-collector:
+    image: docker.io/otel/opentelemetry-collector-contrib:0.163.2
+    command: ["--config=/etc/otelcol/config.yaml"]
+    depends_on:
+      langfuse-web:
+        condition: service_started
+      jaeger:
+        condition: service_started
+    environment:
+      LANGFUSE_AUTH: ${LANGFUSE_AUTH:?}
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - 127.0.0.1:4318:4318
+      - 127.0.0.1:13133:13133

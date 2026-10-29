@@ -1,0 +1,797 @@
+{
+  "schema": "eval-report.v0",
+  "engine": "echo-langgraph",
+  "tool": "deepeval",
+  "cases": [
+    {
+      "id": "g01",
+      "pass": true,
+      "trace_id": "94a1598e5c024fe2bff42cda259d9c40",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "2026",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "Acme",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "30 percent",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "utilize",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "leverage",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": true,
+          "reason": "The answer meets the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g02",
+      "pass": true,
+      "trace_id": "24e3a016352a4899a4ac78d1575103b6",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "portal",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "expenses",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "14 days",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "pursuant",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "utilize",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": true,
+          "reason": "The answer meets the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g03",
+      "pass": true,
+      "trace_id": "910df8f46fed482fba3b72bb777661c5",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "server",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "3 March",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "aforementioned",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "decommissioned",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "expenditure",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": true,
+          "reason": "The answer meets the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g04",
+      "pass": true,
+      "trace_id": "3128b1b226a54701b5a2ef2bf046138b",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "weekly",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "45 minutes",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "facilitate",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "commence",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "in order to",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": true,
+          "reason": "The answer meets the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g05",
+      "pass": true,
+      "trace_id": "862d03fbbb9a4ff8af2d17c44098de60",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "30 June",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "5 percent",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "remitted",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "incur",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": true,
+          "reason": "The answer meets the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g06",
+      "pass": true,
+      "trace_id": "89f623a5fc314d8e94a26a441756e59e",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "2 million euros",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "Berlin",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "consensus",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "allocate",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": true,
+          "reason": "The answer meets the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g07",
+      "pass": true,
+      "trace_id": "65ac5a1f3262436aa7790b33f6c766c4",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "99.9 percent",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "Q3",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "notwithstanding",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "availability",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": true,
+          "reason": "The answer meets the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g08",
+      "pass": false,
+      "trace_id": "78b94357499e4148ba0747a77d18bc3c",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "12 billion tokens",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "3 benchmarks",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "utilize",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "leverage",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": false,
+          "reason": "Learned from is not the same claim as trained on."
+        }
+      ]
+    },
+    {
+      "id": "g09",
+      "pass": false,
+      "trace_id": "c01aa4b43076456f8dc512e81d30ce1b",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "9 am",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "6 pm",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "Sundays",
+          "pass": false,
+          "reason": "output lacks 'Sundays'"
+        },
+        {
+          "kind": "banned",
+          "value": "utilize",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "leverage",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": false,
+          "reason": "The answer misses the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g10",
+      "pass": false,
+      "trace_id": "ac4a0cd0d85f4e85a07739c23ecbda5f",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "dashboard",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "4 regional sites",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "leverage",
+          "pass": false,
+          "reason": "output holds banned 'leverage'"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": false,
+          "reason": "The answer misses the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g11",
+      "pass": false,
+      "trace_id": "f43db5db003d422d8cc427be74060891",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "1932",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "40000",
+          "pass": false,
+          "reason": "output lacks '40000'"
+        },
+        {
+          "kind": "banned",
+          "value": "utilize",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "leverage",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": false,
+          "reason": "The answer misses the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g12",
+      "pass": false,
+      "trace_id": "eb10e22242934997926c7dd115d58bd1",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "Elm Street",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "2024",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "utilize",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "banned",
+          "value": "leverage",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": false,
+          "reason": "The answer misses the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g13",
+      "pass": true,
+      "trace_id": "4b60e689e4064718bdc73c49d2eb9b00",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "own container",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "retrieval-augmented generation",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": true,
+          "reason": "The answer meets the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g14",
+      "pass": true,
+      "trace_id": "7ce67326e5f347cda7c84ca93ee6b98b",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "model router",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "large language model",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": true,
+          "reason": "The answer meets the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g15",
+      "pass": true,
+      "trace_id": "410ae59684dd40cd967bbc252304da9d",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "trace id",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "time to first token",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": true,
+          "reason": "The answer meets the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g16",
+      "pass": true,
+      "trace_id": "8f3d2cad901e46ca8f0a7b9019b76a2a",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "inprocess",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "sidecar",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "remote",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": true,
+          "reason": "The answer meets the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g17",
+      "pass": true,
+      "trace_id": "f7d6cc441b6d4187bab71693266e1b47",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "typed interface",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": true,
+          "reason": "The answer meets the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g18",
+      "pass": true,
+      "trace_id": "4c1e0cebe1a745a38501075a7964d5d8",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "Model Context Protocol",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": true,
+          "reason": "The answer meets the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g19",
+      "pass": false,
+      "trace_id": "9af42003e8bb474ab21a13e0bd5055ef",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "in-memory stand-in",
+          "pass": true,
+          "reason": "ok"
+        },
+        {
+          "kind": "contains",
+          "value": "Agent-to-Agent",
+          "pass": false,
+          "reason": "output lacks 'Agent-to-Agent'"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": false,
+          "reason": "tool calls [{'name': 'glossary_lookup', 'arguments': {'term': 'fake'}}], expected [{'name': 'glossary_lookup', 'arguments': {'term': 'fake'}}, {'name': 'acronym_expand', 'arguments': {'acronym': 'A2A'}}]"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": false,
+          "reason": "The answer misses the rubric."
+        }
+      ]
+    },
+    {
+      "id": "g20",
+      "pass": false,
+      "trace_id": "e8d4b68aab12468ba8fbd8449d2f51be",
+      "assertions": [
+        {
+          "kind": "contains",
+          "value": "agent code",
+          "pass": false,
+          "reason": "output lacks 'agent code'"
+        },
+        {
+          "kind": "tools",
+          "value": "",
+          "pass": false,
+          "reason": "tool calls [{'name': 'acronym_expand', 'arguments': {'acronym': 'workload'}}], expected [{'name': 'glossary_lookup', 'arguments': {'term': 'workload'}}]"
+        },
+        {
+          "kind": "rubric",
+          "value": "",
+          "pass": false,
+          "reason": "The answer misses the rubric."
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total": 20,
+    "passed": 13,
+    "failed": 7
+  },
+  "meta": {
+    "lane": "sidecar",
+    "tool_exit": 1,
+    "tool_wall_s": 7.18,
+    "stack_start_s": 2.56,
+    "model_calls": 31,
+    "judge_calls": 20,
+    "offline": false
+  }
+}

@@ -61,6 +61,8 @@ How a remote workload authenticates to the chassis (one bearer token per remote,
 
 Which engine is the default for new agents, which engines are supported in which lane, and which are rejected ({{L:H-14}}, {{L:CH-8}}, {{L:CH-6}}) is proposed in [ADR-006](../adr/006-agent-engines-default-supported-lanes.md), from PoC-6. The user accepts it at the PoC-6 pull request.
 
+The cross-cutting stack is proposed in four ADRs from PoC-7. The user accepts them at the PoC-7 pull request. Observability ({{L:H-7}}): [ADR-007](../adr/007-observability-otel-collector-langfuse.md), OTLP through one Collector to Langfuse and a second backend, with user and session ids as baggage. Security ({{L:H-6}}, {{L:C-5}}): [ADR-008](../adr/008-security-identity-guardrails-defense-in-depth.md), caller auth and scopes in the chassis, LiteLLM guardrails as the hard control, the chassis guard stages as defense in depth, and the AI-generated marking as response headers; it settles gap (d) for now with guardrails per route. Feedback: [ADR-009](../adr/009-feedback-langfuse-scores-event.md), `POST /v1/feedback` through the Langfuse scores API and the event `agents.feedback.received.v1`. Evals ({{L:H-4}}, {{L:M-2}}, {{L:A-2}}): [ADR-010](../adr/010-evals-offline-tool-online-gate.md), one offline tool in CI and an online gate that wraps the engine.
+
 ## Definition of done for every issue
 
 The platform must be swappable and testable from day 0. So every issue, on top of its own acceptance criteria, is done only when:
