@@ -13,7 +13,7 @@ from __future__ import annotations
 import secrets
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,9 +36,22 @@ from bakeoff.envs import build_env
 from bakeoff.procs import Cleanup, Spawned, free_port, non_loopback_ip
 from bakeoff.registry import ROOT, TS_MAIN, Engine, Lane, check_hosted, check_lane
 
-__all__ = ["FakeModel", "Stack", "StackError", "running_stack"]
+__all__ = ["Extras", "FakeModel", "Stack", "StackError", "running_stack"]
 
 START_TIMEOUT_S = 90.0
+Wrap = Callable[[Any], Any]
+"""An ASGI app in, the app to serve out."""
+
+
+@dataclass(frozen=True)
+class Extras:
+    """What a run adds to the default stack (the red-team run): `spec.adapters` overrides,
+    chassis variables (never a secret name; the dummy model key is the only key), and a wrap of
+    the fake model's app."""
+
+    adapters: tuple[tuple[str, str], ...] = ()
+    chassis_env: tuple[tuple[str, str], ...] = ()
+    wrap: Wrap | None = None
 
 
 class StackError(RuntimeError):
@@ -48,13 +61,14 @@ class StackError(RuntimeError):
 class FakeModel:
     """The fake model server in a uvicorn thread of this process."""
 
-    def __init__(self, script: Path, port: int):
+    def __init__(self, script: Path, port: int, wrap: Wrap | None = None):
+        """`wrap`, when given, serves `wrap(app)` instead of the fake's app: the red-team run
+        puts the LiteLLM guardrail stub in front of it, on the same base URL."""
         self.port = port
         self.app = create_app(Script.from_yaml(script))
+        served = wrap(self.app) if wrap else self.app
         self._server = uvicorn.Server(
-            uvicorn.Config(
-                self.app, host="127.0.0.1", port=port, log_level="warning", lifespan="off"
-            )
+            uvicorn.Config(served, host="127.0.0.1", port=port, log_level="warning", lifespan="off")
         )
         self._thread = threading.Thread(target=self._server.run, name="fake-model", daemon=True)
 
@@ -115,7 +129,11 @@ def _wait_ready(url: str, procs: list[Spawned], secrets_: list[str]) -> None:
 
 @contextmanager
 def running_stack(
-    engine: Engine, lane: Lane, cleanup: Cleanup, hosted: Hosted | None = None
+    engine: Engine,
+    lane: Lane,
+    cleanup: Cleanup,
+    hosted: Hosted | None = None,
+    extras: Extras | None = None,
 ) -> Iterator[Stack]:
     """Start the processes for `engine` in `lane`; stop and remove everything on exit.
 
@@ -133,7 +151,8 @@ def running_stack(
     home = work / "home"
     home.mkdir()
     token = secrets.token_hex(16)
-    fake = None if hosted else FakeModel(ROOT / engine.script, free_port())
+    extras = extras or Extras()
+    fake = None if hosted else FakeModel(ROOT / engine.script, free_port(), extras.wrap)
     children: list[Spawned] = []
     try:
         if fake is not None:
@@ -170,6 +189,7 @@ def running_stack(
             lane,
             workload_port=None if lane == "inprocess" else workload_port,
             route=hosted.route if hosted else "big-default",
+            adapters=dict(extras.adapters),
         )
         config_path = work / "chassis.yaml"
         config_path.write_text(dump_config(config))
@@ -190,7 +210,8 @@ def running_stack(
                     proxy_port=proxy_port,
                     token=token,
                     hosted=hosted,
-                ),
+                )
+                | dict(extras.chassis_env),
             ),
             ROOT,
             work / "chassis.log",

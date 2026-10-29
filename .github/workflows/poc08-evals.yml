@@ -1,0 +1,148 @@
+name: poc08-evals
+
+# PoC-8: the offline eval gate and the red-team set, on every engine that runs offline, in every
+# lane it may use (the trust rule: untrusted engines run remote only). Each job is one engine, so a
+# regression names its engine. The same steps run locally: `make evals`, `make evals-regression`,
+# `make redteam`.
+#
+# - evals: DeepEval 4.3.2 on the 50 gate cases (`bakeoff.evalrun`), then the gate against the
+#   committed baseline `evals/gate/baseline.json` (`bakeoff.evalgate`). The gate exits 1 when the
+#   pass rate drops below the baseline, a must-pass case fails, or a must-fail case (a wrong answer
+#   on purpose) starts to pass. A failing case on its own is not a job failure; the gate decides.
+# - regression: the planning doc's demo. The `drop-facts` business logic (every answer loses a
+#   fact) must make the gate exit 1; the step fails if the gate passes it or errors.
+# - redteam: the PoC-7 red-team set (`bakeoff.redteam`) on both guardrail stacks, checked against
+#   `evals/redteam/baseline.json`: exit 1 when a block rate drops or a stopped case gets through.
+#
+# The engines' model and the judge are the scripted fake model server on localhost: no secret, no
+# hosted model, no egress beyond package installs. DeepEval telemetry is off (set by the launcher).
+# kagent-adk runs only on kind (poc06-kind.yml) and is skipped here, as the baselines record.
+# Every action is pinned by a full commit SHA. Never pull_request_target.
+
+on:
+  push:
+    paths:
+      - "evals/**"
+      - "packages/**"
+      - ".github/workflows/poc08-evals.yml"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: poc08-evals-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        engine:
+          - echo-python
+          - echo-pydanticai
+          - echo-langgraph
+          - echo-openai-agents
+          - echo-typescript
+          - echo-smolagents
+          - echo-claude-agent
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0
+        with:
+          version: "0.11.23"
+          enable-cache: ${{ github.event_name != 'pull_request' }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: matrix.engine == 'echo-typescript'
+        with:
+          node-version: "24"
+      - name: Build echo-typescript
+        if: matrix.engine == 'echo-typescript'
+        working-directory: packages/workloads/echo-typescript
+        run: npm ci && npm run build
+      - name: Sync
+        run: uv sync --all-packages --locked
+      - name: Golden files in sync
+        run: uv run python -m bakeoff.golden.generate --check
+      # Exit 1 only when a stack does not start or DeepEval writes no report.
+      - name: DeepEval on the gate set, every lane
+        run: uv run python -m bakeoff.evalrun --engine ${{ matrix.engine }} --out eval-reports
+      - name: Eval gate
+        run: uv run python -m bakeoff.evalgate --report eval-reports --engine ${{ matrix.engine }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: poc08-eval-reports-${{ matrix.engine }}
+          path: eval-reports/
+          if-no-files-found: warn
+
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0
+        with:
+          version: "0.11.23"
+          enable-cache: ${{ github.event_name != 'pull_request' }}
+      - name: Sync
+        run: uv sync --all-packages --locked
+      - name: Business logic that drops facts fails the eval gate
+        run: make evals-regression EVAL_OUT=eval-reports
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: poc08-eval-reports-drop-facts
+          path: eval-reports/
+          if-no-files-found: warn
+
+  redteam:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        engine:
+          - echo-python
+          - echo-pydanticai
+          - echo-langgraph
+          - echo-openai-agents
+          - echo-typescript
+          - echo-smolagents
+          - echo-claude-agent
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0
+        with:
+          version: "0.11.23"
+          enable-cache: ${{ github.event_name != 'pull_request' }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: matrix.engine == 'echo-typescript'
+        with:
+          node-version: "24"
+      - name: Build echo-typescript
+        if: matrix.engine == 'echo-typescript'
+        working-directory: packages/workloads/echo-typescript
+        run: npm ci && npm run build
+      - name: Sync
+        run: uv sync --all-packages --locked
+      - name: Red-team set, every lane, both guardrail stacks
+        run: >-
+          uv run python -m bakeoff.redteam --engine ${{ matrix.engine }}
+          --out redteam/${{ matrix.engine }}.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: poc08-redteam-${{ matrix.engine }}
+          path: redteam/
+          if-no-files-found: warn
