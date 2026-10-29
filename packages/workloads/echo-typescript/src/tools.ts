@@ -11,9 +11,14 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-export const DEFAULT_TOOL_URL = "http://127.0.0.1:8090/mcp";
+import type { Json } from "./schema.js";
 
-export type Json = Record<string, unknown>;
+export const DEFAULT_TOOL_URL = "http://127.0.0.1:8090/mcp";
+/** How much of an upstream error text goes into an event's `message`. */
+export const MAX_DETAIL = 200;
+
+/** `text` cut to `MAX_DETAIL` characters: an error from a model or a tool is not ours to size. */
+export const clip = (text: string): string => text.slice(0, MAX_DETAIL);
 
 /** How many runs found the tool endpoint unreachable and ran without tools (also warned). */
 export const toolStats = { listFailures: 0 };
@@ -86,11 +91,11 @@ export async function callTool(name: string, args: Json, opts: McpOptions): Prom
   try {
     result = await withSession(opts, (client) => client.callTool({ name, arguments: args }));
   } catch (exc) {
-    throw new ToolCallError(`${name}: ${exc instanceof Error ? exc.message : String(exc)}`);
+    throw new ToolCallError(`${name}: ${clip(exc instanceof Error ? exc.message : String(exc))}`);
   }
   const content = Array.isArray(result["content"]) ? (result["content"] as Json[]) : [];
   const text = content.map((part) => (typeof part["text"] === "string" ? part["text"] : "")).join("");
-  if (result["isError"]) throw new ToolCallError(`${name}: ${text.slice(0, 200) || "tool error"}`);
+  if (result["isError"]) throw new ToolCallError(`${name}: ${clip(text) || "tool error"}`);
   const structured = result["structuredContent"];
   if (structured && typeof structured === "object" && !Array.isArray(structured)) return structured as Json;
   return { text };
