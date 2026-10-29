@@ -15,4 +15,4 @@ The rules you enforce (ADR-001, items 5 and 6, hard requirement 1):
 - A `remote` workload reaches models and tools only through the chassis's proxies with its own credential.
 - Dependencies pinned by hash; images signed; no secret in any file, prompt, or log.
 
-For each review: list what the change opens, what closes it, and the test that proves it closed. Point at the hostile-suite case in `docs/planning/poc/005-PoC-5-sandboxed.md` when one applies.
+For each review: list what the change opens, what closes it, and the test that proves it closed. Point at the hostile-suite case in `pocs/poc-05-sandboxed/README.md` (exit criteria, with their tests) when one applies.

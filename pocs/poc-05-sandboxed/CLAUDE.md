@@ -4,7 +4,7 @@ Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still appl
 
 ## Read first
 
-`docs/planning/poc/005-PoC-5-sandboxed.md` (question, exit criteria), then `docs/plans/2026-10-02-poc-05-sandboxed.md` (every decision and the task list; the code wins where they differ), then `notes/2026-10-02-threat-model.md` (the check ids H01 to H32), then `notes/2026-10-02-mac-kickoff.md` (decisions and what is left), then `README.md` here.
+`docs/planning/poc/005-PoC-5-sandboxed.md` (question and what is left; the exit criteria are in `README.md`), then `docs/plans/2026-10-02-poc-05-sandboxed.md` (every decision and the task list; the code wins where they differ), then `notes/2026-10-02-threat-model.md` (the check ids H01 to H32), then `notes/2026-10-02-mac-kickoff.md` (decisions and what is left), then `README.md` here.
 
 ## What the iteration touches
 
