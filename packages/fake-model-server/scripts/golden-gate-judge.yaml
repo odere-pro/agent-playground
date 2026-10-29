@@ -1,0 +1,107 @@
+# Generated from packages/bakeoff/src/bakeoff/golden/cases.yaml and cases-gate.yaml. Do not edit.
+# Regenerate: uv run python -m bakeoff.golden.generate --write
+# The scripted judge for the PoC-8 gate set (every logic).
+model: fake-judge
+rules:
+- match: A sidecar is a lane where the workload runs in its own container next to the chassis. RAG stands
+    for retrieval-augmented generation.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: The chassis is the service around a workload. It holds keys, calls models and tools, and traces.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: traceparent is the W3C header that carries the trace id. TTFT stands for time to first token.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: A workload is the agent code that runs behind the chassis. A2A stands for Agent-to-Agent.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: The study of 900 students found that how long they sleep is linked to their test scores.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: LiteLLM is the model router the chassis calls. LLM stands for large language model.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: An SLM is a small language model, small enough to run cheaply on one GPU or a CPU.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: A2A is Agent-to-Agent, the protocol the chassis uses to send a task to a workload.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: MCP is the Model Context Protocol, the protocol the chassis uses to serve tools.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: The update makes the battery last about 20 percent longer on version 4 devices.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: The server will be shut down on 3 March because it costs too much to maintain.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: 'A lane is how the chassis reaches a workload: inprocess, sidecar, or remote.'
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: Each team member gets 25 days of leave a year, not counting public holidays.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: To help new people start, the team will hold weekly sessions of 45 minutes.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: After 7 pm, visitors must show a valid ticket before they go into Hall B.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: Customers who have not paid by 30 June will pay a late fee of 5 percent.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: The model learned from 12 billion tokens. It was tested on 3 benchmarks.
+  reply: '{"reason": "Learned from is not the same claim as trained on.", "pass": false, "score": 0}'
+- match: A port is a typed interface the chassis uses for one outside dependency.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: The plan aims to cut plastic waste in the canteen by 40 percent by 2027.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: Despite the outage, the platform was up 99.9 percent of the time in Q3.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: Staff should leverage the new dashboard to watch the 4 regional sites.
+  reply: '{"reason": "The answer misses the rubric.", "pass": false, "score": 0}'
+- match: Because of bad weather, the Friday match in Leeds has moved to 12 May.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: The clinic moved to Elm Street in 2024 to be closer to the hospital.
+  reply: '{"reason": "The answer misses the rubric.", "pass": false, "score": 0}'
+- match: The committee agreed to give 2 million euros to the Berlin office.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: The council will try to fix 300 streetlights in the next quarter.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: In order to cut costs, the office will close at 5 pm from 1 July.
+  reply: '{"reason": "The answer misses the rubric.", "pass": false, "score": 0}'
+- match: After the merger, Orion Bank will run 140 branches across Spain.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: The firm plans to hire 25 engineers in Lisbon before December.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: Staff must use the portal to send in expenses within 14 days.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: The bridge was built in 1932. It carries 4000 vehicles a day.
+  reply: '{"reason": "The answer misses the rubric.", "pass": false, "score": 0}'
+- match: The museum opened in 1885. It gets 2 million visitors a year.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: Applicants must bring two forms of ID to the reception desk.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: The vendor says the 60 laptops will now arrive on Tuesday.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: The report was sent to all 12 regional managers on Monday.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: Do not use the lift during a fire alarm. Take stairwell C.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: Acme put out the SLM in 2026. It cut costs by 30 percent.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: Please do not use water between 2 am and 5 am on 8 April.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: If you find a defect, tell the QA team within 48 hours.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: The festival in Galway runs from 14 to 16 September.
+  reply: '{"reason": "The answer misses the rubric.", "pass": false, "score": 0}'
+- match: The app needs at least 2 GB of memory to run well.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: Overtime pay is 1.5 times the normal hourly rate.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: A fake is an in-memory stand-in used in tests.
+  reply: '{"reason": "The answer misses the rubric.", "pass": false, "score": 0}'
+- match: The library opens at 9 am and closes at 6 pm.
+  reply: '{"reason": "The answer misses the rubric.", "pass": false, "score": 0}'
+- match: I could not find LiteLM in the glossary.
+  reply: '{"reason": "The answer misses the rubric.", "pass": false, "score": 0}'
+- match: The pharmacy opens at 8 am on weekdays.
+  reply: '{"reason": "The answer misses the rubric.", "pass": false, "score": 0}'
+- match: MCP stands for Model Context Protocol.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: The acronym list has no entry for GPU.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: The glossary has no entry for quasar.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: SLM stands for small language model.
+  reply: '{"reason": "The answer meets the rubric.", "pass": true, "score": 1}'
+- match: I could not find the word workload.
+  reply: '{"reason": "The answer misses the rubric.", "pass": false, "score": 0}'
+default_reply: '{"reason": "The judge has no verdict for this answer.", "pass": false, "score": 0}'

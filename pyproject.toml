@@ -103,6 +103,7 @@ exclude = [
   "pocs/poc-06b-bake-off-remote-lane/tests/conftest\\.py$",
   "pocs/poc-06c-pretrained-slm/tests/conftest\\.py$",
   "pocs/poc-07-cross-cutting-decisions/tests/conftest\\.py$",
+  "pocs/poc-08-cross-cutting-build/tests/conftest\\.py$",
   "pocs/[^/]+/notes/",
 ]
 plugins = ["pydantic.mypy"]

@@ -1,0 +1,322 @@
+# The PoC-8 gate cases: 30 more labelled cases. With the 20 PoC-7 cases in `cases.yaml` they are
+# the 50-case golden set the CI eval gate runs on every engine (`bakeoff.golden.load_gate_cases`).
+# `cases.yaml` stays as it is, so the PoC-7 trial and its committed reports keep their 20 cases.
+#
+# Same format and the same rules as `cases.yaml`. Four references are wrong on purpose, so the
+# gate has known-bad answers to fail: g39 drops a fact, g40 keeps a banned phrase, g41 changes a
+# month, g50 calls a tool with a typo. With PoC-7's six, ten of the 50 are labelled `fail`.
+# Regenerate the scripts after an edit:
+#   uv run python -m bakeoff.golden.generate --write
+#
+# Labels: hand-written by the PoC-8 author on 2026-10-29, one reviewer pass. suggested: a second
+# labeller before the set gates a release (backlog 064 D-1).
+version: 1
+cases:
+  - id: g21
+    task: simplifier
+    input: "simplify: The firm intends to recruit 25 engineers in Lisbon prior to December."
+    expect:
+      contains: ["25 engineers", "Lisbon", "December"]
+      banned: ["intends", "recruit", "prior to"]
+      tool_calls: []
+    rubric: "The answer says the firm plans to hire 25 engineers in Lisbon before December, in plain words, and adds no new claim."
+    reference: "The firm plans to hire 25 engineers in Lisbon before December."
+    label: pass
+  - id: g22
+    task: simplifier
+    input: "simplify: Applicants are required to furnish two forms of identification at the reception desk."
+    expect:
+      contains: ["two forms", "reception desk"]
+      banned: ["furnish", "required to"]
+      tool_calls: []
+    rubric: "The answer says applicants bring two forms of ID to the reception desk, in plain words, and adds no new claim."
+    reference: "Applicants must bring two forms of ID to the reception desk."
+    label: pass
+  - id: g23
+    task: simplifier
+    input: "simplify: The update ameliorates battery life by approximately 20 percent on version 4 devices."
+    expect:
+      contains: ["20 percent", "version 4"]
+      banned: ["ameliorates", "approximately"]
+      tool_calls: []
+    rubric: "The answer says the update makes the battery last about 20 percent longer on version 4 devices, in plain words, and adds no new claim."
+    reference: "The update makes the battery last about 20 percent longer on version 4 devices."
+    label: pass
+  - id: g24
+    task: simplifier
+    input: "simplify: Owing to inclement weather, the Friday match in Leeds has been postponed until 12 May."
+    expect:
+      contains: ["Friday", "Leeds", "12 May"]
+      banned: ["owing to", "inclement", "postponed"]
+      tool_calls: []
+    rubric: "The answer says the Friday match in Leeds moved to 12 May because of bad weather, in plain words, and adds no new claim."
+    reference: "Because of bad weather, the Friday match in Leeds has moved to 12 May."
+    label: pass
+  - id: g25
+    task: simplifier
+    input: "simplify: The council will endeavour to repair 300 streetlights during the forthcoming quarter."
+    expect:
+      contains: ["300 streetlights", "quarter"]
+      banned: ["endeavour", "forthcoming"]
+      tool_calls: []
+    rubric: "The answer says the council will try to fix 300 streetlights next quarter, in plain words, and adds no new claim."
+    reference: "The council will try to fix 300 streetlights in the next quarter."
+    label: pass
+  - id: g26
+    task: simplifier
+    input: "simplify: Participants who ascertain a defect should notify the QA team within 48 hours."
+    expect:
+      contains: ["QA team", "48 hours"]
+      banned: ["ascertain", "notify"]
+      tool_calls: []
+    rubric: "The answer says to tell the QA team about a defect within 48 hours, in plain words, and adds no new claim."
+    reference: "If you find a defect, tell the QA team within 48 hours."
+    label: pass
+  - id: g27
+    task: simplifier
+    input: "simplify: The museum, which commenced operations in 1885, attracts 2 million visitors annually."
+    expect:
+      contains: ["1885", "2 million visitors"]
+      banned: ["commenced", "annually"]
+      tool_calls: []
+    rubric: "The answer says the museum opened in 1885 and gets 2 million visitors a year, in plain words, and adds no new claim."
+    reference: "The museum opened in 1885. It gets 2 million visitors a year."
+    label: pass
+  - id: g28
+    task: simplifier
+    input: "simplify: Remuneration for overtime shall be calculated at 1.5 times the standard hourly rate."
+    expect:
+      contains: ["overtime", "1.5 times"]
+      banned: ["remuneration", "shall"]
+      tool_calls: []
+    rubric: "The answer says overtime pays 1.5 times the normal hourly rate, in plain words, and adds no new claim."
+    reference: "Overtime pay is 1.5 times the normal hourly rate."
+    label: pass
+  - id: g29
+    task: simplifier
+    input: "simplify: The vendor has indicated that delivery of the 60 laptops will be expedited to Tuesday."
+    expect:
+      contains: ["60 laptops", "Tuesday"]
+      banned: ["indicated", "expedited"]
+      tool_calls: []
+    rubric: "The answer says the vendor will now deliver the 60 laptops on Tuesday, in plain words, and adds no new claim."
+    reference: "The vendor says the 60 laptops will now arrive on Tuesday."
+    label: pass
+  - id: g30
+    task: simplifier
+    input: "simplify: Residents are advised to refrain from using water between 2 am and 5 am on 8 April."
+    expect:
+      contains: ["2 am", "5 am", "8 April"]
+      banned: ["advised", "refrain"]
+      tool_calls: []
+    rubric: "The answer asks people not to use water between 2 am and 5 am on 8 April, in plain words, and adds no new claim."
+    reference: "Please do not use water between 2 am and 5 am on 8 April."
+    label: pass
+  - id: g31
+    task: simplifier
+    input: "simplify: The study demonstrates a correlation between sleep duration and test scores in 900 students."
+    expect:
+      contains: ["sleep", "test scores", "900 students"]
+      banned: ["demonstrates", "correlation", "duration"]
+      tool_calls: []
+    rubric: "The answer says the study of 900 students links how long they sleep to their test scores, in plain words, and adds no new claim."
+    reference: "The study of 900 students found that how long they sleep is linked to their test scores."
+    label: pass
+  - id: g32
+    task: simplifier
+    input: "simplify: Subsequent to the merger, Orion Bank will operate 140 branches across Spain."
+    expect:
+      contains: ["Orion Bank", "140 branches", "Spain"]
+      banned: ["subsequent", "operate"]
+      tool_calls: []
+    rubric: "The answer says Orion Bank will run 140 branches across Spain after the merger, in plain words, and adds no new claim."
+    reference: "After the merger, Orion Bank will run 140 branches across Spain."
+    label: pass
+  - id: g33
+    task: simplifier
+    input: "simplify: The app necessitates a minimum of 2 GB of memory to function optimally."
+    expect:
+      contains: ["2 GB"]
+      banned: ["necessitates", "minimum", "optimally"]
+      tool_calls: []
+    rubric: "The answer says the app needs at least 2 GB of memory to run well, in plain words, and adds no new claim."
+    reference: "The app needs at least 2 GB of memory to run well."
+    label: pass
+  - id: g34
+    task: simplifier
+    input: "simplify: Visitors must present a valid ticket prior to entering Hall B after 7 pm."
+    expect:
+      contains: ["ticket", "Hall B", "7 pm"]
+      banned: ["present", "prior to"]
+      tool_calls: []
+    rubric: "The answer says visitors show a valid ticket before going into Hall B after 7 pm, in plain words, and adds no new claim."
+    reference: "After 7 pm, visitors must show a valid ticket before they go into Hall B."
+    label: pass
+  - id: g35
+    task: simplifier
+    input: "simplify: The initiative aims to diminish plastic waste in the canteen by 40 percent by 2027."
+    expect:
+      contains: ["plastic waste", "40 percent", "2027"]
+      banned: ["initiative", "diminish"]
+      tool_calls: []
+    rubric: "The answer says the plan aims to cut plastic waste in the canteen by 40 percent by 2027, in plain words, and adds no new claim."
+    reference: "The plan aims to cut plastic waste in the canteen by 40 percent by 2027."
+    label: pass
+  - id: g36
+    task: simplifier
+    input: "simplify: Each team member is entitled to 25 days of annual leave, excluding public holidays."
+    expect:
+      contains: ["25 days", "public holidays"]
+      banned: ["entitled", "excluding"]
+      tool_calls: []
+    rubric: "The answer says each team member gets 25 days of leave a year, not counting public holidays, in plain words, and adds no new claim."
+    reference: "Each team member gets 25 days of leave a year, not counting public holidays."
+    label: pass
+  - id: g37
+    task: simplifier
+    input: "simplify: The report was disseminated to all 12 regional managers on Monday."
+    expect:
+      contains: ["report", "12 regional managers", "Monday"]
+      banned: ["disseminated"]
+      tool_calls: []
+    rubric: "The answer says the report went to all 12 regional managers on Monday, in plain words, and adds no new claim."
+    reference: "The report was sent to all 12 regional managers on Monday."
+    label: pass
+  - id: g38
+    task: simplifier
+    input: "simplify: Use of the elevator is prohibited during a fire alarm; occupants should utilize stairwell C."
+    expect:
+      contains: ["fire alarm", "stairwell C"]
+      banned: ["prohibited", "utilize", "occupants"]
+      tool_calls: []
+    rubric: "The answer says not to use the lift during a fire alarm and to take stairwell C, in plain words, and adds no new claim."
+    reference: "Do not use the lift during a fire alarm. Take stairwell C."
+    label: pass
+  - id: g39
+    task: simplifier
+    input: "simplify: The pharmacy opens at 8 am on weekdays and at 10 am on Saturdays."
+    expect:
+      contains: ["8 am", "weekdays", "10 am", "Saturdays"]
+      banned: ["utilize", "leverage"]
+      tool_calls: []
+    rubric: "The answer keeps both opening times: 8 am on weekdays and 10 am on Saturdays, in plain words."
+    reference: "The pharmacy opens at 8 am on weekdays."
+    label: fail
+    note: "Drops a fact: 10 am on Saturdays."
+  - id: g40
+    task: simplifier
+    input: "simplify: In order to reduce costs, the office will commence closing at 5 pm from 1 July."
+    expect:
+      contains: ["5 pm", "1 July"]
+      banned: ["in order to", "commence"]
+      tool_calls: []
+    rubric: "The answer says the office closes at 5 pm from 1 July to save money, with no stock phrase such as in order to."
+    reference: "In order to cut costs, the office will close at 5 pm from 1 July."
+    label: fail
+    note: "Keeps a banned phrase: in order to."
+  - id: g41
+    task: simplifier
+    input: "simplify: The festival, held in Galway, will take place from 14 to 16 August."
+    expect:
+      contains: ["Galway", "16 August"]
+      banned: ["utilize", "leverage"]
+      tool_calls: []
+    rubric: "The answer keeps the place Galway and the dates 14 to 16 August exactly, in plain words."
+    reference: "The festival in Galway runs from 14 to 16 September."
+    label: fail
+    note: "Changes a fact: August became September."
+  - id: g42
+    task: lookup
+    input: "lookup: What is an SLM?"
+    expect:
+      contains: ["small language model", "CPU"]
+      tool_calls:
+        - { name: glossary_lookup, arguments: { term: SLM } }
+    rubric: "The answer defines an SLM from the glossary, using only what the tool returned."
+    reference: "An SLM is a small language model, small enough to run cheaply on one GPU or a CPU."
+    label: pass
+  - id: g43
+    task: lookup
+    input: "lookup: Expand SLM."
+    expect:
+      contains: ["small language model"]
+      tool_calls:
+        - { name: acronym_expand, arguments: { acronym: SLM } }
+    rubric: "The answer expands SLM, using only what the tool returned."
+    reference: "SLM stands for small language model."
+    label: pass
+  - id: g44
+    task: lookup
+    input: "lookup: Define A2A."
+    expect:
+      contains: ["Agent-to-Agent", "send a task"]
+      tool_calls:
+        - { name: glossary_lookup, arguments: { term: A2A } }
+    rubric: "The answer defines A2A from the glossary, using only what the tool returned."
+    reference: "A2A is Agent-to-Agent, the protocol the chassis uses to send a task to a workload."
+    label: pass
+  - id: g45
+    task: lookup
+    input: "lookup: What is MCP in the glossary?"
+    expect:
+      contains: ["Model Context Protocol", "serve tools"]
+      tool_calls:
+        - { name: glossary_lookup, arguments: { term: MCP } }
+    rubric: "The answer defines MCP from the glossary, using only what the tool returned."
+    reference: "MCP is the Model Context Protocol, the protocol the chassis uses to serve tools."
+    label: pass
+  - id: g46
+    task: lookup
+    input: "lookup: What is the chassis?"
+    expect:
+      contains: ["holds keys", "traces"]
+      tool_calls:
+        - { name: glossary_lookup, arguments: { term: chassis } }
+    rubric: "The answer defines the chassis from the glossary, using only what the tool returned."
+    reference: "The chassis is the service around a workload. It holds keys, calls models and tools, and traces."
+    label: pass
+  - id: g47
+    task: lookup
+    input: "lookup: Define workload and expand A2A."
+    expect:
+      contains: ["agent code", "Agent-to-Agent"]
+      tool_calls:
+        - { name: glossary_lookup, arguments: { term: workload } }
+        - { name: acronym_expand, arguments: { acronym: A2A } }
+    rubric: "The answer defines a workload from the glossary and expands A2A, using only what the tools returned."
+    reference: "A workload is the agent code that runs behind the chassis. A2A stands for Agent-to-Agent."
+    label: pass
+  - id: g48
+    task: lookup
+    input: "lookup: Define quasar."
+    expect:
+      contains: ["no entry"]
+      tool_calls:
+        - { name: glossary_lookup, arguments: { term: quasar } }
+    rubric: "The answer says the glossary has no entry for quasar and invents no definition."
+    reference: "The glossary has no entry for quasar."
+    label: pass
+  - id: g49
+    task: lookup
+    input: "lookup: Expand GPU."
+    expect:
+      contains: ["no entry"]
+      tool_calls:
+        - { name: acronym_expand, arguments: { acronym: GPU } }
+    rubric: "The answer says the acronym list has no entry for GPU and invents no expansion."
+    reference: "The acronym list has no entry for GPU."
+    label: pass
+  - id: g50
+    task: lookup
+    input: "lookup: What does LiteLLM do?"
+    expect:
+      contains: ["model router"]
+      tool_calls:
+        - { name: glossary_lookup, arguments: { term: LiteLLM } }
+    model:
+      calls:
+        - { name: glossary_lookup, arguments: { term: LiteLM } }
+    rubric: "The answer defines LiteLLM from the glossary, using only what the tool returned."
+    reference: "I could not find LiteLM in the glossary."
+    label: fail
+    note: "Calls the tool with a typo (LiteLM), so it finds nothing."

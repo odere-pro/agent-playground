@@ -85,6 +85,14 @@ model router refuses a route the key does not list) answers 403 `model_route_den
 both routes. On the OpenAI route only the complete call changes status; a stream keeps its 200 and
 its error frame. The call is counted as `chassis.model_upstream_denied{route}` and logged once.
 
+The router span and usage (PoC-8, 014 H-7). Every admitted call opens `chassis.model.route` with
+the call's span attributes plus `route.requested` (the `model` the workload named), `route` (the
+one called), and `route.forced` (the run's fallback route won). It is the chassis's routing
+choice; the provider call itself is LiteLLM's own span. A call that reported usage counts
+`chassis.model_tokens{route, direction}` and, with a price in `spec.observability.prices`,
+`chassis.model_cost_microusd{route}` (`chassis.server.observability.count_usage`). A charge with
+no usage (a whole reservation) counts no tokens.
+
 This is the model proxy (`POST /v1/chat/completions` on the proxy port). The router is mounted
 on the proxy app (`chassis.server.proxy_app`), a localhost-only listener,
 never on the public port (`deploy/CLAUDE.md`). The public port's route of the same path is the
@@ -125,6 +133,7 @@ from chassis.ports.model import (
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server.model_admission import (
     DEFAULT_UNCORRELATED_MAX_TOKENS,
+    ROUTE_SPAN,
     SPAN,
     WINDOW_S,
     Admission,
@@ -141,6 +150,7 @@ from chassis.server.model_proxy_messages import add_messages_route
 
 __all__ = [
     "DEFAULT_UNCORRELATED_MAX_TOKENS",
+    "ROUTE_SPAN",
     "SPAN",
     "WINDOW_S",
     "Admission",

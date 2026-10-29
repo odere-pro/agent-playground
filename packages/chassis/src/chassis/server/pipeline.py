@@ -11,7 +11,11 @@ the adapter answers in its own format.
 
 PoC-7 guard stages (`chassis.server.guard`): `input` runs before the engine, and a block is the
 run's one `error` event (the engine never runs); `output` runs on a complete call's events after
-the engine ends and may replace `Run.seen` (masked, or blocked with a closing `error`).
+the engine ends and may replace `Run.seen` (masked, or blocked with a closing `error`). PoC-8: a
+streamed run's events pass `stream_guard.guard_stream` (a secret closes the stream, URLs to hosts
+not on `spec.guardrails.output_url_allow` are masked), and a complete answer's URLs are masked
+after the `output` stage (`output_filter.mask_answer`), so the cache and result events hold the
+masked answer.
 
 `Run.events()` runs the engine once, inside one `chassis.run` span with one `chassis.requests`
 count, both labeled with the `interface` the run was opened for (`open(request, interface=...)`,
@@ -48,6 +52,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from contextlib import aclosing
 from dataclasses import dataclass
 from typing import Any
 
@@ -64,9 +69,11 @@ from chassis.core.trace import parse_traceparent, trace_id_hex
 from chassis.ports.bundle import PortBundle
 from chassis.redaction import redact
 from chassis.server import guard
-from chassis.server.config import ChassisConfig
+from chassis.server.config import ChassisConfig, GuardrailsSpec
 from chassis.server.correlation import RunRecord, RunRegistry, TraceIdInUse
 from chassis.server.idempotency import Idempotency
+from chassis.server.output_filter import URL_MASKED, mask_answer
+from chassis.server.stream_guard import guard_stream, stream_guard_on
 
 __all__ = [
     "Observed",
@@ -140,7 +147,7 @@ def context_for(request: Request, config: ChassisConfig) -> Context:
     )
 
 
-async def _guarded(events: AsyncIterator[Event]) -> AsyncIterator[Event]:
+async def _guarded(events: AsyncIterator[Event]) -> AsyncGenerator[Event]:
     """Forward the engine's events; an exception becomes one `Error` event, not a 500."""
     try:
         async for event in events:
@@ -362,11 +369,15 @@ class Run:
                     self._done = True
                     self.close()
                     return
-                async for event in _guarded(ports.engine.run(request, self.ctx)):
-                    self._seen.append(event)
-                    if isinstance(event, Error):
-                        self._record_error(span.attributes, event)
-                    yield event
+                source = _guarded(ports.engine.run(request, self.ctx))
+                if request.stream and stream_guard_on(guards):  # PoC-8: secrets, URLs
+                    source = guard_stream(source, guards, telemetry, request_id=request.request_id)
+                async with aclosing(source):
+                    async for event in source:
+                        self._seen.append(event)
+                        if isinstance(event, Error):
+                            self._record_error(span.attributes, event)
+                        yield event
                 if not request.stream:  # the `output` stage: complete calls only
                     checked = await guard.check_output(
                         ports, guards, self._seen, request_id=request.request_id
@@ -377,10 +388,19 @@ class Run:
                         if isinstance(last, Error):
                             self._record_error(span.attributes, last)
                             yield last
+                    self._mask_urls(guards)
                 self._done = True
                 self.close()  # the run is over; a trailing frame is not part of it
         finally:
             self.close()
+
+    def _mask_urls(self, guards: GuardrailsSpec) -> None:
+        """PoC-8: image and link URLs to hosts not on `output_url_allow` leave a complete answer
+        (`chassis.server.output_filter`); a stream is masked by `guard_stream`."""
+        masked, count = mask_answer(self._seen, guards.output_url_allow)
+        if masked is not None:
+            self._seen = masked
+            self._pipeline.ports.telemetry.counter(URL_MASKED, count)
 
     def _record_error(self, attributes: dict[str, Any], error: Error) -> None:
         """Keep a run error's detail where an operator sees it: the span and the log. The OpenAI

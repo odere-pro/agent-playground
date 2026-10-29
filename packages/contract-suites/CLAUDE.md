@@ -34,3 +34,7 @@ Contract classes are named `*Contract` so pytest does not collect them on their 
 ## Test
 
 `uv run pytest packages/contract-suites` runs the suites against the chassis fakes.
+
+## Red team (PoC-7, PoC-8)
+
+`redteam/` holds the set (`cases.yaml`) and the in-process runner (`run_all`). `redteam/live.py` is the engine-agnostic half of the PoC-8 run on real stacks: the fake model's script, the MCP tool server, the stop rule per kind, and `redteam-baseline.v0` (`record_baseline`, `check_baseline`). The processes are started by `bakeoff.redteam`; nothing here starts one.

@@ -139,6 +139,15 @@ Costs, per lane:
 | `sidecar` | One call to LiteLLM per enabled stage per request, and one per tool call for `tool_output`. LiteLLM's own guardrails on every model call |
 | `remote` | The same stages, same cost. The remote's tool calls already pass the chassis tool proxy, so `tool_output` covers them. Its model calls pass LiteLLM's guardrails through the remote listener |
 
+PoC-8 build (2026-10-29, merge `2885e4e`; spec: [contract v7](../../contracts/contract-v7.md), parts C to E):
+
+- **Item 7, the deferred marking, is built.** The `ai_marking` body field on the OpenAI and Anthropic formats (`chassis/adapters/ai_marking.py`), the CloudEvent extension `aigenerated` on result events (`chassis/server/results.py`), and `Access-Control-Expose-Headers` for the two flags (`chassis/server/marking.py`). Evidence: `packages/chassis/tests/test_marking_body.py`. `Response` still does not change. The "Harder" point on headers only no longer holds for the OpenAI and Anthropic formats.
+- **Item 5, the stream.** The chassis now checks a streamed answer for secret-shaped values and ends the stream with `guardrail_blocked` before the value leaves (`chassis/server/stream_guard.py`, `spec.guardrails.stream_secrets`, on by default). Regex only. LiteLLM's after-call guardrail stays the hard control.
+- **Exfiltration by link.** Image and link URLs in an answer to hosts not on `spec.guardrails.output_url_allow` are removed (`chassis/server/output_filter.py`). Default deny; `*` turns it off.
+- **Rate limits (G.3 of the epic).** A token bucket per agent and per caller in `StatePort`, shared by every replica; 429 `rate_limited` with `Retry-After` (`chassis/server/rate_limit.py`, `spec.limits.rate_limit`). Only callers with an identity are limited; with auth off, none is.
+- **Item 2.** `/metrics` is now on the public port (ADR-007, PoC-8 build).
+- **Item 9, the red-team pass rates with the PoC-8 controls**, offline with the pattern stand-in (`uv run python -m chassis_contracts.redteam --controls poc08`): 14 of 18 (0.778) on `litellm`, up from 12; 13 of 18 (0.722) on `keyword`, up from 11. PoC-8 stops `exfil-04-markdown-image` and `secret-04-streamed-answer-has-key` (`packages/contract-suites/tests/test_redteam_controls.py::test_poc08_stops_the_two_cases_poc07_missed`). Still missed: the spaced-out and French injections, the base64 tool output, and the write tool that gets a secret; and on `keyword` only, `secret-01-input-asks-for-key`. Their owners are as in item 9. `--controls poc07` still reproduces the PoC-7 record. Waits on: the Mac run on Prompt Guard 2.
+
 ## Revisit
 
 Reopen this decision on any of these:

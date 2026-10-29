@@ -1,0 +1,259 @@
+# Generated from packages/bakeoff/src/bakeoff/golden/cases.yaml and cases-gate.yaml. Do not edit.
+# Regenerate: uv run python -m bakeoff.golden.generate --write
+# The engines' model for the PoC-8 gate set, logic `normal`.
+model: fake-model
+rules:
+- match: 'simplify: The SLM, released in 2026 by Acme, cut costs by 30 percent.'
+  reply: Acme put out the SLM in 2026. It cut costs by 30 percent.
+- match: 'simplify: Pursuant to the policy, employees must utilize the portal to submit expenses within
+    14 days.'
+  reply: Staff must use the portal to send in expenses within 14 days.
+- match: 'simplify: The aforementioned server will be decommissioned on 3 March owing to elevated maintenance
+    expenditure.'
+  reply: The server will be shut down on 3 March because it costs too much to maintain.
+- match: 'simplify: In order to facilitate onboarding, the team will commence weekly sessions of 45 minutes.'
+  reply: To help new people start, the team will hold weekly sessions of 45 minutes.
+- match: 'simplify: Customers who have not remitted payment by 30 June will incur a late fee of 5 percent.'
+  reply: Customers who have not paid by 30 June will pay a late fee of 5 percent.
+- match: 'simplify: The committee reached a consensus to allocate 2 million euros to the Berlin office.'
+  reply: The committee agreed to give 2 million euros to the Berlin office.
+- match: 'simplify: Notwithstanding the outage, the platform maintained 99.9 percent availability in Q3.'
+  reply: Despite the outage, the platform was up 99.9 percent of the time in Q3.
+- match: 'simplify: The model was trained on 12 billion tokens and evaluated on 3 benchmarks.'
+  reply: The model learned from 12 billion tokens. It was tested on 3 benchmarks.
+- match: 'simplify: The library opens at 9 am, closes at 6 pm, and is closed on Sundays.'
+  reply: The library opens at 9 am and closes at 6 pm.
+- match: 'simplify: Staff should leverage the new dashboard to monitor the 4 regional sites.'
+  reply: Staff should leverage the new dashboard to watch the 4 regional sites.
+- match: 'simplify: The bridge, built in 1932, carries 40000 vehicles per day.'
+  reply: The bridge was built in 1932. It carries 4000 vehicles a day.
+- match: 'simplify: The clinic moved to Elm Street in 2024.'
+  reply: The clinic moved to Elm Street in 2024 to be closer to the hospital.
+- match: 'lookup: What is a sidecar? Also expand RAG.'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: sidecar
+- match: 'lookup: Define LiteLLM and expand LLM.'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: LiteLLM
+- match: 'lookup: Define traceparent and expand TTFT.'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: traceparent
+- match: 'lookup: What is a lane?'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: lane
+- match: 'lookup: What is a port in the chassis?'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: port
+- match: 'lookup: Expand MCP.'
+  reply: ''
+  tool_call:
+    name: acronym_expand
+    arguments:
+      acronym: MCP
+- match: 'lookup: Define fake and expand A2A.'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: fake
+- match: 'lookup: Define workload.'
+  reply: ''
+  tool_call:
+    name: acronym_expand
+    arguments:
+      acronym: workload
+- match: 'simplify: The firm intends to recruit 25 engineers in Lisbon prior to December.'
+  reply: The firm plans to hire 25 engineers in Lisbon before December.
+- match: 'simplify: Applicants are required to furnish two forms of identification at the reception desk.'
+  reply: Applicants must bring two forms of ID to the reception desk.
+- match: 'simplify: The update ameliorates battery life by approximately 20 percent on version 4 devices.'
+  reply: The update makes the battery last about 20 percent longer on version 4 devices.
+- match: 'simplify: Owing to inclement weather, the Friday match in Leeds has been postponed until 12
+    May.'
+  reply: Because of bad weather, the Friday match in Leeds has moved to 12 May.
+- match: 'simplify: The council will endeavour to repair 300 streetlights during the forthcoming quarter.'
+  reply: The council will try to fix 300 streetlights in the next quarter.
+- match: 'simplify: Participants who ascertain a defect should notify the QA team within 48 hours.'
+  reply: If you find a defect, tell the QA team within 48 hours.
+- match: 'simplify: The museum, which commenced operations in 1885, attracts 2 million visitors annually.'
+  reply: The museum opened in 1885. It gets 2 million visitors a year.
+- match: 'simplify: Remuneration for overtime shall be calculated at 1.5 times the standard hourly rate.'
+  reply: Overtime pay is 1.5 times the normal hourly rate.
+- match: 'simplify: The vendor has indicated that delivery of the 60 laptops will be expedited to Tuesday.'
+  reply: The vendor says the 60 laptops will now arrive on Tuesday.
+- match: 'simplify: Residents are advised to refrain from using water between 2 am and 5 am on 8 April.'
+  reply: Please do not use water between 2 am and 5 am on 8 April.
+- match: 'simplify: The study demonstrates a correlation between sleep duration and test scores in 900
+    students.'
+  reply: The study of 900 students found that how long they sleep is linked to their test scores.
+- match: 'simplify: Subsequent to the merger, Orion Bank will operate 140 branches across Spain.'
+  reply: After the merger, Orion Bank will run 140 branches across Spain.
+- match: 'simplify: The app necessitates a minimum of 2 GB of memory to function optimally.'
+  reply: The app needs at least 2 GB of memory to run well.
+- match: 'simplify: Visitors must present a valid ticket prior to entering Hall B after 7 pm.'
+  reply: After 7 pm, visitors must show a valid ticket before they go into Hall B.
+- match: 'simplify: The initiative aims to diminish plastic waste in the canteen by 40 percent by 2027.'
+  reply: The plan aims to cut plastic waste in the canteen by 40 percent by 2027.
+- match: 'simplify: Each team member is entitled to 25 days of annual leave, excluding public holidays.'
+  reply: Each team member gets 25 days of leave a year, not counting public holidays.
+- match: 'simplify: The report was disseminated to all 12 regional managers on Monday.'
+  reply: The report was sent to all 12 regional managers on Monday.
+- match: 'simplify: Use of the elevator is prohibited during a fire alarm; occupants should utilize stairwell
+    C.'
+  reply: Do not use the lift during a fire alarm. Take stairwell C.
+- match: 'simplify: The pharmacy opens at 8 am on weekdays and at 10 am on Saturdays.'
+  reply: The pharmacy opens at 8 am on weekdays.
+- match: 'simplify: In order to reduce costs, the office will commence closing at 5 pm from 1 July.'
+  reply: In order to cut costs, the office will close at 5 pm from 1 July.
+- match: 'simplify: The festival, held in Galway, will take place from 14 to 16 August.'
+  reply: The festival in Galway runs from 14 to 16 September.
+- match: 'lookup: What is an SLM?'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: SLM
+- match: 'lookup: Expand SLM.'
+  reply: ''
+  tool_call:
+    name: acronym_expand
+    arguments:
+      acronym: SLM
+- match: 'lookup: Define A2A.'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: A2A
+- match: 'lookup: What is MCP in the glossary?'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: MCP
+- match: 'lookup: What is the chassis?'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: chassis
+- match: 'lookup: Define workload and expand A2A.'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: workload
+- match: 'lookup: Define quasar.'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: quasar
+- match: 'lookup: Expand GPU.'
+  reply: ''
+  tool_call:
+    name: acronym_expand
+    arguments:
+      acronym: GPU
+- match: 'lookup: What does LiteLLM do?'
+  reply: ''
+  tool_call:
+    name: glossary_lookup
+    arguments:
+      term: LiteLM
+- after_tool: true
+  match: 'The service around a workload: it holds keys, calls models and tools, and traces.'
+  reply: The chassis is the service around a workload. It holds keys, calls models and tools, and traces.
+- after_tool: true
+  match: 'A small language model: a model small enough to run cheaply on one GPU or a CPU.'
+  reply: An SLM is a small language model, small enough to run cheaply on one GPU or a CPU.
+- after_tool: true
+  match: Agent-to-Agent, the protocol the chassis uses to send a task to a workload.
+  reply: A2A is Agent-to-Agent, the protocol the chassis uses to send a task to a workload.
+- after_tool: true
+  match: A lane where the workload runs in its own container next to the chassis.
+  reply: ''
+  tool_call:
+    name: acronym_expand
+    arguments:
+      acronym: RAG
+- after_tool: true
+  match: The model router the chassis calls; it holds routes, keys, and budgets.
+  reply: ''
+  tool_call:
+    name: acronym_expand
+    arguments:
+      acronym: LLM
+- after_tool: true
+  match: An in-memory stand-in for a port, used in tests and the fake profile.
+  reply: A fake is an in-memory stand-in used in tests.
+- after_tool: true
+  match: Model Context Protocol, the protocol the chassis uses to serve tools.
+  reply: MCP is the Model Context Protocol, the protocol the chassis uses to serve tools.
+- after_tool: true
+  match: The agent code that runs behind the chassis and answers one request.
+  reply: ''
+  tool_call:
+    name: acronym_expand
+    arguments:
+      acronym: A2A
+- after_tool: true
+  match: The W3C header that carries the trace id from one call to the next.
+  reply: ''
+  tool_call:
+    name: acronym_expand
+    arguments:
+      acronym: TTFT
+- after_tool: true
+  match: 'How the chassis reaches a workload: inprocess, sidecar, or remote.'
+  reply: 'A lane is how the chassis reaches a workload: inprocess, sidecar, or remote.'
+- after_tool: true
+  match: A typed interface the chassis uses for one outside dependency.
+  reply: A port is a typed interface the chassis uses for one outside dependency.
+- after_tool: true
+  match: retrieval-augmented generation
+  reply: A sidecar is a lane where the workload runs in its own container next to the chassis. RAG stands
+    for retrieval-augmented generation.
+- after_tool: true
+  match: Model Context Protocol
+  reply: MCP stands for Model Context Protocol.
+- after_tool: true
+  match: large language model
+  reply: LiteLLM is the model router the chassis calls. LLM stands for large language model.
+- after_tool: true
+  match: small language model
+  reply: SLM stands for small language model.
+- after_tool: true
+  match: time to first token
+  reply: traceparent is the W3C header that carries the trace id. TTFT stands for time to first token.
+- after_tool: true
+  match: Agent-to-Agent
+  reply: A workload is the agent code that runs behind the chassis. A2A stands for Agent-to-Agent.
+- after_tool: true
+  match: workload
+  reply: I could not find the word workload.
+- after_tool: true
+  match: quasar
+  reply: The glossary has no entry for quasar.
+- after_tool: true
+  match: LiteLM
+  reply: I could not find LiteLM in the glossary.
+- after_tool: true
+  match: GPU
+  reply: The acronym list has no entry for GPU.
+default_reply: ok

@@ -29,10 +29,12 @@ from chassis.ports.bundle import PortBundle
 from chassis.ports.model import ModelError, Usage
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server.correlation import RunRecord, RunRegistry, parse_traceparent
+from chassis.server.observability import count_usage
 from chassis.tracecontext import continued
 
 log = logging.getLogger("chassis.model_proxy")
 SPAN = "chassis.model.call"
+ROUTE_SPAN = "chassis.model.route"  # suggested: the routing choice (PoC-8)
 DENIED = "chassis.model_upstream_denied"  # suggested
 FORCED = "chassis.model_route_forced"  # suggested: a call sent to the run's fallback route
 WINDOW_S = 60.0
@@ -150,12 +152,16 @@ class Hold:
         # (Known gap 004 G-2).
         self.charge_abandoned = False
         self.seen: list[Usage] = []
+        self.on_usage: Callable[[Usage], None] | None = None
+        """Called once with the usage a call reported (PoC-8 metrics)."""
         self._done = False
 
-    def settle(self, usage: Usage | None) -> None:
+    def settle(self, usage: Usage | None, *, reported: bool = True) -> None:
         if self._done:
             return
         self._done = True
+        if usage is not None and reported and self.on_usage is not None:
+            self.on_usage(usage)
         if self.record is not None:
             self.record.settle(self.tokens, usage)
         elif self.cap is not None:
@@ -178,7 +184,10 @@ class Hold:
             return
         if self.record is not None and self.charge_abandoned and self.started:
             # Usage unknown: charge the whole reservation, the most the upstream can produce.
-            self.settle(self.seen[-1] if self.seen else Usage(output_tokens=self.tokens))
+            if self.seen:
+                self.settle(self.seen[-1])
+            else:
+                self.settle(Usage(output_tokens=self.tokens), reported=False)
             return
         self._done = True
         if self.record is not None:
@@ -291,6 +300,7 @@ def admit(
     bundle: PortBundle = app.state.ports
     telemetry = bundle.telemetry
     telemetry.counter("chassis.model_calls", route=route)
+    requested = route
     trace_id = parse_traceparent(traceparent)
     runs: RunRegistry = app.state.runs
     record = runs.lookup(trace_id) if trace_id is not None else None
@@ -321,6 +331,11 @@ def admit(
     # An uncorrelated call's reservation is already on the cap.
     hold = Hold(record, wanted, cap, worst)
     attributes = _span_attributes(route, trace_id, record, fmt, traceparent)
+    price = app.state.config.spec.observability.prices.get(route)
+    hold.on_usage = lambda usage: count_usage(telemetry, route, usage, price)
+    choice = {"route.requested": requested, "route.forced": route != requested}
+    with telemetry.span(ROUTE_SPAN, **attributes, **choice):
+        pass  # the choice is made above; the span records it in the call's trace
     return Admission(hold, attributes, bundle, route)
 
 
@@ -328,6 +343,7 @@ __all__ = [
     "DEFAULT_UNCORRELATED_MAX_TOKENS",
     "DENIED",
     "FORCED",
+    "ROUTE_SPAN",
     "SPAN",
     "WINDOW_S",
     "Admission",
