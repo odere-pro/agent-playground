@@ -43,6 +43,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ValidationError
 
+from chassis.adapters.ai_marking import with_marking
 from chassis.adapters.anthropic_compat.types import (
     ErrorResponse,
     Message,
@@ -389,7 +390,7 @@ class AnthropicInbound:
         usage = token_counts(response.metrics)
         message = _message(meta, answer_text(response.output), stop_reason="end_turn", usage=usage)
         headers = {**_ids_headers(meta.ids), "x-chassis-status": response.status}
-        return Reply(200, headers, message.model_dump(mode="json"))
+        return Reply(200, headers, with_marking(message.model_dump(mode="json"), meta))
 
     def stream(self, events: AsyncIterator[Event], meta: ReplyMeta) -> StreamReply:
         return StreamReply(_frames(events, meta), _ids_headers(meta.ids))
@@ -405,8 +406,7 @@ async def _frames(events: AsyncIterator[Event], meta: ReplyMeta) -> AsyncIterato
     """The stream (module docstring). A block is open once any text was sent. Events after `end`
     are read and dropped: the run is over, nothing after it is part of it.
     """
-    start = _message(meta, "", stop_reason=None, usage=(0, 0))
-    yield _frame("message_start", RawMessageStartEvent(type="message_start", message=start))
+    yield _message_start_frame(meta)
     seen: list[Event] = []
     sent: list[str] = []
     ended = False
@@ -434,6 +434,14 @@ async def _frames(events: AsyncIterator[Event], meta: ReplyMeta) -> AsyncIterato
         sent.append(rest)
     for frame in _closing_frames(bool(sent), token_counts(response.metrics)):
         yield frame
+
+
+def _message_start_frame(meta: ReplyMeta) -> str:
+    """`message_start` with an empty message; it carries the AI marking when on (PoC-8)."""
+    start = _message(meta, "", stop_reason=None, usage=(0, 0))
+    started = RawMessageStartEvent(type="message_start", message=start).model_dump(mode="json")
+    started["message"] = with_marking(started["message"], meta)
+    return f"event: message_start\ndata: {json.dumps(started, separators=(',', ':'))}\n\n"
 
 
 def _start_frame() -> str:

@@ -12,6 +12,11 @@ forwards it on its model and MCP calls, and the chassis proxies look the run up 
 None. It lives here, in core, so both the model proxy (`chassis.server`) and the MCP adapter
 (`chassis.adapters.mcp`, which may not import `chassis.server`) use one parser.
 `chassis.server.correlation` re-exports it.
+
+`continued(header)` is the inbound `traceparent` a span continues (PoC-7): only a header
+`parse_traceparent` accepts is kept, cut to its 55 version-00 characters and lowercased, so no raw
+header text reaches telemetry. The model proxy and the tool endpoint pass it as the `traceparent`
+span attribute. `parent_span_id(header)` is the 16-hex parent id of that value, or None.
 """
 
 from __future__ import annotations
@@ -69,3 +74,16 @@ def parse_traceparent(header: str | None) -> str | None:
     if len(value) > _TRACEPARENT_LEN and value[_TRACEPARENT_LEN] != "-":
         return None
     return trace_id
+
+
+def continued(header: str | None) -> str | None:
+    """The `traceparent` to continue, or None when `header` is absent or invalid."""
+    if parse_traceparent(header) is None or header is None:
+        return None
+    return header.strip().lower()[:_TRACEPARENT_LEN]
+
+
+def parent_span_id(header: str | None) -> str | None:
+    """The parent span id (16 hex) of a valid `traceparent`, or None."""
+    value = continued(header)
+    return value.split("-")[2] if value is not None else None
