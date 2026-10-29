@@ -10,10 +10,11 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
 - Day 0 holds the contract and the fakes.
 - The walking skeleton adds the server.
 - PoC-3 adds the public interfaces.
-- PoC-4 adds state, events, the config store and reload, idempotency, readiness, and the drain.
-- Spec: [contract v3](../contracts/contract-v3.md), PoC-4's additive changes. Read v2 and v1 for what v3 does not name.
-- How PoC-4 works: [the PoC-4 guide](poc-04-how-it-works.md).
+- PoC-4 adds state, events, the config store and reload, idempotency, readiness, and the drain. Spec: [contract v3](../contracts/contract-v3.md). How it works: [the PoC-4 guide](poc-04-how-it-works.md).
+- PoC-5 adds the `remote` lane, the remote proxy listener, `ToolPort` write mode, the MCP gateway adapter, the uncorrelated cap, and `spec.trust`. Spec: [contract v4](../contracts/contract-v4.md). How it works: [the PoC-5 guide](poc-05-how-it-works.md). See [PoC-5 modules](#poc-5-modules).
+- PoC-6 adds the plain-A2A mode of the `remote` lane and the Anthropic proxy route. Spec: [contract v5](../contracts/contract-v5.md). How it works: [the PoC-6 guide](poc-06-how-it-works.md). See [PoC-6 modules](#poc-6-modules).
 - PoC-7 adds security, observability, feedback, and the evaluator gate. Spec: [contract v6](../contracts/contract-v6.md). See [PoC-7 modules](#poc-7-modules).
+- The contract in force is named once, on the `Spec:` line of [packages/chassis/CLAUDE.md](../../packages/chassis/CLAUDE.md). Each version names only its changes; read the earlier ones for the rest.
 
 ## core
 
@@ -48,7 +49,13 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
 - `ToolPort`.
   - `ToolDefinition` has a JSON Schema `parameters`.
   - `ToolResult`.
-  - `ToolError` carries `unknown_tool` or `bad_arguments`.
+  - `ToolError` has a `code` and a `retryable` flag. A failure the tool itself reports is `ToolResult(is_error=True)`, never a `ToolError`.
+    - `unknown_tool`: no such tool. Not retryable.
+    - `bad_arguments`: the arguments fail `parameters`. Not retryable.
+    - `idempotency_key_required` (PoC-5): a write tool (`read_only: false`) called without `idempotency_key`. Not retryable.
+    - `tool_denied` (PoC-5): the gateway refused the call for this credential. Not retryable.
+    - `tool_unavailable` (PoC-5): the gateway or the tool server did not answer, timed out, or failed with a 5xx. Retryable (`retryable=True`).
+  - `ToolPort.call` takes an optional `idempotency_key`. A write tool requires it.
 - `StatePort` in `state.py` stores bytes by key.
   - Methods: `get`, `set`, `set_if_absent` (with a required TTL), `compare_and_set` (`value=None` deletes), `delete`.
   - Every failure is `StateUnavailable`.
@@ -367,7 +374,9 @@ The Anthropic proxy route (`POST /v1/messages` on the proxy port; contract v5, p
 
 - The public listener is on `--port` 8080. suggested.
 - The proxy is on `--proxy-host 127.0.0.1 --proxy-port 8090`. suggested.
-- A non-loopback proxy host is refused unless `--allow-any-proxy-host`.
+- A non-loopback proxy host is refused unless `--allow-any-proxy-host`. That flag is for tests; it is not the `remote` lane.
+- The `remote` lane adds a third listener: `--remote-proxy-host <pod IP>` and `--remote-proxy-port` (8091, suggested). See [remote_auth.py](#remote_authpy).
+- The proxy listeners bind first. A taken proxy port exits with status 3 before the public listener binds.
 - `--drain-delay-s` 5 and `--drain-timeout-s` 30. suggested.
 
 ### tool_endpoint.py
@@ -375,6 +384,74 @@ The Anthropic proxy route (`POST /v1/messages` on the proxy port; contract v5, p
 - `mount_tool_endpoint(proxy, lifespan_app=public_app)` mounts `/mcp` on the proxy port. It serves the tools for workloads.
 - It is never on the public port.
 - Streamable HTTP is built from `state.ports.tools` in the public app's lifespan. It answers 503 before that.
+
+## PoC-5 modules
+
+Spec: [contract v4](../contracts/contract-v4.md). How it works: [the PoC-5 guide](poc-05-how-it-works.md). The `remote` connector itself is under [a2a](#a2a).
+
+### remote_auth.py
+
+`chassis/server/remote_auth.py` is the remote proxy listener. It serves the model proxy and the tool endpoint on the pod IP, for a workload in another pod.
+
+- `create_remote_proxy_app(public_app, tokens)` builds its own app from a fixed route list: both model proxy routes and `/mcp`. Every other path is 404. There are no docs and no OpenAPI document.
+- It shares `public_app.state` and has no lifespan of its own. Build it before the public app starts.
+- Two ASGI middlewares wrap it, outermost first. Both refuse every non-`http` scope except `lifespan`.
+  - `BearerAuth(tokens)`: `Authorization: Bearer <t>` must equal the current or the previous token. It compares with `hmac.compare_digest`. Else 401 `remote_unauthenticated`, one fixed body (the Anthropic shape on `/v1/messages`). It counts `chassis.remote.auth_failed{reason}` and removes the header before the route sees it.
+  - `RequireRun`: the `traceparent` must name a run in flight. Else 403 `run_required`. So a remote spends tokens and calls tools only inside a run, under its budget.
+- `remote_tokens(auth)` reads the tokens from `spec.engine.auth.token_env` and `previous_token_env`. A missing variable is a `LookupError` that names it.
+- `chassis serve` runs it only when `spec.engine.connector` is `remote` (see [cli.py](#clipy)).
+- Tests: `tests/test_remote_auth.py`, `tests/test_server_cli.py`. Scenarios: `pocs/poc-05-sandboxed/tests/test_poc05_remote_lane_offline.py`; on kind, `test_poc05_kind_remote_controls.py` (`POC05_KIND=1`).
+
+### mcp/gateway.py
+
+`chassis/adapters/mcp/gateway.py` is `McpGatewayTools`, the real `ToolPort` over LiteLLM's MCP gateway. `REGISTRY` names it as `tools: mcp`.
+
+- It authenticates with the service's own LiteLLM virtual key. The gateway's per-key allow-list is the hard limit; the adapter adds none of its own.
+- The httpx client ignores the environment (`trust_env=False`) and never follows a redirect. The key is never logged, never in an error, and never in `repr`.
+- `list_tools()` is sync, so the adapter keeps a cached list. `await refresh()` fills it. `start()` refreshes it in the background. A failed refresh keeps the last list.
+- The tool endpoint's lifespan calls `refresh()`, then `start()`, and `aclose()` on shutdown.
+- `call()` checks before any request: a write tool with no key raises `idempotency_key_required`; arguments that fail the schema raise `bad_arguments`.
+- Gateway answers map to `unknown_tool`, `tool_denied`, `bad_arguments`, or `tool_unavailable` (see [ports](#ports)). A `ToolError.message` is fixed text, never an upstream body.
+- Tests: `tests/test_tool_gateway_contract.py` (the whole `ToolPortContract`, over the fake MCP server in process), `tests/test_tool_endpoint_gateway_lifecycle.py`. On kind: `pocs/poc-05-sandboxed/tests/test_poc05_kind_tool_gateway.py`.
+
+### Write mode
+
+- A write tool has `read_only: false`. `ToolPort.call` requires an `idempotency_key` for it.
+- The tool endpoint derives one key per write call inside a run (`run_key_of`, then `adapters/mcp/server.tool_key`). A write with no run is refused with `idempotency_key_required`.
+- The fake tools follow the same rule and run a keyed write at most once.
+- Tests: `tests/test_tool_idempotency.py`.
+
+### The uncorrelated cap
+
+- A model call that names no run in flight is served, but a replica spends at most `spec.limits.uncorrelated_tokens_per_minute` tokens (20000, suggested) of them per fixed one-minute window.
+- Past the cap, 429 `budget_exhausted`. `0` refuses every such call. It is reloadable. A correlated call never touches it.
+- It lives in `server/model_proxy.py` (`UncorrelatedCap`) and covers both model proxy routes.
+- Tests: `tests/test_uncorrelated_cap.py`.
+
+### spec.trust
+
+- `spec.trust` is `trusted` or `untrusted` (`server/config.py`). `untrusted` needs `spec.engine.connector: remote`.
+- It defaults to `trusted` in `fake` and `local`. The `cloud` profile must name it. It is restart-only.
+- The manifest shows it as `ManifestAgent.trust`.
+- Tests: `pocs/poc-05-sandboxed/tests/test_poc05_trust_config.py`, `tests/test_manifest.py`.
+
+### Remote lane tests
+
+- The connector: `tests/test_remote_connector.py`, `tests/test_remote_token_scrub.py` (the remote's token never leaves the connector).
+- The lane contract: `pocs/poc-05-sandboxed/tests/test_poc05_remote_lane_contract.py`.
+- Every PoC-5 scenario is in `pocs/poc-05-sandboxed/tests/`. The kind ones run with `POC05_KIND=1`.
+
+## PoC-6 modules
+
+Spec: [contract v5](../contracts/contract-v5.md). How it works: [the PoC-6 guide](poc-06-how-it-works.md).
+
+- The plain-A2A mode of the `remote` lane: `spec.engine.protocol: a2a`, for a third-party agent that sends no `chassis.event`. The module is `adapters/a2a/plain.py`; see [a2a](#a2a). The config fields are under [config.py](#configpy).
+  - It is chassis-only: never edit `mapping.py` for it.
+  - It cannot show `tool_call`. The remote's own error text never reaches a `Response`.
+  - Tests: `tests/test_a2a_plain.py`, `tests/test_remote_connector_plain.py`, `tests/test_config_plain_a2a.py`, and `pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_plain_a2a_contract.py`.
+- The Anthropic proxy route (`POST /v1/messages` on the proxy port): see [model_proxy_messages.py](#model_proxy_messagespy).
+- A refused model route answers 403 `model_route_denied` on both model proxy routes: see [model_proxy.py](#model_proxypy).
+- The bake-off scenarios are in `pocs/poc-06a-bake-off-sidecar-lane/tests/`, `pocs/poc-06b-bake-off-remote-lane/tests/`, and `pocs/poc-06c-pretrained-slm/tests/`.
 
 ## PoC-7 modules
 
