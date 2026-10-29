@@ -23,7 +23,6 @@ retries, dead-letter topic) so the PoC-4 Dapr comparison can count the lines eac
 
 from __future__ import annotations
 
-import asyncio
 import hmac
 import json
 import logging
@@ -38,6 +37,11 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from chassis.adapters.publish_retry import (
+    PUBLISH_BACKOFF_S,
+    RetryablePublishError,
+    publish_with_retry,
+)
 from chassis.ports.events import (
     CONTENT_TYPE,
     DLQ_SUFFIX,
@@ -50,8 +54,6 @@ log = logging.getLogger(__name__)
 
 DEFAULT_ENDPOINT = "http://127.0.0.1:3500"
 DEFAULT_PUBSUB = "pubsub"
-PUBLISH_BACKOFF_S = (0.1, 0.5)
-"""suggested: 3 publish attempts, waiting 0.1 s then 0.5 s between them, as the Kafka adapter."""
 TOKEN_HEADER = "dapr-api-token"
 """daprd's header both ways: the chassis sends `DAPR_API_TOKEN`, daprd sends `APP_API_TOKEN`."""
 EVENTS_PATH = "/dapr/events/"
@@ -169,22 +171,23 @@ class DaprEvents:
         params = {"metadata.partitionKey": key} if key else None
         headers = _headers(event, self._api_token)
         body = event.to_wire()
-        attempts = len(self.publish_backoff_s) + 1
-        why = ""
-        for attempt in range(1, attempts + 1):
+
+        async def attempt(_number: int) -> None:
             try:
                 answer = await self._client.post(url, content=body, params=params, headers=headers)
             except httpx.TransportError as exc:
-                why = type(exc).__name__
-            else:
-                if answer.status_code in (200, 204):
-                    return
-                why = f"daprd answered {answer.status_code}"
-                if answer.status_code < 500:
-                    break
-            if attempt < attempts:
-                await asyncio.sleep(self.publish_backoff_s[attempt - 1])
-        raise PublishFailed(f"publish to {topic} failed: {why}")
+                raise RetryablePublishError(type(exc).__name__) from exc
+            if answer.status_code in (200, 204):
+                return
+            why = f"daprd answered {answer.status_code}"
+            if answer.status_code < 500:
+                raise PublishFailed(f"publish to {topic} failed: {why}")
+            raise RetryablePublishError(why)
+
+        try:
+            await publish_with_retry(attempt, self.publish_backoff_s)
+        except RetryablePublishError as exc:
+            raise PublishFailed(f"publish to {topic} failed: {exc.reason}") from None
 
     # --- end retries: publish ---------------------------------------------------------------
 
