@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 import pytest
 import yaml
-from chassis_contracts.recording import CassetteMiss, CassetteTransport
+from chassis_contracts.recording import CassetteMiss, CassetteSecretError, CassetteTransport
 
 KEY = "cassette-key-not-real"
 BASE = "http://model.invalid/v1"
@@ -260,3 +260,108 @@ def test_a_recording_mode_needs_an_inner_transport(tmp_path: Path) -> None:
         CassetteTransport(None, tmp_path / "c.yaml", "rewrite")
     with pytest.raises(ValueError, match="record_mode"):
         CassetteTransport(None, tmp_path / "c.yaml", "sometimes")
+
+
+# --- Keys never reach the disk or a miss message (R1-27) ---
+
+FAKE_SK = "sk-abcdefghijklmnop"
+KEY_SHAPED = {
+    "openai-style": FAKE_SK,
+    "aws-access-key": "AKIA" + "ABCDEFGHIJKLMNOP",
+    "github-token": "ghp_" + "abcdefghijklmnopqrstuvwx",
+}
+KEY_NAMES = ("key", "api_key", "apikey", "access_token", "token")
+
+
+async def _record_url(path: Path, url: str, body: dict[str, Any]) -> None:
+    transport = CassetteTransport(httpx.ASGITransport(app=Upstream()), path, "rewrite")
+    async with httpx.AsyncClient(transport=transport) as client:
+        await client.post(url, json=body)
+    await transport.aclose()
+
+
+async def test_save_drops_the_key_when_the_spec_url_carries_one(tmp_path: Path) -> None:
+    """A request to `https://x/v1?key=sk-...` is saved with no `sk-` string in the file."""
+    path = tmp_path / "c.yaml"
+
+    await _record_url(path, f"https://x/v1?key={FAKE_SK}", {"q": "hi"})
+
+    assert "sk-" not in path.read_text()
+
+
+@pytest.mark.parametrize("name", KEY_NAMES, ids=KEY_NAMES)
+async def test_save_drops_a_query_parameter_when_its_name_is_key_like(
+    tmp_path: Path, name: str
+) -> None:
+    """A key-like query parameter is not stored; the others are."""
+    path = tmp_path / "c.yaml"
+
+    await _record_url(path, f"https://x/v1?{name}={FAKE_SK}&page=2", {"q": "hi"})
+
+    (interaction,) = yaml.safe_load(path.read_text())["interactions"]
+    assert interaction["request"]["uri"] == "https://x/v1?page=2"
+
+
+BODIES = {
+    "top-level": {"q": "hi", "api_key": FAKE_SK},
+    "nested": {"q": "hi", "auth": {"access_token": FAKE_SK}},
+    "in-a-list": {"q": "hi", "tools": [{"token": FAKE_SK}]},
+}
+
+
+@pytest.mark.parametrize("body", BODIES.values(), ids=BODIES.keys())
+async def test_save_scrubs_a_body_field_when_its_name_is_key_like(
+    tmp_path: Path, body: dict[str, Any]
+) -> None:
+    """A key-like JSON body field is stored as `[redacted]` in the request, at any depth."""
+    path = tmp_path / "c.yaml"
+
+    await _record_url(path, "https://x/v1", body)
+
+    (interaction,) = yaml.safe_load(path.read_text())["interactions"]
+    stored = interaction["request"]["body"]
+    assert FAKE_SK not in stored
+    assert "[redacted]" in stored
+
+
+@pytest.mark.parametrize("secret", KEY_SHAPED.values(), ids=KEY_SHAPED.keys())
+async def test_save_raises_when_a_key_shaped_string_survives_the_scrub(
+    tmp_path: Path, secret: str
+) -> None:
+    """A key-shaped string in a field the scrub does not know stops the save; no file is written."""
+    path = tmp_path / "c.yaml"
+
+    with pytest.raises(CassetteSecretError, match="key-shaped"):
+        await _record_url(path, "https://x/v1", {"prompt": f"use {secret} please"})
+
+    assert not path.exists()
+
+
+async def test_replay_matches_when_only_the_scrubbed_key_differs(tmp_path: Path) -> None:
+    """The scrub runs on replay too, so a request with another key still matches."""
+    path = tmp_path / "c.yaml"
+    await _record_url(path, f"https://x/v1?key={FAKE_SK}", {"q": "hi", "api_key": FAKE_SK})
+    replayer = CassetteTransport(None, path, "none")
+
+    async with httpx.AsyncClient(transport=replayer) as client:
+        response = await client.post("https://x/v1?key=other", json={"q": "hi", "api_key": "x"})
+
+    assert response.status_code == 200
+    replayer.assert_no_misses()
+
+
+async def test_a_miss_message_redacts_the_query_and_key_shaped_strings(tmp_path: Path) -> None:
+    """A miss names the path and the body, but not the query string or a key-shaped value."""
+    path = tmp_path / "c.yaml"
+    await _record_url(path, "https://x/v1", {"q": "recorded"})
+    replayer = CassetteTransport(None, path, "none")
+
+    with pytest.raises(CassetteMiss) as exc:
+        async with httpx.AsyncClient(transport=replayer) as client:
+            await client.post(f"https://x/v1?key={FAKE_SK}", json={"prompt": f"use {FAKE_SK}"})
+
+    message = str(exc.value)
+    assert "sk-" not in message
+    assert "key=" not in message
+    assert "https://x/v1?[redacted]" in message
+    assert "use [redacted]" in message

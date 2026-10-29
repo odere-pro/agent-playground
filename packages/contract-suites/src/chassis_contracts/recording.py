@@ -41,8 +41,11 @@ from vcr.request import Request as VcrRequest
 
 __all__ = [
     "KEPT_HEADERS",
+    "KEY_FIELDS",
+    "KEY_SHAPED",
     "RECORD_MODES",
     "CassetteMiss",
+    "CassetteSecretError",
     "CassetteTransport",
     "default_vcr_config",
     "request_json",
@@ -54,6 +57,17 @@ RECORD_MODES = ("none", "once", "new_episodes", "all", "rewrite")
 KEPT_HEADERS = frozenset({"content-type"})
 """The only header stored on a request or a response. `content-type` lets the `body` matcher
 compare JSON bodies as JSON."""
+
+# suggested: the query parameter and JSON body field names that carry a key.
+KEY_FIELDS = ("key", "api_key", "apikey", "access_token", "token")
+"""Dropped from a stored query string; replaced by `REDACTED` in a stored JSON body, at any
+depth. The same scrub runs on replay, so matching is unchanged."""
+
+KEY_SHAPED = re.compile(r"sk-[A-Za-z0-9]{8,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}")
+"""A key-shaped string (OpenAI-style, AWS access key, GitHub token). A request that still holds
+one after the scrub stops `save()`, and a miss message shows `REDACTED` in its place."""
+
+REDACTED = "[redacted]"
 
 # suggested: 2000 characters of the unmatched body in a miss message; enough to see what changed.
 MISS_BODY_CAP = 2000
@@ -69,9 +83,34 @@ _CASSETTE_KWARGS = (
 )
 
 
+def _scrub(node: Any) -> Any:
+    """`node` with the value of every `KEY_FIELDS` key replaced by `REDACTED`, at any depth."""
+    if isinstance(node, dict):
+        return {k: REDACTED if k in KEY_FIELDS else _scrub(v) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_scrub(v) for v in node]
+    return node
+
+
+def _scrub_body(body: bytes | str | None) -> bytes | str | None:
+    """A JSON body with its key fields scrubbed; any other body, or one with none, as it is."""
+    if not body:
+        return body
+    try:
+        data = json.loads(body)
+    except (ValueError, UnicodeDecodeError):
+        return body
+    scrubbed = _scrub(data)
+    if scrubbed == data:
+        return body
+    return json.dumps(scrubbed, separators=(",", ":")).encode()
+
+
 def _keep_request_headers(request: Any) -> Any:
+    """Keep only `KEPT_HEADERS` and scrub the JSON body's key fields."""
     kept = copy.copy(request)
     kept.headers = {k: v for k, v in request.headers.items() if k.lower() in KEPT_HEADERS}
+    kept.body = _scrub_body(request.body)
     return kept
 
 
@@ -82,8 +121,9 @@ def _keep_response_headers(response: dict[str, Any]) -> dict[str, Any]:
 
 
 def default_vcr_config() -> dict[str, Any]:
-    """The shared config: match on everything but headers, store only `content-type`, and drop
-    auth headers as a second guard. Return it from a `vcr_config` fixture or pass it directly.
+    """The shared config: match on everything but headers, store only `content-type`, drop auth
+    headers as a second guard, drop `KEY_FIELDS` query parameters, and scrub `KEY_FIELDS` in a
+    JSON body. Return it from a `vcr_config` fixture or pass it directly.
     """
     return {
         "match_on": ["method", "scheme", "host", "port", "path", "query", "body"],
@@ -99,23 +139,50 @@ def default_vcr_config() -> dict[str, Any]:
             "set-cookie",
             "x-litellm-api-key",
         ],
+        "filter_query_parameters": list(KEY_FIELDS),
     }
+
+
+class CassetteSecretError(RuntimeError):
+    """A request about to be saved still holds a key-shaped string; nothing is written."""
 
 
 class CassetteMiss(httpx.TransportError):
     """A request the cassette cannot answer in this record mode. The message names the body."""
 
     def __init__(self, path: Path, request: httpx.Request, body: bytes, nearest: str) -> None:
-        text = body.decode(errors="replace")
+        text = _redact(_scrub_body(body) or b"")
         if len(text) > MISS_BODY_CAP:
             text = text[:MISS_BODY_CAP] + "...[truncated]"
+        url = str(request.url.copy_with(query=None))
+        if request.url.query:
+            url = f"{url}?{REDACTED}"
         super().__init__(
-            f"cassette miss: {request.method} {request.url} is not in {path}"
+            f"cassette miss: {request.method} {url} is not in {path}"
             f" ({nearest}). Unmatched body: {text}",
             request=request,
         )
         self.path = path
         self.body = body
+
+
+def _redact(text: bytes | str) -> str:
+    """`text` with every `KEY_SHAPED` substring replaced by `REDACTED`."""
+    decoded = text.decode(errors="replace") if isinstance(text, bytes) else text
+    return KEY_SHAPED.sub(REDACTED, decoded)
+
+
+def _check_no_key(requests: list[Any]) -> None:
+    """Raise `CassetteSecretError` if a request to be saved still holds a key-shaped string."""
+    for index, request in enumerate(requests):
+        body = request.body or b""
+        seen = [request.uri, body.decode(errors="replace") if isinstance(body, bytes) else body]
+        seen.extend(f"{k}: {v}" for k, v in request.headers.items())
+        if any(KEY_SHAPED.search(str(part)) for part in seen):
+            raise CassetteSecretError(
+                f"request {index} ({request.method} {_redact(request.uri)}) still holds a"
+                " key-shaped string after the scrub; the cassette is not saved"
+            )
 
 
 def _nearest(cassette: Any, vcr_request: Any) -> str:
@@ -275,10 +342,12 @@ class CassetteTransport(httpx.AsyncBaseTransport):
 
     def save(self) -> None:
         """Write the cassette if anything was recorded; `rewrite` always overwrites the file.
-        `none` never writes.
+        `none` never writes. Raises `CassetteSecretError`, and writes nothing, if a recorded
+        request still holds a key-shaped string after the scrub.
         """
         if self.record_mode == "none":
             return
+        _check_no_key(list(self._cassette.requests))
         self._cassette._save(force=self.record_mode == "rewrite")
 
     def assert_no_misses(self) -> None:
