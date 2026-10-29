@@ -3,8 +3,9 @@
 Every `*_IMAGE` constant in `chassis_contracts/containers/*.py`, and the kind PoC-4 Valkey, is
 `name:tag@sha256:<64 hex>` and equals the `image:` that `deploy/compose/docker-compose.scale*.yaml`
 gives the same repository. An intended difference is listed in `deploy/compose/SECURITY.md`,
-section 7, with its exact image string. The constants are read with `ast`, so nothing here imports
-testcontainers or talks to Docker.
+section 7, with its exact image string. The constants are read with `ast`. The tests of the
+Kafka KRaft check and of the Ryuk pin import testcontainers, but none starts a container or talks
+to Docker.
 """
 
 from __future__ import annotations
@@ -22,8 +23,9 @@ COMPOSE = sorted((ROOT / "deploy/compose").glob("docker-compose.scale*.yaml"))
 KIND_VALKEY = ROOT / "deploy/kind/poc04/base/valkey.yaml"
 SECURITY = ROOT / "deploy/compose/SECURITY.md"
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
-DIFFERS = {"KAFKA_IMAGE": "confluentinc/cp-kafka"}
-"""Constant name to the repository it runs instead of Compose's; SECURITY.md says why."""
+DIFFERS = {"KAFKA_IMAGE": "confluentinc/cp-kafka", "RYUK_IMAGE": "testcontainers/ryuk"}
+"""Constant name to the repository it runs instead of Compose's; SECURITY.md says why. Ryuk is
+not in Compose at all: testcontainers starts it, with the Docker socket, to reap containers."""
 
 
 def _repository(image: str) -> str:
@@ -70,9 +72,9 @@ COMPOSE_IMAGES = _compose_images()
 
 
 def test_containers_define_one_image_constant_per_service_when_modules_are_read() -> None:
-    """The four helpers each name their image, so none can drift unseen."""
+    """The four helpers and the Ryuk pin each name their image, so none can drift unseen."""
     # Arrange
-    expected = {"dapr", "kafka", "minio", "valkey"}
+    expected = {"dapr", "kafka", "minio", "ryuk", "valkey"}
 
     # Act
     modules = {name.split(".", 1)[0] for name, _ in _constants()}
@@ -126,3 +128,43 @@ def test_kraft_version_reads_the_tag_when_image_is_pinned_by_digest() -> None:
 
     # Assert
     assert version == "7.6.0"
+
+
+def test_ryuk_image_is_the_pin_when_containers_package_is_imported() -> None:
+    """Importing any helper sets testcontainers' Ryuk image to the digest pin, not the tag."""
+    # Arrange
+    from chassis_contracts.containers.ryuk import RYUK_IMAGE
+    from testcontainers.core.config import testcontainers_config
+
+    # Act
+    ryuk_image = testcontainers_config.ryuk_image
+
+    # Assert
+    assert ryuk_image == RYUK_IMAGE
+
+
+def test_kafka_container_defines_kraft_check_when_testcontainers_is_installed() -> None:
+    """`PinnedKafkaContainer` overrides a method `KafkaContainer` itself defines, not a typo."""
+    # Arrange
+    from testcontainers.community.kafka import KafkaContainer
+
+    # Act
+    defined = vars(KafkaContainer)
+
+    # Assert
+    assert "_verify_min_kraft_version" in defined
+
+
+def test_pinned_kafka_kraft_check_passes_when_image_is_the_pin() -> None:
+    """The KRaft check accepts the pinned image string, digest and all."""
+    # Arrange
+    from chassis_contracts.containers.kafka import KAFKA_IMAGE, PinnedKafkaContainer
+
+    container = object.__new__(PinnedKafkaContainer)
+    container.image = KAFKA_IMAGE
+
+    # Act
+    container._verify_min_kraft_version()
+
+    # Assert
+    assert container.image == KAFKA_IMAGE

@@ -23,6 +23,27 @@ ROOT = Path(__file__).resolve().parents[3]
 SCALE = ROOT / "deploy" / "compose" / "scale.sh"
 DRILL = ROOT / "pocs" / "poc-04-stateless-scalable" / "load" / "kill_drill.py"
 URL = "http://127.0.0.1:18080"
+NETWORK = "poc04"
+"""The project network's real name (`networks.default.name` in `docker-compose.scale.yaml`)."""
+CHASSIS_1 = "poc04-chassis-1-1"
+"""Compose's container name for service `chassis-1` in project `poc04`."""
+EGRESS_PROBE = """
+import json, socket
+def tcp(host, port):
+    with socket.create_connection((host, port), timeout=3):
+        return "reached"
+def probe(fn, *args):
+    try:
+        return fn(*args)
+    except OSError as exc:
+        return "refused: " + type(exc).__name__
+print(json.dumps({
+    "internet": probe(tcp, "1.1.1.1", 443),
+    "dns": probe(lambda: socket.gethostbyname("example.com") and "reached"),
+    "host": probe(tcp, "host.docker.internal", 80),
+}))
+"""
+"""Run in chassis-1: each way out prints `reached` or the error that stopped it."""
 
 pytestmark = [pytest.mark.stack, pytest.mark.network]
 
@@ -118,3 +139,30 @@ def test_graceful_drill_fails_nothing_without_retry(tmp_path: Path) -> None:
     assert isinstance(load, dict)
     assert load["failed"] == 0
     assert load["retried"] == 0
+
+
+def docker(*args: str) -> str:
+    done = subprocess.run(["docker", *args], check=True, capture_output=True, text=True, timeout=60)
+    return done.stdout.strip()
+
+
+@pytest.mark.usefixtures("one_pair")
+def test_chassis_reaches_nothing_outside_when_poc04_is_internal() -> None:
+    """`poc04` is internal: chassis-1 reaches no internet, DNS, or host; Traefik still answers."""
+    # Arrange
+    with httpx.Client(base_url=URL, timeout=30) as client:
+        wait_ready(client)
+
+        # Act
+        internal = docker("network", "inspect", NETWORK, "-f", "{{.Internal}}")
+        probes = json.loads(docker("exec", CHASSIS_1, "python", "-c", EGRESS_PROBE))
+        ready = client.get("/ready").status_code
+
+    # Assert
+    assert internal == "true"
+    assert {k: v.startswith("refused: ") for k, v in probes.items()} == {
+        "internet": True,
+        "dns": True,
+        "host": True,
+    }, probes
+    assert ready == 200

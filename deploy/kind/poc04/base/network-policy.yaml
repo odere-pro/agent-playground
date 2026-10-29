@@ -42,6 +42,9 @@ spec:
       ports:
         - port: 6379
           protocol: TCP
+    # DNS to kube-dns only. CoreDNS still forwards any name out of the cluster, so a pod can
+    # tunnel data out in DNS queries. Open, not fixed here: PoC-5's threat model, H20
+    # (pocs/poc-05-sandboxed/notes/2026-10-02-threat-model.md).
     - to:
         - namespaceSelector:
             matchLabels:
