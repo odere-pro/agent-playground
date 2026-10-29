@@ -1,7 +1,7 @@
 # PoC-4: how stateless and scalable works
 
-Status: written 2026-10-01 and refreshed the same day after the review fixes. The code wins where this guide and the code differ.
-Contract: [contract v3](../contracts/contract-v3.md). Design: [the PoC-4 plan](../plans/2026-10-01-poc-04-stateless-scalable.md). Tracking: [the PoC-4 README](../../pocs/poc-04-stateless-scalable/README.md). Events decision: [ADR-004](../planning/adr/004-events-through-a-broker-client.md) (proposed). Evidence: [drills](../../pocs/poc-04-stateless-scalable/notes/2026-10-01-drills.md), [load results](../../pocs/poc-04-stateless-scalable/notes/2026-10-01-load-results.md), [container roles](../../pocs/poc-04-stateless-scalable/notes/2026-10-01-container-roles.md), [Dapr against the broker client](../../pocs/poc-04-stateless-scalable/notes/2026-10-01-dapr-vs-broker.md). Open items: [the debt note](../../pocs/poc-04-stateless-scalable/notes/2026-10-01-debt.md).
+Status: written 2026-10-01 and refreshed the same day after the review fixes. ADR-004 status updated 2026-10-29. The code wins where this guide and the code differ.
+Contract: [contract v3](../contracts/contract-v3.md). Design: [the PoC-4 plan](../plans/2026-10-01-poc-04-stateless-scalable.md). Tracking: [the PoC-4 README](../../pocs/poc-04-stateless-scalable/README.md). Events decision: [ADR-004](../planning/adr/004-events-through-a-broker-client.md) (accepted 2026-10-08). Evidence: [drills](../../pocs/poc-04-stateless-scalable/notes/2026-10-01-drills.md), [load results](../../pocs/poc-04-stateless-scalable/notes/2026-10-01-load-results.md), [container roles](../../pocs/poc-04-stateless-scalable/notes/2026-10-01-container-roles.md), [Dapr against the broker client](../../pocs/poc-04-stateless-scalable/notes/2026-10-01-dapr-vs-broker.md). Open items: [the debt note](../../pocs/poc-04-stateless-scalable/notes/2026-10-01-debt.md).
 
 ## What PoC-4 adds
 
@@ -121,7 +121,7 @@ sequenceDiagram
     end
 ```
 
-Idempotency applies only to a key the client sent: the `Idempotency-Key` header or the native body's `idempotency_key`. A call with no key never touches `StatePort`. The store key is `chassis:idem:v1:<agent>:<sha256 of the key>`. The fingerprint is the sha256 of `{agent, input, context_ref}`, so a retry that switches to streaming, changes its budget, or comes in through another interface still matches. A replay opens no run, calls neither the engine nor the model, and charges nothing. It works on native, OpenAI, and Anthropic, complete and stream. MCP clients get the same envelope but cannot see the header. Only a run that ended with `end` is cached. An error or a client that left frees the key, so the next retry runs again. A result over `max_entry_bytes` stores a small `too_large` marker instead, so the agent never runs twice for one key: a repeat gets a final 409 `idempotency_in_progress` whose text says the result was too large to cache. A duplicate that waited and then takes the key over runs with what is left of its own `budget.timeout_ms` (at least 500 ms, suggested: `MIN_RUN_MS`), so the client waits about one timeout, not two. If the store fails or holds an entry that cannot be read, a keyed call gets 503 `state_unavailable` (suggested: fail closed). Defaults, all suggested: `ttl_s` 86400, `lease_s` 5, `wait_poll_ms` 100, `max_entry_bytes` 1048576.
+Idempotency applies only to a key the client sent: the `Idempotency-Key` header or the native body's `idempotency_key`. A call with no key never touches `StatePort`. A replay opens no run, calls neither the engine nor the model, and charges nothing. It works on native, OpenAI, and Anthropic, complete and stream. MCP clients get the same envelope but cannot see the header. The rules are in [contract v3, "Idempotency"](../contracts/contract-v3.md#idempotency): the store key and the fingerprint, what is cached, the too-large marker, the takeover budget, the refusals, and the defaults.
 
 A complete call whose client hangs up is cancelled. A watcher polls `is_disconnected` every 0.25 s; on a disconnect the run's events close, which cancels the A2A task, frees the run's budget, and releases the claim. MCP has no watcher: its inner hop does not see the client leave.
 
@@ -153,7 +153,7 @@ sequenceDiagram
     R2-->>C: 200 envelope
 ```
 
-A claim is a lease, not a lock. The owner renews it while the run is alive. When the owner dies, the lease runs out after `lease_s` and the next retry takes the key over (`chassis.idempotency.taken_over`). If the dead replica had already cached the result, the retry replays it instead. A claim that lost its lease never writes again (`Claim.lost`). A replica that is alive but cut off from the store is fenced on its own clock: when no renew got through for `0.8 * lease_s` (suggested: `FENCE_FRACTION`), it cancels its run and answers 409 `idempotency_in_progress`, retryable, before another replica can take the key over (`tests/test_killed_replica.py::test_a_replica_cut_off_from_the_store_mid_run_is_fenced`). The Compose kill drill measured the dead-replica case: 582 sent, 582 ok, 0 lost (`notes/2026-10-01-drills.md`, section 2); the recorded demo after the review fixes, 3,284 sent, 3,284 ok, and 24 of 24 retried keys replayed the same envelope (`demo/2026-10-01-demo-scale.md`).
+A claim is a lease, not a lock. The owner renews it while the run is alive. When the owner dies, the lease runs out and the next retry takes the key over. If the dead replica had already cached the result, the retry replays it instead. A replica that is alive but cut off from the store fences itself before another replica can take the key over (`tests/test_killed_replica.py::test_a_replica_cut_off_from_the_store_mid_run_is_fenced`). The lease, the fence, and the takeover are in [contract v3, "The lease and the takeover"](../contracts/contract-v3.md#the-lease-and-the-takeover). The Compose kill drill measured the dead-replica case: 582 sent, 582 ok, 0 lost (`notes/2026-10-01-drills.md`, section 2); the recorded demo after the review fixes, 3,284 sent, 3,284 ok, and 24 of 24 retried keys replayed the same envelope (`demo/2026-10-01-demo-scale.md`).
 
 ## Config reload
 
@@ -299,29 +299,7 @@ deploy/compose/scale.sh down                                   # project poc04 o
 
 `<engine>` is `echo-python`, `echo-pydanticai`, `echo-langgraph`, `echo-typescript`, or `inprocess` (1 pair only).
 
-The drills (`pocs/poc-04-stateless-scalable/load/README.md`):
-
-```bash
-deploy/compose/scale.sh up echo-python 2
-uv run python pocs/poc-04-stateless-scalable/load/kill_drill.py --mode kill --pair 2 \
-  --out pocs/poc-04-stateless-scalable/notes/load/drill-kill.json
-deploy/compose/scale.sh up echo-python 2      # a fresh stack: the killed pair is gone
-uv run python pocs/poc-04-stateless-scalable/load/kill_drill.py --mode graceful --pair 2
-deploy/compose/scale.sh down
-```
-
-The config drill is `uv run python pocs/poc-04-stateless-scalable/load/reload_drill.py` on a running stack; it checks every step, exits 1 on a failure, and restores the seed document. The first hand-run version and the hung-workload drill are in `notes/drills/` (`mc.sh`, `probe.py`, `good.yaml`, `bad.yaml`, `hung.py`). The recorded demo runs the kill, graceful, and reload drills in one go: `pocs/poc-04-stateless-scalable/demo/demo.sh`. `notes/2026-10-01-drills.md` shows each run.
-
-The load matrix (Locust through `uv run --with`, never a workspace dependency):
-
-```bash
-make load-test ARGS="--dry-run"                               # the plan, nothing runs
-make load-test ARGS="--engine echo-python --pairs 1"          # one engine, one pair count
-make load-test ARGS="--engine echo-typescript"                # one engine, 1, 2, and 4 pairs
-make load-test ARGS="--only hop"                              # the sidecar hop only
-```
-
-Results go to `pocs/poc-04-stateless-scalable/notes/load/results.json`, which `tests/test_load_results.py` reads.
+The drills and the load matrix: [the load README](../../pocs/poc-04-stateless-scalable/load/README.md) has every command. It covers the kill, graceful, and config drills, and `make load-test`. The recorded demo runs the kill, graceful, and reload drills in one go: `pocs/poc-04-stateless-scalable/demo/demo.sh`. `notes/2026-10-01-drills.md` shows each run.
 
 kind (`deploy/README.md`, section "kind (PoC-4)"):
 
@@ -339,8 +317,7 @@ As of 2026-10-01. The full list, each item with its owner, is [the debt note](..
 
 - **Throughput grows in only 4 of 8 steps** (exit criterion 4, flagged). echo-pydanticai grows from 1 to 2 to 4 pairs; echo-langgraph and echo-typescript grow from 1 to 2. echo-python 1 to 2 and 2 to 4, echo-langgraph 2 to 4, and echo-typescript 2 to 4 are strict xfails in `tests/test_load_results.py`. 4 pairs do not fit the 7.9 GiB Docker Desktop VM, and CPU per call swings up to 2x between identical runs there. Needs a Linux host or pinned CPUs.
 - **The sidecar hop is not isolated.** It is below the method's 1 ms resolution; a direct figure needs a chassis-side timer.
-- **ADR-001's Revisit input.** At 10 RPS the chassis uses 0.105 to 0.129 vCPU, at or just above the top of 0.05 to 0.1; memory (150 to 182 MiB) is inside the range. Sent to the epic owner through 122 X-5.
-- **ADR-004 is Proposed.** The 019 H-17 body changes wait for its acceptance.
+- **ADR-001's Revisit input.** At 10 RPS the chassis CPU is at or just above the top of ADR-001's range; memory is inside it. The numbers are in [README criterion 11](../../pocs/poc-04-stateless-scalable/README.md#exit-criteria). Sent to the epic owner through 122 X-5.
 - **Event-triggered runs** are not built.
 - **Idempotency gaps:** scoped per agent, not per caller, until auth (PoC-8); no per-caller quota, so any caller can fill Valkey; size Valkey as rate × TTL × about 1.5 KB; the 503 text says "cannot reach" when the store is full.
 - **Kafka is open in the PoC** (PLAINTEXT, no auth), and result events carry `input` and `output` (020 X-8, 019 H-17).

@@ -10,6 +10,7 @@ Build the images first: `deploy/compose/scale.sh build`. The scripts only touch 
 | `run_matrix.py` | Per scenario: `scale.sh up`, wait for `/ready`, warm up, Locust headless, `docker stats` samples of project `poc04` every 2 s, `scale.sh down`. |
 | `steady_client.py` | Plain httpx steady load for the drills. `--no-retry` (default) or `--retry` (same key, same input). Prints totals; exit 1 when a call failed. |
 | `kill_drill.py` | `--mode kill`: SIGKILL one pair under retried load, then replay the retried keys and check the same envelope comes back. `--mode graceful`: SIGTERM the chassis, wait, stop the workload, with no retry; expects 0 failures. |
+| `reload_drill.py` | The config drill on a running stack: a good change in MinIO takes effect with no restart, and a bad one is refused. It checks every step, exits 1 on a failure, and restores the seed document. |
 
 Locust is not a workspace dependency. It runs through `uv run --no-project --with "locust==2.46.6"` (pinned in `run_matrix.py`).
 
@@ -49,6 +50,7 @@ uv run python pocs/poc-04-stateless-scalable/load/kill_drill.py --mode kill --pa
   --out pocs/poc-04-stateless-scalable/notes/load/drill-kill.json
 deploy/compose/scale.sh up echo-python 2      # a fresh stack: the killed pair is gone
 uv run python pocs/poc-04-stateless-scalable/load/kill_drill.py --mode graceful --pair 2
+uv run python pocs/poc-04-stateless-scalable/load/reload_drill.py   # the config drill
 deploy/compose/scale.sh down
 ```
 

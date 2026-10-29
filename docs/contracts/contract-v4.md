@@ -226,7 +226,7 @@ Decision 2026-10-02: the queue adapter is broker-agnostic, and PoC-5 runs no bro
 - Every events adapter other than `none` binds `EventPortContract`: `memory` offline, `kafka` and `dapr` in `packages/chassis/tests/integration/`.
 - A broker the chassis has no client for (RabbitMQ, GCP Pub/Sub, AWS SNS/SQS) fits as a Dapr pub/sub component behind the `dapr` adapter, with no chassis change. A direct client for one of them is a new adapter that binds the same suite (060 H-23).
 - Tests: `pocs/poc-05-sandboxed/tests/test_poc05_events_agnostic.py` checks all of the above on every commit.
-- ADR-004 (a broker client in the chassis, not Dapr) is written and still Proposed. The broker product stays 001 DEC-1's.
+- ADR-004 (a broker client in the chassis, not Dapr) is accepted 2026-10-08. The broker product stays 001 DEC-1's.
 
 ## `/manifest`
 

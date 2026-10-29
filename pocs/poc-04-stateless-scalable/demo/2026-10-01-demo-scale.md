@@ -15,7 +15,7 @@ What was shown:
 
 What was not shown, or only in part:
 
-- **Throughput at 1, 2, 4 pairs per engine, and the sidecar's CPU, memory, and hop per replica.** The load matrix is not rerun in the demo; it takes about 40 minutes. The record is `notes/2026-10-01-load-results.md`, quiet pass. It shows 4 of 8 growth steps grow, and 4 are strict xfails. **4 pairs do not fit this 7.9 GiB Docker Desktop VM** without starving it. The chassis figures: 150 to 182 MiB; 0.105 to 0.129 vCPU at 10 RPS; 0.6 to 1.3 vCPU per 100 RPS at saturation. The hop is below that method's 1 ms resolution and not isolated.
+- **Throughput at 1, 2, 4 pairs per engine, and the sidecar's CPU, memory, and hop per replica.** The load matrix is not rerun in the demo; it takes about 40 minutes. The record is `notes/2026-10-01-load-results.md`, quiet pass. It shows 4 of 8 growth steps grow, and 4 are strict xfails. **4 pairs do not fit this 7.9 GiB Docker Desktop VM** without starving it. The chassis figures and the hop are in the README, criterion 11.
 - **The kill is SIGKILL by `docker kill`, not a node loss.** The kind rolling-restart drill is a separate record (`deploy/kind/run.sh`).
 - **Only echo-python.** The other engines ran the drills' smoke path in the read-only check (`notes/2026-10-01-drills.md`, section 5) and the load matrix, not the kill and drain drills.
 - **The fenced claim (a retryable 409 when a replica cannot renew)** was not triggered here. The kill drill's retries arrived after the claim's owner was dead, and they replayed finished results.

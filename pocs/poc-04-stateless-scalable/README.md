@@ -3,6 +3,10 @@
 Status: done (2026-10-08), criterion 4 flagged
 Planning doc: [004-PoC-4-stateless-scalable.md](../../docs/planning/poc/004-PoC-4-stateless-scalable.md)
 Time box: 1 week
+Builds on: PoC-3, one front door (native, OpenAI, Anthropic, MCP) for every engine in the PoC-2 lanes.
+Hands to: PoC-5, a disposable chassis replica (config from the store, idempotency in `StatePort`, `/ready`, drain, `EventPort`).
+
+PoC-4 makes a chassis replica disposable: it keeps no state a retry needs. It exists to show the agent scales by adding replicas, with safe retries, on every engine. Run the offline gate with `make test-poc POC=04`.
 
 10 of 11 exit criteria have evidence. Criterion 4 is partly shown and closed as flagged on 2026-10-08, by the user's decision. The rerun on a Linux host or with pinned CPUs moves to 122 X-5. ADR-004 was accepted by the user on 2026-10-08.
 
@@ -12,7 +16,7 @@ Does the agent scale by adding replicas, with no state in the process and safe r
 
 ## Answer so far
 
-No state in the process and safe retries: yes, with evidence. A replica keeps nothing a retry needs. A killed replica lost no retried request, a drained one failed none, and a repeated key replays the same result on any replica. Scaling by adding replicas: shown only in part on this host. 4 of 8 growth steps grow; the other 4 are strict xfails, because CPU per call on this Docker Desktop VM swings up to 2x between identical runs and 4 pairs do not fit the VM. The sidecar costs 150 to 182 MiB, inside ADR-001's range, and 0.105 to 0.129 vCPU at 10 RPS, at or just above the top of ADR-001's range. The hop is below the method's 1 ms resolution and not isolated. Events: a broker client in the chassis behind `EventPort`, not Dapr. [ADR-004](../../docs/planning/adr/004-events-through-a-broker-client.md) records it and is Proposed.
+No state in the process and safe retries: yes, with evidence. A replica keeps nothing a retry needs. A killed replica lost no retried request, a drained one failed none, and a repeated key replays the same result on any replica. Scaling by adding replicas: shown only in part on this host. 4 of 8 growth steps grow; the other 4 are strict xfails, because CPU per call on this Docker Desktop VM swings up to 2x between identical runs and 4 pairs do not fit the VM. The sidecar's memory is inside ADR-001's range. Its CPU at 10 RPS is at or just above the top of that range (criterion 11 has the numbers). The hop is below the method's 1 ms resolution and not isolated. Events: a broker client in the chassis behind `EventPort`, not Dapr. [ADR-004](../../docs/planning/adr/004-events-through-a-broker-client.md) records it, accepted 2026-10-08.
 
 ## Scope
 
@@ -68,11 +72,10 @@ make test-integration                   # real adapters in testcontainers; needs
 POC04_STACK=1 uv run pytest pocs/poc-04-stateless-scalable/tests/test_compose_scale.py -v -p no:randomly
 POC04_KIND=1 uv run pytest pocs/poc-04-stateless-scalable/tests/test_kind.py -q
 make kind-poc04 ARGS="up native-sidecar"   # the kind cluster; then drill-rolling, drill-hung, delete
-make load-test ARGS="--dry-run"          # the load matrix plan; drop --dry-run to run it
 pocs/poc-04-stateless-scalable/demo/demo.sh
 ```
 
-The Compose stack is `deploy/compose/scale.sh` (project `poc04`). The load scripts are described in `load/README.md`. The Docker VM is shared: one stack at a time.
+The Compose stack is `deploy/compose/scale.sh` (project `poc04`). The drill and load commands are in [load/README.md](load/README.md). The Docker VM is shared: one stack at a time.
 
 ## Demo
 
