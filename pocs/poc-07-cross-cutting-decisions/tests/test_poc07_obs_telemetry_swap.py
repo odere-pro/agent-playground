@@ -195,9 +195,11 @@ EXPECTED: set[SpanKey] = {
 def test_switching_the_backend_is_exporter_config_only(
     backends: dict[str, Receiver], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Exit criterion 1 (swap): the same code, run twice, once with the OTLP variables naming the
-    Langfuse stand-in (its path and Basic auth), once naming the Tempo stand-in. Each backend gets
-    the same spans, in one trace, with the same parent links."""
+    """Criterion 1: "Telemetry swap shown": the backend changes "by exporter config only".
+
+    The same code runs twice: once with the OTLP variables naming the Langfuse stand-in (its path
+    and Basic auth), once naming the Tempo stand-in. Each backend gets the same spans, in one
+    trace, with the same parent links."""
     _run_with_env(monkeypatch, "langfuse")
     langfuse, tempo = backends[LANGFUSE_HOST], backends[TEMPO_HOST]
     assert tempo.spans == []
@@ -222,9 +224,11 @@ def test_the_langfuse_stand_in_refuses_a_call_without_its_auth(
 
 
 def test_fan_out_sends_the_same_spans_to_both(backends: dict[str, Receiver]) -> None:
-    """Exit criterion 1 (fan-out): two OTLP/HTTP exporters, one per backend, get the same span
-    set from one run. In the deployment the Collector does this (one OTLP input, two exporters);
-    here two exporters in one process stand in for it."""
+    """Criterion 1: "the same spans reach Langfuse and a second OpenTelemetry backend".
+
+    Two OTLP/HTTP exporters, one per backend, get the same span set from one run. In the
+    deployment the Collector does this (one OTLP input, two exporters); here two exporters in one
+    process stand in for it."""
     langfuse_exporter = OTLPSpanExporter(
         endpoint=f"http://{LANGFUSE_HOST}{LANGFUSE_PATH}",
         headers={"Authorization": f"Basic {BASIC}"},
@@ -255,7 +259,9 @@ def test_fan_out_sends_the_same_spans_to_both(backends: dict[str, Receiver]) -> 
 
 
 def test_the_collector_config_fans_traces_out_to_langfuse_and_jaeger() -> None:
-    """Exit criterion 1 (config): the Collector config parses; its traces pipeline takes OTLP in
+    """Criterion 1: "by exporter config only": the Collector config fans traces out to both.
+
+    The Collector config parses; its traces pipeline takes OTLP in
     and exports to both Langfuse (OTLP/HTTP at `/api/public/otel`, Basic auth from the
     environment, never a literal key) and Jaeger, the second backend; the logs pipeline has the
     redaction stage."""

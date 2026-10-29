@@ -54,7 +54,8 @@ INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
         r"\bnew (system )?instructions?\s*:",
         r"\b(send|post|upload|exfiltrate|forward|transmit)\b.{0,80}\bhttps?://",
         r"\bact as\b.{0,30}\b(unrestricted|jailbroken|developer mode|dan)\b",
-        r"<\s*/?\s*(system|im_start|im_end)\s*>",
+        # `(?:/\s*)?`, not `/?\s*`: two adjacent `\s*` are quadratic on `<` and many spaces.
+        r"<\s*(?:/\s*)?(system|im_start|im_end)\s*>",
     )
 )
 """suggested: phrases of common English injections. A stand-in: it misses paraphrase, other

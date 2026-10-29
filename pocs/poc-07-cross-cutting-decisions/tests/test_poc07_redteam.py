@@ -28,6 +28,7 @@ OWNER = re.compile(r"\b(\d{3} [A-Z]{1,3}-\d+|PoC-\d+)\b")
 
 
 def test_the_set_has_four_categories_of_at_least_three_cases() -> None:
+    """Red-team scope: "A red-team set" of four categories, three cases or more each."""
     counts = Counter(case.category for case in load_cases())
     assert set(counts) == set(CATEGORIES)
     assert min(counts.values()) >= 3, counts
@@ -42,6 +43,7 @@ def recorded() -> dict[str, object]:
 
 
 async def test_the_run_matches_the_recorded_pass_rates(recorded: dict[str, object]) -> None:
+    """Criterion 7: "The red-team set has a pass rate recorded"; the run matches it."""
     outcomes = []
     for config in CONFIGS:
         outcomes.extend(await run_all(config))
@@ -49,6 +51,7 @@ async def test_the_run_matches_the_recorded_pass_rates(recorded: dict[str, objec
 
 
 def test_every_miss_has_an_owner_and_a_reason_in_the_note(recorded: dict[str, object]) -> None:
+    """Criterion 7: "every miss has an owner", named in the note with a reason."""
     note = NOTE.read_text()
     summary = recorded["summary"]
     assert isinstance(summary, dict)
@@ -60,6 +63,7 @@ def test_every_miss_has_an_owner_and_a_reason_in_the_note(recorded: dict[str, ob
 
 
 def test_the_note_says_prompt_guard_numbers_wait() -> None:
+    """Checks that the red-team note says the Prompt Guard 2 numbers wait."""
     note = NOTE.read_text()
     assert "Prompt Guard 2" in note
     assert "Hugging Face" in note
