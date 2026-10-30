@@ -1111,30 +1111,30 @@ def all_broken_rules(doc: Doc, p: _Params) -> set[str]:
 @pytest.mark.parametrize(
     ("rule", "pinned"),
     [
-        ("0", "576534e9e0cef6e0"),
-        ("1", "597275553b86abd2"),
-        ("2", "f64a89cf4cd13116"),
-        ("3", "568074d253513a90"),
+        ("0", "576534e9e0cef6e0"),  # pragma: allowlist secret
+        ("1", "597275553b86abd2"),  # pragma: allowlist secret
+        ("2", "f64a89cf4cd13116"),  # pragma: allowlist secret
+        ("3", "568074d253513a90"),  # pragma: allowlist secret
         ("4", "ed1db7cb5b6cb771"),
-        ("5", "e90f7a249dc3490b"),
-        ("6a", "06ca8856518fa312"),
+        ("5", "e90f7a249dc3490b"),  # pragma: allowlist secret
+        ("6a", "06ca8856518fa312"),  # pragma: allowlist secret
         ("6b", "2b12dfb159202cb0"),
-        ("6c", "a5113c46e8644e7b"),
+        ("6c", "a5113c46e8644e7b"),  # pragma: allowlist secret
         ("7a", "0583f09d78803e05"),
-        ("7b", "ac07d2f204ef0003"),
-        ("7c", "79e11318ba44d4e2"),
-        ("7d", "9efa9e4543df63f6"),
+        ("7b", "ac07d2f204ef0003"),  # pragma: allowlist secret
+        ("7c", "79e11318ba44d4e2"),  # pragma: allowlist secret
+        ("7d", "9efa9e4543df63f6"),  # pragma: allowlist secret
         ("8", "7f98972336329322"),
-        ("T1", "ca53815103a2c2af"),
-        ("T2", "11f516c4a675f8e4"),
-        ("T3", "06d8e73ceaac1d74"),
-        ("T4", "8c86a51e84f6d3f6"),
-        ("T5", "3e94decf932b3cf9"),
-        ("C1", "52fb84bdc2365936"),
-        ("C2", "4355e9e17f8aec66"),
-        ("C3", "9ec23d4010e3a8a6"),
-        ("C4", "7bf9639215cf6163"),
-        ("C5", "8c86a51e84f6d3f6"),
+        ("T1", "ca53815103a2c2af"),  # pragma: allowlist secret
+        ("T2", "11f516c4a675f8e4"),  # pragma: allowlist secret
+        ("T3", "06d8e73ceaac1d74"),  # pragma: allowlist secret
+        ("T4", "8c86a51e84f6d3f6"),  # pragma: allowlist secret
+        ("T5", "3e94decf932b3cf9"),  # pragma: allowlist secret
+        ("C1", "52fb84bdc2365936"),  # pragma: allowlist secret
+        ("C2", "4355e9e17f8aec66"),  # pragma: allowlist secret
+        ("C3", "9ec23d4010e3a8a6"),  # pragma: allowlist secret
+        ("C4", "7bf9639215cf6163"),  # pragma: allowlist secret
+        ("C5", "8c86a51e84f6d3f6"),  # pragma: allowlist secret
     ],
 )
 def test_rule_expression_matches_its_pin_when_the_policy_loads(
@@ -1159,9 +1159,9 @@ def test_rule_expression_matches_its_pin_when_the_policy_loads(
 @pytest.mark.parametrize(
     ("name", "pinned"),
     [
-        ("agent-trust-rule", "ce4ee3a01d617e67"),
-        ("sandbox-template-rule", "e3b0c44298fc1c14"),
-        ("sandbox-claim-rule", "e3b0c44298fc1c14"),
+        ("agent-trust-rule", "ce4ee3a01d617e67"),  # pragma: allowlist secret
+        ("sandbox-template-rule", "e3b0c44298fc1c14"),  # pragma: allowlist secret
+        ("sandbox-claim-rule", "e3b0c44298fc1c14"),  # pragma: allowlist secret
     ],
 )
 def test_policy_variables_match_their_pin_when_the_policy_loads(
