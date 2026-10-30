@@ -435,11 +435,8 @@ async def test_code_runner_dispatch_api_redirect_is_not_followed(
     fake_api.create_answer = httpx.Response(307, headers={"location": "https://10.0.0.99/steal"})
     with pytest.raises(ToolError, match=r"^sandbox_unavailable"):
         await _call(dispatcher, "print(1)", "k-1")
-    # The cleanup delete goes to the API server by name; nothing goes to the redirect target.
-    assert [(r.method, r.url.host) for r in fake_api.requests] == [
-        ("POST", "10.96.0.1"),
-        ("DELETE", "10.96.0.1"),
-    ]
+    # A 3xx applied nothing, so no delete; nothing goes to the redirect target.
+    assert [(r.method, r.url.host) for r in fake_api.requests] == [("POST", "10.96.0.1")]
     assert fake_sandbox.requests == []
 
 
@@ -602,6 +599,68 @@ async def test_code_runner_dispatch_delete_error_is_counted_when_the_token_canno
 
     assert result.structured_content["stdout"] == "1\n"
     assert dispatcher.delete_failures == 1
+
+
+async def test_code_runner_dispatch_create_is_unavailable_when_the_token_cannot_be_read(
+    dispatcher: Dispatcher, fake_api: FakeApi, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A create that raises ValueError (an unreadable token) is `sandbox_unavailable`, no delete."""
+
+    async def broken(*_args: object, **_kwargs: object) -> httpx.Response:
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(dispatcher._api, "post", broken)
+
+    with pytest.raises(ToolError, match=r"^sandbox_unavailable"):
+        await _call(dispatcher, "print(1)", "k-1")
+
+    assert fake_api.deleted == []
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [httpx.ConnectError("refused"), httpx.ConnectTimeout("connect timed out")],
+    ids=["connect-error", "connect-timeout"],
+)
+async def test_code_runner_dispatch_sends_no_delete_when_the_create_never_connected(
+    dispatcher: Dispatcher, fake_api: FakeApi, monkeypatch: pytest.MonkeyPatch, failure: Exception
+) -> None:
+    """A create that never reached the API server applied nothing, so no delete is sent."""
+
+    async def unreachable(*_args: object, **_kwargs: object) -> httpx.Response:
+        raise failure
+
+    monkeypatch.setattr(dispatcher._api, "post", unreachable)
+
+    with pytest.raises(ToolError, match=r"^sandbox_unavailable"):
+        await _call(dispatcher, "print(1)", "k-1")
+
+    assert fake_api.deleted == []
+    assert dispatcher.delete_failures == 0
+
+
+async def test_code_runner_dispatch_sends_no_delete_when_the_create_is_refused(
+    dispatcher: Dispatcher, fake_api: FakeApi
+) -> None:
+    """A 4xx answer to the create applied nothing, so no delete is sent."""
+    fake_api.create_answer = httpx.Response(403, json={"kind": "Status"})
+
+    with pytest.raises(ToolError, match=r"^sandbox_unavailable"):
+        await _call(dispatcher, "print(1)", "k-1")
+
+    assert fake_api.methods() == ["POST"]
+
+
+async def test_code_runner_dispatch_deletes_by_name_when_the_create_answers_5xx(
+    dispatcher: Dispatcher, fake_api: FakeApi
+) -> None:
+    """A 5xx answer may follow an applied create, so the claim is deleted by name."""
+    fake_api.create_answer = httpx.Response(500, json={"kind": "Status"})
+
+    with pytest.raises(ToolError, match=r"^sandbox_unavailable"):
+        await _call(dispatcher, "print(1)", "k-1")
+
+    assert fake_api.methods() == ["POST", "DELETE"]
 
 
 async def test_code_runner_dispatch_deeply_nested_answer_is_lost_with_the_fixed_text_when_parsed(

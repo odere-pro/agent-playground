@@ -12,7 +12,7 @@ Ids: H ids are threats in [the threat model](notes/2026-10-02-threat-model.md). 
 
 Seven of 10 exit criteria have plain evidence. Three are flagged:
 
-- Criterion 1: the sidecar kind suites are now in the CI job, but no CI run has shown them yet.
+- Criterion 1: the sidecar-controls and admission kind suites are now in the CI job, but no CI run has shown them yet. Hard requirement 1 and the tool gateway still run by hand.
 - Criterion 3: no chassis holds a MinIO key in PoC-5 (F10).
 - Criterion 8: the in-pod probe workload (T10) is a recorded exception, work in progress, owned by the user ([the T10 note](notes/2026-10-09-t10-probe-exception.md)).
 

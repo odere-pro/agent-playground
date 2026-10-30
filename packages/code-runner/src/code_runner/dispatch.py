@@ -301,18 +301,18 @@ class Dispatcher:
             raise _unavailable("no free sandbox slot") from None
         # The dispatcher picks the name, so a create whose answer was lost is still deleted.
         name = f"call-{uuid.uuid4().hex}"
+        may_exist = True  # until the create proves it applied nothing; a cancel keeps it True
         try:
             try:
-                await self._create(name)
+                created = await self._create(name)
+                may_exist = created is not None
+                if not created:
+                    raise _unavailable("no sandbox could be claimed")
                 host = await self._wait_ready(name)
                 return await self._call_sandbox(host, code, timeout_s, key)
             finally:
-                # Shielded: a cancelled call still deletes its claim. shutdownTime is the backstop.
-                # The set holds the task, so a cancelled caller does not leave it unreferenced.
-                deleting = asyncio.ensure_future(self._delete(name))
-                self._deleting.add(deleting)
-                deleting.add_done_callback(self._deleting.discard)
-                await asyncio.shield(deleting)
+                if may_exist:
+                    await self._delete_shielded(name)
         finally:
             self._slots.release()
 
@@ -332,14 +332,26 @@ class Dispatcher:
             },
         }
 
-    async def _create(self, name: str) -> None:
+    async def _delete_shielded(self, name: str) -> None:
+        """Shielded: a cancelled call still deletes its claim. shutdownTime is the backstop. The
+        set holds the task, so a cancelled caller does not leave it unreferenced."""
+        deleting = asyncio.ensure_future(self._delete(name))
+        self._deleting.add(deleting)
+        deleting.add_done_callback(self._deleting.discard)
+        await asyncio.shield(deleting)
+
+    async def _create(self, name: str) -> bool | None:
+        """True when the claim was made. False when it may exist: the answer was lost, or a 5xx.
+        None when nothing was applied: no connection, an unreadable token, a 3xx or 4xx."""
         try:
             response = await self._api.post(self._claims, json=self._claim_body(name))
-            created = response.status_code in (200, 201)
+        except (httpx.ConnectError, httpx.ConnectTimeout, ValueError):
+            return None
         except (httpx.HTTPError, OSError):
-            created = False
-        if not created:
-            raise _unavailable("no sandbox could be claimed")
+            return False
+        if response.status_code in (200, 201):
+            return True
+        return False if response.status_code >= 500 else None
 
     async def _wait_ready(self, name: str) -> str:
         try:

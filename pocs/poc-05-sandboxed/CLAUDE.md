@@ -1,6 +1,6 @@
 # pocs/poc-05-sandboxed
 
-Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still apply. Status: done (2026-10-09), criteria 1 (sidecar kind suites not yet shown in CI), 3 (MinIO) and 8 (T10) flagged (`README.md`). The decisions are in `notes/2026-10-02-mac-kickoff.md` and `notes/backlog-changes.md`.
+Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still apply. Status: done (2026-10-09), criteria 1 (sidecar-controls and admission kind suites not yet shown in CI; hard requirement 1 and the tool gateway run by hand), 3 (MinIO) and 8 (T10) flagged (`README.md`). The decisions are in `notes/2026-10-02-mac-kickoff.md` and `notes/backlog-changes.md`.
 
 ## Read first
 
