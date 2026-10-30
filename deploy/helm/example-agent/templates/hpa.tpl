@@ -1,0 +1,1 @@
+{{ include "agent-lib.hpa" . }}

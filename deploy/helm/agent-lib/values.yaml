@@ -1,0 +1,4 @@
+# Empty on purpose. A library chart's values do not reach the service chart's `.Values`, so the
+# defaults live in templates/_values.tpl (`agent-lib.defaults`) and are merged under the service
+# chart's values there. Every value a service may set is listed in ../README.md.
+{}
