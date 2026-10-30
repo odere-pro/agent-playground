@@ -332,7 +332,7 @@ async def test_falls_back_to_the_parts_and_reads_a_v0_ctx() -> None:
 
 @pytest.mark.parametrize("key", [CTX_KEY, INPUT_KEY])
 async def test_unparseable_ctx_or_input_is_a2a_bad_request(key: str) -> None:
-    """Unparseable ctx or input is `a2a.bad_request` and `handle` never runs."""
+    """Unparsable ctx or input is `a2a.bad_request` and `handle` never runs."""
     seen: list[tuple[dict[str, Any], dict[str, Any]]] = []
     req = _hi()
     req.metadata[key] = "{not json"

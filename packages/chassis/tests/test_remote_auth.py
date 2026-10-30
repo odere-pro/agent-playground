@@ -464,7 +464,7 @@ async def test_lifespan_scope_passes_through() -> None:
     assert inner.scopes == ["lifespan", "lifespan"]
 
 
-RUN_B_TRACE = "0af7651916cd43dd8448eb211c80319c"
+RUN_B_TRACE = "0af7651916cd43dd8448eb211c80319c"  # pragma: allowlist secret
 
 
 @pytest.mark.xfail(

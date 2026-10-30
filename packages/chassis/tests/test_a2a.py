@@ -563,7 +563,7 @@ async def test_server_falls_back_to_the_parts_without_chassis_input() -> None:
 @pytest.mark.parametrize("key", [CTX_KEY, INPUT_KEY])
 @pytest.mark.parametrize("bad", ["{not json", "[1]"])
 async def test_unparseable_ctx_or_input_is_a2a_bad_request(key: str, bad: str) -> None:
-    """Unparseable ctx or input is `a2a.bad_request` and the handle never runs."""
+    """Unparsable ctx or input is `a2a.bad_request` and the handle never runs."""
     seen: list[tuple[dict[str, Any], dict[str, Any]]] = []
     app = build_app(_recording(seen), build_agent_card(name="rec", version="1"))
     req = request_to_message({"text": "hi"}, CTX)
@@ -717,7 +717,7 @@ async def test_connector_reads_a_v0_struct_event_stream() -> None:
 
 
 async def test_connector_turns_an_unparseable_event_string_into_a2a_bad_event() -> None:
-    """An unparseable event string is `a2a.bad_event`."""
+    """An unparsable event string is `a2a.bad_event`."""
     events = await _run_raw([json.dumps({"type": "start", "request_id": "req-1"}), "{not json"])
     assert [e.type for e in events] == ["start", "error"]
     assert isinstance(events[-1], Error) and events[-1].code == "a2a.bad_event"
