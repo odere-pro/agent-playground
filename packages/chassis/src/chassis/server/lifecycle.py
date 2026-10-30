@@ -153,6 +153,8 @@ class Drain:
     signals: int = 0
     order: list[str] = field(default_factory=list)
     task: asyncio.Task[None] | None = None
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
+    """Times the drain delay. Tests pass a fake."""
 
     def _servers(self) -> list[uvicorn.Server]:
         return [s for s in (self.public, self.proxy, self.remote) if s is not None]
@@ -180,7 +182,7 @@ class Drain:
                 await hook()
             except Exception:
                 log.exception("a drain hook failed")
-        await asyncio.sleep(self.settings.delay_s)
+        await self.sleep(self.settings.delay_s)
         self.order.append("public closing")
         self.public.should_exit = True
 

@@ -3,6 +3,8 @@
 Status: done (2026-10-01)
 Planning doc: [002-PoC-2-two-engines-one-contract.md](../../docs/planning/poc/002-PoC-2-two-engines-one-contract.md)
 Time box: 2 weeks
+Builds on: [PoC-1](../poc-01-walking-skeleton/README.md) (the `handle` contract, the fake and real adapters, the `inprocess` lane)
+Hands to: [PoC-3](../poc-03-one-interface-every-client/README.md) (four echo engines, the `sidecar` lane, the proxy listener, `traceparent`)
 
 ## Question
 

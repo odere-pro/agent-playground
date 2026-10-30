@@ -8,14 +8,20 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import Awaitable, Callable
 
 import pytest
 from chassis.ports.state import StatePort, StateUnavailable
 
-TTL_SHORT_S = 0.2
-"""suggested: a TTL short enough for a test, long enough for one round trip to a container."""
-WAIT_PAST_TTL_S = 0.6
-"""suggested: how long a test sleeps to be sure a `TTL_SHORT_S` entry is gone."""
+PassTime = Callable[[float], Awaitable[None]]
+"""Let this many seconds pass for the store under test."""
+
+TTL_SHORT_S = 1.0
+"""suggested: a TTL short enough for a test, long enough that a stall under load between a write
+and the next call stays inside it. The risk is here: a real store's clock cannot be held."""
+WAIT_PAST_TTL_S = 1.2
+"""suggested: how long to wait for a `TTL_SHORT_S` entry to go. A sleep never ends early, so the
+gap past the TTL only has to cover clock resolution, not load."""
 TTL_LONG_S = 30.0
 CONCURRENT_CLAIMS = 20
 
@@ -23,8 +29,9 @@ CONCURRENT_CLAIMS = 20
 @pytest.mark.contract
 class StatePortContract:
     """Subclass as `Test*`. Provide `state_port`. Optional: `broken_state_port` (a port whose
-    store fails on every call) and `key_prefix` (default: a fresh `uuid4().hex` per test, so runs
-    against a shared store never collide)."""
+    store fails on every call), `key_prefix` (default: a fresh `uuid4().hex` per test, so runs
+    against a shared store never collide), and `pass_time` (default: a real sleep, the path of a
+    real store; a port with an injected clock moves that clock instead)."""
 
     @pytest.fixture
     def state_port(self) -> StatePort:
@@ -33,6 +40,10 @@ class StatePortContract:
     @pytest.fixture
     def key_prefix(self) -> str:
         return uuid.uuid4().hex
+
+    @pytest.fixture
+    def pass_time(self) -> PassTime:
+        return asyncio.sleep
 
     @pytest.fixture
     def broken_state_port(self) -> StatePort:
@@ -84,20 +95,20 @@ class StatePortContract:
         assert await state_port.get(key) == f"c{winner}".encode()
 
     async def test_a_value_expires_after_its_ttl(
-        self, state_port: StatePort, key_prefix: str
+        self, state_port: StatePort, key_prefix: str, pass_time: PassTime
     ) -> None:
         key = f"{key_prefix}:ttl"
         await state_port.set(key, b"soon gone", ttl_s=TTL_SHORT_S)
         assert await state_port.get(key) == b"soon gone"
-        await asyncio.sleep(WAIT_PAST_TTL_S)
+        await pass_time(WAIT_PAST_TTL_S)
         assert await state_port.get(key) is None
 
     async def test_an_expired_claim_can_be_claimed_again(
-        self, state_port: StatePort, key_prefix: str
+        self, state_port: StatePort, key_prefix: str, pass_time: PassTime
     ) -> None:
         key = f"{key_prefix}:lease"
         assert await state_port.set_if_absent(key, b"a", ttl_s=TTL_SHORT_S) is True
-        await asyncio.sleep(WAIT_PAST_TTL_S)
+        await pass_time(WAIT_PAST_TTL_S)
         assert await state_port.set_if_absent(key, b"b", ttl_s=TTL_LONG_S) is True
         assert await state_port.get(key) == b"b"
 
@@ -132,7 +143,7 @@ class StatePortContract:
         assert await state_port.set_if_absent(key, b"again", ttl_s=TTL_LONG_S) is True
 
     async def test_compare_and_set_renews_the_ttl(
-        self, state_port: StatePort, key_prefix: str
+        self, state_port: StatePort, key_prefix: str, pass_time: PassTime
     ) -> None:
         renewed = f"{key_prefix}:renewed"
         await state_port.set(renewed, b"lease", ttl_s=TTL_SHORT_S)
@@ -143,7 +154,7 @@ class StatePortContract:
         cleared = f"{key_prefix}:cleared"
         await state_port.set(cleared, b"brief", ttl_s=TTL_SHORT_S)
         assert await state_port.compare_and_set(cleared, b"brief", b"kept")
-        await asyncio.sleep(WAIT_PAST_TTL_S)
+        await pass_time(WAIT_PAST_TTL_S)
         assert await state_port.get(renewed) == b"lease2"
         assert await state_port.get(shortened) is None
         assert await state_port.get(cleared) == b"kept"

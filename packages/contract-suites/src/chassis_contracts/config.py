@@ -5,11 +5,12 @@ called, and a store failure is `ConfigUnavailable`.
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Awaitable, Callable
 
 import pytest
 from chassis.ports.config import ConfigNotFound, ConfigPort, ConfigUnavailable, LoadedConfig
+
+from chassis_contracts.events import wait_until
 
 Bump = Callable[[], Awaitable[None]]
 
@@ -17,13 +18,13 @@ Bump = Callable[[], Awaitable[None]]
 async def wait_for_version(
     seen: list[LoadedConfig], version: str, timeout_s: float, step_s: float = 0.02
 ) -> None:
-    """Wait until a callback has seen `version`, or `timeout_s` passes."""
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout_s
-    while True:
-        if any(item.version == version for item in seen) or loop.time() >= deadline:
-            return
-        await asyncio.sleep(step_s)
+    """Wait until a callback has seen `version`. On timeout, fail the test."""
+    await wait_until(
+        lambda: any(item.version == version for item in seen),
+        timeout_s,
+        f"a callback to see config version {version!r}",
+        interval_s=step_s,
+    )
 
 
 @pytest.mark.contract

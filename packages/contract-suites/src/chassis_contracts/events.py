@@ -35,6 +35,9 @@ ATTRIBUTE_NAME = re.compile(r"^[a-z0-9]{1,20}$")
 SECRET_TEXT = "secret-detail-do-not-forward"
 """The failing handler's message. It must never reach the dead-letter event."""
 
+Settle = Callable[[], Awaitable[None]]
+"""Give an event that must not arrive its chance to arrive."""
+
 
 class HandlerFailed(Exception):
     """The scripted handler failure the retry and dead-letter cases raise."""
@@ -111,7 +114,8 @@ async def wait_until(
 @pytest.mark.contract
 class EventPortContract:
     """Subclass as `Test*`. Provide `event_port`; optionally `broken_event_port` (a port whose
-    broker is down) and a longer `deliver_timeout_s` for a real broker."""
+    broker is down), a longer `deliver_timeout_s` and `quiet_s` for a real broker, and `settle`
+    for a port that can tell when it has nothing left to deliver."""
 
     @pytest.fixture
     def event_port(self) -> EventPort:
@@ -133,6 +137,16 @@ class EventPortContract:
     def quiet_s(self) -> float:
         """How long to watch for an event that must not arrive."""
         return 0.3
+
+    @pytest.fixture
+    def settle(self, quiet_s: float) -> Settle:
+        """Limit: a real broker has no "nothing is in flight" signal, so this watches for
+        `quiet_s`. A delivery later than that passes unseen; the check can only false-pass."""
+
+        async def wait_quietly() -> None:
+            await asyncio.sleep(quiet_s)
+
+        return wait_quietly
 
     async def test_a_published_event_reaches_a_subscriber(
         self, event_port: EventPort, topic: str, deliver_timeout_s: float
@@ -194,7 +208,7 @@ class EventPortContract:
         assert inbox.ids() == [event.id, event.id]
 
     async def test_after_max_attempts_the_event_goes_to_the_dead_letter_topic(
-        self, event_port: EventPort, topic: str, deliver_timeout_s: float, quiet_s: float
+        self, event_port: EventPort, topic: str, deliver_timeout_s: float, settle: Settle
     ) -> None:
         failing = Inbox(fail=100)
         dead = Inbox()
@@ -204,7 +218,7 @@ class EventPortContract:
         event = make_event(topic, partitionkey="k")
         await event_port.publish(topic, event)
         await wait_until(lambda: len(dead.received) >= 1, deliver_timeout_s, "the dead letter")
-        await asyncio.sleep(quiet_s)
+        await settle()
         await sub.close()
         await dead_sub.close()
         assert failing.ids() == [event.id, event.id]
@@ -236,7 +250,7 @@ class EventPortContract:
         assert second.ids() == want
 
     async def test_a_closed_subscription_gets_nothing_more(
-        self, event_port: EventPort, topic: str, deliver_timeout_s: float, quiet_s: float
+        self, event_port: EventPort, topic: str, deliver_timeout_s: float, settle: Settle
     ) -> None:
         inbox = Inbox()
         sub = await event_port.subscribe(topic, inbox, group=f"{topic}.g")
@@ -245,7 +259,7 @@ class EventPortContract:
         await wait_until(lambda: len(inbox.received) >= 1, deliver_timeout_s, "the first event")
         await sub.close()
         await event_port.publish(topic, make_event(topic, 1, partitionkey="k"))
-        await asyncio.sleep(quiet_s)
+        await settle()
         assert inbox.ids() == [before.id]
 
     async def test_publish_to_a_broken_broker_raises_publish_failed(

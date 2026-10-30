@@ -5,10 +5,13 @@
 This file covers the workload half: a workload that gets SIGTERM mid-call finishes the call,
 then exits (plan section 6). Each workload runs as a subprocess on a Unix socket, no TCP.
 
-- `workload_a2a` (`workload-a2a serve --drain-timeout-s`) serves a slow handle defined in the
-  subprocess itself (`--handle __main__:slow`).
+- `workload_a2a` (`workload-a2a serve --drain-timeout-s`) serves a handle defined in the subprocess
+  itself (`--handle __main__:slow`) that holds until a file appears.
 - The TypeScript echo (`node dist/src/main.js`) calls a model on another Unix socket that stalls
-  mid-stream, so its call is in flight when SIGTERM lands.
+  mid-stream until the test lets it go.
+
+Either way the call cannot end before the test lets it, and the test does so only once the
+workload's listener has closed on SIGTERM with the process still up: the drain is seen under way.
 """  # noqa: E501
 
 from __future__ import annotations
@@ -47,19 +50,21 @@ CTX: dict[str, Any] = {
     "versions": {"chassis": "0.1.0", "config": None, "prompt": None, "model_route": "r"},
     "model_route": "big-default",
 }
-HOLD_S = 1.0
-"""How long the call stays in flight after SIGTERM."""
+HANG_GUARD_S = 30
+"""Only a hang reaches this: the test ends each stall."""
 
-SLOW_WORKLOAD = f"""
+SLOW_WORKLOAD = """
 import asyncio, os, pathlib
 from workload_a2a.cli import main
 
 async def slow(input, ctx):
-    yield {{"type": "start", "request_id": ctx["request_id"]}}
+    yield {"type": "start", "request_id": ctx["request_id"]}
     pathlib.Path(os.environ["DRAIN_MARKER"]).touch()
-    await asyncio.sleep({HOLD_S})
-    yield {{"type": "delta", "text": "finished"}}
-    yield {{"type": "end"}}
+    release = pathlib.Path(os.environ["DRAIN_RELEASE"])
+    while not release.exists():
+        await asyncio.sleep(0.01)
+    yield {"type": "delta", "text": "finished"}
+    yield {"type": "end"}
 
 main()
 """
@@ -129,15 +134,31 @@ def _until(in_flight: Callable[[], bool], timeout_s: float = 10) -> bool:
     return True
 
 
+def _listener_closed(uds: Path) -> bool:
+    """True when a connect is refused. A slow answer is not a closed listener."""
+    try:
+        with httpx.Client(transport=httpx.HTTPTransport(uds=str(uds)), base_url=CARD_URL) as c:
+            c.get("/.well-known/agent-card.json", timeout=1.0)
+    except httpx.ConnectError:
+        return True
+    except httpx.HTTPError:
+        return False
+    return False
+
+
 async def _sigterm_mid_call(
-    proc: Any, uds: Path, in_flight: Callable[[], bool]
+    proc: Any, uds: Path, in_flight: Callable[[], bool], release: Callable[[], None]
 ) -> tuple[list[dict[str, Any]], int]:
-    """Start a call, send SIGTERM once `in_flight()` is true, and return the call's events and the
-    process's exit code.
+    """Start a call, send SIGTERM once `in_flight()` is true, and `release()` the call once the
+    drain is under way. Returns the call's events and the process's exit code.
     """
     call = asyncio.create_task(_call(uds))
     assert await asyncio.to_thread(_until, in_flight), "the call never reached the workload"
     proc.send_signal(signal.SIGTERM)
+    closed = await asyncio.to_thread(_until, lambda: _listener_closed(uds))
+    assert closed, "SIGTERM did not start a drain: the listener stayed open"
+    assert proc.poll() is None and not call.done(), "the call ended before the drain began"
+    release()
     async with asyncio.timeout(15):
         events = await call
     code = await asyncio.to_thread(proc.wait, 15)
@@ -146,12 +167,12 @@ async def _sigterm_mid_call(
 
 async def test_workload_a2a_finishes_in_flight_handle_on_sigterm(folder: Path) -> None:
     """Exit criterion 6, workload half: the A2A template finishes its call, then exits 0."""
-    uds, marker = folder / "a2a.sock", folder / "started"
+    uds, marker, release = folder / "a2a.sock", folder / "started", folder / "release"
     cmd = [sys.executable, "-c", SLOW_WORKLOAD, "serve", "--handle", "__main__:slow"]
     cmd += ["--uds", str(uds), "--drain-timeout-s", "10", "--log-level", "warning"]
-    proc = _start(cmd, uds, {"DRAIN_MARKER": str(marker)})
+    proc = _start(cmd, uds, {"DRAIN_MARKER": str(marker), "DRAIN_RELEASE": str(release)})
     try:
-        events, code = await _sigterm_mid_call(proc, uds, marker.exists)
+        events, code = await _sigterm_mid_call(proc, uds, marker.exists, release.touch)
     finally:
         _stop(proc)
     assert [e["type"] for e in events] == ["start", "delta", "end"], proc.stdout.read()
@@ -171,7 +192,7 @@ def _answers(uds: Path) -> bool:
 
 class _StallingModel:
     """An OpenAI-compatible streaming model (ASGI) that sends one chunk, sets `started`, waits
-    `hold_s` (or until `release` is set), then sends the rest.
+    until `release` is set (at most `hold_s`, a hang guard), then sends the rest.
     """
 
     def __init__(self, hold_s: float) -> None:
@@ -222,11 +243,13 @@ def _typescript(folder: Path, model_uds: str, drain_ms: int) -> tuple[Any, Path]
 
 async def test_typescript_workload_finishes_in_flight_handle_on_sigterm(folder: Path) -> None:
     """Exit criterion 6, workload half: the TypeScript echo finishes its call, then exits 0."""
-    model = _StallingModel(HOLD_S)
+    model = _StallingModel(HANG_GUARD_S)
     with on_unix_socket(model, "model.sock") as model_uds:
         proc, uds = _typescript(folder, model_uds, drain_ms=10_000)
         try:
-            events, code = await _sigterm_mid_call(proc, uds, model.started.is_set)
+            events, code = await _sigterm_mid_call(
+                proc, uds, model.started.is_set, model.release.set
+            )
         finally:
             _stop(proc)
     types = [e["type"] for e in events]
@@ -239,7 +262,7 @@ async def test_typescript_workload_exits_1_when_a_call_outlives_the_drain_timeou
     folder: Path,
 ) -> None:
     """Exit criterion 6, its limit: past the drain timeout the TypeScript echo exits 1."""
-    model = _StallingModel(hold_s=30)
+    model = _StallingModel(HANG_GUARD_S)
     with on_unix_socket(model, "model.sock") as model_uds:
         proc, uds = _typescript(folder, model_uds, drain_ms=300)
         try:

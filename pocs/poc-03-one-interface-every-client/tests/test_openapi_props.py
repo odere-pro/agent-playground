@@ -264,26 +264,18 @@ def test_a_known_good_complete_call_meets_its_spec(path: str) -> None:
     ],
     ids=["max_tokens-true", "timeout_ms-false", "max_tokens-string", "stream-zero"],
 )
-def test_finding_run_refuses_a_value_of_the_wrong_json_type(extra: dict[str, Any]) -> None:
-    """Finding 1 (fixed in `RunRequest`: strict at the HTTP boundary). Minimal request:
-    `POST /v1/run` `{"input": {"text": "x"}, "budget": {"max_tokens": true}}` (or `"stream": 0`).
-    Was 200 `status: ok`; is 422, as declared for a body that does not fit the schema.
-    """
+def test_run_refuses_a_value_of_the_wrong_json_type_with_422(extra: dict[str, Any]) -> None:
+    """`POST /v1/run` answers 422 to a value of the wrong JSON type and never coerces it."""
     case = SCHEMA["/v1/run"]["POST"].Case(
         body={"input": {"text": "x"}, **extra}, media_type="application/json"
     )
     response = case.call()
-    assert response.status_code in (400, 422), (response.status_code, response.text)
+    assert response.status_code == 422, response.text
 
 
 @pytest.mark.parametrize("path", SDK_PATHS)
-async def test_finding_an_undecodable_body_gets_the_formats_error_shape(path: str) -> None:
-    """Finding 2 (fixed in `interfaces.errors`: an `HTTPException` before the handler is in the
-    route's format). Minimal request: `POST /v1/chat/completions` (or `/v1/messages`),
-    `content-type: application/json`, body the single byte `0xff`. Was 400
-    `{"detail": "There was an error parsing the body"}`; is 400 `OpenAIErrorResponse` or
-    Anthropic `ErrorResponse`, as declared. Checked with Schemathesis's own response checks.
-    """
+async def test_an_undecodable_sdk_body_is_400_in_the_formats_error_shape(path: str) -> None:
+    """A body that cannot be decoded is a 400 in the route's declared error shape."""
     app = fake_engine_app()  # its own app: the module app's lifespan runs on Schemathesis's thread
     transport = httpx.ASGITransport(app=app)
     async with (
@@ -309,10 +301,7 @@ STREAM_BODIES = {path: {**body, "stream": True} for path, body in COMPLETE_BODIE
 
 
 @pytest.mark.parametrize("path", BODY_PATHS)
-def test_finding_a_streamed_answer_fits_the_declared_event_stream_schema(path: str) -> None:
-    """Finding 3 (fixed in the spec: `interfaces.serve.SSE_EVENT_SCHEMA`, one event object).
-    Minimal request: `POST /v1/run` `{"input": {"text": "hello big world"}, "stream": true}` (and
-    the same plain call, streamed, on the two SDK routes). Was: SSE event #0 is not of type string.
-    """
+def test_a_streamed_answer_fits_the_declared_event_stream_schema(path: str) -> None:
+    """A streamed answer on every body route fits the declared one-object-per-event schema."""
     case = SCHEMA[path]["POST"].Case(body=STREAM_BODIES[path], media_type="application/json")
     case.call_and_validate(checks=[_check("response_schema_conformance")])

@@ -4,7 +4,7 @@ Findings whose fix would change behavior: the wire contract, the event schema, o
 
 Format: the finding ID, one sentence on the change, one sentence on why, and the decision.
 
-Grouped by theme by R8 on 2026-10-29. The 38 findings with `Status: proposal` are here, in 37 entries: R1-08 shares an entry with R3-02, and R7-16 with R2-10. The last group holds 5 more that the fix sessions raised. Decide the entries in one group together.
+Grouped by theme by R8 on 2026-10-29. The 38 findings with `Status: proposal` are here, in 37 entries: R1-08 shares an entry with R3-02, and R7-16 with R2-10. The last group holds 6 more that the fix sessions raised. Decide the entries in one group together.
 
 ## Error text and redaction
 
@@ -99,6 +99,7 @@ These findings are `open` in their files. The fix session found that a full fix 
 | R4-10 | Cap the waiters on one in-flight key, and answer 409 above the cap. | Duplicates poll the store with no limit; the 409 is a new refusal. F4 adds backoff and the disconnect check now. | open |
 | R6-07 | 6a criterion 3 calls the scorecard check, not a skip. | The skip reason says "not done" while the README says done; calling the check changes what the criterion test asserts. Also for the PoC-6 plan. | open |
 | R6-19 | The 6c static tests check `--dry-run` output instead of matching script text. | A text match passes when the behavior changes; F6 renames the tests now. | open |
+| F8-01 (from R4-14) | A second signal ends `Drain.serve` at once, even with a stream open. | With a stream open, uvicorn's `wait_closed` holds the exit until `timeout_s`, so `force_exit` does not force it. The old test passed only because it closed its stream; `test_a_second_signal_forces_exit` now ends in `xfail` (F8). | open |
 
 ## Seen but not filed
 

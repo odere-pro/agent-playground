@@ -56,6 +56,7 @@ from chassis_contracts.helpers import make_context, make_request
 from fastapi import FastAPI
 from google.protobuf import json_format
 
+HANG_GUARD_S = 30.0
 EVENTS: list[Event] = [
     Start(request_id="req-1"),
     Delta(text="plain "),
@@ -604,17 +605,31 @@ async def test_a_yielded_nan_is_workload_bad_event() -> None:
 # --- the chassis server prunes its task store, like the workload copy ---
 
 
+class _PruneWatchingStore(InMemoryTaskStore):
+    """Sets `pruned` when `expected` tasks have been deleted."""
+
+    def __init__(self, expected: int) -> None:
+        super().__init__()
+        self.expected = expected
+        self.deleted = 0
+        self.pruned = asyncio.Event()
+
+    async def delete(self, task_id: str, context: ServerCallContext) -> None:
+        await super().delete(task_id, context)
+        self.deleted += 1
+        if self.deleted == self.expected:
+            self.pruned.set()
+
+
 async def test_chassis_server_prunes_terminal_tasks() -> None:
     """The chassis server prunes terminal tasks from its store."""
-    store = InMemoryTaskStore()
+    store = _PruneWatchingStore(expected=3)
     app = build_app(_dict_handle, build_agent_card(name="dict", version="1"), task_store=store)
     for _ in range(3):
         await _send(app, request_to_message({"text": "hi"}, CTX))
-    for _ in range(100):
-        page = await store.list(ListTasksRequest(), ServerCallContext())
-        if page.total_size == 0:
-            break
-        await asyncio.sleep(0.01)
+    async with asyncio.timeout(HANG_GUARD_S):
+        await store.pruned.wait()
+    page = await store.list(ListTasksRequest(), ServerCallContext())
     assert page.total_size == 0
 
 

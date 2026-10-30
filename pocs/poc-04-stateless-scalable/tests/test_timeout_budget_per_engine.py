@@ -39,9 +39,12 @@ from poc_harness.scenario import AFTER_TOOL, SIMPLIFIED, SIMPLIFY, TOOL_PROMPT
 LANE = "sidecar"
 HANG = "simplify: HANG until the deadline"
 """suggested: a prompt the probe model never answers."""
-TIMEOUT_MS = 800
-"""suggested: short enough for the gate, long enough for a cold start of the run."""
+TIMEOUT_MS = 2_500
+"""suggested: a real budget, the thing under test. The deadline starts when the chassis sends, and
+no seam moves it to "the run reached the model", so it must outlast that trip on a busy machine.
+`_warm` takes the cold start out first. Each engine's test takes this long."""
 CALL_TIMEOUT_S = 30.0
+WARM_BUDGET = {"timeout_ms": 30_000}
 CLOSE_WAIT_S = 10.0
 """How long the hung model call may stay open past the deadline before the cancel counts as lost."""
 BUDGET = 10
@@ -179,6 +182,12 @@ async def _run(chassis: Chassis, text: str, budget: dict[str, int]) -> list[dict
     return events
 
 
+async def _warm(chassis: Chassis) -> None:
+    """One whole run first, so the timed run does not pay for the engine's first call."""
+    events = await _run(chassis, SIMPLIFY, WARM_BUDGET)
+    assert events[-1]["status"] == "ok", events[-1]
+
+
 def _error(events: list[dict[str, Any]]) -> dict[str, Any]:
     """The run's one `error` event."""
     [error] = [e for e in events if e["event"] == "error"]
@@ -194,6 +203,7 @@ async def test_past_timeout_ms_the_run_ends_with_a2a_timeout_and_the_task_is_can
     seen where it lands: the workload's hung model call is closed in the chassis.
     """
     chassis, model = chassis_for(engine)
+    await _warm(chassis)
     model.hung.clear()
     model.closed.clear()
     started = time.monotonic()
