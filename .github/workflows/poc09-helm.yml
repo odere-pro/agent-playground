@@ -11,8 +11,8 @@
 # helm is pinned by version and by a sha256 in the job env, read once from the project's published
 # sha256 file; the job never fetches a sum from the same release. It goes first on PATH, ahead of
 # the runner's preinstalled helm, and the step checks the version it got.
-# Open: HELM_SHA256 is not filled yet (the PoC-9 Mac could not download it). Until it is, the
-# install step fails closed with an error that says so; it never installs an unchecked binary.
+# HELM_SHA256 was read on 2026-10-30 from get.helm.sh and matches the v3.19.0 GitHub release notes.
+# An empty or malformed sum fails the install step closed; it never installs an unchecked binary.
 name: poc09-helm
 
 on:
@@ -30,7 +30,7 @@ jobs:
     env:
       HELM_VERSION: v3.19.0
       # From https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz.sha256sum
-      HELM_SHA256: ""
+      HELM_SHA256: a7f81ce08007091b86d8bd696eb4d86b8d0f2e1b9f6c714be62f82f96a594496
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
