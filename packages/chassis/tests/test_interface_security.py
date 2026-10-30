@@ -158,6 +158,17 @@ async def test_body_limit_passes_the_whole_body_when_the_length_is_honest() -> N
     assert (sent[0]["status"], b"".join(inner.read)) == (200, b"x" * LIMIT)
 
 
+async def test_body_limit_replays_one_joined_message_when_the_body_came_in_chunks() -> None:
+    """A body sent in many chunks reaches the app as one message, so memory is the body's size."""
+    inner = _RecordingApp()
+    limit = BodyLimit(inner, limit=LIMIT, public=FastAPI())
+    scope = _http_scope([(b"transfer-encoding", b"chunked")])
+
+    await _drive(limit, scope, _chunked_receive(chunks=LIMIT // CHUNK))
+
+    assert inner.read == [b"x" * LIMIT]
+
+
 async def test_body_limit_refuses_without_reading_when_the_length_is_over() -> None:
     """A Content-Length over the limit is 413 before any body is received."""
     inner = _RecordingApp()
