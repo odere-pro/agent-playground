@@ -41,7 +41,7 @@ make test-poc POC=09
 POC09_SCAFFOLD=1 make test-poc POC=09   # the full scaffold runs, about a minute per agent
 ```
 
-`make check` skips the full scaffold runs: they are past its 15-minute limit in CI. `.github/workflows/poc09-scaffold.yml` runs them.
+`make check` skips the full scaffold runs: they add about ten minutes to it. `.github/workflows/poc09-scaffold.yml` runs them.
 
 ## Demo
 

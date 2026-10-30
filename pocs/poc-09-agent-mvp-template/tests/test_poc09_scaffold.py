@@ -24,7 +24,7 @@ SIDECAR_FRAMEWORKS = ("python", "pydanticai", "langgraph", "openai-agents")
 REMOTE_FRAMEWORKS = ("smolagents", "claude-agent")
 FULL_RUN = pytest.mark.skipif(
     os.environ.get("POC09_SCAFFOLD") != "1",
-    reason="about a minute per agent, past the `check` job's limit; set POC09_SCAFFOLD=1 "
+    reason="about a minute per agent, too slow for `make check`; set POC09_SCAFFOLD=1 "
     "(.github/workflows/poc09-scaffold.yml runs them)",
 )
 TREE = (

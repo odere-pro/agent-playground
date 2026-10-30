@@ -1,5 +1,5 @@
 # PoC-9 exit criteria 1 and 4: scaffold an agent per framework, then run its own `make` steps. About
-# a minute per agent, so not in `make check` (`check` has a 15-minute limit). The tests skip without
+# a minute per agent, so not in `make check`, which must stay quick. The tests skip without
 # POC09_SCAFFOLD=1; a skip here would look green, so the step needs the exact pass count.
 #
 # Trigger: push and pull_request on what a scaffold is made of, and workflow_dispatch. No secret.
