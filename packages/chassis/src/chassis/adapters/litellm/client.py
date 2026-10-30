@@ -5,6 +5,11 @@ Errors map to `ModelError`: `http_<status>` (retryable at 5xx), `connect_error` 
 both the `x-litellm-tags` header and `metadata.tags`, so per-agent cost shows up in the router.
 The httpx client ignores the environment (`trust_env=False`), as the sidecar connector's does: no
 proxy variable can route the key elsewhere.
+
+Each request carries the W3C `traceparent` of the current OpenTelemetry span, when there is one
+(PoC-8): the model proxy calls the router inside `chassis.model.call`, so LiteLLM's own
+OpenTelemetry spans join the run's trace (ADR-007 item 4). With no current span (the `memory`
+telemetry) no header is sent. Only `traceparent` goes out; no baggage, so no user id.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 import httpx
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from chassis.ports.model import (
     ModelChunk,
@@ -81,6 +87,17 @@ def _usage(data: dict[str, Any] | None) -> Usage:
         input_tokens=int(data.get("prompt_tokens") or 0),
         output_tokens=int(data.get("completion_tokens") or 0),
     )
+
+
+_TRACE_CONTEXT = TraceContextTextMapPropagator()
+
+
+async def _add_traceparent(request: httpx.Request) -> None:
+    """Put the current span's `traceparent` on `request`; nothing when no span is current."""
+    carrier: dict[str, str] = {}
+    _TRACE_CONTEXT.inject(carrier)
+    if carrier.get("traceparent"):
+        request.headers["traceparent"] = carrier["traceparent"]
 
 
 # suggested: 300 characters of upstream error text; enough to name the cause, short enough for an
@@ -210,6 +227,7 @@ class LiteLLMModel:
             transport=transport,
             timeout=timeout,
             trust_env=False,
+            event_hooks={"request": [_add_traceparent]},
         )
 
     def __repr__(self) -> str:
