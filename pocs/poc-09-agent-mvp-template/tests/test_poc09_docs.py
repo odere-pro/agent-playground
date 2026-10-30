@@ -19,7 +19,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 GUIDE = ROOT / "docs" / "guides" / "how-to-add-business-logic.md"
-TEMPLATE_DOCS = ROOT / "packages" / "agentctl" / "src" / "agentctl" / "template" / "docs"
+TEMPLATE_DOCS = (
+    ROOT / "packages" / "agentctl" / "src" / "agentctl" / "template" / "project" / "docs"
+)
 DECISIONS = TEMPLATE_DOCS / "decisions.md"
 TEMPLATE_GUIDE = TEMPLATE_DOCS / "how-to-add-business-logic.md"
 MONOREPO_URL = "https://github.com/odere-pro/agent-playground/blob/main/"

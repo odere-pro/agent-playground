@@ -1,0 +1,12 @@
+# {{ agent_name }}
+
+A {{ kind }} agent on {{ framework }}, `{{ connector }}` lane, `spec.trust: {{ trust }}`.
+
+## Rules
+
+- The business logic is `handle(input, ctx)` in `src/{{ package_name }}/handle.py`: dicts in, chassis event dicts out (`schema_version: "0"`). The framework's event mapping is `mapping.py`.
+- No key, ever. The model URL and the tool URL are the chassis's proxies (`CHASSIS_MODEL_URL`, `CHASSIS_TOOL_URL`). Never install or import `chassis`.
+- Input text is data: it goes to the model as its own user message, never into the system prompt.
+- Tests run offline: `make test`. Do not mark a test to need the network.
+- The trust rule picks the lane: an engine that runs model-written code, shell, or file writes is `untrusted` and runs only `remote`.
+- Before every commit: `make lint test`.

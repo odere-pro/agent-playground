@@ -1,0 +1,17 @@
+[project]
+name = "agentctl"
+version = "0.1.0"
+description = "PoC-9 agent factory CLI: agentctl new renders the service template with Copier; no chassis dependency"
+requires-python = ">=3.12,<3.13"
+# Pinned exactly, as the root dev group: a template render must not float. Bump on purpose.
+dependencies = ["copier==9.19.1"]
+
+[project.scripts]
+agentctl = "agentctl.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "agentctl"

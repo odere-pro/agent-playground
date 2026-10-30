@@ -38,8 +38,7 @@ What you get, and what you edit:
 The source is [contract v5, part C.2](../contracts/contract-v5.md), item 1. It is frozen. A test pins it.
 
 ```python
-async def handle(input: dict, ctx: dict) -> AsyncIterator[dict]:
-    ...
+async def handle(input: dict, ctx: dict) -> AsyncIterator[dict]: ...
 ```
 
 - It is an async generator. Plain dicts in, event dicts out ([ADR-002](../planning/adr/002-template-a2a-server-placement.md), item 2).

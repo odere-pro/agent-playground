@@ -1,0 +1,64 @@
+.DEFAULT_GOAL := help
+SHELL := /bin/bash
+# The platform checkout. CI checks it out elsewhere and sets PLATFORM_PATH.
+PLATFORM_PATH ?= {{ platform_path }}
+PLATFORM := $(PLATFORM_PATH)
+IMAGE ?= {{ agent_name }}
+IMAGE_METADATA ?= build/image-metadata.json
+PORT ?= 9000
+# Offline, as the platform's `make test`: no socket but Unix sockets and loopback (the kit runs the
+# workload and the chassis as local processes), and no key in the environment.
+PYTEST_FLAGS := --disable-socket --allow-unix-socket --allow-hosts=127.0.0.1,::1
+STRIP_KEYS := for v in $$(env | cut -d= -f1 | grep -E '(_API_KEY|_TOKEN|_SECRET|_PASSWORD)$$' || true); do unset "$$v"; done
+
+.PHONY: help setup test lint fmt run image sign load-smoke hostile redteam eval
+
+help: ## Show this help
+	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  %-8s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+setup: ## Install Python 3.12 and the locked dependencies (writes uv.lock; commit it)
+	uv sync
+
+test: ## Every test, offline: the unit tests and the lane contract over A2A
+	@$(STRIP_KEYS); uv run pytest $(PYTEST_FLAGS) $(ARGS)
+
+lint: ## ruff and mypy, strict
+	uv run ruff format --check .
+	uv run ruff check .
+	uv run mypy
+
+fmt: ## Format
+	uv run ruff format .
+	uv run ruff check --fix .
+
+run: ## Serve handle over A2A on loopback (the chassis reaches it at 127.0.0.1:$(PORT))
+	uv run workload-a2a serve --handle {{ package_name }}:handle --name {{ agent_name }} --version 0.1.0 --port $(PORT)
+
+image: ## Build the hardened workload image: make image [IMAGE=ref] [PUSH=1 IMAGE_METADATA=file]
+ifeq ($(PUSH),1)
+	mkdir -p $(dir $(IMAGE_METADATA))
+	docker buildx build --build-context workload-a2a=$(PLATFORM)/packages/workload-a2a -t $(IMAGE) \
+		--push --sbom=true --provenance=mode=max --metadata-file $(IMAGE_METADATA) .
+else
+	docker buildx build --build-context workload-a2a=$(PLATFORM)/packages/workload-a2a -t $(IMAGE) \
+		--load .
+endif
+
+sign: ## suggested: cosign keyless signing of a pushed digest: make sign IMAGE_REF=ref@sha256:...
+	@test -n "$(IMAGE_REF)" || { echo "set IMAGE_REF=<image>@<digest>"; exit 2; }
+	cosign sign --yes $(IMAGE_REF)
+
+# Stand-ins, PoC-9: the next four run the platform's own suites from PLATFORM_PATH, on the
+# platform's engines. They do not run this agent's cases yet; that needs the suites to ship in
+# agent-testkit (see the platform's pocs/poc-09-agent-mvp-template/notes).
+load-smoke: ## stand-in: the platform's offline PoC-4 scenario tests
+	cd $(PLATFORM) && scripts/check_offline.sh pocs/poc-04-stateless-scalable -q
+
+hostile: ## stand-in: the platform's offline hostile suite (PoC-5)
+	cd $(PLATFORM) && scripts/check_offline.sh pocs/poc-05-sandboxed/tests/test_poc05_hostile_offline.py -q
+
+redteam: ## stand-in: the platform's red-team set (PoC-8)
+	$(MAKE) -C $(PLATFORM) redteam
+
+eval: ## stand-in: the platform's offline eval gate (PoC-8)
+	$(MAKE) -C $(PLATFORM) evals

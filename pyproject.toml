@@ -49,6 +49,8 @@ members = [
   "packages/code-runner",
   "packages/fake-langfuse",
   "packages/guardrail-server",
+  "packages/agentctl",
+  "packages/agent-testkit",
 ]
 
 [tool.uv.sources]
@@ -67,6 +69,8 @@ fake-mcp-server = { workspace = true }
 code-runner = { workspace = true }
 fake-langfuse = { workspace = true }
 guardrail-server = { workspace = true }
+agentctl = { workspace = true }
+agent-testkit = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["packages", "pocs"]
@@ -104,6 +108,7 @@ exclude = [
   "pocs/poc-06c-pretrained-slm/tests/conftest\\.py$",
   "pocs/poc-07-cross-cutting-decisions/tests/conftest\\.py$",
   "pocs/poc-08-cross-cutting-build/tests/conftest\\.py$",
+  "packages/agentctl/tests/conftest\\.py$",
   "pocs/[^/]+/notes/",
 ]
 plugins = ["pydantic.mypy"]
@@ -127,6 +132,8 @@ root_packages = [
   "code_runner",
   "fake_langfuse",
   "guardrail_server",
+  "agentctl",
+  "agent_testkit",
 ]
 include_external_packages = true
 
@@ -163,6 +170,18 @@ source_modules = ["guardrail_server"]
 forbidden_modules = ["chassis", "chassis_contracts"]
 
 [[tool.importlinter.contracts]]
+name = "agentctl never imports the chassis (PoC-9): it renders a template, it runs nothing"
+type = "forbidden"
+source_modules = ["agentctl"]
+forbidden_modules = ["chassis", "chassis_contracts"]
+
+[[tool.importlinter.contracts]]
+name = "the agent test kit never imports the chassis (PoC-9: it runs in the workload's env)"
+type = "forbidden"
+source_modules = ["agent_testkit"]
+forbidden_modules = ["chassis", "chassis_contracts"]
+
+[[tool.importlinter.contracts]]
 name = "the chassis never imports a workload (no business logic in the chassis)"
 type = "forbidden"
 source_modules = ["chassis"]
@@ -179,6 +198,8 @@ forbidden_modules = [
   "code_runner",
   "fake_langfuse",
   "guardrail_server",
+  "agentctl",
+  "agent_testkit",
 ]
 # `allow_indirect_imports` stays unset so an indirect import counts too. The connector loads
 # `spec.engine.handle` by dotted path at runtime through `importlib`, which this does not see.
