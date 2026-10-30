@@ -1,0 +1,30 @@
+# PoC-8 drill Collector (otel/opentelemetry-collector-contrib, the PoC-7 version): the chassis and
+# LiteLLM export OTLP/HTTP on 4318; every span goes to Jaeger. Traces only: the chassis runs with
+# OTEL_METRICS_EXPORTER=none, and log redaction is PoC-7's stack, not this drill's.
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/jaeger]

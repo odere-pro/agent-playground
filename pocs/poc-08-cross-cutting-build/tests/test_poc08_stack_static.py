@@ -411,10 +411,10 @@ def test_the_workflow_runs_the_drill_and_the_measurement_then_tears_down(
 def test_the_drill_is_collected_only_with_the_variable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(STACK_VAR, raising=False)
     off = runpy.run_path(str(HERE / "conftest.py"))["collect_ignore"]
-    assert off == [DRILL_FILE]
+    assert DRILL_FILE in off
     monkeypatch.setenv(STACK_VAR, "1")
     on = runpy.run_path(str(HERE / "conftest.py"))["collect_ignore"]
-    assert on == []
+    assert DRILL_FILE not in on
 
 
 def test_the_drill_is_marked_network_and_skips_without_the_variable(

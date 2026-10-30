@@ -1,5 +1,6 @@
 """Puts the earlier PoC test folders and the chassis test folder on `sys.path`, so a PoC-8 test can
-build on their harnesses.
+build on their harnesses, and keeps the stack drills out of collection unless their variable is
+set: `test_poc08_stack_litellm.py` needs `POC08_LITELLM=1` (`.github/workflows/poc08-litellm.yml`).
 Excluded from mypy (pyproject.toml), like the other PoC conftests: a second top-level `conftest`
 module would clash with the chassis one.
 
@@ -26,5 +27,9 @@ for _tests in (
     if str(_tests) not in sys.path:
         sys.path.insert(0, str(_tests))
 
-# The names are `poc08_stack.STACK_VAR` and `poc08_stack.DRILL_FILE`; the static test checks both.
-collect_ignore = [] if os.environ.get("POC08_STACK") == "1" else ["test_poc08_stack_metrics.py"]
+GATED_DRILLS = {
+    "test_poc08_stack_metrics.py": "POC08_STACK",
+    "test_poc08_stack_litellm.py": "POC08_LITELLM",
+}
+"""A `network` drill against a running stack, to the variable that must be `1` to collect it."""
+collect_ignore = [name for name, var in GATED_DRILLS.items() if os.environ.get(var) != "1"]
