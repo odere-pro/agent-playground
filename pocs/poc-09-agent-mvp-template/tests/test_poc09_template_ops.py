@@ -169,17 +169,12 @@ def test_every_owned_file_exists_and_renders_without_leftovers(agent: Path) -> N
     assert "acme-glossary" in (agent / "deploy/compose/docker-compose.yaml").read_text()
 
 
-def test_platform_path_absolute_or_relative(tmp_path: Path) -> None:
-    """A relative `platform_path` is relative to the agent root; the Compose file is two deeper."""
-    rel = yaml.safe_load(
-        (render_tree(tmp_path / "rel", ANSWERS) / "deploy/compose/docker-compose.yaml").read_text()
-    )
-    absolute = {**ANSWERS, "platform_path": "/opt/agent-platform"}
-    abs_ = yaml.safe_load(
-        (render_tree(tmp_path / "abs", absolute) / "deploy/compose/docker-compose.yaml").read_text()
-    )
-    assert rel["services"]["fake-model-server"]["build"]["context"] == "../../../agent-platform"
-    assert abs_["services"]["fake-model-server"]["build"]["context"] == "/opt/agent-platform"
+def test_compose_builds_from_the_platform_link_not_a_path_of_this_machine(tmp_path: Path) -> None:
+    """The Compose file works from any clone: it names `.platform`, which `make` links."""
+    agent = render_tree(tmp_path / "agent", {**ANSWERS, "platform_path": "/opt/agent-platform"})
+    compose = yaml.safe_load((agent / "deploy/compose/docker-compose.yaml").read_text())
+    assert compose["services"]["fake-model-server"]["build"]["context"] == "../../.platform"
+    assert "/opt/agent-platform" not in (agent / "deploy/compose/docker-compose.yaml").read_text()
 
 
 # --- Compose: profiles, keys, ports, debuggers ----------------------------------------------------
@@ -193,7 +188,10 @@ def test_each_profile_runs_the_chassis_and_the_workload_as_sidecar(
     chassis, workload = f"chassis-{profile}", f"workload-{profile}"
     assert {chassis, workload, "debugpy"} <= set(active)
     assert active[workload]["network_mode"] == f"service:{chassis}"
-    assert active[workload]["build"] == {"context": "../..", "dockerfile": "Dockerfile"}
+    assert active[workload]["build"]["context"] == "../.."
+    assert active[workload]["build"]["additional_contexts"] == {
+        "workload-a2a": "../../.platform/packages/workload-a2a"
+    }
     assert active[chassis]["image"].startswith("${CHASSIS_IMAGE:-")
     assert "build" not in active[chassis], "the chassis image is pinned, never built here"
     sidecars = [

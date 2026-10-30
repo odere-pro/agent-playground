@@ -1,4 +1,3 @@
-{%- set platform = platform_path if platform_path.startswith('/') else '../../' ~ platform_path -%}
 # {{ agent_name }}: the chassis and the workload in the `sidecar` lane, with a debugger in each.
 # Two profiles; pick one (README.md next to this file):
 #   docker compose -f deploy/compose/docker-compose.yaml --profile fake up -d --wait --build
@@ -79,6 +78,9 @@ x-workload: &workload
   build:
     context: ../..
     dockerfile: Dockerfile
+    additional_contexts:
+      # The `.platform` link: `make setup` makes it from PLATFORM_PATH.
+      workload-a2a: ../../.platform/packages/workload-a2a
   image: {{ agent_name }}:dev
   <<: *hardening
   # uid 10002: every workload image (deploy/README.md).
@@ -122,7 +124,7 @@ services:
     # The platform's scripted OpenAI-compatible server. No port, no key.
     profiles: [fake]
     build:
-      context: {{ platform }}
+      context: ../../.platform
       dockerfile: packages/fake-model-server/Dockerfile
     image: agent-platform/fake-model-server:poc09
     <<: *hardening
