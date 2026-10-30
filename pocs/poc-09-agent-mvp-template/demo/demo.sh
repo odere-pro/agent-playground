@@ -45,4 +45,15 @@ if [[ "${1:-}" == "--live" ]]; then
   curl -fsS -X POST http://127.0.0.1:8080/v1/chat/completions -H 'content-type: application/json' \
     -d '{"model": "demo-agent", "messages": [{"role": "user", "content": "hello"}]}'
   echo
+  # MCP: the two calls any client starts with. The kit's `test_an_mcp_client_finds_the_agent` runs
+  # the same pair offline.
+  mcp=(-fsS -X POST http://127.0.0.1:8080/v1/mcp -H 'content-type: application/json'
+    -H 'accept: application/json, text/event-stream')
+  init='{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "demo", "version": "0"}}}'
+  session="$(curl "${mcp[@]}" -D - -o /dev/null -d "$init" | tr -d '\r' | awk -F': ' 'tolower($1) == "mcp-session-id" {print $2}')"
+  curl "${mcp[@]}" -H "mcp-session-id: $session" -o /dev/null \
+    -d '{"jsonrpc": "2.0", "method": "notifications/initialized"}'
+  curl "${mcp[@]}" -H "mcp-session-id: $session" \
+    -d '{"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}'
+  echo
 fi

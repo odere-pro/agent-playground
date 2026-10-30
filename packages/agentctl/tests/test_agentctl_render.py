@@ -99,6 +99,8 @@ def test_the_tree_holds_the_framework_files_and_nothing_else(
     agent = _render(tmp_path, framework, connector)
     src = {f"src/my_agent/{name}" for name in {*SRC_FILES[framework], "__init__.py", "py.typed"}}
     common = COMMON if connector == "sidecar" else {f for f in COMMON if not _sidecar_only(f)}
+    if connector == "remote":
+        common = common | {"tests/test_remote_lane.py"}
     assert _files(agent) == common | src
 
 

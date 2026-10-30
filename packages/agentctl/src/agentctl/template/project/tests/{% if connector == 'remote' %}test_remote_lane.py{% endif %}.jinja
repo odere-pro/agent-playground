@@ -1,0 +1,12 @@
+"""The agent behind the chassis's real remote connector: TCP on loopback, a bearer token."""
+
+from agent_testkit.suites import RemoteLane
+
+
+class TestRemoteLane(RemoteLane):
+{%- if trust == 'untrusted' %}
+    # This engine can end in an error offline, not an answer (see tests/test_contract.py).
+    run_statuses = ("ok", "fallback", "error")
+{%- else %}
+    pass
+{%- endif %}
