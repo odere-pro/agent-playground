@@ -33,6 +33,7 @@ Every new agent should start from the same template, with only the parts its cla
 - The CLI refuses a module that the B.5 table does not allow for the kind.
 - `--kind orchestrator` creates the skeleton with placeholders for the routing, planner, and workflow modules.
 - Installed with uv; `--help` documents every option.
+- Status after PoC-9 ([scaffold test](../../../pocs/poc-09-agent-mvp-template/tests/test_poc09_scaffold.py)): `agentctl new` is built in `packages/agentctl` with `--kind transformer|evaluator|tool`, `--framework`, `--connector`, `--dest`, `--platform-path`, and `--no-lock`. It pins the agent to the platform's `uv.lock` and commits a `uv.lock`. Trust follows the framework; there is no `--trust` flag. Not built: the `orchestrator` and `data` kinds, `spec.modules`, the `governance` block, and a chart in the generated repo. `kind` is recorded and does not change the generated code yet. A `remote` agent gets no Compose file, because Compose is the sidecar shape.
 
 ## Reuse
 
