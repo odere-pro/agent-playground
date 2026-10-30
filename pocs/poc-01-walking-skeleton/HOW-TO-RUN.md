@@ -43,7 +43,7 @@ They start `chassis serve` as a real process, then bring up the Compose stack, s
 uv run chassis serve --config packages/chassis/configs/fake.yaml
 ```
 
-It listens on `127.0.0.1:8080` (`/health`, `/ready`, `/v1/run`) and runs the model proxy (`/v1/chat/completions`) and the MCP tool endpoint (`/mcp`) on a second, localhost-only listener at `127.0.0.1:8090` (suggested: 8090; `--proxy-port`). The `fake` profile uses the scripted model (`ScriptedModel`) and the simplifier workload in the `inprocess` lane, so no other process is needed. In another shell:
+It opens two listeners. The public port, `127.0.0.1:8080`, serves `/health`, `/ready`, and `/v1/run`. It also serves the OpenAI and Anthropic interfaces, `/v1/mcp`, and `/manifest`. The full list is in the [chassis README](../../packages/chassis/README.md#endpoints). The proxy port, `127.0.0.1:8090` (suggested; `--proxy-port`), is localhost only. It serves the model proxy and the tool endpoint `/mcp` for the workload. The `fake` profile uses the scripted model (`ScriptedModel`) and the simplifier workload in the `inprocess` lane, so no other process is needed. In another shell:
 
 ```bash
 curl -s 127.0.0.1:8080/ready
@@ -61,7 +61,7 @@ curl -s -N -X POST 127.0.0.1:8080/v1/run -H 'content-type: application/json' \
 
 The complete call returns one `Response` JSON. The streamed call returns one server-sent event per chassis event (`start`, `delta`, `metrics`, `end`) and a final `response` event with the same `Response`. Both carry `versions` (chassis, config hash, prompt, model route) and token counts in `metrics`.
 
-Note: in the `fake` profile the workload calls the chassis's own model proxy at `CHASSIS_MODEL_URL` (default `http://127.0.0.1:8090/v1`), so the port in the URL and `--proxy-port` must match if you change one. The public port has no `/v1/chat/completions`. `chassis serve` refuses a `--proxy-host` that is not loopback (`deploy/CLAUDE.md`).
+Note: in the `fake` profile the workload calls the chassis's own model proxy at `CHASSIS_MODEL_URL` (default `http://127.0.0.1:8090/v1`), so the port in the URL and `--proxy-port` must match if you change one. Both ports answer the OpenAI chat path, but they do different things. On the public port it is the OpenAI interface: it runs the agent, and `model` names the agent. On the proxy port it is the model proxy: it calls a model route for the workload. So a POST to `127.0.0.1:8080/v1/chat/completions` reaches the agent, not the model proxy. `chassis serve` refuses a `--proxy-host` that is not loopback (`deploy/CLAUDE.md`).
 
 ## 3. Run the Compose stack (chassis, LiteLLM, fake model server)
 

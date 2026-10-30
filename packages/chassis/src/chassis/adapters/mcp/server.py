@@ -12,7 +12,7 @@ Python signature. A call opens one `chassis.tool.call` span, counts `chassis.too
 and turns a `ToolError` into an MCP tool error result (`isError: true`), never a transport failure:
 its text is `public_message(code)` (PoC-5), never the error's own message.
 The span has `tool`; `trace_id` and `traceparent` (checked and cut by
-`chassis.tracecontext.continued`, so the span continues the workload's call, PoC-7) when the
+`chassis.core.trace.continued`, so the span continues the workload's call, PoC-7) when the
 inbound MCP HTTP request carried a valid `traceparent` (an invalid one records nothing, so a raw
 header never reaches telemetry); and `request_id` when `run_of` names an in-flight run with that
 trace id.
@@ -43,10 +43,9 @@ from mcp_types import ToolAnnotations
 from pydantic import PrivateAttr
 
 from chassis.core.inbound import public_message
-from chassis.core.trace import parse_traceparent
+from chassis.core.trace import continued, parse_traceparent
 from chassis.ports.telemetry import TelemetryPort
 from chassis.ports.tool import ToolDefinition, ToolError, ToolPort
-from chassis.tracecontext import continued
 
 if TYPE_CHECKING:
     from fastmcp.utilities.versions import VersionSpec

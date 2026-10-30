@@ -357,7 +357,8 @@ async def test_run_before_setup_is_an_error() -> None:
 
 
 def test_registry_builds_the_sidecar_connector() -> None:
-    assert REGISTRY["engine"]["sidecar"] is SidecarConnector
+    """The entry is a lazy factory (`profiles.lazy`); what it builds is a `SidecarConnector`."""
+    assert callable(REGISTRY["engine"]["sidecar"])
     assert isinstance(resolve("engine", "sidecar"), SidecarConnector)
 
 

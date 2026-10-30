@@ -67,6 +67,7 @@ class TestPoc07FbInMemoryFeedback(FeedbackPortContract):
 
 
 def test_poc07_fb_both_bindings_run_every_case_of_the_suite() -> None:
+    """Criterion 2: "Each new real adapter passes the same contract suite as its fake"."""
     cases = {n for n in dir(FeedbackPortContract) if n.startswith("test_")}
     assert cases <= set(dir(TestPoc07FbLangfuseFeedback))
     assert cases <= set(dir(TestPoc07FbInMemoryFeedback))
