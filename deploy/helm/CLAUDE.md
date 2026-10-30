@@ -10,4 +10,5 @@ The shared library chart (backlog 024 CH-3) and one example chart that includes 
 - Egress peers are labels. No `ipBlock`, no rule without a `to`.
 - No secret value in any file here. Secrets are made outside the chart.
 - Test: `make test-poc POC=09` runs `pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py`. It skips with a reason when `helm` is not on PATH; `.github/workflows/poc09-helm.yml` installs a pinned helm and runs it. A refusal test never changes to pass; fix the chart.
+- A service chart's `templates/` files are `<object>.tpl` with no leading underscore: Helm renders every file there not named `_*` as a manifest, and the `.tpl` suffix keeps raw Go templates out of the repo's `deploy/**/*.y*ml` scans (`test_poc06b_kind_static.py`).
 - Do not: install helm globally, commit `charts/` or `Chart.lock`, or edit a rendered manifest by hand.

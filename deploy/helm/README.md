@@ -18,7 +18,7 @@ Kubernetes 1.33 or later (native sidecars, stable). `charts/` and `Chart.lock` a
 
 ## Named templates
 
-A service chart includes one per file in its `templates/`, as `example-agent` does, or `agent-lib.all` for every object.
+A service chart includes one per file in its `templates/`, as `example-agent` does, or `agent-lib.all` for every object. Name those files `<object>.tpl`, no leading underscore: Helm renders them as manifests, and the suffix keeps raw templates out of the repo's YAML scans of `deploy/`.
 
 | Template | Renders |
 | -------- | ------- |
