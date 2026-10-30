@@ -52,19 +52,15 @@ def _workload_sources() -> list[Path]:
 
 
 def test_no_workload_defines_its_own_tool() -> None:
-    """Exit criterion: the tool is defined once, served by the chassis over MCP. No workload
-    defines `glossary_lookup` or any tool of its own in its framework's terms; each gets the
-    tool from the chassis over MCP.
+    """Exit criterion: "The tool is defined once, served by the chassis over MCP, and works on all
+    three engines."
 
-    Checked in every workload source outside its tests: (1) no hardcoded definition of the tool,
-    meaning a file that names `glossary_lookup` and also holds a `term` parameter or the
-    glossary text; (2) no framework tool decorator (`@tool`, `@function_tool`, `@agent.tool`);
-    (3) each Python workload lists its tools from the chassis's MCP endpoint. Wrapping the tools
-    the MCP listing returns as framework objects (echo-langgraph's `StructuredTool`) is allowed:
-    their name, description, and schema come from `tools/list`.
+    Proves "defined once": no workload defines a tool itself; each lists them from the chassis.
     """
     from chassis.fakes.tool import GLOSSARY
 
+    # Wrapping the tools `tools/list` returns (echo-langgraph's `StructuredTool`) is allowed:
+    # their name, description, and schema still come from the listing.
     glossary_text = tuple(GLOSSARY.values())
     offenders: list[str] = []
     for path in _workload_sources():
@@ -83,9 +79,10 @@ def test_no_workload_defines_its_own_tool() -> None:
 
 
 def test_the_tool_is_defined_once_in_the_chassis() -> None:
-    """Exit criterion: the tool is defined once. The fake `ToolPort` (`default_tools()`) holds
-    `glossary_lookup`, `PortBundle` carries a `tools` port, and exactly one chassis source file
-    names the tool: the fake. The MCP endpoint serves whatever the port lists.
+    """Exit criterion: "The tool is defined once, served by the chassis over MCP, and works on all
+    three engines."
+
+    Proves "defined once": exactly one chassis source file names the tool, the fake `ToolPort`.
     """
     from chassis.fakes.tool import InMemoryTools, default_tools
     from chassis.ports.tool import ToolPort
@@ -102,11 +99,10 @@ def test_the_tool_is_defined_once_in_the_chassis() -> None:
 
 
 async def test_the_tool_is_served_by_the_chassis_over_mcp() -> None:
-    """Exit criterion: the tool is served by the chassis over MCP. An MCP client (`initialize`,
-    `tools/list`, `tools/call`) on the chassis's `/mcp` finds `glossary_lookup`, marked
-    read-only, and gets a non-empty answer for `SLM`. The endpoint is on the localhost-only proxy
-    app, and the public app answers 404 on `/mcp` (the chassis's `test_server.py` checks the
-    same for `/v1/chat/completions`).
+    """Exit criterion: "The tool is defined once, served by the chassis over MCP, and works on all
+    three engines."
+
+    Proves "served by the chassis over MCP": a client on the proxy app's `/mcp` lists and calls it.
     """
     from chassis.fakes.tool import default_tools
 

@@ -54,7 +54,7 @@ Can any client call any engine the same way, through native, OpenAI, Anthropic, 
   - Cassettes: one per engine in `tests/cassettes/interfaces/`, replayed with `--record-mode=none`. `make record-cassettes` re-records offline.
 - [x] Schemathesis property tests generated from the OpenAPI spec. · evidence:
   - Tests: `tests/test_openapi_props.py::test_every_operation_meets_its_spec`.
-  - Tests, the three findings: `::test_finding_run_refuses_a_value_of_the_wrong_json_type`, `::test_finding_an_undecodable_body_gets_the_formats_error_shape`, `::test_finding_a_streamed_answer_fits_the_declared_event_stream_schema`. All pass; none is `xfail`.
+  - Tests, the three findings: `::test_run_refuses_a_value_of_the_wrong_json_type_with_422`, `::test_an_undecodable_sdk_body_is_400_in_the_formats_error_shape`, `::test_a_streamed_answer_fits_the_declared_event_stream_schema`. All pass; none is `xfail`.
   - Run: `21 passed in 15.71s`.
 
 ## Exit criteria
