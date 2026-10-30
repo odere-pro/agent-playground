@@ -32,7 +32,8 @@ from chassis.ports.model import (
 from chassis.server import ChassisConfig, create_app
 from chassis.server.correlation import RunRecord
 from chassis.server.proxy_app import create_proxy_app
-from chassis_contracts.inbound import sse
+from poc_harness.sse import Frame as Frame
+from poc_harness.sse import sse_frames as sse_frames
 from pydantic import TypeAdapter
 
 TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"  # pragma: allowlist secret (a trace id in a test)
@@ -68,8 +69,6 @@ GLOSSARY_RULES = [
 """A glossary tool call for `lookup`, its answer after the tool, and a plain reply."""
 
 STREAM_EVENT: TypeAdapter[Any] = TypeAdapter(RawMessageStreamEvent)
-
-Frame = tuple[str, dict[str, Any]]
 
 
 def proxy_ports(model: Any, engine: FakeEngine | None = None) -> PortBundle:
@@ -114,17 +113,6 @@ def run_request(max_tokens: int) -> tuple[Request, Context]:
         versions=Versions(chassis=CHASSIS_VERSION),
     )
     return request, ctx
-
-
-def sse_frames(text: str) -> list[Frame]:
-    """Parse a named-event SSE body; every frame must name its event and carry `data:`. A thin
-    wrapper over the one SSE parser, `chassis_contracts.inbound.sse`.
-    """
-    out: list[Frame] = []
-    for event in sse([text]):
-        assert event.event is not None and event.data, event
-        out.append((event.event, json.loads(event.data)))
-    return out
 
 
 def frame_names(frames: list[Frame]) -> list[str]:

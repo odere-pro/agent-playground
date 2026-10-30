@@ -66,12 +66,6 @@ def _tcp_allowed() -> bool:
     return True
 
 
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
-
-
 class Recorder:
     """ASGI wrapper that keeps (method, path, traceparent) of each HTTP request."""
 
@@ -91,8 +85,9 @@ class ThreadedServer:
 
     def __init__(self, app: Any, lifespan_app: Any = None) -> None:
         import uvicorn
+        from chassis_contracts.serving import free_port
 
-        self.port = _free_port()
+        self.port = free_port()
         self.lifespan_app = lifespan_app
         config = uvicorn.Config(
             app, host="127.0.0.1", port=self.port, log_level="warning", lifespan="off"

@@ -305,7 +305,6 @@ __all__ = [
     "probe_card",
     "reply",
     "status",
-    "struct",
     "stub_app",
     "task",
 ]
