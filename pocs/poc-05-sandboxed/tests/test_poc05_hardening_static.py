@@ -201,19 +201,42 @@ def test_the_scan_sees_the_platform_too() -> None:
 # --- pod-level fields -------------------------------------------------------------------------
 
 
+# The pods allowed a projected token: the dispatcher, in its one container (next tests).
+PROJECTED_TOKEN_PODS = {f"platform/Deployment/{DISPATCHER}"}
+NO_PROJECTED_TOKEN_PODS = [p for p in ALL_PODS if p.id not in PROJECTED_TOKEN_PODS]
+
+
 @pytest.mark.parametrize("pod", ALL_PODS, ids=_ids(ALL_PODS))
 def test_pod_has_no_token_and_no_host_access(pod: Pod) -> None:
-    """No automounted token anywhere. A projected token only in the dispatcher (next tests)."""
+    """Criterion 5: no automounted token, no host namespace, and no hostPath volume in any pod."""
     spec = pod.spec
+
+    host_fields = [
+        f for f in ("shareProcessNamespace", "hostNetwork", "hostPID", "hostIPC") if spec.get(f)
+    ]
+    host_paths = [v["name"] for v in spec.get("volumes", []) if "hostPath" in v]
+
     assert spec.get("automountServiceAccountToken") is False, pod.id
-    for field in ("shareProcessNamespace", "hostNetwork", "hostPID", "hostIPC"):
-        assert not spec.get(field), f"{pod.id}: {field}"
-    for v in spec.get("volumes", []):
-        assert "hostPath" not in v, f"{pod.id}: hostPath volume {v['name']}"
-        if pod.id == f"platform/Deployment/{DISPATCHER}":
-            continue
-        for s in v.get("projected", {}).get("sources", []):
-            assert "serviceAccountToken" not in s, f"{pod.id}: projected token in {v['name']}"
+    assert host_fields == [], f"{pod.id}: {host_fields}"
+    assert host_paths == [], f"{pod.id}: hostPath volumes {host_paths}"
+
+
+@pytest.mark.parametrize("pod", NO_PROJECTED_TOKEN_PODS, ids=_ids(NO_PROJECTED_TOKEN_PODS))
+def test_pod_has_no_projected_token_when_it_is_not_the_dispatcher(pod: Pod) -> None:
+    """Criterion 5: no pod but those in `PROJECTED_TOKEN_PODS` projects a service account token."""
+    projected = [
+        v["name"]
+        for v in pod.spec.get("volumes", [])
+        for s in v.get("projected", {}).get("sources", [])
+        if "serviceAccountToken" in s
+    ]
+
+    assert projected == [], f"{pod.id}: projected token in {projected}"
+
+
+def test_projected_token_exemption_names_a_scanned_pod() -> None:
+    """Criterion 5: the exemption names a real pod, so a typo cannot widen it silently."""
+    assert set(_ids(ALL_PODS)) >= PROJECTED_TOKEN_PODS
 
 
 @pytest.mark.parametrize("pod", WORKLOAD_PODS, ids=_ids(WORKLOAD_PODS))
@@ -237,24 +260,65 @@ def test_workload_pod_has_its_own_service_account_without_a_token(pod: Pod) -> N
 # --- container-level fields -------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("pod", ALL_PODS, ids=_ids(ALL_PODS))
-def test_every_container_is_hardened(pod: Pod) -> None:
-    pod_sc = pod.spec.get("securityContext", {})
-    for c in pod.containers():
-        where = f"{pod.id}/{c['name']}"
-        sc = c.get("securityContext", {})
-        assert sc.get("runAsNonRoot", pod_sc.get("runAsNonRoot")) is True, where
-        uid = sc.get("runAsUser", pod_sc.get("runAsUser"))
-        assert isinstance(uid, int) and uid > 0, f"{where}: runAsUser {uid!r}"
-        assert sc.get("readOnlyRootFilesystem") is True, where
-        assert sc.get("allowPrivilegeEscalation") is False, where
-        assert not sc.get("privileged"), where
-        assert sc.get("capabilities", {}).get("drop") == ["ALL"], where
-        assert not sc.get("capabilities", {}).get("add"), where
-        seccomp = sc.get("seccompProfile", pod_sc.get("seccompProfile", {}))
-        assert seccomp.get("type") == "RuntimeDefault", where
-        limits = c.get("resources", {}).get("limits", {})
-        assert limits.get("cpu") and limits.get("memory"), f"{where}: limits {limits}"
+# Each (pod, container) pair in every scanned pod, with the pod's securityContext as fallback.
+POD_CONTAINERS = [
+    pytest.param(c, p.spec.get("securityContext", {}), id=f"{p.id}/{c['name']}")
+    for p in ALL_PODS
+    for c in p.containers()
+]
+
+
+@pytest.mark.parametrize(("container", "pod_sc"), POD_CONTAINERS)
+def test_container_runs_as_a_non_root_user(container: Doc, pod_sc: Doc) -> None:
+    """Criterion 5: the container sets runAsNonRoot and a uid above 0, itself or from its pod."""
+    sc = container.get("securityContext", {})
+
+    uid = sc.get("runAsUser", pod_sc.get("runAsUser"))
+
+    assert sc.get("runAsNonRoot", pod_sc.get("runAsNonRoot")) is True
+    assert isinstance(uid, int) and uid > 0, f"runAsUser {uid!r}"
+
+
+@pytest.mark.parametrize(("container", "pod_sc"), POD_CONTAINERS)
+def test_container_has_a_read_only_root_filesystem(container: Doc, pod_sc: Doc) -> None:
+    """Criterion 5: the container's root file system is read-only."""
+    assert container.get("securityContext", {}).get("readOnlyRootFilesystem") is True
+
+
+@pytest.mark.parametrize(("container", "pod_sc"), POD_CONTAINERS)
+def test_container_cannot_escalate_privilege(container: Doc, pod_sc: Doc) -> None:
+    """Criterion 5: the container is not privileged and cannot gain privilege."""
+    sc = container.get("securityContext", {})
+
+    assert sc.get("allowPrivilegeEscalation") is False
+    assert not sc.get("privileged")
+
+
+@pytest.mark.parametrize(("container", "pod_sc"), POD_CONTAINERS)
+def test_container_drops_all_capabilities(container: Doc, pod_sc: Doc) -> None:
+    """Criterion 5: capabilities drop is `[ALL]` and none are added."""
+    caps = container.get("securityContext", {}).get("capabilities", {})
+
+    assert caps.get("drop") == ["ALL"]
+    assert not caps.get("add"), caps.get("add")
+
+
+@pytest.mark.parametrize(("container", "pod_sc"), POD_CONTAINERS)
+def test_container_uses_the_runtime_default_seccomp_profile(container: Doc, pod_sc: Doc) -> None:
+    """Criterion 5: the seccomp profile is RuntimeDefault, set on the container or its pod."""
+    sc = container.get("securityContext", {})
+
+    seccomp = sc.get("seccompProfile", pod_sc.get("seccompProfile", {}))
+
+    assert seccomp.get("type") == "RuntimeDefault"
+
+
+@pytest.mark.parametrize(("container", "pod_sc"), POD_CONTAINERS)
+def test_container_has_cpu_and_memory_limits(container: Doc, pod_sc: Doc) -> None:
+    """Criterion 5: the container sets both a cpu and a memory limit."""
+    limits = container.get("resources", {}).get("limits", {})
+
+    assert limits.get("cpu") and limits.get("memory"), f"limits {limits}"
 
 
 @pytest.mark.parametrize("pod", ALL_PODS, ids=_ids(ALL_PODS))

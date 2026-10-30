@@ -11,7 +11,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Annotated, Any, Protocol
+from typing import Annotated, Any
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -34,12 +34,6 @@ MAX_KEY_CHARS = 256  # suggested
 MAX_CONCURRENT = 1
 
 log = logging.getLogger("code_runner")
-
-
-class Runner(Protocol):
-    def __call__(
-        self, code: str, timeout_s: float, *, limits: Limits, tmp_root: str | Path | None
-    ) -> Awaitable[RunResult]: ...
 
 
 def fingerprint(code: str, timeout_s: int) -> str:
@@ -149,23 +143,24 @@ def resolve_key(argument: str | None) -> str:
     return key
 
 
-def create_server(
-    *,
-    limits: Limits = DEFAULT_LIMITS,
-    tmp_root: str | Path | None = None,
-    cache_size: int = CACHE_SIZE,
-    runner: Runner = run_python,
-) -> FastMCP:
-    """Build the server. `tmp_root` is where each call's fresh directory goes (default: TMPDIR)."""
-    mcp = FastMCP(
+# One run of the tool: (code, timeout_s, idempotency key) -> the result.
+ToolCall = Callable[[str, int, str], Awaitable[RunResult]]
+
+
+def new_mcp() -> FastMCP:
+    """The FastMCP app both servers use. Masked: an unexpected error never shows its text."""
+    return FastMCP(
         "code-runner",
         instructions=(
             f"{TOOL_NAME} runs Python in a sandbox with no network. "
             "Print what you need: the result has stdout, stderr, exit_code, timed_out, truncated."
         ),
+        mask_error_details=True,
     )
-    cache = ResultCache(cache_size)
-    slots = asyncio.Semaphore(MAX_CONCURRENT)
+
+
+def register_run_python(mcp: FastMCP, limits: Limits, call: ToolCall) -> None:
+    """Add the one `run_python` definition to `mcp`; `call` runs it once the key is known."""
     max_timeout = int(limits.max_timeout_s)
 
     @mcp.tool(
@@ -190,30 +185,48 @@ def create_server(
     ) -> RunResult:
         """Run Python 3.12 (standard library only) with no network and no files kept.
 
-        Each call runs in a fresh empty directory that is removed afterwards. stdout and
-        stderr are each cut at a fixed size; `truncated` says so. A write tool: the same
-        idempotency key returns the first result without running the code again.
+        Each call runs in a sandbox, in a fresh empty directory that is removed afterwards.
+        stdout and stderr are each cut at a fixed size; `truncated` says so. A write tool:
+        the same idempotency key returns the first result without running the code again.
         """
         try:
             key = resolve_key(idempotency_key)
-
-            async def run() -> RunResult:
-                async with slots:
-                    started = time.monotonic()
-                    result = await runner(code, timeout_s, limits=limits, tmp_root=tmp_root)
-                log.info(
-                    "run code_bytes=%d exit_code=%d timed_out=%s truncated=%s seconds=%.2f",
-                    len(code.encode("utf-8")),
-                    result.exit_code,
-                    result.timed_out,
-                    result.truncated,
-                    time.monotonic() - started,
-                )
-                return result
-
-            return await cache.get_or_run(key, fingerprint(code, timeout_s), run)
+            if len(code.encode("utf-8")) > limits.max_code_bytes:
+                raise RunnerError("bad_arguments", f"code is over {limits.max_code_bytes} bytes")
+            return await call(code, timeout_s, key)
         except RunnerError as exc:
-            raise ToolError(str(exc)) from exc
+            raise ToolError(str(exc)) from None
+
+
+def create_server(
+    *,
+    limits: Limits = DEFAULT_LIMITS,
+    tmp_root: str | Path | None = None,
+    cache_size: int = CACHE_SIZE,
+) -> FastMCP:
+    """Build the server. `tmp_root` is where each call's fresh directory goes (default: TMPDIR)."""
+    mcp = new_mcp()
+    cache = ResultCache(cache_size)
+    slots = asyncio.Semaphore(MAX_CONCURRENT)
+
+    async def call(code: str, timeout_s: int, key: str) -> RunResult:
+        async def run() -> RunResult:
+            async with slots:
+                started = time.monotonic()
+                result = await run_python(code, timeout_s, limits=limits, tmp_root=tmp_root)
+            log.info(
+                "run code_bytes=%d exit_code=%d timed_out=%s truncated=%s seconds=%.2f",
+                len(code.encode("utf-8")),
+                result.exit_code,
+                result.timed_out,
+                result.truncated,
+                time.monotonic() - started,
+            )
+            return result
+
+        return await cache.get_or_run(key, fingerprint(code, timeout_s), run)
+
+    register_run_python(mcp, limits, call)
 
     @mcp.custom_route("/health", methods=["GET"])
     async def health(_request: Request) -> JSONResponse:

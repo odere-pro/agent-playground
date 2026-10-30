@@ -17,7 +17,10 @@ The JWKS is fetched with httpx (`trust_env=False`, so no proxy variable reroutes
 `jwks_ttl_s` (suggested: 300 s). A token with a `kid` the cache does not hold refetches the JWKS
 once (key rotation), at most once per `refetch_cooldown_s` (suggested: 10 s), so tokens with
 made-up kids cannot hammer the IdP. A JWKS that cannot be read (transport error, non-200, not
-JSON) is `auth_unavailable` (HTTP 503, retryable). No error message holds the token.
+JSON) is `auth_unavailable` (HTTP 503, retryable). After a failed fetch, every request for
+`failure_cooldown_s` (suggested: 5 s) gets `auth_unavailable` at once, with no fetch, so an IdP
+outage costs one fetch timeout per cooldown, not one per queued request. No error message holds
+the token.
 
 Config from the environment (suggested names): `OIDC_ISSUER`, `OIDC_AUDIENCE`, `OIDC_JWKS_URL`.
 `from_env` raises `LookupError` when one is unset (the registry's "not configured").
@@ -60,6 +63,8 @@ REFETCH_COOLDOWN_S = 10.0
 """suggested: the shortest time between two fetches caused by an unknown `kid`."""
 FETCH_TIMEOUT_S = 5.0
 """suggested: the JWKS fetch timeout."""
+FAILURE_COOLDOWN_S = 5.0
+"""suggested: how long a failed JWKS fetch answers `auth_unavailable` without a new fetch."""
 
 
 def _unauthenticated(message: str) -> AuthError:
@@ -96,6 +101,7 @@ class OidcAuth:
         transport: httpx.AsyncBaseTransport | None = None,
         jwks_ttl_s: float = JWKS_TTL_S,
         refetch_cooldown_s: float = REFETCH_COOLDOWN_S,
+        failure_cooldown_s: float = FAILURE_COOLDOWN_S,
         leeway_s: float = LEEWAY_S,
         algorithms: Sequence[str] = ALGORITHMS,
         clock: Callable[[], float] = time.monotonic,
@@ -108,6 +114,7 @@ class OidcAuth:
         self.jwks_url = jwks_url
         self.jwks_ttl_s = jwks_ttl_s
         self.refetch_cooldown_s = refetch_cooldown_s
+        self.failure_cooldown_s = failure_cooldown_s
         self.leeway_s = leeway_s
         self.algorithms = tuple(algorithms)
         self._clock = clock
@@ -116,6 +123,7 @@ class OidcAuth:
         )
         self._keys: dict[str | None, jwt.PyJWK] = {}
         self._fetched_at: float | None = None
+        self._failed_at: float | None = None
         self._lock = asyncio.Lock()
 
     def __repr__(self) -> str:
@@ -168,13 +176,13 @@ class OidcAuth:
         async with self._lock:
             now = self._clock()
             if self._fetched_at is None or now - self._fetched_at >= self.jwks_ttl_s:
-                await self._fetch()
+                await self._refresh()
             found = self._lookup(kid)
             if found is not None:
                 return found
             assert self._fetched_at is not None
             if self._clock() - self._fetched_at >= self.refetch_cooldown_s:
-                await self._fetch()
+                await self._refresh()
                 found = self._lookup(kid)
                 if found is not None:
                     return found
@@ -184,6 +192,18 @@ class OidcAuth:
         if kid is None:
             return next(iter(self._keys.values())) if len(self._keys) == 1 else None
         return self._keys.get(kid)
+
+    async def _refresh(self) -> None:
+        """`_fetch`, unless one failed less than `failure_cooldown_s` ago: then refuse at once."""
+        failed_at = self._failed_at
+        if failed_at is not None and self._clock() - failed_at < self.failure_cooldown_s:
+            raise _unavailable("the JWKS could not be read just now; not retried yet")
+        try:
+            await self._fetch()
+        except AuthError:
+            self._failed_at = self._clock()
+            raise
+        self._failed_at = None
 
     async def _fetch(self) -> None:
         try:

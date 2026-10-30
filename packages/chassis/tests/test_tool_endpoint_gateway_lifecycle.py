@@ -14,11 +14,14 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx2
+import pytest
+from chassis.adapters.mcp.gateway import McpGatewayTools
 from chassis.core.envelope import TaskInput
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.tool import default_tools
 from chassis.ports.bundle import PortBundle
-from chassis.ports.tool import ToolDefinition, ToolResult
+from chassis.ports.tool import ManagedToolPort, NoTools, ToolDefinition, ToolPort, ToolResult
 from chassis.server import ChassisConfig, create_app
 from chassis.server.proxy_app import create_proxy_app
 from chassis.server.remote_auth import create_remote_proxy_app
@@ -248,3 +251,22 @@ async def test_the_tools_port_starts_and_stops_once_with_the_remote_listener_on(
         async with _mcp_client(proxy) as client:
             assert [t.name for t in await client.list_tools()] == ["gateway_lookup"]
     assert tools.calls == ["refresh", "start", "aclose"]
+
+
+@pytest.mark.parametrize(
+    ("port", "managed"),
+    [
+        (StubGateway(), True),
+        (McpGatewayTools("http://gateway/mcp/", "sk-test-not-a-key"), True),
+        (default_tools(), False),
+        (NoTools(), False),
+    ],
+    ids=["stub-gateway", "mcp-gateway", "in-memory", "no-tools"],
+)
+def test_managed_tool_port_matches_only_ports_with_a_lifecycle_when_checked(
+    port: ToolPort, managed: bool
+) -> None:
+    """R5b-07: the endpoint starts a port by the declared lifecycle, not by probing attributes."""
+    result = isinstance(port, ManagedToolPort)
+
+    assert result is managed

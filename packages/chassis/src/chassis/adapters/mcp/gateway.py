@@ -12,6 +12,11 @@ fills it, and `start()` refreshes it every `refresh_s` in the background. A fail
 the last list and counts `refresh_failures`; the background loop logs a refresh that raises and
 keeps looping. Each call opens one short MCP session.
 
+A call to a name the cached list does not hold refreshes the list first, at most once per
+`unknown_refresh_cooldown_s` (suggested: 10 s); inside the cooldown the call goes to the gateway
+on the cached list, and the gateway still decides. A name longer than `MAX_TOOL_NAME` (128, the
+MCP limit) is `unknown_tool` before any request, so it never reaches the gateway or the log.
+
 `call()`, in order:
 - a write tool (`read_only: false`; a tool with no `readOnlyHint` counts as one) with no
   `idempotency_key` raises `idempotency_key_required` before any request;
@@ -41,6 +46,7 @@ import contextlib
 import logging
 import os
 import re
+import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import Any
 
@@ -62,6 +68,11 @@ META_KEY = "idempotency_key"
 # suggested: 30 s per call (plan section 2.7) and a refresh every 60 s.
 DEFAULT_TIMEOUT_S = 30.0
 TOOLS_REFRESH_S = 60.0
+UNKNOWN_REFRESH_COOLDOWN_S = 10.0
+"""suggested: the shortest time between two refreshes caused by an unlisted name, as `OidcAuth`
+does for an unknown `kid`, so a flood of made-up names cannot multiply the gateway's load."""
+MAX_TOOL_NAME = 128
+"""The longest tool name `call()` accepts (the MCP spec's limit for tool names)."""
 
 log = logging.getLogger(__name__)
 
@@ -221,11 +232,16 @@ class McpGatewayTools:
         auth_header: str = "Authorization",
         timeout: float = DEFAULT_TIMEOUT_S,
         refresh_s: float = TOOLS_REFRESH_S,
+        unknown_refresh_cooldown_s: float = UNKNOWN_REFRESH_COOLDOWN_S,
         httpx_client_factory: ClientFactory | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.url = url
         self.timeout = timeout
         self.refresh_s = refresh_s
+        self.unknown_refresh_cooldown_s = unknown_refresh_cooldown_s
+        self.clock = clock
+        self._unknown_refreshed_at: float | None = None
         self.refresh_failures = 0
         # Called once per failed refresh; the tool endpoint sets it to count
         # `chassis.tools.refresh_failed` on the telemetry port.
@@ -328,8 +344,10 @@ class McpGatewayTools:
     async def call(
         self, name: str, arguments: Mapping[str, Any], *, idempotency_key: str | None = None
     ) -> ToolResult:
+        if len(name) > MAX_TOOL_NAME:
+            raise ToolError("unknown_tool", f"no tool has a name over {MAX_TOOL_NAME} characters")
         definition = self._tools.get(name)
-        if definition is None:
+        if definition is None and self._may_refresh_for_unknown():
             await self.refresh()  # the list may be stale; the gateway still decides
             definition = self._tools.get(name)
         args = dict(arguments)
@@ -354,6 +372,15 @@ class McpGatewayTools:
         if result.is_error:
             return self._tool_error(name, result)
         return ToolResult(content=_content(result))
+
+    def _may_refresh_for_unknown(self) -> bool:
+        """True at most once per `unknown_refresh_cooldown_s`; records the refresh it allows."""
+        now = self.clock()
+        last = self._unknown_refreshed_at
+        if last is not None and now - last < self.unknown_refresh_cooldown_s:
+            return False
+        self._unknown_refreshed_at = now
+        return True
 
     @staticmethod
     def _tool_error(name: str, result: CallToolResult) -> ToolResult:

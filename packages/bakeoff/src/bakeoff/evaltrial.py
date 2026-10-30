@@ -28,7 +28,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 
@@ -200,23 +200,28 @@ def _engine_script(engine: Engine, script: Path, work: Path) -> Path:
     return path
 
 
-def run_one(
+@dataclass(frozen=True)
+class _ToolRun:
+    """What one tool run against a live stack left: the process result and its counts."""
+
+    done: subprocess.CompletedProcess[str]
+    stack_s: float
+    wall_s: float
+    model_calls: int
+    judge_calls: int
+
+
+def _run_tool(
     tool: Tool,
-    engine_name: str,
+    engine: Engine,
     lane: str,
-    out: Path,
+    work: Path,
     *,
     offline: bool,
     cleanup: Cleanup,
-    golden: Golden = POC07,
-    stem: str | None = None,
-) -> dict[str, object]:
-    """One tool against one engine: the summary line's data. Raises `StackError`."""
-    work = cleanup.tempdir()
-    home = work / "home"
-    home.mkdir()
-    base = get_engine(engine_name)
-    engine = replace(base, script=_engine_script(base, golden.model_script, work))
+    golden: Golden,
+) -> _ToolRun:
+    """Start the judge and the stack, run `tool` against them, and stop both."""
     judge = FakeModel(ROOT / golden.judge_script, free_port())
     judge.start()
     try:
@@ -224,9 +229,9 @@ def run_one(
         with running_stack(engine, lane, cleanup) as stack:  # type: ignore[arg-type]
             stack_s = time.perf_counter() - started
             env = tool_env(
-                home,
+                work / "home",
                 work,
-                engine=engine_name,
+                engine=engine.name,
                 chassis_url=stack.url,
                 judge_url=f"http://127.0.0.1:{judge.port}/v1",
                 offline=offline,
@@ -247,29 +252,66 @@ def run_one(
         judge_calls = judge.calls_total
     finally:
         judge.stop()
-    stem = stem or f"{tool}-{engine_name}"
+    return _ToolRun(done, stack_s, wall_s, model_calls, judge_calls)
+
+
+def _write_report(
+    tool: Tool,
+    engine_name: str,
+    lane: str,
+    out: Path,
+    work: Path,
+    *,
+    stem: str,
+    run: _ToolRun,
+    meta: dict[str, object],
+) -> dict[str, Any]:
+    """Write the log, the trimmed raw report, and the normalized report; return the report."""
     out.mkdir(parents=True, exist_ok=True)
-    (out / f"{stem}.log").write_text(done.stdout + done.stderr, encoding="utf-8")
+    (out / f"{stem}.log").write_text(run.done.stdout + run.done.stderr, encoding="utf-8")
     raw = _raw_report(tool, work)
     if raw is None:
-        cleanup.remove_dir(work)
-        raise StackError(f"{tool} wrote no report (exit {done.returncode}); see {stem}.log")
+        raise StackError(f"{tool} wrote no report (exit {run.done.returncode}); see {stem}.log")
     raw_data = json.loads(raw.read_text(encoding="utf-8"))
     report = normalize(tool, engine_name, raw_data)
     trimmed = trim_raw(tool, raw_data, str(ROOT))
     (out / f"{stem}.raw.json").write_text(json.dumps(trimmed, indent=1) + "\n", encoding="utf-8")
     report["meta"] = {
         "lane": lane,
-        "tool_exit": done.returncode,
-        "tool_wall_s": round(wall_s, 2),
-        "stack_start_s": round(stack_s, 2),
-        "model_calls": model_calls,
-        "judge_calls": judge_calls,
-        "offline": offline,
-        **dict(golden.meta),
+        "tool_exit": run.done.returncode,
+        "tool_wall_s": round(run.wall_s, 2),
+        "stack_start_s": round(run.stack_s, 2),
+        "model_calls": run.model_calls,
+        "judge_calls": run.judge_calls,
+        **meta,
     }
     (out / f"{stem}.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    cleanup.remove_dir(work)
+    return report
+
+
+def run_one(
+    tool: Tool,
+    engine_name: str,
+    lane: str,
+    out: Path,
+    *,
+    offline: bool,
+    cleanup: Cleanup,
+    golden: Golden = POC07,
+    stem: str | None = None,
+) -> dict[str, object]:
+    """One tool against one engine: the summary line's data. Raises `StackError`."""
+    work = cleanup.tempdir()
+    (work / "home").mkdir()
+    base = get_engine(engine_name)
+    engine = replace(base, script=_engine_script(base, golden.model_script, work))
+    run = _run_tool(tool, engine, lane, work, offline=offline, cleanup=cleanup, golden=golden)
+    meta: dict[str, object] = {"offline": offline, **dict(golden.meta)}
+    stem = stem or f"{tool}-{engine_name}"
+    try:
+        report = _write_report(tool, engine_name, lane, out, work, stem=stem, run=run, meta=meta)
+    finally:
+        cleanup.remove_dir(work)
     summary = report["summary"]
     assert isinstance(summary, dict)
     return {"engine": engine_name, "tool": tool, **summary, **report["meta"]}
