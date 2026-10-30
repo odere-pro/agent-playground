@@ -1,0 +1,8 @@
+# The shared library chart (backlog 024 CH-3, ADR-001 item 9). A service chart lists it as a
+# dependency and includes its named templates; it renders nothing on its own. The chassis image
+# tag is set once, in templates/_values.tpl (`agent-lib.defaults`). README: ../README.md.
+apiVersion: v2
+name: agent-lib
+description: The chassis and its workload in one pod, secrets on the chassis only, the Service on the chassis port.
+type: library
+version: 0.1.0

@@ -1,0 +1,106 @@
+[project]
+name = "{{ agent_name }}"
+version = "0.1.0"
+description = "{{ agent_name }}: a {{ kind }} agent on {{ framework }}, served over A2A by workload-a2a; no chassis dependency, no key"
+requires-python = ">=3.12,<3.13"
+# Exact pins: the versions the platform's echo-{{ framework }} workload is locked to. Bump on purpose.
+dependencies = [
+{%- if framework == 'python' %}
+  "httpx==0.28.1",
+  "httpx2==2.13.1",
+  "mcp==2.2.0",
+  "workload-a2a",
+{%- elif framework == 'pydanticai' %}
+  "pydantic-ai-slim[openai,mcp]==2.52.0",
+  "openai==3.22.1",
+  "httpx==0.28.1",
+  "httpx2==2.13.1",
+  "workload-a2a",
+{%- elif framework == 'langgraph' %}
+  "langgraph==1.2.12",
+  "langchain-openai==1.6.7",
+  "langchain-core==1.6.6",
+  "openai==3.22.1",
+  "mcp==2.2.0",
+  "httpx2==2.13.1",
+  "openinference-instrumentation-langchain==0.1.80",
+  "workload-a2a[otel]",
+{%- elif framework == 'openai-agents' %}
+  "openai-agents==0.23.1",
+  "openai==3.22.1",
+  "mcp==2.2.0",
+  "httpx==0.28.1",
+  "httpx2==2.13.1",
+  "openinference-instrumentation-openai-agents==2.6.0",
+  "workload-a2a[otel]",
+{%- elif framework == 'smolagents' %}
+  "smolagents[mcp]==1.26.0",
+  "openai==3.22.1",
+  "mcp==2.2.0",
+  "httpx==0.28.1",
+  "httpx2==2.13.1",
+  "workload-a2a",
+{%- elif framework == 'claude-agent' %}
+  "claude-agent-sdk==0.2.165",
+  "workload-a2a",
+{%- endif %}
+]
+
+[dependency-groups]
+# The kit starts the chassis in the `fake` profile as its own process: the chassis is never
+# installed here (ADR-001, ADR-002).
+dev = [
+  "agent-testkit",
+  "fake-model-server",
+  "fastmcp==4.0.10",
+  "jsonschema==4.26.0",
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "pytest-socket==0.8.1",
+  "ruff==0.16.9",
+  "mypy==2.3.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "{{ package_name }}"
+
+# suggested: path sources into the platform checkout for the PoC; a package index later.
+[tool.uv.sources]
+workload-a2a = { path = "{{ platform_path }}/packages/workload-a2a", editable = true }
+agent-testkit = { path = "{{ platform_path }}/packages/agent-testkit", editable = true }
+fake-model-server = { path = "{{ platform_path }}/packages/fake-model-server", editable = true }
+
+[tool.agent-testkit]
+handle = "{{ package_name }}:handle"
+name = "{{ agent_name }}"
+
+[tool.agentctl]
+kind = "{{ kind }}"
+framework = "{{ framework }}"
+connector = "{{ connector }}"
+trust = "{{ trust }}"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "RUF", "PTH"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["pytest_socket.*", "agent_testkit.*"]
+ignore_missing_imports = true

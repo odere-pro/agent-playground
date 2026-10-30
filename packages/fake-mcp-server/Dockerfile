@@ -23,6 +23,8 @@ COPY packages/fake-model-server/pyproject.toml packages/fake-model-server/
 COPY packages/fake-mcp-server/pyproject.toml packages/fake-mcp-server/
 COPY packages/fake-langfuse/pyproject.toml packages/fake-langfuse/
 COPY packages/guardrail-server/pyproject.toml packages/guardrail-server/
+COPY packages/agentctl/pyproject.toml packages/agentctl/
+COPY packages/agent-testkit/pyproject.toml packages/agent-testkit/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package fake-mcp-server --no-install-workspace
 COPY packages/fake-mcp-server/src packages/fake-mcp-server/src

@@ -1,0 +1,18 @@
+# {{ agent_name }}
+
+A {{ kind }} agent on {{ framework }}, in the `{{ connector }}` lane (`spec.trust: {{ trust }}`). It
+was scaffolded by `agentctl new` from the agent-platform service template.
+
+The business logic is `handle(input, ctx)` in `src/{{ package_name }}/handle.py`. It starts as the
+platform's example simplifier. `workload-a2a` serves it over A2A; the chassis runs next to it and
+holds every credential. This repository never installs the chassis.
+
+```bash
+make setup   # uv sync; commit the uv.lock it writes
+make test    # offline: unit tests, then the lane contract over A2A against the fake chassis
+make run     # serve handle on 127.0.0.1:9000
+```
+
+- How to add business logic: [docs/how-to-add-business-logic.md](docs/how-to-add-business-logic.md).
+- The chassis config: `config/agent.yaml` (local) and `config/fake.yaml` (tests).
+- Pull template updates: `copier update` (reads `.copier-answers.yml`).

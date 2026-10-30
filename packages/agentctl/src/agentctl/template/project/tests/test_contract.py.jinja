@@ -1,0 +1,10 @@
+"""The lane contract over A2A, from the platform test kit, against this agent's `handle`.
+
+The kit reads the handle from `[tool.agent-testkit]` in pyproject.toml ({{ package_name }}:handle).
+"""
+
+from agent_testkit.contract import WorkloadContract
+
+
+class TestWorkloadContract(WorkloadContract):
+    pass

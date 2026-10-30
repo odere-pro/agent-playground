@@ -1,0 +1,14 @@
+# example-agent: a sidecar-lane agent built on the library chart. The PoC-9 chart test renders it
+# (pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py), and the service template copies it.
+# Build the dependency first, from the repo root (file:// only, no network):
+#   helm dependency update --skip-refresh deploy/helm/example-agent
+apiVersion: v2
+name: example-agent
+description: An example agent, the chassis and an echo workload in the sidecar lane.
+type: application
+version: 0.1.0
+appVersion: "0.0.1"
+dependencies:
+  - name: agent-lib
+    version: 0.1.0
+    repository: file://../agent-lib

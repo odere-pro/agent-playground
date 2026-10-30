@@ -1,0 +1,29 @@
+# The `fake` profile: no network beyond loopback, no keys. The test kit starts the chassis with
+# this config as its own process and points it at the workload it started (the URL is replaced
+# by the kit's free port).
+profile: fake
+agent:
+  name: {{ agent_name }}
+  version: 0.1.0
+spec:
+  trust: {{ trust }}
+  adapters:
+    model: fake
+    config: memory
+    telemetry: memory
+  engine:
+{%- if trust == 'trusted' %}
+    connector: sidecar
+    url: http://127.0.0.1:9000
+{%- else %}
+    # Untrusted: refused in `sidecar` even in tests (spec.trust), so the remote lane on loopback.
+    connector: remote
+    url: http://127.0.0.1:9000
+    auth:
+      scheme: bearer
+      token_env: REMOTE_TOKEN
+{%- endif %}
+  model:
+    route: fake-route
+  prompt:
+    version: simplifier-v1

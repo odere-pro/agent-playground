@@ -1,0 +1,36 @@
+# The chassis config of {{ agent_name }} in the `local` profile, `{{ connector }}` lane. The chassis
+# holds every credential; LITELLM_BASE_URL and LITELLM_API_KEY come from the chassis's environment.
+# Kind: {{ kind }}. Run: `chassis serve --config config/agent.yaml` next to `make run`.
+profile: local
+agent:
+  name: {{ agent_name }}
+  version: 0.1.0
+spec:
+  # {{ framework }} is {{ trust }} (ADR-006). `untrusted` runs only with connector `remote`.
+  trust: {{ trust }}
+  # Merged over the `local` profile defaults per field. Those name services this file does not
+  # start (MinIO, Valkey, OTel, MCP), so the overrides keep one process; swap them in config only.
+  adapters:
+    model: litellm
+    config: memory
+    telemetry: memory
+    tools: fake
+    state: memory
+  engine:
+    connector: {{ connector }}
+{%- if connector == 'sidecar' %}
+    # Loopback only (ADR-001): the workload runs next to the chassis, `make run` serves it here.
+    url: http://127.0.0.1:9000
+{%- else %}
+    # suggested: the remote workload's address; `https` in the `cloud` profile.
+    url: http://127.0.0.1:9000
+    # The per-remote bearer token, by variable name. The value lives in the chassis's env only;
+    # the workload checks it with `workload-a2a serve --require-token-env CHASSIS_API_TOKEN`.
+    auth:
+      scheme: bearer
+      token_env: REMOTE_TOKEN
+{%- endif %}
+  model:
+    route: big-default
+  prompt:
+    version: simplifier-v1

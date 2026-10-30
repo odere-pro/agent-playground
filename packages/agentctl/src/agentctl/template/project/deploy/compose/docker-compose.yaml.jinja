@@ -1,0 +1,212 @@
+{%- set platform = platform_path if platform_path.startswith('/') else '../../' ~ platform_path -%}
+# {{ agent_name }}: the chassis and the workload in the `sidecar` lane, with a debugger in each.
+# Two profiles; pick one (README.md next to this file):
+#   docker compose -f deploy/compose/docker-compose.yaml --profile fake up -d --wait --build
+#   docker compose -f deploy/compose/docker-compose.yaml --profile local up -d --wait --build
+#
+# fake:  the chassis runs config/fake.yaml next to the scripted fake model server. No key, no
+#        internet once the images exist.
+# local: the chassis runs config/agent.yaml against your LiteLLM (or another OpenAI-compatible
+#        endpoint) at LITELLM_BASE_URL. LITELLM_API_KEY goes into the chassis container only.
+#
+# The sidecar lane, as in the platform's deploy/compose/docker-compose.sidecar.yaml: the workload
+# has `network_mode: service:chassis-<profile>`, so it shares the chassis's network namespace the
+# way a sidecar shares a pod. The workload binds 127.0.0.1:9000, publishes no port, and holds no
+# key. The chassis's public port binds the container address, not 0.0.0.0, so loopback carries
+# only the workload and the chassis's proxies on 127.0.0.1:8090 (/v1 models, /mcp tools).
+# Every published port is on the host's 127.0.0.1. No restart policy: a restarted chassis gets a
+# new namespace and strands the workload; recreate both instead.
+#
+# Debuggers. The one-shot `debugpy` service fills a named volume with debugpy and a
+# sitecustomize.py (debug/). The chassis and the workload mount it read-only and start debugpy in
+# their service process when DEBUGPY_LISTEN is set. The images do not change. Both debug ports
+# are published on the chassis service, because it owns the namespace: 5678 the chassis, 5679 the
+# workload. Attach from VS Code with .vscode/launch.json. DEBUGPY_WAIT=1 blocks until you attach.
+#
+# Egress is not enforced: a Compose network has open egress, and `internal: true` would also drop
+# the published ports. The workload reaches whatever the chassis reaches. The deny-all egress
+# rule is the Helm chart's (NetworkPolicy), checked on Kubernetes, not here.
+
+name: {{ agent_name }}
+
+x-hardening: &hardening
+  # No Linux capability, no privilege gain through setuid, a read-only root with a tmpfs /tmp.
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  tmpfs: [/tmp]
+
+x-chassis: &chassis
+  # suggested: set CHASSIS_IMAGE to the released `name:tag@sha256:<digest>`. The default is the
+  # image built from the platform checkout (README.md, "Images").
+  image: ${CHASSIS_IMAGE:-agent-platform/chassis:poc09}
+  <<: *hardening
+  # uid 10001: the platform's uid table (deploy/README.md). Never the workload's uid.
+  user: "10001:10001"
+  entrypoint:
+    - sh
+    - -c
+    # `$$` is a literal `$` for the shell: Compose interpolates a single `$`.
+    - |
+      set -eu
+      addr=$$(python -c 'import socket; print(socket.gethostbyname(socket.gethostname()))')
+      exec chassis serve --host "$$addr" "$$@"
+    - "--"
+  # The proxies keep their loopback default: --proxy-host 127.0.0.1 --proxy-port 8090.
+  command: ["--config", "/etc/chassis/config.yaml", "--port", "8080"]
+  ports:
+    # The public port: /health, /ready, /v1/run, A2A, OpenAI, MCP. Never 9000 or 8090.
+    - "127.0.0.1:${CHASSIS_PORT:-8080}:8080"
+    # debugpy in the chassis.
+    - "127.0.0.1:${CHASSIS_DEBUG_PORT:-5678}:5678"
+    # debugpy in the workload: it shares this namespace, so its port is published here.
+    - "127.0.0.1:${WORKLOAD_DEBUG_PORT:-5679}:5679"
+  healthcheck:
+    # `/ready` on the container address: the public port is not on loopback here.
+    test:
+      - CMD
+      - python
+      - -c
+      - "import socket,urllib.request,sys; a=socket.gethostbyname(socket.gethostname()); sys.exit(0 if urllib.request.urlopen(f'http://{a}:8080/ready', timeout=2).status == 200 else 1)"
+    interval: 5s
+    timeout: 3s
+    retries: 12
+    # `/ready` stays 503 `starting` up to 120 s (--startup-wait-s) while the sidecar comes up.
+    start_period: 150s
+
+x-workload: &workload
+  # The agent's own image, from the root Dockerfile. It never contains the chassis package.
+  build:
+    context: ../..
+    dockerfile: Dockerfile
+  image: {{ agent_name }}:dev
+  <<: *hardening
+  # uid 10002: every workload image (deploy/README.md).
+  user: "10002:10002"
+  healthcheck:
+    test:
+      - CMD
+      - python
+      - -c
+      - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9000/.well-known/agent-card.json', timeout=2).status == 200 else 1)"
+    interval: 5s
+    timeout: 3s
+    retries: 24
+    start_period: 10s
+
+x-workload-env: &workload-env
+  # The four platform variables and the debugger's. No key, no `env_file`, ever.
+  CHASSIS_MODEL_URL: http://127.0.0.1:8090/v1
+  CHASSIS_TOOL_URL: http://127.0.0.1:8090/mcp
+  HOST: 127.0.0.1
+  PORT: "9000"
+  PYTHONPATH: /opt/debugpy
+  # Empty turns the workload's debugger off: WORKLOAD_DEBUGPY_LISTEN= docker compose ...
+  DEBUGPY_LISTEN: ${WORKLOAD_DEBUGPY_LISTEN-auto:5679}
+  DEBUGPY_WAIT: ${WORKLOAD_DEBUGPY_WAIT:-0}
+
+services:
+  debugpy:
+    # One shot: its first run copies /opt/debugpy into the empty volume, then it exits 0.
+    profiles: [fake, local]
+    build:
+      context: ./debug
+      dockerfile: debugpy.Dockerfile
+    image: {{ agent_name }}-debugpy:1.8.22
+    <<: *hardening
+    network_mode: none
+    volumes:
+      - debugpy:/opt/debugpy
+
+  fake-model-server:
+    # The platform's scripted OpenAI-compatible server. No port, no key.
+    profiles: [fake]
+    build:
+      context: {{ platform }}
+      dockerfile: packages/fake-model-server/Dockerfile
+    image: agent-platform/fake-model-server:poc09
+    <<: *hardening
+    user: "10004:10004"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/health', timeout=2).status == 200 else 1)"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  chassis-fake:
+    <<: *chassis
+    profiles: [fake]
+    volumes:
+      - ../../config/fake.yaml:/etc/chassis/config.yaml:ro
+      - debugpy:/opt/debugpy:ro
+    environment:
+      # No key in this profile. The fake model server needs none.
+      LITELLM_BASE_URL: http://fake-model-server:8081/v1
+      CHASSIS_MODEL_URL: http://127.0.0.1:8090/v1
+      PYTHONPATH: /opt/debugpy
+      DEBUGPY_LISTEN: ${CHASSIS_DEBUGPY_LISTEN-auto:5678}
+      DEBUGPY_WAIT: ${CHASSIS_DEBUGPY_WAIT:-0}
+    depends_on:
+      debugpy:
+        condition: service_completed_successfully
+      fake-model-server:
+        condition: service_healthy
+
+  workload-fake:
+    <<: *workload
+    profiles: [fake]
+    network_mode: "service:chassis-fake"
+    volumes:
+      - debugpy:/opt/debugpy:ro
+    environment: *workload-env
+    depends_on:
+      chassis-fake:
+        condition: service_started
+
+  chassis-local:
+    <<: *chassis
+    profiles: [local]
+    volumes:
+      - ../../config/agent.yaml:/etc/chassis/config.yaml:ro
+      - debugpy:/opt/debugpy:ro
+    environment:
+      # The only container with a key (ADR-001 hard requirement 1). From your shell or an
+      # untracked deploy/compose/.env; never `env_file`, never on the workload.
+      # host.docker.internal is the host on Docker Desktop; on Linux set LITELLM_BASE_URL.
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://host.docker.internal:4000/v1}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-}
+      CHASSIS_MODEL_URL: http://127.0.0.1:8090/v1
+      PYTHONPATH: /opt/debugpy
+      # Off by default here: the workload shares this namespace, and debugpy has no auth, so a
+      # listening chassis debugger lets the workload read LITELLM_API_KEY. Turn it on only with a
+      # workload you trust: CHASSIS_DEBUGPY_LISTEN=auto:5678 (README.md, "Debuggers").
+      DEBUGPY_LISTEN: ${CHASSIS_DEBUGPY_LISTEN:-}
+      DEBUGPY_WAIT: ${CHASSIS_DEBUGPY_WAIT:-0}
+    depends_on:
+      debugpy:
+        condition: service_completed_successfully
+
+  workload-local:
+    <<: *workload
+    profiles: [local]
+    network_mode: "service:chassis-local"
+    volumes:
+      - debugpy:/opt/debugpy:ro
+    environment: *workload-env
+    depends_on:
+      chassis-local:
+        condition: service_started
+
+volumes:
+  debugpy:
+    # Versioned name: a new debugpy gets a fresh volume, never the old files.
+    name: {{ agent_name }}-debugpy-1.8.22
+
+networks:
+  default:
+    name: {{ agent_name }}

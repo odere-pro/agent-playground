@@ -1,0 +1,47 @@
+# {{ agent_name }}: `handle` served over A2A by workload-a2a. `make image` builds it:
+#   docker build --build-context workload-a2a={{ platform_path }}/packages/workload-a2a -t {{ agent_name }} .
+# The platform package comes in as a named build context at the path uv.lock names. Base and uv
+# pinned by digest, the same as the platform's workload images. Bump both on purpose.
+ARG PYTHON_IMAGE=python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
+
+FROM ${PYTHON_IMAGE} AS build
+COPY --from=ghcr.io/astral-sh/uv:0.11.23@sha256:d0a0a753ab981624b49c97abc98821c1c09f4ca69d1ef5cee69c501be3d88479 /uv /usr/local/bin/uv
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/app/.venv
+WORKDIR /app
+COPY --from=workload-a2a . {{ platform_path }}/packages/workload-a2a
+COPY pyproject.toml uv.lock ./
+# `--frozen`, not `--locked`: the dev path sources (the test kit) are not in the image. CI runs
+# `uv lock --check` outside it. The chassis is never installed.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
+COPY src src
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-editable
+
+FROM ${PYTHON_IMAGE} AS runtime
+# uid 10002: the workload uid of the platform. No home directory: HOME points at /tmp.
+RUN groupadd --gid 10002 workload && useradd --uid 10002 --gid workload --no-create-home \
+    --home-dir /tmp --shell /usr/sbin/nologin workload
+WORKDIR /app
+# Owned by root and read-only to the app user: the process cannot change its own code.
+COPY --from=build /app/.venv /app/.venv
+# No key, ever: the model URL and the tool URL are the chassis's proxies, which hold the
+# credentials. 127.0.0.1: the chassis reaches the workload on localhost (sidecar lane).
+{%- if connector == 'remote' %}
+# Remote lane: the deploy sets HOST=0.0.0.0 and passes `--require-token-env CHASSIS_API_TOKEN`;
+# the token is mounted at run time, never baked in.
+{%- endif %}
+ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOME=/tmp \
+{%- if framework == 'pydanticai' %}
+    PYDANTIC_AI_NO_BANNER=1 \
+{%- elif framework == 'claude-agent' %}
+    CLAUDE_AGENT_HOME_BASE=/tmp \
+{%- endif %}
+    HOST=127.0.0.1 PORT=9000 \
+    CHASSIS_MODEL_URL=http://127.0.0.1:8090/v1 CHASSIS_TOOL_URL=http://127.0.0.1:8090/mcp
+USER 10002:10002
+EXPOSE 9000
+HEALTHCHECK --interval=5s --timeout=3s --retries=12 \
+    CMD ["python", "-c", "import os,urllib.request,sys; sys.exit(0 if urllib.request.urlopen(f\"http://127.0.0.1:{os.environ['PORT']}/.well-known/agent-card.json\", timeout=2).status == 200 else 1)"]
+# `sh -c` so HOST and PORT come from the environment; `exec` keeps workload-a2a as PID 1.
+ENTRYPOINT ["sh", "-c", "exec workload-a2a serve --handle {{ package_name }}:handle --name {{ agent_name }} --version 0.1.0 --host \"$HOST\" --port \"$PORT\" \"$@\"", "--"]

@@ -1,0 +1,142 @@
+# {{ agent_name }} CI on GitLab: the same stages and the same `make` targets as
+# .github/workflows/ci.yml. Read that file's header for what each target checks and which suites
+# are stand-ins (hostile, redteam, and eval run the platform's suites from PLATFORM_PATH).
+#
+# The platform checkout: PLATFORM_REPO_URL at PLATFORM_REF (CI/CD variables; suggested: pin
+# PLATFORM_REF to a commit SHA). For a private repository, put a read token in the URL through a
+# masked variable, never in this file.
+# Every image is pinned by digest. Bump on purpose, in its own commit, with the output of
+#   docker buildx imagetools inspect <image:tag>
+# Signing (suggested: cosign keyless) runs on the default branch only, with a GitLab OIDC token
+# for Sigstore (id_tokens, aud `sigstore`). No key is stored anywhere.
+
+stages: [lint, test, suites, image, sign]
+
+variables:
+  PLATFORM_REPO_URL: https://github.com/odere-pro/agent-playground.git
+  PLATFORM_REF: main
+  PLATFORM_PATH: /tmp/platform
+  # The python and uv the platform's images use.
+  UV_IMAGE: ghcr.io/astral-sh/uv:0.11.23-python3.12-trixie-slim@sha256:bf72061021b1039aff0aee1c73da3f54e845b318502c3f5382e1c704dd800ba8
+  DOCKER_CLI_IMAGE: docker:29.1.3-cli@sha256:4fa0ee1f3a7e4354c4ea34558b6d4ee32859baf4973d4c8ccc8e7fe3dd730c04
+  DOCKER_DIND_IMAGE: docker:29.1.3-dind@sha256:173f284a4299164772a90f52b373e73e087583c0963f1334c9995f190ef6f3f5
+  # From https://github.com/sigstore/cosign/releases/download/v3.1.4/cosign_checksums.txt
+  COSIGN_VERSION: v3.1.4
+  COSIGN_SHA256: 424e2c97d0b45fd7a6b608a87f090f35633f4c23ece5f092d48bba11aaf4bbfa  # pragma: allowlist secret (public sha256)
+  IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
+.python:
+  image: $UV_IMAGE
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends make git ca-certificates > /dev/null
+    # A commit SHA, a tag, or a branch: fetch exactly that, shallow.
+    - git init -q "$PLATFORM_PATH"
+    - git -C "$PLATFORM_PATH" fetch -q --depth 1 "$PLATFORM_REPO_URL" "$PLATFORM_REF"
+    - git -C "$PLATFORM_PATH" checkout -q FETCH_HEAD
+
+.docker:
+  image: $DOCKER_CLI_IMAGE
+  services:
+    - name: $DOCKER_DIND_IMAGE
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: /certs
+    DOCKER_TLS_VERIFY: "1"
+    DOCKER_CERT_PATH: /certs/client
+  before_script:
+    - apk add --no-cache make jq > /dev/null
+    # BuildKit in a container: the SBOM and provenance attestations need it.
+    - docker buildx create --use --name ci > /dev/null
+
+.default-branch: &default-branch
+  - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+lint:
+  extends: .python
+  stage: lint
+  script:
+    - make lint
+    # ADR-002: the workload talks to the chassis over A2A only.
+    - |
+      if grep -rnE '^[[:space:]]*(from|import)[[:space:]]+chassis([.[:space:]]|$)' --include='*.py' src; then
+        echo "the workload must not import chassis"
+        exit 1
+      fi
+
+test:
+  extends: .python
+  stage: test
+  script:
+    # The lane contract suite over A2A on localhost and in memory, offline.
+    - make test
+
+suites:
+  extends: .python
+  stage: suites
+  needs: []
+  parallel:
+    matrix:
+      - TARGET: [load-smoke, hostile, redteam, eval]
+  script:
+    - make "$TARGET"
+  artifacts:
+    when: always
+    paths: [reports/]
+    expire_in: 2 weeks
+
+image:
+  extends: .docker
+  stage: image
+  needs: [lint, test]
+  script:
+    - make image IMAGE="$IMAGE"
+    - user="$(docker image inspect -f '{{ '{{' }}.Config.User{{ '}}' }}' "$IMAGE")"
+    - echo "image user ${user}"
+    - test "$user" = "10002:10002"
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+        make image IMAGE="$IMAGE" PUSH=1 IMAGE_METADATA=image-metadata.json
+        digest="$(jq -r '."containerimage.digest"' image-metadata.json)"
+        case "$digest" in sha256:*) ;; *) echo "no image digest in the build metadata"; exit 1 ;; esac
+        echo "IMAGE_REF=${CI_REGISTRY_IMAGE}@${digest}" > image.env
+      else
+        : > image.env
+      fi
+  artifacts:
+    reports:
+      dotenv: image.env
+
+sign:
+  # No Docker daemon: cosign talks to the registry itself.
+  image: $DOCKER_CLI_IMAGE
+  stage: sign
+  needs: [image]
+  rules: *default-branch
+  id_tokens:
+    # cosign reads SIGSTORE_ID_TOKEN for keyless signing.
+    SIGSTORE_ID_TOKEN:
+      aud: sigstore
+  before_script:
+    - apk add --no-cache make curl > /dev/null
+    - curl -fsSL -o /usr/local/bin/cosign "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
+    - echo "${COSIGN_SHA256}  /usr/local/bin/cosign" | sha256sum -c -
+    - chmod 0755 /usr/local/bin/cosign
+  script:
+    - test -n "$IMAGE_REF"
+    - echo "$CI_REGISTRY_PASSWORD" | cosign login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - make sign IMAGE_REF="$IMAGE_REF"
+    - >-
+      cosign verify
+      --certificate-identity "${CI_SERVER_URL}/${CI_PROJECT_PATH}//.gitlab-ci.yml@refs/heads/${CI_COMMIT_BRANCH}"
+      --certificate-oidc-issuer "${CI_SERVER_URL}"
+      "$IMAGE_REF" > /dev/null
+    - echo "verified ${IMAGE_REF}"

@@ -1,0 +1,213 @@
+# {{ agent_name }} CI. Every step calls the same `make` target you run locally; CI and local must
+# not diverge. The GitLab twin is .gitlab-ci.yml (same stages, same targets).
+#
+# - lint: `make lint` (ruff, mypy, and the import rule that keeps `chassis` out of the workload;
+#   the rule that keeps every agent framework out of the chassis is the platform's own `make lint`,
+#   since no chassis code lives here), plus a grep that fails on any `chassis` import under src/.
+# - test: `make test`, offline: the lane contract suite over A2A on localhost and in memory,
+#   through the agent test kit, which starts the chassis in the `fake` profile as its own process.
+# - suites: `make load-smoke`, `make hostile`, `make redteam`, `make eval`, one job each.
+#   Stand-ins: hostile, redteam, and eval run the platform's suites (bakeoff.redteam, the hostile
+#   cases, bakeoff.evalrun and evalgate) from PLATFORM_PATH against this agent, until they ship in
+#   the test kit. load-smoke is the kit's short run. All offline: the scripted fake model server
+#   is the model and the judge; no key, no hosted model.
+# - image: `make image` on every run, and the user check against the uid table. On the default
+#   branch only, `make image PUSH=1` pushes to GHCR with an SBOM and provenance (BuildKit).
+# - sign: suggested: cosign keyless signing of the pushed digest (`make sign`), default branch
+#   only, with `id-token: write`; then `cosign verify` against this workflow's identity.
+#
+# The platform checkout: PLATFORM_REPOSITORY at PLATFORM_REF (repository variables; suggested: pin
+# PLATFORM_REF to a commit SHA). Set the secret PLATFORM_TOKEN if that repository is private.
+# Every action is pinned by a full commit SHA. Never pull_request_target. No secret in any log.
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+{% raw -%}
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PLATFORM_REPOSITORY: ${{ vars.PLATFORM_REPOSITORY || 'odere-pro/agent-playground' }}
+  PLATFORM_REF: ${{ vars.PLATFORM_REF || 'main' }}
+  # The version the platform's Dockerfiles pin (ghcr.io/astral-sh/uv:0.11.23).
+  UV_VERSION: "0.11.23"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ env.PLATFORM_REPOSITORY }}
+          ref: ${{ env.PLATFORM_REF }}
+          path: .platform
+          token: ${{ secrets.PLATFORM_TOKEN || github.token }}
+          persist-credentials: false
+      - name: Move the platform out of the workspace
+        run: |
+          mv .platform "$RUNNER_TEMP/platform"
+          echo "PLATFORM_PATH=$RUNNER_TEMP/platform" >> "$GITHUB_ENV"
+      - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: ${{ github.event_name != 'pull_request' }}
+      - name: Lint
+        run: make lint
+      - name: No chassis import in the workload (ADR-002)
+        run: |
+          if grep -rnE '^[[:space:]]*(from|import)[[:space:]]+chassis([.[:space:]]|$)' --include='*.py' src; then
+            echo "the workload must not import chassis: it talks to it over A2A only"
+            exit 1
+          fi
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ env.PLATFORM_REPOSITORY }}
+          ref: ${{ env.PLATFORM_REF }}
+          path: .platform
+          token: ${{ secrets.PLATFORM_TOKEN || github.token }}
+          persist-credentials: false
+      - name: Move the platform out of the workspace
+        run: |
+          mv .platform "$RUNNER_TEMP/platform"
+          echo "PLATFORM_PATH=$RUNNER_TEMP/platform" >> "$GITHUB_ENV"
+      - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: ${{ github.event_name != 'pull_request' }}
+      - name: Test (lane contract suite over A2A, offline)
+        run: make test
+
+  suites:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [load-smoke, hostile, redteam, eval]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ env.PLATFORM_REPOSITORY }}
+          ref: ${{ env.PLATFORM_REF }}
+          path: .platform
+          token: ${{ secrets.PLATFORM_TOKEN || github.token }}
+          persist-credentials: false
+      - name: Move the platform out of the workspace
+        run: |
+          mv .platform "$RUNNER_TEMP/platform"
+          echo "PLATFORM_PATH=$RUNNER_TEMP/platform" >> "$GITHUB_ENV"
+      - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: ${{ github.event_name != 'pull_request' }}
+      - name: Suite
+        env:
+          TARGET: ${{ matrix.target }}
+        run: make "$TARGET"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: reports-${{ matrix.target }}
+          path: reports/
+          if-no-files-found: ignore
+
+  image:
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      ref: ${{ steps.push.outputs.ref }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Image name
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}:${GITHUB_SHA}" >> "$GITHUB_ENV"
+      - name: Build
+        run: make image IMAGE="$IMAGE"
+      - name: User matches the uid table (10002, every workload)
+        run: |
+          user="$(docker image inspect -f '{{.Config.User}}' "$IMAGE")"
+          echo "image user: ${user}"
+          test "${user}" = "10002:10002"
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push with an SBOM and provenance
+        id: push
+        if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        run: |
+          make image IMAGE="$IMAGE" PUSH=1 IMAGE_METADATA="$RUNNER_TEMP/image-metadata.json"
+          digest="$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/image-metadata.json")"
+          case "$digest" in
+            sha256:*) ;;
+            *) echo "no image digest in the build metadata"; exit 1 ;;
+          esac
+          echo "ref=${IMAGE%:*}@${digest}" >> "$GITHUB_OUTPUT"
+
+  sign:
+    needs: image
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      # Keyless: the OIDC token is the signing identity. No key to store or leak.
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.4
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Sign the digest (keyless)
+        env:
+          IMAGE_REF: ${{ needs.image.outputs.ref }}
+        run: make sign IMAGE_REF="$IMAGE_REF"
+      - name: Verify the signature against this workflow
+        env:
+          IMAGE_REF: ${{ needs.image.outputs.ref }}
+          IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+        run: |
+          cosign verify --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$IMAGE_REF" > /dev/null
+          echo "verified: $IMAGE_REF"
+{%- endraw %}

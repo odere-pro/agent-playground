@@ -1,0 +1,3 @@
+# Built by `helm dependency update` from the file:// dependency; never committed.
+*/charts/
+*/Chart.lock
