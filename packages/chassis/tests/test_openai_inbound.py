@@ -50,11 +50,13 @@ def _meta(request: Request | None = None, **options: object) -> ReplyMeta:
 
 
 def test_openai_inbound_is_an_inbound_adapter() -> None:
+    """The OpenAI mapping meets the inbound adapter protocol and names its interface `openai`."""
     assert isinstance(ADAPTER, InboundAdapter)
     assert ADAPTER.interface == "openai"
 
 
 def test_one_user_turn_is_the_plain_canonical_request() -> None:
+    """A body with one user turn maps to a plain request with the given ids and default budget."""
     request = _map(_body())
     assert request == Request(
         request_id="r1",
@@ -70,6 +72,7 @@ def test_one_user_turn_is_the_plain_canonical_request() -> None:
 
 
 def test_system_developer_and_history_are_carried_in_data() -> None:
+    """System and developer text join into `system`, earlier turns go to `history`."""
     body = _body(
         messages=[
             {"role": "system", "content": "be brief"},
@@ -99,6 +102,7 @@ def test_system_developer_and_history_are_carried_in_data() -> None:
 
 
 def test_to_request_is_pure_and_leaves_the_body_alone() -> None:
+    """Mapping the same body twice gives equal requests and never changes the body."""
     body = _body(messages=[{"role": "system", "content": "s"}, USER], max_tokens=9)
     before = copy.deepcopy(body)
     assert _map(body) == _map(body)
@@ -106,12 +110,14 @@ def test_to_request_is_pure_and_leaves_the_body_alone() -> None:
 
 
 def test_ids_are_the_ones_given_never_from_headers() -> None:
+    """The request keeps the ids it was given, even when a traceparent header is present."""
     headers = {"traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"}
     request = _map(_body(), headers)
     assert (request.request_id, request.trace_id, request.idempotency_key) == ("r1", "t1", "i1")
 
 
 def test_a_model_that_is_not_the_agent_is_404_model_not_found() -> None:
+    """A model other than this agent is refused with 404, naming both models, and no retry."""
     refused = _refused(_body(model="gpt-4o"))
     assert refused.status == 404
     assert refused.headers["x-should-retry"] == "false"
@@ -138,6 +144,7 @@ def test_a_model_that_is_not_the_agent_is_404_model_not_found() -> None:
 def test_max_completion_tokens_else_max_tokens_is_the_budget(
     extra: dict[str, Any], max_tokens: int
 ) -> None:
+    """The token budget comes from `max_completion_tokens`, then `max_tokens`, then the default."""
     request = _map(_body(**extra))
     assert request.budget == Budget(max_tokens=max_tokens)
 
@@ -151,6 +158,7 @@ def test_max_completion_tokens_else_max_tokens_is_the_budget(
     ],
 )
 def test_conflicting_or_non_positive_token_limits_are_400(extra: dict[str, Any]) -> None:
+    """Token limits that disagree, or one of zero or less, are refused as an invalid body."""
     refused = _refused(_body(**extra))
     assert refused.status == 400
     assert refused.body["error"]["code"] == "invalid_body"
@@ -186,6 +194,7 @@ REFUSED_PARAMS: list[tuple[str, dict[str, Any]]] = [
 def test_refused_parameters_are_400_unsupported_parameter(
     param: str, extra: dict[str, Any]
 ) -> None:
+    """Each refused parameter is 400, names the parameter, and says do not retry."""
     refused = _refused(_body(**extra))
     assert refused.status == 400 and refused.headers["x-should-retry"] == "false"
     error = refused.body["error"]
@@ -231,6 +240,7 @@ REFUSED_MESSAGES: list[tuple[str, list[dict[str, Any]]]] = [
 def test_refused_messages_are_400_with_the_message_named(
     param: str, messages: list[dict[str, Any]]
 ) -> None:
+    """Each refused message shape is 400, and the error names the message path at fault."""
     refused = _refused(_body(messages=messages))
     assert refused.status == 400
     error = refused.body["error"]
@@ -240,6 +250,7 @@ def test_refused_messages_are_400_with_the_message_named(
 
 
 def test_echoed_empty_fields_and_harmless_values_are_accepted() -> None:
+    """Empty tools, default choices, and echoed assistant fields map like a plain body."""
     plain = _map(_body())
     harmless = _body(
         n=1,
@@ -282,6 +293,7 @@ IGNORED_BODY: dict[str, Any] = {
 
 
 def test_ignored_parameters_do_not_change_the_canonical_request_and_are_named() -> None:
+    """Tuning params leave the request unchanged and are listed; personal fields are not."""
     body = _body(**IGNORED_BODY, metadata={"k": "v"}, user="u-1", safety_identifier="s")
     assert _map(body) == _map(_body())
     names = ADAPTER.ignored(body, {"authorization": "Bearer placeholder"})
@@ -295,6 +307,7 @@ def test_ignored_parameters_do_not_change_the_canonical_request_and_are_named() 
 
 
 def test_options_read_include_usage_only_when_streaming() -> None:
+    """The include-usage option is on only for a streamed body that asks for it."""
     assert ADAPTER.options(_body(stream=True, stream_options={"include_usage": True})) == {
         "include_usage": True
     }
@@ -315,6 +328,7 @@ def _validated(body: dict[str, Any]) -> Any:
 
 
 def test_a_lazy_body_maps_like_a_plain_one() -> None:
+    """A body the SDK type validated lazily maps to the same request as the plain dict."""
     body = _body(messages=[{"role": "system", "content": [{"type": "text", "text": "s"}]}, USER])
     assert _map(_validated(body)) == _map(body)
 
@@ -330,6 +344,7 @@ def test_a_lazy_body_maps_like_a_plain_one() -> None:
 def test_a_validation_error_in_the_lazy_messages_is_400_invalid_body(
     messages: list[dict[str, Any]],
 ) -> None:
+    """A bad message found in lazy messages is 400 `invalid_body` and does not echo input."""
     refused = _refused(_validated(_body(messages=messages)))
     assert refused.status == 400
     error = refused.body["error"]
@@ -355,6 +370,7 @@ def _response(output: dict[str, Any], status: Any = "ok") -> Response:
 
 
 def test_complete_is_an_official_chat_completion() -> None:
+    """A finished run becomes a valid ChatCompletion with ids in the headers and usage."""
     reply = ADAPTER.complete(_response({"text": "hi there"}), _meta())
     assert reply.status == 200
     assert dict(reply.headers) == {
@@ -391,11 +407,13 @@ def test_complete_content_is_the_answer_text(output: dict[str, Any], text: str) 
 
 @pytest.mark.parametrize("status", ["retry", "fallback"])
 def test_retry_and_fallback_are_a_normal_answer_with_the_status_header(status: str) -> None:
+    """A run that ended by retry or fallback is a 200 answer; only the status header tells."""
     reply = ADAPTER.complete(_response({"text": "ok"}, status), _meta())
     assert reply.status == 200 and reply.headers["x-chassis-status"] == status
 
 
 def test_complete_of_a_run_without_an_end_event_is_an_http_error() -> None:
+    """A complete answer for a run that never ended is a 500 `engine_error`."""
     reply = ADAPTER.complete(_response({"text": "partial"}, "error"), _meta())
     assert reply.status == 500 and reply.body["error"]["code"] == "engine_error"
 
@@ -433,6 +451,7 @@ EVENTS: list[Event] = [
 
 
 async def test_stream_is_role_chunk_deltas_finish_with_usage_then_done() -> None:
+    """A stream sends a role chunk, the deltas, a finish chunk with usage, and no tool calls."""
     chunks = _chunks(await _frames(EVENTS))
     assert all(c.id == "chatcmpl-r1" and c.object == "chat.completion.chunk" for c in chunks)
     assert all(c.model == "echo" and c.created == 1_700_000_000 for c in chunks)
@@ -454,6 +473,7 @@ async def test_stream_is_role_chunk_deltas_finish_with_usage_then_done() -> None
 
 
 async def test_stream_with_include_usage_ends_with_a_usage_only_chunk() -> None:
+    """With include usage, the stream ends with a chunk that holds only usage; others say null."""
     chunks = _chunks(await _frames(EVENTS, include_usage=True))
     *_, finish, usage = chunks
     assert finish.choices[0].finish_reason == "stop" and finish.usage is None
@@ -463,6 +483,7 @@ async def test_stream_with_include_usage_ends_with_a_usage_only_chunk() -> None:
 
 
 async def test_stream_joins_to_the_complete_answer_for_json_output() -> None:
+    """Streamed chunks of a JSON output join to the compact, sorted text a complete gives."""
     events: list[Event] = [Start(request_id="r1"), End(output={"b": 1, "a": 2})]
     chunks = _chunks(await _frames(events))
     text = "".join(c.choices[0].delta.content or "" for c in chunks if c.choices)
@@ -470,6 +491,7 @@ async def test_stream_joins_to_the_complete_answer_for_json_output() -> None:
 
 
 async def test_stream_error_after_text_is_an_error_frame_then_done_without_finish() -> None:
+    """An error after text sends an error frame and done, with no finish reason."""
     events: list[Event] = [
         Start(request_id="r1"),
         Delta(text="part"),
@@ -487,6 +509,7 @@ async def test_stream_error_after_text_is_an_error_frame_then_done_without_finis
 
 
 async def test_stream_without_a_terminal_event_ends_with_an_error_frame() -> None:
+    """A stream whose run stops without end or error closes with an `engine_error` frame."""
     frames = await _frames([Start(request_id="r1"), Delta(text="x")])
     assert frames[-1] == "[DONE]" and json.loads(frames[-2])["error"]["code"] == "engine_error"
 
@@ -506,6 +529,7 @@ async def test_stream_without_a_terminal_event_ends_with_an_error_frame() -> Non
 def test_error_status_type_and_should_retry_per_code(
     code: str, retryable: bool, status: int, kind: str, should_retry: str
 ) -> None:
+    """Each error code maps to its status, Anthropic error type, retry header, and the run's ids."""
     reply = ADAPTER.error(code, "m", retryable, ReplyMeta(IDS, SERVED, 0))
     assert reply.status == status
     assert reply.headers["x-should-retry"] == should_retry
@@ -516,6 +540,7 @@ def test_error_status_type_and_should_retry_per_code(
 
 
 def test_a_refused_message_key_never_mentions_the_model_port() -> None:
+    """A refused audio part names its path and talks about the interface, not the model port."""
     body = _body(messages=[{"role": "user", "content": "x", "audio": {"id": "a"}}])
     with pytest.raises(Refused) as info:
         _map(body)

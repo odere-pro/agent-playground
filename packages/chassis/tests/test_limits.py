@@ -143,12 +143,14 @@ def _assert_limit_refusal(interface: str, status: int, body: Any, needle: str) -
 
 @pytest.mark.parametrize("interface", INTERFACES)
 async def test_caller_budget_above_the_config_ceiling_is_refused(interface: str) -> None:
+    """On every interface, a token budget above the configured ceiling is refused."""
     status, body = await _call(interface, max_tokens=10**15)
     _assert_limit_refusal(interface, status, body, str(LIMITS.max_tokens_max))
 
 
 @pytest.mark.parametrize("interface", ["native", "mcp"])
 async def test_caller_timeout_above_the_config_ceiling_is_refused(interface: str) -> None:
+    """A caller timeout above the configured ceiling is refused, naming the ceiling."""
     status, body = await _call(interface, timeout_ms=10**12)
     _assert_limit_refusal(interface, status, body, str(LIMITS.timeout_ms_max))
 
@@ -170,12 +172,14 @@ async def test_caller_budget_below_one_is_refused(interface: str) -> None:
 
 @pytest.mark.parametrize("interface", ["native", "mcp"])
 async def test_caller_timeout_below_one_is_refused(interface: str) -> None:
+    """A caller timeout of zero is refused: 422 on native, 400 through MCP."""
     status, _ = await _call(interface, timeout_ms=0)
     assert status == (422 if interface == "native" else 400)
 
 
 @pytest.mark.parametrize("interface", INTERFACES)
 async def test_the_ceiling_itself_and_the_defaults_pass(interface: str) -> None:
+    """The default budget and a budget exactly at each ceiling are both served."""
     status, body = await _call(interface)
     assert status == 200, body
     status, body = await _call(
@@ -185,6 +189,7 @@ async def test_the_ceiling_itself_and_the_defaults_pass(interface: str) -> None:
 
 
 async def test_the_ceiling_comes_from_the_config() -> None:
+    """A lower token ceiling set in the config refuses a budget one above it."""
     async with _client(_app(max_tokens_max=50)) as client:
         reply = await client.post(
             "/v1/run", json={"input": {"text": "hi"}, "budget": {"max_tokens": 51}}
@@ -194,11 +199,13 @@ async def test_the_ceiling_comes_from_the_config() -> None:
 
 
 def test_limits_must_be_positive() -> None:
+    """The limits spec rejects a token ceiling of zero."""
     with pytest.raises(ValueError):
         LimitsSpec(max_tokens_max=0)
 
 
 async def test_the_mcp_tool_description_states_the_ceilings() -> None:
+    """The MCP tool description tells the caller both the token and the timeout ceilings."""
     app = _app()
     async with app.router.lifespan_context(app), _mcp_client(app) as client:
         (tool,) = await client.list_tools()
@@ -247,6 +254,8 @@ async def test_oversized_body_is_413_before_validation(interface: str) -> None:
 
 @pytest.mark.parametrize("interface", INTERFACES)
 async def test_oversized_streamed_body_with_no_length_is_413(interface: str) -> None:
+    """A chunked body with no length that grows past the cap is 413 on every interface."""
+
     async def chunks() -> AsyncIterator[bytes]:
         yield b"{"
         for _ in range(8):
@@ -262,6 +271,7 @@ async def test_oversized_streamed_body_with_no_length_is_413(interface: str) -> 
 
 
 async def test_a_body_under_the_cap_is_served() -> None:
+    """A body smaller than the byte cap is served normally."""
     async with _client(_app(body_bytes_max=1024)) as client:
         reply = await client.post("/v1/run", json={"input": {"text": "hi"}})
     assert reply.status_code == 200
@@ -278,6 +288,7 @@ async def test_an_oversized_mcp_tool_call_is_refused() -> None:
 
 @pytest.mark.parametrize("interface", ["native", "openai", "anthropic"])
 def test_413_is_declared_on_the_route(interface: str) -> None:
+    """The native, OpenAI, and Anthropic routes declare 413 in the OpenAPI spec."""
     spec = _app().openapi()
     assert "413" in spec["paths"][PATHS[interface]]["post"]["responses"]
 
@@ -292,6 +303,7 @@ def _messages(count: int) -> list[dict[str, str]]:
 
 @pytest.mark.parametrize("interface", ["openai", "anthropic"])
 async def test_messages_over_the_cap_are_refused(interface: str) -> None:
+    """One message over the cap is refused on both SDK routes, and a body at the cap is served."""
     async with _client(_app(messages_max=4)) as client:
         if interface == "openai":
             body: dict[str, Any] = {"model": AGENT, "messages": _messages(5)}
@@ -307,6 +319,7 @@ async def test_messages_over_the_cap_are_refused(interface: str) -> None:
 
 
 async def test_native_history_over_the_cap_is_refused() -> None:
+    """A native call whose history is over the message cap is 400, naming the history."""
     history = [{"role": "user", "text": "m"}] * 4
     async with _client(_app(messages_max=4)) as client:
         reply = await client.post(

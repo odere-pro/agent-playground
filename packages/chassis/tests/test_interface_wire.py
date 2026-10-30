@@ -95,11 +95,13 @@ NOT_POSITIVE = [
 
 @pytest.mark.parametrize("extra", WRONG_TYPES + NOT_POSITIVE)
 def test_run_request_refuses_coercion_and_budgets_of_zero_or_less(extra: dict[str, Any]) -> None:
+    """The native body model rejects a value of the wrong JSON type and a budget of zero or less."""
     with pytest.raises(ValidationError):
         RunRequest.model_validate({"input": {"text": "x"}, **extra})
 
 
 def test_run_request_takes_the_right_types_and_keeps_the_envelope_models() -> None:
+    """A well-typed native body validates into the envelope's own Budget and input models."""
     body = RunRequest.model_validate(
         {
             "input": {"text": "x", "data": {"k": [1, "a"]}},
@@ -128,6 +130,7 @@ def test_the_strict_boundary_leaves_the_published_schemas_as_they_were() -> None
 
 @pytest.mark.parametrize("extra", WRONG_TYPES + NOT_POSITIVE)
 async def test_run_answers_422_for_a_wrong_type_or_a_budget_of_zero(extra: dict[str, Any]) -> None:
+    """The native route answers 422 to a wrong type or a non-positive budget and runs nothing."""
     app, engine = _app()
     async with _client(app) as client, app.router.lifespan_context(app):
         response = await client.post("/v1/run", json={"input": {"text": "x"}, **extra})
@@ -146,6 +149,7 @@ def _anthropic_request(max_tokens: Any) -> None:
 
 @pytest.mark.parametrize("max_tokens", [0, -1, True])
 def test_anthropic_refuses_a_max_tokens_of_zero_or_less(max_tokens: Any) -> None:
+    """The Anthropic mapping refuses a `max_tokens` of zero, below zero, or a boolean with 400."""
     with pytest.raises(Refused) as refused:
         _anthropic_request(max_tokens)
     assert refused.value.reply.status == 400
@@ -163,6 +167,7 @@ def test_anthropic_refuses_a_max_tokens_of_zero_or_less(max_tokens: Any) -> None
 async def test_every_sdk_interface_refuses_a_budget_of_zero_or_less(
     path: str, body: dict[str, Any]
 ) -> None:
+    """Both SDK routes answer a non-positive token limit with 400 in their own format."""
     app, engine = _app()
     payload = {"model": "echo", "messages": [{"role": "user", "content": "x"}], **body}
     if path == "/v1/messages":
@@ -190,6 +195,7 @@ async def test_every_sdk_interface_refuses_a_budget_of_zero_or_less(
 async def test_an_unparseable_body_is_400_in_the_routes_format(
     path: str, content: bytes, content_type: str
 ) -> None:
+    """A body that is not UTF-8, not JSON, or not JSON-typed is 400 in the route's format."""
     app, engine = _app()
     async with _client(app) as client:
         response = await client.post(path, content=content, headers={"content-type": content_type})
@@ -202,6 +208,7 @@ async def test_an_unparseable_body_is_400_in_the_routes_format(
 
 @pytest.mark.parametrize("path", SDK_ROUTES)
 async def test_a_method_the_route_does_not_allow_is_405_in_the_routes_format(path: str) -> None:
+    """A GET on an SDK route is 405, allows POST, and answers in the route's error format."""
     app, _ = _app()
     async with _client(app) as client:
         response = await client.get(path)
@@ -210,24 +217,39 @@ async def test_a_method_the_route_does_not_allow_is_405_in_the_routes_format(pat
     assert FORMAT_CHECK[path](response.json()), response.json()
 
 
-async def test_native_keeps_detail_text_before_the_handler() -> None:
+@pytest.mark.parametrize(
+    ("method", "path", "request_kwargs", "status", "detail"),
+    [
+        pytest.param(
+            "POST",
+            "/v1/run",
+            {"content": b"\xff", "headers": {"content-type": "application/json"}},
+            400,
+            "There was an error parsing the body",
+            id="undecodable",
+        ),
+        pytest.param("GET", "/v1/run", {}, 405, "Method Not Allowed", id="method"),
+        pytest.param("GET", "/no/such/path", {}, 404, "Not Found", id="missing"),
+    ],
+)
+async def test_native_keeps_detail_text_before_the_handler(
+    method: str, path: str, request_kwargs: dict[str, Any], status: int, detail: str
+) -> None:
+    """An error raised before a native handler keeps FastAPI's plain `{"detail": str}` body."""
     app, _ = _app()
+
     async with _client(app) as client:
-        undecodable = await client.post(
-            "/v1/run", content=b"\xff", headers={"content-type": "application/json"}
-        )
-        method = await client.get("/v1/run")
-        missing = await client.get("/no/such/path")
-    assert undecodable.status_code == 400
-    assert undecodable.json() == {"detail": "There was an error parsing the body"}
-    assert method.status_code == 405 and method.json() == {"detail": "Method Not Allowed"}
-    assert missing.status_code == 404 and missing.json() == {"detail": "Not Found"}
+        response = await client.request(method, path, **request_kwargs)
+
+    assert response.status_code == status
+    assert response.json() == {"detail": detail}
 
 
 # --- 3. one SSE event schema --------------------------------------------------------------------
 
 
-def test_the_three_streaming_routes_declare_one_sse_event_schema() -> None:
+def test_sse_event_schema_is_one_object_when_any_route_streams() -> None:
+    """The shared SSE event has a required `data` string and optional event, id, and retry."""
     assert SSE_EVENT_SCHEMA == {
         "type": "object",
         "required": ["data"],
@@ -238,8 +260,13 @@ def test_the_three_streaming_routes_declare_one_sse_event_schema() -> None:
             "retry": {"type": "integer"},
         },
     }
+
+
+@pytest.mark.parametrize("path", STREAMING_ROUTES)
+def test_the_three_streaming_routes_declare_one_sse_event_schema(path: str) -> None:
+    """Each streaming route declares the shared SSE event as its 200 event-stream schema."""
     app, _ = _app()
-    spec = app.openapi()
-    for path in STREAMING_ROUTES:
-        content = spec["paths"][path]["post"]["responses"]["200"]["content"]
-        assert content["text/event-stream"]["schema"] == SSE_EVENT_SCHEMA, path
+
+    content = app.openapi()["paths"][path]["post"]["responses"]["200"]["content"]
+
+    assert content["text/event-stream"]["schema"] == SSE_EVENT_SCHEMA

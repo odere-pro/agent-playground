@@ -13,7 +13,8 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
-from typing import Any, get_args, get_type_hints
+from dataclasses import dataclass
+from typing import Any, cast, get_args, get_type_hints
 
 import anthropic
 import httpx
@@ -27,6 +28,7 @@ from chassis.core.inbound import public_message
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
+from chassis.server.interfaces.anthropic import _with_raw_only
 from chassis.server.interfaces.errors import INTERFACE_KEY
 from fastapi import FastAPI
 
@@ -128,6 +130,7 @@ def _sse(text: str) -> list[tuple[str, dict[str, Any]]]:
 
 
 async def test_sdk_complete_with_only_a_base_url_change() -> None:
+    """The official client gets a full Message, ids, usage, a request count, and one run span."""
     app = _app()
     async with _sdk(app) as client, app.router.lifespan_context(app):
         raw = await client.messages.with_raw_response.create(
@@ -152,6 +155,7 @@ async def test_sdk_complete_with_only_a_base_url_change() -> None:
 
 
 async def test_sdk_messages_stream_gets_text_and_usage() -> None:
+    """The SDK stream helper sees each text delta, the joined final message, and the usage."""
     app = _app()
     async with _sdk(app) as client, app.router.lifespan_context(app):
         async with client.messages.stream(
@@ -169,6 +173,7 @@ async def test_sdk_messages_stream_gets_text_and_usage() -> None:
 
 
 async def test_sdk_create_stream_true_gives_the_raw_event_types() -> None:
+    """A raw SDK stream yields Anthropic's seven event types in their official order."""
     app = _app()
     async with _sdk(app) as client, app.router.lifespan_context(app):
         stream = await client.messages.create(
@@ -221,6 +226,7 @@ async def test_sdk_an_error_before_text_is_an_http_error_and_not_retried(
 
 
 async def test_sdk_a_retryable_error_is_retried_as_x_should_retry_says() -> None:
+    """A retryable failure is a 503 overloaded error that says retry, so the SDK calls once more."""
     engine = FakeEngine(handle=_say)
     app = _app(engine)
     async with _sdk(app, max_retries=1) as client, app.router.lifespan_context(app):
@@ -235,6 +241,7 @@ async def test_sdk_a_retryable_error_is_retried_as_x_should_retry_says() -> None
 
 
 async def test_sdk_an_error_mid_stream_is_raised_by_the_sdk() -> None:
+    """An error after text reaches the SDK as an exception with the public message."""
     app = _app()
     texts: list[str] = []
     async with _sdk(app) as client, app.router.lifespan_context(app):
@@ -253,6 +260,7 @@ async def test_sdk_an_error_mid_stream_is_raised_by_the_sdk() -> None:
 
 
 async def test_sdk_wrong_model_is_not_found_and_the_engine_never_runs() -> None:
+    """A model that is not this agent raises NotFoundError, says do not retry, and runs nothing."""
     engine = FakeEngine(handle=_say)
     app = _app(engine)
     async with _sdk(app) as client, app.router.lifespan_context(app):
@@ -293,8 +301,10 @@ async def test_sdk_request_id_is_the_chassis_request_id() -> None:
 
 
 async def test_sdk_refused_parameters_are_bad_request() -> None:
+    """Client tools sent through the SDK are refused as a bad request and the engine never runs."""
     engine = FakeEngine(handle=_say)
     app = _app(engine)
+
     async with _sdk(app) as client, app.router.lifespan_context(app):
         with pytest.raises(anthropic.BadRequestError) as tools:
             await client.messages.create(
@@ -303,6 +313,17 @@ async def test_sdk_refused_parameters_are_bad_request() -> None:
                 messages=[{"role": "user", "content": "x"}],
                 tools=[{"name": "f", "input_schema": {"type": "object"}}],
             )
+
+    assert "tools" in ErrorResponse.model_validate(tools.value.body).error.message
+    assert engine.runs == 0
+
+
+async def test_sdk_mcp_servers_is_bad_request_when_sent_as_extra_body() -> None:
+    """A key the SDK type drops, sent as extra body, is still read and refused before the engine."""
+    engine = FakeEngine(handle=_say)
+    app = _app(engine)
+
+    async with _sdk(app) as client, app.router.lifespan_context(app):
         with pytest.raises(anthropic.BadRequestError) as mcp:
             await client.messages.create(
                 model="echo",
@@ -310,17 +331,15 @@ async def test_sdk_refused_parameters_are_bad_request() -> None:
                 messages=[{"role": "user", "content": "x"}],
                 extra_body={"mcp_servers": [{"type": "url", "url": "u", "name": "n"}]},
             )
-    assert "tools" in ErrorResponse.model_validate(tools.value.body).error.message
-    assert "mcp_servers" in ErrorResponse.model_validate(mcp.value.body).error.message, (
-        "a key the SDK type drops is still read from the raw body"
-    )
+
+    assert "mcp_servers" in ErrorResponse.model_validate(mcp.value.body).error.message
     assert engine.runs == 0
 
 
-async def test_sdk_ignored_parameters_are_counted_and_headers_never_logged() -> None:
-    app = _app()
+async def _ignored_call(app: FastAPI) -> Message:
+    """One SDK call that sets ignored params, a dropped `metadata`, and the auth headers."""
     async with _sdk(app) as client, app.router.lifespan_context(app):
-        message = await client.messages.create(
+        return await client.messages.create(
             model="echo",
             max_tokens=64,
             messages=[{"role": "user", "content": "x"}],
@@ -329,23 +348,53 @@ async def test_sdk_ignored_parameters_are_counted_and_headers_never_logged() -> 
             extra_body={"temperature": 0.2, "top_k": 4},
             extra_headers={"anthropic-beta": "some-beta"},
         )
+
+
+def _ignored(telemetry: InMemoryTelemetry, param: str) -> int:
+    return telemetry.counter_value("chassis.inbound_ignored", interface="anthropic", param=param)
+
+
+async def test_sdk_ignored_parameters_are_counted_and_headers_never_logged() -> None:
+    """Tuning params are counted once each, and no key, header value, or user id reaches a log."""
+    app = _app()
+
+    message = await _ignored_call(app)
+
     assert [getattr(b, "text", None) for b in message.content] == ["you said x!"]
     telemetry = _telemetry(app)
-    for param in ("stop_sequences", "temperature", "top_k"):
-        assert (
-            telemetry.counter_value("chassis.inbound_ignored", interface="anthropic", param=param)
-            == 1
-        ), param
-    assert (
-        telemetry.counter_value("chassis.inbound_ignored", interface="anthropic", param="metadata")
-        == 0
-    )
+    counted = {p: _ignored(telemetry, p) for p in ("stop_sequences", "temperature", "top_k")}
+    assert counted == {"stop_sequences": 1, "temperature": 1, "top_k": 1}
     dump = json.dumps([telemetry.logs, [s.attributes for s in telemetry.spans]], default=str)
-    for secret in (PLACEHOLDER_KEY, "person-1", "some-beta", "2023-06-01"):
-        assert secret not in dump
+    secrets = (PLACEHOLDER_KEY, "person-1", "some-beta", "2023-06-01")
+    assert [secret for secret in secrets if secret in dump] == []
 
 
-async def test_sdk_concurrent_calls_with_one_traceparent_never_conflict() -> None:
+async def test_sdk_metadata_is_not_counted_when_it_is_sent() -> None:
+    """`metadata` may name a person, so it is dropped without being counted as ignored."""
+    app = _app()
+
+    await _ignored_call(app)
+
+    assert _ignored(_telemetry(app), "metadata") == 0
+
+
+Answer = tuple[str, str]
+"""The text the engine saw as its trace id, and the `x-trace-id` header."""
+
+
+@dataclass(frozen=True)
+class Overlap:
+    """What three SDK calls with one traceparent saw."""
+
+    first: Answer
+    complete: Answer
+    stream: Answer
+    reminted: int
+
+
+async def _overlapping_calls() -> Overlap:
+    """Three SDK calls with one traceparent: the first holds it while a complete and then a
+    stream run."""
     in_flight = asyncio.Event()
     release = asyncio.Event()
 
@@ -360,7 +409,7 @@ async def test_sdk_concurrent_calls_with_one_traceparent_never_conflict() -> Non
     headers = {"traceparent": TRACEPARENT}
     async with _sdk(app, max_retries=0) as client, app.router.lifespan_context(app):
 
-        async def call(text: str, stream: bool) -> tuple[str, str]:
+        async def call(text: str, stream: bool) -> Answer:
             if stream:
                 async with client.messages.stream(
                     model="echo",
@@ -387,17 +436,45 @@ async def test_sdk_concurrent_calls_with_one_traceparent_never_conflict() -> Non
         release.set()
         done = await first
         assert len(app.state.runs) == 0
-    assert done == (TRACE, TRACE), "a free traceparent is the run's trace id"
-    for answer, trace in (second, third):
-        assert answer == trace != TRACE
-    assert second[1] != third[1]
-    assert _telemetry(app).counter_value("chassis.trace_id_reminted", interface="anthropic") == 2
+    reminted = _telemetry(app).counter_value("chassis.trace_id_reminted", interface="anthropic")
+    return Overlap(first=done, complete=second, stream=third, reminted=reminted)
+
+
+async def test_sdk_traceparent_is_the_trace_id_when_no_run_holds_it() -> None:
+    """The first call keeps the caller's trace id, in its header and in the engine's context."""
+    overlap = await _overlapping_calls()
+
+    assert overlap.first == (TRACE, TRACE)
+
+
+@pytest.mark.parametrize("lane", ["complete", "stream"])
+async def test_sdk_trace_id_is_reminted_when_a_run_in_flight_holds_it(lane: str) -> None:
+    """A call reusing a busy trace id gets a fresh one, not a conflict, complete or streamed."""
+    overlap = await _overlapping_calls()
+
+    answer, trace = getattr(overlap, lane)
+    assert answer == trace != TRACE
+
+
+async def test_sdk_reminted_trace_ids_differ_when_two_calls_overlap_one_run() -> None:
+    """Two calls that both meet the busy trace id each get their own new id."""
+    overlap = await _overlapping_calls()
+
+    assert overlap.complete[1] != overlap.stream[1]
+
+
+async def test_sdk_reminting_is_counted_once_per_call_when_the_trace_id_is_busy() -> None:
+    """The reminted counter goes up once for each of the two calls that met a busy trace id."""
+    overlap = await _overlapping_calls()
+
+    assert overlap.reminted == 2
 
 
 # --- through the app with plain HTTP -----------------------------------------------------------
 
 
 async def test_history_and_system_reach_the_engine_as_data() -> None:
+    """System blocks and earlier turns posted over HTTP arrive in the engine's input data."""
     app = _app()
     body = _body(
         system=[{"type": "text", "text": "s1"}, {"type": "text", "text": "s2"}],
@@ -483,6 +560,7 @@ REFUSED: list[tuple[str, dict[str, Any]]] = [
 
 @pytest.mark.parametrize("body", [b for _, b in REFUSED], ids=[n for n, _ in REFUSED])
 async def test_each_refused_class_is_400_and_the_engine_never_runs(body: dict[str, Any]) -> None:
+    """Each refused body class is 400 with a request id, says do not retry, and runs nothing."""
     engine = FakeEngine(handle=_say)
     app = _app(engine)
     async with _http(app) as client, app.router.lifespan_context(app):
@@ -509,6 +587,7 @@ async def test_each_refused_class_is_400_and_the_engine_never_runs(body: dict[st
 async def test_an_invalid_body_is_400_in_the_anthropic_shape_never_422_or_500(
     body: dict[str, Any],
 ) -> None:
+    """A body that fails validation, even lazily, is 400 `invalid_body` in Anthropic's shape."""
     app = _app()
     async with _http(app) as client, app.router.lifespan_context(app):
         res = await client.post("/v1/messages", json=body)
@@ -520,6 +599,7 @@ async def test_an_invalid_body_is_400_in_the_anthropic_shape_never_422_or_500(
 
 
 async def test_not_ready_is_503_overloaded_and_retryable() -> None:
+    """Before startup the route answers 503 `overloaded_error` and tells the client to retry."""
     app = _app()
     async with _http(app) as client:
         res = await client.post("/v1/messages", json=_body())
@@ -529,6 +609,7 @@ async def test_not_ready_is_503_overloaded_and_retryable() -> None:
 
 
 async def test_stream_over_http_is_sse_with_ids_in_the_headers() -> None:
+    """A streamed reply is server-sent events with the trace and request ids in the headers."""
     app = _app()
     async with _http(app) as client, app.router.lifespan_context(app):
         res = await client.post(
@@ -542,6 +623,7 @@ async def test_stream_over_http_is_sse_with_ids_in_the_headers() -> None:
 
 
 async def test_mid_stream_error_over_http_has_no_message_stop() -> None:
+    """An error after text ends the event stream with `error` and sends no `message_stop`."""
     app = _app()
     async with _http(app) as client, app.router.lifespan_context(app):
         res = await client.post("/v1/messages", json=_body("fail-late", stream=True))
@@ -550,11 +632,13 @@ async def test_mid_stream_error_over_http_has_no_message_stop() -> None:
 
 
 def test_interface_off_is_not_mounted() -> None:
+    """Turning the Anthropic interface off in the config removes `/v1/messages` from the app."""
     off = {**CONFIG, "spec": {**CONFIG["spec"], "interfaces": {"anthropic": False}}}
     assert "/v1/messages" not in _app(config=off).openapi()["paths"]
 
 
 def test_openapi_declares_the_messages_operation() -> None:
+    """The spec declares the SDK body, both reply types, error shapes, and no auth headers."""
     spec = _app().openapi()
     op = spec["paths"]["/v1/messages"]["post"]
     assert op["operationId"] == "messages" and op[INTERFACE_KEY] == "anthropic"
@@ -596,3 +680,94 @@ def test_raw_only_params_are_the_read_keys_when_the_sdk_type_drops_them() -> Non
 
     assert READ_PARAMS - listed == RAW_ONLY_PARAMS
     assert sorted(RAW_ONLY_PARAMS) == ["mcp_servers", "temperature", "top_k", "top_p"]
+
+
+# --- keys the SDK type drops (`RAW_ONLY_PARAMS`) -------------------------------------------------
+
+REFUSED_RAW_ONLY: dict[str, Any] = {"mcp_servers": [{"type": "url", "url": "u", "name": "n"}]}
+READ_RAW_ONLY: dict[str, Any] = {"temperature": 0.2, "top_p": 0.9, "top_k": 4}
+
+
+def test_raw_only_cases_cover_every_dropped_key_when_split_into_refused_and_read() -> None:
+    """The route cases below name each key the SDK type drops exactly once."""
+    cases = [*REFUSED_RAW_ONLY, *READ_RAW_ONLY]
+
+    assert sorted(cases) == sorted(RAW_ONLY_PARAMS)
+
+
+@pytest.mark.parametrize(("key", "value"), REFUSED_RAW_ONLY.items())
+async def test_messages_route_refuses_a_dropped_key_when_the_adapter_refuses_it(
+    key: str, value: Any
+) -> None:
+    """A refused key the SDK type drops is still 400 on the public port; nothing runs."""
+    engine = FakeEngine(handle=_say)
+    app = _app(engine)
+
+    async with _http(app) as client, app.router.lifespan_context(app):
+        res = await client.post("/v1/messages", json=_body(**{key: value}))
+
+    assert res.status_code == 400, res.text
+    error = ErrorResponse.model_validate(res.json()).error
+    assert error.type == "invalid_request_error"
+    assert error.message.startswith("unsupported_parameter: ") and key in error.message
+    assert engine.runs == 0
+
+
+@pytest.mark.parametrize(("key", "value"), READ_RAW_ONLY.items())
+async def test_messages_route_counts_a_dropped_key_as_ignored_when_the_adapter_reads_it(
+    key: str, value: Any
+) -> None:
+    """A tuning key the SDK type drops still reaches the adapter, which counts it as ignored."""
+    app = _app()
+
+    async with _http(app) as client, app.router.lifespan_context(app):
+        res = await client.post("/v1/messages", json=_body(**{key: value}))
+
+    assert res.status_code == 200, res.text
+    assert _ignored(_telemetry(app), key) == 1
+
+
+def test_raw_merge_keeps_the_parsed_value_when_raw_json_sets_the_same_key() -> None:
+    """On a conflict the parsed body wins; the route cannot reach this, parsing drops the keys."""
+    parsed = cast(MessageCreateParams, {**_body(), "temperature": 0.1})
+
+    merged = _with_raw_only(parsed, {**_body(), "temperature": 0.9})
+
+    assert merged["temperature"] == 0.1
+
+
+def test_raw_merge_takes_no_raw_key_when_the_key_is_not_raw_only() -> None:
+    """Only the dropped keys the adapter reads come back from the raw JSON, nothing else."""
+    parsed = cast(MessageCreateParams, _body())
+
+    merged = _with_raw_only(parsed, {**_body(), "top_k": 4, "unknown": 1})
+
+    assert merged == {**_body(), "top_k": 4}
+
+
+@pytest.mark.parametrize("raw", [[1, 2], "text", 3, None], ids=["list", "str", "int", "null"])
+def test_raw_merge_returns_the_parsed_body_when_the_raw_json_is_not_an_object(raw: Any) -> None:
+    """A raw body that is not an object adds nothing, and the merge does not raise."""
+    parsed = cast(MessageCreateParams, _body())
+
+    merged = _with_raw_only(parsed, raw)
+
+    assert merged == _body()
+
+
+@pytest.mark.parametrize(
+    "raw", [b"[1, 2]", b'"text"', b"3", b"null"], ids=["list", "str", "int", "null"]
+)
+async def test_messages_route_is_400_when_the_json_body_is_not_an_object(raw: bytes) -> None:
+    """A JSON body that is not an object fails parsing with 400, so the merge never sees it."""
+    engine = FakeEngine(handle=_say)
+    app = _app(engine)
+
+    async with _http(app) as client, app.router.lifespan_context(app):
+        res = await client.post(
+            "/v1/messages", content=raw, headers={"content-type": "application/json"}
+        )
+
+    assert res.status_code == 400, res.text
+    assert ErrorResponse.model_validate(res.json()).error.type == "invalid_request_error"
+    assert engine.runs == 0
