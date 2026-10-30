@@ -126,7 +126,7 @@ services:
 
   prometheus:
     <<: *hardening
-    image: docker.io/prom/prometheus:v3.5.0
+    image: docker.io/prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
     user: "65534:65534"
     mem_limit: 512m
     command:
@@ -149,7 +149,7 @@ services:
   grafana:
     # Not read_only: Grafana writes its SQLite database, plugins, and logs under /var/lib/grafana
     # and /var/log/grafana. No capability and no privilege gain all the same.
-    image: docker.io/grafana/grafana:12.1.0
+    image: docker.io/grafana/grafana:12.1.0@sha256:6ac590e7cabc2fbe8d7b8fc1ce9c9f0582177b334e0df9c927ebd9670469440f
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     user: "472:0"

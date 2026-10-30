@@ -91,7 +91,7 @@ CONFIG_OF = {
 }
 OURS = "agent-platform/"
 """Images built from this repo by `stack.sh up`; never pulled, so no registry digest."""
-AWAITING_DIGEST = {"docker.io/prom/prometheus", "docker.io/grafana/grafana"}
+AWAITING_DIGEST: set[str] = set()
 """suggested: tags until the first CI run's `stack.sh digests` prints their digests (no registry
 was reachable where this was written). Pin each and remove it here; the test fails if a name here
 is pinned or a name not here is not."""

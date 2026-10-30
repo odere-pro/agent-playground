@@ -1,21 +1,14 @@
 # PoC-8: what is left
 
-Status: in progress
+Status: done
 Date: 2026-10-29
 Source: [008-PoC-8-build-cross-cutting.md](../planning/poc/008-PoC-8-build-cross-cutting.md). Tracking: [PoC-8 README](../../pocs/poc-08-cross-cutting-build/README.md).
 
 The code, the scenario tests, the notes, the offline demo, and the two stack drills are done. PR 39 added the workload-side JSON logs, the Prometheus and Grafana drill, and the real-LiteLLM drill. `notes/backlog-changes.md` is applied to the issues (2026-10-30). This list is only what is still open.
 
-## 1. The CI runs on `bc67179`
+## 1. The CI runs
 
-None had finished when this was written. Put each run id, its result, and the commit in the README next to the items it backs. Until then, those items stand on offline tests and local runs.
-
-- `poc08-stack` run 41011346864: Prometheus and Grafana load the dashboards with data, the rate limit in Valkey, and the latency pair (Observability scope item, criterion 3).
-- `poc08-litellm` run 41011346881: a `litellm` span under `chassis.model.call` in one trace, and Presidio in LiteLLM masking PII (Security and Observability scope items, criterion 3).
-- `check` run 41011346866: the offline gate on the merged tree.
-- `poc08-evals` run 41011346893: evals, regression, and red team per engine (criterion 1).
-
-Then the user ticks the boxes. `poc08-evals` as a required check on `main` is a repository setting, the user's call.
+Done. `check`, `poc08-evals`, `poc08-stack`, and `poc08-litellm` passed on `db13d6a`; the run ids are in the README. `poc08-evals` as a required check on `main` is still a repository setting, the user's call.
 
 ## 2. The user's decisions
 
@@ -37,5 +30,4 @@ These need a Hugging Face token or a hosted model key. CI has neither.
 
 ## 4. Close
 
-- The user ticks the remaining boxes from the CI results and sets the README status to done.
-- Set this plan to done.
+Done on 2026-10-30. The README is set to done, with the Offline evals scope item flagged.
