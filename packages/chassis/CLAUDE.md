@@ -43,7 +43,7 @@ Under `packages/chassis/`: `configs/` the bundled specs, `schemas/` the publishe
 
 ## Test
 
-- `make test` or `uv run pytest packages/chassis`. Tests run offline with no keys.
+- `make test`, or `scripts/check_offline.sh packages/chassis` for this package only. Both run offline with no keys. A bare `uv run pytest` does not.
 - Port bindings: `tests/test_contracts.py`. Inbound bindings: `tests/test_inbound_contract.py`.
 - Real adapters: `tests/integration/`, marked `network`, run by `make test-integration` (Docker). Never in the gate.
 - `make schemas` after a schema change. A test fails on drift.

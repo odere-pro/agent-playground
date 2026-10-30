@@ -18,8 +18,6 @@ One folder per iteration of the PoC track in [docs/planning/poc/000-plan.md](../
 
 ## How an iteration runs
 
-1. **Open.** Set `CURRENT`. Fill `README.md` from `docs/templates/poc-readme.md` and `CLAUDE.md` from `docs/templates/poc-claude.md`. Write one scenario test per exit criterion in `tests/`.
-2. **Run.** Small steps, `make quick` after each, `make test-poc POC=NN` before ticking a box. Measurements go to `notes/` with the command that produced them. Decisions that outlive the iteration become ADRs.
-3. **Close.** Every exit criterion has evidence linked from the README. The demo is in `demo/`. `notes/backlog-changes.md` lists what the backlog should change. Status `done`, `CURRENT` moves on, `make check` green.
+Skill `poc-iteration` ([.claude/skills/poc-iteration/SKILL.md](../.claude/skills/poc-iteration/SKILL.md)) owns the open, run, and close steps. [pocs/CLAUDE.md](CLAUDE.md) defines `CURRENT` and says which PoCs are open.
 
 Each folder: `README.md` (question, scope and exit criteria as checklists, status), `CLAUDE.md` (what to read, what is touched, what done means), `tests/`, `demo/`, `notes/`.

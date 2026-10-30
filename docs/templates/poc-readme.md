@@ -1,8 +1,16 @@
 # PoC-NN: <title>
 
-Status: not started | in progress | done
+Status: <not started | in progress | done> (YYYY-MM-DD)
 Planning doc: [docs/planning/poc/00N-*.md](../../docs/planning/poc/)
+Builds on: <the PoC folders this one needs, or none>
+Hands to: <the PoC folders that build on this one, or none>
 Time box: <from the planning doc>
+
+<!-- `Status:` holds one value and the date it was set. Detail goes under "Waiting on". -->
+
+## Waiting on
+
+<what blocks the next box, one bullet each, or none>
 
 ## Question
 
