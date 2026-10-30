@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import subprocess
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -32,8 +33,6 @@ NON_FAKE_CONFIGS = (COMPOSE_LITELLM / "config.local.yaml", KIND_LITELLM)
 MASTER_KEY_REF = "os.environ/LITELLM_MASTER_KEY"
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
 LOCAL_IMAGE = re.compile(r"^kind\.local/agent-platform/[a-z0-9-]+:poc05$")
-UNPINNED_UNTIL_T19 = {"postgres:17.6-alpine"}
-"""Third-party images whose digest is not in the repo yet. Each carries `TODO(T19)` in its file."""
 
 SERVICES = (
     "litellm",
@@ -211,18 +210,32 @@ def test_every_platform_service_has_a_workload() -> None:
     assert set(SERVICES) <= set(_workloads()), sorted(_workloads())
 
 
-def test_platform_images_are_pinned() -> None:
-    """Third-party images by digest; ours are the local `:poc05` builds, never pulled."""
-    for name, doc in _workloads().items():
-        spec = _pod_spec(doc)
-        for c in spec.get("initContainers", []) + spec["containers"]:
-            image = c["image"]
-            if LOCAL_IMAGE.match(image):
-                assert c.get("imagePullPolicy") == "Never", f"{name}: {image}"
-            elif image in UNPINNED_UNTIL_T19:
-                assert f"{image}  # TODO(T19): pin by digest" in _all_platform_text(), image
-            else:
-                assert DIGEST.search(image), f"{name}: {image} is not pinned by digest"
+@pytest.mark.parametrize(
+    "image",
+    [
+        pytest.param(c, id=f"{name}/{c['name']}")
+        for name, doc in _workloads().items()
+        for c in _pod_spec(doc).get("initContainers", []) + _pod_spec(doc)["containers"]
+        if LOCAL_IMAGE.match(c["image"])
+    ],
+)
+def test_platform_images_are_never_pulled_when_they_are_our_builds(image: dict[str, Any]) -> None:
+    """Section 2.11: our images are the local `:poc05` builds, with imagePullPolicy Never."""
+    assert image.get("imagePullPolicy") == "Never", image["image"]
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        pytest.param(c["image"], id=f"{name}/{c['name']}")
+        for name, doc in _workloads().items()
+        for c in _pod_spec(doc).get("initContainers", []) + _pod_spec(doc)["containers"]
+        if not LOCAL_IMAGE.match(c["image"])
+    ],
+)
+def test_platform_images_are_pinned(image: str) -> None:
+    """Section 2.11: each third-party platform image is pinned by an @sha256 digest."""
+    assert DIGEST.search(image), f"{image} is not pinned by digest"
 
 
 def test_platform_pods_are_hardened() -> None:
@@ -419,6 +432,114 @@ def test_seed_review_fixes_hold() -> None:
     text = SEED.read_text()
     assert "-@admin -@dangerous" in text
     assert not re.search(r'put_env_secret "\$AGENTS" minio-chassis', text)
+
+
+# Stubs for the rotate run below: no cluster, no LiteLLM, no network. Made-up values only.
+_STUB_KUBECTL = """#!/usr/bin/env bash
+case " $* " in
+  *" port-forward "*) echo "Forwarding from 127.0.0.1:40999 -> 4000"; exec sleep 30 ;;
+  *LITELLM_MASTER_KEY*) printf 'bWFkZXVwLW1hc3Rlcg==' ;;
+  *" get namespace "*) exit 0 ;;
+  *" get secret "*) exit 1 ;;
+  *" create secret "*) cat >/dev/null; echo "kind: Secret" ;;
+  *) cat >/dev/null 2>&1 || true ;;
+esac
+"""
+_STUB_CURL = """#!/usr/bin/env bash
+cat >/dev/null 2>&1 || true
+url="${*: -1}" fail=0 write=0
+for a in "$@"; do
+  [[ $a == -*f* && $a != --* ]] && fail=1
+  [[ $a == -w || $a == --write-out ]] && write=1
+done
+printf '%s\\n' "${url#http://127.0.0.1:40999}" >>"$STUB_CALLS"
+case $url in
+  */health/liveliness) exit 0 ;;
+  */key/delete*)
+    ((write)) && printf '%s' "$STUB_DELETE_CODE"
+    ((fail && STUB_DELETE_CODE >= 400)) && exit 22
+    exit 0 ;;
+  */key/list*) printf '%s' "$STUB_LIST" ;;
+  */key/generate) printf '{"key":"sk-madeup-new"}' ;;
+esac
+"""
+_LIST_EMPTY = '{"keys": [], "total_count": 0}'
+_LIST_LEFT = '{"keys": ["0f1e2d3c4b5a6978"], "total_count": 1}'  # pragma: allowlist secret
+_LIST_ODD = '{"detail": "x"}'
+
+
+def _rotate(tmp_path: Path, delete_code: str, listing: str) -> tuple[int, list[str], str]:
+    """Run `seed.sh rotate chassis-echo-litellm` with stub kubectl and curl first on PATH."""
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    for name, body in (("kubectl", _STUB_KUBECTL), ("curl", _STUB_CURL)):
+        (stubs / name).write_text(body)
+        (stubs / name).chmod(0o755)
+    calls = tmp_path / "calls"
+    calls.touch()
+    env = {
+        "PATH": f"{stubs}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+        "STUB_CALLS": str(calls),
+        "STUB_DELETE_CODE": delete_code,
+        "STUB_LIST": listing,
+    }
+    out = subprocess.run(
+        ["bash", str(SEED), "rotate", "chassis-echo-litellm"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=env,
+    )
+    return out.returncode, calls.read_text().splitlines(), out.stdout + out.stderr
+
+
+def _has_jq() -> bool:
+    path = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+    probe = subprocess.run(["bash", "-c", f"PATH={path} command -v jq"], capture_output=True)
+    return probe.returncode == 0
+
+
+@pytest.mark.skipif(not _has_jq(), reason="no jq")
+@pytest.mark.parametrize(
+    ("delete_code", "listing"),
+    [
+        ("500", _LIST_EMPTY),
+        ("401", _LIST_EMPTY),
+        ("200", _LIST_LEFT),
+        ("404", _LIST_LEFT),
+        ("200", _LIST_ODD),
+    ],
+    ids=[
+        "delete-500",
+        "delete-401",
+        "deleted-but-key-left",
+        "miss-but-key-left",
+        "list-no-keys-field",
+    ],
+)
+def test_seed_rotate_mints_no_key_when_the_old_key_may_still_be_live(
+    tmp_path: Path, delete_code: str, listing: str
+) -> None:
+    """R5a-09: a failed `/key/delete`, or a key still listed under the alias, stops the rotate
+    with a non-zero exit before `/key/generate`, so two live keys never exist."""
+    rc, calls, output = _rotate(tmp_path, delete_code, listing)
+
+    assert rc != 0, output
+    assert "/key/delete" in calls
+    assert "/key/generate" not in calls
+    assert "sk-madeup-new" not in output and "madeup-master" not in output
+
+
+@pytest.mark.skipif(not _has_jq(), reason="no jq")
+@pytest.mark.parametrize("delete_code", ["200", "404"], ids=["deleted", "miss"])
+def test_seed_rotate_mints_a_key_when_no_old_key_is_left(tmp_path: Path, delete_code: str) -> None:
+    """R5a-09 control: a delete that worked, or a miss, with no key left under the alias, mints
+    the new key and exits zero; nothing secret is printed."""
+    rc, calls, output = _rotate(tmp_path, delete_code, _LIST_EMPTY)
+
+    assert rc == 0, output
+    assert calls.index("/key/delete") < calls.index("/key/generate")
+    assert "sk-madeup-new" not in output and "madeup-master" not in output
 
 
 # --- run.sh: the gateway key, the Job, the pool, the pinned manifest (reviews of 2026-10-09) ---

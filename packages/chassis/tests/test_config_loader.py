@@ -11,17 +11,21 @@ from typing import Any
 
 import jsonschema
 import pytest
-from chassis.fakes import InMemoryConfig, InMemoryTelemetry
+from chassis.fakes import InMemoryConfig, InMemoryState, InMemoryTelemetry
+from chassis.ports.config import LoadedConfig
 from chassis.schemas import SCHEMA_DIR
 from chassis.server.app import close_ports
-from chassis.server.config import ChassisConfig, content_hash, load_config
+from chassis.server.config import ChassisConfig, IdempotencySpec, content_hash, load_config
 from chassis.server.config_loader import (
     ConfigRejected,
     ConfigReloader,
     restart_required,
     uses_store,
 )
+from chassis.server.idempotency import Idempotency
+from chassis.server.pipeline import RunPipeline
 from chassis.server.readiness import not_ready_reason
+from starlette.datastructures import State
 
 DOC: dict[str, Any] = {
     "version": "cfg-1",
@@ -50,10 +54,10 @@ def doc(**changes: Any) -> dict[str, Any]:
 
 def reloader(
     bootstrap: dict[str, Any] = DOC, *, from_store: bool | None = None, store: Any = None
-) -> tuple[ConfigReloader, SimpleNamespace, InMemoryConfig, InMemoryTelemetry]:
+) -> tuple[ConfigReloader, State, InMemoryConfig, InMemoryTelemetry]:
     port = store if store is not None else InMemoryConfig()
     telemetry = InMemoryTelemetry()
-    state = SimpleNamespace(config=None, config_loaded=False)
+    state = State({"config": None, "config_loaded": False})
     loader = ConfigReloader(
         state, port, load_config(bootstrap), telemetry=telemetry, from_store=from_store
     )
@@ -101,12 +105,30 @@ async def test_a_reloadable_change_swaps_the_config() -> None:
     await loader.stop()
 
 
-async def test_the_idempotency_layer_gets_the_new_spec() -> None:
-    loader, state, port, _ = reloader()
-    state.idempotency = SimpleNamespace(spec=None)
+async def test_pipeline_idempotency_uses_the_new_ttl_when_a_reload_changes_it() -> None:
+    """R4-16: the pipeline's `Idempotency` takes the reloaded spec through `reload`."""
+    # Arrange
+    loader, state, port, telemetry = reloader()
+    state.ports = SimpleNamespace(state=InMemoryState(), telemetry=telemetry)
+    pipeline = RunPipeline(state)
     await loader.start()
+    before = pipeline.idempotency
+    # Act
     await port.put("echo", doc(**{"spec.idempotency": {"ttl_s": 60}}))
-    assert state.idempotency.spec.ttl_s == 60
+    # Assert
+    assert pipeline.idempotency is before
+    assert before.spec.ttl_s == 60
+    await loader.stop()
+
+
+def test_idempotency_reload_swaps_the_spec_when_called() -> None:
+    """R4-16: `Idempotency.reload` is the typed way to give it a new `spec.idempotency`."""
+    # Arrange
+    idem = Idempotency(InMemoryState(), IdempotencySpec(), InMemoryTelemetry())
+    # Act
+    idem.reload(IdempotencySpec(ttl_s=60))
+    # Assert
+    assert idem.spec.ttl_s == 60
 
 
 async def test_version_is_the_content_hash_when_the_document_names_none() -> None:
@@ -279,3 +301,109 @@ async def test_close_ports_closes_the_config_port_too() -> None:
     with pytest.raises(RuntimeError):
         await close_ports(bundle)  # type: ignore[arg-type]
     assert log == ["engine", "model", "state", "events", "config"]
+
+
+@pytest.mark.parametrize(
+    "idempotency",
+    [{"ttl_s": float("inf")}, {"ttl_s": float("nan")}, {"ttl_s": 2_592_001}],
+)
+async def test_reloader_refuses_ttl_s_as_invalid_when_it_is_not_finite_or_past_the_cap(
+    idempotency: dict[str, float],
+) -> None:
+    """R4-08: `spec.idempotency.ttl_s: .inf` (or past 30 days) is `invalid`; the last good
+    config stays."""
+    # Arrange
+    loader, state, port, telemetry = reloader()
+    await loader.start()
+    good = state.config
+    # Act
+    await port.put("echo", doc(**{"spec.idempotency": idempotency}))
+    # Assert
+    assert state.config is good
+    assert telemetry.counter_value("chassis.config.rejected", reason="invalid") == 1
+    logged = [e for e in telemetry.logs if e["message"] == "chassis.config.rejected"]
+    assert logged[-1]["paths"] == ["spec.idempotency.ttl_s"]
+    await loader.stop()
+
+
+@pytest.mark.parametrize("lease_s", [float("inf"), float("nan"), 3_601])
+def test_idempotency_spec_refuses_lease_s_when_it_is_not_finite_or_past_the_cap(
+    lease_s: float,
+) -> None:
+    """R4-08: `lease_s` has the same guard as `ttl_s`."""
+    # Arrange
+    data = {"lease_s": lease_s}
+    # Act / Assert
+    with pytest.raises(ValueError, match="lease_s"):
+        IdempotencySpec.model_validate(data)
+
+
+def test_idempotency_spec_accepts_the_caps_when_they_are_exactly_reached() -> None:
+    """R4-08: the caps themselves are allowed."""
+    # Arrange / Act
+    spec = IdempotencySpec(ttl_s=2_592_000, lease_s=3_600)
+    # Assert
+    assert (spec.ttl_s, spec.lease_s) == (2_592_000, 3_600)
+
+
+def _mixed_top_level() -> LoadedConfig:
+    data: dict[Any, Any] = {**doc(), 1: "x", "foo": "y"}
+    return LoadedConfig.model_construct(name="echo", version="2", data=data)
+
+
+def _mixed_nested() -> LoadedConfig:
+    data = doc()
+    data["spec"][1] = "x"
+    return LoadedConfig(name="echo", version="2", data=data)
+
+
+def _too_deep() -> LoadedConfig:
+    data = doc()
+    node: dict[str, Any] = data["spec"]
+    for _ in range(50_000):  # past the C recursion limit of `json.dumps`
+        node["deep"] = {}
+        node = node["deep"]
+    return LoadedConfig.model_construct(name="echo", version="2", data=data)
+
+
+@pytest.mark.parametrize("loaded", [_mixed_top_level, _mixed_nested, _too_deep])
+async def test_reloader_rejects_as_invalid_when_the_document_cannot_be_hashed(
+    loaded: Any,
+) -> None:
+    """R4-28: mixed key types (`1:` next to `foo:`) or a too-deep document count
+    `chassis.config.rejected{reason=invalid}` and keep the active config."""
+    # Arrange
+    loader, state, _, telemetry = reloader()
+    await loader.start()
+    good = state.config
+    # Act
+    await loader.on_change(loaded())
+    # Assert
+    assert state.config is good
+    assert telemetry.counter_value("chassis.config.rejected", reason="invalid") == 1
+    await loader.stop()
+
+
+async def test_reloader_refuses_restart_required_when_a_field_outside_reloadable_changes() -> None:
+    """R4-20: a path in no list (`spec.idempotency.max_entry_bytes`) is restart-only."""
+    # Arrange
+    loader, state, port, telemetry = reloader()
+    await loader.start()
+    good = state.config
+    # Act
+    await port.put("echo", doc(**{"spec.idempotency": {"max_entry_bytes": 7}}))
+    # Assert
+    assert state.config is good
+    assert telemetry.counter_value("chassis.config.rejected", reason="restart_required") == 1
+    await loader.stop()
+
+
+async def test_reloader_leaves_the_port_alone_when_it_does_not_poll() -> None:
+    """R4-16: only a port that polls (`PollingConfig`) gets the poll-failed hook."""
+    # Arrange
+    loader, _, port, _ = reloader()
+    # Act
+    await loader.start()
+    # Assert
+    assert not hasattr(port, "on_poll_failed")
+    await loader.stop()

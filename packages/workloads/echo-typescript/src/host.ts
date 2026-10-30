@@ -1,5 +1,6 @@
 // The bind guard, as in workload_a2a's `build_server`: the sidecar serves localhost only
-// (ADR-001), so a HOST that is not loopback is refused unless ALLOW_ANY_HOST=1. Pure: no socket.
+// (ADR-001), so a HOST that is not loopback is refused unless ALLOW_ANY_HOST=1. Also the PORT
+// check. Pure: no socket.
 
 import { BlockList, isIPv4, isIPv6 } from "node:net";
 
@@ -29,4 +30,17 @@ export function bindHost(env: Readonly<Record<string, string | undefined>>, toke
     );
   }
   return host;
+}
+
+const DEFAULT_PORT = "9000"; // suggested: 9000
+const MAX_PORT = 65_535;
+
+/** The TCP port to bind: PORT (default 9000), refused unless it is an integer 0..65535. */
+export function portOf(env: Readonly<Record<string, string | undefined>>): number {
+  const raw = env["PORT"] ?? DEFAULT_PORT;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 0 || port > MAX_PORT) {
+    throw new Error(`PORT ${JSON.stringify(raw)} is not an integer from 0 to ${MAX_PORT}`);
+  }
+  return port;
 }

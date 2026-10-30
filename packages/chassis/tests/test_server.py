@@ -10,7 +10,6 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-import httpx
 import pytest
 import uvicorn
 from chassis import CHASSIS_VERSION
@@ -27,10 +26,13 @@ from chassis.fakes import (
 from chassis.ports.bundle import PortBundle
 from chassis.profiles import REGISTRY, LaneNotAllowed
 from chassis.server import ChassisConfig, cli, create_app
-from chassis.server.config import RELOADABLE, RESTART_ONLY, load_config
+from chassis.server.config import RELOADABLE, load_config
 from chassis.server.correlation import RunRecord
 from chassis.server.proxy_app import create_proxy_app
 from fastapi import FastAPI
+from proxy_fakes import asgi_client as _client
+from proxy_fakes import proxy_ports
+from proxy_fakes import sse_frames as _frames
 
 CONFIG: dict[str, Any] = {
     "version": "cfg-1",
@@ -45,27 +47,7 @@ CONFIG: dict[str, Any] = {
 
 
 def _ports(engine: FakeEngine | None = None) -> PortBundle:
-    return PortBundle(
-        model=ScriptedModel(),
-        engine=engine or FakeEngine(handle=echo),
-        config=InMemoryConfig(),
-        telemetry=InMemoryTelemetry(),
-    )
-
-
-def _client(app: Any) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://chassis")
-
-
-def _frames(text: str) -> list[tuple[str, dict[str, Any]]]:
-    frames: list[tuple[str, dict[str, Any]]] = []
-    for block in text.split("\n\n"):
-        if not block.strip():
-            continue
-        lines = block.splitlines()
-        assert lines[0].startswith("event: ") and lines[1].startswith("data: "), block
-        frames.append((lines[0][7:], json.loads(lines[1][6:])))
-    return frames
+    return proxy_ports(ScriptedModel(), engine)
 
 
 def test_config_loads_from_a_dict_and_a_file(tmp_path: Any) -> None:
@@ -623,15 +605,14 @@ def _has_path(model: Any, path: str) -> bool:
     return True
 
 
-def test_reloadable_and_restart_only_paths_exist_and_do_not_overlap() -> None:
+def test_reloadable_paths_exist_and_leave_lease_s_restart_only() -> None:
     config = ChassisConfig.model_validate(
         {**CONFIG, "spec": {**CONFIG["spec"], "adapters": {"model": "fake"}}}
     )
-    for path in (*RELOADABLE, *RESTART_ONLY):
+    for path in RELOADABLE:
         assert _has_path(config, path), path
-    assert not set(RELOADABLE) & set(RESTART_ONLY)
     assert "spec.idempotency.ttl_s" in RELOADABLE
-    assert "spec.idempotency.lease_s" in RESTART_ONLY
+    assert "spec.idempotency.lease_s" not in RELOADABLE
 
 
 @pytest.mark.parametrize("name", ["local.yaml", "sidecar.yaml"])

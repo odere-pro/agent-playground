@@ -4,7 +4,8 @@ differ between lanes; the mapping, the validation, the cancel, and the span are 
 A subclass's `setup` builds an `httpx.AsyncClient` and calls `_open`, which reads the agent card
 and opens an a2a-sdk client on it. `run` sends one message per `Request`, always streaming, and
 yields the chassis events it reads back from `metadata["chassis.event"]` (a JSON string, or the
-v0 `Struct`; one that does not parse is `error {code: "a2a.bad_event"}`).
+v0 `Struct`; one that does not parse is `error {code: "a2a.bad_event"}` with fixed text, and the
+parse error, which can quote the remote's payload, goes to the log through `chassis.redaction`).
 
 `budget.timeout_ms` is two limits: the a2a-sdk call timeout, so each HTTP connect, write, pool
 wait, and read gets that long, and a deadline for the whole run, `timeout_ms` after `run` sends,
@@ -38,7 +39,9 @@ read through `getattr`, so this module imports no telemetry SDK; it never replac
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator
+from contextlib import aclosing
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 import anyio
@@ -61,6 +64,8 @@ from chassis.core.envelope import Context, Request
 from chassis.core.events import SCHEMA_VERSION, End, Error, Event, Start, parse_event
 from chassis.core.trace import trace_id_hex, traceparent_for
 from chassis.ports.engine import Lane
+from chassis.ports.telemetry import Span, TelemetryPort
+from chassis.redaction import redact
 
 if TYPE_CHECKING:
     from chassis.ports.bundle import PortBundle
@@ -69,6 +74,8 @@ SPAN_TASK_ID_CAP = 128
 """suggested: characters of the remote's task id kept in the span attribute."""
 CANCEL_TIMEOUT_S = 5.0
 """suggested: the cancel has its own short timeout; the run's budget may already be spent."""
+BAD_EVENT_TEXT = "the agent sent an event that is not valid"
+"""suggested: the fixed `a2a.bad_event` message. The parse error's own text goes to the log."""
 
 
 PROPAGATED = frozenset({"baggage"})
@@ -140,6 +147,29 @@ class ChassisTranslator:
         return [raw]
 
 
+class _DeadlinePassed(Exception):
+    """The run passed its deadline, `budget.timeout_ms` after the send (`a2a.timeout`)."""
+
+
+@dataclass
+class _Run:
+    """What one run's read loop and its cleanup share. `task_id` is the remote's task id, kept
+    from the first stream item that had one."""
+
+    request: Request
+    translator: EventTranslator
+    span: Span
+    headers: dict[str, str]
+    telemetry: TelemetryPort
+    task_id: str | None = None
+
+    def note_task_id(self) -> None:
+        """Keep the translator's task id once it has one, and put it on the span, capped."""
+        if self.task_id is None and self.translator.task_id is not None:
+            self.task_id = self.translator.task_id
+            self.span.attributes["a2a.task_id"] = self.task_id[:SPAN_TASK_ID_CAP]
+
+
 class A2AConnector:
     """The shared client. Subclasses set `kind` and implement `setup` with `_open`."""
 
@@ -199,7 +229,6 @@ class A2AConnector:
         if self._client is None or self._ports is None:
             raise RuntimeError(f"{self.kind} connector is not set up")
         telemetry = self._ports.telemetry
-        task_id: str | None = None
         with telemetry.span(
             "chassis.engine.run",
             lane=self.kind,
@@ -210,98 +239,126 @@ class A2AConnector:
             message = self._message_for(
                 request, ctx.model_copy(update={"traceparent": traceparent})
             )
-            translator = self._translator_for(request)
             headers = {**propagation_headers(telemetry), "traceparent": traceparent}
             call = ClientCallContext(
                 timeout=request.budget.timeout_ms / 1000, service_parameters=dict(headers)
             )
+            run = _Run(request, self._translator_for(request), span, headers, telemetry)
             stream = self._client.send_message(message, context=call)
-            responses = aiter(stream)
             deadline = anyio.current_time() + request.budget.timeout_ms / 1000
             try:
-                while True:
-                    # One deadline for the whole run, applied to each read. The `yield` stays
-                    # outside the scope: a cancel scope must not span a `yield` of a generator.
-                    with anyio.CancelScope(deadline=deadline) as read:
-                        response = await anext(responses, None)
-                    if read.cancelled_caught:
-                        yield Error(
-                            code="a2a.timeout",
-                            message=f"the run took longer than its budget of "
-                            f"{request.budget.timeout_ms} ms",
-                            retryable=True,
-                        )
-                        return
-                    if response is None:
-                        yield Error(
-                            code="a2a.transport",
-                            message="stream ended without end or error",
-                            retryable=True,
-                        )
-                        return
-                    bad: BadJson | None = None
-                    try:
-                        raws = translator.feed(response)
-                    except BadJson as exc:
-                        bad, raws = exc, []
-                    if task_id is None and translator.task_id is not None:
-                        task_id = translator.task_id
-                        span.attributes["a2a.task_id"] = task_id[:SPAN_TASK_ID_CAP]
-                    if bad is not None:
-                        yield Error(code="a2a.bad_event", message=str(bad))
-                        return
-                    for raw in raws:
-                        try:
-                            event = parse_event(raw)
-                        except (ValidationError, ValueError) as exc:
-                            event = Error(code="a2a.bad_event", message=str(exc))
-                        if isinstance(event, Start) and event.request_id != request.request_id:
-                            event = Error(
-                                code="a2a.request_mismatch",
-                                message=f"start.request_id {event.request_id!r} is not "
-                                f"{request.request_id!r}",
-                            )
+                async with aclosing(self._read(aiter(stream), run, deadline)) as events:
+                    async for event in events:
                         yield event
-                        if isinstance(event, End | Error):
-                            return
-            except (httpx.TimeoutException, A2AClientTimeoutError) as exc:
+            except _DeadlinePassed:
                 yield Error(
                     code="a2a.timeout",
-                    message=self._failure_text("a2a.timeout", exc) or "timed out",
+                    message=f"the run took longer than its budget of "
+                    f"{request.budget.timeout_ms} ms",
                     retryable=True,
                 )
+            except (httpx.TimeoutException, A2AClientTimeoutError) as exc:
+                text = self._failure_text("a2a.timeout", exc) or "timed out"
+                yield Error(code="a2a.timeout", message=text, retryable=True)
             except (httpx.TransportError, A2AClientError) as exc:
                 span.attributes["a2a.transport_error"] = type(exc).__name__
-                yield Error(
-                    code="a2a.transport",
-                    message=self._failure_text("a2a.transport", exc) or type(exc).__name__,
-                    retryable=True,
-                )
+                text = self._failure_text("a2a.transport", exc) or type(exc).__name__
+                yield Error(code="a2a.transport", message=text, retryable=True)
             except self._malformed_stream as exc:
                 span.attributes["a2a.transport_error"] = type(exc).__name__
+                text = self._failure_text("a2a.transport", exc)
+                yield Error(code="a2a.transport", message=text, retryable=True)
+            finally:
+                await self._finish(stream, run)
+
+    async def _read_one(
+        self, responses: AsyncIterator[StreamResponse], deadline: float
+    ) -> StreamResponse | None:
+        """The next stream item, or None at the end of the stream. `_DeadlinePassed` when the
+        run's deadline comes first. One deadline for the whole run, applied to each read; the
+        caller's `yield` stays outside the cancel scope, which must not span a generator's
+        `yield`."""
+        with anyio.CancelScope(deadline=deadline) as read:
+            response = await anext(responses, None)
+        if read.cancelled_caught:
+            raise _DeadlinePassed
+        return response
+
+    async def _read(
+        self, responses: AsyncIterator[StreamResponse], run: _Run, deadline: float
+    ) -> AsyncGenerator[Event]:
+        """The run's events up to and including its first `end` or `error`. A stream that ends
+        before one is `a2a.transport`; a `chassis.event` that is not a JSON object is
+        `a2a.bad_event`."""
+        while True:
+            response = await self._read_one(responses, deadline)
+            if response is None:
                 yield Error(
                     code="a2a.transport",
-                    message=self._failure_text("a2a.transport", exc),
+                    message="stream ended without end or error",
                     retryable=True,
                 )
-            finally:
-                span.attributes.update(translator.span_attributes)
-                # Shielded: a client disconnect cancels this task, and an unshielded await here
-                # would be skipped at its first checkpoint, leaving the A2A task running.
-                with anyio.CancelScope(shield=True):
-                    closer = getattr(stream, "aclose", None)
-                    if closer is not None:
-                        try:
-                            await closer()
-                        except Exception as exc:  # the cancel below must still go out
-                            telemetry.log(
-                                "warning",
-                                "a2a stream close failed",
-                                task_id=task_id,
-                                reason=f"{type(exc).__name__}: {exc}",
-                            )
-                    if not translator.server_finished and task_id is not None:
-                        await self._cancel(task_id, headers)
+                return
+            try:
+                raws = run.translator.feed(response)
+            except BadJson as exc:
+                run.note_task_id()
+                yield self._bad_event(run.request, exc)
+                return
+            run.note_task_id()
+            for event in self._events_from(raws, run.request):
+                yield event
+                if isinstance(event, End | Error):
+                    return
+
+    def _events_from(self, raws: list[dict[str, Any]], request: Request) -> Iterator[Event]:
+        """Each raw event parsed, lazily. One that fails `parse_event` is `a2a.bad_event`; a
+        `start` for another request is `a2a.request_mismatch`."""
+        for raw in raws:
+            try:
+                event = parse_event(raw)
+            except (ValidationError, ValueError) as exc:
+                event = self._bad_event(request, exc)
+            if isinstance(event, Start) and event.request_id != request.request_id:
+                event = Error(
+                    code="a2a.request_mismatch",
+                    message=f"start.request_id {event.request_id!r} is not {request.request_id!r}",
+                )
+            yield event
+
+    def _bad_event(self, request: Request, exc: Exception) -> Error:
+        """`a2a.bad_event` with fixed text. The parse error quotes the remote's payload (pydantic's
+        `input_value=...`), so it goes to the log only, through `chassis.redaction.redact`."""
+        if self._ports is not None:
+            self._ports.telemetry.log(
+                "warning",
+                "a2a bad event",
+                request_id=request.request_id,
+                error_type=type(exc).__name__,
+                detail=redact(str(exc)),
+            )
+        return Error(code="a2a.bad_event", message=BAD_EVENT_TEXT)
+
+    async def _finish(self, stream: object, run: _Run) -> None:
+        """The end of every run: the translator's span attributes, then the stream closed and,
+        when the server has not finished the task, the cancel. Shielded: a client disconnect
+        cancels this task, and an unshielded await here would be skipped at its first
+        checkpoint, leaving the A2A task running."""
+        run.span.attributes.update(run.translator.span_attributes)
+        with anyio.CancelScope(shield=True):
+            closer = getattr(stream, "aclose", None)
+            if closer is not None:
+                try:
+                    await closer()
+                except Exception as exc:  # the cancel below must still go out
+                    run.telemetry.log(
+                        "warning",
+                        "a2a stream close failed",
+                        task_id=run.task_id,
+                        reason=f"{type(exc).__name__}: {exc}",
+                    )
+            if not run.translator.server_finished and run.task_id is not None:
+                await self._cancel(run.task_id, run.headers)
 
     async def close(self) -> None:
         if self._client is not None:

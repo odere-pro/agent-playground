@@ -45,7 +45,7 @@ spec:
           localhostProfile: profiles/poc06-runsc-clone3.json
       containers:
         - name: workload
-          image: kind.local/agent-platform/echo-smolagents:poc06
+          image: kind.local/agent-platform/echo-smolagents:kind
           imagePullPolicy: Never
           args: ["--require-token-env", "CHASSIS_API_TOKEN", "--drain-timeout-s", "30"]
           env:

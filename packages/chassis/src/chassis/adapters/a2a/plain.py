@@ -49,6 +49,7 @@ from google.protobuf import json_format
 from google.protobuf.struct_pb2 import Struct
 
 from chassis.core.events import SCHEMA_VERSION
+from chassis.redaction import redact_error_text
 
 REMOTE_TEXT_CAP = 300
 """suggested: characters of the remote's own failure text that reach the log."""
@@ -76,7 +77,6 @@ _TERMINAL = frozenset(
 )
 
 _BEARER = re.compile(r"(?i)bearer[\s:]+\S+")
-_KEY_SHAPE = re.compile(r"sk-[A-Za-z0-9_-]{8,}")
 _LONG_TOKEN = re.compile(r"[A-Za-z0-9_\-+/=.]{32,}")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029]+")
 
@@ -134,11 +134,9 @@ def redact(text: str, cap: int = REMOTE_TEXT_CAP, secret: str | None = None) -> 
     the shapes below can miss when it is short), no control characters, no bearer or key shape, no
     long token-like run, at most `cap` characters. The secret goes first, before the cut.
     """
-    if secret:
-        text = text.replace(secret, "[redacted]")
+    text = redact_error_text(text, secret)
     text = _CONTROL.sub(" ", text)
     text = _BEARER.sub("[redacted]", text)
-    text = _KEY_SHAPE.sub("[redacted]", text)
     text = _LONG_TOKEN.sub("[redacted]", text)
     return text[:cap]
 

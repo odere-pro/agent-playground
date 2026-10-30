@@ -1,6 +1,6 @@
 # PoC-7: Confirm the cross-cutting stack: security, observability, feedback, and evals
 
-Builds on: PoC-1 (ports), PoC-5, PoC-6
+Builds on: PoC-6
 Hands to: PoC-8
 Run: `make test-poc POC=07`
 

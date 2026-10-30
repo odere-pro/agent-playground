@@ -205,3 +205,16 @@ async def test_code_runner_health_fails_once_isolation_is_lost(
         response = await client.get("/health")
     assert response.status_code == 503
     assert response.json() == {"status": "isolation_lost"}
+
+
+async def test_code_runner_workdir_failure_is_run_failed_without_the_path_when_tmp_root_is_gone(
+    tmp_path: Path,
+) -> None:
+    """An `OSError` making the work directory reaches the caller as `run_failed`, no path."""
+    server = create_server(tmp_root=tmp_path / "gone-dir")
+
+    with pytest.raises(ToolError) as raised:
+        await _call(server, {"code": "print(1)"}, "k-1")
+
+    assert str(raised.value).startswith("run_failed: ")
+    assert "gone-dir" not in str(raised.value)

@@ -9,6 +9,8 @@ import re
 
 __all__ = ["SECRET_PATTERNS", "find_secret"]
 
+# Hand copy of chassis/fakes/guardrail.py;
+# packages/contract-suites/tests/test_guardrail_pattern_drift.py pins the drift.
 SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("api_key", re.compile(r"\bsk-[A-Za-z0-9_-]{16,}")),
     ("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),

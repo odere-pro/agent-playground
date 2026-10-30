@@ -72,3 +72,11 @@ def test_ttl_ms_rounds_up_to_at_least_one(ttl_s: float | None, expected: int | N
 def test_ttl_ms_refuses_a_ttl_of_zero_or_less(ttl_s: float) -> None:
     with pytest.raises(ValueError, match="ttl_s"):
         ttl_ms(ttl_s)
+
+
+@pytest.mark.parametrize("ttl_s", [float("inf"), float("nan"), 1e300])
+def test_ttl_ms_raises_value_error_when_the_ttl_is_not_finite_or_too_large(ttl_s: float) -> None:
+    """R4-08: no `OverflowError`, and no `PX` Valkey would refuse."""
+    # Arrange / Act / Assert
+    with pytest.raises(ValueError, match="ttl_s"):
+        ttl_ms(ttl_s)

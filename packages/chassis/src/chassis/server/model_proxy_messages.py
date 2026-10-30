@@ -5,7 +5,7 @@ route; the chassis maps the body onto `ModelPort` (`chassis.adapters.anthropic_c
 and answers in Anthropic's shape. This is not the Anthropic interface on the public port
 (`chassis.server.interfaces.anthropic`), which calls the agent.
 
-The route shares `model_proxy.admit` with the OpenAI route: one run lookup, one budget, one
+The route shares `model_admission.admit` with the OpenAI route: one run lookup, one budget, one
 uncorrelated cap, and on the remote listener the same `BearerAuth` and `RequireRun`. No header is
 read or forwarded: `authorization`, `x-api-key`, `anthropic-version`, `anthropic-beta`. The query
 string is ignored. The `traceparent` is the only header read.
@@ -36,7 +36,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Receive, Scope, Send
 
 from chassis.adapters.anthropic_compat.model_wire import (
-    BODY_CAP_BYTES,
     TOO_LARGE,
     ParsedMessages,
     RefusedField,
@@ -51,15 +50,16 @@ from chassis.adapters.anthropic_compat.model_wire import (
 )
 from chassis.ports.model import ModelChunk, ModelError, Usage
 from chassis.ports.telemetry import TelemetryPort
-from chassis.server.model_proxy import (
+from chassis.server.model_admission import (
     SPAN,
     Admission,
+    Hold,
     Refusal,
-    _Hold,
     admit,
     is_ready,
     note_denied,
     note_rejected,
+    read_capped,
 )
 
 FIRST_CHUNK_WAIT_S = 5.0  # suggested
@@ -238,7 +238,7 @@ class _MessagesStream(StreamingResponse):
             # Otherwise the client left: `release` in `__call__` charges the abandoned stream.
 
 
-def _deadline_s(hold: _Hold) -> float:
+def _deadline_s(hold: Hold) -> float:
     """The stream's wall clock: what is left of the run's `timeout_ms`, else the fixed default."""
     record = hold.record
     if record is None:
@@ -280,22 +280,6 @@ async def _empty() -> AsyncIterator[str]:
     yield ""
 
 
-async def _read_capped(http: HTTPRequest) -> bytes | None:
-    """The body, or `None` when it is over `BODY_CAP_BYTES`. The cap is enforced while reading,
-    before anything is parsed."""
-    declared = http.headers.get("content-length")
-    if declared is not None and declared.isdigit() and int(declared) > BODY_CAP_BYTES:
-        return None
-    size = 0
-    parts: list[bytes] = []
-    async for part in http.stream():
-        size += len(part)
-        if size > BODY_CAP_BYTES:
-            return None
-        parts.append(part)
-    return b"".join(parts)
-
-
 COUNT_TOKENS_PATH = "/v1/messages/count_tokens"
 NOT_FOUND = WireError(
     404,
@@ -329,7 +313,7 @@ def add_messages_route(router: APIRouter, app: FastAPI) -> None:
         msg_id, request_id = new_ids(hex24)
         if not is_ready(app):
             return error_response(NOT_READY, request_id)
-        body = await _read_capped(http)
+        body = await read_capped(http)
         if body is None:
             return error_response(TOO_LARGE, request_id)
         try:
@@ -350,20 +334,24 @@ def add_messages_route(router: APIRouter, app: FastAPI) -> None:
         )
         if isinstance(admission, Refusal):
             return error_response(_refusal_error(admission), request_id)
-        telemetry = admission.bundle.telemetry
-        for param in parsed.ignored:
-            telemetry.counter(IGNORED, format="anthropic", param=param)
-        if parsed.stream:
-            return _MessagesStream(admission, parsed, msg_id, request_id)
+        try:
+            telemetry = admission.bundle.telemetry
+            for param in parsed.ignored:
+                telemetry.counter(IGNORED, format="anthropic", param=param)
+            if parsed.stream:
+                return _MessagesStream(admission, parsed, msg_id, request_id)
+        except BaseException:
+            admission.hold.release()  # the model was never called: give the reservation back
+            raise
         return await _complete(admission, parsed, msg_id, request_id)
 
 
 async def _complete(
     admission: Admission, parsed: ParsedMessages, msg_id: str, request_id: str
 ) -> Response:
-    hold: _Hold = admission.hold
+    hold = admission.hold
     telemetry = admission.bundle.telemetry
-    with telemetry.span(SPAN, **admission.attributes):
+    with hold.settled(), telemetry.span(SPAN, **admission.attributes):
         try:
             result = await admission.bundle.model.complete(
                 parsed.messages,
@@ -373,13 +361,9 @@ async def _complete(
                 max_tokens=hold.max_tokens,
             )
         except ModelError as exc:
-            hold.settle(None)
             err = model_error_to_wire(exc)
             _note(telemetry, parsed.route, exc, err)
             return error_response(err, request_id)
-        except BaseException:
-            hold.settle(None)
-            raise
         hold.settle(result.usage)
     return JSONResponse(
         message_json(result, parsed.route, msg_id), headers={"request-id": request_id}

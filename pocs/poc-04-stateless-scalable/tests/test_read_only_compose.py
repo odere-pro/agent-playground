@@ -1,7 +1,10 @@
 """PoC-4 Compose stack for scale: `deploy/compose/docker-compose.scale.yaml` and its Dapr overlay.
 
-Exit criterion 5 (docs/planning/poc/004-PoC-4-stateless-scalable.md): "Both containers run with a
-read-only root file system on every engine, or the engine is flagged." The offline half: every
+PoC-4 exit criterion 5, in the README's words:
+
+"Both containers run with a read-only root file system on every engine."
+
+(The planning doc adds "or the engine is flagged"; no engine is.) The offline half: every
 chassis, workload, and daprd service has `read_only: true`, a tmpfs on `/tmp` only, no Linux
 capability, `no-new-privileges`, and a non-root user. One `x-workload` anchor serves every engine
 (`WORKLOAD_IMAGE` picks it), so the check holds for all four. The live half is
@@ -81,15 +84,62 @@ def _env(service: dict[str, Any]) -> dict[str, str]:
     return {str(k): "" if v is None else str(v) for k, v in env.items()}
 
 
-def _hardened(name: str, service: dict[str, Any], user: str | None = UID) -> None:
-    assert service.get("read_only") is True, f"{name}: the root file system must be read-only"
-    assert service.get("tmpfs", []) in ([], ["/tmp"]), f"{name}: {service.get('tmpfs')}"
-    assert service.get("cap_drop") == ["ALL"], f"{name}: {service.get('cap_drop')}"
-    assert "cap_add" not in service, f"{name} adds a capability"
-    assert service.get("security_opt") == ["no-new-privileges:true"], name
-    if user is not None:
-        assert service.get("user") == user, f"{name}: {service.get('user')}"
-    assert not service.get("privileged"), f"{name} is privileged"
+def _where(url: str) -> tuple[str | None, int | None, str]:
+    """`(host, port, path)` of `url`."""
+    parts = urlsplit(url)
+    return parts.hostname, parts.port, parts.path
+
+
+HARDENED: dict[str, Any] = {
+    "read_only": True,
+    "tmpfs on /tmp only": True,
+    "cap_drop": ["ALL"],
+    "adds a capability": False,
+    "security_opt": ["no-new-privileges:true"],
+    "privileged": False,
+}
+"""What every chassis, workload, and daprd service sets: `_hardening` reads the same keys."""
+
+
+def _hardening(service: dict[str, Any]) -> dict[str, Any]:
+    """The hardening settings of `service`, keyed as in `HARDENED`."""
+    return {
+        "read_only": service.get("read_only"),
+        "tmpfs on /tmp only": service.get("tmpfs", []) in ([], ["/tmp"]),
+        "cap_drop": service.get("cap_drop"),
+        "adds a capability": "cap_add" in service,
+        "security_opt": service.get("security_opt"),
+        "privileged": bool(service.get("privileged")),
+    }
+
+
+PAIR_SERVICES = [
+    pytest.param(f"{half}-{n}", uid, id=f"{half}-{n}")
+    for n in PAIRS
+    for half, uid in (("chassis", UID), ("workload", WORKLOAD_UID))
+]
+"""Each chassis and workload service of the scale file, with its image's non-root user."""
+FILE_SERVICES = [
+    pytest.param(path, name, id=f"{label}-{name}")
+    for path, label in ((SCALE, "scale"), (DAPR, "dapr"))
+    for name in _services(path)
+]
+"""Every service of the scale file and of its Dapr overlay."""
+KEY_VARIABLES = [
+    pytest.param(value, id=f"{label}-{name}-{var}")
+    for path, label in ((SCALE, "scale"), (DAPR, "dapr"))
+    for name, service in _services(path).items()
+    for var, value in _env(service).items()
+    if KEY_NAME.search(var)
+]
+"""The value of every key-like variable in either file."""
+PULLED_IMAGES = [
+    pytest.param(image, id=f"{label}-{name}")
+    for path, label in ((SCALE, "scale"), (DAPR, "dapr"))
+    for name, service in _services(path).items()
+    if (image := str(service.get("image", ""))) and BUILT not in image
+]
+"""Every image either file names that this repo does not build."""
 
 
 def test_scale_file_is_its_own_project_and_network() -> None:
@@ -114,7 +164,8 @@ def test_scale_file_is_its_own_project_and_network() -> None:
 
 @pytest.mark.parametrize("n", PAIRS)
 def test_pairs_are_explicit_and_chosen_by_profile(n: int) -> None:
-    """Exit criterion 4: 1, 2, or 4 pairs. Each workload joins its own chassis's namespace, and
+    """Scope item "Traefik in front of N chassis-and-workload pairs in Docker Compose, each pair
+    scaling as one unit": 1, 2, or 4 pairs. Each workload joins its own chassis's namespace, and
     both halves of a pair carry the same profiles.
     """
     services = _services(SCALE)
@@ -125,46 +176,71 @@ def test_pairs_are_explicit_and_chosen_by_profile(n: int) -> None:
     assert f"chassis-{n}" in workload.get("depends_on", {})
 
 
-def test_compose_sets_read_only_on_every_chassis_and_workload() -> None:
-    """Exit criterion 5: both containers of every pair run with a read-only root, a tmpfs on
-    `/tmp` only, no capability, `no-new-privileges`, and the images' non-root user. The workload
-    anchor is the same for every engine, so this covers all four.
+@pytest.mark.parametrize(("name", "uid"), PAIR_SERVICES)
+def test_compose_sets_read_only_on_every_chassis_and_workload(name: str, uid: str) -> None:
+    """Exit criterion 5: this container of a pair runs with a read-only root, a tmpfs on `/tmp`
+    only, no capability, `no-new-privileges`, and its image's non-root user. The workload anchor
+    is the same for every engine, so this covers all four.
     """
-    services = _services(SCALE)
-    for n in PAIRS:
-        for name, uid in ((f"chassis-{n}", UID), (f"workload-{n}", WORKLOAD_UID)):
-            _hardened(name, services[name], user=uid)
-            assert services[name].get("stop_grace_period") == "45s", name
-            assert services[name].get("mem_limit") == "512m", name
+    service = _services(SCALE)[name]
+    expected = {**HARDENED, "user": uid, "stop_grace_period": "45s", "mem_limit": "512m"}
+
+    seen = {
+        **_hardening(service),
+        "user": service.get("user"),
+        "stop_grace_period": service.get("stop_grace_period"),
+        "mem_limit": service.get("mem_limit"),
+    }
+
+    assert seen == expected, name
 
 
-def test_daprd_sidecars_are_hardened_and_follow_their_pair() -> None:
+@pytest.mark.parametrize("n", PAIRS)
+def test_daprd_sidecars_are_hardened_and_follow_their_pair(n: int) -> None:
     """Exit criterion 5 for the Dapr variant: daprd is a third container in the pair's namespace,
     read-only and with no capability, in the same profiles as its pair.
     """
-    services = _services(DAPR)
-    for n in PAIRS:
-        daprd = services[f"daprd-{n}"]
-        _hardened(f"daprd-{n}", daprd, user=None)
-        assert daprd.get("network_mode") == f"service:chassis-{n}"
-        assert daprd.get("profiles") == PAIR_PROFILES[n], f"daprd-{n}"
-        assert "ports" not in daprd, f"daprd-{n} publishes a port"
+    daprd = _services(DAPR)[f"daprd-{n}"]
+    expected = {
+        **HARDENED,
+        "network_mode": f"service:chassis-{n}",
+        "profiles": PAIR_PROFILES[n],
+        "publishes a port": False,
+    }
+
+    seen = {
+        **_hardening(daprd),
+        "network_mode": daprd.get("network_mode"),
+        "profiles": daprd.get("profiles"),
+        "publishes a port": "ports" in daprd,
+    }
+
+    assert seen == expected, f"daprd-{n}"
 
 
-@pytest.mark.parametrize("path", [SCALE, DAPR], ids=["scale", "dapr"])
-def test_only_traefik_publishes_and_only_on_loopback(path: Path) -> None:
+@pytest.mark.parametrize(("path", "name"), FILE_SERVICES)
+def test_only_traefik_publishes_and_only_on_loopback(path: Path, name: str) -> None:
     """SECURITY.md 7: the one published port is Traefik's, on 127.0.0.1. The chassis, the
     workloads, Valkey, MinIO, Kafka, and daprd publish nothing.
     """
-    for name, service in _services(path).items():
-        if name == "traefik":
-            assert service.get("ports") == [PUBLISHED], service.get("ports")
-        else:
-            assert "ports" not in service, f"{name} publishes {service.get('ports')}"
-        assert service.get("network_mode") != "host", name
-        assert "env_file" not in service, f"{name} loads an env_file"
-        volumes = [str(v) for v in service.get("volumes", [])]
-        assert not [v for v in volumes if "docker.sock" in v], f"{name} mounts the Docker socket"
+    service = _services(path)[name]
+    expected = {
+        "ports": [PUBLISHED] if name == "traefik" else "none",
+        "host network": False,
+        "loads an env_file": False,
+        "Docker socket mounts": [],
+    }
+
+    seen = {
+        "ports": service.get("ports", "none"),
+        "host network": service.get("network_mode") == "host",
+        "loads an env_file": "env_file" in service,
+        "Docker socket mounts": [
+            str(v) for v in service.get("volumes", []) if "docker.sock" in str(v)
+        ],
+    }
+
+    assert seen == expected, name
 
 
 @pytest.mark.parametrize("n", PAIRS)
@@ -177,35 +253,32 @@ def test_no_key_in_any_workload_env(n: int) -> None:
     env = _env(workload)
     assert set(env) <= WORKLOAD_ENV, f"workload-{n}: {sorted(env)}"
     assert [k for k in env if KEY_NAME.search(k)] == [], f"workload-{n} holds a key"
-    for var, path in (("CHASSIS_MODEL_URL", "/v1"), ("CHASSIS_TOOL_URL", "/mcp")):
-        url = urlsplit(env[var])
-        assert (url.hostname, url.port, url.path) == ("127.0.0.1", 8090, path), env[var]
+    proxies = {var: _where(env[var]) for var in ("CHASSIS_MODEL_URL", "CHASSIS_TOOL_URL")}
+    assert proxies == {
+        "CHASSIS_MODEL_URL": ("127.0.0.1", 8090, "/v1"),
+        "CHASSIS_TOOL_URL": ("127.0.0.1", 8090, "/mcp"),
+    }, env
     assert env["HOST"] == "127.0.0.1"
 
 
-@pytest.mark.parametrize("path", [SCALE, DAPR], ids=["scale", "dapr"])
-def test_no_secret_value_in_any_file(path: Path) -> None:
+@pytest.mark.parametrize("value", KEY_VARIABLES)
+def test_no_secret_value_in_any_file(value: str) -> None:
     """Plan 8a, Secrets: no value in any file. Every key-like variable is a required
     interpolation that `scale.sh` fills, so a run without `scale.sh` fails instead of starting
     with a blank or a default secret.
     """
-    for name, service in _services(path).items():
-        for var, value in _env(service).items():
-            if KEY_NAME.search(var):
-                assert REQUIRED.fullmatch(value), f"{name}: {var} is not ${{{var}:?...}}"
+    assert REQUIRED.fullmatch(value), f"{value!r} is not ${{NAME:?...}}"
 
 
-@pytest.mark.parametrize("path", [SCALE, DAPR], ids=["scale", "dapr"])
-def test_every_pulled_image_is_pinned_by_digest(path: Path) -> None:
+@pytest.mark.parametrize("image", PULLED_IMAGES)
+def test_every_pulled_image_is_pinned_by_digest(image: str) -> None:
     """SECURITY.md 2: every image this repo does not build is `name:tag@sha256:<digest>`."""
-    for name, service in _services(path).items():
-        image = str(service.get("image", ""))
-        if image and BUILT not in image:
-            assert DIGEST.search(image), f"{name}: {image}"
+    assert DIGEST.search(image), image
 
 
 def test_traefik_balances_all_four_chassis_on_ready() -> None:
-    """Exit criterion 4: Traefik reaches every chassis by name and drops one that fails `/ready`
+    """Scope item "Traefik in front of N chassis-and-workload pairs in Docker Compose, each pair
+    scaling as one unit": Traefik reaches every chassis by name and drops one that fails `/ready`
     (a pair that is not running, draining, or with a hung workload). No retry middleware: the
     client's own retry is what the drills test.
     """
@@ -232,16 +305,22 @@ def test_dapr_retries_match_the_subscribe_default() -> None:
     assert pubsub["metadata"]["name"] == "pubsub"
 
 
+SIDECAR_URL = "http://127.0.0.1:9000"
+"""The workload's address in the sidecar lane: its own loopback port in the pair's namespace."""
+
+
 @pytest.mark.parametrize(
-    ("name", "lane", "events"),
+    ("name", "lane", "events", "url"),
     [
-        ("scale.yaml", "sidecar", "none"),
-        ("scale-kafka.yaml", "sidecar", "kafka"),
-        ("scale-dapr.yaml", "sidecar", "dapr"),
-        ("scale-inprocess.yaml", "inprocess", "none"),
+        pytest.param("scale.yaml", "sidecar", "none", SIDECAR_URL, id="scale"),
+        pytest.param("scale-kafka.yaml", "sidecar", "kafka", SIDECAR_URL, id="kafka"),
+        pytest.param("scale-dapr.yaml", "sidecar", "dapr", SIDECAR_URL, id="dapr"),
+        pytest.param("scale-inprocess.yaml", "inprocess", "none", None, id="inprocess"),
     ],
 )
-def test_scale_configs_name_the_real_adapters(name: str, lane: str, events: str) -> None:
+def test_scale_configs_name_the_real_adapters(
+    name: str, lane: str, events: str, url: str | None
+) -> None:
     """Plan 8a: the bootstrap files the stack mounts. Each validates as `ChassisConfig`, keeps
     state in Valkey and the agent config in MinIO, and names its lane and event adapter.
     """
@@ -251,8 +330,7 @@ def test_scale_configs_name_the_real_adapters(name: str, lane: str, events: str)
     assert (adapters.model, adapters.config, adapters.state) == ("litellm", "minio", "valkey")
     assert adapters.events == events
     assert config.spec.engine.connector == lane
-    if lane == "sidecar":
-        assert config.spec.engine.url == "http://127.0.0.1:9000"
+    assert config.spec.engine.url == url
     assert config.spec.events.result_events is (events != "none")
 
 
@@ -269,5 +347,4 @@ def test_scale_script_never_touches_another_project() -> None:
         if "docker compose" in line and not line.strip().startswith("#")
     ]
     assert calls, "scale.sh runs no Compose command"
-    for call in calls:
-        assert "docker compose -p poc04 " in call, call
+    assert [call for call in calls if "docker compose -p poc04 " not in call] == []

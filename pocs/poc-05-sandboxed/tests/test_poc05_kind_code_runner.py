@@ -23,6 +23,7 @@ standard-library code. Each refusal sits next to its allowed control in the same
   that starts 5 works.
 - The burst (the HIGH): about 31 forked Python children in one call. Whatever happens to that
   sandbox, the dispatcher does not restart, and a concurrent call and the next call work.
+- A read-only root (H21): a write to `/var/tmp` fails with EROFS; the same write to `/tmp` works.
 - Nothing crosses calls (B12): files call A leaves in `/tmp` and `/dev/shm` are not in call B.
 - `/dev/shm` is an 8Mi memory `emptyDir`: a write past it fails with ENOSPC.
 - The claim for a call is gone, with its pod, within 10 s (`suggested:`) of the call's end.
@@ -194,6 +195,21 @@ for i in range({limit}):
         break
     written += 1
 print(json.dumps({{"small": small, "written_mib": written, "error": error}}))
+"""
+
+# One small write to the root file system and one to /tmp; each result is "written" or the errno
+# name. /var/tmp is mode 1777 on the image's root, so only a read-only root refuses it.
+ROOT_WRITES = """
+import errno, json
+seen = {}
+for path in ("/var/tmp/poc05", "/tmp/poc05"):
+    try:
+        with open(path, "w") as f:
+            f.write("poc05")
+        seen[path] = "written"
+    except OSError as e:
+        seen[path] = errno.errorcode.get(e.errno, str(e.errno))
+print(json.dumps(seen))
 """
 
 HOST = """
@@ -381,16 +397,22 @@ async def test_process_limit_refuses_forks_past_the_allowance(tools: McpGatewayT
     assert NPROC_ALLOWANCE - 4 <= over["started"] < NPROC_ALLOWANCE, over
 
 
-async def test_python_child_burst_leaves_the_dispatcher_up(
+def burst_outcome(result: Any) -> str:
+    """What the burst call ended with: `result` (the code ran and returned), `sandbox_lost` (its
+    own sandbox ended, the dispatcher's retryable error), or the raw result for anything else."""
+    if result.is_error:
+        return LOST if LOST in json.dumps(result.content) else repr(result)
+    return "result" if {"exit_code", "timed_out"} <= set(result.content) else repr(result)
+
+
+async def test_python_child_burst_is_isolated_from_a_concurrent_caller(
     tools: McpGatewayTools, other_caller: McpGatewayTools
 ) -> None:
     """Criterion 8 (partly shown), the security review's HIGH (054 H-16), H23 for the tool lane:
-    one call forks about 31 Python children (ordinary code, inside the per-call limits), which
-    took the old shared runner to its memory limit and a restart for every caller. The burst
-    either returns a result or `sandbox_lost`; it cannot reach anyone else. The allowed controls:
-    another caller's call run at the same time works, the next call by that caller (5 children)
-    works, and the dispatcher pod is the same pod with the same restart count."""
-    pod_uid, restarts = dispatcher_state()
+    one call forks about 31 Python children (ordinary code, inside the per-call limits). The
+    design lets that call end either way: a result, or `sandbox_lost` if its own sandbox ends
+    (how-it-works, the dispatcher's answer); never another error. The allowed control: another
+    caller's call run at the same time works, in a code-runner sandbox."""
     warm_pool_ready()
 
     async def concurrent() -> dict[str, Any]:
@@ -398,16 +420,38 @@ async def test_python_child_burst_leaves_the_dispatcher_up(
         return await run_python(other_caller, HOST)
 
     burst, during = await asyncio.gather(call(tools, PY_FORKS.format(want=BURST)), concurrent())
-    if burst.is_error:
-        assert LOST in json.dumps(burst.content), burst
-    else:
-        assert {"exit_code", "timed_out"} <= set(burst.content), burst
+
+    assert burst_outcome(burst) in {"result", LOST}, burst
     assert during["host"].startswith(f"{APP}-"), during
 
+
+async def test_python_child_burst_leaves_the_dispatcher_up(
+    tools: McpGatewayTools, other_caller: McpGatewayTools
+) -> None:
+    """Criterion 8 (partly shown), the security review's HIGH (054 H-16), H23 for the tool lane:
+    a call that forks about 31 Python children took the old shared runner to its memory limit and
+    a restart for every caller. Now, after that call ends, the dispatcher is the same pod with the
+    same restart count. The allowed control: the next call (5 children), by another caller,
+    works."""
+    pod_uid, restarts = dispatcher_state()
+    warm_pool_ready()
+
+    await call(tools, PY_FORKS.format(want=BURST))
     warm_pool_ready()  # the burst's sandbox is torn down before the next call claims one
     after = await run_python(other_caller, PY_FORKS.format(want=UNDER_LIMIT))
+
     assert after == {"started": UNDER_LIMIT, "refused": None}, after
     assert dispatcher_state() == (pod_uid, restarts)
+
+
+async def test_code_cannot_write_the_root_and_can_write_tmp(tools: McpGatewayTools) -> None:
+    """Criterion 8 (partly shown), H21 for the tool lane (review R5a-14): the sandbox's root file
+    system is read-only, so the control refuses a write to `/var/tmp/poc05` with EROFS. The
+    allowed control in the same call: the write to `/tmp/poc05` works."""
+    seen = await run_python(tools, ROOT_WRITES)
+
+    assert seen["/var/tmp/poc05"] == "EROFS", seen
+    assert seen["/tmp/poc05"] == "written", seen
 
 
 # --- nothing survives a call -------------------------------------------------------------------

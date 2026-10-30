@@ -21,7 +21,7 @@ DEFAULT_PORT = 8000  # suggested
 
 
 def serve_parser() -> argparse.ArgumentParser:
-    # Imported here so the dispatcher's parser needs nothing from the server side.
+    # Imported here, as in each mode: `code-runner` loads a module only when a mode needs it.
     from code_runner.server import CACHE_SIZE
 
     parser = argparse.ArgumentParser(description="The code-execution MCP server (run_python)")

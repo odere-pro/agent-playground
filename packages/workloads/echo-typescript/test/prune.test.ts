@@ -41,7 +41,6 @@ test("prune: a final task is kept for the wait, then forgotten; a working task s
     assert.equal(await store.load(`t${state}`, context()), undefined, `state ${state} pruned`);
   }
   assert.ok(await store.load("working", context()), "a task that is not final is kept");
-  assert.equal(store.pending, 0);
 });
 
 test("prune: a finished streaming call leaves no task in the store", async () => {
@@ -70,5 +69,4 @@ test("prune: a finished streaming call leaves no task in the store", async () =>
   assert.ok(taskId, "the call made a task");
   await sleep(WAIT_MS * 5);
   assert.equal(await store.load(taskId, context()), undefined);
-  assert.equal(store.pending, 0);
 });

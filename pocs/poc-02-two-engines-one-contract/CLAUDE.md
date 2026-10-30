@@ -19,7 +19,9 @@ Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still appl
 ## How to work with it
 
 - Read first: `docs/planning/poc/002-PoC-2-two-engines-one-contract.md`, then `README.md`, then `docs/contracts/contract-v1.md`.
-- The request path, in order: `/v1/run` → `SidecarConnector` (or `InProcessConnector`) → A2A on `127.0.0.1:9000` → `workload_a2a` `HandleExecutor` → the workload's `handle` → model call to `127.0.0.1:8090/v1/chat/completions` and tool call to `127.0.0.1:8090/mcp`, each with `traceparent` → `RunRegistry` charges the run → `ports.model` (LiteLLM) or `ports.tools` → events back up. Start from `chassis/server/app.py`.
+- The request path, in order: `POST /v1/run` (`chassis/server/interfaces/native.py`) → `RunPipeline` (`chassis/server/pipeline.py`) → `SidecarConnector` (or `InProcessConnector`) → A2A on `127.0.0.1:9000` → `workload_a2a` `HandleExecutor` → the workload's `handle`.
+- The calls back, each with `traceparent`: the model call to `127.0.0.1:8090/v1/chat/completions` (`chassis/server/model_proxy.py`), and the tool call to `127.0.0.1:8090/mcp` (`chassis/server/tool_endpoint.py`). `RunRegistry` charges the run, then `ports.model` (LiteLLM) or `ports.tools` serves it, and the events go back up.
+- Start reading from `chassis/server/interfaces/native.py`, where the `/v1/run` route is.
 - `make test-poc POC=02` is the gate. TCP and Docker: `uv run pytest pocs/poc-02-two-engines-one-contract -m network -p no:socket -q`.
 - A box in `README.md` changes only with evidence. Known debt is in `notes/2026-10-01-debt.md`; do not fix it here.
 

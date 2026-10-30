@@ -1,5 +1,9 @@
-"""PoC-4 exit criterion 1: the swap drill. "The same scenario tests pass with the in-memory fakes
-and with the real adapters, chosen by config only."
+"""PoC-4 exit criterion 1, in the README's words:
+
+"Swap drill: `StatePort` (in-memory ↔ Valkey) and `EventPort` (in-memory ↔ a broker) switch by config only, with the same tests passing."
+
+This file covers both ports: one scenario per port, run once per adapter, with the adapter named
+only in config.
 
 The adapter is named in the replica's config, `spec.adapters.state` or `spec.adapters.events`,
 and nowhere else: each replica's ports come from `build_ports(config.profile,
@@ -17,7 +21,7 @@ the object replica 0's config built (what one shared Valkey or broker is); a rea
 per replica and shares through its server. The Dapr adapter is bound to the `EventPort` suite in
 `packages/chassis/tests/integration/test_dapr_events_contract.py`; it is not repeated here, since
 daprd must call back into the app (plan section 10).
-"""
+"""  # noqa: E501
 
 from __future__ import annotations
 

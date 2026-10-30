@@ -14,8 +14,11 @@ from dataclasses import dataclass
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
-VALKEY_IMAGE = "valkey/valkey:8-alpine"
-"""suggested: the image the Compose stack uses (plan section 8a), without the digest pin."""
+VALKEY_IMAGE = (
+    "valkey/valkey:8.1.4-alpine"
+    "@sha256:e706d1213aaba6896c162bb6a3a9e1894e1a435f28f8f856d14fab2e10aa098b"
+)
+"""The exact image `deploy/compose/docker-compose.scale.yaml` and the kind PoC-4 Valkey pin."""
 VALKEY_PORT = 6379
 READY_LOG = "Ready to accept connections"
 

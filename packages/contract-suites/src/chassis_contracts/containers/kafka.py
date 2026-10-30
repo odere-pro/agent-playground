@@ -10,16 +10,42 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from testcontainers.community.kafka import KafkaContainer
+from testcontainers.core.version import ComparableVersion
 
-KAFKA_IMAGE = "confluentinc/cp-kafka:7.6.0"
-"""The testcontainers 4.15 default image; 7.x supports KRaft."""
+KAFKA_IMAGE = (
+    "confluentinc/cp-kafka:7.6.0"
+    "@sha256:24cdd3a7fa89d2bed150560ebea81ff1943badfa61e51d66bb541a6b0d7fb047"
+)
+"""The testcontainers 4.15 default image, pinned by digest (resolved 2026-10-29 with `docker
+buildx imagetools inspect`). Not Compose's `apache/kafka`: `KafkaContainer` starts the broker
+through cp-kafka's `/etc/confluent/docker/*` scripts, which `apache/kafka` does not have. The
+intended difference is listed in `deploy/compose/SECURITY.md`, section 7.
+"""
+
+
+def kraft_version(image: str) -> str:
+    """The tag of `image`, with any `@sha256:` digest dropped: `repo:7.6.0@sha256:..` -> `7.6.0`."""
+    return image.split("@", 1)[0].rsplit(":", 1)[-1]
+
+
+class PinnedKafkaContainer(KafkaContainer):
+    """`KafkaContainer` whose KRaft check reads the tag, not the digest.
+
+    testcontainers 4.15 takes the version after the last `:`; with a digest pin that is the hex
+    digest, which is not a version. Same check, same minimum (`MIN_KRAFT_TAG`), on the tag.
+    """
+
+    def _verify_min_kraft_version(self) -> None:
+        version = kraft_version(self.image)
+        if ComparableVersion(version) < self.MIN_KRAFT_TAG:
+            raise ValueError(f"Kafka {version} does not support KRaft (needs {self.MIN_KRAFT_TAG})")
 
 
 @contextmanager
 def kafka_container(image: str = KAFKA_IMAGE) -> Iterator[str]:
     """Start a broker, yield its bootstrap address (`host:port`), remove it on exit."""
     container = (
-        KafkaContainer(image)
+        PinnedKafkaContainer(image)
         .with_kraft()
         .with_env("KAFKA_AUTO_CREATE_TOPICS_ENABLE", "true")
         .with_env("KAFKA_NUM_PARTITIONS", "3")

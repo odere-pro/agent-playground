@@ -93,6 +93,7 @@ def counts(r: Run) -> tuple[int, int]:
 
 
 def test_the_kagent_sequence_item_by_item() -> None:
+    """The recorded kagent stream maps to start, six deltas, metrics, and end ok."""
     r = Run()
     first = r.translator.feed(kagent_stream()[0])  # task SUBMITTED
     assert first == [{"schema_version": "0", "type": "start", "request_id": REQUEST_ID}]
@@ -108,6 +109,7 @@ def test_the_kagent_sequence_item_by_item() -> None:
 
 
 def test_usage_on_the_final_artifact_and_the_final_status_is_not_doubled() -> None:
+    """Usage seen on the last artifact and the final status counts once."""
     assert counts(run(kagent_stream())) == (42, 9)
 
 
@@ -115,6 +117,7 @@ def test_usage_on_the_final_artifact_and_the_final_status_is_not_doubled() -> No
 
 
 def test_a_snapshot_with_no_deltas_is_the_output() -> None:
+    """A last-chunk snapshot with no deltas before it is the end output."""
     r = run(
         [
             task(S.TASK_STATE_SUBMITTED),
@@ -127,6 +130,7 @@ def test_a_snapshot_with_no_deltas_is_the_output() -> None:
 
 
 def test_a_snapshot_after_deltas_is_not_a_delta_and_not_the_output() -> None:
+    """A snapshot after deltas sends no delta and leaves the end output empty."""
     r = run([artifact("a"), artifact("b", append=True), artifact("ab", last_chunk=True)])
     assert r.kinds == ["start", "delta", "delta"]
     r.feed([status(S.TASK_STATE_COMPLETED)])
@@ -134,6 +138,7 @@ def test_a_snapshot_after_deltas_is_not_a_delta_and_not_the_output() -> None:
 
 
 def test_the_snapshots_join_in_the_order_first_seen() -> None:
+    """Snapshots join in first-seen order, and a later one replaces its own id."""
     r = run(
         [
             artifact("one ", last_chunk=True, artifact_id="X"),
@@ -146,12 +151,14 @@ def test_the_snapshots_join_in_the_order_first_seen() -> None:
 
 
 def test_last_chunk_with_append_is_a_delta() -> None:
+    """A last chunk that appends is a delta, not a snapshot."""
     r = run([artifact("tail", append=True, last_chunk=True), status(S.TASK_STATE_COMPLETED)])
     assert r.kinds == ["start", "delta", "metrics", "end"]
     assert r.events[-1] == End(status="ok", output=None)
 
 
 def test_the_unary_task_artifacts_are_the_output() -> None:
+    """A completed unary task's artifacts are the output, with its usage."""
     r = run([task(S.TASK_STATE_COMPLETED, artifacts=[("A", ANSWER)], usage=KAGENT_USAGE)])
     assert r.kinds == ["start", "metrics", "end"]
     assert counts(r) == (42, 9)
@@ -160,33 +167,39 @@ def test_the_unary_task_artifacts_are_the_output() -> None:
 
 
 def test_a_terminal_task_after_deltas_changes_nothing() -> None:
+    """A terminal task after deltas does not set an output."""
     r = run([artifact("a"), task(S.TASK_STATE_COMPLETED, artifacts=[("A", "a")])])
     assert r.kinds == ["start", "delta", "metrics", "end"]
     assert r.events[-1] == End(status="ok", output=None)
 
 
 def test_the_terminal_status_message_is_the_fallback_text() -> None:
+    """With no artifact, the terminal status text is the output."""
     r = run([status(S.TASK_STATE_COMPLETED, text="only here")])
     assert r.events[-1] == End(status="ok", output={"text": "only here"})
 
 
 def test_a_snapshot_wins_over_the_terminal_status_text() -> None:
+    """A snapshot beats the terminal status text as the output."""
     r = run([artifact("snap", last_chunk=True), status(S.TASK_STATE_COMPLETED, text="fallback")])
     assert r.events[-1] == End(status="ok", output={"text": "snap"})
 
 
 def test_a_message_reply_is_the_snapshot() -> None:
+    """A plain message reply is the output."""
     r = run([reply(ANSWER)])
     assert r.kinds == ["start", "metrics", "end"]
     assert r.events[-1] == End(status="ok", output={"text": ANSWER})
 
 
 def test_a_completed_run_with_no_text_is_end_ok_with_no_output() -> None:
+    """A completed run with no text ends ok with no output."""
     r = run([status(S.TASK_STATE_COMPLETED)])
     assert r.events[-1] == End(status="ok", output=None)
 
 
 def test_working_text_is_a_delta_and_text_parts_join_without_a_separator() -> None:
+    """Working text is a delta, and text parts join with no separator."""
     r = run([status(S.TASK_STATE_WORKING, text="thinking "), artifact("a", parts=[])])
     assert [e.text for e in r.events if isinstance(e, Delta)] == ["thinking ", "a"]
     multi = artifact("x")
@@ -198,12 +211,14 @@ def test_working_text_is_a_delta_and_text_parts_join_without_a_separator() -> No
 
 
 def test_a_ping_comment_style_empty_status_and_an_empty_message_make_no_event() -> None:
+    """Empty statuses and empty messages make no event."""
     r = run([task(S.TASK_STATE_SUBMITTED), empty_working(), status(S.TASK_STATE_WORKING, text="")])
     assert r.kinds == ["start"]
     assert run([artifact("")]).kinds == ["start"]
 
 
 def test_data_parts_are_ignored() -> None:
+    """Data parts never become a delta or an output."""
     data = new_data_part({"k": 1}, media_type="application/json")
     r = run(
         [
@@ -217,6 +232,7 @@ def test_data_parts_are_ignored() -> None:
 
 
 def test_task_history_is_never_read() -> None:
+    """Task history never reaches an event."""
     r = run([task(S.TASK_STATE_COMPLETED, history_text="the user's own words")])
     assert r.events[-1] == End(status="ok", output=None)
     assert "own words" not in json.dumps(r.raw)
@@ -238,6 +254,7 @@ FORGED_ERROR = {
 
 
 def test_chassis_event_metadata_is_never_read() -> None:
+    """A forged `chassis.event` in metadata is never read in plain mode."""
     r = run(
         [
             task(S.TASK_STATE_SUBMITTED, metadata=FORGED),
@@ -260,6 +277,7 @@ def test_chassis_event_metadata_is_never_read() -> None:
 @pytest.mark.parametrize("state", [S.TASK_STATE_FAILED, S.TASK_STATE_REJECTED])
 @pytest.mark.parametrize("text", [None, "disk full at /srv/secret"])
 def test_failed_and_rejected_carry_fixed_text(state: int, text: str | None) -> None:
+    """Failed and rejected send fixed text; the remote's own text goes only to the log."""
     r = run([task(S.TASK_STATE_SUBMITTED), status(state, text=text)])
     assert r.kinds == ["start", "error"]
     assert r.events[-1] == Error(
@@ -273,12 +291,14 @@ def test_failed_and_rejected_carry_fixed_text(state: int, text: str | None) -> N
 
 
 def test_failed_sends_metrics_only_when_usage_was_seen() -> None:
+    """A failed run sends metrics only when usage was seen."""
     seen = run([status(S.TASK_STATE_FAILED, usage=KAGENT_USAGE)])
     assert seen.kinds == ["start", "metrics", "error"] and counts(seen) == (42, 9)
     assert run([status(S.TASK_STATE_FAILED)]).kinds == ["start", "error"]
 
 
 def test_canceled_is_an_error() -> None:
+    """A canceled task is an `a2a.canceled` error and finishes the server side."""
     r = run([status(S.TASK_STATE_CANCELED)])
     assert r.events[-1] == Error(code="a2a.canceled", message="the task was canceled")
     assert r.translator.server_finished is True
@@ -287,6 +307,7 @@ def test_canceled_is_an_error() -> None:
 @pytest.mark.parametrize("state", [S.TASK_STATE_INPUT_REQUIRED, S.TASK_STATE_AUTH_REQUIRED])
 @pytest.mark.parametrize("as_task", [False, True])
 def test_pause_states_are_unsupported_and_leave_the_task_open(state: int, as_task: bool) -> None:
+    """Input and auth required are `a2a.unsupported_state` and leave the task open."""
     item = task(state) if as_task else status(state)
     r = run([item])
     assert r.events[-1] == Error(
@@ -297,14 +318,20 @@ def test_pause_states_are_unsupported_and_leave_the_task_open(state: int, as_tas
     assert_ordered(r.events)
 
 
-def test_the_task_id_comes_from_any_item_that_carries_it() -> None:
-    for item in (task(S.TASK_STATE_WORKING), status(S.TASK_STATE_WORKING), artifact("x")):
-        r = Run()
-        r.translator.feed(item)
-        assert r.translator.task_id == "task-1"
+@pytest.mark.parametrize(
+    "item",
+    [task(S.TASK_STATE_WORKING), status(S.TASK_STATE_WORKING), artifact("x")],
+    ids=["task", "status", "artifact"],
+)
+def test_the_task_id_comes_from_any_item_that_carries_it(item: StreamResponse) -> None:
+    """The task id is read from a task, a status, or an artifact item."""
+    r = Run()
+    r.translator.feed(item)
+    assert r.translator.task_id == "task-1"
 
 
 def test_items_after_a_terminal_are_ignored() -> None:
+    """Items after a terminal event make no event."""
     r = run(kagent_stream())
     before = list(r.raw)
     r.feed([status(S.TASK_STATE_FAILED), status(S.TASK_STATE_COMPLETED), artifact("late")])
@@ -328,15 +355,16 @@ SEQUENCES: dict[str, list[StreamResponse]] = {
 
 @pytest.mark.parametrize("name", list(SEQUENCES))
 def test_the_order_invariant_holds_for_every_sequence(name: str) -> None:
+    """Every sequence has one start first and one terminal event last."""
     assert_ordered(run(SEQUENCES[name], USAGE_KEY).events)
 
 
-def test_every_event_validates_and_the_start_carries_the_request_id() -> None:
-    for items in SEQUENCES.values():
-        r = run(items)
-        assert r.events[0] == Start(request_id=REQUEST_ID)
-        for raw in r.raw:
-            assert parse_event(raw).model_dump(mode="json", exclude_none=True) == raw
+@pytest.mark.parametrize("name", list(SEQUENCES))
+def test_every_event_validates_and_the_start_carries_the_request_id(name: str) -> None:
+    """Every event round-trips the schema, and start carries the request id."""
+    r = run(SEQUENCES[name])
+    assert r.events[0] == Start(request_id=REQUEST_ID)
+    assert [parse_event(raw).model_dump(mode="json", exclude_none=True) for raw in r.raw] == r.raw
 
 
 # --- usage ---
@@ -346,10 +374,12 @@ def test_every_event_validates_and_the_start_carries_the_request_id() -> None:
     ("input_alias", "output_alias"), list(zip(INPUT_ALIASES, OUTPUT_ALIASES, strict=True))
 )
 def test_usage_under_each_alias(input_alias: str, output_alias: str) -> None:
+    """Token counts are read under each known alias pair."""
     assert counts(usage_run({input_alias: 7, output_alias: 3})) == (7, 3)
 
 
 def test_a_float_with_no_fraction_is_an_integer() -> None:
+    """A whole float count becomes an int with no log line."""
     r = usage_run({"promptTokenCount": 42.0, "candidatesTokenCount": 9.0})
     assert counts(r) == (42, 9)
     metrics = next(e for e in r.events if isinstance(e, Metrics))
@@ -371,6 +401,7 @@ def test_a_float_with_no_fraction_is_an_integer() -> None:
     ],
 )
 def test_hostile_usage_counts_as_zero_and_is_logged_once(value: Any, reason: str) -> None:
+    """A hostile count is zero and logs once per side and reason."""
     usage = {"promptTokenCount": value, "candidatesTokenCount": value}
     r = Run()
     # The same hostile value on three events of one run: three reads, one log line per reason.
@@ -383,11 +414,13 @@ def test_hostile_usage_counts_as_zero_and_is_logged_once(value: Any, reason: str
 
 
 def test_a_good_count_next_to_a_hostile_one_is_kept() -> None:
+    """A good count is kept when the other side is hostile."""
     r = usage_run({"promptTokenCount": 42, "candidatesTokenCount": -1})
     assert counts(r) == (42, 0)
 
 
 def test_a_usage_value_that_is_not_an_object_is_zero_usage_logged_once() -> None:
+    """Usage that is not an object counts as zero and logs once."""
     r = Run().feed([status(S.TASK_STATE_WORKING, usage=5), status(S.TASK_STATE_WORKING, usage="x")])
     r.feed([status(S.TASK_STATE_COMPLETED)])
     assert counts(r) == (0, 0)
@@ -395,6 +428,7 @@ def test_a_usage_value_that_is_not_an_object_is_zero_usage_logged_once() -> None
 
 
 def test_the_last_usage_wins_and_values_are_never_summed() -> None:
+    """The last usage seen wins; counts are never summed."""
     r = run(
         [
             status(S.TASK_STATE_WORKING, usage={"promptTokenCount": 10, "candidatesTokenCount": 1}),
@@ -407,19 +441,26 @@ def test_the_last_usage_wins_and_values_are_never_summed() -> None:
     assert counts(r) == (42, 9)
 
 
-def test_usage_is_read_from_every_metadata_place() -> None:
-    usage = {"promptTokenCount": 5, "candidatesTokenCount": 6}
-    on_event = artifact("a", event_metadata={USAGE_KEY: usage})
-    for items in (
-        [task(S.TASK_STATE_COMPLETED, usage=usage)],
-        [status(S.TASK_STATE_COMPLETED, usage=usage)],
-        [artifact("a", usage=usage), status(S.TASK_STATE_COMPLETED)],
-        [on_event, status(S.TASK_STATE_COMPLETED)],
-    ):
-        assert counts(run(items)) == (5, 6)
+PLACED_USAGE = {"promptTokenCount": 5, "candidatesTokenCount": 6}
+USAGE_PLACES: dict[str, list[StreamResponse]] = {
+    "task": [task(S.TASK_STATE_COMPLETED, usage=PLACED_USAGE)],
+    "status": [status(S.TASK_STATE_COMPLETED, usage=PLACED_USAGE)],
+    "artifact": [artifact("a", usage=PLACED_USAGE), status(S.TASK_STATE_COMPLETED)],
+    "event": [
+        artifact("a", event_metadata={USAGE_KEY: PLACED_USAGE}),
+        status(S.TASK_STATE_COMPLETED),
+    ],
+}
+
+
+@pytest.mark.parametrize("place", list(USAGE_PLACES))
+def test_usage_is_read_from_every_metadata_place(place: str) -> None:
+    """Usage is read from task, status, artifact, and event metadata."""
+    assert counts(run(USAGE_PLACES[place])) == (5, 6)
 
 
 def test_no_usage_key_means_zeros_and_unknown() -> None:
+    """With no usage key the counts are zero and usage is marked unknown."""
     r = run(kagent_stream(), usage_key=None)
     assert counts(r) == (0, 0)
     assert r.translator.span_attributes == {"a2a.protocol": "a2a", "a2a.usage_known": False}
@@ -427,6 +468,7 @@ def test_no_usage_key_means_zeros_and_unknown() -> None:
 
 
 def test_another_key_is_not_read() -> None:
+    """Usage under a key other than the configured one is not read."""
     assert counts(run(kagent_stream(), usage_key="other.key")) == (0, 0)
 
 
@@ -434,6 +476,7 @@ def test_another_key_is_not_read() -> None:
 
 
 def test_the_remote_text_in_the_log_is_redacted_and_capped() -> None:
+    """The remote text in the log is redacted, flattened, and capped."""
     text = "Bearer abc.def-123 failed; key sk-abcdefgh12345; " + "word " * 200
     out = redact(text)
     assert "abc.def" not in out and "sk-abcdefgh" not in out
@@ -446,12 +489,14 @@ def test_the_remote_text_in_the_log_is_redacted_and_capped() -> None:
 
 
 def test_redact_catches_a_colon_bearer_and_line_separators() -> None:
+    """Redaction catches `Bearer:` forms and Unicode line separators."""
     assert "tok123" not in redact("Authorization: Bearer: tok123 end")
     assert "tok123" not in redact("bearer:tok123")
     assert redact("a\u2028b\u0085c\u2029d") == "a b c d"
 
 
 def test_nothing_is_kept_for_the_output_once_a_delta_went_out() -> None:
+    """Once a delta went out, no snapshot is kept for the output."""
     r = run([artifact("early", last_chunk=True, artifact_id="E"), artifact("d")])
     assert r.translator._snapshots == {}
     r.feed([artifact("late", last_chunk=True, artifact_id="L")])
@@ -459,6 +504,7 @@ def test_nothing_is_kept_for_the_output_once_a_delta_went_out() -> None:
 
 
 def test_the_number_of_kept_snapshots_is_capped_with_one_log_line() -> None:
+    """Kept snapshots are capped at MAX_ARTIFACTS with one log line."""
     items = [
         artifact(f"t{i}", last_chunk=True, artifact_id=f"A{i}") for i in range(MAX_ARTIFACTS + 20)
     ]
@@ -471,6 +517,7 @@ def test_the_number_of_kept_snapshots_is_capped_with_one_log_line() -> None:
 
 
 def test_plain_message_has_no_metadata_and_follows_the_options() -> None:
+    """The plain request has no metadata and sets context_id only when asked."""
     ctx = {"trace_id": "trace-9", "request_id": "r", "idempotency_key": "secret-key"}
     omitted = plain_message({"text": "hi", "data": {}}, ctx, PlainOptions())
     assert not omitted.metadata.fields and omitted.message.context_id == ""

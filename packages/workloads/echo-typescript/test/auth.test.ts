@@ -223,14 +223,14 @@ test("bindHost: a token lifts the loopback guard; without it the guard stands", 
   assert.throws(() => bindHost({ HOST: "0.0.0.0" }), /ADR-001/);
 });
 
-function startUp(args: string[], env: Record<string, string>): { status: number | null; stderr: string } {
+function startUp(args: string[], env: Record<string, string>): { status: number | null; stderr: string; stdout: string } {
   const main = new URL("../src/main.ts", import.meta.url).pathname;
   const result = spawnSync(process.execPath, ["--import", "tsx", main, ...args], {
     env: { PATH: process.env["PATH"] ?? "", ...env },
     encoding: "utf8",
     timeout: 20_000,
   });
-  return { status: result.status, stderr: result.stderr };
+  return { status: result.status, stderr: result.stderr, stdout: result.stdout };
 }
 
 test("main: a start-up error exits 2 before listening, naming only the variable", () => {
@@ -268,4 +268,25 @@ test("main: starts with the PoC-4 scale stack's command, `--drain-timeout-s 30`"
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }
+});
+
+test("main: PORT=abc exits 2 and stderr names PORT", () => {
+  const { status, stderr } = startUp([], { PORT: "abc" });
+  assert.deepEqual([status, /PORT/.test(stderr)], [2, true]);
+});
+
+test("main: PORT=65536 exits 2 and stderr names PORT", () => {
+  const { status, stderr } = startUp([], { PORT: "65536" });
+  assert.deepEqual([status, /PORT/.test(stderr)], [2, true]);
+});
+
+const UNLISTENABLE = { UDS: join(tmpdir(), "no-such-folder-ts-main", "a2a.sock") };
+
+test("main: a listen error exits 2 and stderr names the listen", () => {
+  const { status, stderr } = startUp([], UNLISTENABLE);
+  assert.deepEqual([status, /echo-typescript: listen E[A-Z]+/.test(stderr)], [2, true]);
+});
+
+test("main: a listen error never prints the ready line", () => {
+  assert.equal(startUp([], UNLISTENABLE).stdout.includes("A2A on"), false);
 });

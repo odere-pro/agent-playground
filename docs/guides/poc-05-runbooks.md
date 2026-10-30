@@ -2,7 +2,7 @@
 
 Status: first draft, 2026-10-09 (T27). Per-call code-runner sections added 2026-10-09 (per-call plan, task 7). One section per problem: symptom, check, cause, fix. Every command was run on the Mac and is pasted in a note, unless it says "not yet run". Notes: [bring-up](../../pocs/poc-05-sandboxed/notes/2026-10-02-bring-up.md), [sidecar suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md), [remote suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-remote-suite.md). The day-to-day steps are in the skill `poc-05-operate`.
 
-Every `kubectl` call pins `--context kind-poc05`. No secret value goes in a command line, a file, or this guide.
+Who may use the cluster, and the kind context to pass: [deploy/CLAUDE.md](../../deploy/CLAUDE.md). No secret value goes in a command line, a file, or this guide.
 
 ## The cluster will not start
 
@@ -284,7 +284,7 @@ Not yet run. No step below has output in a note. Values marked `suggested:` are 
 | `rootfs_write` | Whether a write to a path on the root, from env, fails with EROFS; and that the same write to `/tmp` works | 8 (H21) |
 | `child_burst` | How many children start before one is refused, capped at 64 | 8 (H23) |
 
-**Fix: the steps, in order.** Each step ends green before the next starts. One agent at a time on kind.
+**Fix: the steps, in order.** Each step ends green before the next starts.
 
 1. **Offline gate.** Unit tests for each check id and for `bad_input`, in the package's `tests/`. They open no socket (`make test` disables sockets). `UV_NO_SYNC=1 make quick` passes.
 2. **Image.** The same base as `echo-python` (`packages/workloads/echo-python/Dockerfile`). A non-root uid of its own. It runs on a read-only root with `/tmp` as the only writable path. Add it to `IMAGES` in `deploy/kind/poc05/run.sh`, so `run.sh build load` makes and loads it, and to the uid table in `packages/chassis/tests/test_image_uids.py`. The image stays off `trustedRepositories` (`admission/params.yaml`).

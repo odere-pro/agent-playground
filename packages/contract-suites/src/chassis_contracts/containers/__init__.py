@@ -2,5 +2,10 @@
 `kafka.py`, `dapr.py`, one per service, each added by the package that binds that adapter.
 
 Used only by `network` tests (`make test-integration`); never imported by the chassis. Import
-`testcontainers.community.*`, not the deprecated `testcontainers.<name>` aliases.
+`testcontainers.community.*`, not the deprecated `testcontainers.<name>` aliases. Importing this
+package pins the Ryuk reaper by digest (`ryuk.py`).
 """
+
+from chassis_contracts.containers.ryuk import pin_ryuk
+
+pin_ryuk()

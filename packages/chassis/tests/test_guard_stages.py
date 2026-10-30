@@ -181,7 +181,7 @@ async def test_output_pii_is_masked_on_openai_complete() -> None:
     assert response.json()["choices"][0]["message"]["content"] == "call <PHONE_NUMBER>"
 
 
-@pytest.mark.xfail(strict=True, reason="R7-04 open")
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="R7-04 open")
 async def test_output_stage_masks_pii_when_the_call_is_a_stream() -> None:
     """With `spec.guardrails.output` on, a streamed answer's PII does not reach the client."""
     ports, _ = _ports(_answering("mail jane@example.com"))
@@ -237,6 +237,20 @@ async def test_guardrail_outage_is_retryable_unavailable_when_fail_closed(stage:
     assert outage.error["code"] == UNAVAILABLE_CODE
     assert outage.error["retryable"] is True
     assert outage.text is None
+
+
+async def test_engine_never_runs_when_the_input_check_is_down_and_fail_closed() -> None:
+    """A fail-closed `input` outage refuses before the engine runs."""
+    guardrails = KeywordGuardrails()
+    guardrails.unavailable = True
+    ports, engine = _ports(_answering("fine"), guardrails)
+    body = {"model": "echo", "messages": [{"role": "user", "content": "hello"}]}
+
+    async with _client(create_app(_config(**_only("input", "fail_closed")), ports)) as client:
+        response = await client.post("/v1/chat/completions", json=body)
+
+    assert response.status_code == 503
+    assert engine.runs == 0
 
 
 @pytest.mark.parametrize(
