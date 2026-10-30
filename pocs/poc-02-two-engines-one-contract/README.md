@@ -114,7 +114,7 @@ Each one has a scenario test in `tests/` or a recorded reason it cannot have one
 
 Gate runs on 2026-10-01:
 
-- `PATH=/opt/homebrew/bin:$PATH make test-poc POC=02` → `134 passed, 6 skipped in 19.62s`. The skips: 2 need TCP or Docker (the TCP twin and the Compose demo; sockets are disabled in the gate), and 4 are the JSON-values and `traceparent` suite cases `TestFakeEngine` and `TestEchoTypeScriptEngine` skip on purpose.
+- `UV_NO_SYNC=1 make test-poc POC=02` → `142 passed, 6 skipped in 44.39s` (re-run 2026-10-30; was `134 passed, 6 skipped` on 2026-10-01). The skips: 2 need TCP or Docker (the TCP twin and the Compose demo; sockets are disabled in the gate), and 4 are the JSON-values and `traceparent` suite cases `TestFakeEngine` and `TestEchoTypeScriptEngine` skip on purpose.
 - With Docker up, `uv run pytest pocs packages -m network -p no:socket -q -rA` → `5 passed, 686 deselected in 113.18s`. The passes: `pocs/poc-02-two-engines-one-contract/tests/test_compose_sidecar.py::test_demo_runs_every_workload_with_no_key`, `tests/test_lanes.py::test_typescript_echo_gives_the_same_stream_as_echo_python_over_tcp`, `packages/chassis/tests/test_a2a_sidecar.py::test_over_tcp_on_loopback`, and PoC-1's `test_compose.py::test_compose_up_serves_one_request_and_counts_tokens` and `test_serve.py::test_chassis_serve_subprocess_answers_health`.
 - `PATH=/opt/homebrew/bin:$PATH make check` → `673 passed, 18 skipped, 14 warnings in 34.74s`, mypy `Success: no issues found in 112 source files`, `Contracts: 7 kept, 0 broken.`, `planning-check OK`, `harness-lint: ok`.
 

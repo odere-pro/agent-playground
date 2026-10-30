@@ -80,7 +80,8 @@ async def _post_and_fail(ports: PortBundle, path: str, body: dict[str, Any]) -> 
     ):
         with pytest.raises(RuntimeError):
             await client.post(path, json=body, headers={"traceparent": TRACEPARENT})
-        return record.reserved_tokens
+        held: int = record.reserved_tokens
+        return held
 
 
 @pytest.mark.parametrize("route", sorted(ROUTES))
