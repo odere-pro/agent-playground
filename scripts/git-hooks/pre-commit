@@ -1,14 +1,6 @@
 #!/usr/bin/env bash
-# Installed by `make setup`. A secret scan of the staged files, then the same gate as `make quick`.
+# Installed by `make setup`. The staged-file linters, then the same gate as `make quick`.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-# Added, copied, modified, or renamed files; NUL-separated so any file name is safe.
-# detect-secrets reads each file as it is on disk, so a partly staged file is scanned whole.
-staged=()
-while IFS= read -r -d '' f; do
-  staged+=("$f")
-done < <(git diff --cached --name-only --diff-filter=ACMR -z)
-if [ "${#staged[@]}" -gt 0 ]; then
-  uv run detect-secrets-hook --baseline .secrets.baseline "${staged[@]}"
-fi
+scripts/lint_staged.sh
 make quick
