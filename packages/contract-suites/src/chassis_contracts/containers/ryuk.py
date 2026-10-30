@@ -4,6 +4,8 @@ mounted, so it is the most trusted image of a test run.
 testcontainers 4.15 starts `testcontainers/ryuk:0.8.1` by tag (`RYUK_CONTAINER_IMAGE` overrides
 it). `pin_ryuk()` sets `testcontainers_config.ryuk_image`, which is read when the first container
 starts, not at import. `containers/__init__.py` calls it, so every helper gets the pin.
+The pin wins over `RYUK_CONTAINER_IMAGE`, so a registry mirror set there is ignored. To use a
+mirror, change `RYUK_IMAGE` to the mirror's name with the same digest.
 """
 
 from __future__ import annotations
