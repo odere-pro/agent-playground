@@ -31,7 +31,7 @@ Payload `feedback.v0.json` (contract v6, part C). The schema is registered by 08
 
 ### 014 H-7 Observability
 
-- `OtelTelemetry`, run span on the request's W3C trace id, Collector fan-out to Langfuse and Jaeger (swap by exporter config). Evidence offline: `tests/test_poc07_obs_telemetry_swap.py::test_switching_the_backend_is_exporter_config_only`, `::test_fan_out_sends_the_same_spans_to_both`; trace join in the `sidecar` lane: `tests/test_poc07_obs_trace_join.py::test_one_trace_joins_chassis_workload_framework_model_and_tool[echo-langgraph]`, `[echo-openai-agents]`. Waits on: the `poc07-stack.yml` run id (`tests/test_poc07_stack.py`).
+- `OtelTelemetry`, run span on the request's W3C trace id, Collector fan-out to Langfuse and Jaeger (swap by exporter config). Evidence offline: `tests/test_poc07_obs_telemetry_swap.py::test_switching_the_backend_is_exporter_config_only`, `::test_fan_out_sends_the_same_spans_to_both`; trace join in the `sidecar` lane: `tests/test_poc07_obs_trace_join.py::test_one_trace_joins_chassis_workload_framework_model_and_tool[echo-langgraph]`, `[echo-openai-agents]`. Real stack: `poc07-stack` run 40735435727 on `dd1d594` (`tests/test_poc07_stack.py`).
 - Baggage `user.id` (the authenticated subject; none with auth off) and `session.id` over A2A; caller baggage never forwarded. Evidence: `packages/chassis/tests/test_otel_wiring.py::test_the_connector_sends_baggage_next_to_the_traceparent`, `packages/chassis/tests/test_security_auth.py::test_auth_off_puts_no_user_id_on_the_run_span`.
 - Per-engine telemetry list (contract v6, F.3): `echo-langgraph` and `echo-openai-agents` run; nothing had to live in an event mapping, only the instrumentor and `inject_trace_headers` ([per-engine list](2026-10-28-per-engine-mapping.md)).
 - The TypeScript twin of `workload_a2a.telemetry` is not built.
@@ -48,7 +48,7 @@ Payload `feedback.v0.json` (contract v6, part C). The schema is registered by 08
 ### 037 M-2 Eval gate in CI
 
 - The tool picked for CI: DeepEval 4.3.2 ([trial](2026-10-28-eval-tool-trial.md)), with the 20-case reports for two engines in `notes/evals/` and one format, `eval-report.v0` (`tests/test_poc07_evals_report_format.py::test_both_engines_give_the_same_report_format`). CI: `poc07-evals` passed on commit `9d942ee`, [run 40730858164](https://github.com/odere-pro/agent-playground/actions/runs/40730858164).
-- Langfuse datasets and experiments as the case and result store: `bakeoff.langfuse_datasets`, tested against a stub (`packages/bakeoff/tests/test_bakeoff_langfuse_datasets.py::test_bakeoff_langfuse_creates_the_dataset_and_one_run_per_report`). Waits on: a real Langfuse (the `poc07-stack.yml` run or the Mac) for the dataset name and the experiment runs.
+- Langfuse datasets and experiments as the case and result store: `bakeoff.langfuse_datasets`, tested against a stub (`packages/bakeoff/tests/test_bakeoff_langfuse_datasets.py::test_bakeoff_langfuse_creates_the_dataset_and_one_run_per_report`). Waits on: a new stack test in `tests/test_poc07_stack.py` (not written yet; `poc07-stack` run 40735435727 has none), for the dataset name and the experiment runs on a real Langfuse.
 
 ### 023 C-5 AI-generated marking
 

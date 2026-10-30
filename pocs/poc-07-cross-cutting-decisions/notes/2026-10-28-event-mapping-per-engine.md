@@ -25,3 +25,5 @@ Date: 2026-10-28. Work package W1. Evidence: `tests/test_poc07_obs_trace_join.py
 
 - Real Langfuse v4, the OTel Collector, and Tempo: no image registry in this container. Criterion 1 uses two in-process OTLP/HTTP receivers (`tests/test_poc07_obs_telemetry_swap.py`).
 - How Langfuse shows `session.id` and `user.id` from baggage: needs the real service.
+
+Update 2026-10-30: the real Collector and Langfuse v4 ran in `poc07-stack` run 40735435727 on `dd1d594`, with Jaeger as the second backend, not Tempo. How Langfuse shows `session.id` and `user.id` waits on a new stack test in `tests/test_poc07_stack.py`.
