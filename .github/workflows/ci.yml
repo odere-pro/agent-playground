@@ -26,6 +26,10 @@ jobs:
           enable-cache: true
       - name: Sync
         run: uv sync --all-packages --locked
+      # `uv sync --locked` stores no registry index, and PoC-9's scaffold tests run `uv lock`
+      # offline. This fills the cache and writes nothing.
+      - name: Fill the uv cache
+        run: uv lock --refresh --dry-run
       # The same gate developers run. CI and local must not diverge.
       - name: Check
         run: make check
