@@ -20,7 +20,8 @@ KIND = ROOT / "deploy/kind"
 LIB = KIND / "lib.sh"
 BASH = shutil.which("bash") or "bash"
 SOURCE_LINE = re.compile(r'^source "\$HERE/(?:\.\./)*lib\.sh"$', re.M)
-OWN_NAMES = re.compile(r"^(?:CLUSTER|CONTEXT|LOG_PREFIX)=.*$", re.M)
+OWN_NAMES = re.compile(r"^[ \t]*(?:CLUSTER|CONTEXT|LOG_PREFIX)=.*$", re.M)
+LITERAL_NAME = re.compile(r"^(?:CONTEXT=kind-(?:poc0\d|\$CLUSTER)|LOG_PREFIX=[a-z0-9-]+)$")
 DIRECT_KUBECTL = re.compile(r"(?<![\w-])kubectl(\s|$)")
 KCTL = 'kctl() { kubectl --context "$CONTEXT" "$@"; }'
 FAKE_KUBECTL = '#!/bin/sh\nprintf \'%s\\n\' "$@" >"$KUBECTL_ARGV"\n'
@@ -162,7 +163,7 @@ def test_kctl_keeps_the_script_context_when_the_caller_exports_another(
 ) -> None:
     """R5b-12: `CONTEXT=evil` in the caller's environment does not reach `kctl`."""
     code = f"{_top(script)}\nkctl get pods\n"
-    evil = {"CONTEXT": "evil", "CLUSTER": "evil"}
+    evil = {"CONTEXT": "evil", "CLUSTER": "evil", "HERE": "/nonexistent"}
 
     done = _bash(code, tmp_path, script=script, env=evil)
 
@@ -224,9 +225,18 @@ def test_script_takes_no_default_for_its_names_from_the_environment(script: str)
     """R5b-12: each script assigns its names unconditionally, so the caller's value is dropped."""
     text = (KIND / script).read_text()
 
-    defaults = re.findall(r"\$\{(?:CONTEXT|CLUSTER|LOG_PREFIX)[:=?+-]", text)
+    defaults = re.findall(r"\$\{(?:CONTEXT|CLUSTER|LOG_PREFIX|HERE)[:=?+-]", text)
 
     assert defaults == []
+
+
+@pytest.mark.parametrize("script", SCRIPTS)
+def test_script_builds_its_context_and_prefix_from_literals(script: str) -> None:
+    """R5b-12: no other variable can feed `CONTEXT` or `LOG_PREFIX`, indented or not."""
+    lines = [ln for ln in OWN_NAMES.findall(_top(script)) if "CLUSTER=" not in ln]
+
+    assert [ln for ln in lines if not LITERAL_NAME.match(ln)] == []
+    assert len(lines) == 2
 
 
 @pytest.mark.parametrize("script", SCRIPTS)
@@ -235,7 +245,7 @@ def test_script_calls_kubectl_only_through_kctl(script: str) -> None:
     code = _code(KIND / script)
 
     direct = [ln for ln in code if DIRECT_KUBECTL.search(ln) and "for tool in " not in ln]
-    helpers = [ln for ln in code if re.match(r"(kctl|log|die)\(\)", ln)]
+    helpers = [ln for ln in code if re.match(r"\s*(kctl|log|die)\(\)", ln)]
 
     assert direct == []
     assert helpers == []
