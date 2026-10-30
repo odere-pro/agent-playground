@@ -8,26 +8,31 @@
       "request": "attach",
       "connect": { "host": "127.0.0.1", "port": 5678 },
       "pathMappings": [
-        { "localRoot": "{{ platform }}/packages/chassis/src", "remoteRoot": "/app/packages/chassis/src" }
+        {
+          "localRoot": "{{ platform }}/packages/chassis/src",
+          "remoteRoot": "/app/packages/chassis/src"
+        }
       ],
       "justMyCode": false
     },
     {
-      "name": "Attach: workload ({{ agent_name }})",
+      "name": "Attach: workload",
       "type": "debugpy",
       "request": "attach",
       "connect": { "host": "127.0.0.1", "port": 5679 },
       "pathMappings": [
-        { "localRoot": "${workspaceFolder}/src", "remoteRoot": "/app/src" }
+        {
+          "localRoot": "${workspaceFolder}/src",
+          "remoteRoot": "/app/src"
+        }
       ],
-      "justMyCode": true
+      "justMyCode": false
     }
   ],
   "compounds": [
     {
       "name": "Attach: chassis + workload",
-      "configurations": ["Attach: chassis", "Attach: workload ({{ agent_name }})"],
-      "stopAll": true
+      "configurations": ["Attach: chassis", "Attach: workload"]
     }
   ]
 }
