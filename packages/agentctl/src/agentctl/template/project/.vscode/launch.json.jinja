@@ -1,0 +1,33 @@
+{%- set platform = platform_path if platform_path.startswith('/') else '${workspaceFolder}/' ~ platform_path -%}
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Attach: chassis",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": { "host": "127.0.0.1", "port": 5678 },
+      "pathMappings": [
+        { "localRoot": "{{ platform }}/packages/chassis/src", "remoteRoot": "/app/packages/chassis/src" }
+      ],
+      "justMyCode": false
+    },
+    {
+      "name": "Attach: workload ({{ agent_name }})",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": { "host": "127.0.0.1", "port": 5679 },
+      "pathMappings": [
+        { "localRoot": "${workspaceFolder}/src", "remoteRoot": "/app/src" }
+      ],
+      "justMyCode": true
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Attach: chassis + workload",
+      "configurations": ["Attach: chassis", "Attach: workload ({{ agent_name }})"],
+      "stopAll": true
+    }
+  ]
+}
