@@ -37,6 +37,7 @@ set -euo pipefail
 
 CLUSTER=poc05
 CONTEXT=kind-$CLUSTER
+LOG_PREFIX=kind-poc05
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
 # The release's sandbox-with-extensions.yaml (base/agent-sandbox/kustomization.yaml).
@@ -64,7 +65,8 @@ IMAGES=(
   "$REGISTRY/echo-typescript:poc05|packages/workloads/echo-typescript/Dockerfile|packages/workloads/echo-typescript"
 )
 
-kctl() { kubectl --context "$CONTEXT" "$@"; }
+# shellcheck source=deploy/kind/lib.sh
+source "$HERE/../lib.sh"
 
 # The one redaction filter for every `kubectl logs` output, here and in the CI failure step
 # (security review 2026-10-02, item 2). LiteLLM's 401 line quotes the refused key's suffix and
@@ -77,8 +79,6 @@ redact_logs() {
     -e 's/(Key Hash \(Token\) = )[^[:space:],;"]+/\1[redacted]/g' \
     -e 's/(^|[^[:alnum:]_-])sk-[^[:space:],;"]+/\1[redacted]/g'
 }
-log() { printf '[kind-poc05] %s\n' "$*" >&2; }
-die() { log "$*"; exit 1; }
 
 cluster_exists() { kind get clusters 2>/dev/null | grep -qx "$CLUSTER"; }
 

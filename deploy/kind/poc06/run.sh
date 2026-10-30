@@ -53,6 +53,7 @@ set -euo pipefail
 
 CLUSTER=poc05
 CONTEXT=kind-$CLUSTER
+LOG_PREFIX=kind-poc06
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
 P5=$ROOT/deploy/kind/poc05/run.sh
@@ -103,9 +104,8 @@ KIND_TESTS=(
   pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_sidecar_controls.py
 )
 
-kctl() { kubectl --context "$CONTEXT" "$@"; }
-log() { printf '[kind-poc06] %s\n' "$*" >&2; }
-die() { log "$*"; exit 1; }
+# shellcheck source=deploy/kind/lib.sh
+source "$HERE/../lib.sh"
 
 # kagent_commit: the pinned commit, the first 40-hex line of kagent/source.commit.
 kagent_commit() {

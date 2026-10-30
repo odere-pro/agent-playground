@@ -27,6 +27,7 @@ KIND = ROOT / "deploy/kind/poc05"
 PLATFORM = KIND / "platform"
 SEED = PLATFORM / "seed.sh"
 RUN_SH = KIND / "run.sh"
+LIB_SH = ROOT / "deploy/kind/lib.sh"
 AGENT_SANDBOX = KIND / "base/agent-sandbox"
 KIND_LITELLM = PLATFORM / "litellm/config.yaml"
 COMPOSE_LITELLM = ROOT / "deploy/compose/litellm"
@@ -330,12 +331,15 @@ def _from_chassis(rule: dict[str, Any]) -> bool:
 
 
 def test_seed_is_strict_and_pins_the_context() -> None:
-    """Section 2.9: `set -euo pipefail`, no trace, every kubectl call on `kind-poc05`."""
+    """Section 2.9: `set -euo pipefail`, no trace, every kubectl call on `kind-poc05`, through
+    the one `kctl` in lib.sh."""
     text = SEED.read_text()
     lines = _seed_lines()
+    lib = LIB_SH.read_text()
     assert lines[0] == "#!/usr/bin/env bash"
     assert "set -euo pipefail" in lines
     assert "CONTEXT=kind-poc05" in lines
+    assert lines.index("CONTEXT=kind-poc05") < lines.index('source "$HERE/../../lib.sh"')
     for line in lines:
         assert not re.search(r"\bset\s+-\w*x|\bset\s+-o\s+xtrace|\bBASH_XTRACEFD\b", line), line
         assert not re.search(r"\bcurl\b.*\s(-v|--verbose|--trace\S*)\b", line), line
@@ -344,7 +348,9 @@ def test_seed_is_strict_and_pins_the_context() -> None:
             continue
         for m in re.finditer(r"\bkubectl\b", line):
             assert line[m.end() :].startswith(' --context "$CONTEXT"'), f"unpinned: {line}"
-    assert text.count("kubectl --context") == 1, "only the kctl helper calls kubectl"
+    assert text.count("kubectl --context") == 0, "only the kctl helper calls kubectl"
+    assert lib.count('kctl() { kubectl --context "$CONTEXT" "$@"; }') == 1
+    assert lib.count("kubectl --context") == 1, "only the kctl helper calls kubectl"
 
 
 def test_seed_makes_values_with_openssl_into_stdin() -> None:

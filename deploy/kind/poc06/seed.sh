@@ -24,9 +24,11 @@
 set -euo pipefail
 
 CONTEXT=kind-poc05
+LOG_PREFIX=seed-poc06
 PLATFORM=poc05-platform
 AGENTS=poc05-agents
 REMOTE=poc05-remote
+HERE=$(cd "$(dirname "$0")" && pwd)
 MODEL="fake-chat"
 TOOLS="glossary_lookup,acronym_expand"
 
@@ -47,9 +49,8 @@ REMOTES=(smolagents claude-agent typescript)
 # its token is made in poc05-agents only.
 CHASSIS_ONLY_REMOTES=(kagent-adk)
 
-kctl() { kubectl --context "$CONTEXT" "$@"; }
-log() { printf '[seed-poc06] %s\n' "$*" >&2; }
-die() { log "$*"; exit 1; }
+# shellcheck source=deploy/kind/lib.sh
+source "$HERE/../lib.sh"
 
 new_secret() { openssl rand -hex "${1:-32}"; }
 
@@ -119,16 +120,32 @@ key_body() {
        object_permission: {mcp_servers: ["fake_tools"], mcp_tool_permissions: {fake_tools: $t}}}'
 }
 
-# make_keys SVC...: needs LITELLM up. An old key with the same alias is deleted first, so a Secret
-# lost while Postgres kept the key never leaves two live keys.
+# drop_old_key SVC: delete every key with the alias svc-SVC, and fail closed, as
+# deploy/kind/poc05/platform/seed.sh does (code review R5a-09). Reads `master` from make_keys (bash
+# dynamic scope), so the master key is never a function argument. A 2xx, 400, or 404 counts only
+# once /key/list shows no key left under the alias; any other status (401, 403, 5xx, no answer)
+# stops the run before a new key is minted.
+drop_old_key() {
+  local gone status left
+  gone=$(jq -nc --arg alias "svc-$1" '{key_aliases: [$alias]}')
+  status=$(printf 'Authorization: Bearer %s\n' "$master" | curl -sS -o /dev/null -w '%{http_code}' -H @- -H 'Content-Type: application/json' --data-binary "$gone" "$LITELLM/key/delete" 2>/dev/null) || status=000
+  [[ $status =~ ^(2[0-9][0-9]|400|404)$ ]] || die "LiteLLM /key/delete failed for svc-$1; no key minted"
+  left=$(printf 'Authorization: Bearer %s\n' "$master" | curl -fsS -H @- --get --data-urlencode "key_alias=svc-$1" "$LITELLM/key/list" 2>/dev/null) ||
+    die "LiteLLM /key/list failed for svc-$1; no key minted"
+  printf '%s' "$left" | jq -e '(.keys | type) == "array" and (.keys | length) == 0' >/dev/null 2>&1 ||
+    die "a key with alias svc-$1 is still live after /key/delete; no key minted"
+  unset status left
+}
+
+# make_keys SVC...: needs LITELLM up. Each old key with the same alias is deleted first, and checked
+# gone, so a Secret lost while Postgres kept the key never leaves two live keys.
 make_keys() {
-  local svc master body resp key gone
+  local svc master body resp key
   start_forward
   master=$(read_secret "$PLATFORM" litellm-master LITELLM_MASTER_KEY)
   [[ -n $master ]] || die "$PLATFORM/litellm-master is empty"
   for svc in "$@"; do
-    gone=$(jq -nc --arg alias "svc-$svc" '{key_aliases: [$alias]}')
-    printf 'Authorization: Bearer %s\n' "$master" | curl -sS -o /dev/null -H @- -H 'Content-Type: application/json' --data-binary "$gone" "$LITELLM/key/delete" 2>/dev/null || true
+    drop_old_key "$svc"
     body=$(key_body "$svc")
     resp=$(printf 'Authorization: Bearer %s\n' "$master" | curl -sS -H @- -H 'Content-Type: application/json' --data-binary "$body" "$LITELLM/key/generate")
     if ! key=$(printf '%s' "$resp" | jq -er .key); then
