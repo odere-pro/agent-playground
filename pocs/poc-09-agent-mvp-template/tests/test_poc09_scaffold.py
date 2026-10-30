@@ -49,6 +49,8 @@ def _env() -> dict[str, str]:
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "GIT_CONFIG_NOSYSTEM": "1",
         "UV_OFFLINE": "1",
+        # The offline cache: CI's setup-uv keeps it here, not in the default folder under $HOME.
+        **{key: os.environ[key] for key in ("UV_CACHE_DIR",) if key in os.environ},
     }
 
 
