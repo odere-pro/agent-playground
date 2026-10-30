@@ -1,9 +1,10 @@
 """PoC-4 scope item "Timeout and budget per call", on every engine (plan section 5, item 3).
 
 Each of the four engines runs in the `sidecar` lane behind a real chassis on Unix sockets
-(`poc03_harness.chassis_on_unix_sockets`): the Python echoes on the workload template server, the
-TypeScript echo on Node. The model is a scripted `ModelPort` in the chassis, reached through the
-chassis's model proxy, so the proxy's budget and the connector's deadline are the real ones.
+(`poc_harness.interfaces.chassis_on_unix_sockets`): the Python echoes on the workload template
+server, the TypeScript echo on Node. The model is a scripted `ModelPort` in the chassis, reached
+through the chassis's model proxy, so the proxy's budget and the connector's deadline are the real
+ones.
 
 - **Timeout.** The model never answers a prompt that holds `HANG`. Past `budget.timeout_ms` the run
   ends with one retryable `a2a.timeout` error, and the workload's task is cancelled: the hung model
@@ -31,16 +32,9 @@ import pytest
 from chassis.fakes.model import ScriptedModel, ScriptRule
 from chassis.ports.model import ModelChunk, ModelMessage, ModelResult, ToolCallRequest, ToolSpec
 from chassis_contracts.interface import BASE_URL, Chassis
-from poc03_harness import (
-    ENGINES,
-    SIMPLIFIED,
-    SIMPLIFY,
-    TYPESCRIPT,
-    OutboundRouter,
-    chassis_on_unix_sockets,
-    patch_outbound,
-)
-from poc_harness.scenario import AFTER_TOOL, TOOL_PROMPT
+from poc_harness.interfaces import ENGINES, TYPESCRIPT, OutboundRouter, chassis_on_unix_sockets
+from poc_harness.outbound import patch_outbound
+from poc_harness.scenario import AFTER_TOOL, SIMPLIFIED, SIMPLIFY, TOOL_PROMPT
 
 LANE = "sidecar"
 HANG = "simplify: HANG until the deadline"

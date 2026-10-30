@@ -1,5 +1,5 @@
-"""Puts the PoC-2 to PoC-5 test folders on `sys.path`, so a PoC-6 test can build on
-`poc03_harness`, `poc04_harness`, and `poc05_harness` (the PoC-2 helpers are in `poc_harness`).
+"""Puts the PoC-2, PoC-4, and PoC-5 test folders on `sys.path`, so a PoC-6 test can build on
+`poc04_harness` and `poc05_harness` (the PoC-2 and PoC-3 helpers are in `poc_harness`).
 Excluded from mypy (pyproject.toml), like the PoC-4 and PoC-5 conftests: a second top-level
 `conftest` module would clash with the chassis one.
 """
@@ -12,7 +12,6 @@ from pathlib import Path
 POCS = Path(__file__).resolve().parents[2]
 for _tests in (
     POCS / "poc-02-two-engines-one-contract" / "tests",
-    POCS / "poc-03-one-interface-every-client" / "tests",
     POCS / "poc-04-stateless-scalable" / "tests",
     POCS / "poc-05-sandboxed" / "tests",
 ):

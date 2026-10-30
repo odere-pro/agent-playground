@@ -1,8 +1,7 @@
 """The PoC-4 tests conftest, as a module mypy can check: `conftest.py` re-exports it, and mypy
 skips that file, since a second top-level `conftest` module would clash with the chassis one.
 
-Puts the PoC-2 and PoC-3 test folders on `sys.path`, so `poc04_harness` builds on
-`poc03_harness` (the PoC-2 helpers are in `poc_harness`).
+Puts the PoC-2 test folder on `sys.path`. The PoC-2 and PoC-3 helpers are in `poc_harness`.
 
 Drills need a running stack and are `network` tests: a Compose drill (marker `stack`, or any test
 in `test_compose_scale.py`) is skipped unless `POC04_STACK=1`; a kind drill (marker `kind`, or any
@@ -19,10 +18,7 @@ import pytest
 
 HERE = Path(__file__).resolve().parent
 POCS = HERE.parents[1]
-for _tests in (
-    POCS / "poc-02-two-engines-one-contract" / "tests",
-    POCS / "poc-03-one-interface-every-client" / "tests",
-):
+for _tests in (POCS / "poc-02-two-engines-one-contract" / "tests",):
     if str(_tests) not in sys.path:
         sys.path.insert(0, str(_tests))
 

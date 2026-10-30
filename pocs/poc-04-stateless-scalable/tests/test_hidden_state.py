@@ -45,8 +45,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from poc03_harness import ENGINES, OutboundRouter, patch_outbound
 from poc04_harness import SIMPLIFIED, TYPESCRIPT, HarnessModel, call, replicas_on_unix_sockets
+from poc_harness.interfaces import ENGINES, OutboundRouter
+from poc_harness.outbound import patch_outbound
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKLOADS = ROOT / "packages/workloads"

@@ -14,9 +14,9 @@ Named `test_interface_contract.py`, not `test_interfaces.py`: `packages/chassis/
 test_interfaces.py` exists, and pytest's default import mode refuses two test modules with one
 basename ("import file mismatch").
 
-How each engine runs: see `poc03_harness`. The model calls replay from one cassette per engine,
-`cassettes/interfaces/<engine>.yaml`, on the `LiteLLMModel` transport only. Matching is on the
-body, and every interface, mode, and lane must send the same model call for the same logical
+How each engine runs: see `poc_harness.interfaces`. The model calls replay from one cassette per
+engine, `cassettes/interfaces/<engine>.yaml`, on the `LiteLLMModel` transport only. Matching is on
+the body, and every interface, mode, and lane must send the same model call for the same logical
 request: each cassette must hold exactly one interaction, and a miss fails at teardown.
 Re-record offline with `make record-cassettes`. The TypeScript echo skips (with the reason) when
 its `node_modules` is absent, as in PoC-2.
@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager
+from pathlib import Path
 from typing import ClassVar
 
 import httpx
@@ -38,22 +39,21 @@ from chassis_contracts.interface import LOGICAL, Chassis, ExpectedAnswer, Interf
 from chassis_contracts.recording import CassetteTransport
 from fake_model_server import Script
 from fake_model_server import create_app as create_fake_model_app
-from poc03_harness import (
+from poc_harness.interfaces import (
     AGENT,
-    CASSETTES,
     ENGINES,
-    EXAMPLE_SCRIPT,
     LANES,
     MODEL_BASE_URL,
     PYTHON_ENGINES,
-    SIMPLIFIED,
-    SIMPLIFY,
     TEST_KEY,
     OutboundRouter,
     chassis_on_unix_sockets,
-    patch_outbound,
-    tool_list_failures,
 )
+from poc_harness.outbound import patch_outbound, tool_list_failures
+from poc_harness.paths import EXAMPLE_SCRIPT
+from poc_harness.scenario import SIMPLIFIED, SIMPLIFY
+
+CASSETTES = Path(__file__).resolve().parent / "cassettes" / "interfaces"
 
 
 @pytest.fixture(scope="module")

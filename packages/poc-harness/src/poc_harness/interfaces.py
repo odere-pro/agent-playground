@@ -1,7 +1,6 @@
-"""Shared harness for the PoC-3 interface suite binding. Not a test module; the binding imports it.
+"""A real chassis on Unix sockets, one per engine and lane, for an interface suite binding.
 
-It reuses the PoC-2 harness by import (`poc_harness`: the workload template server on a Unix
-socket, the TypeScript echo, the outbound patch) and adds what PoC-3 needs on top:
+Used by the PoC-3 interface binding and by later PoCs that run the same chassis:
 
 - **A real chassis on Unix sockets.** `chassis_on_unix_sockets(target, lane, ...)` serves the
   public app and the proxy app with uvicorn, each on its own Unix socket, both on one event loop
@@ -18,8 +17,8 @@ socket, the TypeScript echo, the outbound patch) and adds what PoC-3 needs on to
   suite keeps one per engine and lane), and a call that names no run fails loudly instead of
   landing on the wrong chassis. Each response is read in full before the workload sees it
   (`poc_harness.outbound.patch_outbound`), which is fine for these model calls; no timing here.
-- **Model calls from cassettes.** Each engine's chassis gets the real `LiteLLMModel` over a
-  `CassetteTransport` (`cassettes`); replay never reaches a model.
+- **Model calls from cassettes.** A binding gives each engine's chassis the real `LiteLLMModel`
+  over a `CassetteTransport`; replay never reaches a model.
 """
 
 from __future__ import annotations
@@ -43,32 +42,24 @@ from chassis.ports.model import ModelPort
 from chassis.server import ChassisConfig, create_app
 from chassis.server.proxy_app import create_proxy_app
 from chassis_contracts.interface import Chassis, UnixApp, serve_on_unix_sockets
-from poc_harness.outbound import patch_outbound, tool_list_failures
-from poc_harness.paths import EXAMPLE_SCRIPT, ROOT
-from poc_harness.scenario import CHASSIS_PROXY_URL, ROUTE, SIMPLIFIED, SIMPLIFY
+
+from poc_harness.scenario import CHASSIS_PROXY_URL, ROUTE
 from poc_harness.servers import a2a_on_unix_socket
+from poc_harness.sockets import SOCKET_DIR_PREFIX
 from poc_harness.typescript import typescript_echo
 
 __all__ = [
     "AGENT",
-    "CASSETTES",
     "ENGINES",
-    "EXAMPLE_SCRIPT",
     "LANES",
     "MODEL_BASE_URL",
     "PYTHON_ENGINES",
-    "SIMPLIFIED",
-    "SIMPLIFY",
     "TEST_KEY",
     "TYPESCRIPT",
     "OutboundRouter",
     "chassis_on_unix_sockets",
-    "patch_outbound",
-    "tool_list_failures",
 ]
 
-POC = ROOT / "pocs/poc-03-one-interface-every-client"
-CASSETTES = POC / "tests/cassettes/interfaces"
 MODEL_BASE_URL = "http://model.invalid/v1"
 """The model URL the cassettes hold; `.invalid` never resolves (open note, section 10)."""
 TEST_KEY = "cassette-key-not-real"
@@ -147,6 +138,31 @@ class OutboundRouter:
         return httpx.Response(response.status_code, headers=response.headers, content=content)
 
 
+Engine = tuple[dict[str, Any], EngineConnector]
+"""`spec.engine` for the config, and the connector that runs it."""
+
+
+def _typescript_engine(lane: str, folder: str, proxy_uds: str, stack: ExitStack) -> Engine:
+    """The TypeScript echo on a Unix socket, its model calls going to the chassis's proxy socket."""
+    if lane != "sidecar":
+        raise ValueError(f"{TYPESCRIPT} runs in the sidecar lane only, not {lane!r}")
+    ts_uds = str(Path(folder, "ts.sock"))
+    env = {"CHASSIS_MODEL_URL": f"{CHASSIS_PROXY_URL}/v1", "CHASSIS_MODEL_UDS": proxy_uds}
+    url = stack.enter_context(typescript_echo(uds=ts_uds, env=env))
+    return {"connector": "sidecar", "url": url, "uds": ts_uds}, SidecarConnector()
+
+
+def _python_engine(target: str, lane: str, stack: ExitStack) -> Engine:
+    """`target` loaded by path (`inprocess`) or on the workload template server (`sidecar`)."""
+    handle = ENGINES.get(target) or target
+    if lane == "inprocess":
+        return {"connector": "inprocess", "handle": handle}, InProcessConnector()
+    if lane == "sidecar":
+        url, uds = stack.enter_context(a2a_on_unix_socket(handle))
+        return {"connector": "sidecar", "url": url, "uds": uds}, SidecarConnector()
+    raise ValueError(f"unknown lane {lane!r}; one of {LANES}")
+
+
 @contextmanager
 def chassis_on_unix_sockets(
     target: str, lane: str, *, model: ModelPort, router: OutboundRouter
@@ -155,32 +171,15 @@ def chassis_on_unix_sockets(
     and the proxy app on Unix sockets, `model` as its model port, the fake glossary tool as its
     tools, and in-memory telemetry. Registered with `router` while it runs.
     """
-    folder = tempfile.mkdtemp(prefix="poc03-")
+    folder = tempfile.mkdtemp(prefix=SOCKET_DIR_PREFIX)
     public_uds = str(Path(folder, "public.sock"))
     proxy_uds = str(Path(folder, "proxy.sock"))
     with ExitStack() as stack:
         stack.callback(shutil.rmtree, folder, ignore_errors=True)
-        connector: EngineConnector
         if target == TYPESCRIPT:
-            if lane != "sidecar":
-                raise ValueError(f"{TYPESCRIPT} runs in the sidecar lane only, not {lane!r}")
-            ts_uds = str(Path(folder, "ts.sock"))
-            env = {"CHASSIS_MODEL_URL": f"{CHASSIS_PROXY_URL}/v1", "CHASSIS_MODEL_UDS": proxy_uds}
-            url = stack.enter_context(typescript_echo(uds=ts_uds, env=env))
-            spec: dict[str, Any] = {"connector": "sidecar", "url": url, "uds": ts_uds}
-            connector = SidecarConnector()
+            spec, connector = _typescript_engine(lane, folder, proxy_uds, stack)
         else:
-            handle = ENGINES.get(target) or target
-            if lane == "inprocess":
-                spec, connector = {"connector": "inprocess", "handle": handle}, InProcessConnector()
-            elif lane == "sidecar":
-                url, uds = stack.enter_context(a2a_on_unix_socket(handle))
-                spec, connector = (
-                    {"connector": "sidecar", "url": url, "uds": uds},
-                    SidecarConnector(),
-                )
-            else:
-                raise ValueError(f"unknown lane {lane!r}; one of {LANES}")
+            spec, connector = _python_engine(target, lane, stack)
         config = chassis_config(spec)
         telemetry = InMemoryTelemetry()
         ports = PortBundle(

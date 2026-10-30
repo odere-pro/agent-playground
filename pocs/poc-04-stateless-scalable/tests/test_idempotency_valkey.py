@@ -22,8 +22,9 @@ from collections.abc import Iterator
 import pytest
 from chassis.adapters.valkey.state import ValkeyState
 from chassis_contracts.containers.valkey import ValkeyServer, valkey_container
-from poc03_harness import OutboundRouter, patch_outbound
 from poc04_harness import SIMPLIFY, SLOW, HarnessModel, Replicas, call, replicas_on_unix_sockets
+from poc_harness.interfaces import OutboundRouter
+from poc_harness.outbound import patch_outbound
 
 pytestmark = pytest.mark.network
 

@@ -15,7 +15,8 @@ Test support that more than one PoC folder, or a PoC demo, uses. It replaces the
 | `scripted_model` | `ToolLoopModel`: calls the tool once, then answers. |
 | `typescript` | The TypeScript echo as a child process (`typescript_echo`, `typescript_echo_on_unix_sockets`). |
 | `mcp_client` | A plain JSON-RPC MCP client (`mcp_request`, `mcp_session`, `glossary_over_mcp`). |
-| `sse` | `sse_frames`: `(event, payload)` pairs, a thin wrapper over `chassis_contracts.inbound.sse`. |
+| `interfaces` | A real chassis on Unix sockets for one engine and lane (`chassis_on_unix_sockets`), `OutboundRouter`, `ENGINES`, `AGENT`, `LANES`. |
+| `sse` | `sse_frames` (`(event, payload)` pairs) and `sse_data` (payloads alone): thin wrappers over `chassis_contracts.inbound.sse`. |
 | `plain_a2a` | A plain A2A stub agent (no chassis), for the remote connector tests and PoC-6b. |
 
 ## Use

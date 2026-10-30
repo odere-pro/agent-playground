@@ -1,8 +1,8 @@
 """The PoC-5 tests conftest, as a module mypy can check: `conftest.py` re-exports it, and mypy
 skips that file, since a second top-level `conftest` module would clash with the chassis one.
 
-Puts the PoC-2, PoC-3, and PoC-4 test folders on `sys.path`, so a PoC-5 harness can build on
-`poc03_harness` and `poc04_harness` (the PoC-2 helpers are in `poc_harness`).
+Puts the PoC-2 and PoC-4 test folders on `sys.path`, so a PoC-5 harness can build on
+`poc04_harness` (the PoC-2 and PoC-3 helpers are in `poc_harness`).
 
 Kind tests need the `kind-poc05` cluster and are `network` tests: every test in a file named
 `test_poc05_kind_*.py`, or any test here marked `kind`, is marked `network` and skipped unless
@@ -25,7 +25,6 @@ HERE = Path(__file__).resolve().parent
 POCS = HERE.parents[1]
 for _tests in (
     POCS / "poc-02-two-engines-one-contract" / "tests",
-    POCS / "poc-03-one-interface-every-client" / "tests",
     POCS / "poc-04-stateless-scalable" / "tests",
 ):
     if str(_tests) not in sys.path:
