@@ -15,7 +15,9 @@ from chassis.ports.guardrail import Stage
 from guardrail_server import PatternClassifier
 from guardrail_server.secret_scan import find_secret
 
-DRIFT = pytest.mark.xfail(strict=True, reason="drift: decide with R1-07 and R7-14")
+DRIFT = pytest.mark.xfail(
+    strict=True, raises=AssertionError, reason="drift: decide with R1-07 and R7-14"
+)
 
 
 async def _fake_blocks(text: str, stage: Stage) -> bool:
