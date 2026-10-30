@@ -783,14 +783,17 @@ def _delta_overhead(per_n: dict[str, dict[int, Samples]]) -> list[str]:
     ]
     per_delta: dict[str, float] = {}
     for name, by_n in per_n.items():
-        lines.append(f"| {name} | {' | '.join(_delta_cells(name, by_n, per_delta))} |")
+        cells, per50s = _delta_cells(by_n)
+        lines.append(f"| {name} | {' | '.join(cells)} |")
+        per_delta |= {f"{name}:{values}": per50 for values, per50 in per50s.items()}
     return lines + _delta_meaning(per_delta)
 
 
-def _delta_cells(name: str, by_n: dict[int, Samples], per_delta: dict[str, float]) -> list[str]:
-    """One row's cells; records the p50 per-delta cost of `name` in `per_delta`."""
+def _delta_cells(by_n: dict[int, Samples]) -> tuple[list[str], dict[str, float]]:
+    """One row's cells, and its p50 per-delta cost by `end` and `cpu`."""
     top = DELTA_COUNTS[-1]
     cells = []
+    per50s: dict[str, float] = {}
     for n in DELTA_COUNTS:
         p50, p95 = _p(by_n[n].end)
         cells += [p50, p95]
@@ -800,8 +803,8 @@ def _delta_cells(name: str, by_n: dict[int, Samples], per_delta: dict[str, float
         per = [(a - b) / (top - 1) for a, b in zip(tops, ones, strict=True)]
         per50 = percentile(per, 50) * 1e6
         cells += [f"{per50:.1f}", f"{percentile(per, 95) * 1e6:.1f}"]
-        per_delta[f"{name}:{values}"] = per50
-    return cells
+        per50s[values] = per50
+    return cells, per50s
 
 
 def _delta_meaning(per_delta: dict[str, float]) -> list[str]:

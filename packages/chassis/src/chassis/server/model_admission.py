@@ -211,7 +211,7 @@ def note_rejected(telemetry: TelemetryPort, route: str, exc: ModelError) -> None
     """Log the upstream's own text for a 400-class rejection at the chassis. The adapter has
     already redacted and capped it. It never reaches the response."""
     log.warning(
-        "model route rejected the request: route=%s code=%s upstream=%s",
+        "model route rejected the request: route=%s code=%s upstream=%r",
         route,
         exc.code,
         exc.message,
@@ -221,7 +221,7 @@ def note_rejected(telemetry: TelemetryPort, route: str, exc: ModelError) -> None
 def note_failed(route: str, exc: ModelError) -> None:
     """Log the upstream's own text for a model call that failed on the OpenAI route. The adapter
     has already redacted and capped it. It never reaches the response."""
-    log.warning("model call failed: route=%s code=%s upstream=%s", route, exc.code, exc.message)
+    log.warning("model call failed: route=%s code=%s upstream=%r", route, exc.code, exc.message)
 
 
 def note_denied(telemetry: TelemetryPort, route: str, exc: ModelError) -> None:
@@ -239,7 +239,13 @@ async def read_capped(http: HTTPRequest) -> bytes | None:
     """The body, or `None` when it is over `BODY_CAP_BYTES`. The cap is enforced while reading,
     before anything is parsed."""
     declared = http.headers.get("content-length")
-    if declared is not None and declared.isdigit() and int(declared) > BODY_CAP_BYTES:
+    # `isascii` too: a Latin-1 superscript digit passes `isdigit` but not `int`.
+    if (
+        declared is not None
+        and declared.isascii()
+        and declared.isdigit()
+        and int(declared) > BODY_CAP_BYTES
+    ):
         return None
     size = 0
     parts: list[bytes] = []

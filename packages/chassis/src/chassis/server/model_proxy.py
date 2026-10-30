@@ -435,22 +435,25 @@ def model_proxy_router(app: FastAPI, *, clock: Callable[[], float] | None = None
         bundle, hold, route = admission.bundle, admission.hold, admission.route
         telemetry = bundle.telemetry
         attributes = admission.attributes
-        tools = body.port_tools()
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
         created = int(time.time())
-
-        if body.stream:
-            chunks = bundle.model.stream(
-                messages,
-                route=route,
-                tools=tools,
-                temperature=body.temperature,
-                max_tokens=hold.max_tokens,
-            )
-            return _HeldStream(
-                _sse(chunks, route, completion_id, created, telemetry, attributes, hold), hold
-            )
-        with telemetry.span(SPAN, **attributes), hold.settled():
+        try:
+            tools = body.port_tools()
+            if body.stream:
+                chunks = bundle.model.stream(
+                    messages,
+                    route=route,
+                    tools=tools,
+                    temperature=body.temperature,
+                    max_tokens=hold.max_tokens,
+                )
+                return _HeldStream(
+                    _sse(chunks, route, completion_id, created, telemetry, attributes, hold), hold
+                )
+        except BaseException:
+            hold.release()  # the model was never called: give the reservation back
+            raise
+        with hold.settled(), telemetry.span(SPAN, **attributes):
             try:
                 result = await bundle.model.complete(
                     messages,

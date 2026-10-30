@@ -11,7 +11,7 @@ import { Role } from "@a2a-js/sdk";
 import schema from "../schemas/events.v0.json" with { type: "json" };
 import { EVENT_KEY, HandleExecutor, SUPPORTED_SCHEMA_VERSIONS } from "../src/a2a_server.js";
 import type { Handle, Json } from "../src/handle.js";
-import { SCHEMA_VERSION, validateEvent } from "../src/schema.js";
+import { SCHEMA_VERSION, sortVersions, validateEvent } from "../src/schema.js";
 import { CTX } from "./stub.js";
 
 const ev = (type: string, fields: Json = {}): Json => ({ schema_version: "0", type, ...fields });
@@ -78,4 +78,9 @@ test("the event's own keys keep their order and the missing defaults come after 
 test("an event that ends with schema_version keeps it last, the missing defaults before it", () => {
   const out = validateEvent({ type: "end", status: "ok", schema_version: "0" });
   assert.deepEqual(Object.keys(out), ["type", "status", "output", "schema_version"]);
+});
+
+test("schema versions sort as numbers, so the newest is last", () => {
+  assert.deepEqual(sortVersions(["10", "9", "2", "9"]), ["2", "9", "10"]);
+  assert.equal(SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS.at(-1));
 });

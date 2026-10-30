@@ -746,3 +746,21 @@ async def test_chat_proxy_answers_403_model_route_denied_when_the_upstream_answe
             "retryable": False,
         }
     }
+
+
+@pytest.mark.parametrize(
+    ("oversized", "status"), [(True, 413), (False, 503)], ids=["oversized", "normal"]
+)
+async def test_chat_proxy_checks_the_body_cap_before_readiness(
+    oversized: bool, status: int
+) -> None:
+    """Before the lifespan: an oversized body is 413, a normal one 503 (pins today's order)."""
+    app = create_app(ChassisConfig.model_validate(CONFIG), _chat_ports())
+    content = _oversized_body() if oversized else json.dumps(BODY).encode()
+
+    async with asgi_client(create_proxy_app(app)) as client:
+        res = await client.post(
+            "/v1/chat/completions", content=content, headers={"content-type": "application/json"}
+        )
+
+    assert res.status_code == status, res.text

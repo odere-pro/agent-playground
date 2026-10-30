@@ -334,11 +334,15 @@ def add_messages_route(router: APIRouter, app: FastAPI) -> None:
         )
         if isinstance(admission, Refusal):
             return error_response(_refusal_error(admission), request_id)
-        telemetry = admission.bundle.telemetry
-        for param in parsed.ignored:
-            telemetry.counter(IGNORED, format="anthropic", param=param)
-        if parsed.stream:
-            return _MessagesStream(admission, parsed, msg_id, request_id)
+        try:
+            telemetry = admission.bundle.telemetry
+            for param in parsed.ignored:
+                telemetry.counter(IGNORED, format="anthropic", param=param)
+            if parsed.stream:
+                return _MessagesStream(admission, parsed, msg_id, request_id)
+        except BaseException:
+            admission.hold.release()  # the model was never called: give the reservation back
+            raise
         return await _complete(admission, parsed, msg_id, request_id)
 
 
@@ -347,7 +351,7 @@ async def _complete(
 ) -> Response:
     hold = admission.hold
     telemetry = admission.bundle.telemetry
-    with telemetry.span(SPAN, **admission.attributes), hold.settled():
+    with hold.settled(), telemetry.span(SPAN, **admission.attributes):
         try:
             result = await admission.bundle.model.complete(
                 parsed.messages,

@@ -15,10 +15,13 @@ const KNOWN = new Set(["type", "const", "enum", "anyOf", "required", "properties
 const root = schema as unknown as { $defs: Record<string, Node>; discriminator: { mapping: Record<string, string> } };
 const props = (def: Node): Record<string, Node> => (def["properties"] ?? {}) as Record<string, Node>;
 
+/** Versions in number order, so "10" comes after "9" (a string sort puts it first). */
+export const sortVersions = (versions: Iterable<string>): string[] => [...new Set(versions)].sort((a, b) => Number(a) - Number(b));
+
 /** The versions the server accepts: the `schema_version` consts in the vendored schema, sorted. */
-export const SUPPORTED_SCHEMA_VERSIONS: readonly string[] = [
-  ...new Set(Object.values(root.$defs).map((def) => String(props(def)["schema_version"]?.["const"]))),
-].sort();
+export const SUPPORTED_SCHEMA_VERSIONS: readonly string[] = sortVersions(
+  Object.values(root.$defs).map((def) => String(props(def)["schema_version"]?.["const"])),
+);
 /** The version this workload writes: the newest supported one. */
 export const SCHEMA_VERSION: string = SUPPORTED_SCHEMA_VERSIONS.at(-1) ?? "0";
 
