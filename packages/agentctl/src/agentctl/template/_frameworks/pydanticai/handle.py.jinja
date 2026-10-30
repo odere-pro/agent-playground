@@ -33,6 +33,8 @@ from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
+from workload_a2a.events import DEFAULT_TIMEOUT_S as DEFAULT_TIMEOUT_S
+from workload_a2a.events import timeout_s as timeout_s
 
 from {{ package_name }}.mapping import EventMapper, error_event, event
 
@@ -44,24 +46,15 @@ DEFAULT_MODEL_URL = "http://127.0.0.1:8090/v1"
 TOKEN_VAR = "CHASSIS_API_TOKEN"
 TOOL_URL_VAR = "CHASSIS_TOOL_URL"
 DEFAULT_TOOL_URL = "http://127.0.0.1:8090/mcp"
-# suggested: 30 s per call when `ctx.budget.timeout_ms` is not set; the epic gives none.
-DEFAULT_TIMEOUT_S = 30.0
 # The openai SDK refuses an empty key, so it gets this placeholder, never an `*_API_KEY` variable.
 # It is not sent either: `_drop_authorization` removes the header. The chassis model proxy ignores
 # `Authorization` anyway and adds the real, scoped key itself; only the chassis holds credentials.
-PLACEHOLDER_API_KEY = "not-a-key"
+PLACEHOLDER_API_KEY = "not-a-key"  # pragma: allowlist secret
 
 model_transport: httpx2.AsyncBaseTransport | None = None
 """Test-only hook: when set, model calls go through this `httpx2` transport, not a socket."""
 tool_transport: httpx2.AsyncBaseTransport | None = None
 """Test-only hook: when set, MCP requests go through this `httpx2` transport, not a socket."""
-
-
-def timeout_s(ctx: dict[str, Any]) -> float:
-    budget = ctx.get("budget")
-    if isinstance(budget, dict) and budget.get("timeout_ms"):
-        return float(budget["timeout_ms"]) / 1000
-    return DEFAULT_TIMEOUT_S
 
 
 async def _drop_authorization(request: httpx2.Request) -> None:

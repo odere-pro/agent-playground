@@ -49,7 +49,7 @@ DEFAULT_TOOL_URL = "http://127.0.0.1:8090/mcp"
 # The openai SDK refuses an empty key, so it gets this placeholder, never an `*_API_KEY` variable.
 # It is not sent either: `_drop_authorization` removes the header. The chassis model proxy ignores
 # `Authorization` anyway and adds the real, scoped key itself; only the chassis holds credentials.
-PLACEHOLDER_API_KEY = "not-a-key"
+PLACEHOLDER_API_KEY = "not-a-key"  # pragma: allowlist secret
 
 model_transport: httpx2.AsyncBaseTransport | None = None
 """Test-only hook: when set, model calls go through this `httpx2` transport, not a socket."""
