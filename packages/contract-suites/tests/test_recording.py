@@ -488,10 +488,10 @@ async def test_a_miss_message_drops_userinfo_and_fragment_when_the_url_has_them(
     path = tmp_path / "c.yaml"
     await _record_url(path, "https://x/v1", {"q": "recorded"})
     replayer = CassetteTransport(None, path, "none")
-    url = f"https://user:hunter2@x/v1/{FAKE_SK}#frag"  # pragma: allowlist secret
 
     with pytest.raises(CassetteMiss) as exc:
         async with httpx.AsyncClient(transport=replayer) as client:
+            url = f"https://user:hunter2@x/v1/{FAKE_SK}#frag"  # pragma: allowlist secret
             await client.post(url, json={"q": "new"})
 
     message = str(exc.value)
