@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -36,9 +37,18 @@ class ProbeSettings:
 
 
 class ReadinessMonitor:
-    def __init__(self, engine: EngineConnector, settings: ProbeSettings) -> None:
+    """`sleep` times the pause between probes. Tests pass a fake."""
+
+    def __init__(
+        self,
+        engine: EngineConnector,
+        settings: ProbeSettings,
+        *,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
         self._engine = engine
         self.settings = settings
+        self.sleep = sleep
         self.failures = 0
         self.healthy = True
         self._task: asyncio.Task[None] | None = None
@@ -64,7 +74,7 @@ class ReadinessMonitor:
 
     async def _loop(self) -> None:
         while True:
-            await asyncio.sleep(self.settings.interval_s)
+            await self.sleep(self.settings.interval_s)
             await self.check_once()
 
     def start(self) -> None:

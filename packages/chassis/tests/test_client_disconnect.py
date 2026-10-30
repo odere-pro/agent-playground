@@ -30,6 +30,8 @@ from fastapi import FastAPI
 AGENT = "echo"
 KEY = "key-disconnect"
 TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"
+HANG_GUARD_S = 30.0
+YIELDS_FOR_ANOTHER_CHECK = 10
 CONFIG: dict[str, Any] = {
     "version": "cfg-1",
     "profile": "fake",
@@ -152,16 +154,28 @@ async def test_a_complete_call_whose_client_leaves_is_cancelled(interface: str) 
 async def test_a_check_that_fails_stops_watching_and_waits_for_the_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(serve_module, "DISCONNECT_POLL_S", 0.01)
+    monkeypatch.setattr(serve_module, "DISCONNECT_POLL_S", 0.0)
+    checked, run_may_end = asyncio.Event(), asyncio.Event()
+    checks = 0
 
     async def broken() -> bool:
+        nonlocal checks
+        checks += 1
+        checked.set()
         raise RuntimeError("no receive")
 
     async def run() -> None:
-        await asyncio.sleep(0.05)
+        await run_may_end.wait()
 
     reader = asyncio.create_task(run())
-    assert await serve_module._watch(reader, broken) is False
+    watcher = asyncio.create_task(serve_module._watch(reader, broken))
+    await asyncio.wait_for(checked.wait(), HANG_GUARD_S)
+    for _ in range(YIELDS_FOR_ANOTHER_CHECK):
+        await asyncio.sleep(0)
+    assert checks == 1 and not watcher.done(), "one check, then it only waits for the run"
+
+    run_may_end.set()
+    assert await asyncio.wait_for(watcher, HANG_GUARD_S) is False
     assert reader.done()
 
 
