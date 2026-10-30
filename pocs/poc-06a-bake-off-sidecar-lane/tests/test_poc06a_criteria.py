@@ -18,8 +18,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from poc06_harness import ENGINES, SMOKE
-from poc06a_harness import (
+from poc_harness.bakeoff_tasks import ENGINES, SMOKE
+from poc_harness.sidecar_lane import (
     LANES,
     Backends,
     SidecarAddress,

@@ -1,12 +1,13 @@
-"""Shared helpers for the PoC-6b kind tests. Not a test module; the `test_poc06b_kind_*.py` files
-import it. The cluster is PoC-5's (`kind-poc05`), so the PoC-5 helpers (`poc_harness.kind`) do the
-kubectl calls, and this file adds what PoC-6 needs on top:
+"""The bake-off engines on kind. The cluster is PoC-5's (`kind-poc05`), so `poc_harness.kind` does
+the kubectl calls, and this file adds what PoC-6 needs on top:
 
 - `KindEngine`: the six PoC-6 engine deployments (two sidecar pods, four remotes) as data;
 - `run_stream`: one `POST /v1/run` with `stream: true` on a chassis, from inside its container;
 - `gateway_view`: the events as the offline harness sees them (see its docstring);
 - `NODE_PROBE` and `probe_in`: the PoC-5 in-pod probe for an image with no Python (Node), and the
-  one entry point that picks the right probe for a pod.
+  one entry point that picks the right probe for a pod;
+- the pod that names a seccomp profile no node has (`missing_profile_manifest`), and
+  `container_error_of`, which watches it fail closed.
 
 Every kubectl call pins `--context kind-poc05` (through `poc_harness.kind.kubectl`). A credential is
 never returned: a check names its env variable (`auth_env`) and the probe reads it in the pod.
@@ -15,17 +16,39 @@ never returned: a check names its env variable (`auth_env`) and the probe reads 
 from __future__ import annotations
 
 import json
+import subprocess
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
-from poc06_harness import LOOKUP, SIMPLIFIER, SMOKE, Task, Verdict, answer_text
-from poc_harness.kind import AGENTS_NS, CHASSIS, REMOTE_NS, WORKLOAD, kubectl
+from bakeoff.registry import check_lane, get_engine, lanes_for
+
+from poc_harness.bakeoff_tasks import (
+    LOOKUP,
+    SIMPLIFIER,
+    SMOKE,
+    Task,
+    Verdict,
+    answer_text,
+    trust_of,
+)
+from poc_harness.kind import (
+    AGENTS_NS,
+    CALLER_IMAGE,
+    CALLER_NS,
+    CHASSIS,
+    REMOTE_NS,
+    WORKLOAD,
+    ExecFailed,
+    exec_probe,
+    get_json,
+    kubectl,
+)
 from poc_harness.pod_probe import PROBE
 
-ROOT = Path(__file__).resolve().parents[3]
 GATEWAY_PREFIX = "fake_tools-"
 """LiteLLM's MCP gateway lists a tool as `<server>-<tool>` (PoC-5 blind-spots note, B11)."""
 RUN_TIMEOUT_S = 240
@@ -36,9 +59,11 @@ class KindEngine:
     """One PoC-6 engine on kind. `chassis` is the Deployment in `poc05-agents` whose `/v1/run` the
     tests call; `pod` is the workload pod's `app.kubernetes.io/name` (`namespace` says where).
     `marker` is added to the end of the task text for the engines whose reply the script cannot
-    tell from the others' (deploy/kind/poc06/platform/fake-model-script.yaml)."""
+    tell from the others' (deploy/kind/poc06/platform/fake-model-script.yaml). Build one with
+    `kind_engine`, which takes trust, lane, and language from `bakeoff.registry`."""
 
     name: str
+    trust: str
     lane: str
     chassis: str
     pod: str
@@ -57,53 +82,71 @@ class KindEngine:
         return task.text + self.marker
 
 
+def kind_engine(
+    name: str,
+    chassis: str,
+    pod: str,
+    *,
+    lane: str | None = None,
+    marker: str = "",
+    plain: bool = False,
+    proxy_ip: str | None = None,
+    token_secret: str | None = None,
+) -> KindEngine:
+    """One row of the table. Trust and language come from the registry, the namespace from the
+    lane. `lane` is needed only for an engine the registry allows in several, because a trusted
+    engine has a deployment per lane; `bakeoff.registry.check_lane` refuses one it forbids."""
+    entry = get_engine(name)
+    lanes = lanes_for(entry)
+    if lane is None and len(lanes) > 1:
+        raise ValueError(f"{name} may run in {', '.join(lanes)}: name the lane of this deployment")
+    deployed = lane or lanes[0]
+    check_lane(entry, deployed)
+    return KindEngine(
+        name=name,
+        trust=trust_of(entry),
+        lane=deployed,
+        chassis=chassis,
+        pod=pod,
+        namespace=REMOTE_NS if deployed == "remote" else AGENTS_NS,
+        language="node" if entry.runner == "node" else "python",
+        marker=marker,
+        plain=plain,
+        proxy_ip=proxy_ip,
+        token_secret=token_secret,
+    )
+
+
 ENGINES: tuple[KindEngine, ...] = (
-    KindEngine(
-        "echo-openai-agents", "sidecar", "agent-openai-agents", "agent-openai-agents", AGENTS_NS
-    ),
-    KindEngine(
-        "echo-typescript",
-        "sidecar",
-        "agent-typescript",
-        "agent-typescript",
-        AGENTS_NS,
-        language="node",
-    ),
-    KindEngine(
+    kind_engine("echo-openai-agents", "agent-openai-agents", "agent-openai-agents", lane="sidecar"),
+    kind_engine("echo-typescript", "agent-typescript", "agent-typescript", lane="sidecar"),
+    kind_engine(
         "echo-smolagents",
-        "remote",
         "chassis-smolagents-remote",
         "remote-smolagents",
-        REMOTE_NS,
         marker=" [code]",
         proxy_ip="10.96.85.92",
         token_secret="remote-smolagents-token",  # pragma: allowlist secret (a Secret name)
     ),
-    KindEngine(
+    kind_engine(
         "echo-claude-agent",
-        "remote",
         "chassis-claude-agent-remote",
         "remote-claude-agent",
-        REMOTE_NS,
         proxy_ip="10.96.85.93",
         token_secret="remote-claude-agent-token",  # pragma: allowlist secret (a Secret name)
     ),
-    KindEngine(
+    kind_engine(
         "echo-typescript",
-        "remote",
         "chassis-typescript-remote",
         "remote-typescript",
-        REMOTE_NS,
-        language="node",
+        lane="remote",
         proxy_ip="10.96.85.94",
         token_secret="remote-typescript-token",  # pragma: allowlist secret (a Secret name)
     ),
-    KindEngine(
+    kind_engine(
         "kagent-adk",
-        "remote",
         "chassis-kagent-adk-remote",
         "remote-kagent-adk",
-        REMOTE_NS,
         marker=" [text]",
         plain=True,
         proxy_ip="10.96.85.95",
@@ -224,14 +267,7 @@ def probe_node(
     namespace: str, pod_name: str, container: str, checks: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """Run `checks` in `container` with the image's own Node; one result per check, in order."""
-    got = kubectl(
-        "exec", "-n", namespace, pod_name, "-c", container, "--",
-        "node", "-e", NODE_PROBE, json.dumps(checks),
-    )  # fmt: skip
-    assert got.returncode == 0, f"exec in {pod_name}/{container} failed: {got.stderr[-400:]}"
-    results: list[dict[str, Any]] = json.loads(got.stdout.strip().splitlines()[-1])
-    assert len(results) == len(checks)
-    return results
+    return exec_probe(namespace, pod_name, container, ["node", "-e", NODE_PROBE], checks)
 
 
 NO_PYTHON = (
@@ -247,17 +283,11 @@ def probe_python(
     """The PoC-5 probe (`poc_harness.pod_probe.PROBE`) with the first Python the image has. An
     image with none is an exception: the test is marked xfail with `NO_PYTHON`, not dropped."""
     for exe in PYTHONS:
-        got = kubectl(
-            "exec", "-n", namespace, pod_name, "-c", container, "--",
-            exe, "-c", PROBE, json.dumps(checks),
-        )  # fmt: skip
-        if got.returncode == 0:
-            results: list[dict[str, Any]] = json.loads(got.stdout.strip().splitlines()[-1])
-            assert len(results) == len(checks)
-            return results
-        assert "not found" in got.stderr.lower(), (
-            f"exec in {pod_name}/{container} failed: {got.stderr[-400:]}"
-        )
+        try:
+            return exec_probe(namespace, pod_name, container, [exe, "-c", PROBE], checks)
+        except ExecFailed as failed:
+            if "not found" not in failed.stderr.lower():
+                raise
     pytest.xfail(NO_PYTHON)
 
 
@@ -268,3 +298,91 @@ def probe_in(
     if engine.language == "node":
         return probe_node(engine.namespace, pod_name, container, checks)
     return probe_python(engine.namespace, pod_name, container, checks)
+
+
+# --- a pod with a seccomp profile no node has -----------------------------------------------
+
+MISSING_PROFILE_POD = "poc06-missing-seccomp"
+CONTAINER_ERRORS = frozenset({"CreateContainerError", "CreateContainerConfigError"})
+"""The waiting reasons of a container the runtime would not start."""
+MISSING_PROFILE_WAIT_S = 90
+POLL_S = 3
+CREATE_TIMEOUT_S = 60
+
+
+def missing_profile_manifest() -> dict[str, Any]:
+    """A pod that passes every control but names a Localhost profile no node has."""
+    return {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {
+            "name": MISSING_PROFILE_POD,
+            "namespace": CALLER_NS,
+            "labels": {"app.kubernetes.io/part-of": "poc06-missing-seccomp"},
+        },
+        "spec": {
+            "automountServiceAccountToken": False,
+            "restartPolicy": "Never",
+            "securityContext": {
+                "runAsNonRoot": True,
+                "runAsUser": 10001,
+                "seccompProfile": {
+                    "type": "Localhost",
+                    "localhostProfile": "profiles/poc06-does-not-exist.json",
+                },
+            },
+            "containers": [
+                {
+                    "name": "c",
+                    "image": CALLER_IMAGE,
+                    "imagePullPolicy": "Never",
+                    "command": ["python", "-c", "import time; time.sleep(600)"],
+                    "securityContext": {
+                        "allowPrivilegeEscalation": False,
+                        "capabilities": {"drop": ["ALL"]},
+                    },
+                }
+            ],
+        },
+    }
+
+
+def create_missing_profile_pod() -> subprocess.CompletedProcess[str]:
+    """Replace any leftover pod and create it again; the result says if admission refused it."""
+    kubectl(
+        "delete", "pod", MISSING_PROFILE_POD, "-n", CALLER_NS, "--ignore-not-found", "--wait=true"
+    )
+    return kubectl(
+        "create", "-f", "-", timeout=CREATE_TIMEOUT_S, stdin=json.dumps(missing_profile_manifest())
+    )
+
+
+def delete_missing_profile_pod() -> None:
+    kubectl(
+        "delete", "pod", MISSING_PROFILE_POD, "-n", CALLER_NS, "--wait=false", "--grace-period=0"
+    )
+
+
+def _waiting_error(status: Mapping[str, Any]) -> str:
+    """The first container's start error, or `""`. Fails if the pod or a container runs."""
+    assert status.get("phase") != "Running", "the pod ran without its profile"
+    reason = ""
+    for container in status.get("containerStatuses", []):
+        assert not container.get("state", {}).get("running"), "the container ran"
+        waiting = container.get("state", {}).get("waiting") or {}
+        if waiting.get("reason") in CONTAINER_ERRORS:
+            reason = waiting["reason"]
+    return reason
+
+
+def container_error_of(
+    namespace: str, pod_name: str, timeout_s: float = MISSING_PROFILE_WAIT_S
+) -> str:
+    """Poll the pod until a container reports a `CONTAINER_ERRORS` reason, and return it, or `""`
+    at the deadline. Fails as soon as the pod or a container is seen running."""
+    reason = ""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline and not reason:
+        reason = _waiting_error(get_json("pod", pod_name, "-n", namespace)["status"])
+        time.sleep(POLL_S)
+    return reason

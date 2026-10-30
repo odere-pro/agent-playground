@@ -26,7 +26,6 @@ for _tests in (
     "poc-03-one-interface-every-client",
     "poc-04-stateless-scalable",
     "poc-05-sandboxed",
-    "poc-06a-bake-off-sidecar-lane",
     "poc-07-cross-cutting-decisions",
 ):
     sys.path.insert(0, str(POCS / _tests / "tests"))
@@ -256,8 +255,8 @@ def evals(folder: Path, tool: str, engines: list[str]) -> int:
 
 
 async def _gate(engine: str, mp: pytest.MonkeyPatch) -> int:
-    from poc06_harness import ROUTE
     from poc07_evals_harness import BAD, FALLBACK_ROUTE, GATE_INPUT, GOOD, serve_gate_backends
+    from poc_harness.bakeoff_tasks import ROUTE
     from test_poc07_evals_gate import gated_run, routes
 
     with serve_gate_backends() as backends:

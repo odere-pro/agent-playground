@@ -3,7 +3,7 @@ A2A on localhost and in memory, offline against the fake model server) and crite
 non-Python agent passes the same suite, with no change to the chassis core).
 
 `chassis_contracts.EngineConnectorContract` is bound twice and parametrized over the trusted
-engines of `poc06_harness.ENGINES`, so a new engine is one registry line:
+engines of `poc_harness.bakeoff_tasks.ENGINES`, so a new engine is one registry line:
 
 - `TestEngineInMemory`: each Python engine behind the chassis's own `inprocess` connector, served
   by the chassis app (`poc_harness.apps.chassis_app`).
@@ -11,7 +11,7 @@ engines of `poc06_harness.ENGINES`, so a new engine is one registry line:
   served by `workload-a2a`; the TypeScript agent is the built `dist` (`node dist/src/main.js`).
 
 Every engine's model calls go to the fake model server on `scripts/bakeoff.yaml` and its tool calls
-to the two-tool fake MCP server, both on Unix sockets (`poc06a_harness`). No TCP, no key. The
+to the two-tool fake MCP server, both on Unix sockets (`sidecar_lane`). No TCP, no key. The
 TypeScript cases skip only when its `node_modules` is absent (`npm ci`).
 
 The JSON-integer and `ctx.traceparent` cases run the suite's own `json_values_handle` in each
@@ -30,8 +30,10 @@ from chassis.ports.engine import EngineConnector
 from chassis_contracts import EngineConnectorContract
 from chassis_contracts.engine import JSON_VALUES_HANDLE
 from chassis_contracts.helpers import make_request
-from poc06_harness import ENGINES, SMOKE
-from poc06a_harness import (
+from poc_harness.apps import chassis_app, running
+from poc_harness.bakeoff_tasks import ENGINES, SMOKE
+from poc_harness.servers import a2a_on_unix_socket
+from poc_harness.sidecar_lane import (
     Backends,
     SidecarAddress,
     python_engines,
@@ -39,8 +41,6 @@ from poc06a_harness import (
     sidecar_engines,
     wire_python_engine,
 )
-from poc_harness.apps import chassis_app, running
-from poc_harness.servers import a2a_on_unix_socket
 
 SIDECAR_ENGINES = list(sidecar_engines())
 PYTHON_ENGINES = list(python_engines())

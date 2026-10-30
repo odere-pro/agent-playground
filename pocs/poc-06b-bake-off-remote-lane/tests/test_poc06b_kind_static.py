@@ -20,7 +20,7 @@ kagent-adk):
   peerless egress, and no DNS for a remote;
 - each admission rule (0 to 8; the template and claim rules T1 to T5 and C1 to C5 do not apply,
   and the folder has no template or claim) admits each object, by PoC-5's own Python model of the
-  rules (`test_poc05_admission_static.broken_rules`), and refuses a mutated copy;
+  rules (`poc_harness.admission_model.broken_rules`), and refuses a mutated copy;
 - the trust params differ from PoC-5's by the one repository the sidecar lane adds;
 - the seed script, `run.sh`, the fake-model script, and the workflow.
 
@@ -43,8 +43,8 @@ import pytest
 import yaml
 from chassis.server.config import ChassisConfig, load_config
 from fake_model_server import Script
-from poc06_harness import LOOKUP, SIMPLIFIER, SMOKE
 from poc_harness.admission_model import AdmissionParams, broken_rules
+from poc_harness.bakeoff_tasks import LOOKUP, SIMPLIFIER, SMOKE
 from poc_harness.workflows import (
     PINNED,
     SHA256,
@@ -1249,7 +1249,7 @@ def test_the_run_sh_text_selects_the_kind_files_by_path_and_names_missing_ones()
         "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_sidecar_controls.py",
     ]
     assert not missing, missing
-    assert "POC06_KIND=1" in text and '"${KIND_TESTS[@]}"' in text and "-m kind" in text
+    assert "POC06_KIND=1" in text and '"${KIND_TESTS[@]}"' in text and "-m network" in text
     assert " -k " not in run_tests, "select by file path, not by -k"
 
 

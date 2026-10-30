@@ -16,10 +16,10 @@ from collections.abc import Iterator
 import pytest
 from chassis.adapters.a2a.sidecar import SidecarConnector
 from chassis.core.trace import parse_traceparent, trace_id_hex
-from poc06_harness import ENGINES, SMOKE
-from poc06a_harness import Backends, serve_backends, wire_python_engine
 from poc07_fb_harness import chassis, client, fake_langfuse, run
+from poc_harness.bakeoff_tasks import ENGINES, SMOKE
 from poc_harness.servers import a2a_on_unix_socket
+from poc_harness.sidecar_lane import Backends, serve_backends, wire_python_engine
 
 FEEDBACK_ENGINES = ("echo-python", "echo-langgraph")
 

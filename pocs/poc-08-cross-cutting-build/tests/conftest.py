@@ -17,8 +17,6 @@ from pathlib import Path
 
 POCS = Path(__file__).resolve().parents[2]
 for _tests in (
-    POCS / "poc-05-sandboxed" / "tests",
-    POCS / "poc-06a-bake-off-sidecar-lane" / "tests",
     POCS / "poc-07-cross-cutting-decisions" / "tests",
     POCS.parent / "packages" / "chassis" / "tests",  # `promtext`, the Prometheus text reader
 ):

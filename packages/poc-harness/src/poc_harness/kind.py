@@ -2,9 +2,8 @@
 
 Every check runs with `kubectl exec` of the image's own interpreter (T10 is dropped: no probe
 workload, no attack tool). `exec_probe` runs a check list with any interpreter; `probe` runs
-`poc_harness.pod_probe.PROBE` with the image's Python. PoC-6b's `probe_node` and `probe_python`
-in `poc06b_kind.py` copy this exec, parse, and assert; they move onto `exec_probe` in the next
-step of the harness move.
+`poc_harness.pod_probe.PROBE` with the image's Python; `poc_harness.bakeoff_kind` adds Node and
+the search for a Python.
 
 A policy drop on kindnet is a timeout; a refused connection means nothing listens. So a check
 that the network policy refuses an edge expects `POLICY_DROPPED` only, and proves the target is up
@@ -53,11 +52,14 @@ CALLER_NS = "default"
 CALLER_IMAGE = "kind.local/agent-platform/echo-python:poc05"
 
 
-def kubectl(*args: str, timeout: int = TIMEOUT_S) -> subprocess.CompletedProcess[str]:
+def kubectl(
+    *args: str, timeout: int = TIMEOUT_S, stdin: str | None = None
+) -> subprocess.CompletedProcess[str]:
     exe = shutil.which("kubectl")
     assert exe is not None, "kubectl is not on PATH"
     return subprocess.run(
         [exe, "--context", CONTEXT, *args],
+        input=stdin,
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -112,6 +114,15 @@ def node_ip() -> str:
     return ip
 
 
+class ExecFailed(AssertionError):
+    """`kubectl exec` of a probe exited non-zero. An assertion, so a test fails on it; a caller
+    that can try another interpreter reads `stderr`."""
+
+    def __init__(self, where: str, stderr: str) -> None:
+        super().__init__(f"exec in {where} failed: {stderr[-400:]}")
+        self.stderr = stderr
+
+
 def exec_probe(
     namespace: str, pod_name: str, container: str, argv: list[str], checks: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -121,7 +132,8 @@ def exec_probe(
     got = kubectl(
         "exec", "-n", namespace, pod_name, "-c", container, "--", *argv, json.dumps(checks)
     )
-    assert got.returncode == 0, f"exec in {pod_name}/{container} failed: {got.stderr[-400:]}"
+    if got.returncode != 0:
+        raise ExecFailed(f"{pod_name}/{container}", got.stderr)
     results: list[dict[str, Any]] = json.loads(got.stdout.strip().splitlines()[-1])
     assert len(results) == len(checks)
     return results

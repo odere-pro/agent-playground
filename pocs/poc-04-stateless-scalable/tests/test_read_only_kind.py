@@ -9,7 +9,7 @@ Exit criteria covered (docs/planning/poc/004-PoC-4-stateless-scalable.md):
   rolling restart." The manifest half: the workload has an exec liveness probe on the agent card
   (it listens on 127.0.0.1 only, so the kubelet's `httpGet` cannot reach it), the chassis is ready
   on `/ready`, and each variant puts the two containers in the roles it names. The drills
-  themselves are `test_kind.py` (`kind`, needs a cluster).
+  themselves are `test_kind.py` (`POC04_KIND`, needs a cluster).
 
 Two layers. The raw files under `deploy/kind/poc04/` are parsed with PyYAML and always checked.
 The rendered output of `kubectl kustomize` (a local render: no cluster, no socket) is checked

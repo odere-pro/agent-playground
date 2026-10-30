@@ -22,7 +22,7 @@ from fake_mcp_server.server import create_app as create_tool_app
 from fake_model_server import Script
 from fake_model_server import create_app as create_model_app
 from fastapi import FastAPI, Request
-from poc06a_harness import Backends, Recorder, Seen
+from poc_harness.sidecar_lane import Backends, Recorder, Seen
 from poc_harness.sockets import on_unix_socket
 
 FALLBACK_ROUTE = "fallback-route"

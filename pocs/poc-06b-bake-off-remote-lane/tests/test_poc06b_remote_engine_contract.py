@@ -42,7 +42,7 @@ from chassis_contracts.engine import JSON_VALUES_HANDLE
 from chassis_contracts.helpers import make_context, make_request
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
 from fake_model_server import Script, create_app
-from poc06_harness import ENGINES, SMOKE
+from poc_harness.bakeoff_tasks import ENGINES, SMOKE
 from poc_harness.lane_tokens import Tokens
 from poc_harness.remote_lane import remote_lane_connector
 from poc_harness.sockets import on_unix_socket_on_this_loop

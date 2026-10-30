@@ -10,12 +10,13 @@ connection.
 
 Reuse: the metadata stand-in listener, the policy scan, the node's API check, and the container and
 Secret readers are PoC-5's, imported unchanged. The probe runs with Python or Node by the image
-(`poc06b_kind.probe_in`); `agent-typescript`'s workload is Node, so its checks use `node_probe.js`.
+(`bakeoff_kind.probe_in`); `agent-typescript`'s workload is Node, so its checks use `node_probe.js`.
 The H26 `/proc` scan (the workload cannot read the chassis's environ) is not repeated: it reads the
 process table with Python, and the pod-level fact it rests on, no shared PID namespace, is checked
 on the spec.
 
-A kind test: marked `kind` (and `network`), skipped unless `POC06_KIND=1` (`poc06b_conftest.py`).
+A kind test: marked `POC06_KIND` (`poc_harness.drills`), so also `network`, and skipped unless
+`POC06_KIND=1`.
 Run: `deploy/kind/poc06/run.sh test`.
 """
 
@@ -25,7 +26,8 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from poc06b_kind import SIDECARS, KindEngine, probe_in
+from poc_harness.bakeoff_kind import SIDECARS, KindEngine, probe_in
+from poc_harness.drills import POC06_KIND
 from poc_harness.kind import (
     AGENTS_NS,
     CHASSIS,
@@ -53,7 +55,7 @@ from poc_harness.kind_controls import (
     secret_refs,
 )
 
-pytestmark = pytest.mark.kind
+pytestmark = POC06_KIND
 
 ENGINE_IDS = [e.id for e in SIDECARS]
 

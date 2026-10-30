@@ -8,7 +8,7 @@ reaches nothing but its chassis's listener, has no DNS, runs on a read-only root
 paired allowed control in the same test.
 
 Reuse: the probe, the pod and node helpers, and `secret_sources` come from PoC-5's tests unchanged.
-What is new: the probe runs with Python or Node by the image (`poc06b_kind.probe_in`), and the
+What is new: the probe runs with Python or Node by the image (`bakeoff_kind.probe_in`), and the
 listener checks cover `/v1/messages` too (the Claude CLI's path).
 
 Recorded exceptions (notes/2026-10-09-lanes-b-kind.md):
@@ -19,7 +19,8 @@ Recorded exceptions (notes/2026-10-09-lanes-b-kind.md):
   pod spec and the node. Its image is built from source (`run.sh build_kagent`) and has the venv
   Python at /.kagent/.venv/bin/python, so the probe is expected to run.
 
-A kind test: marked `kind` (and `network`), skipped unless `POC06_KIND=1` (`poc06b_conftest.py`).
+A kind test: marked `POC06_KIND` (`poc_harness.drills`), so also `network`, and skipped unless
+`POC06_KIND=1`.
 Run: `deploy/kind/poc06/run.sh test`.
 """
 
@@ -29,7 +30,6 @@ import json
 import re
 import shutil
 import subprocess
-import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -37,18 +37,21 @@ from typing import Any
 
 import pytest
 import yaml
-from poc06b_kind import (
+from poc_harness.bakeoff_kind import (
+    MISSING_PROFILE_POD,
     PYTHONS,
     REMOTES,
     KindEngine,
+    container_error_of,
+    create_missing_profile_pod,
+    delete_missing_profile_pod,
     probe_in,
 )
+from poc_harness.drills import POC06_KIND
 from poc_harness.kind import (
     AGENTS_NS,
-    CALLER_IMAGE,
     CALLER_NS,
     CHASSIS,
-    CONTEXT,
     NOT_A_KEY,
     POLICY_DROPPED,
     REMOTE_NS,
@@ -65,7 +68,7 @@ from poc_harness.kind import (
 )
 from poc_harness.kind_controls import secret_sources, traceparent_headers
 
-pytestmark = pytest.mark.kind
+pytestmark = POC06_KIND
 
 REPO = Path(__file__).resolve().parents[3]
 CLUSTER_YAML = REPO / "deploy" / "kind" / "poc05" / "cluster.yaml"
@@ -484,87 +487,38 @@ def test_the_profile_file_is_the_same_on_every_node() -> None:
     assert len(set(sums.values())) == 1, sums
 
 
-MISSING_PROFILE_POD = "poc06-missing-seccomp"
+@pytest.fixture(scope="module")
+def missing_profile_pod() -> Iterator[subprocess.CompletedProcess[str]]:
+    """The result of creating the pod with a missing profile. Deleted after, if it was created."""
+    made = create_missing_profile_pod()
+    yield made
+    if made.returncode == 0:
+        delete_missing_profile_pod()
 
 
-def test_a_pod_with_a_missing_profile_never_runs() -> None:
+def test_a_refused_pod_with_a_missing_profile_was_denied_by_admission(
+    missing_profile_pod: subprocess.CompletedProcess[str],
+) -> None:
+    """Fail closed: admission may refuse the pod before scheduling. Accepted, as long as the
+    refusal is a denial and not another `kubectl create` failure. A pod that was admitted is the
+    case of `test_a_pod_with_a_missing_profile_never_runs`, so this one skips."""
+    if missing_profile_pod.returncode == 0:
+        pytest.skip("admission let the pod in: the never-Running test decides")
+    stderr = missing_profile_pod.stderr
+    assert "denied" in stderr.lower() or "forbidden" in stderr.lower(), stderr
+
+
+def test_a_pod_with_a_missing_profile_never_runs(
+    missing_profile_pod: subprocess.CompletedProcess[str],
+) -> None:
     """Fail closed: a Localhost profile the node does not have must stop the container, not run it
-    unfiltered. Record: either admission refuses the pod (also fail closed, accepted), or the pod
-    stays out of Running with a container waiting in CreateContainerError or
-    CreateContainerConfigError. The pod is deleted after."""
-    manifest = {
-        "apiVersion": "v1",
-        "kind": "Pod",
-        "metadata": {
-            "name": MISSING_PROFILE_POD,
-            "namespace": CALLER_NS,
-            "labels": {"app.kubernetes.io/part-of": "poc06-missing-seccomp"},
-        },
-        "spec": {
-            "automountServiceAccountToken": False,
-            "restartPolicy": "Never",
-            "securityContext": {
-                "runAsNonRoot": True,
-                "runAsUser": 10001,
-                "seccompProfile": {
-                    "type": "Localhost",
-                    "localhostProfile": "profiles/poc06-does-not-exist.json",
-                },
-            },
-            "containers": [
-                {
-                    "name": "c",
-                    "image": CALLER_IMAGE,
-                    "imagePullPolicy": "Never",
-                    "command": ["python", "-c", "import time; time.sleep(600)"],
-                    "securityContext": {
-                        "allowPrivilegeEscalation": False,
-                        "capabilities": {"drop": ["ALL"]},
-                    },
-                }
-            ],
-        },
-    }
-    kubectl(
-        "delete", "pod", MISSING_PROFILE_POD, "-n", CALLER_NS, "--ignore-not-found", "--wait=true"
-    )
-    exe = shutil.which("kubectl")
-    assert exe is not None, "kubectl is not on PATH"
-    made = subprocess.run(
-        [exe, "--context", CONTEXT, "create", "-f", "-"],
-        input=json.dumps(manifest),
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    if made.returncode != 0:
-        # Admission refused the pod before scheduling: fail closed, accepted.
-        assert "denied" in made.stderr.lower() or "forbidden" in made.stderr.lower(), made.stderr
-        return
-    try:
-        reason = ""
-        deadline = time.monotonic() + 90
-        while time.monotonic() < deadline and not reason:
-            got = get_json("pod", MISSING_PROFILE_POD, "-n", CALLER_NS)
-            assert got["status"].get("phase") != "Running", "the pod ran without its profile"
-            for cs in got["status"].get("containerStatuses", []):
-                assert not cs.get("state", {}).get("running"), "the container ran"
-                waiting = cs.get("state", {}).get("waiting") or {}
-                if waiting.get("reason") in {"CreateContainerError", "CreateContainerConfigError"}:
-                    reason = waiting["reason"]
-            time.sleep(3)
-        assert reason, "no container reached CreateContainerError or CreateContainerConfigError"
-    finally:
-        kubectl(
-            "delete",
-            "pod",
-            MISSING_PROFILE_POD,
-            "-n",
-            CALLER_NS,
-            "--wait=false",
-            "--grace-period=0",
-        )
+    unfiltered. The pod stays out of Running with a container waiting in CreateContainerError or
+    CreateContainerConfigError. A pod that admission refused is the case of the test above, so
+    this one skips."""
+    if missing_profile_pod.returncode != 0:
+        pytest.skip("admission refused the pod: the denial test decides")
+    reason = container_error_of(CALLER_NS, MISSING_PROFILE_POD)
+    assert reason, "no container reached CreateContainerError or CreateContainerConfigError"
 
 
 def test_the_remote_pods_are_the_ones_the_manifests_name() -> None:

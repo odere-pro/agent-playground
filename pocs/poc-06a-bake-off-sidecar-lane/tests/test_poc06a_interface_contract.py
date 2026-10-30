@@ -7,7 +7,7 @@ the README's "rerun the PoC-3 contract suite on each new engine". It binds the s
 `pocs/poc-03-one-interface-every-client/tests/test_interface_contract.py` does, with PoC-3's own
 harness (`poc_harness.interfaces.chassis_on_unix_sockets`: a real chassis on Unix sockets, the
 workload behind `inprocess` or `sidecar`, model calls replayed from a cassette), but over the
-engines of `poc06_harness.ENGINES` that PoC-3 does not list, so PoC-3's engine list stays as it is.
+engines of `bakeoff_tasks.ENGINES` that PoC-3 does not list, so PoC-3's engine list stays as it is.
 A new Python sidecar engine in the registry is bound with no edit here, and records one cassette.
 
 The cassette of an engine is `cassettes/interfaces/<engine>.yaml` here. Every interface, mode, and
@@ -32,7 +32,6 @@ from chassis_contracts.interface import LOGICAL, Chassis, ExpectedAnswer, Interf
 from chassis_contracts.recording import CassetteTransport
 from fake_model_server import Script
 from fake_model_server import create_app as create_fake_model_app
-from poc06a_harness import python_engines
 from poc_harness.interfaces import (
     AGENT,
     LANES,
@@ -45,6 +44,7 @@ from poc_harness.interfaces import ENGINES as POC03_ENGINES
 from poc_harness.outbound import patch_outbound
 from poc_harness.paths import EXAMPLE_SCRIPT
 from poc_harness.scenario import SIMPLIFIED, SIMPLIFY
+from poc_harness.sidecar_lane import python_engines
 
 CASSETTES = Path(__file__).resolve().parent / "cassettes" / "interfaces"
 HANDLES = {name: engine.handle for name, engine in python_engines().items()}
