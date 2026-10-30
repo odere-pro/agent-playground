@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from chassis.core.trace import continued, parent_span_id, parse_traceparent
 
-TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"
+TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"  # pragma: allowlist secret
 SPAN = "00f067aa0ba902b7"
 VALID = f"00-{TRACE}-{SPAN}-01"
 LATER = f"01-{TRACE}-{SPAN}-01-extra"
