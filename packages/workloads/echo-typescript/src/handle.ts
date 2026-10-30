@@ -13,9 +13,10 @@
 import { request as httpRequest, type IncomingMessage } from "node:http";
 import { Readable } from "node:stream";
 
+import { SCHEMA_VERSION, type Json } from "./schema.js";
 import * as tools from "./tools.js";
 
-export const SCHEMA_VERSION = "0";
+export { SCHEMA_VERSION, type Json } from "./schema.js";
 export const PROMPT_VERSION = "simplifier-v1";
 export const SYSTEM_PROMPT = "Rewrite in plain words. Short sentences. Keep every fact.";
 const DEFAULT_ROUTE = "big-default";
@@ -24,7 +25,6 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 // suggested: at most 3 rounds of tool calls per run; a 4th ask is `tool_loop_exceeded`.
 export const MAX_TOOL_ROUNDS = 3;
 
-export type Json = Record<string, unknown>;
 export type ChassisEvent = Json & { schema_version: string; type: string };
 /** `context.v0.json` as plain JSON; `traceparent` is the run's W3C value, optional. */
 export type Context = Json & { traceparent?: string | null };
@@ -123,7 +123,7 @@ interface Turn {
 async function* stream(send: typeof fetch, url: string, init: RequestInit, turn: Turn): AsyncGenerator<ChassisEvent> {
   const response = await send(url, init);
   if (response.status >= 400) {
-    const detail = (await response.text()).slice(0, 200);
+    const detail = tools.clip(await response.text());
     turn.failed = true;
     yield error(`http_${response.status}`, detail || response.statusText, response.status >= 500);
     return;
@@ -163,13 +163,19 @@ async function* stream(send: typeof fetch, url: string, init: RequestInit, turn:
   }
 }
 
-/**
- * `start`, then per model call its `delta`s and a `tool_call` per tool it asked for, then one
- * `metrics` summing every call, `end`; or `error`. Event order and codes match echo-python.
- */
-export async function* handle(input: Json, ctx: Context, deps: Deps = {}): AsyncGenerator<ChassisEvent> {
-  yield event("start", { request_id: String(ctx["request_id"] ?? "") });
-  const route = String(ctx["model_route"] || DEFAULT_ROUTE);
+/** What one run sends with: the model endpoint and the options every MCP call shares. */
+interface Run {
+  route: string;
+  url: string;
+  headers: Record<string, string>;
+  timeout: number;
+  send: typeof fetch;
+  signal: AbortSignal | undefined;
+  mcp: tools.McpOptions;
+}
+
+/** The run's route, endpoints, headers (`traceparent`, `Authorization`), and timeout. */
+function prepare(ctx: Context, deps: Deps): Run {
   const base = (deps.modelUrl ?? process.env["CHASSIS_MODEL_URL"] ?? DEFAULT_MODEL_URL).replace(/\/+$/, "");
   const headers: Record<string, string> = {};
   const traceparent = ctx["traceparent"];
@@ -178,7 +184,6 @@ export async function* handle(input: Json, ctx: Context, deps: Deps = {}): Async
   if (token) headers["authorization"] = `Bearer ${token}`;
   const timeout = timeoutMs(ctx);
   const uds = process.env["CHASSIS_MODEL_UDS"];
-  const send = deps.fetch ?? (uds ? udsFetch(uds) : fetch);
   const mcp: tools.McpOptions = {
     fetch: deps.toolFetch ?? deps.fetch ?? fetch,
     headers,
@@ -186,7 +191,61 @@ export async function* handle(input: Json, ctx: Context, deps: Deps = {}): Async
     signal: deps.signal,
     ...(deps.toolUrl !== undefined ? { url: deps.toolUrl } : {}),
   };
-  const offered = await tools.listOpenAiTools(mcp);
+  const send = deps.fetch ?? (uds ? udsFetch(uds) : fetch);
+  const route = String(ctx["model_route"] || DEFAULT_ROUTE);
+  return { route, url: `${base}/chat/completions`, headers, timeout, send, signal: deps.signal, mcp };
+}
+
+/** One model call's request: the conversation so far, streamed, with the offered tools. */
+function modelRequest(run: Run, messages: Json[], offered: Json[]): RequestInit {
+  const body: Json = { model: run.route, messages, stream: true, stream_options: { include_usage: true } };
+  if (offered.length) body["tools"] = offered;
+  const timeout = AbortSignal.timeout(run.timeout);
+  return {
+    method: "POST",
+    headers: { "content-type": "application/json", ...run.headers },
+    body: JSON.stringify(body),
+    signal: run.signal ? AbortSignal.any([run.signal, timeout]) : timeout,
+  };
+}
+
+/**
+ * One round of tool calls, in `index` order: a `tool_call` per call, or one `error` (then it
+ * returns `undefined`). On success it returns the messages to append: the assistant message,
+ * then one `tool` message per result.
+ */
+export async function* runToolRound(found: Map<number, tools.ToolCall>, mcp: tools.McpOptions): AsyncGenerator<ChassisEvent, Json[] | undefined> {
+  const calls = [...found.entries()].sort((a, b) => a[0] - b[0]).map(([, c]) => c);
+  const messages: Json[] = [tools.assistantMessage(calls)];
+  for (const call of calls) {
+    let args: Json;
+    let result: Json;
+    try {
+      args = tools.parseArguments(call);
+    } catch (exc) {
+      yield error("bad_response", exc instanceof Error ? exc.message : String(exc), false);
+      return undefined;
+    }
+    try {
+      result = await tools.callTool(call.name, args, mcp);
+    } catch (exc) {
+      yield error("tool_error", exc instanceof Error ? exc.message : String(exc), false);
+      return undefined;
+    }
+    yield event("tool_call", { call_id: call.callId, name: call.name, arguments: args, result });
+    messages.push(tools.toolMessage(call.callId, result));
+  }
+  return messages;
+}
+
+/**
+ * `start`, then per model call its `delta`s and a `tool_call` per tool it asked for, then one
+ * `metrics` summing every call, `end`; or `error`. Event order and codes match echo-python.
+ */
+export async function* handle(input: Json, ctx: Context, deps: Deps = {}): AsyncGenerator<ChassisEvent> {
+  yield event("start", { request_id: String(ctx["request_id"] ?? "") });
+  const run = prepare(ctx, deps);
+  const offered = await tools.listOpenAiTools(run.mcp);
   const messages: Json[] = [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: String(input["text"] ?? "") },
@@ -195,16 +254,8 @@ export async function* handle(input: Json, ctx: Context, deps: Deps = {}): Async
   let tokensOut = 0;
   try {
     for (let rounds = 0; rounds <= MAX_TOOL_ROUNDS; rounds++) {
-      const body: Json = { model: route, messages, stream: true, stream_options: { include_usage: true } };
-      if (offered.length) body["tools"] = offered;
       const turn: Turn = { usage: [0, 0], calls: new Map(), failed: false };
-      const init: RequestInit = {
-        method: "POST",
-        headers: { "content-type": "application/json", ...headers },
-        body: JSON.stringify(body),
-        signal: deps.signal ? AbortSignal.any([deps.signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout),
-      };
-      yield* stream(send, `${base}/chat/completions`, init, turn);
+      yield* stream(run.send, run.url, modelRequest(run, messages, offered), turn);
       if (turn.failed) return;
       tokensIn += turn.usage[0];
       tokensOut += turn.usage[1];
@@ -213,26 +264,9 @@ export async function* handle(input: Json, ctx: Context, deps: Deps = {}): Async
         yield error("tool_loop_exceeded", `the model asked for tools more than ${MAX_TOOL_ROUNDS} times`, false);
         return;
       }
-      const calls = [...turn.calls.entries()].sort((a, b) => a[0] - b[0]).map(([, c]) => c);
-      messages.push(tools.assistantMessage(calls));
-      for (const call of calls) {
-        let args: Json;
-        let result: Json;
-        try {
-          args = tools.parseArguments(call);
-        } catch (exc) {
-          yield error("bad_response", exc instanceof Error ? exc.message : String(exc), false);
-          return;
-        }
-        try {
-          result = await tools.callTool(call.name, args, mcp);
-        } catch (exc) {
-          yield error("tool_error", exc instanceof Error ? exc.message : String(exc), false);
-          return;
-        }
-        yield event("tool_call", { call_id: call.callId, name: call.name, arguments: args, result });
-        messages.push(tools.toolMessage(call.callId, result));
-      }
+      const added = yield* runToolRound(turn.calls, run.mcp);
+      if (!added) return;
+      messages.push(...added);
     }
   } catch (exc) {
     const e = exc instanceof Error ? exc : new Error(String(exc));
@@ -240,6 +274,6 @@ export async function* handle(input: Json, ctx: Context, deps: Deps = {}): Async
     else yield error("connect_error", e.message || e.name, true);
     return;
   }
-  yield event("metrics", { input_tokens: tokensIn, output_tokens: tokensOut, model_route: route, attempt: 1 });
+  yield event("metrics", { input_tokens: tokensIn, output_tokens: tokensOut, model_route: run.route, attempt: 1 });
   yield event("end", { status: "ok" });
 }

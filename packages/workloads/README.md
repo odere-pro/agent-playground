@@ -5,11 +5,11 @@ What runs behind the chassis: business logic in any framework or language, serve
 | Folder | Arrives in | What |
 | ------ | ---------- | ---- |
 | `echo-python/` | PoC-1 walking skeleton | The simplifier in plain Python, with its own MCP tool loop. In process (`inprocess`) by the chassis's template server; next to the chassis (`sidecar`) by `packages/workload-a2a` |
-| `echo-typescript/` | PoC-2 | The simplifier in TypeScript, served by its own port of the template server on `@a2a-js/sdk` 1.3, to prove the contract has nothing Python in it. No tool |
+| `echo-typescript/` | PoC-2 | The simplifier in TypeScript, served by its own port of the template server on `@a2a-js/sdk` 1.3, to prove the contract has nothing Python in it. Tools over MCP, in its own loop |
 | `echo-pydanticai/` | PoC-2 | The simplifier in PydanticAI, tools over MCP, served by `packages/workload-a2a` |
 | `echo-langgraph/` | PoC-2 | The simplifier in LangGraph, tools over MCP through a stand-in for `langchain-mcp-adapters`, served by `packages/workload-a2a` |
-| `echo-openai-agents/` | PoC-6a (skeleton) | The simplifier in the OpenAI Agents SDK, `sidecar` lane, trust `trusted`. Yields `not_implemented` until its task lands |
-| `echo-claude-agent/` | PoC-6b (skeleton) | The simplifier in the Claude Agent SDK with shell and file tools on, `remote` lane, trust `untrusted`. Yields `not_implemented` until its task lands |
-| `echo-smolagents/` | PoC-6b (skeleton) | The simplifier as a smolagents code agent, `remote` lane, trust `untrusted`. Yields `not_implemented` until its task lands |
+| `echo-openai-agents/` | PoC-6a | The simplifier in the OpenAI Agents SDK, tools over MCP, `sidecar` lane, trust `trusted` |
+| `echo-claude-agent/` | PoC-6b | The simplifier in the Claude Agent SDK with shell and file tools on, `remote` lane, trust `untrusted` |
+| `echo-smolagents/` | PoC-6b | The simplifier as a smolagents code agent, tools over MCP, `remote` lane, trust `untrusted` |
 
-"echo" is the repo's name for the simplifier plug-in (`agent: echo`). Every workload holds no key and calls the chassis's proxies on `127.0.0.1:8090`. PoC-6 adds the rest of the shortlist; its benchmark kit is `packages/bakeoff`.
+"echo" is the repo's name for the simplifier plug-in (`agent: echo`). Every workload holds no key and calls the chassis's proxies. In `inprocess` and `sidecar` they are on the loopback listener, `127.0.0.1:8090`. In `remote` they are on the remote proxy listener, port 8091 (suggested), with a per-remote token. PoC-6 adds the rest of the shortlist; its benchmark kit is `packages/bakeoff`.

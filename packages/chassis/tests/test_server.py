@@ -10,7 +10,6 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-import httpx
 import pytest
 import uvicorn
 from chassis import CHASSIS_VERSION
@@ -31,6 +30,9 @@ from chassis.server.config import RELOADABLE, RESTART_ONLY, load_config
 from chassis.server.correlation import RunRecord
 from chassis.server.proxy_app import create_proxy_app
 from fastapi import FastAPI
+from proxy_fakes import asgi_client as _client
+from proxy_fakes import proxy_ports
+from proxy_fakes import sse_frames as _frames
 
 CONFIG: dict[str, Any] = {
     "version": "cfg-1",
@@ -45,27 +47,7 @@ CONFIG: dict[str, Any] = {
 
 
 def _ports(engine: FakeEngine | None = None) -> PortBundle:
-    return PortBundle(
-        model=ScriptedModel(),
-        engine=engine or FakeEngine(handle=echo),
-        config=InMemoryConfig(),
-        telemetry=InMemoryTelemetry(),
-    )
-
-
-def _client(app: Any) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://chassis")
-
-
-def _frames(text: str) -> list[tuple[str, dict[str, Any]]]:
-    frames: list[tuple[str, dict[str, Any]]] = []
-    for block in text.split("\n\n"):
-        if not block.strip():
-            continue
-        lines = block.splitlines()
-        assert lines[0].startswith("event: ") and lines[1].startswith("data: "), block
-        frames.append((lines[0][7:], json.loads(lines[1][6:])))
-    return frames
+    return proxy_ports(ScriptedModel(), engine)
 
 
 def test_config_loads_from_a_dict_and_a_file(tmp_path: Any) -> None:

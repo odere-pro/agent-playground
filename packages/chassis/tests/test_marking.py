@@ -129,17 +129,44 @@ async def _mcp_responses(app: FastAPI) -> list[httpx2.Response]:
     return seen
 
 
-async def test_limited_marks_every_interface_streaming_and_complete() -> None:
-    app = _app({"risk_class": "limited"})
-    for res in await _run_responses(app):
-        assert _flags(res) == ("true", "true"), res.request.url
-    for mcp in await _mcp_responses(_app({"risk_class": "limited"})):
-        assert _flags(mcp) == ("true", "true"), mcp.request.url
+# One case per HTTP run interface and mode: (path, body, stream).
+HTTP_TARGETS: list[tuple[str, dict[str, Any] | None, bool]] = [
+    (path, body, stream) for path, body in CALLS for stream in (False, True)
+]
+HTTP_IDS = [f"{path}-{'stream' if stream else 'complete'}" for path, _, stream in HTTP_TARGETS]
+# The MCP case (body None) covers every HTTP response of one MCP session.
+TARGETS = [*HTTP_TARGETS, (MCP_PATH, None, False)]
+TARGET_IDS = [*HTTP_IDS, "mcp"]
+MARKED = ("true", "true")
 
 
-async def test_high_marks_too() -> None:
-    for res in await _run_responses(_app({"risk_class": "high"})):
-        assert _flags(res) == ("true", "true")
+async def _target_flags(
+    app: FastAPI, target: tuple[str, dict[str, Any] | None, bool]
+) -> list[tuple[str | None, str | None]]:
+    """The flags of every response one target gives: one HTTP call, or one MCP session."""
+    path, body, stream = target
+    if body is None:
+        return [_flags(r) for r in await _mcp_responses(app)]
+    async with _serving(app) as client:
+        res = await client.post(path, json={**body, "stream": stream})
+    assert res.status_code == 200, (path, stream, res.text)
+    assert ("text/event-stream" in res.headers["content-type"]) is stream
+    return [_flags(res)]
+
+
+@pytest.mark.parametrize("target", TARGETS, ids=TARGET_IDS)
+async def test_limited_marks_every_interface_streaming_and_complete(
+    target: tuple[str, dict[str, Any] | None, bool],
+) -> None:
+    """A limited-risk agent marks every run interface, streamed and complete."""
+    flags = await _target_flags(_app({"risk_class": "limited"}), target)
+    assert flags == [MARKED] * len(flags)
+
+
+@pytest.mark.parametrize("target", HTTP_TARGETS, ids=HTTP_IDS)
+async def test_high_marks_too(target: tuple[str, dict[str, Any] | None, bool]) -> None:
+    """A high-risk agent marks every HTTP run interface."""
+    assert await _target_flags(_app({"risk_class": "high"}), target) == [MARKED]
 
 
 @pytest.mark.parametrize(
@@ -151,26 +178,30 @@ async def test_high_marks_too() -> None:
         (None, False),
     ],
 )
-async def test_minimal_marks_only_when_asked(governance: Any, marked: bool) -> None:
-    want = ("true", "true") if marked else (None, None)
-    for res in await _run_responses(_app(governance)):
-        assert _flags(res) == want, res.request.url
-    for mcp in await _mcp_responses(_app(governance)):
-        assert _flags(mcp) == want, mcp.request.url
+@pytest.mark.parametrize("target", TARGETS, ids=TARGET_IDS)
+async def test_minimal_marks_only_when_asked(
+    governance: Any, marked: bool, target: tuple[str, dict[str, Any] | None, bool]
+) -> None:
+    """A minimal-risk agent marks only when `ai_generated_marking` is true."""
+    want = MARKED if marked else (None, None)
+    flags = await _target_flags(_app(governance), target)
+    assert flags == [want] * len(flags)
 
 
 @pytest.mark.parametrize("risk_class", ["limited", "high"])
 def test_marking_false_is_refused_for_limited_and_high(risk_class: str) -> None:
+    """`ai_generated_marking: false` is refused for limited and high risk."""
     with pytest.raises(ValidationError, match="ai_generated_marking: false is refused"):
         _config({"risk_class": risk_class, "ai_generated_marking": False})
 
 
-async def test_health_ready_and_manifest_are_not_marked() -> None:
+@pytest.mark.parametrize("path", ["/health", "/ready", "/manifest"])
+async def test_health_ready_and_manifest_are_not_marked(path: str) -> None:
+    """`/health`, `/ready`, and `/manifest` are never marked."""
     async with _serving(_app({"risk_class": "limited"})) as client:
-        for path in ("/health", "/ready", "/manifest"):
-            res = await client.get(path)
-            assert res.status_code == 200, path
-            assert _flags(res) == (None, None), path
+        res = await client.get(path)
+    assert res.status_code == 200
+    assert _flags(res) == (None, None)
 
 
 async def test_a_refused_call_on_a_run_route_is_marked() -> None:
@@ -181,15 +212,16 @@ async def test_a_refused_call_on_a_run_route_is_marked() -> None:
     assert _flags(res) == ("true", "true")
 
 
-async def test_a_workload_that_claims_not_ai_generated_is_still_marked() -> None:
-    """The workload's text says `ai_generated: false`; the chassis sets the header on the way
-    out, after the workload's events, so the claim changes nothing."""
+@pytest.mark.parametrize("target", HTTP_TARGETS, ids=HTTP_IDS)
+async def test_a_workload_that_claims_not_ai_generated_is_still_marked(
+    target: tuple[str, dict[str, Any] | None, bool],
+) -> None:
+    """A workload's `ai_generated: false` claim does not remove the marking."""
     claim = '{"ai_generated": false, "disclosure_required": false}'
     engine = FakeEngine(
         events=[Delta(text=claim), End(output={"text": claim, "ai_generated": False})]
     )
-    for res in await _run_responses(_app({"risk_class": "limited"}, engine)):
-        assert _flags(res) == ("true", "true")
+    assert await _target_flags(_app({"risk_class": "limited"}, engine), target) == [MARKED]
 
 
 async def test_the_marking_follows_a_reload_of_the_config() -> None:
@@ -227,6 +259,7 @@ async def _lane_flags(lane: str, governance: dict[str, Any] | None) -> list[tupl
 async def test_inprocess_and_sidecar_give_the_same_flags(
     governance: dict[str, Any], want: tuple[Any, Any]
 ) -> None:
+    """The inprocess and sidecar lanes give the same marking flags."""
     inprocess = await _lane_flags("inprocess", governance)
     sidecar = await _lane_flags("sidecar", governance)
     assert inprocess == sidecar == [want] * len(inprocess)

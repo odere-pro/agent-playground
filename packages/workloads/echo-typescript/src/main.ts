@@ -20,7 +20,7 @@ import { parseServeOptions, type ServeOptions } from "./auth.js";
 import { buildAgentCard, buildApp } from "./a2a_server.js";
 import { drainOnSignals, drainTimeoutMs } from "./drain.js";
 import { handle } from "./handle.js";
-import { bindHost } from "./host.js";
+import { bindHost, portOf } from "./host.js";
 import { log, setLogAgent } from "./log.js";
 
 const NAME = "echo-typescript";
@@ -31,15 +31,16 @@ const uds = process.env["UDS"] || undefined;
 let host: string;
 let drainMs: number;
 let serve: ServeOptions;
+let port: number;
 try {
   serve = parseServeOptions(process.argv.slice(2), process.env);
   host = uds ? "127.0.0.1" : bindHost(process.env, serve.token !== undefined);
   drainMs = serve.drainTimeoutS !== undefined ? serve.drainTimeoutS * 1000 : drainTimeoutMs(process.env);
+  port = portOf(process.env);
 } catch (err) {
   log("error", LOGGER, err instanceof Error ? err.message : String(err));
   process.exit(2);
 }
-const port = Number(process.env["PORT"] ?? "9000"); // suggested: 9000
 // The card names the bound host, or 127.0.0.1 for a wildcard bind.
 const cardHost = ["0.0.0.0", "::", ""].includes(host) ? "127.0.0.1" : host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 const card = buildAgentCard({ name: NAME, version: "0.1.0", url: `http://${cardHost}:${port}` });
@@ -59,12 +60,18 @@ function removeStaleSocket(path: string): void {
 let server: ReturnType<typeof app.listen>;
 if (uds) {
   removeStaleSocket(uds);
-  server = app.listen(uds, () => {
+  server = app.listen(uds, (err) => {
+    if (err) return; // the "error" listener below reports it
     log("info", LOGGER, `A2A on unix:${uds} (card: /.well-known/agent-card.json)`);
   });
 } else {
-  server = app.listen(port, host, () => {
+  server = app.listen(port, host, (err) => {
+    if (err) return; // the "error" listener below reports it
     log("info", LOGGER, `A2A on http://${host}:${port}/ (card: /.well-known/agent-card.json)`);
   });
 }
+server.on("error", (err) => {
+  log("error", LOGGER, err.message);
+  process.exit(2);
+});
 drainOnSignals(server, drainMs);

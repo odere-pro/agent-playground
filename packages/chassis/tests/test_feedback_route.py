@@ -22,7 +22,7 @@ from chassis.fakes.events import InMemoryBus
 from chassis.fakes.feedback import InMemoryFeedback
 from chassis.ports.auth import NoAuth, Principal
 from chassis.ports.bundle import PortBundle
-from chassis.ports.feedback import FeedbackPort, NoFeedback
+from chassis.ports.feedback import Feedback, FeedbackError, FeedbackPort, NoFeedback
 from chassis.ports.state import InMemoryState, StatePort
 from chassis.schemas import SCHEMA_DIR
 from chassis.server import ChassisConfig, create_app
@@ -101,6 +101,7 @@ def _telemetry(app: FastAPI) -> InMemoryTelemetry:
 
 
 async def test_feedback_after_a_run_lands_on_its_trace() -> None:
+    """Feedback after a run is stored on that run's trace and counted."""
     store = InMemoryFeedback()
     app = _app(feedback=store)
     async with _client(app) as client:
@@ -126,6 +127,7 @@ async def test_feedback_after_a_run_lands_on_its_trace() -> None:
 
 
 async def test_an_unknown_request_id_is_404() -> None:
+    """An unknown request id is 404 `unknown_request` and stores nothing."""
     store = InMemoryFeedback()
     async with _client(_app(feedback=store)) as client:
         answer = await client.post(FEEDBACK_PATH, json={"request_id": "nope", "score": 0})
@@ -135,6 +137,7 @@ async def test_an_unknown_request_id_is_404() -> None:
 
 
 async def test_a_repeat_is_one_record_with_the_first_timestamp() -> None:
+    """A repeat is one record that keeps the first timestamp."""
     store = InMemoryFeedback()
     async with _client(_app(feedback=store)) as client:
         run = await _run(client)
@@ -149,6 +152,7 @@ async def test_a_repeat_is_one_record_with_the_first_timestamp() -> None:
 
 
 async def test_a_feedback_id_used_for_another_request_is_409() -> None:
+    """A feedback id reused for another request is 409 `feedback_id_conflict`."""
     async with _client(_app()) as client:
         one, two = await _run(client), await _run(client)
         ok = await client.post(
@@ -179,12 +183,14 @@ async def test_a_feedback_id_used_for_another_request_is_409() -> None:
     ],
 )
 async def test_a_bad_body_is_422(body: dict[str, Any]) -> None:
+    """A body out of range, with extra fields, or too long is 422."""
     async with _client(_app()) as client:
         answer = await client.post(FEEDBACK_PATH, json=body)
     assert answer.status_code == 422
 
 
 async def test_the_subject_comes_from_the_principal_never_the_body() -> None:
+    """The subject comes from the caller's token, never the body."""
     token = "tok-42"
     scopes = frozenset({"agent:run", "agent:feedback"})
     store = InMemoryFeedback()
@@ -210,6 +216,7 @@ async def test_the_subject_comes_from_the_principal_never_the_body() -> None:
 
 
 async def test_no_feedback_port_is_501() -> None:
+    """With no feedback port the route is 501 `feedback_not_configured`."""
     async with _client(_app(feedback=NoFeedback())) as client:
         run = await _run(client)
         answer = await client.post(
@@ -220,6 +227,7 @@ async def test_no_feedback_port_is_501() -> None:
 
 
 async def test_a_store_outage_is_503_retryable() -> None:
+    """A store outage is 503 `feedback_unavailable` with `Retry-After`."""
     store = InMemoryFeedback()
     store.unavailable = True
     app = _app(feedback=store)
@@ -234,6 +242,7 @@ async def test_a_store_outage_is_503_retryable() -> None:
 
 
 async def test_a_state_outage_on_lookup_is_503() -> None:
+    """A state outage on the lookup is 503 `state_unavailable`."""
     state = InMemoryState()
     async with _client(_app(state=state)) as client:
         run = await _run(client)
@@ -246,6 +255,7 @@ async def test_a_state_outage_on_lookup_is_503() -> None:
 
 
 async def test_the_lookup_is_in_state_with_the_spec_ttl() -> None:
+    """The request-to-trace lookup lives in state for the spec TTL."""
     now = [1000.0]
     state = InMemoryState(clock=lambda: now[0])
     app = _app(state=state, config=_config(lookup_ttl_s=60))
@@ -259,19 +269,26 @@ async def test_the_lookup_is_in_state_with_the_spec_ttl() -> None:
     assert late.status_code == 404
 
 
-async def test_the_route_is_off_without_an_adapter_or_when_disabled() -> None:
-    for config in (_config(adapter="none"), _config(enabled=False)):
-        assert not feedback_on(config)
-        app = _app(config=config)
-        assert FEEDBACK_PATH not in app.openapi()["paths"]
-        async with _client(app) as client:
-            await _run(client)
-            answer = await client.post(FEEDBACK_PATH, json={"request_id": "r", "score": 1})
-        assert answer.status_code == 404
-        assert app.state.ports.state.calls == [], "no lookup is written when the route is off"
+@pytest.mark.parametrize(
+    "options", [{"adapter": "none"}, {"enabled": False}], ids=["no-adapter", "disabled"]
+)
+async def test_the_route_is_off_without_an_adapter_or_when_disabled(
+    options: dict[str, Any],
+) -> None:
+    """With no adapter or `enabled: false`, the route is off and writes no lookup."""
+    config = _config(**options)
+    assert not feedback_on(config)
+    app = _app(config=config)
+    assert FEEDBACK_PATH not in app.openapi()["paths"]
+    async with _client(app) as client:
+        await _run(client)
+        answer = await client.post(FEEDBACK_PATH, json={"request_id": "r", "score": 1})
+    assert answer.status_code == 404
+    assert app.state.ports.state.calls == [], "no lookup is written when the route is off"
 
 
 async def test_the_openapi_operation_is_named_and_not_an_interface() -> None:
+    """The OpenAPI operation is `feedback`, not a run interface, with its answers."""
     op = _app().openapi()["paths"][FEEDBACK_PATH]["post"]
     assert op["operationId"] == "feedback"
     assert "x-chassis-interface" not in op
@@ -279,6 +296,7 @@ async def test_the_openapi_operation_is_named_and_not_an_interface() -> None:
 
 
 async def test_the_event_is_published_redacted_and_valid() -> None:
+    """The feedback event is a valid CloudEvent with the comment redacted."""
     bus = InMemoryBus()
     app = _app(bus=bus, config=_config(events=True))
     comment = "mail me at ana@example.com or +44 20 7946 0958"
@@ -314,6 +332,7 @@ async def test_the_event_is_published_redacted_and_valid() -> None:
 
 
 async def test_a_failed_publish_never_changes_the_202() -> None:
+    """A failed event publish never changes the 202."""
     bus = InMemoryBus()
     app = _app(bus=bus, config=_config(events=True))
     async with _client(app) as client:
@@ -328,6 +347,7 @@ async def test_a_failed_publish_never_changes_the_202() -> None:
 
 
 async def test_events_off_publishes_nothing() -> None:
+    """With events off, no feedback event is published."""
     bus = InMemoryBus()
     app = _app(bus=bus)
     async with _client(app) as client:
@@ -338,7 +358,65 @@ async def test_events_off_publishes_nothing() -> None:
 
 
 async def test_the_score_name_from_the_spec_reaches_the_adapter() -> None:
+    """The spec's score name reaches the feedback adapter."""
     store = InMemoryFeedback()
     store.score_name = "default"  # type: ignore[attr-defined]
     async with _client(_app(feedback=store, config=_config(score_name="thumbs"))):
         assert store.score_name == "thumbs"  # type: ignore[attr-defined]
+
+
+ALICE = "tok-alice"
+BOB = "tok-bob"
+RATERS = frozenset({"agent:run", "agent:feedback"})
+"""R2-10: two callers who both hold the feedback scope."""
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="R2-10 proposal: feedback lookup is not scoped to the caller; open user question in "
+    "contract-v6 and ADR-009",
+)
+async def test_feedback_refuses_another_caller_with_404_when_the_run_ended_for_alice() -> None:
+    """Bob cannot score a call that ended for alice: 404 unknown_request, nothing stored."""
+    store = InMemoryFeedback()
+    tokens = {ALICE: Principal("alice", RATERS), BOB: Principal("bob", RATERS)}
+    app = _app(feedback=store, auth=StaticTokens(tokens))
+
+    async with _client(app) as client:
+        ran = await client.post(
+            "/v1/run",
+            json={"input": {"text": "hello"}},
+            headers={"Authorization": f"Bearer {ALICE}"},
+        )
+        answer = await client.post(
+            FEEDBACK_PATH,
+            json={"request_id": ran.json()["request_id"], "score": 0},
+            headers={"Authorization": f"Bearer {BOB}"},
+        )
+
+    assert answer.status_code == 404
+    assert answer.json()["detail"]["code"] == "unknown_request"
+    assert store.records == {}
+
+
+class _OddFeedback:
+    """A feedback port that fails with a code the route does not know."""
+
+    name = "odd"
+
+    async def submit(self, feedback: Feedback) -> None:
+        raise FeedbackError("weird_code", "the store said something odd")
+
+
+async def test_feedback_answers_502_rejected_when_the_store_fails_with_an_unknown_code() -> None:
+    """An unknown FeedbackError code is 502 feedback_rejected."""
+    app = _app(feedback=_OddFeedback())
+
+    async with _client(app) as client:
+        run = await _run(client)
+        answer = await client.post(
+            FEEDBACK_PATH, json={"request_id": run["request_id"], "score": 1}
+        )
+
+    assert answer.status_code == 502
+    assert answer.json()["detail"]["code"] == "feedback_rejected"

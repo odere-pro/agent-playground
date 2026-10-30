@@ -5,7 +5,7 @@ The plain-Python simplifier: the first workload behind the chassis (PoC-1), and 
 ## Shape
 
 - `src/echo_python/handle.py`: `handle(input: dict, ctx: dict) -> AsyncIterator[dict]`. Events follow `packages/chassis/schemas/events.v0.json`: `start`, a `tool_call` per tool the model asked for, `delta` per chunk, one `metrics` summing every model call, `end`; `error` on an HTTP, connection, or tool failure.
-- `src/echo_python/tools.py`: the MCP client and the OpenAI tool-loop messages, by hand. It lists the chassis's tools, calls one, and builds the assistant and `tool` messages. No tool schema lives here.
+- `src/echo_python/tools.py`: the MCP client and the OpenAI tool-loop messages, by hand. It lists the chassis's tools, calls one, and builds the assistant and `tool` messages. The tool schemas come from the chassis, so none is written here.
 - The model call is OpenAI-compatible HTTP (`POST {CHASSIS_MODEL_URL}/chat/completions`, `stream: true`). `ctx.model_route` is the `model`; `big-default` when unset.
 - Prompt `simplifier-v1`: the system prompt is fixed; the input text is its own user message.
 - No model key here. The chassis holds the credential. Only in the `remote` lane, when `CHASSIS_API_TOKEN` is set and not empty, every model and MCP call carries `Authorization: Bearer <token>` (the per-remote token); unset (`sidecar` lane) no `Authorization` header is sent.

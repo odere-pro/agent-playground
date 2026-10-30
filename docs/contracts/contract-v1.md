@@ -1,5 +1,7 @@
 # Contract v1
 
+> **Superseded by [contract v6](contract-v6.md).** This file is the PoC-2 record. Read v6 for the contract in force, and [v2](contract-v2.md) to [v5](contract-v5.md) for what v6 does not name. v1 still holds only where the later versions are silent. Some statements below are now false, and the later versions correct them. Examples: the TypeScript task store is now pruned, the `remote` lane is built, and the proxy has more than two routes.
+
 The written contract PoC-2's exit criterion asks for: the `handle` contract, the chassis event schema, and its A2A mapping, with the changes from v0 and why. It supersedes [contract v0](contract-v0.md), which stays as the PoC-1 record. Generated schemas: `packages/chassis/schemas/*.v0.json` (`make schemas`). Source models: `packages/chassis/src/chassis/core/`. Status: PoC-2, written 2026-10-01 from the code, after the four "Changes decided for v1" in contract v0 landed. Updated the same day after the PoC-2 fix round (run deadline, token reservation, 409 on trace-id reuse). Where a decision's text and the code differ, this document describes the code and says so under "Changes from v0 and why".
 
 Contract v1 is a version of this document, not of the wire. The event schema is still `schema_version: "0"` (see "Events").
@@ -151,7 +153,7 @@ One `Request` is one A2A task. The chassis is the A2A client; the template A2A s
 | `chassis.schema_version` | `SendMessageRequest.metadata` | The event schema version the chassis speaks, a plain string, `"0"` |
 
 - **Write:** Python `json.dumps(value, separators=(",", ":"), allow_nan=False)` (`mapping.dump_json`); TypeScript `JSON.stringify(value)`. A yielded event with `NaN` or `Infinity` is `workload.bad_event`.
-- **Read:** `json.loads` or `JSON.parse` when the value is a string (`mapping.load_json`). An object value is the v0 `Struct` form: it is still read, as is, doubles and all, through v1, and dropped in v2. A value that is neither, or a string that does not parse to a JSON object, is `a2a.bad_event` on the connector and `a2a.bad_request` on the server.
+- **Read:** `json.loads` or `JSON.parse` when the value is a string (`mapping.load_json`). An object value is the v0 `Struct` form: it is still read, as is, doubles and all, through v1, and dropped in v2 (v5: kept until the next schema major; see [contract v5](contract-v5.md#c2-what-is-fixed), part C, item 6). A value that is neither, or a string that does not parse to a JSON object, is `a2a.bad_event` on the connector and `a2a.bad_request` on the server.
 - **Number limits, in both languages:** integers are exact up to 2^53 - 1; a workload sends a larger one as a string. TypeScript cannot tell `3` from `3.0`, so a reader of a float field accepts an integer.
 
 ### Request in
@@ -226,7 +228,7 @@ A workload's own failures use its own codes; they are a convention, not in the s
 
 - The chassis accepts the current and the previous major `schema_version`, on `chassis.schema_version` and on every `chassis.event`. A bump adds the new major to `SUPPORTED_SCHEMA_VERSIONS` and keeps the old one. `workload_a2a` derives its accepted versions from the `schema_version` constants in its vendored `events.v0.json`.
 - The chassis sends `chassis.schema_version: "0"`.
-- The v0 `Struct` form of `chassis.event`, `chassis.ctx`, and `chassis.input` is read through v1 and dropped in v2.
+- The v0 `Struct` form of `chassis.event`, `chassis.ctx`, and `chassis.input` is read through v1 and dropped in v2 (v5: kept until the next schema major; see [contract v5](contract-v5.md#c2-what-is-fixed), part C, item 6).
 
 ### Timeout and cancel
 

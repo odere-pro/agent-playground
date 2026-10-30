@@ -374,6 +374,69 @@ async def _first_seen(
     return datetime.fromisoformat(seen["timestamp"])
 
 
+async def _store(
+    ports: PortBundle,
+    config: ChassisConfig,
+    body: FeedbackRequest,
+    subject: str | None,
+    *,
+    span_attributes: dict[str, Any],
+) -> Feedback:
+    """Look the run up, keep the `feedback_id`'s first time, and submit the record. The trace id
+    goes on the span once found. Raises `_Refusal`, `StateUnavailable`, or `FeedbackError`; a
+    store error is logged first, its detail redacted, never the comment."""
+    agent = config.agent.name
+    feedback_id = body.feedback_id or default_feedback_id(body.request_id, subject)
+    trace_id = await _lookup(ports, agent, body.request_id)
+    span_attributes["trace_id"] = trace_id
+    timestamp = await _first_seen(
+        ports, agent, feedback_id, body.request_id, config.spec.feedback.lookup_ttl_s
+    )
+    record = Feedback(
+        feedback_id=feedback_id,
+        request_id=body.request_id,
+        trace_id=trace_id,
+        score=float(body.score),
+        label=body.label,
+        comment=body.comment,
+        subject=subject,
+        timestamp=timestamp,
+    )
+    try:
+        await ports.feedback.submit(record)
+    except FeedbackError as exc:
+        ports.telemetry.log(
+            "warning",
+            "feedback not stored",
+            request_id=body.request_id,
+            feedback_id=feedback_id,
+            code=exc.code,
+            detail=redact(exc.message),
+        )
+        raise
+    return record
+
+
+def _failure_code(exc: StateUnavailable | _Refusal | FeedbackError) -> str:
+    """The answer's code for a failure of `_store`. A store error keeps its own code only when
+    the route knows it; else `feedback_rejected`."""
+    if isinstance(exc, StateUnavailable):
+        return "state_unavailable"
+    if isinstance(exc, _Refusal):
+        return exc.code
+    return exc.code if exc.code in STATUS else "feedback_rejected"
+
+
+def _accepted(state: State, record: Feedback, agent: str) -> JSONResponse:
+    """Count the stored feedback, publish its event when events are on, and answer 202."""
+    state.ports.telemetry.counter(COUNTER, label=record.label or "none")
+    events: FeedbackEvents | None = state.feedback_events
+    if events is not None:
+        events.publish(feedback_event(record, agent, datetime.now(UTC)))
+    accepted = FeedbackAccepted(feedback_id=record.feedback_id, trace_id=record.trace_id)
+    return JSONResponse(accepted.model_dump(), status_code=202)
+
+
 def mount_feedback(app: FastAPI) -> None:
     """Add `POST /v1/feedback` to `app`. `create_app` calls it when `feedback_on(config)`."""
 
@@ -404,51 +467,16 @@ def mount_feedback(app: FastAPI) -> None:
             return _refused("not_ready")
         ports: PortBundle = state.ports
         config: ChassisConfig = state.config
-        telemetry = ports.telemetry
-        agent = config.agent.name
         subject = _subject(http)
         feedback_id = body.feedback_id or default_feedback_id(body.request_id, subject)
-        with telemetry.span(SPAN, request_id=body.request_id, feedback_id=feedback_id) as span:
+        with ports.telemetry.span(
+            SPAN, request_id=body.request_id, feedback_id=feedback_id
+        ) as span:
             try:
-                trace_id = await _lookup(ports, agent, body.request_id)
-                span.attributes["trace_id"] = trace_id
-                timestamp = await _first_seen(
-                    ports, agent, feedback_id, body.request_id, config.spec.feedback.lookup_ttl_s
-                )
-                record = Feedback(
-                    feedback_id=feedback_id,
-                    request_id=body.request_id,
-                    trace_id=trace_id,
-                    score=float(body.score),
-                    label=body.label,
-                    comment=body.comment,
-                    subject=subject,
-                    timestamp=timestamp,
-                )
-                await ports.feedback.submit(record)
-            except StateUnavailable:
-                code = "state_unavailable"
-            except _Refusal as refusal:
-                code = refusal.code
-            except FeedbackError as exc:
-                code = exc.code if exc.code in STATUS else "feedback_rejected"
-                telemetry.log(
-                    "warning",
-                    "feedback not stored",
-                    request_id=body.request_id,
-                    feedback_id=feedback_id,
-                    code=exc.code,
-                    detail=redact(exc.message),
-                )
-            else:
-                telemetry.counter(COUNTER, label=body.label or "none")
-                events: FeedbackEvents | None = state.feedback_events
-                if events is not None:
-                    events.publish(feedback_event(record, agent, datetime.now(UTC)))
-                return JSONResponse(
-                    FeedbackAccepted(feedback_id=feedback_id, trace_id=trace_id).model_dump(),
-                    status_code=202,
-                )
-            span.attributes["error.code"] = code
-            telemetry.counter(FAILED, code=code)
-            return _refused(code)
+                record = await _store(ports, config, body, subject, span_attributes=span.attributes)
+            except (StateUnavailable, _Refusal, FeedbackError) as exc:
+                code = _failure_code(exc)
+                span.attributes["error.code"] = code
+                ports.telemetry.counter(FAILED, code=code)
+                return _refused(code)
+            return _accepted(state, record, config.agent.name)

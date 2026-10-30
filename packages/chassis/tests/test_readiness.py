@@ -86,6 +86,7 @@ async def _wait_for(client: httpx.AsyncClient, status: int, *, tries: int = 200)
 
 
 async def test_the_monitor_turns_unhealthy_after_n_failures_and_back_after_one_success() -> None:
+    """The monitor is unhealthy after N failed probes and healthy after one good one."""
     engine = FakeEngine(handle=echo)
     monitor = ReadinessMonitor(engine, ProbeSettings(failures=3))
     assert monitor.healthy
@@ -101,6 +102,7 @@ async def test_the_monitor_turns_unhealthy_after_n_failures_and_back_after_one_s
 
 
 async def test_a_probe_that_hangs_counts_as_a_failure() -> None:
+    """A probe that hangs past its timeout counts as a failure."""
     engine = HangingEngine()
     engine.hung = True
     monitor = ReadinessMonitor(engine, ProbeSettings(timeout_s=0.01, failures=1))
@@ -109,6 +111,8 @@ async def test_a_probe_that_hangs_counts_as_a_failure() -> None:
 
 
 async def test_a_probe_that_raises_counts_as_a_failure() -> None:
+    """A probe that raises counts as a failure."""
+
     class Broken(FakeEngine):
         async def probe(self) -> bool:
             raise RuntimeError("boom")
@@ -119,6 +123,7 @@ async def test_a_probe_that_raises_counts_as_a_failure() -> None:
 
 
 async def test_the_monitor_task_starts_and_stops() -> None:
+    """The monitor task probes while started and stops probing after `stop`."""
     engine = FakeEngine(handle=echo)
     monitor = ReadinessMonitor(engine, FAST)
     monitor.start()
@@ -133,6 +138,7 @@ async def test_the_monitor_task_starts_and_stops() -> None:
 
 
 async def test_ready_says_starting_then_ready_then_draining() -> None:
+    """`/ready` says starting, then ready, then draining; `/health` stays 200."""
     app = create_app(ChassisConfig.model_validate(CONFIG), _ports(FakeEngine(handle=echo)))
     async with _client(app) as client:
         before = await client.get("/ready")
@@ -151,6 +157,7 @@ async def test_ready_says_starting_then_ready_then_draining() -> None:
 
 
 async def test_ready_goes_false_after_failed_probes_and_health_stays_ok() -> None:
+    """`/ready` is 503 after failed probes and recovers; `/health` stays ok."""
     engine = HangingEngine()
     app = create_app(ChassisConfig.model_validate(CONFIG), _ports(engine), probe=FAST)
     async with _client(app) as client, app.router.lifespan_context(app):
@@ -164,6 +171,7 @@ async def test_ready_goes_false_after_failed_probes_and_health_stays_ok() -> Non
 
 
 async def test_the_lifespan_closes_state_and_events() -> None:
+    """The lifespan closes `ports.state` and `ports.events` on exit."""
     state, events = ClosingState(), ClosingEvents()
     app = create_app(
         ChassisConfig.model_validate(CONFIG),
@@ -175,6 +183,7 @@ async def test_the_lifespan_closes_state_and_events() -> None:
 
 
 async def test_the_sidecar_probe_is_false_on_a_bad_status_or_a_dead_workload() -> None:
+    """The sidecar probe is false before setup, on a bad status, or a dead workload."""
     from chassis.adapters.a2a.sidecar import SidecarConnector
 
     connector = SidecarConnector()

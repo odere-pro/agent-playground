@@ -86,6 +86,7 @@ def _chassis_handle(token: str, last: dict[str, Any]) -> Any:
 
 
 async def test_chassis_mode_scrubs_delta_tool_call_and_error(token: str) -> None:
+    """Chassis mode scrubs the token from deltas, tool calls, and the error."""
     error = {"type": "error", "code": "boom", "message": f"failed with {token}"}
     app = build_app(
         _chassis_handle(token, error), build_agent_card(name="r", version="1", url=REMOTE_URL)
@@ -105,6 +106,7 @@ async def test_chassis_mode_scrubs_delta_tool_call_and_error(token: str) -> None
 
 
 async def test_chassis_mode_scrubs_the_end_output(token: str) -> None:
+    """Chassis mode scrubs the token from the end output."""
     end = {"type": "end", "status": "ok", "output": {"text": f"it is {token}"}}
     app = build_app(
         _chassis_handle(token, end), build_agent_card(name="r", version="1", url=REMOTE_URL)
@@ -116,6 +118,7 @@ async def test_chassis_mode_scrubs_the_end_output(token: str) -> None:
 
 
 async def test_plain_mode_scrubs_the_deltas_and_the_output(token: str) -> None:
+    """Plain mode scrubs the token from the deltas."""
     stub = PlainStub(
         lambda _: [
             task(S.TASK_STATE_SUBMITTED),
@@ -131,6 +134,7 @@ async def test_plain_mode_scrubs_the_deltas_and_the_output(token: str) -> None:
 
 
 async def test_plain_mode_scrubs_the_snapshot_output(token: str) -> None:
+    """Plain mode scrubs the token from the snapshot output."""
     stub = PlainStub(
         lambda _: [
             task(S.TASK_STATE_SUBMITTED),
@@ -145,6 +149,7 @@ async def test_plain_mode_scrubs_the_snapshot_output(token: str) -> None:
 
 
 async def test_plain_mode_log_of_the_remote_text_has_no_token(token: str) -> None:
+    """Plain mode's log of the remote failure text has no token."""
     stub = PlainStub(
         lambda _: [
             task(S.TASK_STATE_SUBMITTED),
@@ -160,6 +165,7 @@ async def test_plain_mode_log_of_the_remote_text_has_no_token(token: str) -> Non
 
 
 async def test_an_event_without_the_token_passes_unchanged(token: str) -> None:
+    """An event without the token passes unchanged."""
     app = build_app(
         _chassis_handle(token, {"type": "end"}),
         build_agent_card(name="r", version="1", url=REMOTE_URL),
@@ -171,6 +177,7 @@ async def test_an_event_without_the_token_passes_unchanged(token: str) -> None:
 
 
 async def test_repr_does_not_show_the_token(token: str) -> None:
+    """The connector's `repr` does not show the token."""
     app = build_app(
         _chassis_handle(token, {"type": "end"}),
         build_agent_card(name="r", version="1", url=REMOTE_URL),
@@ -182,6 +189,7 @@ async def test_repr_does_not_show_the_token(token: str) -> None:
 
 
 def test_redact_removes_a_short_exact_secret_that_the_shapes_miss() -> None:
+    """`redact` removes a short exact secret that the token shapes miss."""
     short = "hunter2"  # pragma: allowlist secret
     assert short in redact(f"pw is {short}")
     assert redact(f"pw is {short}", secret=short) == "pw is [redacted]"

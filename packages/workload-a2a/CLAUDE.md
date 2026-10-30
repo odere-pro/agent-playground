@@ -2,7 +2,7 @@
 
 The template A2A server a Python workload ships with. `packages/workloads/CLAUDE.md` still applies to every workload that uses it.
 
-- Layout: `src/workload_a2a/mapping.py` (the A2A mapping), `server.py` (executor, card, app, pruning handler, `DrainingServer`, `build_server`, `serve`), `cli.py` (`workload-a2a serve`), `logs.py` (JSON log lines), `telemetry.py` (the `workload.handle` span), `schemas/events.v0.json` (vendored), `tests/`.
+- Layout: `src/workload_a2a/mapping.py` (the A2A mapping), `server.py` (executor, card, app, pruning handler, `DrainingServer`, `build_server`, `serve`), `cli.py` (`workload-a2a serve`), `auth.py` (the inbound bearer check), `logs.py` (JSON log lines), `telemetry.py` (PoC-7: the `workload.handle` span, the engine instrumentor hook, the outbound trace headers; a no-op without the `otel` extra), `schemas/events.v0.json` (vendored), `tests/`.
 - Never import `chassis` or `chassis_contracts`. Dependencies: a2a-sdk, fastapi, uvicorn, jsonschema. `make lint` (import-linter) enforces it. Tests may import `echo_python` and `fake_model_server`; the one chassis comparison uses `pytest.importorskip`.
 - `mapping.py` must equal `packages/chassis/src/chassis/adapters/a2a/mapping.py` byte for byte, and `schemas/events.v0.json` must equal `packages/chassis/schemas/events.v0.json`. Change the chassis copy first, then copy the file here. `tests/test_workload_a2a_copies.py` checks both.
 - `server.py` mirrors `chassis.adapters.a2a.server`. Keep the error codes and the event order rules the same in both; the difference is validation (`jsonschema` here, `parse_event` there).

@@ -25,7 +25,6 @@ status, a timeout, or a transport error. It never raises.
 
 from __future__ import annotations
 
-import ipaddress
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
@@ -36,6 +35,7 @@ from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from a2a.utils.errors import A2AError
 
 from chassis.adapters.a2a.connector import A2AConnector
+from chassis.adapters.a2a.loopback import is_loopback_host
 from chassis.ports.engine import Lane
 
 if TYPE_CHECKING:
@@ -78,15 +78,6 @@ def loopback_url(url: object) -> str:
     return f"http://{host}:{port}"
 
 
-def _is_loopback_host(host: str) -> bool:
-    if host == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
-
-
 class SidecarConnector(A2AConnector):
     kind: Lane = "sidecar"
 
@@ -98,7 +89,7 @@ class SidecarConnector(A2AConnector):
     def _check_card(self, card: AgentCard) -> None:
         for interface in card.supported_interfaces:
             parts = urlsplit(interface.url)
-            if parts.scheme != "http" or not _is_loopback_host(parts.hostname or ""):
+            if parts.scheme != "http" or not is_loopback_host(parts.hostname or ""):
                 raise _refuse("the sidecar's agent card interface url", interface.url)
 
     async def setup(self, config: Mapping[str, Any], ports: PortBundle) -> None:
