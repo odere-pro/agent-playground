@@ -16,7 +16,7 @@ from chassis.ports.state import InMemoryState
 from chassis.schemas import SCHEMA_DIR
 from chassis.server.feedback import DATASCHEMA, FEEDBACK_RECEIVED, FeedbackEvents
 from chassis_contracts.events import assert_valid_cloudevent
-from poc07_fb_harness import chassis, client, fake_langfuse, run
+from poc_harness.feedback import chassis, client, fake_langfuse, run
 
 
 async def test_poc07_fb_a_repeat_is_one_score_on_the_trace() -> None:

@@ -1,4 +1,4 @@
-"""A small reader of the Prometheus text format for the observability tests. Not a test module."""
+"""A small reader of the Prometheus text format for the observability tests."""
 
 from __future__ import annotations
 

@@ -71,7 +71,7 @@ DIRTY=$(git status --short | wc -l | tr -d ' ')
   echo
   echo "Where it ran: localhost on $(uname -sr). Steps 1 and 2: the \`sidecar\` lane in a \`bakeoff\` stack (the fake model server on localhost TCP as the engine's model and the judge). Step 3: the \`sidecar\` lane on Unix sockets, every PoC-8 stage on, the LiteLLM stub and the guardrail server (pattern stand-in) in process. No Docker, no kind, no key."
   echo "Commit: \`$COMMIT\` ($DIRTY changed or untracked paths at the start). Date: $(date -u +%FT%TZ)."
-  echo "Script: \`pocs/poc-08-cross-cutting-build/demo/demo.sh\` (helper \`poc08_demo.py\`, which reuses \`tests/poc08_harness.py\`). The uv \`UV_NATIVE_TLS\` deprecation warning is dropped from the output; the temp folder is shown as \`\$TMP\`."
+  echo "Script: \`pocs/poc-08-cross-cutting-build/demo/demo.sh\` (helper \`poc08_demo.py\`, which reuses \`poc_harness.full_stack\`). The uv \`UV_NATIVE_TLS\` deprecation warning is dropped from the output; the temp folder is shown as \`\$TMP\`."
   echo "Not shown here: a Grafana dashboard (no Grafana runs offline; step 3 shows the \`/metrics\` lines the dashboards read, including `chassis_feedback_total`, which the dashboards' feedback panel reads), the real Langfuse, LiteLLM, and Prompt Guard 2 (the Mac run). The judge's scores are scripted: they show the mechanics, not judge quality."
 } >"$REC"
 

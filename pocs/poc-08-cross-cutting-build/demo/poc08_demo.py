@@ -1,8 +1,8 @@
-"""PoC-8 demo helper, called by `demo.sh`. Not a test. It reuses the PoC-8 scenario harness.
+"""PoC-8 demo helper, called by `demo.sh`. Not a test. It reuses `poc_harness.full_stack`.
 
     python poc08_demo.py live --engine echo-langgraph --lane sidecar
 
-One live call through the chassis with every stage on (`poc08_harness.full_stack`): the main
+One live call through the chassis with every stage on (`poc_harness.full_stack`): the main
 route's answer scores low, the gate retries, then falls back to `spec.model.fallback_route`. Then
 the span list of that run, a thumbs-down `POST /v1/feedback` on its `request_id`, and the lines of
 `GET /metrics` that show the gate and the feedback.
@@ -17,24 +17,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import sys
-from pathlib import Path
 from typing import Any
 
-HERE = Path(__file__).resolve().parent
-POCS = HERE.parents[1]
-for _tests in (
-    POCS / "poc-02-two-engines-one-contract" / "tests",
-    POCS / "poc-03-one-interface-every-client" / "tests",
-    POCS / "poc-05-sandboxed" / "tests",
-    POCS / "poc-06a-bake-off-sidecar-lane" / "tests",
-    POCS / "poc-07-cross-cutting-decisions" / "tests",
-    POCS / "poc-08-cross-cutting-build" / "tests",
-    POCS.parent / "packages" / "chassis" / "tests",
-):
-    sys.path.insert(0, str(_tests))
-
-import pytest  # noqa: E402  (MonkeyPatch only, for the harness's hooks)
+import pytest
+from chassis.core.trace import trace_id_hex
+from chassis.server.evaluator_gate import GATE_FALLBACKS, GATE_RETRIES
+from poc_harness.full_stack import full_stack
+from poc_harness.stage_model import BAD, FALLBACK_ROUTE, GATE_MARK, GOOD, ROUTE
 
 RETRIES = 2
 """From the config (`spec.harness.retries`), not the default 1, so the count is visibly the
@@ -75,10 +64,6 @@ def _metric_lines(text: str) -> list[str]:
 
 
 async def _live(engine: str, lane: str, mp: pytest.MonkeyPatch) -> int:
-    from chassis.core.trace import trace_id_hex
-    from chassis.server.evaluator_gate import GATE_FALLBACKS, GATE_RETRIES
-    from poc08_harness import BAD, FALLBACK_ROUTE, GATE_MARK, GOOD, ROUTE, full_stack
-
     task = f"simplify: {GATE_MARK} The report was signed by Dana Ruiz on 4 May 2025."
     with full_stack(engine, lane, mp, retries=RETRIES) as stack:
         response = await stack.run(task)

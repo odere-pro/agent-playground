@@ -1,6 +1,4 @@
-"""Shared harness for the PoC-7 feedback scenarios. Not a test module.
-
-A chassis app with `spec.adapters.feedback: langfuse` whose `LangfuseFeedback` talks to the fake
+"""A chassis app with `spec.adapters.feedback: langfuse` whose `LangfuseFeedback` talks to the fake
 Langfuse API (`packages/fake-langfuse`) over an ASGI transport: no socket, no key. The engine is
 injected: `FakeEngine` over `echo`, or a `SidecarConnector` to a workload on a Unix socket.
 """

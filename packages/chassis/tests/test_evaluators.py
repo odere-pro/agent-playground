@@ -11,7 +11,6 @@ Plus the adapter rules the suite does not cover: strict parsing, the prompt shap
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Callable
 from typing import Any
 
@@ -23,7 +22,8 @@ from chassis.ports.evaluator import EvalCase, EvaluatorError
 from chassis_contracts import EvaluatorPortContract
 from chassis_contracts.evaluator import BAD, GOOD
 from fake_model_server import Script, create_app
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
+from poc_harness.tei import tei_stub
 
 JUDGE_USAGE = {"prompt_tokens": 300, "completion_tokens": 25}
 
@@ -81,37 +81,6 @@ class TestJudgeEvaluator(EvaluatorPortContract):
     @pytest.fixture
     def make_unavailable(self, parts: tuple[JudgeEvaluator, Switch, FastAPI]) -> Callable[[], None]:
         return lambda: setattr(parts[1], "down", True)
-
-
-# --- A stub of the TEI `/predict` API -----------------------------------------------------------
-
-_FACT = re.compile(r"\b(?:[A-Z][\w-]+|\d[\d.,:]*)\b")
-
-
-def tei_stub(seen: list[dict[str, Any]] | None = None) -> FastAPI:
-    """`POST /predict` with `{"inputs": [[premise, hypothesis]]}`: per pair, the three NLI labels,
-    sorted by score as TEI does. Entailment is the share of the hypothesis's capitalized words
-    and numbers found in the premise: a toy, so the contract has a good and a bad answer."""
-    app = FastAPI()
-
-    @app.post("/predict")
-    async def predict(request: Request) -> Any:
-        body = await request.json()
-        if seen is not None:
-            seen.append(body)
-        out = []
-        for premise, hypothesis in body["inputs"]:
-            facts = set(_FACT.findall(hypothesis))
-            kept = len([f for f in facts if f in premise]) / max(len(facts), 1)
-            labels: list[dict[str, Any]] = [
-                {"label": "entailment", "score": kept},
-                {"label": "neutral", "score": (1 - kept) / 2},
-                {"label": "contradiction", "score": (1 - kept) / 2},
-            ]
-            out.append(sorted(labels, key=lambda x: -float(x["score"])))
-        return out
-
-    return app
 
 
 class TestEncoderEvaluator(EvaluatorPortContract):

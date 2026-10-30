@@ -22,7 +22,8 @@ from typing import Any
 
 import pytest
 from chassis.core.trace import trace_id_hex
-from poc08_harness import PLAIN, TRUSTED_ENGINES, full_stack
+from poc_harness.full_stack import TRUSTED_ENGINES, full_stack
+from poc_harness.stage_model import PLAIN
 from workload_a2a.logs import JsonFormatter
 
 WORKLOAD_AGENT = "workload"

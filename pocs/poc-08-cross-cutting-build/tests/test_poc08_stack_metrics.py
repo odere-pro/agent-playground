@@ -37,7 +37,7 @@ from typing import Any
 
 import httpx
 import pytest
-from poc08_stack import (
+from poc_harness.metrics_stack import (
     AGENT,
     CHASSIS,
     DASHBOARD_UID,

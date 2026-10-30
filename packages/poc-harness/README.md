@@ -38,6 +38,18 @@ Test support that more than one PoC folder, or a PoC demo, uses. It replaces the
 | `sidecar_lane` | An engine behind a lane's connector, against fake backends on Unix sockets (`serve_backends`, `wire_python_engine`, `connected`, `run_task`, `typescript_agent`). `tool_uds_preload.mjs` is the TypeScript agent's preload. |
 | `sidecar_fixtures` | The fixtures of the sidecar-lane suites (`backends`, `typescript`, `address`, `wired`); a conftest imports them. |
 | `bakeoff_kind` | The bake-off engines on kind (`ENGINES`, built by `kind_engine` from `bakeoff.registry`), `run_stream`, `gateway_view`, `probe_in`, the missing-profile pod. `node_probe.js` is the probe for an image with no Python. |
+| `tei` | `tei_stub`: an in-process stub of the Hugging Face TEI `POST /predict` API. |
+| `evals` | The evaluator gate on a sidecar engine: `gate_script`, `serve_gate_backends`, `gated_run`, `routes`. |
+| `feedback` | A chassis app with `LangfuseFeedback` on the fake Langfuse API (`chassis`, `client`, `run`, `fake_langfuse`, `langfuse_port`). |
+| `security` | A chassis on Unix sockets with auth and guardrails on (`secured_chassis`, `AnswerModel`, `glossary_answering`, `bearer`). |
+| `trace_join` | One traced run across the chassis and a workload (`workload_on_uds`, `traced_ports`, `run_once`, `caller_headers`). |
+| `stage_model` | `StageModel`, the scripted model for every engine, and the prompts that drive it. |
+| `stage_ports` | `ToolBox`, `RecordingGuardrails`, `litellm_guardrails`. |
+| `engine_wiring` | `wire_engine`: an engine's test-only hooks, pointed at the chassis proxy socket. |
+| `full_stack` | One chassis with every stage on, per engine and lane (`full_stack`, `Stack`, `CELLS`, `cell_params`). |
+| `claude_cli` | `ClaudeCliStandIn`, a stand-in for the `claude` CLI that reaches the chassis proxy. |
+| `metrics_stack` | The Compose metrics stack's ports, inputs, and helpers, for its drill, static test, and latency script. |
+| `promtext` | A small reader of the Prometheus text format (`samples`, `families`, `value`). |
 | `waits` | `wait_until` and `wait_until_async`: poll, and fail on timeout. |
 
 ## Use

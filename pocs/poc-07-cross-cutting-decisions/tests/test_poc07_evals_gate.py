@@ -14,35 +14,25 @@ judge both reach the fake model server on its socket. The judge's scores are scr
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
 
-import httpx
 import pytest
-from chassis.adapters.a2a.sidecar import SidecarConnector
-from chassis.adapters.evaluators import JudgeEvaluator
-from chassis.adapters.litellm import LiteLLMModel
-from chassis.fakes import InMemoryConfig, InMemoryTelemetry
-from chassis.ports.bundle import PortBundle
-from chassis.server import ChassisConfig, create_app
 from chassis.server.evaluator_gate import (
     EVALUATOR_CALLS,
     GATE_FALLBACKS,
     GATE_RETRIES,
     SCORE_SPAN,
-    GatedEngine,
 )
-from poc07_evals_harness import (
+from poc_harness.bakeoff_tasks import ROUTE
+from poc_harness.evals import (
     BAD,
     FALLBACK_ROUTE,
-    GATE_INPUT,
     GOOD,
     JUDGE_ROUTE,
+    gated_run,
+    routes,
     serve_gate_backends,
 )
-from poc_harness.apps import fake_model_over_litellm
-from poc_harness.bakeoff_tasks import ENGINES, ROUTE
-from poc_harness.servers import a2a_on_unix_socket
-from poc_harness.sidecar_lane import Backends, wire_python_engine
+from poc_harness.sidecar_lane import Backends
 
 TWO_ENGINES = ["echo-python", "echo-langgraph"]
 
@@ -51,64 +41,6 @@ TWO_ENGINES = ["echo-python", "echo-langgraph"]
 def backends() -> Iterator[Backends]:
     with serve_gate_backends() as served:
         yield served
-
-
-def gate_config(url: str, uds: str, **harness: Any) -> ChassisConfig:
-    return ChassisConfig.model_validate(
-        {
-            "version": "cfg-poc07-gate",
-            "profile": "fake",
-            "agent": {"name": "simplifier", "version": "0.0.1"},
-            "spec": {
-                "engine": {"connector": "sidecar", "url": url, "uds": uds},
-                "model": {"route": ROUTE, "fallback_route": FALLBACK_ROUTE},
-                "harness": {"evaluator_gate": True, "retries": 1, "threshold": 0.7, **harness},
-            },
-        }
-    )
-
-
-async def gated_run(
-    engine: str,
-    backends: Backends,
-    monkeypatch: pytest.MonkeyPatch,
-    **harness: Any,
-) -> tuple[dict[str, Any], InMemoryTelemetry, list[dict[str, Any]]]:
-    """One `/v1/run` of the gate input through the chassis, the engine as a sidecar. Returns the
-    response, the telemetry, and the model request bodies the fake server received."""
-    backends.reset()
-    wire_python_engine(monkeypatch, ENGINES[engine], backends)
-    judge = JudgeEvaluator(
-        LiteLLMModel(
-            "http://model.invalid/v1", transport=httpx.AsyncHTTPTransport(uds=backends.model_uds)
-        ),
-        route=JUDGE_ROUTE,
-    )
-    telemetry = InMemoryTelemetry()
-    with a2a_on_unix_socket(ENGINES[engine].handle) as (url, uds):
-        bundle = PortBundle(
-            model=fake_model_over_litellm(),
-            engine=SidecarConnector(),
-            config=InMemoryConfig(),
-            telemetry=telemetry,
-            evaluator=judge,
-        )
-        app = create_app(gate_config(url, uds, **harness), bundle)
-        transport = httpx.ASGITransport(app=app)
-        async with (
-            httpx.AsyncClient(transport=transport, base_url="http://chassis") as client,
-            app.router.lifespan_context(app),
-        ):
-            res = await client.post("/v1/run", json={"input": {"text": GATE_INPUT}})
-            gate = app.state.ports.engine
-            if isinstance(gate, GatedEngine):
-                assert await gate.wait(10) == 0
-    assert res.status_code == 200, res.text
-    return res.json(), telemetry, list(backends.model_app.state.calls)
-
-
-def routes(calls: list[dict[str, Any]]) -> list[str]:
-    return [str(c.get("model")) for c in calls]
 
 
 @pytest.mark.parametrize("engine", TWO_ENGINES)

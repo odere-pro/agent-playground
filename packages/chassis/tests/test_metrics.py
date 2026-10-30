@@ -27,7 +27,7 @@ from chassis.server import ChassisConfig, create_app
 from chassis.server.proxy_app import create_proxy_app
 from fastapi import FastAPI
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from promtext import families, samples, value
+from poc_harness.promtext import families, samples, value
 
 CONFIG: dict[str, Any] = {
     "version": "cfg-1",

@@ -10,7 +10,7 @@ Do the designs chosen in PoC-7 work end to end, on every supported engine and in
 
 ## Cells
 
-The scenario tests run 11 cells (`tests/poc08_harness.py`, `CELLS`), each with every stage on at once:
+The scenario tests run 11 cells (`poc_harness.full_stack.CELLS`), each with every stage on at once:
 
 - the four trusted Python engines of ADR-006, `echo-python`, `echo-pydanticai`, `echo-langgraph`, and `echo-openai-agents`, in `inprocess` and `sidecar`;
 - `echo-python`, `echo-smolagents`, and `echo-claude-agent` in `remote`.
