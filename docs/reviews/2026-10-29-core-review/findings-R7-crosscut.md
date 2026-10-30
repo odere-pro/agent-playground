@@ -107,7 +107,7 @@ Spec: "given `texts: []` and `tool_calls` holding `sk-` and 20 characters, when 
 Status: proposal
 
 ### R7-14 [MEDIUM] [secure] packages/guardrail-server/src/guardrail_server/secret_scan.py:12
-Problem: `find_secret` returns None for common shapes: `ghp_` tokens, `xoxb-` tokens, JWTs, `ASIA` keys, `glpat-` tokens, `AIza` keys, `password=...`, lowercase `api_key=...`, JSON `"api_key"`, `AWS_SECRET_ACCESS_KEY=...`, `postgres://u:pw@h/db`, and lowercase `bearer`. A zero-width space inside `sk-` also evades it.
+Problem: `find_secret` returns None for common shapes: `ghp_` tokens, `xoxb-` tokens, JWTs, `ASIA` keys, `glpat-` tokens, `AIza` keys, `password=...`, lowercase `api_key=...`, JSON `"api_key"`, `AWS_SECRET_ACCESS_KEY=...`, `postgres://u:pw@h/db`, and lowercase `bearer`. A zero-width space inside `sk-` also evades it. <!-- pragma: allowlist secret -->
 Why it matters: With R1-07, the chassis has no other secret backstop on this path.
 Fix: Add the vendor prefixes, make `key_assignment` and `bearer` case-insensitive with optional quotes, and apply NFKC and zero-width stripping before the scan. Keeps behavior: no (proposal: blocks more, and the recorded red-team pass rate must be rerun).
 Spec: "given `ghp_` and 36 alphanumerics, `password=hunter2hunter2`, or `sk​-` and 20 alphanumerics, when `find_secret` runs, then it returns a kind."

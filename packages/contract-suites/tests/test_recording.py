@@ -275,11 +275,11 @@ KEY_SHAPED = {
     "openai-style": FAKE_SK,
     "aws-access-key": "AKIA" + "ABCDEFGHIJKLMNOP",
     "github-token": "ghp_" + "abcdefghijklmnopqrstuvwx",
-    "anthropic-style": "sk-ant-api03-" + "ABCDEFGHIJKLMNOP1234567890",
-    "openai-project": "sk-proj-" + "ABCDEFGHIJKLMNOP1234567890",
-    "google-api-key": "AIza" + "SyABCDEFGHIJKLMNOPQRSTUVWXYZ0123456",
+    "anthropic-style": "sk-ant-api03-" + "ABCDEFGHIJKLMNOP1234567890",  # pragma: allowlist secret
+    "openai-project": "sk-proj-" + "ABCDEFGHIJKLMNOP1234567890",  # pragma: allowlist secret
+    "google-api-key": "AIza" + "SyABCDEFGHIJKLMNOPQRSTUVWXYZ0123456",  # pragma: allowlist secret
     "slack-token": "xoxb-" + "1234567890-abcdefghij",
-    "google-oauth": "ya29." + "a0ABCDEFGHIJKLMNOPQRSTUV",
+    "google-oauth": "ya29." + "a0ABCDEFGHIJKLMNOPQRSTUV",  # pragma: allowlist secret
 }
 KEY_NAMES = ("key", "api_key", "apikey", "access_token", "token")
 
@@ -491,7 +491,8 @@ async def test_a_miss_message_drops_userinfo_and_fragment_when_the_url_has_them(
 
     with pytest.raises(CassetteMiss) as exc:
         async with httpx.AsyncClient(transport=replayer) as client:
-            await client.post(f"https://user:hunter2@x/v1/{FAKE_SK}#frag", json={"q": "new"})
+            url = f"https://user:hunter2@x/v1/{FAKE_SK}#frag"  # pragma: allowlist secret
+            await client.post(url, json={"q": "new"})
 
     message = str(exc.value)
     assert "https://x/v1/[redacted] is not in" in message
