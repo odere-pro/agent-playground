@@ -287,9 +287,12 @@ def start_workload(
             process.stop()
 
 
-def chassis_config(workload: Workload) -> dict[str, Any]:
-    """The `fake`-profile sidecar config for `workload`, from the template in `data/`."""
+def chassis_config(workload: Workload, adapters: Mapping[str, str] | None = None) -> dict[str, Any]:
+    """The `fake`-profile sidecar config for `workload`, from the template in `data/`.
+
+    `adapters` merges over `spec.adapters`, for example `{"guardrails": "fake"}`."""
     config: dict[str, Any] = json.loads(CHASSIS_CONFIG.read_text())
+    config["spec"]["adapters"].update(adapters or {})
     config["agent"]["name"] = workload.ref.name
     config["spec"]["engine"]["url"] = workload.url
     config["spec"]["engine"]["uds"] = workload.uds
@@ -322,13 +325,17 @@ def chassis_argv(source: ChassisSource, config: Path, uds: str, proxy_port: int)
 
 @contextmanager
 def start_chassis(
-    workload: Workload, source: ChassisSource, *, timeout_s: float = CHASSIS_START_S
+    workload: Workload,
+    source: ChassisSource,
+    *,
+    timeout_s: float = CHASSIS_START_S,
+    adapters: Mapping[str, str] | None = None,
 ) -> Iterator[Chassis]:
     """Start the chassis in the `fake` profile in front of `workload`; wait for `/ready`."""
     with _scratch() as root:
         uds = str(root / "chassis.sock")
         config = root / "chassis.yaml"  # JSON is YAML
-        config.write_text(json.dumps(chassis_config(workload), indent=2))
+        config.write_text(json.dumps(chassis_config(workload, adapters), indent=2))
         env = clean_env(os.environ, drop=("PYTHONPATH", *UV_VARIABLES))
         env["PYTHONUNBUFFERED"] = "1"
         argv = chassis_argv(source, config, uds, workload.proxy_port)

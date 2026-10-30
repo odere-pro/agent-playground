@@ -6,3 +6,6 @@ __pycache__/
 .ruff_cache/
 dist/
 .env
+# A link to the platform checkout; `make` creates it from PLATFORM_PATH.
+.platform
+reports/

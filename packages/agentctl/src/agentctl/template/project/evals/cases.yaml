@@ -1,0 +1,6 @@
+# The golden cases `make eval` runs through the chassis. Add your own: `contains` is text the JSON
+# of the output must hold, so a change that breaks the logic fails here.
+cases:
+  - id: greeting
+    input: {text: hello big world}
+    expect: {contains: ok}

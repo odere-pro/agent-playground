@@ -152,6 +152,8 @@ def pin_to_platform(path: Path, platform: Path) -> None:
             "# Do not edit by hand; a newer platform comes with a new export.\n"
             f"[tool.uv]\nconstraint-dependencies = [\n{body}\n]\n"
         )
+    link = path / ".platform"
+    link.symlink_to(platform, target_is_directory=True)
     _uv(path, "lock")
 
 

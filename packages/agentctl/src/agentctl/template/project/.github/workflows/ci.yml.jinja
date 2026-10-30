@@ -7,10 +7,8 @@
 # - test: `make test`, offline: the lane contract suite over A2A on localhost and in memory,
 #   through the agent test kit, which starts the chassis in the `fake` profile as its own process.
 # - suites: `make load-smoke`, `make hostile`, `make redteam`, `make eval`, one job each.
-#   Stand-ins: hostile, redteam, and eval run the platform's suites (bakeoff.redteam, the hostile
-#   cases, bakeoff.evalrun and evalgate) from PLATFORM_PATH against this agent, until they ship in
-#   the test kit. load-smoke is the kit's short run. All offline: the scripted fake model server
-#   is the model and the judge; no key, no hosted model.
+#   Each runs this agent's own cases (agent_testkit.suites, evals/cases.yaml). All offline: no key,
+#   no hosted model. The platform's full suites, on a cluster and every engine, are its own CI.
 # - image: `make image` on every run, and the user check against the uid table. On the default
 #   branch only, `make image PUSH=1` pushes to GHCR with an SBOM and provenance (BuildKit).
 # - sign: suggested: cosign keyless signing of the pushed digest (`make sign`), default branch
