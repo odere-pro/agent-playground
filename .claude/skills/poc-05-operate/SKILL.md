@@ -12,7 +12,7 @@ Every command below was run on the Mac and is pasted in the notes, unless it say
 - Not for the offline gate: `make check` and `make test-poc POC=05` need no cluster.
 
 ## Rules
-- One agent on Docker or kind at a time. Never touch other stacks (`paligo-*`, opensearch).
+- One worktree on Docker or kind at a time (skill `git-flow`, "Parallel work in worktrees"). Never touch other stacks (`paligo-*`, opensearch).
 - Every `kubectl` call pins `--context kind-poc05`; `run.sh` does this for you.
 - No secret value in a file, argv, or output. Read a key into the env in a subshell (`run.sh with-gateway`). Print logs only through `run.sh logs`.
 - Never edit a test to make a refusal pass. See the runbook "A refusal test passes when it should fail".

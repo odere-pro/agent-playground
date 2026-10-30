@@ -1,18 +1,16 @@
 # PoC-2: Two engines, one contract, two lanes: prove the chassis is framework-agnostic
 
 Status: done (2026-10-01)
-Builds on: [PoC-1](../poc-01-walking-skeleton/)
-Hands to: [PoC-3](../poc-03-one-interface-every-client/)
 Planning doc: [002-PoC-2-two-engines-one-contract.md](../../docs/planning/poc/002-PoC-2-two-engines-one-contract.md)
 Time box: 2 weeks
 
 ## Question
 
-Can two very different frameworks run as workloads behind the same `handle` contract? Can they run over A2A in the `sidecar` lane, and over A2A in memory in the chassis's tests? Can they do it with no framework code in the chassis and no key in any workload? Does a workload that is not Python pass the same contract?
+Can two very different frameworks run as workloads behind the same `handle` contract, over A2A in the `sidecar` lane and over A2A in memory in the chassis's tests, with no framework code in the chassis and no key in any workload? Does a workload that is not Python pass the same contract?
 
 ## What we built
 
-In short: the same chassis now runs four workloads in four styles behind one contract. Each runs next to it over A2A on localhost, or in memory for tests. Every model and tool call a workload makes comes back through the chassis. To run it: `make test-poc POC=02` (more under "How to run").
+In one line: the same chassis now runs four workloads in four styles behind one contract, either next to it over A2A on localhost or in memory for tests, and every model and tool call a workload makes comes back through the chassis.
 
 ```
                 public 127.0.0.1:8080
@@ -115,7 +113,7 @@ Each one has a scenario test in `tests/` or a recorded reason it cannot have one
 Gate runs on 2026-10-01:
 
 - `UV_NO_SYNC=1 make test-poc POC=02` → `142 passed, 6 skipped in 44.39s` (re-run 2026-10-30; was `134 passed, 6 skipped` on 2026-10-01). The skips: 2 need TCP or Docker (the TCP twin and the Compose demo; sockets are disabled in the gate), and 4 are the JSON-values and `traceparent` suite cases `TestFakeEngine` and `TestEchoTypeScriptEngine` skip on purpose.
-- With Docker up, `uv run pytest pocs packages -m network -p no:socket -q -rA` → `5 passed, 686 deselected in 113.18s`. The passes: `pocs/poc-02-two-engines-one-contract/tests/test_compose_sidecar.py::test_demo_runs_every_workload_with_no_key`, `tests/test_lanes.py::test_typescript_echo_gives_the_same_stream_as_echo_python_over_tcp`, `packages/chassis/tests/test_a2a_sidecar.py::test_over_tcp_on_loopback`, and PoC-1's `test_compose.py::test_compose_up_serves_one_request_and_counts_tokens` and `test_serve.py::test_chassis_serve_subprocess_answers_health`.
+- With Docker up, `uv run pytest pocs packages -m network -p no:socket -q -rA` → `5 passed, 686 deselected in 113.18s`. The passes: `pocs/poc-02-two-engines-one-contract/tests/test_compose_sidecar.py::test_demo_runs_every_workload_with_no_key`, `tests/test_lanes.py::test_typescript_echo_gives_the_same_stream_as_echo_python_over_tcp`, `packages/chassis/tests/test_a2a_sidecar.py::test_over_tcp_on_loopback`, and PoC-1's `test_compose.py` `test_compose_up_serves_one_request_and_counts_tokens` (since split into `::test_compose_up_starts_the_chassis_and_the_router_with_no_manual_steps` and `::test_compose_run_reports_the_token_counts_of_the_request`) and `test_serve.py::test_chassis_serve_subprocess_answers_health`.
 - `PATH=/opt/homebrew/bin:$PATH make check` → `673 passed, 18 skipped, 14 warnings in 34.74s`, mypy `Success: no issues found in 112 source files`, `Contracts: 7 kept, 0 broken.`, `planning-check OK`, `harness-lint: ok`.
 
 ## How to run
