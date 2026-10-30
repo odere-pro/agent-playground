@@ -62,6 +62,26 @@ def test_sse_data_refuses_a_named_frame_when_told_every_frame_is_unnamed() -> No
         sse_data(ANTHROPIC_STREAM, named=False)
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(': keepalive\n\ndata: {"id": 1}\n\n', id="comment-block"),
+        pytest.param('id: 1\ndata: {"id": 1}\n\n', id="id-line-first"),
+        pytest.param('data: {"id": 1}\nid: 1\n\n', id="id-line-last"),
+        pytest.param('data: {"id": 1}\n\ndata:\n\n', id="empty-data-frame"),
+        pytest.param('data: {"id": 1}\n\ndata: \n\n', id="blank-data-frame"),
+    ],
+)
+def test_sse_data_refuses_any_block_but_one_data_line_when_every_frame_is_unnamed(
+    body: str,
+) -> None:
+    """The OpenAI stream is `data: <json>` blocks and nothing else; the parser alone would skip
+    each of these. With names allowed, the same body still parses."""
+    with pytest.raises(AssertionError, match="one `data: ` line"):
+        sse_data(body, named=False)
+    assert sse_data(body) == [{"id": 1}]
+
+
 def test_a_failed_lifespan_fails_on_unix_socket_at_start() -> None:
     """`serve_on_uds` used `lifespan="on"`; this pins that the shared helper still fails loudly."""
 

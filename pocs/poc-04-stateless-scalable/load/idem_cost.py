@@ -25,10 +25,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
-from run_matrix import LOCUST, LOCUSTFILE, URL, read_locust, sample_stats  # noqa: E402
+from run_matrix import LOCUST, LOCUSTFILE, URL, read_locust, sample_stats
 
+HERE = Path(__file__).resolve().parent
 OUT = HERE.parent / "notes" / "load" / "idem-cost.json"
 RAW = HERE.parent / "notes" / "load" / "idem-raw"
 CHASSIS, VALKEY = "poc04-chassis-1-1", "poc04-valkey-1"

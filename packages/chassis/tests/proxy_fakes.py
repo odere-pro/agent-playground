@@ -33,7 +33,7 @@ from chassis.server import ChassisConfig, create_app
 from chassis.server.correlation import RunRecord
 from chassis.server.proxy_app import create_proxy_app
 from poc_harness.sse import Frame as Frame
-from poc_harness.sse import sse_frames as sse_frames
+from poc_harness.sse import sse_frames as parse_named_frames
 from pydantic import TypeAdapter
 
 TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"  # pragma: allowlist secret (a trace id in a test)
@@ -69,6 +69,17 @@ GLOSSARY_RULES = [
 """A glossary tool call for `lookup`, its answer after the tool, and a plain reply."""
 
 STREAM_EVENT: TypeAdapter[Any] = TypeAdapter(RawMessageStreamEvent)
+
+
+def sse_frames(text: str) -> list[Frame]:
+    """`(event name, payload)` per frame, `event:` first and `data:` second in every block. The
+    shared parser keeps no line order, and PoC tests share it, so the raw check is here.
+    """
+    for block in text.strip().split("\n\n"):
+        lines = block.splitlines()
+        assert len(lines) >= 2, block
+        assert lines[0].startswith("event: ") and lines[1].startswith("data: "), block
+    return parse_named_frames(text)
 
 
 def proxy_ports(model: Any, engine: FakeEngine | None = None) -> PortBundle:

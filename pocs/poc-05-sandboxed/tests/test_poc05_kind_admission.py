@@ -1,26 +1,26 @@
 """PoC-5 admission on kind: the real ValidatingAdmissionPolicy `agent-trust-rule` against every
 fixture under `deploy/kind/poc05/admission/fixtures/` (plan section 2.5; ADR-005 decisions 4, 5).
 
-Exit criterion 7: "Admission rejects `untrusted` and a third-party image in `sidecar`." Each rule
-(1 to 5, and 6a to 8 from the security review's F1 to F3) is proved with a rejected object and its
-admitted twin, sent with `kubectl apply --dry-run=server`, so nothing is created. Each fixture goes
-as the identity that may create it, so RBAC never refuses it for the wrong reason: a
-`SandboxClaim` as the code-runner dispatcher (the deployer has no claim rights); anything else in
-`poc05-agents` or `poc05-tools` as the platform deployer (the submitter has no rights there:
-review F2, and the per-call sandbox plan, "RBAC", dropped its `poc05-tools` binding); the rest as
-the tenant's submitter. A rejected fixture must name its rule's policy, not an RBAC refusal. The
-per-call sandbox adds the template rules T1 to T5 (`sandbox-template-rule`) and the claim rules C1
-to C5 (`sandbox-claim-rule`). A policy that fails to compile enforces nothing (spike question 5);
-the admitted twins alone would then pass, so the rejected ones are what proves the policy is live.
-Neither identity can write the platform's params, and with the params gone every request is
-denied.
+Exit criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image, in
+the `sidecar` lane." Each rule (1 to 5, and 6a to 8 from the security review's F1 to F3) is proved
+with a rejected object and its admitted twin, sent with `kubectl apply --dry-run=server`, so nothing
+is created. Each fixture goes as the identity that may create it, so RBAC never refuses it for the
+wrong reason: a `SandboxClaim` as the code-runner dispatcher (the deployer has no claim rights);
+anything else in `poc05-agents` or `poc05-tools` as the platform deployer (the submitter has no
+rights there: review F2, and the per-call sandbox plan, "RBAC", dropped its `poc05-tools` binding);
+the rest as the tenant's submitter. A rejected fixture must name its rule's policy, not an RBAC
+refusal. The per-call sandbox adds the template rules T1 to T5 (`sandbox-template-rule`) and the
+claim rules C1 to C5 (`sandbox-claim-rule`). A policy that fails to compile enforces nothing (spike
+question 5); the admitted twins alone would then pass, so the rejected ones are what proves the
+policy is live. Neither identity can write the platform's params, and with the params gone every
+request is denied.
 
-The per-call plan's `can-i` lists (`CAN_I`, in `poc_harness.admission_manifests`, so the static
-and kind tests never drift) and the check that no agent-sandbox object owns a NetworkPolicy close
-the security review's required changes 1, 2, and 4 on the cluster.
+The per-call plan's `can-i` lists (`CAN_I`, in `poc_harness.admission_manifests`, so the static and
+kind tests never drift) and the check that no agent-sandbox object owns a NetworkPolicy close the
+security review's required changes 1, 2, and 4 on the cluster.
 
-A kind test: marked `network` and skipped unless `POC05_KIND=1` and the `kind-poc05` context
-exists (`poc_harness.drills`). Needs `deploy/kind/poc05/base/` and `admission/` applied (T19).
+A kind test: marked `network` and skipped unless `POC05_KIND=1` and the `kind-poc05` context exists
+(`poc_harness.drills`). Needs `deploy/kind/poc05/base/` and `admission/` applied (T19).
 """
 
 from __future__ import annotations
