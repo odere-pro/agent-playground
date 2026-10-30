@@ -40,7 +40,14 @@ run '\.sh$' shellcheck -x -S warning
 run '^(\.github|deploy)/.*\.ya?ml$|^pocs/[^/]+/tests/fixtures/.*\.ya?ml$' \
   yamllint --strict -c .yamllint.yaml
 # detect-secrets reads each file as it is on disk, so a partly staged file is scanned whole.
-run '.' detect-secrets-hook --baseline .secrets.baseline
+# Exit 3 means only baseline line numbers moved, which is no finding, so stage them.
+code=0
+uv run detect-secrets-hook --baseline .secrets.baseline "${staged[@]}" || code=$?
+case "$code" in
+  0) ;;
+  3) git add .secrets.baseline ;;
+  *) status=1 ;;
+esac
 
 if [ "$status" -ne 0 ]; then
   echo "lint-staged: fix the files above; 'make lint-fix' repairs typos and formatting" >&2
