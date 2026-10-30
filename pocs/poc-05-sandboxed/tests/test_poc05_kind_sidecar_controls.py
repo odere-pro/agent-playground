@@ -69,6 +69,9 @@ METADATA_LISTENER = (
 )
 NODE_CONTAINER = "poc05-control-plane"
 API_PORT = 6443
+# What the probe's `http` check returns when the connect fails: urllib raises URLError for a
+# timeout and a refusal alike (AbstractHTTPHandler.do_open wraps every OSError).
+HTTP_CONNECT_FAILED = "URLError"
 
 
 @pytest.fixture(scope="module")
@@ -294,8 +297,10 @@ def test_h01_metadata_address_denied(sidecar: dict[str, Any], metadata_listener:
         WORKLOAD,
         [tcp(str(METADATA_IP), 80), {"kind": "http", "url": url}, allowed_edge()],
     )
-    assert meta.get("error") == POLICY_DROPPED, meta
-    assert "status" not in fetched, fetched
+    assert meta == {"error": POLICY_DROPPED}, meta
+    # urllib wraps a connect timeout in URLError, so the probe's HTTP check cannot name the
+    # timeout; the TCP check above, to the same address and port, shows the drop is one.
+    assert fetched == {"error": HTTP_CONNECT_FAILED}, fetched
     assert allowed.get("connected") is True, allowed
 
     with unpoliced_caller() as caller:

@@ -1,6 +1,6 @@
 # code-runner
 
-The code-execution tool: an MCP server with one write tool, `run_python`. It runs in an agent-sandbox `Sandbox` pod on gVisor, behind LiteLLM's MCP gateway. An agent reaches it only as a tool, through the chassis's tool endpoint, so the gateway's per-key allow-list applies to it like any other tool. Design: `docs/plans/2026-10-02-poc-05-sandboxed.md`, section 2.8.
+The code-execution tool: an MCP server with one write tool, `run_python`, behind LiteLLM's MCP gateway. In PoC-5 it runs as `code-runner dispatch`: each call gets a fresh gVisor sandbox from the warm pool, used once and then deleted ([dispatch mode](#dispatch-mode-a-sandbox-per-call)). An agent reaches it only as a tool, through the chassis's tool endpoint, so the gateway's per-key allow-list applies to it. How to start each mode: [Run it](#run-it). Design: `docs/plans/2026-10-02-poc-05-sandboxed.md`, section 2.8, and `docs/plans/2026-10-09-poc-05-per-call-sandbox.md`.
 
 ## The sandbox pod is the security boundary
 
@@ -51,9 +51,9 @@ The text after each code is a fixed string. No upstream body and no token goes i
 
 One run at a time, so memory stays predictable in a 256 MiB pod and the sweep knows what is the call's. Other calls wait.
 
-## Isolation between calls
+## Isolation between calls, without the dispatcher
 
-Calls are isolated per process, not per sandbox. One long-lived pod serves every call, and every child runs as the server's uid 10003 with no capabilities. So there is no per-call uid and no per-call PID namespace. What holds, on Linux only:
+This section is the mode where the server serves calls itself (`code-runner --port 8000`). PoC-5 does not deploy it; the dispatcher gives each call its own sandbox. In this mode, calls are isolated per process, not per sandbox. One long-lived pod serves every call, and every child runs as the server's uid 10003 with no capabilities. So there is no per-call uid and no per-call PID namespace. What holds, on Linux only:
 
 - **No process outlives its call.** The server is a child subreaper (`PR_SET_CHILD_SUBREAPER`), so a process that leaves the call's process group with `setsid()` and loses its parent is reparented to the server, not to init. After the child exits, the server reads `/proc`, kills and reaps every process started since the call began, and repeats until none is left. Then the directory is removed and the next call may start. So no code from one call is running while another call's directory exists.
 - **If a process cannot be stopped** within 5 s (suggested), the call fails with `run_failed`, every later call is refused, and `GET /health` returns 503 `isolation_lost`, so the liveness probe restarts the pod.
@@ -76,17 +76,17 @@ Off Linux (a developer's Mac) there is no subreaper and no `/proc`. Only the pro
 Per call:
 
 1. Take a slot (2 concurrent claims, suggested); wait for one up to 20 s.
-2. `POST` a `SandboxClaim`: `generateName: call-`, `warmPoolRef` the pool, `lifecycle` with `shutdownPolicy: Delete` and `shutdownTime` now + 60 s (suggested). No `env`, no labels, nothing from the caller.
+2. `POST` a `SandboxClaim`: `name: call-<uuid>` (chosen by the dispatcher, so a create whose answer was lost is still deleted), `warmPoolRef` the pool, `lifecycle` with `shutdownPolicy: Delete` and `shutdownTime` now + 60 s (suggested). No `env`, no labels, nothing from the caller.
 3. `GET` it every 100 ms (suggested) until `Ready` is `True` and `status.sandbox.podIPs` is set, for up to 20 s.
 4. Parse `podIPs[0]` as an IP address (loopback, link-local, multicast, and unspecified are refused), then send one stateless `tools/call` to `http://<podIP>:8000/mcp` with the code, `timeout_s`, and the key in `_meta`. A refused connect is retried for up to 2 s (suggested), since `Ready` may come before the server listens.
-5. `DELETE` the claim (background propagation) on every path, also on cancel. A failed delete is counted and logged; `shutdownTime` removes the claim later.
+5. `DELETE` the claim by name (background propagation) after every create attempt, also on cancel. A failed delete is tried up to 3 times (suggested), then counted and logged; `shutdownTime` removes the claim later.
 
 A pod is never reused. The idempotency cache lives in the dispatcher: a repeated key returns the first result without a claim. A failed call frees its key.
 
 Two `httpx` clients, never shared, and no Kubernetes SDK:
 
 - **API client:** base URL fixed at start from `KUBERNETES_SERVICE_HOST` and `KUBERNETES_SERVICE_PORT` (an IP and a port, else it refuses to start); the cluster CA (`--ca-file`) verifies the server; no redirects; nothing taken from the environment (`trust_env=False`). It is the only client that sends the token, read from `--token-file` on each request, since the projected token rotates. It sends only `create`, `get`, and `delete` on `sandboxclaims` in one namespace.
-- **Sandbox client:** no auth of any kind, no redirects, `trust_env=False`; the response body is cut off at 256 KiB (suggested), which ends the call with `sandbox_lost`.
+- **Sandbox client:** no auth of any kind, no redirects, `trust_env=False`; it asks for `Accept-Encoding: identity` and refuses any other `Content-Encoding`, and the raw body is cut off at 256 KiB (suggested); both end the call with `sandbox_lost`.
 
 `GET /health` never calls the API, so a slow API server cannot get the dispatcher restarted.
 
@@ -95,7 +95,7 @@ Two `httpx` clients, never shared, and no Kubernetes SDK:
 - A restart forgets every idempotency key.
 - The result cache can hold up to 256 x 128 KiB of output in the worst case; it counts against the pod's memory limit.
 - The rlimits are hygiene. The hard limits are the pod's.
-- Isolation between calls is per process, on Linux only (above), when the server serves calls itself. Dispatch mode gives each call its own sandbox instead.
+- Isolation between calls is per process, on Linux only ([above](#isolation-between-calls-without-the-dispatcher)), when the server serves calls itself. Dispatch mode gives each call its own sandbox instead.
 - A dispatcher restart forgets every key, and its in-flight claims wait for `shutdownTime`.
 - The sweep stops every process started since the call began, so it relies on nothing else in the pod starting processes.
 - Not yet verified under gVisor: `PR_SET_CHILD_SUBREAPER`, `PR_SET_DUMPABLE`, and `RLIMIT_NPROC` enforcement. The kind test covers the sweep.

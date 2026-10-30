@@ -55,7 +55,7 @@ Shape:
 Per call:
 
 1. Take a slot (`suggested:` 2 concurrent claims). Wait for one up to the claim timeout.
-2. `POST` a `SandboxClaim` (`generateName: call-`, `warmPoolRef: code-runner`, `shutdownTime: now + 60 s` `suggested:`, `shutdownPolicy: Delete`).
+2. `POST` a `SandboxClaim` (`generateName: call-`; since the 2026-10-29 review the dispatcher sets `name: call-<uuid>` itself, so a lost answer can still be deleted by name; `warmPoolRef: code-runner`, `shutdownTime: now + 60 s` `suggested:`, `shutdownPolicy: Delete`).
 3. `GET` it every 100 ms (`suggested:`) until `Ready` is `True` and `status.sandbox.podIPs` is set; claim timeout 20 s (`suggested:`, covers a cold start under host load).
 4. Open an MCP session to `http://<podIP>:8000/mcp/` and call `run_python` with the same code, timeout, and key. Client timeout: `timeout_s + 5 s` (`suggested:`). Retry the connect for up to 2 s (`suggested:`), in case `Ready` comes before the server listens (**cluster proves**).
 5. `DELETE` the claim (background propagation) in a `finally`, on every path. A failed delete is logged as a count; `shutdownTime` removes it later.
