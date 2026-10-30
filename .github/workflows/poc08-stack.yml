@@ -1,0 +1,94 @@
+name: poc08-stack
+
+# PoC-8 stack drill: Prometheus scrapes a real chassis and Grafana loads the generated dashboards
+# (scope item "Observability" of pocs/poc-08-cross-cutting-build/README.md).
+#
+# What it runs: `deploy/compose/poc08/stack.sh up` (three chassis built from
+# packages/chassis/Dockerfile, the fake model server, Valkey, Prometheus, Grafana), `stack.sh wait`
+# (host-side polls), `stack.sh digests` (image digests into the log, to pin them), then the
+# `network` drill test_poc08_stack_metrics.py (every panel query of deploy/dashboards/echo.json on
+# the real Prometheus, Grafana's dashboards and datasource), then the latency measurement
+# poc08_stack_latency.py (p50 and p95 of /v1/run, PoC-8 stages on and off, 200 requests each).
+# The JUnit report and the latency JSON are uploaded as the artifact `poc08-stack`.
+#
+# Trigger: push on the stack's paths, pull_request, and workflow_dispatch. Never
+# pull_request_target. No secret is used: stack.sh makes every credential into an env file
+# (mode 600) on the runner. The tests get its path from `stack.sh env` and read it themselves;
+# nothing here prints it. On failure, log tails go through `stack.sh logs`, which masks every env
+# file value. The offline gate (`make check`, ci.yml) stays the every-commit gate. Every action
+# is pinned by a full commit SHA.
+
+on:
+  push:
+    paths:
+      - "deploy/compose/poc08/**"
+      - "deploy/dashboards/**"
+      - "packages/chassis/**"
+      - "packages/fake-model-server/**"
+      - "packages/workloads/echo-python/**"
+      - "pocs/poc-08-cross-cutting-build/tests/poc08_stack*.py"
+      - "pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_metrics.py"
+      - "uv.lock"
+      - ".github/workflows/poc08-stack.yml"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: poc08-stack-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  poc08-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # PR code runs `stack.sh up`: it gets no stored token.
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0
+        with:
+          version: "0.11.23"
+          # No uv cache on pull_request: PR code cannot poison what a push run restores.
+          enable-cache: ${{ github.event_name != 'pull_request' }}
+      - name: Sync
+        run: uv sync --all-packages --locked
+      - name: Up
+        run: deploy/compose/poc08/stack.sh up
+      - name: Wait
+        run: deploy/compose/poc08/stack.sh wait
+      - name: Digests
+        run: deploy/compose/poc08/stack.sh digests
+      - name: Stack drill
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/poc08-stack
+          # `stack.sh env` prints POC08_ENV_FILE=<path>: the path, never the values.
+          export "$(deploy/compose/poc08/stack.sh env)"
+          POC08_STACK=1 uv run pytest -m network -v \
+            --junitxml=artifacts/poc08-stack/drill.xml \
+            pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_metrics.py
+      - name: Latency, stages on and off
+        run: |
+          set -euo pipefail
+          export "$(deploy/compose/poc08/stack.sh env)"
+          uv run python pocs/poc-08-cross-cutting-build/tests/poc08_stack_latency.py \
+            --out artifacts/poc08-stack/latency.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: poc08-stack
+          path: artifacts/poc08-stack/
+          if-no-files-found: warn
+      - name: Logs
+        if: failure()
+        run: |
+          set -uo pipefail
+          deploy/compose/poc08/stack.sh logs
+          echo "(stack.sh logs: every env file value is redacted)"
+      - name: Down
+        if: always()
+        run: deploy/compose/poc08/stack.sh down

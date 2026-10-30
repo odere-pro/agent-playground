@@ -1,0 +1,15 @@
+# Loads every generated dashboard: deploy/dashboards/ is mounted read-only at
+# /etc/grafana/dashboards. Grafana reads the *.json files there and skips agents.txt.
+apiVersion: 1
+
+providers:
+  - name: chassis
+    orgId: 1
+    folder: Agents
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false
