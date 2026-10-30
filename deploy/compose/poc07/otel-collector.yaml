@@ -17,6 +17,9 @@
 # Named-entity redaction (names, places) is not done here: it needs a Presidio call or a custom
 # processor. The patterns hold no `$`, since the Collector expands `$` in its config.
 # Offline check: packages/chassis/tests/test_collector_log_redaction.py.
+#
+# Spans: `transform/redact_spans` masks span and span-event attributes with the same rules, and
+# keeps the chassis's id keys as they are. Offline check: test_poc07_stack_static.py.
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
