@@ -42,7 +42,8 @@ def test_c2_telemetry_swaps_by_config_with_no_business_logic_change(
     answers = Answers("swapped", "transformer", framework, "sidecar", ROOT)
     agent = render(answers, tmp_path)
     before = _digest(agent / "src")
-    assert load_config(agent / "config/agent.yaml").spec.adapters.telemetry == "memory"
+    adapters = load_config(agent / "config/agent.yaml").spec.adapters
+    assert adapters is not None and adapters.telemetry == "memory"
 
     path = agent / "config/agent.yaml"
     data = yaml.safe_load(path.read_text())
