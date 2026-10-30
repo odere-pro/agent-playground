@@ -8,7 +8,8 @@ trigger test requires every one). Whether gVisor starts on a GitHub runner is sh
 
 Exit criterion 2: a fake workload goes through the `remote` lane on every commit. Offline that is
 the `LaneContract` file in `make check`. On kind, the `test-remote` verb selects the kind remote
-test files by path and fails, naming them, if one is missing.
+test files by path and fails, naming them, if one is missing. It also runs the kind admission and
+sidecar-control files (R5a-03), so criteria 5 and 7 are checked on the cluster in CI.
 
 Also checked: the workflow pins every action by a full commit SHA, uses no secret, is never
 triggered by `pull_request_target`, always deletes the cluster, and sends every pod log through
@@ -42,6 +43,9 @@ REMOTE_TESTS = (
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_shm.py",
+    "pocs/poc-05-sandboxed/tests/test_poc05_kind_sidecar_controls.py",
+    "pocs/poc-05-sandboxed/tests/test_poc05_kind_runtime_hardening.py",
+    "pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py",
 )
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -157,12 +161,14 @@ def _function(text: str, name: str) -> str:
 
 def test_poc05_run_sh_test_remote_selects_by_file_path() -> None:
     """Reviewer B1: `-k "remote or code_runner"` matched only admission fixture ids. The verb
-    selects the kind remote-lane and code-runner files by path, and no admission file."""
+    selects its kind files by path, and R5a-03 adds the admission and sidecar-control files, so a
+    broken CEL rule or metadata deny fails the CI job."""
     text = RUN_SH.read_text()
     assert re.search(r"^\s*test-remote\)", text, re.M), "run.sh has no test-remote verb"
     selection = _remote_selection(text)
     assert selection == list(REMOTE_TESTS)
-    assert not any("admission" in f for f in selection)
+    assert selection[-1] == "pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py"
+    assert "pocs/poc-05-sandboxed/tests/test_poc05_kind_sidecar_controls.py" in selection
     body = _function(text, "run_tests_remote")
     assert "POC05_KIND=1" in body and '"${REMOTE_TESTS[@]}"' in body
     assert " -k " not in body and "pocs/poc-05-sandboxed/tests " not in body

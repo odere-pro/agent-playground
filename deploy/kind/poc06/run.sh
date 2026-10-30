@@ -8,7 +8,7 @@
 #                                     trusted repositories, switch the fake model's script, seed the
 #                                     PoC-6 keys and tokens, apply remote/, agents/, and (with a
 #                                     kagent/, each waited for. A second `up` converges
-#   deploy/kind/poc06/run.sh build    docker build the PoC-6 images (tag poc06), kagent-adk included
+#   deploy/kind/poc06/run.sh build    docker build the PoC-6 images (tag kind), kagent-adk included
 #   deploy/kind/poc06/run.sh load     kind load the PoC-6 images
 #   deploy/kind/poc06/run.sh seed     seed.sh keys (needs LiteLLM Ready)
 #   deploy/kind/poc06/run.sh seccomp  derive the gVisor seccomp profile from PoC-5's running remote-echo
@@ -43,9 +43,11 @@
 # kagent-adk (the remote solution, kagent/): built from kagent's own source, not pulled. `build_kagent`
 # clones https://github.com/kagent-dev/kagent, checks out the commit in kagent/source.commit, fails
 # closed unless `git rev-parse HEAD` equals it, and builds python/Dockerfile as
-# kind.local/agent-platform/kagent-adk:poc06. That Dockerfile does not pin its base images by digest
-# (debian:bookworm-slim, the uv image by tag); an accepted, recorded gap for a PoC remote (see
-# notes/2026-10-09-lanes-b-kind.md). To add another plain-A2A remote, copy kagent/ (a Sandbox, a
+# kind.local/agent-platform/kagent-adk:kind. That Dockerfile names its base images by tag
+# (debian:bookworm-slim, and the uv image as ghcr.io/astral-sh/uv:${UV_VERSION}). `build_kagent`
+# pins both by multi-arch index digest without editing it: the build arg UV_VERSION=<tag>@<digest>,
+# and a BuildKit named context that replaces debian:bookworm-slim (KAGENT_UV_VERSION, KAGENT_DEBIAN
+# below). To add another plain-A2A remote, copy kagent/ (a Sandbox, a
 # chassis with `spec.engine.protocol: a2a`, a ConfigMap) and add it below.
 set -euo pipefail
 
@@ -61,7 +63,11 @@ AGENTS_NS=poc05-agents
 REMOTE_NS=poc05-remote
 KAGENT_COMMIT_FILE=$HERE/kagent/source.commit
 KAGENT_REPO=https://github.com/kagent-dev/kagent
-KAGENT_IMAGE=kind.local/agent-platform/kagent-adk:poc06
+# The base images of kagent's python/Dockerfile at that commit, by multi-arch index digest (amd64 for
+# CI, arm64 for a Mac). Resolved 2026-10-29 with `docker buildx imagetools inspect <tag>`. A new
+# commit in source.commit means checking its Dockerfile's FROM lines and these again.
+KAGENT_UV_VERSION=0.12.3@sha256:2d890623d310b57771ce840f0da5eed5fc6d657da05ffaa45d82797b53fa3abc
+KAGENT_DEBIAN=debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
 SECCOMP_DERIVE=$HERE/seccomp/derive_profile.py
 SECCOMP_DIR=/var/lib/kubelet/seccomp/profiles
 SECCOMP_FILE=poc06-runsc-clone3.json
@@ -71,10 +77,13 @@ SOURCE_POD_LABEL=app.kubernetes.io/name=remote-echo
 # to the repo root. echo-typescript is PoC-5's image (kind.local/agent-platform/echo-typescript:poc05,
 # built from the same source by `poc05/run.sh build`), so it is not repeated here.
 REGISTRY=kind.local/agent-platform
+# The one tag of every image this script builds; the manifests under deploy/kind/poc06 use it.
+TAG=kind
+KAGENT_IMAGE=$REGISTRY/kagent-adk:$TAG
 IMAGES=(
-  "$REGISTRY/echo-openai-agents:poc06|packages/workloads/echo-openai-agents/Dockerfile|."
-  "$REGISTRY/echo-smolagents:poc06|packages/workloads/echo-smolagents/Dockerfile|."
-  "$REGISTRY/echo-claude-agent:poc06|packages/workloads/echo-claude-agent/Dockerfile|."
+  "$REGISTRY/echo-openai-agents:$TAG|packages/workloads/echo-openai-agents/Dockerfile|."
+  "$REGISTRY/echo-smolagents:$TAG|packages/workloads/echo-smolagents/Dockerfile|."
+  "$REGISTRY/echo-claude-agent:$TAG|packages/workloads/echo-claude-agent/Dockerfile|."
 )
 
 # What `apply` waits for.
@@ -106,9 +115,29 @@ kagent_commit() {
   printf '%s\n' "$commit"
 }
 
+# check_kagent_bases: every FROM base in the Dockerfile is one `build_kagent` pins (the uv image
+# by the UV_VERSION build arg, debian:bookworm-slim by the named context) or the internal stage
+# `base`. Fails closed on any other base, and on a Dockerfile with no FROM line, so a new kagent
+# commit that adds or renames a base cannot build from an unpinned tag.
+check_kagent_bases() {
+  local dockerfile=$1 image count=0
+  while read -r image; do
+    count=$((count + 1))
+    # shellcheck disable=SC2016 # the Dockerfile's literal text, not expanded here
+    case $image in
+      'ghcr.io/astral-sh/uv:${UV_VERSION}' | debian:bookworm-slim | base) ;;
+      *) die "kagent: unpinned base image '$image' in python/Dockerfile; refusing to build" ;;
+    esac
+  done < <(awk 'toupper($1) == "FROM" {
+    for (i = 2; i <= NF; i++) if ($i !~ /^--/) { print $i; break }
+  }' "$dockerfile")
+  ((count > 0)) || die "kagent: no FROM line in python/Dockerfile; refusing to build"
+}
+
 # build_kagent: kagent-adk from kagent's source at the pinned commit. The clone goes to its own
 # new empty directory, and its path is an argument to git and docker; nothing runs from inside it.
-# Fails closed unless HEAD is exactly the pinned commit.
+# Fails closed unless HEAD is exactly the pinned commit. --build-context needs BuildKit, so it is
+# asked for by name; the legacy builder would fail rather than build from unpinned tags.
 build_kagent() {
   local commit dir head
   commit=$(kagent_commit)
@@ -119,7 +148,11 @@ build_kagent() {
   git -C "$dir/kagent" checkout --quiet --detach "$commit"
   head=$(git -C "$dir/kagent" rev-parse HEAD)
   [[ $head == "$commit" ]] || die "kagent: HEAD is $head, want $commit; refusing to build"
-  docker build -f "$dir/kagent/python/Dockerfile" -t "$KAGENT_IMAGE" "$dir/kagent/python"
+  check_kagent_bases "$dir/kagent/python/Dockerfile"
+  DOCKER_BUILDKIT=1 docker build -f "$dir/kagent/python/Dockerfile" -t "$KAGENT_IMAGE" \
+    --build-arg "UV_VERSION=$KAGENT_UV_VERSION" \
+    --build-context "debian:bookworm-slim=docker-image://$KAGENT_DEBIAN" \
+    "$dir/kagent/python"
 }
 
 build() {

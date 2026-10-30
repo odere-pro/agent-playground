@@ -8,6 +8,9 @@ about 0.5 to 1 GiB per replica and breaks ADR-001's memory estimate. Standard li
 Each match becomes `<ENTITY>`, the form Presidio's anonymizer uses by default, so a record reads
 the same whichever layer redacted it. suggested: the entity names and the patterns.
 
+`redact_error_text` is separate: it strips credentials (a configured key, any `sk-` shape, and
+LiteLLM's 401 echo) from upstream error text, for every adapter that passes such text on.
+
 A phone match is kept as it is only when the whole match is a valid ISO date (`2026-10-29`), an
 IPv4 address (four groups of 0 to 255), or an x.y.z version (three groups of 1 or 2 digits). Any
 other dotted or dashed run (`612.345.678`, `0171-12-34`) is still masked. The email pattern starts
@@ -87,3 +90,20 @@ def redact_value(value: Any) -> Any:
     if isinstance(value, list | tuple):
         return type(value)(redact_value(v) for v in value)
     return value
+
+
+KEY_SHAPE = re.compile(r"sk-[A-Za-z0-9_-]{8,}")
+"""A LiteLLM or OpenAI style key."""
+# LiteLLM's 401 echo: `Received API Key = sk-...abcd, Key Hash (Token) = <hash>`. The value runs
+# to the next space, comma, or semicolon; a trailing period stays as text.
+_LITELLM_ECHO = re.compile(r"(Received API Key = |Key Hash \(Token\) = )[^\s,;]*[^\s,;.]")
+
+
+def redact_error_text(text: str, api_key: str | None) -> str:
+    """Strip the configured key, anything shaped like one, and LiteLLM's 401 echo of the key
+    suffix and hash. Upstream error text travels into events, proxy bodies, logs, and `/v1/run`.
+    """
+    if api_key:
+        text = text.replace(api_key, "[redacted]")
+    text = _LITELLM_ECHO.sub(r"\1[redacted]", text)
+    return KEY_SHAPE.sub("[redacted]", text)

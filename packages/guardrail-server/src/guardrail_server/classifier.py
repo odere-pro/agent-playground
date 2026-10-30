@@ -43,6 +43,8 @@ class Classifier(Protocol):
     def score(self, chunks: Sequence[str]) -> list[float]: ...
 
 
+# Hand copy of chassis/fakes/guardrail.py;
+# packages/contract-suites/tests/test_guardrail_pattern_drift.py pins the drift.
 INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     re.compile(p, re.I | re.S)
     for p in (

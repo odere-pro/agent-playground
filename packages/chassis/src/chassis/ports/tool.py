@@ -7,12 +7,17 @@ keyword `idempotency_key`. Write mode is `ToolDefinition.read_only = False` (MCP
 `readOnlyHint`). A write tool called without a key raises `ToolError("idempotency_key_required")`
 before anything runs; with a key it has at most one effect per key, and a repeat returns the
 first result.
+
+`ManagedToolPort` is a `ToolPort` with a lifecycle (the gateway adapter, plan section 2.7). The
+tool endpoint (`chassis.server.tool_endpoint`) checks for it with `isinstance` and drives it:
+it sets `on_refresh_failed`, awaits the first `refresh()`, calls `start()`, and on shutdown awaits
+`aclose()`. A port without all four members is served as is.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import Any, Protocol
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -64,6 +69,26 @@ class ToolPort(Protocol):
         self, name: str, arguments: Mapping[str, Any], *, idempotency_key: str | None = None
     ) -> ToolResult:
         """Call one tool. `idempotency_key` is required for a write tool (`read_only: false`)."""
+        ...
+
+
+@runtime_checkable
+class ManagedToolPort(ToolPort, Protocol):
+    """A tools port with a cached list it refreshes in the background."""
+
+    on_refresh_failed: Callable[[], None] | None
+    """Called once per failed refresh; the tool endpoint counts it on telemetry."""
+
+    async def refresh(self) -> bool:
+        """Replace the cached list; on failure keep it, call `on_refresh_failed`, return False."""
+        ...
+
+    def start(self) -> None:
+        """Begin the background refresh."""
+        ...
+
+    async def aclose(self) -> None:
+        """Stop the background refresh."""
         ...
 
 

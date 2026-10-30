@@ -100,7 +100,7 @@ Render without a daemon, with dummy secrets: `VALKEY_PASSWORD=x MINIO_ROOT_PASSW
 
 ## PoC-7 stack
 
-`poc07/docker-compose.yaml` is a file of its own, project `poc07`. It runs Langfuse v4 (web, worker, ClickHouse, MinIO, Redis, Postgres), an OTel Collector, and Jaeger v2. The chassis sends OTLP to the Collector. The Collector sends the same spans to Langfuse and to Jaeger. Every port binds `127.0.0.1`. Plan: `docs/plans/2026-10-28-poc-07-cross-cutting.md`, criterion 1.
+`poc07/docker-compose.yaml` is a file of its own, project `poc07`. It runs Langfuse v4 (web, worker, ClickHouse, MinIO, Redis, Postgres), an OTel Collector, and Jaeger v2. The chassis sends OTLP to the Collector. The Collector sends the same spans to Langfuse and to Jaeger. Before it sends them, it masks emails, phone numbers, and ids in span attributes, with the logs pipeline's rules. It leaves the chassis's id keys alone. Every port binds `127.0.0.1`. Plan: `docs/plans/2026-10-28-poc-07-cross-cutting.md`, criterion 1.
 
 Use `stack.sh`, never a bare `docker compose`. It makes every credential into the git-ignored `poc07/.env.poc07` (mode 600) and passes `-p poc07` on every call.
 

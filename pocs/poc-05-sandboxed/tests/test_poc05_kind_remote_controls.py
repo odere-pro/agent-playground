@@ -229,42 +229,77 @@ def in_platform(name: str, checks: list[dict[str, Any]]) -> list[dict[str, Any]]
     return probe(PLATFORM_NS, pod(PLATFORM_NS, name)["metadata"]["name"], name, checks)
 
 
-def test_h30_remote_reaches_no_other_pod(
-    caller: str, remote: dict[str, Any], remote_chassis: dict[str, Any]
-) -> None:
-    """Criterion 6, H30: the control refuses (a policy drop, a timeout) the remote pod's TCP
-    connection to another agent (`agent-echo`'s public port), to its own chassis's public port,
-    to LiteLLM, to Valkey, to the code-runner dispatcher's Service, and to a warm code-runner
-    sandbox by pod IP. The allowed control in the same call: 8091 connects. Each target is up,
-    from an allowed peer in the same test: the unpoliced caller reaches both 8080 ports,
-    `agent-echo`'s workload reaches LiteLLM, its chassis reaches Valkey, LiteLLM reaches the
-    dispatcher, and the dispatcher reaches the sandbox."""
-    sidecar = pod(AGENTS_NS, SIDECAR_POD)
+# H30's targets, each with the allowed peer that shows it is up.
+H30_TARGETS = ("agent_echo_web", "own_chassis_web", "litellm", "valkey", "dispatch", "sandbox")
+
+
+@pytest.fixture(scope="module")
+def h30_targets(remote_chassis: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """One TCP check per H30 target, in `H30_TARGETS` order."""
     sandboxes = warm_sandboxes()
     assert sandboxes, "no Running code-runner pod (the warm pool is empty)"
-    sidecar_web = tcp(sidecar["status"]["podIP"], 8080)
-    chassis_web = tcp(remote_chassis["status"]["podIP"], 8080)
-    litellm = tcp(service_ip(PLATFORM_NS, "litellm"), 4000)
-    valkey = tcp(service_ip(PLATFORM_NS, "valkey"), 6379)
-    dispatch = tcp(service_ip(PLATFORM_NS, DISPATCH), 8000)
-    sandbox = tcp(sandboxes[0]["status"]["podIP"], 8000)
-    checks = [sidecar_web, chassis_web, litellm, valkey, dispatch, sandbox, tcp(PROXY_IP, 8091)]
+    return {
+        "agent_echo_web": tcp(pod(AGENTS_NS, SIDECAR_POD)["status"]["podIP"], 8080),
+        "own_chassis_web": tcp(remote_chassis["status"]["podIP"], 8080),
+        "litellm": tcp(service_ip(PLATFORM_NS, "litellm"), 4000),
+        "valkey": tcp(service_ip(PLATFORM_NS, "valkey"), 6379),
+        "dispatch": tcp(service_ip(PLATFORM_NS, DISPATCH), 8000),
+        "sandbox": tcp(sandboxes[0]["status"]["podIP"], 8000),
+    }
 
+
+@pytest.fixture(scope="module")
+def h30_from_remote(
+    remote: dict[str, Any], h30_targets: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    """The remote pod's results for every target and for 8091 (key `listener`), in one call."""
+    checks = [*h30_targets.values(), tcp(PROXY_IP, 8091)]
     *refused, allowed = in_remote(remote, checks)
-    for check, result in zip(checks, refused, strict=False):
-        assert result.get("error") == POLICY_DROPPED, (check, result)
-    assert allowed.get("connected") is True, allowed
+    return {**dict(zip(h30_targets, refused, strict=True)), "listener": allowed}
 
-    name = sidecar["metadata"]["name"]
+
+@pytest.fixture(scope="module")
+def h30_from_peers(
+    caller: str, h30_targets: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    """Each target probed from a peer allowed to reach it, probed once for the module."""
+    t = h30_targets
+    name = pod(AGENTS_NS, SIDECAR_POD)["metadata"]["name"]
     up = [
-        *in_caller(caller, [sidecar_web, chassis_web]),
-        *probe(AGENTS_NS, name, WORKLOAD, [litellm]),
-        *probe(AGENTS_NS, name, CHASSIS, [valkey]),
-        *in_platform("litellm", [dispatch]),
-        *in_platform(DISPATCH, [sandbox]),
+        *in_caller(caller, [t["agent_echo_web"], t["own_chassis_web"]]),
+        *probe(AGENTS_NS, name, WORKLOAD, [t["litellm"]]),
+        *probe(AGENTS_NS, name, CHASSIS, [t["valkey"]]),
+        *in_platform("litellm", [t["dispatch"]]),
+        *in_platform(DISPATCH, [t["sandbox"]]),
     ]
-    for check, result in zip(checks[:-1], up, strict=True):
-        assert result.get("connected") is True, (check, result)
+    return dict(zip(H30_TARGETS, up, strict=True))
+
+
+def test_h30_targets_are_all_named(h30_targets: dict[str, dict[str, Any]]) -> None:
+    """Criterion 6, H30: the parametrized list and the probed targets are the same six."""
+    assert tuple(h30_targets) == H30_TARGETS
+
+
+@pytest.mark.parametrize("target", H30_TARGETS)
+def test_h30_remote_reaches_no_other_pod(
+    target: str,
+    h30_from_remote: dict[str, dict[str, Any]],
+    h30_from_peers: dict[str, dict[str, Any]],
+) -> None:
+    """Criterion 6, H30: the control refuses (a policy drop, a timeout) the remote pod's TCP
+    connection to the target: another agent (`agent-echo`'s public port), its own chassis's public
+    port, LiteLLM, Valkey, the code-runner dispatcher's Service, or a warm code-runner sandbox by
+    pod IP. The allowed controls: 8091 connects in the same call, and the target is up from an
+    allowed peer (the unpoliced caller reaches both 8080 ports, `agent-echo`'s workload reaches
+    LiteLLM, its chassis reaches Valkey, LiteLLM reaches the dispatcher, and the dispatcher
+    reaches the sandbox)."""
+    refused = h30_from_remote[target]
+    listener = h30_from_remote["listener"]
+    up = h30_from_peers[target]
+
+    assert refused == {"error": POLICY_DROPPED}, (target, refused)
+    assert listener.get("connected") is True, listener
+    assert up.get("connected") is True, (target, up)
 
 
 # --- H19, H20: no way out ----------------------------------------------------------------------

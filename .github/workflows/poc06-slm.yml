@@ -61,6 +61,8 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0
         with:
+          # The version ci.yml and the Dockerfiles pin (ghcr.io/astral-sh/uv:0.11.23).
+          version: "0.11.23"
           # No uv cache on pull_request: PR code cannot poison what a push run restores.
           enable-cache: ${{ github.event_name != 'pull_request' }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -68,7 +70,7 @@ jobs:
           # The image is node:24-slim (packages/workloads/echo-typescript/Dockerfile).
           node-version: "24"
       - name: Sync
-        run: uv sync --all-packages --frozen
+        run: uv sync --all-packages --locked
       - name: Host
         run: |
           nproc
@@ -116,9 +118,12 @@ jobs:
               { echo "::error::llama.cpp $tag sha256 $got does not match the pin"; exit 1; }
             echo "llama.cpp $tag: sha256 matches the pin"
           else
-            [[ -z "$listed" || "$listed" == "sha256:$got" ]] ||
+            # Unpinned: the release's listed digest is the only check, so no digest is a failure.
+            [[ -n "$listed" ]] ||
+              { echo "::error::llama.cpp $tag asset $name lists no digest; set LLAMA_CPP_SHA256"; exit 1; }
+            [[ "$listed" == "sha256:$got" ]] ||
               { echo "::error::llama.cpp $tag sha256 $got differs from the listed $listed"; exit 1; }
-            echo "PIN llama.cpp: LLAMA_CPP_TAG=$tag LLAMA_CPP_SHA256=$got asset=$name (listed digest: ${listed:-none})"
+            echo "PIN llama.cpp: LLAMA_CPP_TAG=$tag LLAMA_CPP_SHA256=$got asset=$name (listed digest: $listed)"
           fi
           mkdir -p llama
           case "$name" in

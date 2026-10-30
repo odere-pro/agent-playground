@@ -81,8 +81,17 @@ die() { log "$*"; exit 1; }
 [[ $HOSTED_MODEL =~ ^[A-Za-z0-9._/:-]+$ ]] || die "POC06_HOSTED_MODEL has characters outside [A-Za-z0-9._/:-]"
 [[ $REPEAT =~ ^[0-9]+$ ]] || die "POC06_REPEAT must be a number"
 
-# Anything key-like out of text on stdin.
+# Anything key-like out of text on stdin. Inside `up`, `key` (its local, which bash shows to every
+# function it calls) is the provider key: its exact value goes first, as poc06_mac.sh `redact` does.
+# Elsewhere `key` is unset, or a chassis key inside set_key_models, and is redacted the same way.
 scrub() {
+  local text
+  [[ -n ${key:-} ]] || { scrub_shapes; return; }
+  text=$(cat)
+  printf '%s\n' "${text//"$key"/[redacted]}" | scrub_shapes
+}
+
+scrub_shapes() {
   sed -E \
     -e 's/(sk-|Bearer )[A-Za-z0-9._-]{8,}/\1[redacted]/g' \
     -e 's/sk-[A-Za-z0-9._-]*\*+[A-Za-z0-9]*/sk-[redacted]/g' \
@@ -312,6 +321,15 @@ original_config() {
 
 # ---- verbs ------------------------------------------------------------------------------------
 
+# up_undo: the EXIT trap while `up` runs. A failed or interrupted `up` leaves no provider Secret and
+# no egress policy: `down` undoes every step and is idempotent, so a partial `up` is safe to undo.
+up_undo() {
+  trap - EXIT
+  stop_forward
+  log "up did not finish; undoing it with down"
+  ( down ) || log "warning: down did not finish; run: $0 down"
+}
+
 up() {
   local key current pair svc state already=0
   [[ ! -t 0 ]] || die "up: the provider key goes on stdin (printf '%s' \"\$KEY\" | $0 up)"
@@ -319,10 +337,10 @@ up() {
   [[ -n $key ]] || die "up: no provider key on stdin"
   [[ $key =~ ^[[:graph:]]+$ ]] || { unset key; die "up: the key on stdin has spaces or control characters"; }
   preflight
+  trap up_undo EXIT
 
   log "1/6 Secret $PLATFORM/$PROVIDER_SECRET (from stdin; value not shown)"
   printf '%s' "$key" | put_secret "$PLATFORM" "$PROVIDER_SECRET" api_key
-  unset key
 
   log "2/6 ConfigMap $HOSTED_CM: PoC-5's config plus the route $ROUTE ($HOSTED_MODEL)"
   apply_hosted_config
@@ -361,6 +379,8 @@ up() {
     serves_route "$svc" "$ROUTE" || die "chassis-$svc is ready but does not serve route $ROUTE"
   done
   log "up done: the three untrusted chassis serve $ROUTE"
+  unset key
+  trap stop_forward EXIT
 }
 
 RELAY_PIDS=""
@@ -429,22 +449,26 @@ run() {
 }
 
 down() {
-  local pair svc orig k
+  local pair svc orig k reverted=1
   if ! kctl get namespace "$PLATFORM" >/dev/null 2>&1; then
     log "down: no cluster or no $PLATFORM in $CONTEXT; nothing to undo"
     return 0
   fi
   # The security reverts come first (egress, provider key, chassis keys), so a teardown that is
   # cut short leaves no key and no egress behind. The route restores and their rollouts come last.
+  # Each security revert runs even if the one before it fails; `down` then fails at the end.
   log "1/5 NetworkPolicy litellm-hosted-egress"
-  kctl -n "$PLATFORM" delete networkpolicy litellm-hosted-egress --ignore-not-found >/dev/null
+  kctl -n "$PLATFORM" delete networkpolicy litellm-hosted-egress --ignore-not-found >/dev/null ||
+    { log "error: could not delete NetworkPolicy litellm-hosted-egress"; reverted=0; }
   log "2/5 LiteLLM: drop $PROVIDER_ENV and the Secret $PROVIDER_SECRET, config back to PoC-5's"
   orig=$(original_config)
   if [[ -n $orig ]] && { provider_env_present || [[ $(litellm_config_cm) == "$HOSTED_CM" ]]; }; then
-    unpatch_litellm "$orig"
+    ( unpatch_litellm "$orig" ) ||
+      { log "error: could not drop $PROVIDER_ENV from LiteLLM"; reverted=0; }
     kctl -n "$PLATFORM" annotate deployment litellm "$ORIGINAL_ANNOTATION-" >/dev/null 2>&1 || true
   fi
-  kctl -n "$PLATFORM" delete secret "$PROVIDER_SECRET" --ignore-not-found >/dev/null
+  kctl -n "$PLATFORM" delete secret "$PROVIDER_SECRET" --ignore-not-found >/dev/null ||
+    { log "error: could not delete Secret $PROVIDER_SECRET"; reverted=0; }
   if [[ -n $orig ]]; then
     ( wait_rollout "$PLATFORM" litellm ) || log "warning: litellm did not settle"
   fi
@@ -469,6 +493,10 @@ down() {
   fi
   log "5/5 ConfigMap $HOSTED_CM"
   kctl -n "$PLATFORM" delete configmap "$HOSTED_CM" --ignore-not-found >/dev/null
+  if ((reverted == 0)); then
+    log "down: a security revert failed (see the errors above); rerun: $0 down"
+    return 1
+  fi
   log "down done"
 }
 

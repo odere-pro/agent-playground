@@ -34,7 +34,7 @@ from typing import Any
 
 import httpx
 
-from chassis.adapters.litellm.client import API_KEY_VAR, BASE_URL_VAR, _redact
+from chassis.adapters.litellm.client import API_KEY_VAR, BASE_URL_VAR
 from chassis.ports.guardrail import (
     PII,
     PROMPT_INJECTION,
@@ -43,6 +43,7 @@ from chassis.ports.guardrail import (
     Verdict,
     split_for_classifier,
 )
+from chassis.redaction import redact_error_text
 
 __all__ = ["APPLY_PATH", "BLOCKED", "SECRET", "LiteLLMGuardrails", "StageNames"]
 
@@ -194,5 +195,7 @@ class LiteLLMGuardrails:
             return str(answer) if answer is not None else text
         if status in (400, 422):
             return Verdict(allowed=False, text=text, reasons=(_reason(response.content),))
-        message = _redact(f"guardrail {guardrail}: LiteLLM answered HTTP {status}", self._api_key)
+        message = redact_error_text(
+            f"guardrail {guardrail}: LiteLLM answered HTTP {status}", self._api_key
+        )
         raise GuardrailError("guardrail_unavailable", message, retryable=status >= 500)
