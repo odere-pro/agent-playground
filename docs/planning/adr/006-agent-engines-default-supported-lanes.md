@@ -7,7 +7,7 @@
 
 ## Status
 
-Proposed, 2026-10-09. The user accepts it at the PoC-6 pull request.
+Accepted, 2026-10-30, by the user. Proposed 2026-10-09. Its open questions stay open; a change to one of them needs a new ADR or an edit here.
 
 Two parts of the evidence are not in yet:
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+import secrets
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -19,8 +20,15 @@ from typing import Any, ClassVar
 import pytest
 import yaml
 
-from agent_testkit.processes import Chassis, Workload, start_chassis
-from agent_testkit.settings import ChassisSource
+from agent_testkit.processes import (
+    REMOTE_CHASSIS_TOKEN,
+    Chassis,
+    StartError,
+    Workload,
+    start_chassis,
+    start_workload,
+)
+from agent_testkit.settings import AgentRef, ChassisSource
 
 RUN_STATUSES = ("ok", "fallback")
 BLOCKED = "guardrail_blocked"
@@ -152,3 +160,51 @@ def _score(chassis: Chassis, case: dict[str, Any]) -> dict[str, Any]:
     output = json.dumps(envelope.get("output"), sort_keys=True)
     passed = envelope["status"] in statuses and str(expect.get("contains", "")) in output
     return {"id": case["id"], "passed": passed, "status": envelope["status"], "output": output}
+
+
+class RemoteLane:
+    """The agent behind the chassis's real `RemoteConnector`: TCP on loopback, a bearer token.
+
+    What the sandbox adds (gVisor, no egress) is the platform's kind suites. This shows the lane
+    itself: a run crosses it, and a wrong token does not.
+    """
+
+    remote_input: ClassVar[dict[str, Any]] = {"text": "hello big world"}
+    run_statuses: ClassVar[tuple[str, ...]] = RUN_STATUSES
+
+    @pytest.fixture(scope="class")
+    def remote_token(self) -> str:
+        return secrets.token_hex(16)
+
+    @pytest.fixture(scope="class")
+    def remote_workload(
+        self, agent_handle_ref: AgentRef | str, remote_token: str
+    ) -> Iterator[Workload]:
+        with start_workload(agent_handle_ref, remote_token=remote_token) as started:
+            yield started
+
+    def test_a_run_crosses_the_remote_lane(
+        self,
+        remote_workload: Workload,
+        remote_token: str,
+        agent_testkit_chassis_source: ChassisSource,
+    ) -> None:
+        env = {REMOTE_CHASSIS_TOKEN: remote_token}
+        with start_chassis(remote_workload, agent_testkit_chassis_source, env=env) as chassis:
+            envelope = chassis.run(self.remote_input)
+        assert envelope["status"] in self.run_statuses, envelope
+        assert envelope["agent"] == remote_workload.ref.name
+
+    def test_a_wrong_token_never_reaches_the_workload(
+        self, remote_workload: Workload, agent_testkit_chassis_source: ChassisSource
+    ) -> None:
+        env = {REMOTE_CHASSIS_TOKEN: "not-the-token"}  # pragma: allowlist secret
+        try:
+            with start_chassis(
+                remote_workload, agent_testkit_chassis_source, env=env, timeout_s=10
+            ) as chassis:
+                response = chassis.post("/v1/run", {"input": {"text": "hello"}})
+        except StartError:
+            return  # refused at startup: `/ready` never turned true
+        body = response.json()
+        assert response.status_code != 200 or body["status"] == "error", body
