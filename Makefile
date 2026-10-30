@@ -19,6 +19,13 @@ fmt: ## Format code
 	uv run ruff format .
 	uv run ruff check --fix .
 
+lint-fix: ## Fix what the linters can fix: ruff format, ruff fixes, codespell typos
+	$(MAKE) fmt
+	uv run codespell -w docs packages pocs deploy scripts .github
+
+lint-staged: ## The fast lint-extra checks on staged files (the pre-commit hook runs this)
+	scripts/lint_staged.sh
+
 fmt-check: ## Check formatting without changing files
 	uv run ruff format --check .
 
@@ -26,7 +33,8 @@ lint: ## Ruff rules and the import rules (import-linter)
 	uv run ruff check .
 	uv run lint-imports
 
-# Not in `quick` or `check`: CI runs it as its own job, so the pre-commit hook stays fast.
+# Not in `quick` or `check`: CI runs it as its own job. The pre-commit hook runs the fast
+# part on staged files only (`make lint-staged`).
 # The tools are wheels in the root dev group; uv.lock pins each by hash.
 lint-extra: ## Extra linters: shellcheck, actionlint, hadolint, codespell, yamllint, detect-secrets
 	uv run shellcheck -x -S warning $$(git ls-files '*.sh') scripts/git-hooks/pre-commit

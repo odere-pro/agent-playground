@@ -6,7 +6,7 @@
 make setup
 ```
 
-Installs Python 3.12 through uv, every workspace package in editable mode, the dev tools, and the git pre-commit hook (which runs `make quick`).
+Installs Python 3.12 through uv, every workspace package in editable mode, the dev tools, and the git pre-commit hook. The hook runs `make lint-staged` (codespell, shellcheck, yamllint, and detect-secrets on the staged files), then `make quick`. `make lint-fix` repairs formatting and typos.
 
 ## The gates
 
