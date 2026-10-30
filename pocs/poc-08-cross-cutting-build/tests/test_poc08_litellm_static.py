@@ -200,6 +200,13 @@ def test_the_master_key_reaches_litellm_only_and_the_virtual_key_the_chassis_onl
     assert "set -x" not in script
 
 
+def test_the_virtual_key_may_call_the_model_and_the_guardrail_route_only() -> None:
+    """LiteLLM keeps `/guardrails/apply_guardrail` for admins unless the key's `allowed_routes`
+    names it (v1.103.0, `route_checks.py`); the chassis's guard stages call it."""
+    script = _code(STACK / "stack.sh")
+    assert '"allowed_routes":["openai_routes","/guardrails/apply_guardrail"]' in script
+
+
 def test_the_chassis_reaches_litellm_and_the_collector_only() -> None:
     services = _services()
     assert services["chassis"]["networks"] == ["edge"]

@@ -40,11 +40,13 @@ make_script() {
   (cd "$root" && uv run --no-sync python "$here/model_script.py" "$run_dir/model.yaml")
 }
 
-# The /key/generate body. suggested: the PoC-5 shape (seed.sh key_body) without the MCP fields;
-# no `allowed_routes`, since the chassis also calls `/guardrails/apply_guardrail`.
+# The /key/generate body. suggested: the PoC-5 shape (seed.sh key_body) without the MCP fields.
+# `allowed_routes`: the model routes and `/guardrails/apply_guardrail`, which the chassis's guard
+# stages call. LiteLLM refuses that route to a key without it (admin-only by default).
 key_body() {
   printf '{"key_alias":"svc-echo","models":["%s"],"max_budget":1.0,"budget_duration":"1d",' \
     "$model_route"
+  printf '"allowed_routes":["openai_routes","/guardrails/apply_guardrail"],'
   printf '"rpm_limit":600,"metadata":{"tags":["agent:echo"]}}'
 }
 
