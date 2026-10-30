@@ -38,7 +38,7 @@ from poc08_harness import ROOT
 from pytest_socket import SocketBlockedError
 
 WORKFLOWS = ROOT / ".github/workflows"
-SUITE_WORKFLOWS = ("ci.yml", "poc08-evals.yml")
+SUITE_WORKFLOWS = ("ci.yml", "poc08-evals.yml", "poc08-stack.yml")
 HERE = "pocs/poc-08-cross-cutting-build/tests"
 SUPPORTED = {
     "echo-python",
@@ -52,6 +52,9 @@ SUPPORTED = {
 """ADR-006's supported engines that run offline. `kagent-adk` runs only on kind (poc06-kind.yml);
 both baselines record it as skipped."""
 FULL_SHA = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
+STACK_DRILL = "test_poc08_stack_metrics.py"
+"""The one test file of this folder outside the gate: the stack drill, collected only with
+POC08_STACK=1. `test_poc08_stack_static.py` checks its own wiring."""
 
 
 def _workflow(name: str) -> dict[str, Any]:
@@ -149,7 +152,9 @@ def test_the_gate_collects_this_folder_with_no_network_test() -> None:
     assert report["code"] == 0, done.stdout[-3000:] + done.stderr[-3000:]
     items: dict[str, list[str]] = report["items"]
     files = {node.split("::")[0].rsplit("/", 1)[-1] for node in items}
-    expected = {p.name for p in (ROOT / HERE).glob("test_poc08_*.py")}
+    # The stack drill is `network` and is collected only with POC08_STACK=1 (conftest.py); it
+    # runs in poc08-stack.yml, not in the gate.
+    expected = {p.name for p in (ROOT / HERE).glob("test_poc08_*.py")} - {STACK_DRILL}
     assert files == expected
     assert not [node for node, marks in items.items() if "network" in marks]
     assert not [node for node, marks in items.items() if "skip" in marks]
