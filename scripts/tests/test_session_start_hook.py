@@ -13,8 +13,17 @@ pytestmark = pytest.mark.slow  # starts bash and git
 HOOK = Path(__file__).resolve().parents[2] / ".claude" / "hooks" / "session_start.sh"
 
 
+def _clean_env() -> dict[str, str]:
+    """The environment without `GIT_*`.
+
+    A pre-commit hook exports `GIT_DIR`. With it set, `git init` here reinitializes the real repo
+    and flips `core.bare` to `true` in the config every worktree shares.
+    """
+    return {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
+
+
 def _run(project: Path) -> str:
-    env = {**os.environ, "CLAUDE_PROJECT_DIR": str(project)}
+    env = {**_clean_env(), "CLAUDE_PROJECT_DIR": str(project)}
     out = subprocess.run(
         ["bash", str(HOOK)], env=env, capture_output=True, text=True, timeout=30, check=True
     )
@@ -64,7 +73,7 @@ def test_a_poc_name_with_a_trailing_newline_is_printed(tmp_path: Path) -> None:
 def test_git_status_is_capped_at_eight_lines(tmp_path: Path) -> None:
     """At most eight git status lines reach the session context."""
     project = _project(tmp_path, "poc-01-walking-skeleton")
-    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=project, env=_clean_env(), check=True)
     for i in range(12):
         (project / f"f{i}.txt").write_text("x")
     lines = _run(project).splitlines()
@@ -73,3 +82,12 @@ def test_git_status_is_capped_at_eight_lines(tmp_path: Path) -> None:
 
     assert all(line.startswith("??") for line in status)
     assert lines[start + 9].startswith("Commands:")
+
+
+def test_a_hooks_git_variables_stay_out_of_the_child_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A test's `git init` must never see the `GIT_DIR` a pre-commit hook exports."""
+    monkeypatch.setenv("GIT_DIR", "/the/real/repo/.git")
+
+    assert "GIT_DIR" not in _clean_env()
