@@ -195,22 +195,27 @@ async def test_hold_peeks_to_the_first_delta_and_continues_the_same_iterator() -
 
 
 @pytest.mark.parametrize(
-    "events",
+    ("events", "read"),
     [
-        [Error(code="not_ready", message="m")],
-        [
-            Start(request_id="r"),
-            Metrics(),
-            Error(code="engine_error", message="m"),
-            Delta(text="x"),
-        ],
+        ([Error(code="not_ready", message="m")], 1),
+        (
+            [
+                Start(request_id="r"),
+                Metrics(),
+                Error(code="engine_error", message="m"),
+                Delta(text="x"),
+            ],
+            3,
+        ),
     ],
+    ids=["error-first", "error-after-start"],
 )
-async def test_hold_stops_at_an_error_before_any_text(events: list[Event]) -> None:
+async def test_hold_stops_at_an_error_before_any_text(events: list[Event], read: int) -> None:
+    """The hold reads up to the error and no further."""
     source = _Source(events)
     held = await hold(source.gen())
     assert isinstance(held.error, Error) and held.decider is held.error
-    assert source.read == len(events[:-1]) if len(events) > 1 else source.read == 1
+    assert source.read == read
     await held.aclose()
     await held.aclose()
     assert source.closed
@@ -542,16 +547,27 @@ def _paths(app: FastAPI) -> set[str]:
     return set(app.openapi()["paths"])
 
 
-def test_mount_interfaces_mounts_native_whatever_the_flags() -> None:
-    for flags in ({}, {"openai": False, "anthropic": False, "mcp": False}):
-        config = ChassisConfig.model_validate(
-            {**CONFIG, "spec": {**CONFIG["spec"], "interfaces": flags}}
-        )
-        app = FastAPI()
-        app.state.config = config
-        app.state.pipeline = RunPipeline(app.state)
-        mount_interfaces(app, config)
-        assert "/v1/run" in _paths(app)
+@pytest.mark.parametrize(
+    "flags",
+    [{}, {"openai": False, "anthropic": False, "mcp": False}],
+    ids=["all-on", "all-off"],
+)
+def test_mount_interfaces_mounts_native_whatever_the_flags(flags: dict[str, bool]) -> None:
+    """`/v1/run` is mounted whatever `spec.interfaces` turns off."""
+    config = ChassisConfig.model_validate(
+        {**CONFIG, "spec": {**CONFIG["spec"], "interfaces": flags}}
+    )
+    app = FastAPI()
+    app.state.config = config
+    app.state.pipeline = RunPipeline(app.state)
+
+    mount_interfaces(app, config)
+
+    assert "/v1/run" in _paths(app)
+
+
+def test_create_app_serves_run_health_and_ready_when_built_with_defaults() -> None:
+    """The public app has `/v1/run`, `/health`, and `/ready`."""
     assert {"/v1/run", "/health", "/ready"} <= _paths(_app())
 
 

@@ -365,6 +365,46 @@ ERROR_CODES: tuple[tuple[str, bool], ...] = (
 PRE_RUN_CODES = frozenset({"not_ready", "invalid_body"})
 """Answered before `to_request`: `ReplyMeta.request` is None."""
 
+Mode = Literal["complete", "stream"]
+MODES: tuple[Mode, ...] = ("complete", "stream")
+
+END_OUTPUT_NO_TEXT_JSON = json.dumps(END_OUTPUT_NO_TEXT, separators=(",", ":"), sort_keys=True)
+
+
+def _end_only(output: dict[str, Any]) -> list[Event]:
+    """A run with no delta whose `end` carries `output`."""
+    return [
+        Start(request_id=IDS.request_id),
+        Metrics(input_tokens=2, output_tokens=1),
+        End(output=output),
+    ]
+
+
+END_OUTPUT_CASES: tuple[tuple[Mode, list[Event], str], ...] = (
+    ("complete", _end_only(END_OUTPUT_NO_TEXT), END_OUTPUT_NO_TEXT_JSON),
+    ("stream", _end_only(END_OUTPUT_NO_TEXT), END_OUTPUT_NO_TEXT_JSON),
+    ("complete", _end_only(END_OUTPUT_TEXT), "set by handle"),
+    ("stream", _end_only(END_OUTPUT_TEXT), "set by handle"),
+    # With deltas before it, complete still answers `output.text`.
+    (
+        "complete",
+        [
+            Start(request_id=IDS.request_id),
+            Delta(text="not the output"),
+            End(output=END_OUTPUT_TEXT),
+        ],
+        "set by handle",
+    ),
+)
+"""`(mode, events, the answer text)`: `end.output` with and without a string `text`."""
+END_OUTPUT_IDS = (
+    "no-text-complete",
+    "no-text-stream",
+    "text-complete",
+    "text-stream",
+    "text-after-deltas-complete",
+)
+
 
 def _answer_events() -> list[Event]:
     return [
@@ -490,6 +530,26 @@ class InboundAdapterContract:
         assert all(isinstance(f, str) for f in frames), "frames are text"
         return read_stream(200, reply.headers, frames)
 
+    async def _read(
+        self,
+        mode: Mode,
+        adapter: InboundAdapter[Any],
+        encode: Encode,
+        read_complete: ReadComplete,
+        read_stream: ReadStream,
+        events: Sequence[Event],
+    ) -> Readback:
+        """The answer to `events` as the client of `mode` reads it."""
+        if mode == "complete":
+            return await self._complete(adapter, encode, read_complete, events)
+        return await self._stream(adapter, encode, read_stream, events)
+
+    def _check_code(self, read: Readback, code: str, where: str) -> None:
+        """The error carries `code`, where the format makes it readable."""
+        if self.error_code_readable:
+            assert read.error is not None, f"{where}: the client reads no error"
+            assert read.error.code == code, f"{where}: code {read.error.code!r}, want {code!r}"
+
     def _check_error(self, read: Readback, *, status: int, code: str | None, where: str) -> None:
         assert read.status == status, f"{where}: status {read.status}, want {status}"
         assert read.error is not None, f"{where}: the client reads no error"
@@ -561,20 +621,24 @@ class InboundAdapterContract:
         assert errors[0] == errors[1], "error is not deterministic"
         assert streams[0] == streams[1], "stream is not deterministic"
 
-    def test_ids_are_the_ones_given(self, adapter: InboundAdapter[Any], encode: Encode) -> None:
+    @pytest.mark.parametrize("given", [IDS, OTHER_IDS], ids=["ids", "other-ids"])
+    def test_ids_are_the_ones_given(
+        self, adapter: InboundAdapter[Any], encode: Encode, given: Ids
+    ) -> None:
         """Section 6: the router resolves the ids; the adapter copies exactly the ones given and
         reads none from the headers (or, for native, the body). The agent is the served one."""
-        for ids in (IDS, OTHER_IDS):
-            body, headers = encode(BASE)
-            noisy = {
-                **headers,
-                "traceparent": "00-" + "a" * 32 + "-" + "b" * 16 + "-01",
-                "idempotency-key": "from-a-header",
-                "x-request-id": "from-a-header",
-            }
-            request = adapter.to_request(body, noisy, ids=ids, served=SERVED)
-            assert Ids.of(request) == ids
-            assert (request.agent, request.agent_version) == (AGENT, AGENT_VERSION)
+        body, headers = encode(BASE)
+        noisy = {
+            **headers,
+            "traceparent": "00-" + "a" * 32 + "-" + "b" * 16 + "-01",
+            "idempotency-key": "from-a-header",
+            "x-request-id": "from-a-header",
+        }
+
+        request = adapter.to_request(body, noisy, ids=given, served=SERVED)
+
+        assert Ids.of(request) == given
+        assert (request.agent, request.agent_version) == (AGENT, AGENT_VERSION)
 
     def test_model_must_name_the_agent(
         self, adapter: InboundAdapter[Any], encode: Encode, read_complete: ReadComplete
@@ -688,38 +752,29 @@ class InboundAdapterContract:
         assert complete.usage == Usage(8, 6)
         assert streamed.usage == Usage(8, 6)
 
+    @pytest.mark.parametrize(("mode", "events", "text"), END_OUTPUT_CASES, ids=END_OUTPUT_IDS)
     async def test_end_output_without_text_is_json_text(
         self,
         adapter: InboundAdapter[Any],
         encode: Encode,
         read_complete: ReadComplete,
         read_stream: ReadStream,
+        mode: Mode,
+        events: list[Event],
+        text: str,
     ) -> None:
         """Section 3: `end.output` without a string `text` is sent as compact, sorted JSON
-        text; with one, `output.text` is the answer. Both modes, for a run with no delta."""
+        text; with one, `output.text` is the answer. Both modes, for a run with no delta; in
+        complete mode, also after deltas."""
         if not self.output_as_text:
             pytest.skip("this format returns end.output as is (the native envelope)")
-        want = json.dumps(END_OUTPUT_NO_TEXT, separators=(",", ":"), sort_keys=True)
-        for output, text in ((END_OUTPUT_NO_TEXT, want), (END_OUTPUT_TEXT, "set by handle")):
-            events: list[Event] = [
-                Start(request_id=IDS.request_id),
-                Metrics(input_tokens=2, output_tokens=1),
-                End(output=output),
-            ]
-            complete = await self._complete(adapter, encode, read_complete, events)
-            streamed = await self._stream(adapter, encode, read_stream, events)
-            assert complete.text == text, f"complete, end.output {output}"
-            assert streamed.text == text, f"stream, end.output {output}"
-            assert complete.finish == streamed.finish == self.finish_reason
-        # With deltas before it, complete still answers `output.text`.
-        events = [
-            Start(request_id=IDS.request_id),
-            Delta(text="not the output"),
-            End(output=END_OUTPUT_TEXT),
-        ]
-        complete = await self._complete(adapter, encode, read_complete, events)
-        assert complete.text == "set by handle"
 
+        read = await self._read(mode, adapter, encode, read_complete, read_stream, events)
+
+        assert read.text == text, f"{mode}, events {events}"
+        assert read.finish == self.finish_reason
+
+    @pytest.mark.parametrize("mode", MODES)
     @pytest.mark.parametrize("status", ["retry", "fallback"])
     async def test_retry_and_fallback_are_a_normal_answer(
         self,
@@ -728,6 +783,7 @@ class InboundAdapterContract:
         read_complete: ReadComplete,
         read_stream: ReadStream,
         status: Literal["retry", "fallback"],
+        mode: Mode,
     ) -> None:
         """Section 4: status `retry` or `fallback` is a normal 200 answer with the normal finish;
         complete reports the status (`x-chassis-status` or the envelope), a stream may not."""
@@ -737,22 +793,24 @@ class InboundAdapterContract:
             Metrics(input_tokens=1, output_tokens=1),
             End(status=status),
         ]
-        complete = await self._complete(adapter, encode, read_complete, events)
-        streamed = await self._stream(adapter, encode, read_stream, events)
-        for mode, read in (("complete", complete), ("stream", streamed)):
-            assert read.status == 200, mode
-            assert read.error is None, mode
-            assert read.text == "Hello.", mode
-            assert read.finish == self.finish_reason, mode
-        assert complete.run_status == status
-        assert streamed.run_status in (None, status)
+        reported: dict[Mode, set[str | None]] = {"complete": {status}, "stream": {None, status}}
 
+        read = await self._read(mode, adapter, encode, read_complete, read_stream, events)
+
+        assert read.status == 200
+        assert read.error is None
+        assert read.text == "Hello."
+        assert read.finish == self.finish_reason
+        assert read.run_status in reported[mode]
+
+    @pytest.mark.parametrize("mode", MODES)
     async def test_tool_call_events_are_not_client_tool_calls(
         self,
         adapter: InboundAdapter[Any],
         encode: Encode,
         read_complete: ReadComplete,
         read_stream: ReadStream,
+        mode: Mode,
     ) -> None:
         """Section 4: the agent's own `tool_call` events are never sent as `tool_calls` or
         `tool_use` (the client would try to run them), and never change the finish reason."""
@@ -768,16 +826,17 @@ class InboundAdapterContract:
             Metrics(input_tokens=10, output_tokens=5),
             End(status="ok"),
         ]
-        complete = await self._complete(adapter, encode, read_complete, events)
-        streamed = await self._stream(adapter, encode, read_stream, events)
-        for mode, read in (("complete", complete), ("stream", streamed)):
-            assert read.tool_calls == 0, f"{mode}: a tool_call event reached the client"
-            assert read.text == TOOL_ANSWER, mode
-            assert read.finish == self.finish_reason, mode
-            assert read.error is None, mode
+
+        read = await self._read(mode, adapter, encode, read_complete, read_stream, events)
+
+        assert read.tool_calls == 0, f"{mode}: a tool_call event reached the client"
+        assert read.text == TOOL_ANSWER
+        assert read.finish == self.finish_reason
+        assert read.error is None
 
     # --- Errors ---
 
+    @pytest.mark.parametrize("stream", [True, False], ids=["stream", "complete"])
     @pytest.mark.parametrize(
         ("code", "retryable"), [("model.overloaded", True), ("workload.bad_event", False)]
     )
@@ -788,23 +847,25 @@ class InboundAdapterContract:
         read_complete: ReadComplete,
         code: str,
         retryable: bool,
+        stream: bool,
     ) -> None:
         """Section 3, the hold rule: the router hands an `error` before the first `delta` (or any
         `error` in complete mode) to `adapter.error`; the answer is an HTTP error with the
         status table's status, the format's body, the code, and `x-should-retry`."""
         if not self.errors_as_http:
             pytest.skip("this format answers a run error as a 200 envelope with status: error")
-        for stream in (True, False):
-            meta = self._meta(adapter, encode, stream=stream)
-            reply = adapter.error(code, "the run failed", retryable, meta)
-            json.dumps(reply.body)
-            read = read_complete(reply.status, reply.headers, reply.body)
-            where = f"{code} ({'stream' if stream else 'complete'})"
-            self._check_error(read, status=status_for(code, retryable), code=code, where=where)
-            assert read.error is not None
-            assert "the run failed" in read.error.message, where
-            assert read.finish is None, where
-            self._check_should_retry(read, retryable, where)
+        meta = self._meta(adapter, encode, stream=stream)
+        where = f"{code} (stream={stream})"
+
+        reply = adapter.error(code, "the run failed", retryable, meta)
+
+        json.dumps(reply.body)
+        read = read_complete(reply.status, reply.headers, reply.body)
+        self._check_error(read, status=status_for(code, retryable), code=code, where=where)
+        assert read.error is not None
+        assert "the run failed" in read.error.message, where
+        assert read.finish is None, where
+        self._check_should_retry(read, retryable, where)
 
     async def test_error_mid_stream_is_the_formats_error_frame(
         self, adapter: InboundAdapter[Any], encode: Encode, read_stream: ReadStream
@@ -817,12 +878,14 @@ class InboundAdapterContract:
         assert read.text == PARTIAL
         assert read.error is not None, "the client reads no error"
         assert read.error.code == MID_ERROR.code
-        if adapter.interface in SDK_INTERFACES:
-            # A fixed text per code; the run's own message stays in the log and the span.
-            assert public_message(MID_ERROR.code) in read.error.message
-            assert MID_ERROR.message not in read.error.message, "the run's own text leaked"
-        else:  # native and MCP keep contract v1's message (debt: PoC-8)
-            assert MID_ERROR.message in read.error.message
+        # The SDK formats send a fixed text per code; the run's own message stays in the log and
+        # the span. Native and MCP keep contract v1's message (debt: PoC-8).
+        sends_public_text = adapter.interface in SDK_INTERFACES
+        sent = {True: public_message(MID_ERROR.code), False: MID_ERROR.message}
+        assert sent[sends_public_text] in read.error.message
+        assert (MID_ERROR.message in read.error.message) is not sends_public_text, (
+            f"the run's own text in {read.error.message!r}: want {not sends_public_text}"
+        )
         assert read.finish is None, f"a finish ({read.finish!r}) was sent after the error"
         assert read.tool_calls == 0
         assert read.run_status in (None, "error")
@@ -850,8 +913,7 @@ class InboundAdapterContract:
         streamed = await self._stream(adapter, encode, read_stream, events)
         assert streamed.status == 200
         assert streamed.error is not None, "stream, no end: the client reads no error"
-        if self.error_code_readable:
-            assert streamed.error.code == "engine_error"
+        self._check_code(streamed, "engine_error", "stream, no end")
         assert streamed.finish is None, f"a finish ({streamed.finish!r}) was sent with no end"
         assert streamed.run_status in (None, "error")
 

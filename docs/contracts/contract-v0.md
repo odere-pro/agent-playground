@@ -1,8 +1,8 @@
 # Contract v0
 
-> **Superseded by [contract v1](contract-v1.md) (2026-10-01).** This file is the PoC-1 record. Read v1 for the contract in force; the few v0 statements below that the code has since made false are corrected in place and marked "(v1: ...)".
+> **Superseded by [contract v1](contract-v1.md) (2026-10-01).** This file is the PoC-1 record. The `Spec:` line of [packages/chassis/CLAUDE.md](../../packages/chassis/CLAUDE.md) names the contract in force. The few v0 statements below that the code has since made false are corrected in place and marked "(v1: ...)".
 
-The written contract PoC-1's exit criterion asks for. Generated schemas: `packages/chassis/schemas/*.v0.json` (`make schemas`). Source models: `packages/chassis/src/chassis/core/`. Status: PoC-1 walking skeleton. The A2A mapping below is the wire contract from the first commit; it becomes part of v1 in PoC-2 when the `sidecar` lane runs the same server in its own container. Changes already decided for v1 are at the end, in "Changes decided for v1 (2026-10-01)"; build PoC-2 code to them, not to the v0 text they replace.
+The written contract PoC-1's exit criterion asks for. Generated schemas: `packages/chassis/schemas/*.v0.json` (`make schemas`). Source models: `packages/chassis/src/chassis/core/`. Status: PoC-1 walking skeleton. The A2A mapping below is the wire contract from the first commit; it becomes part of v1 in PoC-2 when the `sidecar` lane runs the same server in its own container. Changes already decided for v1 are at the end, in "Changes decided for v1 (2026-10-01)". At the time, PoC-2 code was built to them, not to the v0 text they replace.
 
 ## The `handle` contract
 

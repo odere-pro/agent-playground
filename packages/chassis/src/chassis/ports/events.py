@@ -47,6 +47,10 @@ class CloudEvent(BaseModel):
     modelroute: str | None = None
     partitionkey: str | None = None
     """The CloudEvents partitioning extension. suggested: the run's `idempotency_key`."""
+    aigenerated: bool | None = None
+    """PoC-8 (023 C-5): `true` on a result event when `spec.governance` turns marking on; absent
+    otherwise, as the headers are. suggested: the name. An extension, so `task-result.v1.json`
+    does not change."""
     deadletterreason: str | None = None
     """Set on the dead-letter topic only: the handler's exception class name, never its text."""
     deadletterattempts: int | None = None

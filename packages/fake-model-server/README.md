@@ -1,11 +1,13 @@
 # fake-model-server
 
+A scripted, OpenAI-compatible model server: it answers chat calls from a YAML script, with no model and no key. It exists because agent frameworks call models over HTTP with their own clients. A Python mock cannot intercept those calls, so this server is how every engine is tested offline. Run it with `make fake-model-server` (port 8081, `scripts/example.yaml`).
+
 ```bash
 make fake-model-server                      # port 8081, scripts/example.yaml
 uv run fake-model-server --script my.yaml --port 8081
 ```
 
-Script format and endpoints: [CLAUDE.md](CLAUDE.md). Every chat request body is recorded in `app.state.calls`.
+Tests use it in process through the httpx ASGI transport, with no socket. Script format and endpoints: [CLAUDE.md](CLAUDE.md). Every chat request body is recorded in `app.state.calls`.
 
 A scripted tool loop ends: the rule that calls a tool matches the last user message, and only while the last message is not a tool result. After the tool answers, a rule with `after_tool: true` replies (its `match`, when set, is tested against the tool result), or `default_reply` does. See [scripts/example.yaml](scripts/example.yaml).
 

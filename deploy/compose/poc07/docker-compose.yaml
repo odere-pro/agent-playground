@@ -8,9 +8,20 @@
 # (otel-collector.yaml). Ports bind 127.0.0.1 only.
 #
 # Images: Langfuse's own compose file (github.com/langfuse/langfuse, docker-compose.yml at
-# b51b3966, 2026-10-28) names these tags. suggested: pin each by digest after the first CI run
-# prints them (`stack.sh digests`); deploy/CLAUDE.md asks for digests.
+# b51b3966, 2026-10-28) names these tags (MinIO has none there; `latest` is what it resolved to).
+# Each is pinned by its index digest, resolved on 2026-10-29; `stack.sh digests` refreshes them.
 name: poc07
+
+x-hardening: &hardening
+  # The same baseline as docker-compose.scale.yaml (SECURITY.md 6 and 7; anchors do not cross
+  # files): no Linux capability, no privilege gain through setuid, a read-only root file system
+  # with a small tmpfs for /tmp. Only on jaeger and otel-collector, the services that write
+  # nothing to disk (in-memory traces, no file storage). The rest are listed as deviations in
+  # deploy/compose/README.md, "PoC-7 stack".
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  tmpfs: [/tmp]
 
 x-langfuse-env: &langfuse-env
   NEXTAUTH_URL: http://localhost:3000
@@ -53,12 +64,12 @@ x-depends: &langfuse-depends
 
 services:
   langfuse-worker:
-    image: docker.langfuse.com/langfuse/langfuse-worker:4
+    image: docker.langfuse.com/langfuse/langfuse-worker:4@sha256:aa1724b989a00f1e4ca9930709202489c73deaaf2f1116bbd3d71c77edb8fedb
     depends_on: *langfuse-depends
     environment: *langfuse-env
 
   langfuse-web:
-    image: docker.langfuse.com/langfuse/langfuse:4
+    image: docker.langfuse.com/langfuse/langfuse:4@sha256:c311fd9db4b69f6514fdcb1b86a2a105d5a4ed51fbf0ded033ff2722459c804a
     # No in-container healthcheck: the image's tools are not ours to assume (the first CI run's
     # wget check never passed while Langfuse logged "Ready"). `stack.sh wait` polls
     # /api/public/health from the host instead.
@@ -76,7 +87,7 @@ services:
       LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?}
 
   clickhouse:
-    image: docker.io/clickhouse/clickhouse-server:25.12
+    image: docker.io/clickhouse/clickhouse-server:25.12@sha256:8a790dd3468db22b1d4e7b18a176f378ff5ff6053b9c48dd4ea1fa71a24c5ba6
     user: "101:101"
     environment:
       CLICKHOUSE_DB: default
@@ -89,7 +100,7 @@ services:
       retries: 20
 
   minio:
-    image: cgr.dev/chainguard/minio
+    image: cgr.dev/chainguard/minio:latest@sha256:e234321fd3abff7fb968b0674056e883b702aa1ad93a0d4d795cb6c21fa46407
     entrypoint: sh
     command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" /data'
     environment:
@@ -102,7 +113,7 @@ services:
       retries: 20
 
   redis:
-    image: docker.io/redis:7
+    image: docker.io/redis:7@sha256:b6b6e3dc0c0952737748e55d5d885272840c7e42ba41ab1d5489f693419882f5
     command: --requirepass ${REDIS_AUTH:?} --maxmemory-policy noeviction
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_AUTH:?}", "ping"]
@@ -111,7 +122,7 @@ services:
       retries: 10
 
   postgres:
-    image: docker.io/postgres:17
+    image: docker.io/postgres:17@sha256:31ba9c94a03ada9988f2bb493a22a75eef3a185884533e5cdbcd498ea835b08f
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
@@ -126,12 +137,14 @@ services:
   # healthcheck; `stack.sh wait` polls the Jaeger UI and the Collector's health_check extension
   # (13133) from the host instead. Jaeger v2's all-in-one config takes OTLP gRPC on 4317.
   jaeger:
-    image: docker.io/jaegertracing/jaeger:2.21.0
+    <<: *hardening
+    image: docker.io/jaegertracing/jaeger:2.21.0@sha256:3d0ac795ff98aa04d1be04311d2dac6c25b4bfc8322dc02e53bc5b170c5018c3
     ports:
       - 127.0.0.1:16686:16686
 
   otel-collector:
-    image: docker.io/otel/opentelemetry-collector-contrib:0.163.2
+    <<: *hardening
+    image: docker.io/otel/opentelemetry-collector-contrib:0.163.2@sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849
     command: ["--config=/etc/otelcol/config.yaml"]
     depends_on:
       langfuse-web:

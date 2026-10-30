@@ -194,6 +194,13 @@ class LimitsSpec(BaseModel):
     - `uncorrelated_tokens_per_minute: 20000` (PoC-5, plan section 2.12, H16): the per-replica
       token bucket for model calls on the loopback model proxy that name no run in flight; past
       it, 429 `budget_exhausted`. `0` refuses every uncorrelated call. Reloadable.
+    - The rate limit per caller (PoC-8, 022 H-6; `chassis.server.rate_limit`): a token bucket per
+      agent and per caller (the `Principal` subject) in `StatePort`, so every replica shares it.
+      `rate_limit: true` (on by default: the defaults are generous, and it counts only callers
+      with a checked identity, so auth off changes nothing), `requests_per_minute: 600` (the
+      refill rate), `request_burst: 100` (the bucket size), `rate_limit_on_unavailable:
+      fail_open` (a store outage lets the call through and is counted; `fail_closed` answers 503
+      `state_unavailable`). Past it, 429 `rate_limited` with `Retry-After`. Reloadable.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -202,6 +209,10 @@ class LimitsSpec(BaseModel):
     body_bytes_max: int = Field(default=1_048_576, ge=1)
     messages_max: int = Field(default=256, ge=1)
     uncorrelated_tokens_per_minute: int = Field(default=20_000, ge=0)
+    rate_limit: bool = True
+    requests_per_minute: int = Field(default=600, ge=1)
+    request_burst: int = Field(default=100, ge=1)
+    rate_limit_on_unavailable: Literal["fail_open", "fail_closed"] = "fail_open"
 
 
 TTL_S_MAX = 2_592_000
@@ -289,8 +300,18 @@ class GuardrailsSpec(BaseModel):
     tool_output: bool = True
     """A tool's result on the proxy port, before the workload reads it."""
     output: bool = True
-    """The answer of a complete call, before it leaves. A stream is checked by LiteLLM only."""
+    """The answer of a complete call, before it leaves, through `GuardrailPort`."""
     on_unavailable: Literal["fail_closed", "fail_open"] = "fail_closed"
+    stream_secrets: bool = True
+    """PoC-8: a streamed answer is checked in the chassis for secret-shaped values (regex, no
+    port call); a match closes the stream with `guardrail_blocked` before the value leaves
+    (`chassis.server.stream_guard`). On with any guardrail adapter, `none` included."""
+    output_url_allow: list[str] = Field(default_factory=list)
+    """PoC-8: the hosts a markdown or HTML image or link in an answer may point to, complete and
+    streamed. Any other absolute URL is removed from the answer (`chassis.server.output_filter`).
+    An entry is a host (`docs.example.com`), a subdomain wildcard (`*.example.com`), or `*` (every
+    host: the check is off). The default, empty, removes every absolute URL in a link or image:
+    default-deny, as egress is. A relative link stays."""
 
 
 class HarnessSpec(BaseModel):
@@ -330,15 +351,32 @@ class FeedbackSpec(BaseModel):
     score_name: str = "user-feedback"
 
 
+class ModelPrice(BaseModel):
+    """One route's price in USD per million tokens (PoC-8). suggested: the unit. LiteLLM's own
+    spend stays the bill; this is the dashboard's estimate."""
+
+    model_config = ConfigDict(extra="forbid")
+    input_per_mtok: float = Field(default=0, ge=0)
+    output_per_mtok: float = Field(default=0, ge=0)
+
+
 class ObservabilitySpec(BaseModel):
     """`spec.observability` (PoC-7, 014 H-7). suggested: every name and default. Restart-only.
 
     - `session_header: x-session-id`: the request header whose value is the session id on spans
       and in baggage. The user id is the caller's `Principal.subject`, never a header.
+    - `log_level: info` (PoC-8): the level of the chassis's JSON log lines (`chassis.logs`).
+    - `metrics_scope: null` (PoC-8): the scope `GET /metrics` needs. Unset, a scraper needs no
+      token, as for `/health`; set, the caller needs a valid token with that scope.
+    - `prices` (PoC-8): USD per million tokens per model route, for
+      `chassis_model_cost_microusd_total`. A route with no price counts no cost.
     """
 
     model_config = ConfigDict(extra="forbid")
     session_header: str = "x-session-id"
+    log_level: Literal["debug", "info", "warning", "error"] = "info"
+    metrics_scope: str | None = None
+    prices: dict[str, ModelPrice] = Field(default_factory=dict)
 
 
 RiskClass = Literal["minimal", "limited", "high"]

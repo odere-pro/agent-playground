@@ -41,6 +41,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from chassis.adapters.ai_marking import marked, with_marking
 from chassis.adapters.openai_compat.messages import (
     UnsupportedMessage,
     is_empty,
@@ -61,6 +62,8 @@ from chassis.adapters.openai_compat.types import (
 from chassis.core.envelope import Budget, Request, Response, TaskInput
 from chassis.core.events import Delta, Error, Event
 from chassis.core.inbound import (
+    ENGINE_ERROR,
+    NO_END_MESSAGE,
     Ids,
     Interface,
     Refused,
@@ -69,9 +72,15 @@ from chassis.core.inbound import (
     Served,
     StreamReply,
     answer_text,
+    id_headers,
+    over_cap,
     public_message,
     rest_of_answer,
+    retry_header,
+    run_failure,
     status_for,
+    task_input,
+    token_counts,
 )
 
 __all__ = [
@@ -202,10 +211,10 @@ class OpenAIInbound:
             if refused(plain.get(param)):
                 raise self._refused(ids, "unsupported_parameter", why, param)
         messages = plain.get("messages")
-        cap = self.messages_max
-        if cap is not None and isinstance(messages, list) and len(messages) > cap:
-            why = f"messages: {len(messages)} is more than the limit of {cap}"
-            raise self._refused(ids, "limit_exceeded", why, "messages")
+        if isinstance(messages, list):
+            over = over_cap(len(messages), self.messages_max, "messages")
+            if over is not None:
+                raise self._refused(ids, "limit_exceeded", over, "messages")
         try:
             task = self._task_input(messages)
         except UnsupportedMessage as exc:
@@ -283,12 +292,7 @@ class OpenAIInbound:
             raise UnsupportedMessage(
                 f"messages[{last}].role", "the last message must be a user message"
             )
-        data: dict[str, Any] = {}
-        if system:
-            data["system"] = "\n".join(system)
-        if len(turns) > 1:
-            data["history"] = turns[:-1]
-        return TaskInput(text=turns[-1]["text"], data=data)
+        return task_input(turns[-1]["text"], system, turns[:-1])
 
     def _budget(self, plain: Mapping[str, Any], ids: Ids) -> Budget:
         completion, legacy = plain.get("max_completion_tokens"), plain.get("max_tokens")
@@ -321,10 +325,7 @@ class OpenAIInbound:
         `error` with no `error` event) is an HTTP error.
         """
         if response.status == "error":
-            found = response.output.get("error")
-            error = found if isinstance(found, Mapping) else {}
-            code = str(error.get("code") or "engine_error")
-            message = public_message(code) if error else "the run ended without an end event"
+            code, message = run_failure(response)
             return self.error(code, message, False, meta)
         completion = ChatCompletion(
             id=_completion_id(meta),
@@ -343,8 +344,9 @@ class OpenAIInbound:
             ],
             usage=_usage(response.metrics),
         )
-        headers = {**_id_headers(meta.ids), "x-chassis-status": response.status}
-        return Reply(200, headers, completion.model_dump(mode="json", exclude_unset=True))
+        headers = {**id_headers(meta.ids), "x-chassis-status": response.status}
+        body = with_marking(completion.model_dump(mode="json", exclude_unset=True), meta)
+        return Reply(200, headers, body)
 
     def stream(self, events: AsyncIterator[Event], meta: ReplyMeta) -> StreamReply:
         include_usage = meta.options.get(INCLUDE_USAGE) is True
@@ -373,9 +375,8 @@ class OpenAIInbound:
                     yield _DONE
                     return
             response = await meta.collect(seen)
-            if response.status == "error":
-                message = "the run ended without an end event"
-                yield self._error_frame("engine_error", message, False, meta)
+            if response.status == "error":  # no `end` and no `error`: the run did not finish
+                yield self._error_frame(ENGINE_ERROR, NO_END_MESSAGE, False, meta)
                 yield _DONE
                 return
             rest = rest_of_answer(response.output, "".join(sent))
@@ -389,7 +390,7 @@ class OpenAIInbound:
                 yield chunk(ChoiceDelta(), finish=True, usage=usage)
             yield _DONE
 
-        return StreamReply(frames(), _id_headers(meta.ids))
+        return StreamReply(frames(), id_headers(meta.ids))
 
     def error(self, code: str, message: str, retryable: bool, meta: ReplyMeta) -> Reply:
         return self._error(code, message, retryable, meta.ids, None)
@@ -397,7 +398,7 @@ class OpenAIInbound:
     @staticmethod
     def _error(code: str, message: str, retryable: bool, ids: Ids, param: str | None) -> Reply:
         status = status_for(code, retryable)
-        headers = {**_id_headers(ids), "x-should-retry": "true" if retryable else "false"}
+        headers = {**id_headers(ids), **retry_header(retryable)}
         return Reply(status, headers, _error_body(code, message, retryable, param, status))
 
     def _error_frame(self, code: str, message: str, retryable: bool, meta: ReplyMeta) -> str:
@@ -413,12 +414,8 @@ def _completion_id(meta: ReplyMeta) -> str:
     return f"chatcmpl-{meta.ids.request_id}"
 
 
-def _id_headers(ids: Ids) -> dict[str, str]:
-    return {"x-request-id": ids.request_id, "x-trace-id": ids.trace_id}
-
-
 def _usage(metrics: Mapping[str, Any]) -> CompletionUsage:
-    prompt, completion = int(metrics.get("input_tokens", 0)), int(metrics.get("output_tokens", 0))
+    prompt, completion = token_counts(metrics)
     return CompletionUsage(
         prompt_tokens=prompt, completion_tokens=completion, total_tokens=prompt + completion
     )
@@ -451,4 +448,7 @@ def _chunk_frame(
         choices=choices,
         **fields,
     )
-    return f"data: {chunk.model_dump_json(exclude_unset=True)}\n\n"
+    if not marked(meta):
+        return f"data: {chunk.model_dump_json(exclude_unset=True)}\n\n"
+    body = with_marking(chunk.model_dump(mode="json", exclude_unset=True), meta)
+    return f"data: {json.dumps(body, separators=(',', ':'), ensure_ascii=False)}\n\n"

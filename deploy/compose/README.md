@@ -14,6 +14,7 @@ The Compose stacks for the PoCs. The PoC-1 stack (chassis, LiteLLM, fake model s
 | `docker-compose.scale-dapr.yaml` | PoC-4 overlay: a daprd sidecar in each pair; components in `dapr/` |
 | `traefik/poc04.yaml` | Traefik's routes: the four chassis, health check on `/ready` |
 | `scale.sh` | The one entry point for the scale stack: `build`, `up`, `down`, `ps`, `logs` |
+| `poc07/` | PoC-7 stack, project `poc07`: Langfuse v4, an OTel Collector, Jaeger v2 (`stack.sh`) |
 
 ## Sidecar variant (PoC-2)
 
@@ -96,6 +97,33 @@ curl -s 127.0.0.1:18080/ready
 Every `up` starts from a clean project: earlier pairs, daprd, and Valkey data are removed first. The chassis config is picked by `CHASSIS_CONFIG`, which `scale.sh` sets: `packages/chassis/configs/scale.yaml` (sidecar), `scale-kafka.yaml`, `scale-dapr.yaml`, or `scale-inprocess.yaml`. Each chassis runs `chassis serve --drain-delay-s 3 --drain-timeout-s 30`, and each Python workload `workload-a2a serve --drain-timeout-s 30` (TypeScript: `DRAIN_TIMEOUT_MS=30000`). To stop a pair without failing a request, send SIGTERM to the chassis first (`docker kill -s TERM poc04-chassis-2-1`), wait for it to exit, then stop the workload: `docker compose stop` stops the workload first, which is the wrong order (plan, section 6).
 
 Render without a daemon, with dummy secrets: `VALKEY_PASSWORD=x MINIO_ROOT_PASSWORD=x CHASSIS_S3_ACCESS_KEY=x CHASSIS_S3_SECRET_KEY=x DAPR_API_TOKEN=x APP_API_TOKEN=x docker compose -p poc04 -f docker-compose.scale.yaml --profile pairs4 config`. The Dapr overlay needs `--profile events` (daprd depends on Kafka). The offline checks are `pocs/poc-04-stateless-scalable/tests/test_read_only_compose.py`.
+
+## PoC-7 stack
+
+`poc07/docker-compose.yaml` is a file of its own, project `poc07`. It runs Langfuse v4 (web, worker, ClickHouse, MinIO, Redis, Postgres), an OTel Collector, and Jaeger v2. The chassis sends OTLP to the Collector. The Collector sends the same spans to Langfuse and to Jaeger. Every port binds `127.0.0.1`. Plan: `docs/plans/2026-10-28-poc-07-cross-cutting.md`, criterion 1.
+
+Use `stack.sh`, never a bare `docker compose`. It makes every credential into the git-ignored `poc07/.env.poc07` (mode 600) and passes `-p poc07` on every call.
+
+```bash
+deploy/compose/poc07/stack.sh up      # start the stack
+deploy/compose/poc07/stack.sh wait    # poll Langfuse, Jaeger, and the Collector from the host
+deploy/compose/poc07/stack.sh down    # project poc07 only
+```
+
+`stack.sh digests` prints each image's current digest, to bump the pins. CI runs the stack in `.github/workflows/poc07-stack.yml`. The offline checks are `pocs/poc-07-cross-cutting-decisions/tests/test_poc07_stack_static.py`.
+
+**Hardening.** `jaeger` and `otel-collector` use the same `x-hardening` block as the scale stack: `cap_drop: [ALL]`, `no-new-privileges`, `read_only: true`, and a tmpfs for `/tmp`. Both keep data in memory only. The Collector holds `LANGFUSE_AUTH`.
+
+**Deviations.** These services run without the hardening block. Each image is third party, and what it writes or needs was not checked with a run:
+
+- `langfuse-web`: the Langfuse image; its writes and needed capabilities are not checked.
+- `langfuse-worker`: the same image family as `langfuse-web`; not checked.
+- `clickhouse`: writes its data and logs inside the container; not checked.
+- `minio`: its entrypoint runs `mkdir` and writes `/data` in the container.
+- `redis`: writes its data directory in the container; not checked.
+- `postgres`: its entrypoint runs `initdb` and may switch users, which needs capabilities.
+
+**MinIO image.** This stack uses `cgr.dev/chainguard/minio`, the image Langfuse's own compose file names. The scale stack uses `pgsty/minio`, because MinIO stopped publishing its own images. The two were not compared.
 
 ## PoC-6: the one Mac command
 

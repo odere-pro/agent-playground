@@ -25,6 +25,7 @@ PORTS = {
 
 @pytest.mark.parametrize("port", sorted(PORTS))
 def test_each_new_port_has_a_default_a_fake_and_a_suite(port: str) -> None:
+    """Ports scope: "each with a fake and a contract suite", plus a no-op default."""
     protocol, suite, fake = PORTS[port]
     assert protocol in PortBundle.__annotations__[port]
     assert {"none", fake} <= set(REGISTRY[port])
@@ -33,6 +34,7 @@ def test_each_new_port_has_a_default_a_fake_and_a_suite(port: str) -> None:
 
 
 def test_each_fake_is_bound_to_its_suite() -> None:
+    """Ports scope: "each with a fake and a contract suite"; each fake binds its suite."""
     tree = ast.parse((ROOT / "packages/chassis/tests/test_contracts_poc07.py").read_text())
     bases = {
         base.id

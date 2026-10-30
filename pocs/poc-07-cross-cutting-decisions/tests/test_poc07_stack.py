@@ -191,6 +191,7 @@ def _emit_run(trace_id: str) -> None:
 def test_same_spans_reach_langfuse_and_jaeger_through_the_collector(
     langfuse: httpx.Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Criterion 1: "the same spans reach Langfuse and a second OpenTelemetry backend"."""
     _export_to(monkeypatch, COLLECTOR)
     trace_id = uuid.uuid4().hex
     _emit_run(trace_id)
@@ -206,6 +207,7 @@ def test_same_spans_reach_langfuse_and_jaeger_through_the_collector(
 def test_swap_to_direct_langfuse_by_exporter_config_only(
     langfuse: httpx.Client, keys: _Keys, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Criterion 1: "Telemetry swap shown": straight to Langfuse "by exporter config only"."""
     # Only OTEL_EXPORTER_OTLP_* change: straight to Langfuse's OTLP endpoint, Basic auth and the
     # v4 ingestion header (the Python SDK URL-decodes header values, so the space is %20).
     _export_to(
@@ -291,6 +293,7 @@ class TestLangfuseFeedbackOnTheStack(FeedbackPortContract):
 async def test_chassis_feedback_lands_on_the_run_trace(
     langfuse: httpx.Client, langfuse_env: _Keys, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Feedback scope: "onto the call's trace", on a real Langfuse."""
     from chassis.profiles import REGISTRY
     from chassis.server import ChassisConfig, create_app
 

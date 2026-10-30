@@ -46,6 +46,7 @@ def _shape(value: Any) -> Any:
 
 
 def test_the_golden_set_has_20_labelled_cases() -> None:
+    """Evals scope: "each tried on the same 20 golden cases"; each case is labelled."""
     cases = load_cases()
     assert len(cases) == GOLDEN_SIZE == 20
     assert all(c.label in ("pass", "fail") for c in cases)
@@ -55,6 +56,7 @@ def test_the_golden_set_has_20_labelled_cases() -> None:
 
 @pytest.mark.parametrize("engine", ENGINES)
 def test_the_picked_tool_report_is_eval_report_v0_with_one_row_per_case(engine: str) -> None:
+    """Criterion 8: "One eval tool is picked for CI"; its report is `eval-report.v0`."""
     report = _load(f"{PICKED}-{engine}.json")
     validate_report(report)
     assert report["schema"] == SCHEMA_ID
@@ -66,6 +68,7 @@ def test_the_picked_tool_report_is_eval_report_v0_with_one_row_per_case(engine: 
 
 
 def test_both_engines_give_the_same_report_format() -> None:
+    """Criterion 8: "it produces the same report format for every engine"."""
     first, second = (_load(f"{PICKED}-{engine}.json") for engine in ENGINES)
     assert _shape(first) == _shape(second)
     assert [c["id"] for c in first["cases"]] == [c["id"] for c in second["cases"]]
@@ -76,12 +79,15 @@ def test_both_engines_give_the_same_report_format() -> None:
 
 
 def test_the_raw_tool_reports_share_their_keys() -> None:
+    """Criterion 8: "the same report format for every engine", for raw reports too."""
     first, second = (_load(f"{PICKED}-{engine}.raw.json") for engine in ENGINES)
     assert _shape(first) == _shape(second)
 
 
 def test_same_cases_pass_on_both_engines_and_match_the_labels_but_one() -> None:
-    """The scripted model answers the same way on both engines, so the verdicts agree; the
+    """Criterion 8: "the same report format for every engine", and the same verdicts too.
+
+    The scripted model answers the same way on both engines, so the verdicts agree; the
     scripted judge disagrees with the human label on g08 only (a false fail)."""
     cases = {c.id: c for c in load_cases()}
     verdicts = [{c["id"]: c["pass"] for c in _load(f"{PICKED}-{e}.json")["cases"]} for e in ENGINES]
