@@ -104,7 +104,7 @@ Spec: "given the split files, when `pytest packages/chassis packages/contract-su
 Status: open
 
 ### R1-11 [MEDIUM] [simple] packages/chassis/src/chassis/tracecontext.py:13
-Problem: W3C `traceparent` logic lives in two modules: this file re-declares `TRACEPARENT_LEN = 55` next to `core/trace.py`'s `_TRACEPARENT_LEN`, and neither `tracecontext.py` nor `core/trace.py` has a direct test (`parse_traceparent` is tested only through the `server.correlation` re-export).
+Problem: W3C `traceparent` logic lives in two modules: this file redeclares `TRACEPARENT_LEN = 55` next to `core/trace.py`'s `_TRACEPARENT_LEN`, and neither `tracecontext.py` nor `core/trace.py` has a direct test (`parse_traceparent` is tested only through the `server.correlation` re-export).
 Why it matters: A change to version handling must be made twice, and the 55-character cut, lowercasing, and `None` path are unpinned.
 Fix: First add `test_trace.py` with parametrized cases importing from `chassis.core.trace`, then move `continued` and `parent_span_id` into `core/trace.py` and update the three importers.
 Keeps behavior: yes.

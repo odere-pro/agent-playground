@@ -167,7 +167,7 @@ Status: open
 
 ### R0-18 [MEDIUM] [tests] [shared] pyproject.toml:75
 Problem: Pytest runs without `--strict-markers`. There is no `addopts`, and `check_offline.sh:12` does not pass the flag either.
-Why it matters: A typo such as `@pytest.mark.netwrok` silently runs an online test inside the offline gate instead of failing at collection.
+Why it matters: A typo such as `@pytest.mark.netwrok` silently runs an online test inside the offline gate instead of failing at collection. <!-- codespell:ignore -->
 Fix: Pass `--strict-markers` in `check_offline.sh` and `check_integration.sh`. Keeps behavior: yes (every marker in use is registered; verify with one collect run).
 Spec: "given a test with an unregistered marker, when `make test` collects it, then collection fails."
 Status: open
