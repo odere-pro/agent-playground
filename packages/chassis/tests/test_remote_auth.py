@@ -70,11 +70,11 @@ def _client(app: Any) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://chassis")
 
 
-def _run() -> tuple[Request, Context]:
+def _run(request_id: str = "req-remote", trace: str = TRACE) -> tuple[Request, Context]:
     request = Request(
-        request_id="req-remote",
-        trace_id=TRACE,
-        idempotency_key="idem-remote",
+        request_id=request_id,
+        trace_id=trace,
+        idempotency_key=f"idem-{request_id}",
         agent="echo",
         agent_version="0.0.1",
         input=TaskInput(text="x"),
@@ -117,10 +117,11 @@ async def test_no_token_and_a_wrong_token_are_401_with_one_body(
             json=BODY,
             headers={"Authorization": f"Basic {CURRENT}", "traceparent": TRACEPARENT},
         )
-    for response in (missing, wrong, not_bearer):
-        assert response.status_code == 401
-        assert response.json() == UNAUTHENTICATED
-        assert response.headers["www-authenticate"] == "Bearer"
+    refusals = [
+        (r.status_code, r.json(), r.headers["www-authenticate"])
+        for r in (missing, wrong, not_bearer)
+    ]
+    assert refusals == [(401, UNAUTHENTICATED, "Bearer")] * 3
     assert missing.content == wrong.content == not_bearer.content
     model = ports.model
     assert isinstance(model, ScriptedModel) and model.calls == [], "the model was never called"
@@ -156,39 +157,39 @@ async def test_the_right_token_inside_a_run_is_200_and_charged_to_the_run(
     assert CURRENT not in caplog.text and PREVIOUS not in caplog.text
 
 
-async def test_the_right_token_with_no_run_is_403_run_required() -> None:
+@pytest.mark.parametrize(
+    ("path", "body", "traceparent"),
+    [
+        ("/v1/chat/completions", BODY, None),
+        ("/v1/chat/completions", BODY, OTHER),
+        ("/v1/chat/completions", BODY, "not-a-traceparent"),
+        ("/mcp", {}, OTHER),
+    ],
+    ids=["no-header", "unknown", "bad", "tools"],
+)
+async def test_the_right_token_with_no_run_is_403_run_required(
+    path: str, body: dict[str, Any], traceparent: str | None
+) -> None:
     """H17: a remote holding the token cannot spend outside a run the chassis opened."""
     public, remote, ports = _app()
     request, ctx = _run()
+    headers = {"Authorization": f"Bearer {CURRENT}"}
+    if traceparent is not None:
+        headers["traceparent"] = traceparent
     async with (
         _client(remote) as client,
         public.router.lifespan_context(public),
         public.state.runs.register(request, ctx),
     ):
-        no_header = await client.post(
-            "/v1/chat/completions", json=BODY, headers={"Authorization": f"Bearer {CURRENT}"}
-        )
-        unknown = await client.post(
-            "/v1/chat/completions",
-            json=BODY,
-            headers={"Authorization": f"Bearer {CURRENT}", "traceparent": OTHER},
-        )
-        bad = await client.post(
-            "/v1/chat/completions",
-            json=BODY,
-            headers={"Authorization": f"Bearer {CURRENT}", "traceparent": "not-a-traceparent"},
-        )
-        tools = await client.post(
-            "/mcp", json={}, headers={"Authorization": f"Bearer {CURRENT}", "traceparent": OTHER}
-        )
-    for response in (no_header, unknown, bad, tools):
-        assert response.status_code == 403, response.text
-        assert response.json()["error"]["code"] == "run_required"
+        response = await client.post(path, json=body, headers=headers)
+    assert response.status_code == 403, response.text
+    assert response.json()["error"]["code"] == "run_required"
     model = ports.model
     assert isinstance(model, ScriptedModel) and model.calls == []
 
 
 async def test_after_the_run_ends_its_traceparent_is_403() -> None:
+    """A run's traceparent is let in during the run and 403 after it ends."""
     public, remote, _ = _app()
     request, ctx = _run()
     async with _client(remote) as client, public.router.lifespan_context(public):
@@ -198,7 +199,10 @@ async def test_after_the_run_ends_its_traceparent_is_403() -> None:
     assert (inside.status_code, after.status_code) == (200, 403)
 
 
-async def test_dapr_docs_and_other_paths_are_404_even_with_the_token() -> None:
+@pytest.mark.parametrize(
+    "path", ["/dapr/subscribe", "/dapr/events/x", "/docs", "/openapi.json", "/v1/run"]
+)
+async def test_dapr_docs_and_other_paths_are_404_even_with_the_token(path: str) -> None:
     """The remote app is an explicit list of routes: only the model proxy and `/mcp`."""
     public, remote, _ = _app()
     request, ctx = _run()
@@ -207,10 +211,9 @@ async def test_dapr_docs_and_other_paths_are_404_even_with_the_token() -> None:
         public.router.lifespan_context(public),
         public.state.runs.register(request, ctx),
     ):
-        for path in ("/dapr/subscribe", "/dapr/events/x", "/docs", "/openapi.json", "/v1/run"):
-            response = await client.get(path, headers=_auth(CURRENT))
-            assert response.status_code == 404, path
+        response = await client.get(path, headers=_auth(CURRENT))
         unauthenticated = await client.get("/dapr/subscribe")
+    assert response.status_code == 404
     assert unauthenticated.status_code == 401, "auth comes before routing"
     paths = {getattr(route, "path", None) for route in remote.routes}
     assert "/mcp" in paths
@@ -230,8 +233,7 @@ def _route_paths(routes: Any) -> set[str]:
 
 
 def test_the_remote_listener_route_list_is_pinned() -> None:
-    """Contract v5, A.6: exactly the chat route, the Anthropic proxy route, and `/mcp`. A route
-    added later fails here, on purpose."""
+    """The remote listener serves exactly chat, Anthropic proxy, and `/mcp` (v5 A.6)."""
     _, remote, _ = _app()
     assert _route_paths(remote.routes) == {"/v1/chat/completions", "/v1/messages", "/mcp"}
 
@@ -240,8 +242,7 @@ ANTHROPIC_PATH = "/v1/messages"
 
 
 async def test_the_anthropic_proxy_route_refusals_are_in_the_anthropic_body() -> None:
-    """Contract v5, A.8: 401 and 403 on `/v1/messages` use Anthropic's error shape, and the chat
-    route keeps v4's bytes. `x-api-key` alone is not a credential."""
+    """401 and 403 on the Anthropic proxy route use Anthropic's error body (v5 A.8)."""
     public, remote, _ = _app()
     request, ctx = _run()
     anthropic_body = {**BODY, "max_tokens": 32}
@@ -266,17 +267,22 @@ async def test_the_anthropic_proxy_route_refusals_are_in_the_anthropic_body() ->
         )
         chat = await client.post("/v1/chat/completions", json=BODY)
         inside = await client.post(ANTHROPIC_PATH, json=anthropic_body, headers=_auth(CURRENT))
-    for response in (none, key_only, both):
-        assert response.status_code == 401
-        data = response.json()
-        assert data["type"] == "error"
-        assert data["error"] == {
-            "type": "authentication_error",
-            "message": "remote_unauthenticated: missing or invalid bearer token",
-        }
-        assert data["request_id"] == response.headers["request-id"]
-        assert response.headers["www-authenticate"] == "Bearer"
-        assert response.headers["x-should-retry"] == "false"
+    refusals = [
+        (
+            r.status_code,
+            r.json()["type"],
+            r.json()["error"],
+            r.json()["request_id"] == r.headers["request-id"],
+            r.headers["www-authenticate"],
+            r.headers["x-should-retry"],
+        )
+        for r in (none, key_only, both)
+    ]
+    refused = {
+        "type": "authentication_error",
+        "message": "remote_unauthenticated: missing or invalid bearer token",
+    }
+    assert refusals == [(401, "error", refused, True, "Bearer", "false")] * 3
     assert no_run.status_code == 403
     assert no_run.json()["error"] == {
         "type": "permission_error",
@@ -291,9 +297,9 @@ async def test_the_anthropic_proxy_route_refusals_are_in_the_anthropic_body() ->
     assert inside.json()["content"] == [{"type": "text", "text": "Plain words."}]
 
 
-async def test_count_tokens_and_models_are_404_with_a_token_and_401_without() -> None:
-    """Auth comes first. `count_tokens` is the Anthropic 404 once authenticated, but its 401 keeps
-    v4's body: the middlewares test the exact path `/v1/messages` (contract v5, A.8)."""
+@pytest.mark.parametrize("path", ["/v1/messages/count_tokens", "/v1/models"])
+async def test_count_tokens_and_models_are_404_with_a_token_and_401_without(path: str) -> None:
+    """Auth comes first: 404 with the token, and v4's 401 body without it (contract v5, A.8)."""
     public, remote, _ = _app()
     request, ctx = _run()
     async with (
@@ -301,16 +307,16 @@ async def test_count_tokens_and_models_are_404_with_a_token_and_401_without() ->
         public.router.lifespan_context(public),
         public.state.runs.register(request, ctx),
     ):
-        for path in ("/v1/messages/count_tokens", "/v1/models"):
-            allowed = await client.post(path, json={}, headers=_auth(CURRENT))
-            denied = await client.post(path, json={})
-            assert allowed.status_code == 404, path
-            assert denied.status_code == 401 and denied.json() == UNAUTHENTICATED, path
+        allowed = await client.post(path, json={}, headers=_auth(CURRENT))
+        denied = await client.post(path, json={})
         counted = await client.post("/v1/messages/count_tokens", json={}, headers=_auth(CURRENT))
+    assert allowed.status_code == 404
+    assert denied.status_code == 401 and denied.json() == UNAUTHENTICATED
     assert counted.json()["error"]["type"] == "not_found_error"
 
 
 async def test_a_websocket_to_the_anthropic_proxy_route_is_closed_with_1008() -> None:
+    """A websocket to the Anthropic proxy route is closed with 1008."""
     _, remote, _ = _app()
     sent: list[Any] = []
 
@@ -351,6 +357,7 @@ async def test_the_mcp_route_is_served_inside_a_run() -> None:
 
 
 async def test_the_authorization_header_is_stripped_before_the_route() -> None:
+    """`BearerAuth` strips `Authorization` before the route sees the request."""
     seen: list[list[tuple[bytes, bytes]]] = []
 
     async def inner(scope: Scope, receive: Receive, send: Send) -> None:
@@ -366,6 +373,7 @@ async def test_the_authorization_header_is_stripped_before_the_route() -> None:
 
 
 def test_bearer_auth_needs_a_token() -> None:
+    """`BearerAuth` refuses an empty token list and an empty token."""
     with pytest.raises(ValueError, match="at least one token"):
         BearerAuth(lambda *_: None, (), state=None)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="at least one token"):
@@ -375,6 +383,7 @@ def test_bearer_auth_needs_a_token() -> None:
 def test_remote_tokens_reads_the_named_variables_and_never_shows_a_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """`remote_tokens` reads the named variables and never shows a value."""
     auth = {"scheme": "bearer", "token_env": "REMOTE_TOKEN", "previous_token_env": "REMOTE_OLD"}
     monkeypatch.setenv("REMOTE_TOKEN", CURRENT)
     monkeypatch.setenv("REMOTE_OLD", PREVIOUS)
@@ -422,24 +431,62 @@ def _wrapped(inner: _Recorder) -> list[Any]:
     ]
 
 
-@pytest.mark.parametrize("kind", ["websocket", "webtransport", "something-else"])
-async def test_non_http_scopes_are_refused_and_never_reach_the_app(kind: str) -> None:
+@pytest.mark.parametrize("middleware_index", [0, 1], ids=["bearer-auth", "require-run"])
+@pytest.mark.parametrize(
+    ("kind", "headers", "want"),
+    [
+        (
+            "websocket",
+            [(b"authorization", f"Bearer {CURRENT}".encode())],
+            [{"type": "websocket.close", "code": 1008}],
+        ),
+        ("webtransport", [], []),
+        ("something-else", [], []),
+    ],
+    ids=["websocket", "webtransport", "something-else"],
+)
+async def test_non_http_scopes_are_refused_and_never_reach_the_app(
+    kind: str, headers: list[tuple[bytes, bytes]], want: list[Any], middleware_index: int
+) -> None:
     """F4: every scope but http and lifespan is refused; a websocket is closed with 1008."""
-    for middleware_index in (0, 1):
-        inner = _Recorder()
-        middleware = _wrapped(inner)[middleware_index]
-        scope: Scope = {"type": kind, "headers": [], "path": "/mcp"}
-        if kind == "websocket":
-            scope["headers"] = [(b"authorization", f"Bearer {CURRENT}".encode())]
-        sent = await _drive(middleware, scope)
-        assert inner.scopes == [], "the inner app was never called"
-        if kind == "websocket":
-            assert sent == [{"type": "websocket.close", "code": 1008}]
-        else:
-            assert sent == []
+    inner = _Recorder()
+    middleware = _wrapped(inner)[middleware_index]
+    scope: Scope = {"type": kind, "headers": list(headers), "path": "/mcp"}
+    sent = await _drive(middleware, scope)
+    assert inner.scopes == [], "the inner app was never called"
+    assert sent == want
 
 
 async def test_lifespan_scope_passes_through() -> None:
+    """Both middlewares pass the lifespan scope to the app."""
     for middleware in _wrapped(inner := _Recorder()):
         await _drive(middleware, {"type": "lifespan"})
     assert inner.scopes == ["lifespan", "lifespan"]
+
+
+RUN_B_TRACE = "0af7651916cd43dd8448eb211c80319c"  # pragma: allowlist secret
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="R2-02 proposal: one shared bearer lets a remote act under any in-flight run; "
+    "needs a per-run secret",
+)
+async def test_require_run_refuses_another_runs_traceparent_when_two_runs_share_one_remote() -> (
+    None
+):
+    """A remote serving run A cannot spend under run B with the shared bearer and B's trace."""
+    public, remote, _ = _app()
+    run_a, ctx_a = _run("req-a", TRACE)
+    run_b, ctx_b = _run("req-b", RUN_B_TRACE)
+    headers = {"Authorization": f"Bearer {CURRENT}", "traceparent": OTHER}
+
+    async with (
+        _client(remote) as client,
+        public.router.lifespan_context(public),
+        public.state.runs.register(run_a, ctx_a),
+        public.state.runs.register(run_b, ctx_b),
+    ):
+        answer = await client.post("/v1/chat/completions", json=BODY, headers=headers)
+
+    assert answer.status_code == 403

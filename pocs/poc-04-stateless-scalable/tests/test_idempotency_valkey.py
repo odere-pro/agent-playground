@@ -1,5 +1,9 @@
-"""PoC-4 exit criterion 2 over a real Valkey: "A repeated call with the same `Idempotency-Key`
-returns the same result on any replica."
+"""PoC-4 exit criterion 2 over a real Valkey, in the README's words:
+
+"A repeated call with the same key returns the same result on any replica."
+
+This file covers "any replica" when the replicas share the result only through Valkey. "The same
+key" is the `Idempotency-Key` header the client sends.
 
 Two replicas, each with its own `ValkeyState` client to one Valkey in a container
 (`chassis_contracts.containers.valkey`), as two pods share one Valkey. The offline twin, with one

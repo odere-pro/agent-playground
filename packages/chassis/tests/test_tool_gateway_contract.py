@@ -19,13 +19,16 @@ import httpx2
 import pytest
 from chassis.adapters.mcp.gateway import (
     API_KEY_VAR,
+    MAX_TOOL_NAME,
     URL_VAR,
     McpGatewayTools,
     _failure,
 )
+from chassis.fakes import tool as chassis_fake_tools
 from chassis.ports.tool import ToolError
 from chassis_contracts.tool import KnownCall, ToolPortContract
 from fake_mcp_server import PROBE_MARKER, FakeMcpState, create_app
+from fake_mcp_server import server as fake_server
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError as FastMcpToolError
 from mcp.shared.exceptions import MCPError
@@ -48,6 +51,7 @@ class Gateway:
         self.list_fails_with: int | None = None
         self.delete_status: int | None = None
         self.requests = 0
+        self.lists = 0
         self.client_kwargs: list[dict[str, Any]] = []
 
     def factory(self, **kwargs: Any) -> httpx2.AsyncClient:
@@ -61,6 +65,8 @@ class _Transport(httpx2.AsyncBaseTransport):
 
     async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
         self.gate.requests += 1
+        if b'"tools/list"' in request.content:
+            self.gate.lists += 1
         if request.method == "DELETE" and self.gate.delete_status is not None:
             # A gateway in stateless mode refuses the session-close `DELETE`.
             return httpx2.Response(self.gate.delete_status, request=request)
@@ -499,3 +505,60 @@ def test_from_env_names_the_unset_variable(monkeypatch: pytest.MonkeyPatch, miss
 
 def test_names_are_the_plan_s() -> None:
     assert (URL_VAR, API_KEY_VAR) == ("LITELLM_MCP_URL", "LITELLM_API_KEY")
+
+
+async def test_unknown_names_refresh_the_list_once_when_inside_the_cooldown(
+    gateway_tools: McpGatewayTools, gate: Gateway
+) -> None:
+    """R5a-20: a flood of unlisted names sends at most one `tools/list` per cooldown."""
+    before = gate.lists
+
+    for index in range(20):
+        with pytest.raises(ToolError):
+            await gateway_tools.call(f"no_such_tool_{index}", {})
+
+    assert gate.lists - before == 1
+
+
+async def test_an_unknown_name_refreshes_again_when_the_cooldown_has_passed(gate: Gateway) -> None:
+    """R5a-20: after the cooldown, an unlisted name may refresh the list once more."""
+    now = [1000.0]
+    async for port in _open(gate):
+        port.clock = lambda: now[0]
+        before = gate.lists
+
+        with pytest.raises(ToolError):
+            await port.call("no_such_tool", {})
+        now[0] += port.unknown_refresh_cooldown_s
+        with pytest.raises(ToolError):
+            await port.call("no_such_tool", {})
+
+        assert gate.lists - before == 2
+
+
+async def test_a_name_over_the_cap_is_unknown_with_no_request_when_called(
+    gateway_tools: McpGatewayTools, gate: Gateway, caplog: pytest.LogCaptureFixture
+) -> None:
+    """R5a-20: a name longer than the cap is refused before any request and never logged."""
+    caplog.set_level(logging.DEBUG)
+    name = "x" * (MAX_TOOL_NAME + 1)
+    before = gate.requests
+
+    with pytest.raises(ToolError) as info:
+        await gateway_tools.call(name, {})
+
+    assert info.value.code == "unknown_tool"
+    assert gate.requests == before
+    assert name not in str(info.value)
+    assert all(name not in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.parametrize("table", ["GLOSSARY", "ACRONYMS"])
+def test_fake_server_data_matches_the_chassis_fake_when_compared(table: str) -> None:
+    """R5b-09: the fake MCP server's copy of the tool data never drifts from the chassis fake."""
+    chassis_table = getattr(chassis_fake_tools, table)
+    server_table = getattr(fake_server, table)
+
+    assert server_table == chassis_table, (
+        f"{table} differs: {set(server_table) ^ set(chassis_table)}"
+    )

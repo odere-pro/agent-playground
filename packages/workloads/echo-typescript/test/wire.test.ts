@@ -78,8 +78,8 @@ test("wire: task, then one frame per chassis event, JSON as the Python connector
     { schema_version: "0", type: "start", request_id: CTX.request_id },
     { schema_version: "0", type: "delta", text: "Plain " },
     { schema_version: "0", type: "delta", text: "words." },
-    { schema_version: "0", type: "metrics", input_tokens: 12, output_tokens: 3, model_route: "local-small", attempt: 1 },
-    { schema_version: "0", type: "end", status: "ok" },
+    { schema_version: "0", type: "metrics", input_tokens: 12, output_tokens: 3, cost_usd: null, latency_ms: null, model_route: "local-small", attempt: 1 },
+    { schema_version: "0", type: "end", status: "ok", output: null },
   ]);
   const deltas = results.flatMap((r) => (r["artifactUpdate"] ? [r["artifactUpdate"] as Json] : []));
   assert.deepEqual(deltas.map((d) => [(d["artifact"] as Json)["artifactId"], d["append"] ?? false]), [["output", false], ["output", true]]);

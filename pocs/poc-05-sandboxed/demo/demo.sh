@@ -56,7 +56,8 @@ test_unlisted_probe_is_refused_with_its_control|H08|call the unlisted probe tool
 test_h17_listener_answers_only_the_remote_token_inside_a_run|H17|model call to 8091, no or wrong token, or outside a run|refused: 401, 403|own token inside a run: 200
 test_litellm_refuses_the_workload_without_the_chassis_key|H05|workload calls LiteLLM, no or wrong key|refused: 401|through the chassis proxy: 200
 test_mcp_gateway_refuses_the_workload_without_the_chassis_key|H07|workload opens the MCP gateway, no or wrong key|refused: 401, no tool|through chassis /mcp: tool listed
-test_fixture_outcome_matches_its_header|ADM|apply --dry-run=server of the fixture|as its header says|the fixture's admitted twin
+test_rejected_fixture_is_refused_with_its_rule_message|ADM|apply --dry-run=server of a rejected fixture|refused: its rule message|its admitted twin
+test_admitted_twin_is_admitted|ADM|apply --dry-run=server of an admitted twin|admitted|its rejected fixture is refused
 test_code_runs_on_gvisor_with_no_egress|H28|run_python TCP to outside, LiteLLM, dispatcher, API|refused: policy drop|its own 127.0.0.1:8000; each target up from an allowed peer
 EOF
 )
@@ -163,7 +164,8 @@ count_lines() {
   fi
   step "5. Admission: every fixture through a server dry run"
   kind_tests admission \
-    "$TESTS/test_poc05_kind_admission.py::test_fixture_outcome_matches_its_header"
+    "$TESTS/test_poc05_kind_admission.py::test_rejected_fixture_is_refused_with_its_rule_message" \
+    "$TESTS/test_poc05_kind_admission.py::test_admitted_twin_is_admitted"
   step "6. The code runner: run_python on gVisor, no egress"
   kind_tests code-runner \
     "$TESTS/test_poc05_kind_code_runner.py::test_code_runs_on_gvisor_with_no_egress"

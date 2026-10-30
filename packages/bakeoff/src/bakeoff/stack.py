@@ -127,6 +127,101 @@ def _wait_ready(url: str, procs: list[Spawned], secrets_: list[str]) -> None:
     raise StackError("the chassis was not ready in time (/ready)")
 
 
+def _remote_ip(lane: Lane) -> str | None:
+    """The address the remote proxy listener binds in the `remote` lane, else None."""
+    if lane != "remote":
+        return None
+    remote_ip = non_loopback_ip()
+    if remote_ip is None:
+        raise StackError("no non-loopback IP address for the remote proxy listener")
+    return remote_ip
+
+
+def _endpoints(remote_ip: str | None, proxy_port: int, remote_port: int) -> tuple[str, str]:
+    """The model and tool URLs the workload calls: the remote listener, or the localhost proxy."""
+    if remote_ip is not None:
+        return f"http://{remote_ip}:{remote_port}/v1", f"http://{remote_ip}:{remote_port}/mcp"
+    return f"http://127.0.0.1:{proxy_port}/v1", f"http://127.0.0.1:{proxy_port}/mcp"
+
+
+def _spawn_workload(
+    engine: Engine,
+    lane: Lane,
+    cleanup: Cleanup,
+    work: Path,
+    *,
+    port: int,
+    urls: tuple[str, str],
+    token: str,
+) -> Spawned:
+    model_url, tool_url = urls
+    main_js = str(ROOT / TS_MAIN)
+    return cleanup.spawn(
+        engine.name,
+        workload_argv(engine, lane, port=port, main_js=main_js),
+        build_env(
+            work / "home",
+            workload_env_vars(
+                engine,
+                lane,
+                port=port,
+                model_url=model_url,
+                tool_url=tool_url,
+                token=token,
+            ),
+        ),
+        ROOT / TS_MAIN.parents[2] if engine.runner == "node" else ROOT,
+        work / "workload.log",
+    )
+
+
+def _spawn_chassis(
+    engine: Engine,
+    lane: Lane,
+    cleanup: Cleanup,
+    work: Path,
+    ports: tuple[int, int, int, int],
+    remote_ip: str | None,
+    fake: FakeModel | None,
+    token: str,
+    hosted: Hosted | None,
+    extras: Extras,
+) -> Spawned:
+    port, proxy_port, remote_port, workload_port = ports
+    config = chassis_config(
+        engine,
+        lane,
+        workload_port=None if lane == "inprocess" else workload_port,
+        route=hosted.route if hosted else "big-default",
+        adapters=dict(extras.adapters),
+    )
+    config_path = work / "chassis.yaml"
+    config_path.write_text(dump_config(config))
+    return cleanup.spawn(
+        "chassis",
+        chassis_argv(
+            str(config_path),
+            port=port,
+            proxy_port=proxy_port,
+            remote_ip=remote_ip,
+            remote_port=remote_port if remote_ip else None,
+        ),
+        build_env(
+            work / "home",
+            chassis_env_vars(
+                lane,
+                fake_port=fake.port if fake else 0,
+                proxy_port=proxy_port,
+                token=token,
+                hosted=hosted,
+            )
+            | dict(extras.chassis_env),
+        ),
+        ROOT,
+        work / "chassis.log",
+    )
+
+
 @contextmanager
 def running_stack(
     engine: Engine,
@@ -142,14 +237,9 @@ def running_stack(
     check_lane(engine, lane)
     if hosted is not None:
         check_hosted(engine)
-    remote_ip: str | None = None
-    if lane == "remote":
-        remote_ip = non_loopback_ip()
-        if remote_ip is None:
-            raise StackError("no non-loopback IP address for the remote proxy listener")
+    remote_ip = _remote_ip(lane)
     work = cleanup.tempdir()
-    home = work / "home"
-    home.mkdir()
+    (work / "home").mkdir()
     token = secrets.token_hex(16)
     extras = extras or Extras()
     fake = None if hosted else FakeModel(ROOT / engine.script, free_port(), extras.wrap)
@@ -158,63 +248,16 @@ def running_stack(
         if fake is not None:
             fake.start()
         port, proxy_port, remote_port, workload_port = (free_port() for _ in range(4))
-        if lane == "remote":
-            model_url = f"http://{remote_ip}:{remote_port}/v1"
-            tool_url = f"http://{remote_ip}:{remote_port}/mcp"
-        else:
-            model_url = f"http://127.0.0.1:{proxy_port}/v1"
-            tool_url = f"http://127.0.0.1:{proxy_port}/mcp"
         if lane != "inprocess":
-            main_js = str(ROOT / TS_MAIN)
-            workload = cleanup.spawn(
-                engine.name,
-                workload_argv(engine, lane, port=workload_port, main_js=main_js),
-                build_env(
-                    home,
-                    workload_env_vars(
-                        engine,
-                        lane,
-                        port=workload_port,
-                        model_url=model_url,
-                        tool_url=tool_url,
-                        token=token,
-                    ),
-                ),
-                ROOT / TS_MAIN.parents[2] if engine.runner == "node" else ROOT,
-                work / "workload.log",
-            )
-            children.append(workload)
-        config = chassis_config(
-            engine,
-            lane,
-            workload_port=None if lane == "inprocess" else workload_port,
-            route=hosted.route if hosted else "big-default",
-            adapters=dict(extras.adapters),
-        )
-        config_path = work / "chassis.yaml"
-        config_path.write_text(dump_config(config))
-        chassis = cleanup.spawn(
-            "chassis",
-            chassis_argv(
-                str(config_path),
-                port=port,
-                proxy_port=proxy_port,
-                remote_ip=remote_ip,
-                remote_port=remote_port if remote_ip else None,
-            ),
-            build_env(
-                home,
-                chassis_env_vars(
-                    lane,
-                    fake_port=fake.port if fake else 0,
-                    proxy_port=proxy_port,
-                    token=token,
-                    hosted=hosted,
+            urls = _endpoints(remote_ip, proxy_port, remote_port)
+            children.append(
+                _spawn_workload(
+                    engine, lane, cleanup, work, port=workload_port, urls=urls, token=token
                 )
-                | dict(extras.chassis_env),
-            ),
-            ROOT,
-            work / "chassis.log",
+            )
+        ports = (port, proxy_port, remote_port, workload_port)
+        chassis = _spawn_chassis(
+            engine, lane, cleanup, work, ports, remote_ip, fake, token, hosted, extras
         )
         children.append(chassis)
         _wait_ready(f"http://127.0.0.1:{port}", children, [token, hosted.key if hosted else ""])

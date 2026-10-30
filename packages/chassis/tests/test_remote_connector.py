@@ -108,6 +108,7 @@ async def _stuck(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[An
 
 
 async def test_echo_runs_over_the_remote_lane(token: str) -> None:
+    """Echo runs end to end over the remote lane with the bearer token."""
     request = make_request(text="over the remote lane")
     async with serve_uds(RequireBearer(_app(echo_wire), token)) as path:
         events = await _run(await _remote(path), request)
@@ -115,6 +116,7 @@ async def test_echo_runs_over_the_remote_lane(token: str) -> None:
 
 
 async def test_the_token_is_on_the_card_fetch_every_message_and_the_cancel(token: str) -> None:
+    """The bearer token is on the card fetch, every message, and the cancel."""
     request = make_request().model_copy(update={"budget": Budget(timeout_ms=300)})
     recorder = Recorder(RequireBearer(_app(_stuck), token))
     async with serve_uds(recorder) as path:
@@ -122,11 +124,12 @@ async def test_the_token_is_on_the_card_fetch_every_message_and_the_cancel(token
     assert events[-1].type == "error"
     assert recorder.seen[0].path == AGENT_CARD_WELL_KNOWN_PATH
     assert [s.method for s in recorder.rpc()] == ["SendStreamingMessage", "CancelTask"]
-    for seen in recorder.seen:
-        assert seen.headers.get("authorization") == f"Bearer {token}", seen.path
+    sent = [(s.path, s.headers.get("authorization")) for s in recorder.seen]
+    assert sent == [(s.path, f"Bearer {token}") for s in recorder.seen]
 
 
 async def test_a_server_that_wants_another_token_fails_setup(token: str) -> None:
+    """Setup fails when the server wants another token."""
     async with serve_uds(RequireBearer(_app(echo_wire), "not-the-token")) as path:
         with pytest.raises(RuntimeError, match="not reachable"):
             await _remote(path)
@@ -147,11 +150,11 @@ async def test_the_card_url_is_replaced_by_the_configured_url(token: str) -> Non
     assert urls == [REMOTE_URL]
     assert events[-1] == End()
     assert recorder.rpc()
-    for seen in recorder.seen:
-        assert seen.headers["host"] == "remote.test:8443"
+    assert [s.headers["host"] for s in recorder.seen] == ["remote.test:8443"] * len(recorder.seen)
 
 
 async def test_the_card_url_keeps_a_configured_path(token: str) -> None:
+    """A configured URL path is kept for the card fetch and every message."""
     url = "http://remote.test:8443/agents/echo"
 
     async def strip_prefix(scope: Scope, receive: Receive, send: Send) -> None:
@@ -171,6 +174,7 @@ async def test_the_card_url_keeps_a_configured_path(token: str) -> None:
 
 
 def test_a_card_without_jsonrpc_is_refused() -> None:
+    """A card with no JSON-RPC interface is refused."""
     card = build_agent_card(name="x", version="1", url="http://evil.test:1")
     card.supported_interfaces[0].protocol_binding = TransportProtocol.GRPC
     connector = RemoteConnector()
@@ -180,6 +184,7 @@ def test_a_card_without_jsonrpc_is_refused() -> None:
 
 
 def test_non_jsonrpc_interfaces_are_dropped() -> None:
+    """Non-JSON-RPC interfaces are dropped and the URL is the configured one."""
     card = build_agent_card(name="x", version="1", url="http://evil.test:1")
     extra = card.supported_interfaces.add()
     extra.CopyFrom(card.supported_interfaces[0])
@@ -193,6 +198,7 @@ def test_non_jsonrpc_interfaces_are_dropped() -> None:
 
 
 async def test_a_redirect_is_not_followed(token: str) -> None:
+    """A redirect on the card fetch is not followed."""
     seen: list[str] = []
 
     async def redirect(scope: Scope, receive: Receive, send: Send) -> None:
@@ -212,14 +218,15 @@ async def test_a_redirect_is_not_followed(token: str) -> None:
 async def test_the_clients_ignore_the_proxy_environment(
     token: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The HTTP clients ignore proxy variables and do not follow redirects."""
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.test:3128")
     monkeypatch.setenv("HTTP_PROXY", "http://proxy.test:3128")
     async with serve_uds(RequireBearer(_app(echo_wire), token)) as path:
         connector = await _remote(path)
         try:
-            for client in (connector._http, connector._probe_http):
-                assert client is not None
-                assert client.trust_env is False and client.follow_redirects is False
+            clients = [connector._http, connector._probe_http]
+            settings = [(c.trust_env, c.follow_redirects) if c else None for c in clients]
+            assert settings == [(False, False)] * 2
             assert await connector.probe()
         finally:
             await connector.close()
@@ -229,12 +236,14 @@ async def test_the_clients_ignore_the_proxy_environment(
 
 
 async def test_a_missing_token_variable_is_named(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A missing token variable is named in the setup error."""
     monkeypatch.delenv(TOKEN_ENV, raising=False)
     with pytest.raises(LookupError, match=TOKEN_ENV):
         await RemoteConnector().setup(_config(None), _bundle(None))
 
 
 async def test_an_empty_token_variable_is_named(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty token variable is named in the setup error."""
     monkeypatch.setenv(TOKEN_ENV, "")
     with pytest.raises(LookupError, match=TOKEN_ENV):
         await RemoteConnector().setup(_config(None), _bundle(None))
@@ -245,6 +254,7 @@ async def test_an_empty_token_variable_is_named(monkeypatch: pytest.MonkeyPatch)
     [None, {"scheme": "sigv4", "token_env": TOKEN_ENV}, {"scheme": "bearer"}],
 )
 async def test_auth_must_be_bearer_with_a_variable(token: str, auth: Any) -> None:
+    """`engine.auth` must be bearer with a token variable."""
     with pytest.raises(ValueError, match=r"engine\.auth"):
         await RemoteConnector().setup(_config(None, auth=auth), _bundle(None))
 
@@ -262,17 +272,20 @@ async def test_auth_must_be_bearer_with_a_variable(token: str, auth: Any) -> Non
     ],
 )
 async def test_a_bad_url_is_refused(token: str, url: Any) -> None:
+    """An `engine.url` that is not plain http(s) with a port is refused."""
     with pytest.raises(ValueError, match=r"engine\.url"):
         await RemoteConnector().setup(_config(None, url=url), _bundle(None))
 
 
 async def test_setup_against_a_dead_socket_fails_clearly(token: str, tmp_path: Path) -> None:
+    """Setup against a dead socket names the URL and not the token."""
     with pytest.raises(RuntimeError, match=r"remote\.test:8443") as info:
         await _remote(str(tmp_path / "none.sock"))
     assert token not in str(info.value)
 
 
 async def test_run_before_setup_is_an_error() -> None:
+    """A run before setup raises a clear error."""
     request = make_request()
     with pytest.raises(RuntimeError, match="not set up"):
         await anext(aiter(RemoteConnector().run(request, make_context(request))))
@@ -282,6 +295,7 @@ async def test_run_before_setup_is_an_error() -> None:
 
 
 async def test_probe_sends_the_token_and_is_true_on_200(token: str) -> None:
+    """The probe fetches the card with the token and is true on 200."""
     recorder = Recorder(RequireBearer(_app(echo_wire), token))
     async with serve_uds(recorder) as path:
         connector = await _remote(path)
@@ -296,6 +310,7 @@ async def test_probe_sends_the_token_and_is_true_on_200(token: str) -> None:
 
 
 async def test_probe_is_false_on_401_and_on_a_dead_server(token: str) -> None:
+    """The probe is false on 401 and on a dead server."""
     guard = RequireBearer(_app(echo_wire), token)
     async with serve_uds_server(guard) as (path, server):
         connector = await _remote(path)
@@ -314,6 +329,7 @@ async def test_probe_is_false_on_401_and_on_a_dead_server(token: str) -> None:
 
 
 async def test_probe_before_setup_is_false() -> None:
+    """The probe before setup is false."""
     assert await RemoteConnector().probe() is False
 
 
@@ -323,6 +339,7 @@ async def test_probe_before_setup_is_false() -> None:
 async def test_the_token_is_in_no_log_span_error_or_repr(
     token: str, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """The token is in no log, span, error, event, or `repr`."""
     caplog.set_level(logging.DEBUG)
     texts: list[str] = []
     timed_out = make_request().model_copy(update={"budget": Budget(timeout_ms=300)})
@@ -337,11 +354,10 @@ async def test_the_token_is_in_no_log_span_error_or_repr(
         telemetry: InMemoryTelemetry = bundle.telemetry
         texts.extend(repr(s) for s in telemetry.spans)
         texts.extend(repr(entry) for entry in telemetry.logs)
-    try:
+    with pytest.raises(RuntimeError, match=r"remote\.test:8443") as dead:
         await _remote(str(tmp_path / "none.sock"))
-    except RuntimeError as exc:
-        texts.append(repr(exc))
-        texts.append(repr(exc.__cause__))
+    texts.append(repr(dead.value))
+    texts.append(repr(dead.value.__cause__))
     # The in-test server shares this process; in the remote lane it is the workload's process.
     # a2a-sdk's server logs every request header at DEBUG (`a2a.server.*`), which is the
     # workload's concern, not the connector's. Every other record is the chassis side.
@@ -349,13 +365,13 @@ async def test_the_token_is_in_no_log_span_error_or_repr(
     assert client_side
     texts.extend(f"{r.name} {r.getMessage()} {r.args!r}" for r in client_side)
     assert telemetry.spans
-    for text in texts:
-        assert token not in text
+    assert [text for text in texts if token in text] == []
 
 
 # --- the registry ---
 
 
 def test_registry_builds_the_remote_connector() -> None:
+    """The registry builds `RemoteConnector` for the `remote` lane."""
     connector = resolve("engine", "remote")
     assert isinstance(connector, RemoteConnector) and connector.kind == "remote"

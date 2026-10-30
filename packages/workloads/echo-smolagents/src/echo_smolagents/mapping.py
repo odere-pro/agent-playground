@@ -14,15 +14,17 @@ the generated code made. Output: event dicts in the wire form, `schema_version: 
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from typing import Any
 
 import httpx
 import httpx2
 import openai
 from smolagents.memory import FinalAnswerStep  # type: ignore[import-untyped]
+from workload_a2a.events import chain as _chain
+from workload_a2a.events import error as _error
+from workload_a2a.events import event
 
-SCHEMA_VERSION = "0"
 _TIMEOUTS = (httpx2.TimeoutException, httpx.TimeoutException, openai.APITimeoutError, TimeoutError)
 _TRANSPORT = (httpx2.TransportError, httpx.TransportError, openai.APIConnectionError)
 
@@ -37,10 +39,6 @@ class ToolFailure(Exception):
 
 class BadResponse(Exception):
     """The model server answered 200 with a body that is not a usable chat completion."""
-
-
-def event(kind: str, **fields: Any) -> dict[str, Any]:
-    return {"schema_version": SCHEMA_VERSION, "type": kind, **fields}
 
 
 class EventMapper:
@@ -75,21 +73,6 @@ class EventMapper:
         ]
 
 
-def _chain(exc: BaseException) -> Iterator[BaseException]:
-    """The exception, its causes and contexts, and the members of any exception group."""
-    seen: set[int] = set()
-    stack = [exc]
-    while stack:
-        current = stack.pop()
-        if id(current) in seen:
-            continue
-        seen.add(id(current))
-        yield current
-        if isinstance(current, BaseExceptionGroup):
-            stack.extend(current.exceptions)
-        stack.extend(e for e in (current.__cause__, current.__context__) if e is not None)
-
-
 def error_event(exc: BaseException) -> dict[str, Any]:
     """One `error`: `tool_loop_exceeded`, `tool_error`, `bad_response`, `http_<status>`
     (retryable for 5xx), `timeout` and `connect_error` (retryable), else `model_error`. The
@@ -121,7 +104,3 @@ def _detail(exc: openai.APIStatusError) -> str:
     body = exc.body
     detail = body.get("detail") if isinstance(body, dict) else body
     return str(detail or exc.message)
-
-
-def _error(code: str, message: str, retryable: bool) -> dict[str, Any]:
-    return event("error", code=code, message=message[:500], retryable=retryable)

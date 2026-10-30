@@ -111,6 +111,7 @@ def _roundtrip(wire: StreamResponse) -> StreamResponse:
 
 @pytest.mark.parametrize("event", EVENTS, ids=[e.type for e in EVENTS])
 async def test_every_event_round_trips_through_one_a2a_update(event: Event) -> None:
+    """Each chassis event is exactly one A2A update and reads back unchanged."""
     queue = _Queue()
     updater = TaskUpdater(queue, "task-1", "trace-1")
     await event_to_update(event.model_dump(mode="json"), updater)
@@ -122,6 +123,7 @@ async def test_every_event_round_trips_through_one_a2a_update(event: Event) -> N
 
 
 async def test_states_and_native_parts_follow_the_table() -> None:
+    """Each event maps to the task state and native parts in the mapping table."""
     queue = _Queue()
     updater = TaskUpdater(queue, "task-1", "trace-1")
     for event in EVENTS[:-1]:
@@ -157,6 +159,7 @@ async def test_states_and_native_parts_follow_the_table() -> None:
 
 
 async def test_second_delta_appends() -> None:
+    """The first delta opens the output artifact; the next one appends."""
     queue = _Queue()
     updater = TaskUpdater(queue, "task-1", "trace-1")
     await event_to_update(Delta(text="a").model_dump(mode="json"), updater)
@@ -165,6 +168,7 @@ async def test_second_delta_appends() -> None:
 
 
 def test_request_to_message_puts_ctx_in_metadata_and_trace_in_context_id() -> None:
+    """The request puts ctx in metadata and the trace id in `context_id`."""
     req = request_to_message({"text": "hello", "data": {"k": 1}}, CTX)
     assert isinstance(req, SendMessageRequest)
     wire = json_format.ParseDict(json_format.MessageToDict(req), SendMessageRequest())
@@ -181,9 +185,7 @@ def test_request_to_message_puts_ctx_in_metadata_and_trace_in_context_id() -> No
 
 
 def test_chassis_json_crosses_as_a_compact_string() -> None:
-    """Decision 1: `chassis.ctx`, `chassis.input`, and `chassis.event` are JSON strings written
-    with `separators=(",", ":")`; the reader gets back exactly what the writer wrote.
-    """
+    """Chassis ctx, input, and event cross as compact JSON strings (decision 1)."""
     input = {"text": "hello", "data": {"k": 1, "f": 1.5}}
     meta = json_format.MessageToDict(request_to_message(input, CTX).metadata)
     assert meta[CTX_KEY] == json.dumps(CTX, separators=(",", ":"))
@@ -191,26 +193,28 @@ def test_chassis_json_crosses_as_a_compact_string() -> None:
 
 
 async def test_event_metadata_is_a_json_string() -> None:
+    """`chassis.event` metadata is a JSON string on status and artifact updates."""
     queue = _Queue()
     updater = TaskUpdater(queue, "task-1", "trace-1")
     for event in EVENTS[:3]:
         await event_to_update(event.model_dump(mode="json"), updater)
     start, delta, tool = (to_stream_response(e) for e in queue.events)
-    for meta in (
+    metas = [
         json_format.MessageToDict(start.status_update.metadata),
         json_format.MessageToDict(delta.artifact_update.artifact.metadata),
         json_format.MessageToDict(tool.status_update.metadata),
-    ):
-        assert isinstance(meta[EVENT_KEY], str)
+    ]
+    assert [type(meta[EVENT_KEY]) for meta in metas] == [str, str, str]
     assert json.loads(json_format.MessageToDict(tool.status_update.metadata)[EVENT_KEY])[
         "result"
     ] == {"n": 2}
 
 
 async def test_an_event_that_is_not_json_is_refused_before_it_is_published() -> None:
+    """An event with NaN raises before anything is published."""
     queue = _Queue()
     updater = TaskUpdater(queue, "task-1", "trace-1")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="not JSON compliant"):
         await event_to_update({"type": "delta", "text": "x", "nan": float("nan")}, updater)
     assert queue.events == []
 
@@ -233,17 +237,21 @@ def test_a_v0_struct_event_is_still_read() -> None:
 
 @pytest.mark.parametrize("bad", ["{not json", "[1, 2]", '"a string"', "3"])
 def test_a_string_that_is_not_a_json_object_is_bad_json(bad: str) -> None:
+    """A `chassis.event` string that is not a JSON object is `BadJson`."""
     with pytest.raises(BadJson, match=EVENT_KEY):
         update_to_event(_status_with(bad))
 
 
 def test_empty_input_sends_no_text_part() -> None:
+    """Empty input sends no text part and no data part."""
     req = request_to_message({"text": None, "data": {}}, CTX)
     assert get_message_text(req.message) == ""
     assert get_data_parts(req.message.parts) == []
 
 
 def test_a2a_states_without_a_chassis_event() -> None:
+    """Bare A2A terminal and pause states map to fixed chassis events."""
+
     def status(state: int) -> StreamResponse:
         return to_stream_response(
             TaskStatusUpdateEvent(task_id="t", context_id="c", status={"state": state})
@@ -325,6 +333,7 @@ async def _no_end(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[A
 
 
 def test_agent_card_is_a_valid_a2a_card() -> None:
+    """The agent card is a valid streaming JSONRPC A2A card."""
     card = build_agent_card(name="echo_python:handle", version="0.1.0", description="d")
     assert isinstance(card, AgentCard)
     parsed = json_format.ParseDict(json_format.MessageToDict(card), AgentCard())
@@ -333,6 +342,7 @@ def test_agent_card_is_a_valid_a2a_card() -> None:
 
 
 async def test_server_streams_dict_events_over_a2a() -> None:
+    """The template server streams dict events with the trace id as context."""
     app = build_app(_dict_handle, build_agent_card(name="dict", version="1"))
     responses = await _send(app, request_to_message({"text": "hi"}, CTX))
     assert responses[0].HasField("task"), "a2a-sdk 1.2 needs the task before the first update"
@@ -349,12 +359,14 @@ async def test_server_streams_dict_events_over_a2a() -> None:
 
 
 async def test_server_accepts_pydantic_events_too() -> None:
+    """The template server streams pydantic events too."""
     app = build_app(_model_handle, build_agent_card(name="typed", version="1"))
     responses = await _send(app, request_to_message({"text": "hi"}, CTX))
     assert _events(responses) == [Start(request_id="req-1"), Delta(text="typed"), End()]
 
 
 async def test_unsupported_schema_version_becomes_an_error_event() -> None:
+    """An event with an unknown schema version becomes `workload.bad_event`."""
     app = build_app(_future_handle, build_agent_card(name="future", version="1"))
     events = _events(await _send(app, request_to_message({"text": "hi"}, CTX)))
     assert isinstance(events[-1], Error)
@@ -371,6 +383,7 @@ async def test_unsupported_schema_version_becomes_an_error_event() -> None:
     ],
 )
 async def test_server_keeps_the_order_the_port_promises(handle: Any, code: str) -> None:
+    """A handle that breaks the event order ends with one error and no end."""
     app = build_app(handle, build_agent_card(name="bad", version="1"))
     events = _events(await _send(app, request_to_message({"text": "hi"}, CTX)))
     assert isinstance(events[-1], Error) and events[-1].code == code
@@ -378,6 +391,7 @@ async def test_server_keeps_the_order_the_port_promises(handle: Any, code: str) 
 
 
 async def test_request_schema_version_is_checked() -> None:
+    """A request with an unknown schema version is one error and no run."""
     app = build_app(_dict_handle, build_agent_card(name="dict", version="1"))
     req = request_to_message({"text": "hi"}, CTX, schema_version="9")
     events = _events(await _send(app, req))
@@ -386,15 +400,13 @@ async def test_request_schema_version_is_checked() -> None:
 
 
 def test_executor_is_an_agent_executor() -> None:
+    """The executor is an a2a-sdk `AgentExecutor` and the keys are pinned."""
     assert issubclass(HandleExecutor, AgentExecutor)
     assert EVENT_KEY == "chassis.event" and CTX_KEY == "chassis.ctx"
 
 
 async def test_cancel_while_the_handle_is_mid_await_is_clean() -> None:
-    """`aclose()` on a running generator raises `RuntimeError`. A cancel that lands while the
-    handle awaits sets a flag instead; the executor stops at the next event and publishes nothing
-    after `TASK_STATE_CANCELED`.
-    """
+    """A cancel during an await publishes nothing after `TASK_STATE_CANCELED`."""
     gate = asyncio.Event()
 
     async def blocking(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[Any]:
@@ -458,13 +470,7 @@ def _terminal_states(events: list[Any]) -> list[int]:
 async def test_cancel_while_the_handle_is_suspended_at_a_yield_is_one_canceled(
     group: bool,
 ) -> None:
-    """The cancel lands while the handle is parked at a `yield`, plain or holding an anyio cancel
-    scope (the PydanticAI and LangGraph handles hold task groups, which hold one). The cancel does
-    not close the generator from its own task; `execute` does, in the task that opened the scope.
-    Exactly one terminal state, `CANCELED`, and nothing after it (no `workload.no_end`). The one
-    exception is the update whose publish was already in flight when the cancel landed (`held`
-    here): a publish cannot be recalled. Nothing the handle yields after the cancel is published.
-    """
+    """A cancel at a yield is one CANCELED, and the executor closes the handle."""
     import contextlib
 
     import anyio
@@ -502,6 +508,8 @@ async def test_cancel_while_the_handle_is_suspended_at_a_yield_is_one_canceled(
         for i, e in enumerate(queue.events)
         if isinstance(e, TaskStatusUpdateEvent) and e.status.state == TaskState.TASK_STATE_CANCELED
     )
+    # Only the update already in flight when the cancel landed (`held`) may follow: a publish
+    # cannot be recalled.
     after = queue.events[canceled + 1 :]
     assert all(isinstance(e, TaskArtifactUpdateEvent) for e in after), after
     texts = [
@@ -527,6 +535,7 @@ def _recording(seen: list[tuple[dict[str, Any], dict[str, Any]]]) -> Any:
 
 
 async def test_server_passes_chassis_input_and_ctx_as_is() -> None:
+    """The server passes `chassis.input` and `chassis.ctx` to the handle as is."""
     seen: list[tuple[dict[str, Any], dict[str, Any]]] = []
     app = build_app(_recording(seen), build_agent_card(name="rec", version="1"))
     req = request_to_message({"text": "hi", "data": {"n": 3}}, CTX)
@@ -554,6 +563,7 @@ async def test_server_falls_back_to_the_parts_without_chassis_input() -> None:
 @pytest.mark.parametrize("key", [CTX_KEY, INPUT_KEY])
 @pytest.mark.parametrize("bad", ["{not json", "[1]"])
 async def test_unparseable_ctx_or_input_is_a2a_bad_request(key: str, bad: str) -> None:
+    """Unparsable ctx or input is `a2a.bad_request` and the handle never runs."""
     seen: list[tuple[dict[str, Any], dict[str, Any]]] = []
     app = build_app(_recording(seen), build_agent_card(name="rec", version="1"))
     req = request_to_message({"text": "hi"}, CTX)
@@ -569,6 +579,7 @@ async def test_unparseable_ctx_or_input_is_a2a_bad_request(key: str, bad: str) -
 
 
 async def test_schema_version_is_checked_before_the_request_is_read() -> None:
+    """The schema version is checked before the ctx is parsed."""
     app = build_app(_dict_handle, build_agent_card(name="dict", version="1"))
     req = request_to_message({"text": "hi"}, CTX, schema_version="9")
     req.metadata[CTX_KEY] = "{not json"
@@ -577,6 +588,8 @@ async def test_schema_version_is_checked_before_the_request_is_read() -> None:
 
 
 async def test_a_yielded_nan_is_workload_bad_event() -> None:
+    """A yielded non-finite float is `workload.bad_event`."""
+
     async def nan(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[Any]:
         yield {"schema_version": "0", "type": "start", "request_id": ctx["request_id"]}
         yield {"type": "tool_call", "call_id": "c", "name": "n", "arguments": {"x": float("inf")}}
@@ -592,6 +605,7 @@ async def test_a_yielded_nan_is_workload_bad_event() -> None:
 
 
 async def test_chassis_server_prunes_terminal_tasks() -> None:
+    """The chassis server prunes terminal tasks from its store."""
     store = InMemoryTaskStore()
     app = build_app(_dict_handle, build_agent_card(name="dict", version="1"), task_store=store)
     for _ in range(3):
@@ -613,6 +627,7 @@ async def _foreign_start(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIte
 
 
 async def test_connector_refuses_a_start_for_another_request() -> None:
+    """A start for another request id is `a2a.request_mismatch`."""
     connector = InProcessConnector()
     bundle = PortBundle(
         model=ScriptedModel(),
@@ -686,6 +701,7 @@ async def _run_raw(values: list[Any]) -> list[Event]:
 
 
 async def test_connector_reads_a_v0_struct_event_stream() -> None:
+    """The connector still reads a v0 `Struct` event stream."""
     events = await _run_raw(
         [
             {"schema_version": "0", "type": "start", "request_id": "req-1"},
@@ -701,6 +717,7 @@ async def test_connector_reads_a_v0_struct_event_stream() -> None:
 
 
 async def test_connector_turns_an_unparseable_event_string_into_a2a_bad_event() -> None:
+    """An unparsable event string is `a2a.bad_event`."""
     events = await _run_raw([json.dumps({"type": "start", "request_id": "req-1"}), "{not json"])
     assert [e.type for e in events] == ["start", "error"]
     assert isinstance(events[-1], Error) and events[-1].code == "a2a.bad_event"
@@ -787,6 +804,7 @@ def _task_and_start() -> list[StreamResponse]:
 
 
 async def test_a_stream_that_ends_without_end_or_error_is_a2a_transport() -> None:
+    """A stream that ends early is `a2a.transport` and the task is cancelled."""
     stream = _StubStream(_task_and_start())
     events, stub, _ = await _run_stub(stream)
     assert [e.type for e in events] == ["start", "error"]
@@ -797,6 +815,7 @@ async def test_a_stream_that_ends_without_end_or_error_is_a2a_transport() -> Non
 
 
 async def test_a_closer_that_raises_still_cancels_and_is_logged() -> None:
+    """A stream closer that raises still cancels the task and is logged."""
     stream = _StubStream(_task_and_start(), close_raises=True)
     events, stub, telemetry = await _run_stub(stream)
     assert [e.type for e in events] == ["start", "error"]

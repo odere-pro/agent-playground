@@ -14,7 +14,7 @@ Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still appl
 
 ## The request path, with idempotency
 
-Client → Traefik (`127.0.0.1:18080`, only to a chassis with `/ready` 200) → `chassis-N` → `serve` (`to_request`, `enforce_limits`) → with a sent key, `Idempotency.begin` over `StatePort` (Valkey) → refusal (422, 409, 503), replay (`Idempotent-Replayed: true`, no run), or claim → `open_run` → `SidecarConnector` → A2A on `127.0.0.1:9000` → `workload-N` `handle` → the model proxy on `127.0.0.1:8090` → the fake model server → events back → `Claim.finish` caches an `end` → `on_finished` publishes a result event when on. Start in `chassis/server/interfaces/serve.py`.
+The ports and the pairs are in `docs/guides/poc-04-how-it-works.md`, "The scale stack". Start in `chassis/server/interfaces/serve.py`.
 
 ```mermaid
 flowchart LR
@@ -30,7 +30,7 @@ flowchart LR
 
 ## How to run
 
-- Gate: `make test-poc POC=04` (offline, inside `make test`). Integration: `make test-integration` (Docker). Compose drills: `deploy/compose/scale.sh up <engine> <pairs>`, then `load/kill_drill.py`, or `POC04_STACK=1` with `test_compose_scale.py`. Load: `make load-test ARGS="--dry-run"` first. kind: `make kind-poc04 ARGS="up native-sidecar"`.
+- Gate: `make test-poc POC=04` (offline, inside `make test`). Integration: `make test-integration` (Docker). Drills and load: the commands are in `load/README.md`; dry-run the load matrix first. Stack test: `POC04_STACK=1` with `test_compose_scale.py`. kind: `make kind-poc04 ARGS="up native-sidecar"`.
 - The Docker VM is shared: pass `-p poc04` (scale.sh does), never prune, never stop another project's container. One stack at a time.
 
 ## Done means and do not touch

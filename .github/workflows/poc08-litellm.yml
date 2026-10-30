@@ -1,0 +1,80 @@
+# PoC-8 drill: a real LiteLLM proxy in the trace, with its real Presidio hook
+# (pocs/poc-08-cross-cutting-build/README.md, "What waits": a real LiteLLM span next to
+# chassis.model.route, and LiteLLM's real Presidio hook in place of the stand-in).
+#
+# What it runs: `deploy/compose/poc08-litellm/stack.sh up` (Postgres, the fake model server,
+# guardrail-server with the pattern stand-in, Presidio analyzer and anonymizer, LiteLLM 1.103.0,
+# Jaeger, the OTel Collector, then the chassis with the virtual key stack.sh mints), `stack.sh
+# wait`, `stack.sh digests` (image digests into the log and an artifact, to pin the images still
+# on a version tag), then the `network` drill
+# pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_litellm.py.
+#
+# Trigger: push, pull_request, and workflow_dispatch. Never pull_request_target.
+# No secret is used: no hosted model key, no Hugging Face token (Prompt Guard 2 is out of scope;
+# the pattern stand-in answers the injection check). stack.sh makes the LiteLLM master key and
+# the database password on the runner (mode 600) and mints the chassis's key; the drill reads the
+# key file's path from `stack.sh env` and never prints a value. On failure, log tails go through
+# `stack.sh logs`, which masks every key file value.
+# Artifacts: the Jaeger trace JSON, the drill's results and output, and the image digests.
+# Every action is pinned by a full commit SHA, the same as ci.yml.
+name: poc08-litellm
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  poc08-litellm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # PR code runs `stack.sh up`: it gets no stored token.
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0
+        with:
+          version: "0.11.23"
+          # No uv cache on pull_request: PR code cannot poison what a push run restores.
+          enable-cache: ${{ github.event_name != 'pull_request' }}
+      - name: Sync
+        run: uv sync --all-packages --locked
+      - name: Artifact folder
+        run: echo "POC08_LITELLM_OUT=$RUNNER_TEMP/poc08-litellm" >> "$GITHUB_ENV"
+      - name: Up
+        run: deploy/compose/poc08-litellm/stack.sh up
+      - name: Wait
+        run: deploy/compose/poc08-litellm/stack.sh wait
+      - name: Digests
+        run: |
+          set -euo pipefail
+          mkdir -p "$POC08_LITELLM_OUT"
+          deploy/compose/poc08-litellm/stack.sh digests | tee "$POC08_LITELLM_OUT/digests.txt"
+      - name: PoC-8 LiteLLM drill
+        run: |
+          set -euo pipefail
+          # `stack.sh env` prints POC08_LITELLM_KEY_FILE=<path>: the path, never the value.
+          export "$(deploy/compose/poc08-litellm/stack.sh env)"
+          POC08_LITELLM=1 uv run pytest -m network -v -s \
+            pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_litellm.py \
+            2>&1 | tee "$POC08_LITELLM_OUT/drill.txt"
+      - name: Logs
+        if: failure()
+        run: |
+          set -uo pipefail
+          deploy/compose/poc08-litellm/stack.sh logs
+          echo "(stack.sh logs: every key file value is redacted)"
+      - name: Artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: poc08-litellm
+          path: ${{ runner.temp }}/poc08-litellm
+          if-no-files-found: warn
+      - name: Down
+        if: always()
+        run: deploy/compose/poc08-litellm/stack.sh down

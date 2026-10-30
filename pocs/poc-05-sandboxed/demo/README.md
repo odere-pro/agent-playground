@@ -6,7 +6,7 @@
 
 - The cluster is up: `make kind-poc05 ARGS=up`. The demo brings nothing up or down.
 - `kind`, `kubectl`, `uv`, `python3`, and `jq` on the path (the same as `run.sh up`).
-- No other agent or stack on the Docker VM uses kind (`pocs/poc-05-sandboxed/CLAUDE.md`).
+- The rules for the shared Docker VM and the kind context hold ([deploy/CLAUDE.md](../../../deploy/CLAUDE.md)).
 
 ## How to run
 
@@ -25,14 +25,14 @@ It stops non-zero on the first failed step. The last line of a good run is `resu
 | 1, 3 | A normal request through `agent-echo` (sidecar) and `chassis-echo-remote` (remote), before and after the probe | `run.sh request` |
 | 2 | The remote probe: H25, H19, H21, H23, H08, H17 | the named tests in `test_poc05_kind_remote_controls.py` and `test_poc05_kind_tool_gateway.py` |
 | 4 | The sidecar probe: H05, H07 from the workload; then the in-pod probe suite | `test_poc05_kind_hardreq1.py`, `test_poc05_kind_probe.py` |
-| 5 | Admission: every fixture through a server dry run | `test_poc05_kind_admission.py::test_fixture_outcome_matches_its_header` |
+| 5 | Admission: every fixture through a server dry run | `test_poc05_kind_admission.py::test_rejected_fixture_is_refused_with_its_rule_message`, `::test_admitted_twin_is_admitted` |
 | 6 | One `run_python` call on gVisor, with no egress | `test_poc05_kind_code_runner.py::test_code_runs_on_gvisor_with_no_egress` |
 | 7 | H11, Kafka with SASL | `test_poc05_kind_hardreq1.py -k kafka` |
 | 8 | Where it was logged: `probe.check`, `remote_unauthenticated`, LiteLLM's 401 lines | `run.sh logs`, counted |
 
 Every pytest step runs through `run.sh with-gateway` with `POC05_KIND=1` and prints one line per check: id, attempt, outcome, control. A failed, skipped, or deselected check fails the step. A test file that does not exist yet fails the step by name.
 
-Every check is an existing kind test or a `run.sh` verb; the demo has no probe logic of its own. All captured output goes through `run.sh redact`. The gateway key reaches pytest only through `run.sh with-gateway`: in its environment, never in argv or the record. Every `kubectl` call passes `--context kind-poc05`.
+Every check is an existing kind test or a `run.sh` verb; the demo has no probe logic of its own. All captured output goes through `run.sh redact`. The gateway key reaches pytest only through `run.sh with-gateway`: in its environment, never in argv or the record. Every `kubectl` call passes the cluster's context.
 
 ## Recorded
 

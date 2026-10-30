@@ -1,0 +1,181 @@
+# PoC-8 stack drill: Prometheus scrapes a real chassis, and Grafana loads the generated dashboards
+# (deploy/dashboards/*.json) on that Prometheus. Scope item "Observability" of
+# pocs/poc-08-cross-cutting-build/README.md: "Prometheus and Grafana loading deploy/dashboards/".
+#
+# Run only through ./stack.sh (project `poc08`). It makes every credential into .env.poc08
+# (mode 600, git-ignored); nothing here has a default secret, so `${VAR:?}` fails closed.
+# CI: .github/workflows/poc08-stack.yml. The drill: pocs/poc-08-cross-cutting-build/tests/
+# test_poc08_stack_metrics.py. The latency: tests/poc08_stack_latency.py.
+#
+# Services:
+# - chassis: the drill's agent `echo`, every PoC-8 stage on (chassis/drill.yaml).
+# - chassis-stages, chassis-plain: the same agent code with the PoC-8 request stages on and off,
+#   for the latency measurement only (chassis/stages.yaml, chassis/plain.yaml).
+# - fake-model-server: the model and the judge (fake-model/poc08.yaml). No key, no egress.
+# - valkey: the state store: the rate limit buckets, idempotency, the feedback lookup.
+# - prometheus: scrapes the three chassis at /metrics (prometheus/prometheus.yml).
+# - grafana: provisions the Prometheus datasource and every dashboard (grafana/provisioning/).
+#
+# The chassis runs `inprocess` (echo_python is in the chassis image), so no workload container.
+# Ports bind 127.0.0.1 only.
+#
+# Images: ours are built from this repo (packages/chassis/Dockerfile and
+# packages/fake-model-server/Dockerfile; both pin their base by digest) and never pulled. Valkey is
+# the PoC-4 scale stack's pin. Prometheus and Grafana: suggested: the tags below; no digest could
+# be resolved where this was written (no Docker, no registry access). `stack.sh digests` prints
+# them on the first CI run; paste each as `name:tag@sha256:...` and drop it from AWAITING_DIGEST in
+# tests/test_poc08_stack_static.py, which fails until both are pinned or listed.
+name: poc08
+
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+  tmpfs: [/tmp]
+
+x-chassis: &chassis
+  <<: *hardening
+  image: agent-platform/chassis:poc08
+  # Built once by the `chassis` service (stack.sh runs `compose build` first); never pulled.
+  pull_policy: never
+  user: "10001:10001"
+  # suggested: the same ceiling for each chassis, so the latency compares like with like.
+  cpus: 1.0
+  mem_limit: 512m
+  stop_grace_period: 15s
+  volumes:
+    - ./chassis:/etc/chassis:ro
+  depends_on:
+    fake-model-server:
+      condition: service_healthy
+    valkey:
+      # No healthcheck key: the image's own HEALTHCHECK polls /ready; `up --wait` waits for it.
+      condition: service_healthy
+
+x-chassis-env: &chassis-env
+  # The model and the judge: the fake model server directly, no LiteLLM, no key.
+  LITELLM_BASE_URL: http://fake-model-server:8081/v1
+  VALKEY_URL: valkey://valkey:6379/0
+  VALKEY_PASSWORD: ${VALKEY_PASSWORD:?set by stack.sh}
+
+services:
+  chassis:
+    <<: *chassis
+    build:
+      context: ../../..
+      dockerfile: packages/chassis/Dockerfile
+    command: [--config, /etc/chassis/drill.yaml, --host, 0.0.0.0, --port, "8080", --drain-delay-s, "1"]
+    environment:
+      <<: *chassis-env
+      # One caller, made from the generated token. The drill and the latency script read the
+      # token from the env file; it is never printed.
+      CHASSIS_STATIC_TOKENS: '{"${POC08_RUN_TOKEN:?set by stack.sh}": {"subject": "poc08-drill", "scopes": ["agent:run", "agent:feedback", "agent:read"]}}'
+      CHASSIS_JUDGE_ROUTE: judge
+    ports:
+      - 127.0.0.1:18088:8080
+
+  chassis-stages:
+    <<: *chassis
+    command: [--config, /etc/chassis/stages.yaml, --host, 0.0.0.0, --port, "8080", --drain-delay-s, "1"]
+    environment:
+      <<: *chassis-env
+      CHASSIS_STATIC_TOKENS: '{"${POC08_RUN_TOKEN:?set by stack.sh}": {"subject": "poc08-latency", "scopes": ["agent:run", "agent:feedback", "agent:read"]}}'
+    ports:
+      - 127.0.0.1:18089:8080
+
+  chassis-plain:
+    <<: *chassis
+    command: [--config, /etc/chassis/plain.yaml, --host, 0.0.0.0, --port, "8080", --drain-delay-s, "1"]
+    environment: *chassis-env
+    ports:
+      - 127.0.0.1:18090:8080
+
+  fake-model-server:
+    <<: *hardening
+    build:
+      context: ../../..
+      dockerfile: packages/fake-model-server/Dockerfile
+    image: agent-platform/fake-model-server:poc08
+    pull_policy: never
+    user: "10004:10004"
+    # suggested: 2 CPUs, so the model is not what the latency measures.
+    cpus: 2.0
+    mem_limit: 256m
+    command: [--script, /etc/fake-model/poc08.yaml]
+    volumes:
+      # No healthcheck key: the image's own HEALTHCHECK polls /health.
+      - ./fake-model:/etc/fake-model:ro
+
+  valkey:
+    <<: *hardening
+    image: valkey/valkey:8.1.4-alpine@sha256:e706d1213aaba6896c162bb6a3a9e1894e1a435f28f8f856d14fab2e10aa098b
+    user: "999:1000"
+    mem_limit: 320m
+    environment:
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD:?set by stack.sh}
+    entrypoint:
+      - sh
+      - -c
+      - exec valkey-server --save "" --appendonly no --maxmemory 256mb --requirepass "$$VALKEY_PASSWORD"
+    healthcheck:
+      # REDISCLI_AUTH keeps the password off the command line of the check.
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$VALKEY_PASSWORD\" valkey-cli ping | grep -q PONG"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  prometheus:
+    <<: *hardening
+    image: docker.io/prom/prometheus:v3.5.0
+    user: "65534:65534"
+    mem_limit: 512m
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=1h
+      - --web.listen-address=:9090
+    tmpfs:
+      - /tmp
+      - /prometheus:uid=65534,gid=65534
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      chassis:
+        condition: service_healthy
+    ports:
+      # No in-container healthcheck: `stack.sh wait` polls /-/ready from the host.
+      - 127.0.0.1:19090:9090
+
+  grafana:
+    # Not read_only: Grafana writes its SQLite database, plugins, and logs under /var/lib/grafana
+    # and /var/log/grafana. No capability and no privilege gain all the same.
+    image: docker.io/grafana/grafana:12.1.0
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    user: "472:0"
+    mem_limit: 512m
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set by stack.sh}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_LOG_MODE: console
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../dashboards:/etc/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+    ports:
+      # No in-container healthcheck: `stack.sh wait` polls /api/health from the host.
+      - 127.0.0.1:13000:3000
+
+# One network for the project. No `network_mode: host` anywhere.
+networks:
+  default:
+    name: poc08

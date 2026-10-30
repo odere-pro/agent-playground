@@ -1,5 +1,10 @@
-"""Exit criterion 7 and the scope item "Config loader", offline: a config change reaches the next
-request with no restart, and a bad config is refused while the agent keeps the last good one.
+"""PoC-4 exit criterion 7, in the README's words:
+
+"A bad config is rejected by the schema, and the agent keeps the last good one."
+
+This file covers both clauses offline, and the scope item "Config loader": a config change
+reaches the next request with no restart, and a bad config is refused while the agent keeps the
+last good one.
 
 A real chassis app over fake ports. The store is `InMemoryConfig`; `put` plays the store change
 (`spec.adapters.config: memory`, so the bootstrap is the first config). The same drill against a
@@ -68,6 +73,7 @@ async def run(client: httpx.AsyncClient, **body: Any) -> httpx.Response:
 
 
 async def test_a_change_takes_effect_on_the_next_request_with_no_restart() -> None:
+    """Exit criterion 7, the last good one: a good change takes effect with no restart."""
     async with running() as (app, client, store, telemetry):
         assert (await client.get("/ready")).status_code == 200
         before = (await run(client)).json()["versions"]
@@ -102,6 +108,7 @@ async def test_a_change_takes_effect_on_the_next_request_with_no_restart() -> No
 
 @pytest.mark.parametrize("path", INVALID + RESTART, ids=lambda p: p.stem)
 async def test_a_bad_config_is_refused_and_the_last_good_one_stays(path: Path) -> None:
+    """Exit criterion 7, both clauses: this bad config is refused; the last good one serves."""
     bad = yaml.safe_load(path.read_text())  # noqa: ASYNC240 (a small fixture, read once)
     async with running() as (app, client, store, telemetry):
         good = app.state.config
@@ -118,6 +125,7 @@ async def test_a_bad_config_is_refused_and_the_last_good_one_stays(path: Path) -
 
 @pytest.mark.parametrize("path", INVALID, ids=lambda p: p.stem)
 def test_every_invalid_fixture_fails_the_model_and_the_published_schema(path: Path) -> None:
+    """Exit criterion 7, "rejected by the schema": this fixture fails the model and the schema."""
     data = yaml.safe_load(path.read_text())
     with pytest.raises(ValidationError):
         ChassisConfig.model_validate(data)
@@ -128,8 +136,10 @@ def test_every_invalid_fixture_fails_the_model_and_the_published_schema(path: Pa
 
 @pytest.mark.parametrize("path", RESTART, ids=lambda p: p.stem)
 def test_every_restart_fixture_is_a_valid_document(path: Path) -> None:
+    """Exit criterion 7: a restart-only fixture is valid, so its refusal is not the schema's."""
     ChassisConfig.model_validate(yaml.safe_load(path.read_text()))
 
 
 def test_there_are_fixtures_of_both_kinds() -> None:
+    """Exit criterion 7: at least 4 invalid and 3 restart-only fixtures exist."""
     assert len(INVALID) >= 4 and len(RESTART) >= 3

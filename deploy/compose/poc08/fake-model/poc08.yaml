@@ -1,0 +1,33 @@
+# The model of the PoC-8 stack (packages/fake-model-server). The first matching rule wins. The
+# drill's inputs live in pocs/poc-08-cross-cutting-build/tests/poc08_stack.py, and
+# test_poc08_stack_static.py checks each one picks the rule it needs.
+model: fake-model
+rules:
+  # The judge (`spec.adapters.evaluator: judge`, route `judge`). It sees the answer in
+  # `<answer>`: the gate's bad answer scores below the threshold, every other answer passes.
+  - model: judge
+    match: GATE-BAD-ANSWER
+    reply: '{"score": 0.1, "reason": "The answer drops the facts."}'
+  - model: judge
+    reply: '{"score": 1.0, "reason": "The answer keeps every fact."}'
+  # The gate's last attempt (`spec.model.fallback_route`).
+  - model: fallback-route
+    reply: "Dana Ruiz signed the report."
+    usage: {prompt_tokens: 30, completion_tokens: 6}
+  # A run with a tool call: glossary_lookup, then the answer from its result.
+  - match: glossary
+    tool_call:
+      name: glossary_lookup
+      arguments: {term: SLM}
+  - after_tool: true
+    reply: "From the glossary: SLM means small language model."
+  # A run that ends in an error (the errors panel).
+  - match: fail-model
+    error: {status: 500, message: scripted failure}
+  # The answer the judge scores low, so the gate retries, then falls back.
+  - match: gate-check
+    reply: GATE-BAD-ANSWER
+  - match: simplify
+    reply: "Plain words. Short sentences. Same facts."
+    usage: {prompt_tokens: 42, completion_tokens: 9}
+default_reply: ok

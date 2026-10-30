@@ -1,0 +1,23 @@
+# The chassis config for the PoC-8 LiteLLM drill. Mounted at /etc/chassis/config.yaml.
+# LITELLM_BASE_URL, LITELLM_API_KEY (the virtual key stack.sh mints), and the OTEL_* variables
+# come from the container env. Every guard stage is on (the `spec.guardrails` defaults).
+profile: local
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  adapters:
+    model: litellm
+    guardrails: litellm
+    telemetry: otel
+    # The `local` defaults name minio, mcp, and valkey, which this stack does not run.
+    config: memory
+    tools: fake
+    state: memory
+  engine:
+    connector: inprocess
+    handle: echo_python:handle
+  model:
+    route: big-default
+  prompt:
+    version: simplifier-v1

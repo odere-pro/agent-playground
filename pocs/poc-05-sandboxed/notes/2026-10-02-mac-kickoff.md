@@ -1,5 +1,7 @@
 # PoC-5 kickoff for the Mac: the cluster steps, 2026-10-02
 
+**Update, 2026-10-09: T10 is no longer dropped.** It is a recorded exception, work in progress, owned by the user ([the T10 note](2026-10-09-t10-probe-exception.md)). The rest is kept as written on 2026-10-02.
+
 A cloud session did every offline step (commits `fb9f3e2` to `473cbec`, first on `poc-05/sandboxed`; all of it is on `main` since 2026-10-08, PRs #3 to #9). It could not run kind: the session's permissions refused the kind and kubectl downloads, and the host has cgroup v1 (`2026-10-02-cloud-host-limits.md`). Everything that needs a cluster is left for a session on the Mac, where `kind-poc05` was brought up before. Paste the prompt below into a Claude Code session opened at the repository root.
 
 ## Decisions already made (do not reopen)

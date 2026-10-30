@@ -144,6 +144,7 @@ def _kinds(events: Sequence[Event]) -> list[str]:
 
 
 async def test_the_kagent_stream_becomes_start_deltas_metrics_end(token: str) -> None:
+    """The kagent stream becomes start, six deltas, int metrics, and end ok."""
     stub = PlainStub(kagent_script)
     request = make_request(text="simplify this")
     async with serve_uds(RequireBearer(stub_app(stub), token)) as path:
@@ -160,8 +161,7 @@ async def test_the_kagent_stream_becomes_start_deltas_metrics_end(token: str) ->
 
 
 async def test_regression_the_answer_text_is_not_dropped(token: str) -> None:
-    """The probe's bug: the chassis mode read this stream as `end ok` with `output: null`, and the
-    `Response` had no text. Plain mode keeps the answer, once (the snapshot is not a delta)."""
+    """Plain mode keeps the kagent answer text once in the `Response`."""
     stub = PlainStub(kagent_script)
     async with serve_uds(RequireBearer(stub_app(stub), token)) as path:
         connector, _ = await _remote(path)
@@ -172,8 +172,7 @@ async def test_regression_the_answer_text_is_not_dropped(token: str) -> None:
 
 
 async def test_the_chassis_mode_still_reads_the_same_stream_as_before(token: str) -> None:
-    """The control for the regression test: no `protocol`, and the answer is lost, as the probe
-    saw. The default is untouched."""
+    """With no `protocol`, chassis mode still drops the answer as before."""
     stub = PlainStub(kagent_script)
     async with serve_uds(RequireBearer(stub_app(stub), token)) as path:
         config = _config(path)
@@ -189,6 +188,7 @@ async def test_the_chassis_mode_still_reads_the_same_stream_as_before(token: str
 
 
 async def test_a_snapshot_with_no_deltas_is_the_output(token: str) -> None:
+    """A snapshot with no deltas is the end output over the wire."""
     stub = PlainStub(
         _script(
             task(S.TASK_STATE_SUBMITTED),
@@ -204,6 +204,7 @@ async def test_a_snapshot_with_no_deltas_is_the_output(token: str) -> None:
 
 
 async def test_a_unary_task_with_the_answer_in_its_artifact(token: str) -> None:
+    """A unary task's artifact is the output and its usage is the metrics."""
     stub = PlainStub(
         _script(task(S.TASK_STATE_COMPLETED, artifacts=[("A", ANSWER)], usage=KAGENT_USAGE))
     )
@@ -216,6 +217,7 @@ async def test_a_unary_task_with_the_answer_in_its_artifact(token: str) -> None:
 
 
 async def test_a_message_reply_is_the_answer(token: str) -> None:
+    """A message reply is the output over the wire."""
     stub = PlainStub(_script(reply(ANSWER)))
     async with serve_uds(RequireBearer(stub_app(stub), token)) as path:
         connector, _ = await _remote(path)
@@ -231,6 +233,7 @@ async def test_a_message_reply_is_the_answer(token: str) -> None:
 async def test_a_failed_task_has_fixed_text_and_the_remote_text_stays_in_the_log(
     token: str, state: int
 ) -> None:
+    """A failed task has fixed text; the remote text stays in one capped log line."""
     stub = PlainStub(
         _script(
             task(S.TASK_STATE_SUBMITTED), status(state, text=REMOTE_FAILURE_TEXT + " word" * 200)
@@ -275,18 +278,26 @@ def _sse_error(stub_app_: Any, payload: bytes) -> ASGIApp:
 
 
 @pytest.mark.parametrize(
-    "payload",
+    ("payload", "quoted"),
     [
-        json.dumps(
-            {"jsonrpc": "2.0", "id": "x", "error": {"code": -32000, "message": (MARKER + " ") * 30}}
-        ).encode(),
-        ((MARKER + " ") * 30).encode(),
+        (
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "x",
+                    "error": {"code": -32000, "message": (MARKER + " ") * 30},
+                }
+            ).encode(),
+            True,
+        ),
+        (((MARKER + " ") * 30).encode(), False),
     ],
     ids=["jsonrpc-error", "not-json"],
 )
 async def test_the_remote_words_in_a_transport_error_stay_in_the_log(
-    token: str, payload: bytes
+    token: str, payload: bytes, quoted: bool
 ) -> None:
+    """A transport error has fixed text; the remote's words stay in the log."""
     inner = RequireBearer(_sse_error(stub_app(PlainStub(kagent_script)), payload), token)
     async with serve_uds(inner) as path:
         connector, telemetry = await _remote(path)
@@ -299,12 +310,13 @@ async def test_the_remote_words_in_a_transport_error_stay_in_the_log(
     logged = [e for e in telemetry.logs if e["message"] == "plain a2a remote failed in transit"]
     assert len(logged) == 1
     assert len(logged[0]["remote_text"]) <= 300
-    if payload.startswith(b"{"):  # the SDK quotes a JSON-RPC error message; not a parse failure
-        assert MARKER in logged[0]["remote_text"]
+    # The SDK quotes a JSON-RPC error message; a parse failure does not quote the payload.
+    assert (MARKER in logged[0]["remote_text"]) is quoted
     assert MARKER not in json.dumps([e for e in telemetry.logs if e not in logged], default=str)
 
 
 async def test_a_timeout_error_has_fixed_text_in_plain_mode(token: str) -> None:
+    """A timeout has fixed text in plain mode and the cause goes to the log."""
     connector, _ = _faked([])
     text = connector._failure_text("a2a.timeout", TimeoutError(MARKER))
     assert text == "the remote timed out"
@@ -325,6 +337,7 @@ async def test_chassis_mode_still_passes_the_exception_text_on() -> None:
 
 
 async def test_a_long_remote_task_id_is_capped_in_the_span() -> None:
+    """A long remote task id is capped at 128 characters in the span."""
     long_id = "t" * 1000
     first = task(S.TASK_STATE_COMPLETED, text="x")
     first.task.id = long_id
@@ -341,6 +354,7 @@ async def test_a_long_remote_task_id_is_capped_in_the_span() -> None:
 
 @pytest.mark.parametrize("state", [S.TASK_STATE_INPUT_REQUIRED, S.TASK_STATE_AUTH_REQUIRED])
 async def test_input_required_is_an_error_and_the_task_is_canceled(token: str, state: int) -> None:
+    """A pause state is `a2a.unsupported_state` and the task is canceled."""
     stub = PlainStub(_script(task(S.TASK_STATE_SUBMITTED), status(state)), hang_after=True)
     recorder = Recorder(RequireBearer(stub_app(stub), token))
     async with serve_uds(recorder) as path:
@@ -356,6 +370,7 @@ async def test_input_required_is_an_error_and_the_task_is_canceled(token: str, s
 
 
 async def test_a_completed_run_sends_no_cancel(token: str) -> None:
+    """A completed run sends no `CancelTask`."""
     stub = PlainStub(kagent_script)
     recorder = Recorder(RequireBearer(stub_app(stub), token))
     async with serve_uds(recorder) as path:
@@ -398,19 +413,17 @@ def _faked(items: Sequence[StreamResponse]) -> tuple[RemoteConnector, _FakeClien
 
 
 @pytest.mark.parametrize(
-    "first",
+    "items",
     [
-        status(S.TASK_STATE_INPUT_REQUIRED),
-        artifact("partial", append=True),
+        [status(S.TASK_STATE_INPUT_REQUIRED)],
+        [artifact("partial", append=True), status(S.TASK_STATE_AUTH_REQUIRED)],
     ],
     ids=["status_update", "artifact_update"],
 )
 async def test_the_cancel_goes_out_when_the_task_id_came_from_an_update_not_a_task(
-    first: StreamResponse,
+    items: list[StreamResponse],
 ) -> None:
-    items = [first]
-    if first.HasField("artifact_update"):
-        items.append(status(S.TASK_STATE_AUTH_REQUIRED))
+    """The cancel uses a task id read from an update, not only from a task."""
     connector, fake = _faked(items)
     events = await _events(connector, make_request())
     assert events[-1].type == "error"
@@ -418,6 +431,7 @@ async def test_the_cancel_goes_out_when_the_task_id_came_from_an_update_not_a_ta
 
 
 async def test_a_stream_that_ends_without_a_terminal_state_is_a_transport_error() -> None:
+    """A stream with no terminal state is `a2a.transport` and is canceled."""
     connector, fake = _faked([task(S.TASK_STATE_SUBMITTED), status(S.TASK_STATE_WORKING, text="x")])
     events = await _events(connector, make_request())
     assert _kinds(events) == ["start", "delta", "error"]
@@ -427,6 +441,7 @@ async def test_a_stream_that_ends_without_a_terminal_state_is_a_transport_error(
 
 
 async def test_the_deadline_is_a_timeout_error(token: str) -> None:
+    """The run deadline is a retryable `a2a.timeout` and sends `CancelTask`."""
     stub = PlainStub(_script(task(S.TASK_STATE_SUBMITTED)), hang_after=True)
     request = make_request().model_copy(update={"budget": Budget(timeout_ms=300)})
     recorder = Recorder(RequireBearer(stub_app(stub), token))
@@ -445,6 +460,7 @@ async def test_the_deadline_is_a_timeout_error(token: str) -> None:
 async def test_the_request_has_no_chassis_metadata_and_no_context_id_by_default(
     token: str,
 ) -> None:
+    """The plain request has no chassis metadata and no `contextId` by default."""
     stub = PlainStub(kagent_script)
     bodies = Bodies(stub_app(stub))
     recorder = Recorder(RequireBearer(bodies, token))
@@ -463,6 +479,7 @@ async def test_the_request_has_no_chassis_metadata_and_no_context_id_by_default(
 
 
 async def test_context_id_trace_id_sets_the_run_trace_id(token: str) -> None:
+    """`context_id: trace_id` sends the run's trace id as `contextId`."""
     stub = PlainStub(kagent_script)
     bodies = Bodies(stub_app(stub))
     request = make_request()
@@ -475,6 +492,7 @@ async def test_context_id_trace_id_sets_the_run_trace_id(token: str) -> None:
 
 
 async def test_a_data_part_goes_out_only_when_data_is_not_empty(token: str) -> None:
+    """A data part goes out only when the input data is not empty."""
     stub = PlainStub(kagent_script)
     request = make_request(text="with data").model_copy(
         update={"input": TaskInput(text="with data", data={"n": 3})}
@@ -493,6 +511,7 @@ async def test_a_data_part_goes_out_only_when_data_is_not_empty(token: str) -> N
 async def test_the_token_is_on_the_card_fetch_the_message_the_cancel_and_the_probe(
     token: str,
 ) -> None:
+    """The bearer token is on the card fetch, message, cancel, and probe."""
     stub = PlainStub(
         _script(task(S.TASK_STATE_SUBMITTED), status(S.TASK_STATE_INPUT_REQUIRED)),
         hang_after=True,
@@ -506,11 +525,12 @@ async def test_the_token_is_on_the_card_fetch_the_message_the_cancel_and_the_pro
     assert recorder.seen[0].path == AGENT_CARD_WELL_KNOWN_PATH
     assert [s.method for s in recorder.rpc()] == ["SendStreamingMessage", "CancelTask"]
     assert len(recorder.seen) == 4
-    for seen in recorder.seen:
-        assert seen.headers.get("authorization") == f"Bearer {token}", seen.path
+    sent = [(s.path, s.headers.get("authorization")) for s in recorder.seen]
+    assert sent == [(s.path, f"Bearer {token}") for s in recorder.seen]
 
 
 async def test_a_card_that_names_another_host_is_not_followed(token: str) -> None:
+    """A card that names another host is not followed."""
     stub = PlainStub(kagent_script)
     recorder = Recorder(RequireBearer(stub_app(stub, probe_card("http://evil.test:9999")), token))
     async with serve_uds(recorder) as path:
@@ -518,11 +538,11 @@ async def test_a_card_that_names_another_host_is_not_followed(token: str) -> Non
         events = await _events(connector, make_request())
     assert events[-1].type == "end"
     assert recorder.rpc()
-    for seen in recorder.seen:
-        assert seen.headers["host"] == "remote.test:8443"
+    assert [s.headers["host"] for s in recorder.seen] == ["remote.test:8443"] * len(recorder.seen)
 
 
 async def test_the_span_says_plain_and_whether_usage_was_known(token: str) -> None:
+    """The span names the plain protocol and whether usage was known."""
     stub = PlainStub(kagent_script)
     async with serve_uds(RequireBearer(stub_app(stub), token)) as path:
         connector, telemetry = await _remote(path)
@@ -533,6 +553,7 @@ async def test_the_span_says_plain_and_whether_usage_was_known(token: str) -> No
 
 
 async def test_no_usage_key_means_zero_usage_and_an_unknown_span(token: str) -> None:
+    """With no usage key, metrics are zero and the span says unknown."""
     stub = PlainStub(kagent_script)
     async with serve_uds(RequireBearer(stub_app(stub), token)) as path:
         connector, telemetry = await _remote(path, a2a={})
@@ -559,5 +580,6 @@ async def test_no_usage_key_means_zero_usage_and_an_unknown_span(token: str) -> 
 async def test_setup_refuses_a_bad_plain_option(
     token: str, extra: dict[str, Any], match: str
 ) -> None:
+    """Setup refuses a bad plain option with an error naming the field."""
     with pytest.raises(ValueError, match=match):
         await RemoteConnector().setup(_config(None, **extra), _bundle(None))

@@ -140,6 +140,7 @@ async def start_server() -> AsyncIterator[StartServer]:
 async def test_serves_echo_python_over_a_unix_socket(
     echo_python: Any, start_server: StartServer, uds_path: str
 ) -> None:
+    """The template server serves `echo_python` over a Unix socket."""
     path = uds_path
     await start_server(build_server(echo_python.handle, CARD, port=9000, uds=path))
     req = request_to_message({"text": "simplify: the quick brown fox"}, CTX)
@@ -152,9 +153,7 @@ async def test_serves_echo_python_over_a_unix_socket(
 async def test_same_stream_as_the_chassis_template_server(
     echo_python: Any, start_server: StartServer, uds_path: str
 ) -> None:
-    """The workload copy over a socket and the chassis copy in memory give the same events. The
-    chassis is imported only here, and only to compare; a workload-only environment skips this.
-    """
+    """The workload server and the chassis template server give the same events."""
     chassis_server = pytest.importorskip("chassis.adapters.a2a.server")
     path = uds_path
     await start_server(build_server(echo_python.handle, CARD, port=9000, uds=path))
@@ -221,6 +220,7 @@ async def _models(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[A
 
 
 async def test_fills_defaults_like_the_chassis() -> None:
+    """Missing event fields are filled with the chassis defaults."""
     events = _events(await _send_asgi(build_app(_minimal, CARD), _hi()))
     assert events == [
         {"schema_version": "0", "type": "start", "request_id": "req-1"},
@@ -247,6 +247,7 @@ async def test_fills_defaults_like_the_chassis() -> None:
 
 
 async def test_accepts_objects_with_model_dump() -> None:
+    """Objects with `model_dump` are accepted as events."""
     events = _events(await _send_asgi(build_app(_models, CARD), _hi()))
     assert [e["type"] for e in events] == ["start", "end"]
 
@@ -264,6 +265,7 @@ async def test_accepts_objects_with_model_dump() -> None:
     ],
 )
 async def test_bad_events_map_to_the_chassis_error_codes(handle: Any, code: str) -> None:
+    """Bad events and a bad order map to the chassis error codes, with no end."""
     events = _events(await _send_asgi(build_app(handle, CARD), _hi()))
     assert events[-1]["type"] == "error" and events[-1]["code"] == code
     assert events[-1]["retryable"] is False
@@ -271,11 +273,13 @@ async def test_bad_events_map_to_the_chassis_error_codes(handle: Any, code: str)
 
 
 async def test_bad_schema_version_names_the_version() -> None:
+    """A bad event schema version is named in the error message."""
     events = _events(await _send_asgi(build_app(_future, CARD), _hi()))
     assert "'9'" in events[-1]["message"]
 
 
 async def test_request_schema_version_is_checked() -> None:
+    """A request with an unknown schema version is one error."""
     req = request_to_message({"text": "hi"}, CTX, schema_version="9")
     events = _events(await _send_asgi(build_app(_minimal, CARD), req))
     assert [e["code"] for e in events] == ["a2a.unsupported_schema_version"]
@@ -294,6 +298,7 @@ def _recording(seen: list[tuple[dict[str, Any], dict[str, Any]]]) -> Any:
 
 
 async def test_input_and_ctx_reach_handle_as_sent() -> None:
+    """Input and ctx reach `handle` as sent, ints kept as ints."""
     seen: list[tuple[dict[str, Any], dict[str, Any]]] = []
     req = request_to_message({"text": "hi", "data": {"n": 3, "nested": [{"k": 2}]}}, CTX)
     await _send_asgi(build_app(_recording(seen), CARD), req)
@@ -304,6 +309,7 @@ async def test_input_and_ctx_reach_handle_as_sent() -> None:
 
 
 async def test_chassis_input_is_passed_as_is() -> None:
+    """`chassis.input` is passed to `handle` as is."""
     seen: list[tuple[dict[str, Any], dict[str, Any]]] = []
     req = _hi()
     req.metadata[INPUT_KEY] = json.dumps({"data": {"n": 3}})
@@ -313,6 +319,7 @@ async def test_chassis_input_is_passed_as_is() -> None:
 
 
 async def test_falls_back_to_the_parts_and_reads_a_v0_ctx() -> None:
+    """With no `chassis.input`, the parts are the input and a v0 ctx is read."""
     seen: list[tuple[dict[str, Any], dict[str, Any]]] = []
     req = request_to_message({"text": "hi", "data": {"n": 3}}, CTX)
     del req.metadata.fields[INPUT_KEY]
@@ -325,6 +332,7 @@ async def test_falls_back_to_the_parts_and_reads_a_v0_ctx() -> None:
 
 @pytest.mark.parametrize("key", [CTX_KEY, INPUT_KEY])
 async def test_unparseable_ctx_or_input_is_a2a_bad_request(key: str) -> None:
+    """Unparsable ctx or input is `a2a.bad_request` and `handle` never runs."""
     seen: list[tuple[dict[str, Any], dict[str, Any]]] = []
     req = _hi()
     req.metadata[key] = "{not json"
@@ -334,6 +342,8 @@ async def test_unparseable_ctx_or_input_is_a2a_bad_request(key: str) -> None:
 
 
 async def test_a_yielded_infinity_is_workload_bad_event() -> None:
+    """A yielded infinite float is `workload.bad_event`."""
+
     async def inf(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[Any]:
         yield {"type": "start", "request_id": ctx["request_id"]}
         yield {"type": "metrics", "input_tokens": 1, "cost_usd": float("inf")}
@@ -345,6 +355,7 @@ async def test_a_yielded_infinity_is_workload_bad_event() -> None:
 
 
 def test_validate_event_is_the_one_check() -> None:
+    """`validate_event` fills defaults and refuses a missing field."""
     assert validate_event({"type": "delta", "text": "x"}) == {
         "schema_version": "0",
         "type": "delta",
@@ -371,15 +382,16 @@ async def _until_empty(store: InMemoryTaskStore) -> int:
 
 
 async def test_store_does_not_grow_across_requests() -> None:
+    """The task store is empty again after five runs."""
     store = InMemoryTaskStore()
     app = build_app(_minimal, CARD, task_store=store)
-    for _ in range(5):
-        events = _events(await _send_asgi(app, _hi()))
-        assert events[-1]["type"] == "end"
+    last = [_events(await _send_asgi(app, _hi()))[-1]["type"] for _ in range(5)]
+    assert last == ["end"] * 5
     assert await _until_empty(store) == 0
 
 
 async def test_store_is_pruned_after_errors_too() -> None:
+    """The task store is pruned after runs that end in an error."""
     store = InMemoryTaskStore()
     app = build_app(_raising, CARD, task_store=store)
     for _ in range(3):
@@ -390,6 +402,7 @@ async def test_store_is_pruned_after_errors_too() -> None:
 async def test_store_is_pruned_after_a_mid_run_cancel(
     start_server: StartServer, uds_path: str
 ) -> None:
+    """The task store is pruned after a mid-run cancel."""
     gate = asyncio.Event()
 
     async def parked(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[Any]:
@@ -457,14 +470,7 @@ class _GatedQueue(EventQueue):
 async def test_cancel_while_the_handle_is_suspended_at_a_yield_is_one_canceled(
     group: bool,
 ) -> None:
-    """The cancel lands while the handle is parked at a `yield`, plain or holding an anyio cancel
-    scope (the PydanticAI and LangGraph handles hold task groups, which hold one). The cancel does
-    not close the generator from its own task; `execute` does, in the task that opened the scope.
-    Exactly one terminal state, `CANCELED`, and nothing after it (no `workload.no_end`). The one
-    exception is the update whose publish was already in flight when the cancel landed (`held`
-    here): a publish cannot be recalled. Nothing the handle yields after the cancel is published.
-    The chassis copy has the same test.
-    """
+    """A cancel at a yield is one CANCELED, and the executor closes the handle."""
     import contextlib
 
     import anyio
@@ -509,6 +515,8 @@ async def test_cancel_while_the_handle_is_suspended_at_a_yield_is_one_canceled(
         for i, e in enumerate(queue.events)
         if isinstance(e, TaskStatusUpdateEvent) and e.status.state == TaskState.TASK_STATE_CANCELED
     )
+    # Only the update already in flight when the cancel landed (`held`) may follow: a publish
+    # cannot be recalled. The chassis copy has the same test.
     after = queue.events[canceled + 1 :]
     assert all(isinstance(e, TaskArtifactUpdateEvent) for e in after), after
     texts = [
@@ -526,27 +534,32 @@ async def test_cancel_while_the_handle_is_suspended_at_a_yield_is_one_canceled(
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])
 def test_loopback_hosts_bind(host: str) -> None:
+    """Loopback hosts bind by default."""
     server = build_server(_minimal, CARD, host=host, port=9000)
     assert server.config.host == host
 
 
 @pytest.mark.parametrize("host", ["0.0.0.0", "10.0.0.5", "example.com", "::"])
 def test_non_loopback_host_is_refused(host: str) -> None:
+    """A non-loopback host is refused by default (ADR-001)."""
     with pytest.raises(ValueError, match="ADR-001"):
         build_server(_minimal, CARD, host=host, port=9000)
 
 
 def test_any_host_needs_the_explicit_flag() -> None:
+    """Any host binds only with `allow_any_host`."""
     server = build_server(_minimal, CARD, host="0.0.0.0", port=9000, allow_any_host=True)
     assert server.config.host == "0.0.0.0"
 
 
 def test_cli_refuses_a_non_loopback_host() -> None:
+    """The CLI refuses a non-loopback host (ADR-001)."""
     with pytest.raises(SystemExit, match="ADR-001"):
         cli.main(["serve", "--handle", "echo_python:handle", "--port", "9000", "--host", "0.0.0.0"])
 
 
 def test_cli_builds_the_server_from_a_dotted_handle() -> None:
+    """The CLI builds the server from a `module:attribute` handle."""
     server = cli.build(
         ["serve", "--handle", "echo_python:handle", "--port", "9001", "--name", "echo"]
     )
@@ -554,5 +567,6 @@ def test_cli_builds_the_server_from_a_dotted_handle() -> None:
 
 
 def test_cli_refuses_a_bad_handle_path() -> None:
+    """The CLI refuses a handle that is not `module:attribute`."""
     with pytest.raises(SystemExit, match="module:attribute"):
         cli.main(["serve", "--handle", "echo_python", "--port", "9000"])

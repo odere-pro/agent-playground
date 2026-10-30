@@ -138,6 +138,7 @@ EXTRA_SECTION=""
 MISSING=0
 NOTE_FILES=()
 FAILED=""
+BAKEOFF_CMD=()
 
 say() { printf '%s\n' "$*"; }
 warn() { printf 'poc06_mac: warning: %s\n' "$*" >&2; }
@@ -580,11 +581,17 @@ write_note() {
 
 # ---- steps -----------------------------------------------------------------------------------
 
+# The bake-off command of one route, built once: bakeoff_run runs it and the note records it.
+bakeoff_cmd() {  # ROUTE: sets BAKEOFF_CMD
+  BAKEOFF_CMD=(uv run python -m bakeoff run
+    --model-url "http://127.0.0.1:$LITELLM_PORT/v1" --model-key-env POC06_LITELLM_KEY
+    --route "$1" --tasks "smoke,simplifier,lookup" --repeat "$REPEAT"
+    --engine "$ENGINES_CSV" --lane "inprocess,sidecar")
+}
+
 bakeoff_run() {  # LOG ROUTE OUTDIR
-  POC06_LITELLM_KEY="$LITELLM_KEY" run_logged "$1" uv run python -m bakeoff run \
-    --model-url "http://127.0.0.1:$LITELLM_PORT/v1" --model-key-env POC06_LITELLM_KEY \
-    --route "$2" --tasks smoke,simplifier,lookup --repeat "$REPEAT" \
-    --engine "$ENGINES_CSV" --lane inprocess,sidecar --out "$3"
+  bakeoff_cmd "$2"
+  POC06_LITELLM_KEY="$LITELLM_KEY" run_logged "$1" "${BAKEOFF_CMD[@]}" --out "$3"
 }
 
 # Words that name the engines and pairs for load_driver.py, one per line.
@@ -602,6 +609,7 @@ build_scale_images() {  # LOG
 step_hosted() {
   say; say "== step hosted: big-default, $HOSTED_MODEL, engines $ENGINES_CSV"
   local log="$WORK/hosted.log" out="$WORK/hosted-out" rc=0
+  bakeoff_cmd big-default
   [[ "$DRY" == 1 ]] || : >"$log"
   if start_litellm "$log" hosted; then
     bakeoff_run "$log" big-default "$out" || rc=$?
@@ -611,7 +619,7 @@ step_hosted() {
   stop_litellm
   write_note hosted-run "$NOTES_A" "PoC-6 hosted big-model run" \
     "PoC-6a and 6b exit criterion 5 (every engine on a hosted big model) and the token-overhead column. Trusted engines only: the untrusted ones run on kind under gVisor. No prompt-bytes column: the chassis calls LiteLLM, not the fake model server." \
-    "uv run python -m bakeoff run --model-url http://127.0.0.1:$LITELLM_PORT/v1 --model-key-env POC06_LITELLM_KEY --route big-default --tasks smoke,simplifier,lookup --repeat $REPEAT --engine $ENGINES_CSV --lane inprocess,sidecar" \
+    "${BAKEOFF_CMD[*]} --out <dir>" \
     "$log" "$rc" "$out"
   return "$rc"
 }
@@ -619,6 +627,7 @@ step_hosted() {
 step_slm() {
   say; say "== step slm: local-small, $GGUF_FILE, engines $ENGINES_CSV"
   local log="$WORK/slm.log" out="$WORK/slm-out" rc=0
+  bakeoff_cmd local-small
   [[ "$DRY" == 1 ]] || : >"$log"
   if start_llama && start_litellm "$log"; then
     bakeoff_run "$log" local-small "$out" || rc=$?
@@ -632,7 +641,7 @@ $(cpu_summary)"
   stop_llama
   write_note slm-run "$NOTES_C" "PoC-6c pre-trained SLM run" \
     "PoC-6c exit criteria 1, 2, and 5: every trusted 6a engine on Qwen3-1.7B through LiteLLM \`local-small\`, only \`--route\` changed from the hosted run. The model file hash, the llama.cpp version, and the server flags are in Setup." \
-    "uv run python -m bakeoff run --model-url http://127.0.0.1:$LITELLM_PORT/v1 --model-key-env POC06_LITELLM_KEY --route local-small --tasks smoke,simplifier,lookup --repeat $REPEAT --engine $ENGINES_CSV --lane inprocess,sidecar" \
+    "${BAKEOFF_CMD[*]} --out <dir>" \
     "$log" "$rc" "$out"
   EXTRA_SECTION=""
   return "$rc"

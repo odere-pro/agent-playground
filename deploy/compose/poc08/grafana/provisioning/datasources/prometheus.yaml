@@ -1,0 +1,15 @@
+# The one Prometheus datasource. Each dashboard in deploy/dashboards/ picks its datasource with
+# the variable `datasource` (type `datasource`, query `prometheus`); with no saved value Grafana
+# takes the default datasource of that type, so this one is the default.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: poc08-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 5s

@@ -38,7 +38,7 @@ from poc08_harness import ROOT
 from pytest_socket import SocketBlockedError
 
 WORKFLOWS = ROOT / ".github/workflows"
-SUITE_WORKFLOWS = ("ci.yml", "poc08-evals.yml")
+SUITE_WORKFLOWS = ("ci.yml", "poc08-evals.yml", "poc08-stack.yml")
 HERE = "pocs/poc-08-cross-cutting-build/tests"
 SUPPORTED = {
     "echo-python",
@@ -52,6 +52,8 @@ SUPPORTED = {
 """ADR-006's supported engines that run offline. `kagent-adk` runs only on kind (poc06-kind.yml);
 both baselines record it as skipped."""
 FULL_SHA = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
+GATED_DRILLS = {"test_poc08_stack_metrics.py", "test_poc08_stack_litellm.py"}
+"""`network` drills against a running stack, collected only with their variable (conftest.py)."""
 
 
 def _workflow(name: str) -> dict[str, Any]:
@@ -133,7 +135,10 @@ print("@@COLLECTED@@" + json.dumps({"code": int(code), "items": seen.items}))
 @pytest.mark.slow
 def test_the_gate_collects_this_folder_with_no_network_test() -> None:
     """Criterion 1: with the gate's own flags, every PoC-8 scenario file is collected, every
-    cell is there, and none of it is marked `network` (so none is left out of `make test`)."""
+    cell is there, and none of it is marked `network` (so none is left out of `make test`).
+    The stack drills in `GATED_DRILLS` are not scenario files: they need a running Compose
+    stack and are collected only with their variable (conftest.py; test_poc08_litellm_static.py
+    checks that gate)."""
     env = {k: v for k, v in os.environ.items() if not k.endswith(("_API_KEY", "_TOKEN"))}
     done = subprocess.run(
         [sys.executable, "-c", _COLLECT, *_gate_flags(), "--collect-only", "-q", HERE],
@@ -149,7 +154,7 @@ def test_the_gate_collects_this_folder_with_no_network_test() -> None:
     assert report["code"] == 0, done.stdout[-3000:] + done.stderr[-3000:]
     items: dict[str, list[str]] = report["items"]
     files = {node.split("::")[0].rsplit("/", 1)[-1] for node in items}
-    expected = {p.name for p in (ROOT / HERE).glob("test_poc08_*.py")}
+    expected = {p.name for p in (ROOT / HERE).glob("test_poc08_*.py")} - GATED_DRILLS
     assert files == expected
     assert not [node for node, marks in items.items() if "network" in marks]
     assert not [node for node, marks in items.items() if "skip" in marks]

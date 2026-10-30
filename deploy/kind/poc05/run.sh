@@ -527,13 +527,19 @@ run_tests() {
     -q -rs)
 }
 
-# The kind remote-lane and code-runner tests, selected by file path (review B1: a `-k` match
-# picked only admission fixture ids). No admission file belongs here.
+# The kind tests the CI job runs, selected by file path (review B1: a `-k` match picked only
+# admission fixture ids). The remote-lane and code-runner files, then the sidecar-control files
+# and the runtime hardening per lane (R5a-03, R5a-08). The admission file runs last: it deletes and
+# patches the trust rule's params, which refuses new pods (a warm-pool refill) until restored.
+# None needs Kafka; `up` applies all they use.
 REMOTE_TESTS=(
   pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_lane.py
   pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py
   pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py
   pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_shm.py
+  pocs/poc-05-sandboxed/tests/test_poc05_kind_sidecar_controls.py
+  pocs/poc-05-sandboxed/tests/test_poc05_kind_runtime_hardening.py
+  pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py
 )
 
 # The remote-lane CI job (.github/workflows/remote-lane.yml) runs this after `up`. A missing file

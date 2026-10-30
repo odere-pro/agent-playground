@@ -1,8 +1,9 @@
 # PoC-4 scale stack: Traefik in front of 1, 2, or 4 chassis and workload pairs, with Valkey for
 # shared state, MinIO for the agent config, the fake model server as the model, and Kafka in the
-# `events` profile. A file of its own, project `poc04`, network `poc04`: it never names, stops, or
-# reuses a container of another project. Start it with scale.sh, the one entry point; it
-# generates the secrets this file requires and passes `-p poc04 -f docker-compose.scale.yaml`:
+# `events` profile. A file of its own, project `poc04`, internal network `poc04` (plus
+# `poc04-edge` for Traefik's port): it never names, stops, or reuses a container of another
+# project. Start it with scale.sh, the one entry point; it generates the secrets this file
+# requires and passes `-p poc04 -f docker-compose.scale.yaml`:
 #   ./scale.sh build
 #   ./scale.sh up echo-python 2            # 2 pairs; engines: echo-python, echo-pydanticai,
 #                                          # echo-langgraph, echo-typescript; or `inprocess 1`
@@ -308,6 +309,9 @@ services:
       - --global.sendAnonymousUsage=false
     volumes:
       - ./traefik/poc04.yaml:/etc/traefik/dynamic/poc04.yaml:ro
+    # `default` (poc04, internal) to reach the chassis; `edge` only so Docker can publish the
+    # port: Docker publishes no port from an internal network (SECURITY.md 7).
+    networks: [default, edge]
     ports:
       - "127.0.0.1:18080:8000"
 
@@ -357,7 +361,14 @@ services:
       chassis-4:
         condition: service_started
 
-# One network for the project. No `network_mode: host` anywhere.
+# `poc04` is internal: no route out of the stack, so no chassis, workload, daprd, or backing
+# service reaches the internet, the LAN, or the host (host.docker.internal). Nothing here needs
+# one: the model is the fake model server, and image pulls are the daemon's, not a container's.
+# `edge` is a normal network that only Traefik joins, for its published port. No
+# `network_mode: host` anywhere (SECURITY.md 7).
 networks:
   default:
     name: poc04
+    internal: true
+  edge:
+    name: poc04-edge

@@ -50,8 +50,8 @@ telemetry adapter's registry. Its `OpenMetrics` middleware is the outermost one,
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from typing import Literal
 
 from fastapi import FastAPI
@@ -130,85 +130,18 @@ async def close_ports(bundle: PortBundle) -> None:
                 stack.push_async_callback(closer)
 
 
-def create_app(
-    config: ChassisConfig,
-    ports: PortBundle | None = None,
-    *,
-    probe: ProbeSettings | None = None,
-) -> FastAPI:
-    """Build the app. Ports come from the profile unless a test injects them. `probe` sets the
-    workload probe's interval, timeout, and failure count (suggested defaults in `ProbeSettings`).
-    """
+def _build_ports(config: ChassisConfig) -> PortBundle:
+    """The ports the profile and `spec.adapters` name, for the lane of `spec.engine.connector`."""
+    return build_ports(
+        config.profile,
+        config.spec.adapters,
+        connector=config.spec.engine.connector,
+        agent=config.agent.name,
+    )
 
-    @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        bundle = ports or build_ports(
-            config.profile,
-            config.spec.adapters,
-            connector=config.spec.engine.connector,
-            agent=config.agent.name,
-        )
-        try:
-            check_engine(bundle, config, built=ports is None)
-            await bundle.engine.setup(config.spec.engine.as_mapping(), bundle)
-        except BaseException:
-            await close_ports(bundle)
-            raise
-        app.state.ports = bundle
-        app.state.draining = False  # a lifespan entered again (tests) is not draining
-        monitor = ReadinessMonitor(bundle.engine, probe or ProbeSettings())
-        app.state.readiness = monitor
-        # Background tasks start here, after the engine is set up and before `ready`.
-        reloader = ConfigReloader(app.state, bundle.config, config, telemetry=bundle.telemetry)
-        try:
-            await reloader.start()  # the first config; a bad store document fails startup
-        except BaseException:
-            await close_ports(bundle)
-            raise
-        app.state.config_reloader = reloader
-        try:  # PoC-7: the evaluator gate wraps the engine, by the first config
-            bundle = app.state.ports = with_gate(bundle, app.state)
-        except BaseException:
-            await reloader.stop()
-            await close_ports(bundle)
-            raise
-        publisher = None  # result events: `spec.events` is restart-only, read once here
-        if app.state.config.spec.events.result_events:
-            publisher = ResultPublisher(app.state)
-            app.state.pipeline.on_finished.append(publisher)
-        app.state.result_publisher = publisher
-        lookup = None  # feedback: `spec.feedback` is restart-only, read once here
-        feedback_events = None
-        if feedback_route:
-            spec_feedback = app.state.config.spec.feedback
-            bind_score_name(bundle.feedback, spec_feedback.score_name)
-            lookup = FeedbackLookup(app.state)
-            app.state.pipeline.on_finished.append(lookup)
-            if spec_feedback.events:
-                feedback_events = FeedbackEvents(app.state)
-        app.state.feedback_events = feedback_events
-        monitor.start()
-        app.state.ready = True
-        try:
-            yield
-        finally:
-            app.state.ready = False
-            app.state.draining = True
-            # Background tasks stop here, before the ports close.
-            await reloader.stop()
-            await monitor.stop()
-            if publisher is not None:  # pending publishes go out, bounded, before the ports close
-                app.state.pipeline.on_finished.remove(publisher)
-                await publisher.aclose()
-            if lookup is not None:
-                app.state.pipeline.on_finished.remove(lookup)
-            if feedback_events is not None:
-                app.state.feedback_events = None
-                await feedback_events.aclose()
-            await close_ports(bundle)
 
-    feedback_route = feedback_on(config)
-    app = FastAPI(title="chassis", version=CHASSIS_VERSION, lifespan=lifespan)
+def _init_state(app: FastAPI, config: ChassisConfig) -> None:
+    """The state before the lifespan: not ready, not draining, no config loaded yet."""
     app.state.config = config
     app.state.config_loaded = False  # set by the config loader in the lifespan
     app.state.config_reloader = None
@@ -219,6 +152,117 @@ def create_app(
     app.state.readiness = None
     app.state.runs = RunRegistry()
     app.state.pipeline = RunPipeline(app.state)
+
+
+def _start_result_events(app: FastAPI) -> ResultPublisher | None:
+    """Add a `ResultPublisher` to `pipeline.on_finished` when `spec.events.result_events`.
+    `spec.events` is restart-only, read once here."""
+    publisher = None
+    if app.state.config.spec.events.result_events:
+        publisher = ResultPublisher(app.state)
+        app.state.pipeline.on_finished.append(publisher)
+    app.state.result_publisher = publisher
+    return publisher
+
+
+async def _stop_result_events(app: FastAPI, publisher: ResultPublisher | None) -> None:
+    """Pending publishes go out, bounded, before the ports close."""
+    if publisher is not None:
+        app.state.pipeline.on_finished.remove(publisher)
+        await publisher.aclose()
+
+
+def _start_feedback(
+    app: FastAPI, bundle: PortBundle, *, route: bool
+) -> tuple[FeedbackLookup | None, FeedbackEvents | None]:
+    """With the feedback route, name the score, add a `FeedbackLookup` to `pipeline.on_finished`,
+    and, with `spec.feedback.events`, start `FeedbackEvents`. `spec.feedback` is restart-only,
+    read once here."""
+    lookup = None
+    feedback_events = None
+    if route:
+        spec_feedback = app.state.config.spec.feedback
+        bind_score_name(bundle.feedback, spec_feedback.score_name)
+        lookup = FeedbackLookup(app.state)
+        app.state.pipeline.on_finished.append(lookup)
+        if spec_feedback.events:
+            feedback_events = FeedbackEvents(app.state)
+    app.state.feedback_events = feedback_events
+    return lookup, feedback_events
+
+
+async def _stop_feedback(
+    app: FastAPI, lookup: FeedbackLookup | None, feedback_events: FeedbackEvents | None
+) -> None:
+    """Remove the lookup, then drain the feedback events, like the result publisher."""
+    if lookup is not None:
+        app.state.pipeline.on_finished.remove(lookup)
+    if feedback_events is not None:
+        app.state.feedback_events = None
+        await feedback_events.aclose()
+
+
+def _lifespan(
+    config: ChassisConfig,
+    ports: PortBundle | None,
+    probe: ProbeSettings | None,
+    *,
+    feedback_route: bool,
+) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
+    """The lifespan `create_app` gives FastAPI (module docstring)."""
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        bundle = ports or _build_ports(config)
+        # A failed start unwinds what started, last in, first out: the reloader, then the ports.
+        async with AsyncExitStack() as startup:
+            startup.push_async_callback(close_ports, bundle)
+            check_engine(bundle, config, built=ports is None)
+            await bundle.engine.setup(config.spec.engine.as_mapping(), bundle)
+            app.state.ports = bundle
+            app.state.draining = False  # a lifespan entered again (tests) is not draining
+            monitor = ReadinessMonitor(bundle.engine, probe or ProbeSettings())
+            app.state.readiness = monitor
+            # Background tasks start here, after the engine is set up and before `ready`.
+            reloader = ConfigReloader(app.state, bundle.config, config, telemetry=bundle.telemetry)
+            await reloader.start()  # the first config; a bad store document fails startup
+            app.state.config_reloader = reloader
+            startup.push_async_callback(reloader.stop)
+            # PoC-7: the evaluator gate wraps the engine, by the first config
+            bundle = app.state.ports = with_gate(bundle, app.state)
+            startup.pop_all()  # started: the shutdown below owns them now
+        publisher = _start_result_events(app)
+        lookup, feedback_events = _start_feedback(app, bundle, route=feedback_route)
+        monitor.start()
+        app.state.ready = True
+        try:
+            yield
+        finally:
+            app.state.ready = False
+            app.state.draining = True
+            # Background tasks stop here, before the ports close.
+            await reloader.stop()
+            await monitor.stop()
+            await _stop_result_events(app, publisher)
+            await _stop_feedback(app, lookup, feedback_events)
+            await close_ports(bundle)
+
+    return lifespan
+
+
+def create_app(
+    config: ChassisConfig,
+    ports: PortBundle | None = None,
+    *,
+    probe: ProbeSettings | None = None,
+) -> FastAPI:
+    """Build the app. Ports come from the profile unless a test injects them. `probe` sets the
+    workload probe's interval, timeout, and failure count (suggested defaults in `ProbeSettings`).
+    """
+    feedback_route = feedback_on(config)
+    lifespan = _lifespan(config, ports, probe, feedback_route=feedback_route)
+    app = FastAPI(title="chassis", version=CHASSIS_VERSION, lifespan=lifespan)
+    _init_state(app, config)
 
     @app.get("/health", operation_id="health", response_model=Health)
     async def health() -> Health:

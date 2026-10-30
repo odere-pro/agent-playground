@@ -72,7 +72,7 @@ The gateway is the `mcp_servers.chassis_agent` entry in `litellm/config.yaml`: L
 
 ## Scale stack (PoC-4)
 
-`docker-compose.scale.yaml` is a file of its own, project `poc04`, network `poc04`. Traefik on `127.0.0.1:18080` balances over explicit pairs `chassis-N` and `workload-N`; each workload joins its chassis's network namespace, as in the sidecar variant. The chassis reaches the fake model server directly (no LiteLLM in the measured path), keeps state in Valkey, and reads its agent config from MinIO (`s3://agent-configs/agents/echo.yaml`, seeded by `minio-init` on every `up`). Design: `docs/plans/2026-10-01-poc-04-stateless-scalable.md`, section 8a. Rules: `SECURITY.md`, section 7.
+`docker-compose.scale.yaml` is a file of its own, project `poc04`, network `poc04`. That network is internal, with no way out; Traefik alone also joins `poc04-edge` to publish its port. Traefik on `127.0.0.1:18080` balances over explicit pairs `chassis-N` and `workload-N`; each workload joins its chassis's network namespace, as in the sidecar variant. The chassis reaches the fake model server directly (no LiteLLM in the measured path), keeps state in Valkey, and reads its agent config from MinIO (`s3://agent-configs/agents/echo.yaml`, seeded by `minio-init` on every `up`). Design: `docs/plans/2026-10-01-poc-04-stateless-scalable.md`, section 8a. Rules: `SECURITY.md`, section 7.
 
 | Pairs | Profiles | Services |
 | ----- | -------- | -------- |
@@ -100,7 +100,7 @@ Render without a daemon, with dummy secrets: `VALKEY_PASSWORD=x MINIO_ROOT_PASSW
 
 ## PoC-7 stack
 
-`poc07/docker-compose.yaml` is a file of its own, project `poc07`. It runs Langfuse v4 (web, worker, ClickHouse, MinIO, Redis, Postgres), an OTel Collector, and Jaeger v2. The chassis sends OTLP to the Collector. The Collector sends the same spans to Langfuse and to Jaeger. Every port binds `127.0.0.1`. Plan: `docs/plans/2026-10-28-poc-07-cross-cutting.md`, criterion 1.
+`poc07/docker-compose.yaml` is a file of its own, project `poc07`. It runs Langfuse v4 (web, worker, ClickHouse, MinIO, Redis, Postgres), an OTel Collector, and Jaeger v2. The chassis sends OTLP to the Collector. The Collector sends the same spans to Langfuse and to Jaeger. Before it sends them, it masks emails, phone numbers, and ids in span attributes, with the logs pipeline's rules. It leaves the chassis's id keys alone. Every port binds `127.0.0.1`. Plan: `docs/plans/2026-10-28-poc-07-cross-cutting.md`, criterion 1.
 
 Use `stack.sh`, never a bare `docker compose`. It makes every credential into the git-ignored `poc07/.env.poc07` (mode 600) and passes `-p poc07` on every call.
 

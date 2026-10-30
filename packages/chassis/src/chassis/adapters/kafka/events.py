@@ -32,6 +32,11 @@ from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from aiokafka.errors import KafkaError
 from pydantic import ValidationError
 
+from chassis.adapters.publish_retry import (
+    PUBLISH_BACKOFF_S,
+    RetryablePublishError,
+    publish_with_retry,
+)
 from chassis.ports.events import (
     CONTENT_TYPE,
     DLQ_SUFFIX,
@@ -42,8 +47,6 @@ from chassis.ports.events import (
 
 log = logging.getLogger(__name__)
 
-PUBLISH_BACKOFF_S = (0.1, 0.5)
-"""suggested: 3 publish attempts, waiting 0.1 s then 0.5 s between them."""
 DELIVERY_BACKOFF_S = (0.2, 1.0)
 """suggested: the wait before the 2nd and later deliveries of a failing event."""
 METADATA_MAX_AGE_MS = 1_000
@@ -235,27 +238,30 @@ class KafkaEvents:
         """Return once every in-sync replica has the event (`acks=all`). Raise `PublishFailed`
         after `len(publish_backoff_s) + 1` attempts."""
         key, value, headers = _encode(event)
-        attempts = len(self.publish_backoff_s) + 1
-        for attempt in range(1, attempts + 1):
+
+        async def attempt(number: int) -> None:
             try:
                 producer = await self._started_producer()
                 await producer.send_and_wait(topic, value=value, key=key, headers=headers)
-                return
             except (KafkaError, OSError) as exc:
                 log.warning(
                     "kafka publish failed",
                     extra={
                         "topic": topic,
                         "event_id": event.id,
-                        "attempt": attempt,
+                        "attempt": number,
                         "error": type(exc).__name__,
                     },
                 )
-                if attempt == attempts:
-                    raise PublishFailed(
-                        f"publish to {topic} failed after {attempts} attempts: {type(exc).__name__}"
-                    ) from None
-                await asyncio.sleep(self.publish_backoff_s[attempt - 1])
+                raise RetryablePublishError(type(exc).__name__) from exc
+
+        try:
+            await publish_with_retry(attempt, self.publish_backoff_s)
+        except RetryablePublishError as exc:
+            attempts = len(self.publish_backoff_s) + 1
+            raise PublishFailed(
+                f"publish to {topic} failed after {attempts} attempts: {exc.reason}"
+            ) from None
 
     # --- end retries: publish ---------------------------------------------------------------
 

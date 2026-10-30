@@ -23,15 +23,18 @@ import { UserBuilder, agentCardHandler, jsonRpcHandler } from "@a2a-js/sdk/serve
 import express, { type Express } from "express";
 
 import { bearerAuth } from "./auth.js";
-import { SCHEMA_VERSION, type ChassisEvent, type Context, type Handle, type Json } from "./handle.js";
-import { validateEvent } from "./schema.js";
+import type { ChassisEvent, Context, Handle } from "./handle.js";
+import { idsOf, log, withRequest, type RequestIds } from "./log.js";
+import { SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS, validateEvent, type Json } from "./schema.js";
 
+export { SUPPORTED_SCHEMA_VERSIONS } from "./schema.js";
+
+const LOGGER = "echo_typescript.a2a_server";
 export const EVENT_KEY = "chassis.event";
 export const CTX_KEY = "chassis.ctx";
 export const INPUT_KEY = "chassis.input";
 export const SCHEMA_VERSION_KEY = "chassis.schema_version";
 export const OUTPUT_ARTIFACT_ID = "output";
-export const SUPPORTED_SCHEMA_VERSIONS = ["0"];
 
 const textPart = (text: string): Part => ({ content: { $case: "text", value: text }, metadata: undefined, filename: "", mediaType: "" });
 const dataPart = (data: unknown): Part => ({ content: { $case: "data", value: data }, metadata: undefined, filename: "", mediaType: "application/json" });
@@ -84,6 +87,15 @@ export function requestToInput(request: SendMessageRequest): [Json, Context] {
   return [{ text: typeof text === "string" && text ? text : null, data: data ?? {} }, { ...ctx }];
 }
 
+/** The request's log ids from `chassis.ctx`; none when it is absent or not readable. */
+function logIds(request: SendMessageRequest): RequestIds {
+  try {
+    return idsOf(readJson(request.metadata as Json | undefined, CTX_KEY) ?? {});
+  } catch {
+    return {}; // `run` answers a2a.bad_request
+  }
+}
+
 // --- Events out ---
 
 /**
@@ -114,21 +126,37 @@ export function eventToUpdate(event: ChassisEvent, taskId: string, contextId: st
 
 // --- The executor ---
 
+/** The `a2a.unsupported_schema_version` error for a request in a version this server does not
+ * accept; `undefined` when the version (absent means the current one) is supported. */
+function unsupportedVersion(request: SendMessageRequest): ChassisEvent | undefined {
+  const version = String(request.metadata?.[SCHEMA_VERSION_KEY] ?? SCHEMA_VERSION);
+  if (SUPPORTED_SCHEMA_VERSIONS.includes(version)) return undefined;
+  return own("a2a.unsupported_schema_version", `schema version ${JSON.stringify(version)} is not supported; this server accepts ${SUPPORTED_SCHEMA_VERSIONS.join(", ")}`);
+}
+
 /** Runs `handle` for one task; enforces the order: `start` first, `end` or `error` last. */
 export class HandleExecutor implements AgentExecutor {
   private readonly running = new Map<string, { abort: AbortController; contextId: string }>();
   constructor(private readonly handle: Handle) {}
 
-  execute = async (context: RequestContext, bus: ExecutionEventBus): Promise<void> => {
+  /** `run` inside the request's log ids (`src/log.ts`), then one `handle done` line. */
+  execute = (context: RequestContext, bus: ExecutionEventBus): Promise<void> =>
+    withRequest(logIds(context.request), async () => {
+      const begun = Date.now();
+      try {
+        await this.run(context, bus);
+      } finally {
+        log("info", LOGGER, "handle done", { task_id: context.taskId, duration_ms: Date.now() - begun });
+      }
+    });
+
+  private run = async (context: RequestContext, bus: ExecutionEventBus): Promise<void> => {
     const { taskId, contextId } = context;
     const history = context.request.message ? [context.request.message] : [];
     bus.publish(AgentEvent.task({ id: taskId, contextId, status: { state: TaskState.TASK_STATE_SUBMITTED, message: undefined, timestamp: new Date().toISOString() }, artifacts: [], history, metadata: undefined }));
     const publish = (event: ChassisEvent, append = false): void => bus.publish(eventToUpdate(event, taskId, contextId, append));
-    const version = String(context.request.metadata?.[SCHEMA_VERSION_KEY] ?? SCHEMA_VERSION);
-    if (!SUPPORTED_SCHEMA_VERSIONS.includes(version)) {
-      publish(own("a2a.unsupported_schema_version", `schema version ${JSON.stringify(version)} is not supported; this server accepts ${SUPPORTED_SCHEMA_VERSIONS.join(", ")}`));
-      return;
-    }
+    const refused = unsupportedVersion(context.request);
+    if (refused) return publish(refused);
     let input: Json;
     let ctx: Context;
     try {
@@ -180,10 +208,10 @@ export class HandleExecutor implements AgentExecutor {
 
 // --- Card and app ---
 
-export function buildAgentCard(opts: { name: string; version: string; description?: string; url: string }): AgentCard {
+export function buildAgentCard(opts: { name: string; version: string; url: string }): AgentCard {
   return {
     name: opts.name,
-    description: opts.description || `chassis workload ${opts.name}`,
+    description: `chassis workload ${opts.name}`,
     version: opts.version,
     capabilities: { streaming: true, extensions: [] },
     defaultInputModes: ["text/plain", "application/json"],
@@ -223,11 +251,6 @@ export class PruningTaskStore extends InMemoryTaskStore {
   private readonly timers = new Map<string, NodeJS.Timeout>();
   constructor(private readonly delayMs: number = PRUNE_DELAY_MS) {
     super();
-  }
-
-  /** Tasks waiting to be forgotten. */
-  get pending(): number {
-    return this.timers.size;
   }
 
   override async save(task: Task, context: ServerCallContext): Promise<void> {

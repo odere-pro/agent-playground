@@ -463,8 +463,9 @@ def _test_names(path: Path) -> set[str]:
 
 @pytest.mark.parametrize("hid", list(EXISTING))
 def test_existing_coverage_is_still_there(hid: str) -> None:
-    """Exit criterion 1 (offline): every H id this file leaves to another test still has that
-    test, so the map in `EXISTING` cannot go stale silently.
+    """A name guard, not criterion 1 evidence: every H id this file leaves to another test still
+    has a test of that name, so the map in `EXISTING` cannot go stale silently. It runs no
+    behavior; the `test_h*` tests above and in `EXISTING` are the evidence.
     """
     name, tests = EXISTING[hid]
     found = _test_names(HERE / name)

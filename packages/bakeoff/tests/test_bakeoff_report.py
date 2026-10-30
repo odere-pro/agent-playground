@@ -80,3 +80,79 @@ def test_the_smoke_line_is_pass_fail_or_skip() -> None:
         "remote",
         "runs only on kind (poc06-kind.yml)",
     ]
+
+
+GOLDEN_FULL = """\
+# Bake-off results
+
+Tasks: smoke, lookup. Repeat: 2. Model: fake. Generated: now.
+
+| Engine | Lane | Task | Pass | Tool calls | p50 ms | p95 ms | TTFT p50 ms | In tok | Out tok \
+| Prompt bytes per call | Request body keys |
+| ------ | ---- | ---- | ---- | ---------- | ------ | ------ | ----------- | ------ | ------- \
+| --------------------- | ----------------- |
+| echo-python | sidecar | smoke | 2/2 | - | 15.0 | 19.5 | 6.0 | 10 | 5 | 100 | messages,model |
+| echo-python | sidecar | lookup | 1/2 | 1/2 | 15.0 | 19.5 | 6.0 | 10 | 5 | 100 | messages,model |
+
+## Not run
+
+| Engine | Lane | Status | Reason |
+| --- | --- | --- | --- |
+| kagent-adk | remote | SKIP | runs only on kind (poc06-kind.yml) |
+| echo-x | inprocess | FAIL | chassis exited (3) |
+
+## Mapping size
+
+| Engine | Code lines | Files |
+| ------ | ---------- | ----- |
+| echo-python | 243 | handle.py, tools.py |
+| kagent-adk | - | - |
+| echo-x | - | - |
+
+## Failures
+
+- echo-python sidecar lookup: status error
+"""
+
+GOLDEN_CLEAN = """\
+# Bake-off results
+
+Tasks: smoke, lookup. Repeat: 2. Model: fake. Generated: now.
+
+| Engine | Lane | Task | Pass | Tool calls | p50 ms | p95 ms | TTFT p50 ms | In tok | Out tok \
+| Prompt bytes per call | Request body keys |
+| ------ | ---- | ---- | ---- | ---------- | ------ | ------ | ----------- | ------ | ------- \
+| --------------------- | ----------------- |
+| echo-python | inprocess | smoke | 1/1 | - | - | - | - | - | - | - | - |
+
+## Mapping size
+
+| Engine | Code lines | Files |
+| ------ | ---------- | ----- |
+| echo-python | - | - |
+"""
+
+
+def test_the_markdown_with_every_section_matches_the_golden_text() -> None:
+    extra = [
+        Cell("echo-python", "remote", "ok", code_lines=243, mapping_files=["a/handle.py"]),
+        Cell("echo-x", "inprocess", "fail", "chassis exited (3)"),
+    ]
+    assert render_markdown([*_cells(), *extra], META) == GOLDEN_FULL
+
+
+def test_the_markdown_of_a_clean_run_has_no_not_run_or_failures_section() -> None:
+    empty = TaskResult(
+        "smoke",
+        runs=1,
+        passed=1,
+        tools_passed=1,
+        latencies_ms=[],
+        ttft_ms=[],
+        input_tokens=[],
+        output_tokens=[],
+        model_calls=[],
+        failures=[],
+    )
+    cell = Cell("echo-python", "inprocess", "ok", tasks={"smoke": empty})
+    assert render_markdown([cell], META) == GOLDEN_CLEAN

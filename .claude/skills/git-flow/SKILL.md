@@ -17,11 +17,11 @@ description: Branch, commit, worktree, and pull request conventions for this rep
 
 One checkout runs one line of work. A second line of work gets its own worktree, never a branch switch under another session.
 
-1. `git fetch origin main`, then `git worktree add -b <branch> ../agent-orchestration.wt/<branch-with-dashes> origin/main`.
+1. `git fetch origin main`, then `git worktree add -b <branch> .claude/worktrees/<name> origin/main`. Every worktree lives under `.claude/worktrees/`.
 2. `git branch --unset-upstream` in the new tree, so a bare `git push` cannot target `main`. Push later with `git push -u origin <branch>`.
 3. `make setup` in the new tree. The pre-commit hook lands in the shared git dir, so every worktree uses it.
 4. Offline gates (`make quick`, `make test`, `make test-poc`) run in any number of worktrees at once.
-5. Docker, Compose, and kind are one shared machine: kind cluster names, image tags, and host ports are fixed today. Run infra work (`make kind-poc0N`, `make test-integration`, `make load-test`, `make record-cassettes`) in one worktree at a time. Run `kind get clusters` and `docker ps` first; if another tree's cluster is up, do not touch it.
+5. Docker, Compose, and kind are one shared machine. Kind cluster names and image tags are fixed. The PoC-6 Mac run's host ports can be moved (`POC06_LLAMA_PORT`, `POC06_LITELLM_PORT` in `scripts/poc06_mac.sh`); other host ports are fixed. This skill owns the rule: run infra work (`make kind-poc0N`, `make test-integration`, `make load-test`, `make record-cassettes`) in one worktree at a time. Run `kind get clusters` and `docker ps` first; if another tree's cluster is up, do not touch it.
 6. Edits to shared files (`pyproject.toml` members, `uv.lock`, `Makefile`, root `CLAUDE.md`, `.github/workflows/ci.yml`) land in a small `chassis/<topic>` PR first. Other branches rebase onto it, after asking.
 7. Never use a bare `git stash`: the stash stack is shared by all worktrees. Use a WIP commit instead.
-8. When the branch merges: `git worktree remove ../agent-orchestration.wt/<dir>`, then `git branch -d <branch>`.
+8. When the branch merges: `git worktree remove .claude/worktrees/<name>`, then `git branch -d <branch>`.

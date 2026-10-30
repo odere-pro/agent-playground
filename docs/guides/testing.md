@@ -16,7 +16,26 @@ The test layers of the PoC plan, and where each lives today.
 
 ## Offline is enforced
 
-`scripts/check_offline.sh` runs pytest with `--disable-socket --allow-unix-socket` (pytest-socket) and unsets every `*_API_KEY`, `*_TOKEN`, `*_SECRET`, and `*_PASSWORD` variable. A test that needs a socket is marked `network` and is not part of any gate. HTTP tests use the httpx ASGI transport, which needs no socket.
+`make test` runs [scripts/check_offline.sh](../../scripts/check_offline.sh). This section owns the list of stripped variables.
+
+- Sockets are off: pytest runs with `--disable-socket --allow-unix-socket` (pytest-socket).
+- Markers are strict: `--strict-markers` fails a test that uses an unregistered marker.
+- Keys are stripped: the script unsets every variable whose name ends in `_API_KEY`, `_TOKEN`, `_SECRET`, `_PASSWORD`, `_SECRET_KEY`, `_PUBLIC_KEY`, `_MASTER_KEY`, `_ACCESS_KEY`, `_PROVIDER_KEY`, `_VIRTUAL_KEY`, or `_LITELLM_KEY`.
+- A test that needs a socket is marked `network` and is not part of any gate.
+- HTTP tests use the httpx ASGI transport, which needs no socket.
+
+The pre-commit hook ([scripts/git-hooks/pre-commit](../../scripts/git-hooks/pre-commit)) runs `make lint-staged` first: codespell, shellcheck, yamllint, and detect-secrets on the staged files ([scripts/lint_staged.sh](../../scripts/lint_staged.sh)). Then it runs `make quick`. `make lint-fix` repairs formatting and typos.
+
+## Test shape
+
+- Name: `test_<subject>_<does what>_when_<condition>`. The `when_` part is optional. The name reads as a sentence.
+- Docstring: one plain line that says the behavior.
+- Body: arrange, act, assert, split by blank lines.
+- One behavior per test.
+- Use `pytest.mark.parametrize` instead of a loop.
+- No `if` or `for` around an assert.
+- Helpers live in a harness module, with names from the domain, not from the test.
+- A PoC scenario test's docstring starts with its exit criterion, quoted word for word from the PoC README. More lines are optional.
 
 ## Contract suites
 
@@ -32,8 +51,31 @@ Required fixtures raise `NotImplementedError`; optional cases skip with a hint u
 
 ## Integration tests
 
-`make test-integration` runs `scripts/check_integration.sh`: `pytest -m network` on `packages/chassis/tests/integration` and `pocs/poc-04-stateless-scalable/tests`, sockets on, every `*_API_KEY`, `*_TOKEN`, `*_SECRET`, and `*_PASSWORD` variable still unset. Real adapters bind the same suites as the fakes, against services started by the helpers in `chassis_contracts.containers` (testcontainers). A test skips when Docker is not reachable. Compose drills also need `POC04_STACK=1`, kind drills `POC04_KIND=1`. Extra pytest arguments go through `ARGS`, for example `make test-integration ARGS="-k valkey"`.
+`make test-integration` runs [scripts/check_integration.sh](../../scripts/check_integration.sh). It runs `pytest -m network` on `packages/chassis/tests/integration` and `pocs/poc-04-stateless-scalable/tests`, with sockets on.
+
+- It strips a narrower list: names ending in `_API_KEY`, `_TOKEN`, `_SECRET`, or `_PASSWORD`. The live Langfuse binding reads `LANGFUSE_*_KEY` from the shell, so those stay.
+- Real adapters bind the same suites as the fakes. The services start from the helpers in `chassis_contracts.containers` (testcontainers).
+- A test skips when Docker is not reachable.
+- Extra pytest arguments go through `ARGS`, for example `make test-integration ARGS="-k valkey"`.
 
 ## Markers
 
-`slow` for subprocess or import-lint tests (still in `make test`), `network` for tests that need a socket (never in `make test`; `make test-integration` runs them), `stack` for the PoC-4 Compose drills (also `network`, skipped unless `POC04_STACK=1`), `contract` on every suite case.
+The registered list is in [pyproject.toml](../../pyproject.toml) (`[tool.pytest.ini_options]`). The contract plugin registers `contract`.
+
+- `slow`: a subprocess or import-lint test. It still runs in `make test`.
+- `network`: needs a real socket. Never in `make test`; `make test-integration` runs it.
+- `stack`: a Compose drill. Also `network`.
+- `kind`: a kind drill. Also `network`.
+- `contract`: every case of a contract suite.
+
+A drill runs only when its gate variable is `1`.
+
+| Variable | Gates |
+| -------- | ----- |
+| `POC04_STACK` | PoC-4 Compose drills |
+| `POC04_KIND` | PoC-4 kind drills |
+| `POC05_KIND` | PoC-5 kind suites |
+| `POC06_KIND` | PoC-6 kind tests |
+| `POC07_STACK` | PoC-7 real-service stack tests |
+
+PoC-8 adds no gate variable.

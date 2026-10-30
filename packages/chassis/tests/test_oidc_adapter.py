@@ -9,6 +9,7 @@ token whose key is not in the JWKS are all `unauthenticated`; scopes come from `
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections.abc import Callable
@@ -282,6 +283,53 @@ async def test_jwks_that_is_not_json_is_unavailable(idp: Idp) -> None:
     with pytest.raises(AuthError) as info:
         await auth.authenticate(idp.token())
     assert info.value.code == "auth_unavailable"
+
+
+class _TimingOutJwks:
+    """A JWKS endpoint that waits `delay_s`, then times out; it counts the fetches."""
+
+    def __init__(self, delay_s: float) -> None:
+        self.delay_s = delay_s
+        self.fetches = 0
+
+    async def handler(self, request: httpx.Request) -> httpx.Response:
+        self.fetches += 1
+        await asyncio.sleep(self.delay_s)
+        raise httpx.ReadTimeout("the IdP did not answer", request=request)
+
+
+async def test_concurrent_requests_fetch_once_and_fail_fast_when_the_jwks_times_out(
+    idp: Idp,
+) -> None:
+    """R5a-21: 20 requests during an IdP outage cost one fetch, not 20 queued timeouts."""
+    jwks = _TimingOutJwks(delay_s=0.05)
+    auth = OidcAuth(
+        ISSUER, AUDIENCE, JWKS_URL, transport=httpx.MockTransport(jwks.handler), clock=lambda: 1.0
+    )
+    token = idp.token()
+
+    results = await asyncio.gather(
+        *(auth.authenticate(token) for _ in range(20)), return_exceptions=True
+    )
+
+    assert jwks.fetches == 1
+    assert {getattr(r, "code", r) for r in results} == {"auth_unavailable"}
+
+
+async def test_jwks_is_fetched_again_when_the_failure_cooldown_has_passed(idp: Idp) -> None:
+    """R5a-21: the negative cache is short; once it passes, the next request fetches again."""
+    now = [1000.0]
+    auth = _auth(idp, clock=lambda: now[0])
+    idp.status = 503
+    with pytest.raises(AuthError):
+        await auth.authenticate(idp.token())
+    idp.status = 200
+
+    now[0] += auth.failure_cooldown_s
+    principal = await auth.authenticate(idp.token())
+
+    assert principal.subject == "user-1"
+    assert idp.fetches == 2
 
 
 def test_from_env_needs_all_three(monkeypatch: pytest.MonkeyPatch) -> None:

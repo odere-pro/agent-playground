@@ -21,6 +21,11 @@ span that continues the A2A request's `traceparent` header (else `ctx["tracepare
 its `baggage`. `build_app` calls `telemetry.configure_from_env()`, so the span is exported only when
 an OTLP endpoint is set or a test configured telemetry; otherwise it is a no-op.
 
+Logs (PoC-8): `execute` runs `handle` inside `logs.request_context`, so every line logged inside
+it carries the request's `request_id` and `trace_id`, and it logs one `handle done` line.
+`build_server` gives uvicorn no log config of its own; `serve` and the CLI call
+`logs.configure_logging` (JSON, one object per line).
+
 `PruningRequestHandler` deletes each task from the store once it is terminal, so a long-running
 sidecar does not keep every task in memory (PoC-1 debt, 2026-09-29). `build_server` and `serve`
 run the app on uvicorn, on loopback only unless `allow_any_host` is set (ADR-001: the sidecar
@@ -37,6 +42,7 @@ import json
 import logging
 import signal
 import threading
+import time
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
 from pathlib import Path
 from types import FrameType
@@ -71,7 +77,7 @@ from fastapi import FastAPI
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import best_match
 
-from workload_a2a import telemetry
+from workload_a2a import logs, telemetry
 from workload_a2a.mapping import (
     SCHEMA_VERSION_KEY,
     BadJson,
@@ -217,9 +223,16 @@ class HandleExecutor(AgentExecutor):
         except BadJson as exc:
             await event_to_update(_error("a2a.bad_request", str(exc)), updater)
             return
-        headers = context.call_context.state.get("headers") if context.call_context else None
-        with telemetry.handle_span(headers if isinstance(headers, dict) else {}, ctx):
-            await self._run(self._handle(input, ctx), task_id, updater)
+        raw_headers = context.call_context.state.get("headers") if context.call_context else None
+        headers = raw_headers if isinstance(raw_headers, dict) else {}
+        ids = {"request_id": ctx.get("request_id"), "trace_id": logs.trace_id_of(headers, ctx)}
+        started = time.monotonic()
+        with logs.request_context(**ids), telemetry.handle_span(headers, ctx):
+            try:
+                await self._run(self._handle(input, ctx), task_id, updater)
+            finally:
+                elapsed_ms = round((time.monotonic() - started) * 1000)
+                logger.info("handle done", extra={"task_id": task_id, "duration_ms": elapsed_ms})
 
     async def _run(self, stream: AsyncIterator[Any], task_id: str, updater: TaskUpdater) -> None:
         self._running[task_id] = stream
@@ -478,6 +491,7 @@ def build_server(
         log_level=log_level,
         lifespan="off",
         timeout_graceful_shutdown=drain_timeout_s,
+        log_config=None,  # uvicorn writes through the root logger: `logs.configure_logging`
     )
     return DrainingServer(config)
 
@@ -491,5 +505,9 @@ def serve(
     uds: str | None = None,
     allow_any_host: bool = False,
 ) -> None:
-    """Serve `handle` over A2A until the process is stopped."""
-    build_server(handle, card, host=host, port=port, uds=uds, allow_any_host=allow_any_host).run()
+    """Serve `handle` over A2A until the process is stopped, with JSON logs (`logs`)."""
+    server = build_server(
+        handle, card, host=host, port=port, uds=uds, allow_any_host=allow_any_host
+    )
+    logs.configure_logging(agent=card.name)
+    server.run()

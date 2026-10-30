@@ -15,14 +15,11 @@ The echo agent in TypeScript, served over A2A by `@a2a-js/sdk` 1.3 (PoC-2). Same
 
 ## The tool loop
 
-`src/tools.ts` is the MCP client, `@modelcontextprotocol/sdk` 1.32.1 (pinned; it takes an injected `fetch`, so tests need no socket). Same loop, event order, and error codes as `echo-python`.
+The loop, its event order, and its error codes are `echo-python`'s: see [its tool loop](../echo-python/README.md#the-tool-loop). Only the TypeScript points are here.
 
-1. At the start of a run, list the chassis's tools over MCP (streamable HTTP, stateless) at `CHASSIS_TOOL_URL` and offer them to the model as OpenAI `tools` (`name`, `description`, the tool's own JSON Schema as `parameters`). If the endpoint cannot be reached, the run goes on without tools; a warning is logged and `toolStats.listFailures` counts it.
-2. Stream the model's answer as `delta` events. Streamed `tool_calls` pieces are joined by `index`.
-3. If the answer asked for tools: call each over MCP (`tools/call`), yield one `tool_call {call_id, name, arguments, result}` per call, append the assistant message (`content: null`, `tool_calls` with `arguments` as a JSON string) and one `tool` message per result, and call the model again.
-4. At most `MAX_TOOL_ROUNDS = 3` rounds of tool calls (suggested). A 4th ask is `error {code: "tool_loop_exceeded", retryable: false}`.
-
-A failed `tools/call` (transport failure or an `isError` result) is `error {code: "tool_error", retryable: false}`. Arguments that are not a JSON object are `error {code: "bad_response"}`. A result that is not an object becomes `{"text": ...}`. Each MCP operation opens its own short session, so nothing stays open while `handle` yields. Every MCP request carries the same `traceparent` and bearer as the model call, and a timeout from `ctx.budget.timeout_ms`.
+- `src/tools.ts` is the MCP client, `@modelcontextprotocol/sdk` 1.32.1, pinned exactly.
+- The SDK takes an injected `fetch`. So tests need no socket, and every MCP request gets the same `traceparent`, bearer, and timeout as the model call.
+- An unreachable tool endpoint is counted in `toolStats.listFailures` (Python: `echo_python.tools.list_failures`).
 
 ## Environment
 
@@ -74,7 +71,7 @@ npm run fixture         # rewrites packages/chassis/tests/fixtures/events_from_t
 uv run pytest packages/workloads/echo-typescript   # the Python gate runs `npm test` (marked slow)
 ```
 
-The pytest wrapper skips when `node_modules` is absent. CI does not run `npm ci` for this package yet, so there it skips.
+The pytest wrapper skips when `node_modules` is absent. In CI it skips in the `check` job. The `typescript` job runs `npm ci`, typecheck, test, and build (`.github/workflows/ci.yml`; locally `make ts-check`).
 
 The PoC-2 gate (`make test-poc POC=02`, sockets disabled, Unix sockets allowed) runs the built workload over HTTP: it starts `node dist/src/main.js` with `UDS` and `CHASSIS_MODEL_UDS`, rebuilding `dist` when `src` is newer, and drives it through the chassis's `SidecarConnector` with `spec.engine.uds`. That covers the `EnginePort` suite (`TestEchoTypeScriptEngine`), the response-shape test, and the twin test against `echo_python`, in `pocs/poc-02-two-engines-one-contract/tests/`. They skip only when `node_modules` is absent. One `network` variant of the twin test runs over TCP loopback, and the Compose demo runs it in a container.
 

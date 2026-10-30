@@ -1,0 +1,30 @@
+# PoC-8 latency, "stages off" (service `chassis-plain`): the baseline for stages.yaml. The same
+# agent code, model, lane, and Valkey state store; no auth, no rate limit, no guardrail stage, no
+# feedback lookup, no marking.
+profile: local
+agent:
+  name: echo-plain
+  version: 0.0.1
+spec:
+  adapters:
+    model: litellm
+    config: memory
+    telemetry: memory
+    tools: fake
+    state: valkey
+    events: none
+    auth: none
+    guardrails: none
+    evaluator: none
+    feedback: none
+  engine:
+    connector: inprocess
+    handle: echo_python:handle
+  model:
+    route: big-default
+  prompt:
+    version: simplifier-v1
+  limits:
+    rate_limit: false
+  governance:
+    risk_class: minimal

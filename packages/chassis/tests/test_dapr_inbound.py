@@ -94,6 +94,7 @@ async def deliver(client: httpx.AsyncClient, topic: str, body: bytes) -> httpx.R
 def test_from_env_reads_the_endpoint_the_pubsub_and_both_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """`from_env` reads the endpoint, the pubsub, and both tokens, and hides them."""
     monkeypatch.setenv("DAPR_HTTP_ENDPOINT", "http://127.0.0.1:3999")
     monkeypatch.setenv("DAPR_PUBSUB_NAME", "events")
     monkeypatch.setenv("DAPR_API_TOKEN", API_TOKEN)
@@ -105,6 +106,7 @@ def test_from_env_reads_the_endpoint_the_pubsub_and_both_tokens(
 
 
 def test_from_env_defaults_the_endpoint_and_the_pubsub(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`from_env` defaults the endpoint and the pubsub name."""
     monkeypatch.delenv("DAPR_HTTP_ENDPOINT", raising=False)
     monkeypatch.delenv("DAPR_PUBSUB_NAME", raising=False)
     monkeypatch.setenv("DAPR_API_TOKEN", API_TOKEN)
@@ -116,6 +118,7 @@ def test_from_env_defaults_the_endpoint_and_the_pubsub(monkeypatch: pytest.Monke
 
 @pytest.mark.parametrize("missing", ["DAPR_API_TOKEN", "APP_API_TOKEN"])
 def test_from_env_needs_both_tokens(monkeypatch: pytest.MonkeyPatch, missing: str) -> None:
+    """`from_env` names the token variable that is missing."""
     monkeypatch.setenv("DAPR_API_TOKEN", API_TOKEN)
     monkeypatch.setenv("APP_API_TOKEN", APP_TOKEN)
     monkeypatch.delenv(missing)
@@ -124,6 +127,7 @@ def test_from_env_needs_both_tokens(monkeypatch: pytest.MonkeyPatch, missing: st
 
 
 def test_the_profile_builds_dapr_by_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`adapters.events: dapr` builds `DaprEvents`."""
     monkeypatch.setenv("DAPR_API_TOKEN", API_TOKEN)
     monkeypatch.setenv("APP_API_TOKEN", APP_TOKEN)
     bundle = build_ports("fake", AdapterSpec(events="dapr"))
@@ -136,6 +140,8 @@ def test_the_profile_builds_dapr_by_config(monkeypatch: pytest.MonkeyPatch) -> N
 async def test_dapr_subscribe_lists_each_topic_with_its_dead_letter_topic(
     port: DaprEvents,
 ) -> None:
+    """`/dapr/subscribe` lists each topic, its route, and its dead-letter topic."""
+
     async def handler(_: CloudEvent) -> None:
         return None
 
@@ -155,6 +161,8 @@ async def test_dapr_subscribe_lists_each_topic_with_its_dead_letter_topic(
 
 
 async def test_a_closed_subscription_leaves_the_list(port: DaprEvents) -> None:
+    """A closed subscription leaves `/dapr/subscribe`."""
+
     async def handler(_: CloudEvent) -> None:
         return None
 
@@ -165,6 +173,8 @@ async def test_a_closed_subscription_leaves_the_list(port: DaprEvents) -> None:
 
 
 async def test_a_second_group_on_one_topic_is_refused(port: DaprEvents) -> None:
+    """A second group on one topic is refused."""
+
     async def handler(_: CloudEvent) -> None:
         return None
 
@@ -178,6 +188,7 @@ async def test_a_second_group_on_one_topic_is_refused(port: DaprEvents) -> None:
 
 @pytest.mark.parametrize("token", [None, "wrong-token"])
 async def test_a_callback_without_the_app_token_is_401(port: DaprEvents, token: str | None) -> None:
+    """A callback with no app token or a wrong one is 401 and reaches no handler."""
     seen: list[CloudEvent] = []
 
     async def handler(got: CloudEvent) -> None:
@@ -194,6 +205,7 @@ async def test_a_callback_without_the_app_token_is_401(port: DaprEvents, token: 
 
 
 async def test_a_handler_that_returns_is_success(port: DaprEvents) -> None:
+    """A handler that returns is SUCCESS, and daprd's own attributes are dropped."""
     seen: list[CloudEvent] = []
 
     async def handler(got: CloudEvent) -> None:
@@ -218,6 +230,8 @@ async def test_a_handler_that_returns_is_success(port: DaprEvents) -> None:
 async def test_a_handler_that_raises_is_retry_and_the_answer_holds_no_message(
     port: DaprEvents,
 ) -> None:
+    """A handler that raises is RETRY, and the answer holds no message."""
+
     async def handler(_: CloudEvent) -> None:
         raise RuntimeError("secret-detail-do-not-forward")
 
@@ -235,6 +249,7 @@ async def test_a_handler_that_raises_is_retry_and_the_answer_holds_no_message(
     ids=["not-json", "not-an-object", "not-a-cloudevent"],
 )
 async def test_a_body_that_is_not_a_cloudevent_is_drop(port: DaprEvents, body: bytes) -> None:
+    """A body that is not a CloudEvent is DROP."""
     seen: list[CloudEvent] = []
 
     async def handler(got: CloudEvent) -> None:
@@ -248,6 +263,7 @@ async def test_a_body_that_is_not_a_cloudevent_is_drop(port: DaprEvents, body: b
 
 
 async def test_an_event_for_a_closed_subscription_is_drop(port: DaprEvents) -> None:
+    """An event for a closed subscription is DROP."""
     seen: list[CloudEvent] = []
 
     async def handler(got: CloudEvent) -> None:
@@ -265,6 +281,7 @@ async def test_an_event_for_a_closed_subscription_is_drop(port: DaprEvents) -> N
 
 
 async def test_publish_posts_the_structured_cloudevent_with_the_api_token() -> None:
+    """Publish posts the structured CloudEvent with the API token and partition key."""
     requests: list[httpx.Request] = []
 
     def answer(request: httpx.Request) -> httpx.Response:
@@ -285,6 +302,7 @@ async def test_publish_posts_the_structured_cloudevent_with_the_api_token() -> N
 
 
 async def test_publish_retries_a_server_error_then_succeeds() -> None:
+    """Publish retries a server error and then succeeds."""
     codes = iter([500, 503, 204])
 
     def answer(_: httpx.Request) -> httpx.Response:
@@ -293,9 +311,11 @@ async def test_publish_retries_a_server_error_then_succeeds() -> None:
     adapter = dapr(httpx.MockTransport(answer))
     await adapter.publish(TOPIC, event())
     await adapter.aclose()
+    assert next(codes, None) is None, "all three answers were used: two retries, then 204"
 
 
 async def test_publish_raises_publish_failed_after_three_attempts_without_the_token() -> None:
+    """Publish raises `PublishFailed` after three attempts, without the token."""
     calls: list[int] = []
 
     def answer(_: httpx.Request) -> httpx.Response:
@@ -311,6 +331,7 @@ async def test_publish_raises_publish_failed_after_three_attempts_without_the_to
 
 
 async def test_a_refused_publish_is_not_retried() -> None:
+    """A 401 publish is not retried."""
     calls: list[int] = []
 
     def answer(_: httpx.Request) -> httpx.Response:
@@ -328,6 +349,7 @@ async def test_a_refused_publish_is_not_retried() -> None:
 
 
 async def test_the_proxy_app_serves_the_inbound_routes_and_the_public_app_does_not() -> None:
+    """The proxy app serves the dapr routes; the public app does not."""
     adapter = dapr()
     public = public_app(adapter)
     proxy = create_proxy_app(public)
@@ -352,6 +374,7 @@ async def test_the_proxy_app_serves_the_inbound_routes_and_the_public_app_does_n
 
 
 async def test_the_proxy_app_has_no_dapr_routes_when_the_port_has_none() -> None:
+    """The proxy app has no dapr routes when the event port has none."""
     public = public_app(InMemoryBus())
     proxy = create_proxy_app(public)
     async with (
@@ -364,6 +387,7 @@ async def test_the_proxy_app_has_no_dapr_routes_when_the_port_has_none() -> None
 
 
 async def test_publish_sends_the_events_traceparent_as_the_w3c_header() -> None:
+    """Publish sends the event's traceparent as the W3C header, and none without one."""
     requests: list[httpx.Request] = []
 
     def answer(request: httpx.Request) -> httpx.Response:
@@ -380,6 +404,7 @@ async def test_publish_sends_the_events_traceparent_as_the_w3c_header() -> None:
 
 
 async def test_daprds_empty_traceparent_is_not_passed_on(port: DaprEvents) -> None:
+    """daprd's all-zero traceparent is not passed to the handler."""
     seen: list[CloudEvent] = []
 
     async def handler(got: CloudEvent) -> None:

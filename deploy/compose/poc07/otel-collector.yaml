@@ -17,6 +17,9 @@
 # Named-entity redaction (names, places) is not done here: it needs a Presidio call or a custom
 # processor. The patterns hold no `$`, since the Collector expands `$` in its config.
 # Offline check: packages/chassis/tests/test_collector_log_redaction.py.
+#
+# Spans: `transform/redact_spans` masks span and span-event attributes with the same rules, and
+# keeps the chassis's id keys as they are. Offline check: test_poc07_stack_static.py.
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
@@ -30,6 +33,51 @@ receivers:
 processors:
   batch:
     timeout: 1s
+  # Spans: the same attribute rules as the logs pipeline below, on span and span-event attributes.
+  # Workload spans never pass the chassis's own redaction. Keep both lists equal:
+  # test_poc07_stack_static.py checks it. The id keys (`ID_KEYS` in chassis.adapters.otel) are
+  # saved first and put back last, so an id is never masked, as in the chassis.
+  transform/redact_spans:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          - set(cache["a2a.task_id"], attributes["a2a.task_id"]) where attributes["a2a.task_id"] != nil
+          - set(cache["agent"], attributes["agent"]) where attributes["agent"] != nil
+          - set(cache["format"], attributes["format"]) where attributes["format"] != nil
+          - set(cache["interface"], attributes["interface"]) where attributes["interface"] != nil
+          - set(cache["lane"], attributes["lane"]) where attributes["lane"] != nil
+          - set(cache["request_id"], attributes["request_id"]) where attributes["request_id"] != nil
+          - set(cache["route"], attributes["route"]) where attributes["route"] != nil
+          - set(cache["session.id"], attributes["session.id"]) where attributes["session.id"] != nil
+          - set(cache["span_id"], attributes["span_id"]) where attributes["span_id"] != nil
+          - set(cache["tool"], attributes["tool"]) where attributes["tool"] != nil
+          - set(cache["trace_id"], attributes["trace_id"]) where attributes["trace_id"] != nil
+          - set(cache["user.id"], attributes["user.id"]) where attributes["user.id"] != nil
+          - replace_all_patterns(attributes, "value", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}", "<EMAIL_ADDRESS>")
+          - replace_all_patterns(attributes, "value", "[A-Z]{2}[0-9]{2}( ?[A-Z0-9]{4}){2,7}( ?[A-Z0-9]{1,4})?", "<IBAN_CODE>")
+          - replace_all_patterns(attributes, "value", "[0-9]{4}([ -]?[0-9]{4}){2}[ -]?[0-9]{1,7}", "<CREDIT_CARD>")
+          - replace_all_patterns(attributes, "value", "[0-9]{3}-[0-9]{2}-[0-9]{4}", "<US_SSN>")
+          - replace_all_patterns(attributes, "value", "([+][0-9][0-9 ().-]{7,}[0-9]|[0-9]{3}[-. ][0-9]{3}[-. ][0-9]{4})", "<PHONE_NUMBER>")
+          - set(attributes["a2a.task_id"], cache["a2a.task_id"]) where cache["a2a.task_id"] != nil
+          - set(attributes["agent"], cache["agent"]) where cache["agent"] != nil
+          - set(attributes["format"], cache["format"]) where cache["format"] != nil
+          - set(attributes["interface"], cache["interface"]) where cache["interface"] != nil
+          - set(attributes["lane"], cache["lane"]) where cache["lane"] != nil
+          - set(attributes["request_id"], cache["request_id"]) where cache["request_id"] != nil
+          - set(attributes["route"], cache["route"]) where cache["route"] != nil
+          - set(attributes["session.id"], cache["session.id"]) where cache["session.id"] != nil
+          - set(attributes["span_id"], cache["span_id"]) where cache["span_id"] != nil
+          - set(attributes["tool"], cache["tool"]) where cache["tool"] != nil
+          - set(attributes["trace_id"], cache["trace_id"]) where cache["trace_id"] != nil
+          - set(attributes["user.id"], cache["user.id"]) where cache["user.id"] != nil
+      - context: spanevent
+        statements:
+          - replace_all_patterns(attributes, "value", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}", "<EMAIL_ADDRESS>")
+          - replace_all_patterns(attributes, "value", "[A-Z]{2}[0-9]{2}( ?[A-Z0-9]{4}){2,7}( ?[A-Z0-9]{1,4})?", "<IBAN_CODE>")
+          - replace_all_patterns(attributes, "value", "[0-9]{4}([ -]?[0-9]{4}){2}[ -]?[0-9]{1,7}", "<CREDIT_CARD>")
+          - replace_all_patterns(attributes, "value", "[0-9]{3}-[0-9]{2}-[0-9]{4}", "<US_SSN>")
+          - replace_all_patterns(attributes, "value", "([+][0-9][0-9 ().-]{7,}[0-9]|[0-9]{3}[-. ][0-9]{3}[-. ][0-9]{4})", "<PHONE_NUMBER>")
   transform/redact:
     error_mode: ignore
     log_statements:
@@ -66,7 +114,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
+      processors: [transform/redact_spans, batch]
       exporters: [otlphttp/langfuse, otlp/jaeger]
     logs:
       receivers: [otlp]

@@ -1,5 +1,9 @@
-"""PoC-4 exit criterion 2: "A repeated call with the same `Idempotency-Key` returns the same
-result on any replica."
+"""PoC-4 exit criterion 2, in the README's words:
+
+"A repeated call with the same key returns the same result on any replica."
+
+This file covers the whole sentence offline. "The same key" is the `Idempotency-Key` header the
+client sends; "any replica" is the other of two replicas that share one store.
 
 Two chassis replicas (`poc04_harness.replicas_on_unix_sockets`) share one `InMemoryState`, which
 stands for Valkey; each runs `echo_python` in the `inprocess` lane, and one `HarnessModel` answers
@@ -37,14 +41,19 @@ from poc04_harness import (
 TTL_S = 60.0
 """suggested: short enough to step past with the offset clock."""
 IDEMPOTENCY = {"ttl_s": TTL_S, "lease_s": 2, "wait_poll_ms": 20}
+REPLAY_MARKED = (False, True)
+"""`Idempotent-Replayed` on the first answer and on the repeat, over HTTP."""
+NO_HEADERS = (False, False)
+"""MCP clients see no HTTP headers, so neither answer carries the header (the envelope is what
+shows the replay)."""
 CASES = [
-    ("native", True),
-    ("native", False),
-    ("openai", True),
-    ("openai", False),
-    ("anthropic", True),
-    ("anthropic", False),
-    ("mcp", False),
+    pytest.param("native", True, REPLAY_MARKED, id="native-stream"),
+    pytest.param("native", False, REPLAY_MARKED, id="native-complete"),
+    pytest.param("openai", True, REPLAY_MARKED, id="openai-stream"),
+    pytest.param("openai", False, REPLAY_MARKED, id="openai-complete"),
+    pytest.param("anthropic", True, REPLAY_MARKED, id="anthropic-stream"),
+    pytest.param("anthropic", False, REPLAY_MARKED, id="anthropic-complete"),
+    pytest.param("mcp", False, NO_HEADERS, id="mcp-complete"),
 ]
 
 
@@ -108,8 +117,12 @@ async def test_a_repeated_key_makes_no_second_model_call(pair: Pair) -> None:
     key = _key()
     runs, calls = pair.replicas.engine_runs(), len(pair.model.calls)
     await call(pair.replicas[0], "native", SIMPLIFY, key=key)
-    for replica in (1, 0, 1):
-        assert (await call(pair.replicas[replica], "native", SIMPLIFY, key=key)).replayed
+    replayed = [
+        (await call(pair.replicas[replica], "native", SIMPLIFY, key=key)).replayed
+        for replica in (1, 0, 1)
+    ]
+
+    assert replayed == [True, True, True]
     assert pair.replicas.engine_runs() - runs == 1
     assert len(pair.model.calls) - calls == 1
 
@@ -157,23 +170,22 @@ async def test_a_cached_result_replays_as_a_stream(pair: Pair) -> None:
     assert text == _text(first.body)
 
 
-@pytest.mark.parametrize(
-    ("interface", "stream"), CASES, ids=[f"{i}-{'stream' if s else 'complete'}" for i, s in CASES]
-)
+@pytest.mark.parametrize(("interface", "stream", "marked"), CASES)
 async def test_every_interface_replays_the_same_result(
-    pair: Pair, interface: str, stream: bool
+    pair: Pair, interface: str, stream: bool, marked: tuple[bool, bool]
 ) -> None:
     """Exit criterion 2, per interface and mode: the repeat on the other replica is the first
     answer (`created` aside), carries `Idempotent-Replayed: true` (MCP clients cannot see headers:
     the envelope is compared), and makes no second model call."""
     key = _key()
     calls = len(pair.model.calls)
+
     first = await call(pair.replicas[0], interface, SIMPLIFY, key=key, stream=stream)
     again = await call(pair.replicas[1], interface, SIMPLIFY, key=key, stream=stream)
+
     assert first.status == again.status == 200, (first, again)
     assert without_created(again.body) == without_created(first.body)
-    if interface != "mcp":
-        assert not first.replayed and again.replayed, (first.headers, again.headers)
+    assert (first.replayed, again.replayed) == marked, (first.headers, again.headers)
     assert len(pair.model.calls) - calls == 1
 
 
