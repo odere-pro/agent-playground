@@ -1,0 +1,184 @@
+# PoC-8 drill: a real LiteLLM proxy in the trace, with its real Presidio hook.
+#
+#   chassis (built, model: litellm, guardrails: litellm, telemetry: otel)
+#     -> LiteLLM 1.103.0 (auth on, Postgres for virtual keys, guardrails on every call)
+#          -> fake model server (scripted; model_script.py)
+#          -> Presidio analyzer and anonymizer (`pii-mask`, LiteLLM's `presidio` hook)
+#          -> guardrail-server, pattern stand-in (`prompt-guard`, `secret-guard`)
+#   chassis and LiteLLM -> OTel Collector -> Jaeger
+#
+# Run only through ./stack.sh (project `poc08-litellm`). It makes the master key and the database
+# password into .env.poc08-litellm (mode 600, git-ignored), starts everything but the chassis,
+# mints the chassis's virtual key into .run/chassis.env (mode 600), then starts the chassis.
+# Nothing here has a default secret, so `${VAR:?}` fails closed. Only LiteLLM gets the master
+# key; only the chassis gets the virtual key (ADR-001 hard requirement 1).
+#
+# Networks: `edge` carries the published ports and the telemetry path; `platform` is internal
+# (no egress) and holds what only LiteLLM may reach. The chassis is on `edge` only, so it reaches
+# LiteLLM and the Collector, never Presidio, the guardrail server, or the fake model directly.
+# Ports bind 127.0.0.1 only.
+#
+# Images: pinned by digest where this repo has recorded one (LiteLLM and Postgres as in PoC-5,
+# the Python and uv bases of our builds). PENDING DIGEST, exact version tags until the first CI
+# run prints their digests (`stack.sh digests`, uploaded as an artifact):
+#   jaegertracing/jaeger:2.21.0, otel/opentelemetry-collector-contrib:0.163.2 (both as PoC-7),
+#   mcr.microsoft.com/presidio-analyzer:2.2.358, mcr.microsoft.com/presidio-anonymizer:2.2.358
+#   (suggested: the Presidio release). Then pin each and drop it from PENDING in
+#   pocs/poc-08-cross-cutting-build/tests/test_poc08_litellm_static.py.
+name: poc08-litellm
+
+services:
+  postgres:
+    # The PoC-5 pin (deploy/kind/poc05/platform/postgres.yaml).
+    image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+    environment:
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${LITELLM_DB_PASSWORD:?}
+      POSTGRES_DB: litellm
+    networks: [platform]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  fake-model-server:
+    build:
+      context: ../../..
+      dockerfile: packages/fake-model-server/Dockerfile
+    image: agent-platform/fake-model-server:poc08-litellm
+    command: ["--script", "/etc/fake-model/model.yaml"]
+    volumes:
+      - ./.run/model.yaml:/etc/fake-model/model.yaml:ro
+    networks: [platform]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  guardrail-server:
+    build:
+      context: ../../..
+      dockerfile: deploy/compose/poc08-litellm/guardrail-server.Dockerfile
+    image: agent-platform/guardrail-server:poc08-litellm
+    networks: [platform]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  # Presidio listens on PORT (3000 in its images). The analyzer image bundles its spaCy model, so
+  # it needs no egress. No in-container healthcheck: the image's tools are not ours to assume;
+  # LiteLLM's first guarded call and the drill's direct guardrail call show it answers.
+  presidio-analyzer:
+    image: mcr.microsoft.com/presidio-analyzer:2.2.358
+    environment:
+      PORT: "3000"
+    networks: [platform]
+    security_opt: [no-new-privileges:true]
+
+  presidio-anonymizer:
+    image: mcr.microsoft.com/presidio-anonymizer:2.2.358
+    environment:
+      PORT: "3000"
+    networks: [platform]
+    security_opt: [no-new-privileges:true]
+
+  litellm:
+    # The image PoC-1 and PoC-5 pin (deploy/compose/docker-compose.yaml has the provenance note).
+    image: ghcr.io/berriai/litellm:v1.103.0@sha256:bd089afdcd35b894b14a93f9743cdc8b591f82da1a38dd43a010a7b0c9de5fd7
+    command: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
+    volumes:
+      - ./litellm.yaml:/etc/litellm/config.yaml:ro
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?}
+      DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD:?}@postgres:5432/litellm
+      LITELLM_LOG: INFO
+      # The cost map bundled in the pinned image; nothing is downloaded at run time.
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      DISABLE_ADMIN_UI: "True"
+      PRESIDIO_ANALYZER_API_BASE: http://presidio-analyzer:3000
+      PRESIDIO_ANONYMIZER_API_BASE: http://presidio-anonymizer:3000
+      # LiteLLM's `otel` callback (litellm.yaml): OTLP/HTTP to the Collector.
+      OTEL_EXPORTER: otlp_http
+      OTEL_ENDPOINT: http://otel-collector:4318/v1/traces
+      OTEL_SERVICE_NAME: litellm
+    ports:
+      # For stack.sh to mint the chassis's key, and for the drill's direct guardrail check.
+      - 127.0.0.1:4000:4000
+    networks: [edge, platform]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      fake-model-server:
+        condition: service_healthy
+      guardrail-server:
+        condition: service_healthy
+      presidio-analyzer:
+        condition: service_started
+      presidio-anonymizer:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      # No curl in the LiteLLM image; python is. Migrations run on start (PoC-5: about 50 s).
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=3).status == 200 else 1)"
+      interval: 5s
+      timeout: 5s
+      retries: 48
+      start_period: 30s
+
+  chassis:
+    build:
+      context: ../../..
+      dockerfile: packages/chassis/Dockerfile
+    image: agent-platform/chassis:poc08-litellm
+    volumes:
+      - ./chassis.yaml:/etc/chassis/config.yaml:ro
+    # LITELLM_API_KEY: the virtual key stack.sh mints. Never the master key.
+    env_file:
+      - ./.run/chassis.env
+    environment:
+      LITELLM_BASE_URL: http://litellm:4000/v1
+      # The in-process workload calls the chassis's model proxy on the container's loopback.
+      CHASSIS_MODEL_URL: http://127.0.0.1:8090/v1
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: chassis
+      OTEL_METRICS_EXPORTER: none
+    ports:
+      - 127.0.0.1:8080:8080
+    networks: [edge]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      litellm:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+
+  # The jaeger and collector images ship no shell, so no in-container healthcheck; `stack.sh
+  # wait` polls the Jaeger UI and the Collector's health_check extension from the host.
+  jaeger:
+    image: docker.io/jaegertracing/jaeger:2.21.0
+    ports:
+      - 127.0.0.1:16686:16686
+    networks: [edge]
+
+  otel-collector:
+    image: docker.io/otel/opentelemetry-collector-contrib:0.163.2
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - 127.0.0.1:13133:13133
+    networks: [edge]
+    depends_on:
+      jaeger:
+        condition: service_started
+
+networks:
+  edge:
+    name: poc08-litellm-edge
+  platform:
+    name: poc08-litellm-platform
+    internal: true
