@@ -55,6 +55,7 @@ class Answers:
             "framework": self.framework,
             "connector": self.connector,
             "platform_path": str(self.platform_path),
+            "platform_ref": _platform_ref(self.platform_path),
         }
 
 
@@ -152,6 +153,8 @@ def pin_to_platform(path: Path, platform: Path) -> None:
             "# Do not edit by hand; a newer platform comes with a new export.\n"
             f"[tool.uv]\nconstraint-dependencies = [\n{body}\n]\n"
         )
+    link = path / ".platform"
+    link.symlink_to(platform, target_is_directory=True)
     _uv(path, "lock")
 
 
@@ -161,6 +164,18 @@ def new_agent(answers: Answers, dest: Path, *, lock: bool = True) -> Path:
         pin_to_platform(target, answers.platform_path)
     first_commit(target, answers.agent_name)
     return target
+
+
+def _platform_ref(platform: Path) -> str:
+    """The commit CI pins to: path sources carry no hash, so a floating branch would be unpinned."""
+    return _git_value_at(platform, "rev-parse", "HEAD")
+
+
+def _git_value_at(path: Path, *args: str) -> str:
+    done = subprocess.run(
+        ["git", "-C", str(path), *args], env=_env(), capture_output=True, text=True
+    )
+    return done.stdout.strip()
 
 
 def _toml_string(value: str) -> str:

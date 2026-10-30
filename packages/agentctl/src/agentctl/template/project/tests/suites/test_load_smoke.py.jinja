@@ -1,0 +1,12 @@
+"""Concurrent runs through the chassis."""
+
+from agent_testkit.suites import LoadSmoke
+
+
+class TestLoadSmoke(LoadSmoke):
+{%- if trust == 'untrusted' %}
+    # This engine can end in an error offline, not an answer (see tests/test_contract.py).
+    run_statuses = ("ok", "fallback", "error")
+{%- else %}
+    pass
+{%- endif %}

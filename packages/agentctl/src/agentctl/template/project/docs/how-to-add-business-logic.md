@@ -218,7 +218,7 @@ docker compose -f deploy/compose/docker-compose.yaml --profile local up   # Lite
 
 **Offline evals** use DeepEval on the golden set ([ADR-010](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/010-evals-offline-tool-online-gate.md), item 1).
 
-- In the agent repo: `make eval`. <!-- verify after merge -->
+- In the agent repo: `make eval` runs your golden cases in `evals/cases.yaml` through the chassis and writes `reports/eval.json`. Break the logic and it fails.
 - In the platform monorepo: `make evals` runs every engine and lane and checks the baseline. `make evals-regression` shows a logic change that drops facts and fails the gate.
 - A change to the business logic, the prompt, or the model needs a passing eval.
 
@@ -226,7 +226,7 @@ docker compose -f deploy/compose/docker-compose.yaml --profile local up   # Lite
 
 **The red-team set** covers injection in the input, injection in a tool output, exfiltration through a tool, and a secret read ([ADR-008](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/008-security-identity-guardrails-defense-in-depth.md), item 9).
 
-- In the agent repo: `make redteam`, and `make hostile` for the hostile workload suite. <!-- verify after merge -->
+- In the agent repo: `make redteam` sends attacks through the chassis guard stage. `make hostile` checks your source, image, and Compose file against ADR-001. `make load-smoke` runs concurrent calls.
 - In the platform monorepo: `make redteam` runs it on every engine, lane, and guardrail config against the recorded baseline.
 
 **Feedback** from users goes to `POST /v1/feedback` and onto the run's trace in Langfuse. The workload exposes nothing for it ([ADR-009](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/009-feedback-langfuse-scores-event.md)).

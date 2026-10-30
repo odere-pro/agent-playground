@@ -7,4 +7,16 @@ from agent_testkit.contract import WorkloadContract
 
 
 class TestWorkloadContract(WorkloadContract):
+{%- if framework == 'smolagents' %}
+    # The fake model does not write `<code>` blocks, so the run ends in `tool_loop_exceeded`. A
+    # real run needs a model that does (ADR-006); the platform's remote-lane suites run one.
+    terminal_types = ("error",)
+    run_statuses = ("ok", "fallback", "error")
+{%- elif framework == 'claude-agent' %}
+    # Offline it answers through the fake model. In a shell that holds Claude Code's own settings
+    # the guard in `handle.py` stops it first (`env_not_clean`), which is the safe answer.
+    terminal_types = ("end", "error")
+    run_statuses = ("ok", "fallback", "error")
+{%- else %}
     pass
+{%- endif %}

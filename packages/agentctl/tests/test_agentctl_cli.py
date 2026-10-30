@@ -116,8 +116,9 @@ def test_the_platform_path_defaults_to_this_checkout(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     assert main(["new", "reader", "--kind", "evaluator", "--dest", str(tmp_path), "--no-lock"]) == 0
-    pyproject = (tmp_path / "reader/pyproject.toml").read_text()
-    assert f'path = "{platform}/packages/workload-a2a", editable = true' in pyproject
+    agent = tmp_path / "reader"
+    assert 'path = ".platform/packages/workload-a2a"' in (agent / "pyproject.toml").read_text()
+    assert f"PLATFORM_PATH ?= {platform}\n" in (agent / "Makefile").read_text()
 
 
 def test_inside_a_git_hook_the_callers_repo_is_left_alone(

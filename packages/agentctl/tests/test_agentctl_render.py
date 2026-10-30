@@ -37,6 +37,11 @@ COMMON = {
     "tests/conftest.py",
     "tests/test_contract.py",
     "tests/test_handle.py",
+    "tests/suites/test_eval.py",
+    "tests/suites/test_hostile.py",
+    "tests/suites/test_load_smoke.py",
+    "tests/suites/test_redteam.py",
+    "evals/cases.yaml",
     # Compose profiles with a debugger per container, and the template's own CI.
     ".github/workflows/ci.yml",
     ".gitlab-ci.yml",
@@ -79,6 +84,10 @@ def _render(tmp_path: Path, framework: str, connector: str, name: str = "my-agen
     return render(answers, tmp_path)
 
 
+def _sidecar_only(path: str) -> bool:
+    return path.startswith(("deploy/", ".vscode/"))
+
+
 def _files(path: Path) -> set[str]:
     return {str(p.relative_to(path)) for p in path.rglob("*") if p.is_file()}
 
@@ -89,7 +98,8 @@ def test_the_tree_holds_the_framework_files_and_nothing_else(
 ) -> None:
     agent = _render(tmp_path, framework, connector)
     src = {f"src/my_agent/{name}" for name in {*SRC_FILES[framework], "__init__.py", "py.typed"}}
-    assert _files(agent) == COMMON | src
+    common = COMMON if connector == "sidecar" else {f for f in COMMON if not _sidecar_only(f)}
+    assert _files(agent) == common | src
 
 
 @pytest.mark.parametrize(("framework", "connector"), COMBOS)
@@ -127,7 +137,7 @@ def test_pyproject_names_the_kit_and_never_the_chassis(
         name = dep.split("[")[0].split("=")[0]
         assert name in sources or "==" in dep, dep
     for name, source in sources.items():
-        assert source["path"] == f"{ROOT}/packages/{name}", name
+        assert source["path"] == f".platform/packages/{name}", name
     assert project["tool"]["agent-testkit"] == {"handle": "my_agent:handle", "name": "my-agent"}
     assert project["tool"]["uv"]["build-backend"]["module-name"] == "my_agent"
 
