@@ -13,6 +13,10 @@ guardrails:
       guardrail: generic_guardrail_api
       mode: pre_call
       api_base: http://guardrail-server:8095
+      # Fail closed, stated, not left to the default: both are LiteLLM v1.103.0 params (the pinned
+      # image), and an unreachable or failing check blocks the call. A check error never passes.
+      unreachable_fallback: fail_closed
+      fail_on_error: true
       additional_provider_specific_params:
         checks: [injection]
   - guardrail_name: secret-guard
@@ -20,5 +24,9 @@ guardrails:
       guardrail: generic_guardrail_api
       mode: post_call
       api_base: http://guardrail-server:8095
+      # Fail closed, stated, not left to the default: both are LiteLLM v1.103.0 params (the pinned
+      # image), and an unreachable or failing check blocks the call. A check error never passes.
+      unreachable_fallback: fail_closed
+      fail_on_error: true
       additional_provider_specific_params:
         checks: [secrets]

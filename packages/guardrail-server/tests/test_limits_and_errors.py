@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -150,3 +151,12 @@ async def test_routes_answer_422_without_the_rejected_value_when_checks_is_bad(
     assert response.status_code == 422
     assert "sk-" not in response.text
     assert response.json()["detail"][0]["loc"][-2:] == ["checks", 0]
+
+
+def test_the_litellm_config_states_fail_closed_on_both_generic_guardrails() -> None:
+    """A guardrail-server fault blocks the call: LiteLLM's fallback is stated, not assumed."""
+    config = (Path(__file__).parents[1] / "litellm" / "config.yaml").read_text()
+
+    assert config.count("guardrail: generic_guardrail_api") == 2
+    assert config.count("unreachable_fallback: fail_closed") == 2
+    assert config.count("fail_on_error: true") == 2
