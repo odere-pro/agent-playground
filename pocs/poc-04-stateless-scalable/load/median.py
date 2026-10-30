@@ -14,14 +14,13 @@ from __future__ import annotations
 import csv
 import json
 import statistics
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from run_matrix import ok_rps, per_role, read_locust
+
 LOAD = Path(__file__).resolve().parents[1] / "notes" / "load"
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run_matrix import ok_rps, per_role, read_locust  # noqa: E402
 
 ENGINES = (
     "echo-python",

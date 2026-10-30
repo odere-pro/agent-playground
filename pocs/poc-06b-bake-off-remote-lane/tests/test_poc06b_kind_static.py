@@ -33,7 +33,10 @@ from __future__ import annotations
 import copy
 import ipaddress
 import json
+import os
 import re
+import shutil
+import subprocess
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,6 +68,7 @@ REMOTE_LANE = ROOT / ".github/workflows/remote-lane.yml"
 CI = ROOT / ".github/workflows/ci.yml"
 RUN_SH = POC06 / "run.sh"
 SEED_SH = POC06 / "seed.sh"
+LIB_SH = ROOT / "deploy/kind/lib.sh"
 FOLDERS = ("remote", "agents", "kagent")
 
 CHASSIS_REPO = "kind.local/agent-platform/chassis"
@@ -1132,6 +1136,9 @@ def _code_lines(text: str) -> list[str]:
     return [ln for ln in text.splitlines() if not ln.lstrip().startswith("#")]
 
 
+KCTL = 'kctl() { kubectl --context "$CONTEXT" "$@"; }'
+
+
 def test_the_seed_makes_every_secret_the_manifests_name() -> None:
     """The seed's arrays make exactly the Secrets the pods name, and the remotes' tokens."""
     seed = SEED_SH.read_text()
@@ -1168,7 +1175,6 @@ def test_the_seed_text_is_strict_pins_the_context_and_prints_no_credential() -> 
     text = SEED_SH.read_text()
     code = _code_lines(text)
     body = "\n".join(code)
-    allowed = ('kctl() { kubectl --context "$CONTEXT" "$@"; }', "for tool in kubectl")
 
     kubectl = [ln for ln in code if re.search(r"(?<![\w-])kubectl\s", ln)]
     outside = [ln.strip() for ln in code if CREDENTIAL.search(ln) and not _in_a_pipe(ln)]
@@ -1180,12 +1186,118 @@ def test_the_seed_text_is_strict_pins_the_context_and_prints_no_credential() -> 
     echoed = [ln for ln in code if re.search(r"\becho\b.*\$\{?(value|key|master)\b", ln)]
 
     assert "set -euo pipefail" in body and "CONTEXT=kind-poc05" in body
+    assert body.index("CONTEXT=kind-poc05") < body.index('source "$HERE/../lib.sh"')
     assert not re.search(r"\bset\s+-\w*x", body), "set -x would print a credential"
-    assert all(any(a in ln for a in allowed) for ln in kubectl), kubectl
+    assert all("for tool in kubectl" in ln for ln in kubectl), kubectl
+    assert KCTL in _code_lines(LIB_SH.read_text())
     assert "openssl rand -hex" in body
     assert not outside, f"a credential variable outside a pipe: {outside}"
     assert not printed, f"printf of a credential not into a pipe: {printed}"
     assert not echoed, echoed
+
+
+# Stubs for the key run below: no cluster, no LiteLLM, no network. Made-up values only.
+_STUB_KUBECTL = """#!/usr/bin/env bash
+case " $* " in
+  *" port-forward "*) echo "Forwarding from 127.0.0.1:40999 -> 4000"; exec sleep 30 ;;
+  *LITELLM_MASTER_KEY*) printf 'bWFkZXVwLW1hc3Rlcg==' ;;
+  *" get namespace "*) exit 0 ;;
+  *" get secret litellm-master "*) exit 0 ;;
+  *" get secret "*) exit 1 ;;
+  *" create secret "*) cat >/dev/null; echo "kind: Secret" ;;
+  *) cat >/dev/null 2>&1 || true ;;
+esac
+"""
+_STUB_CURL = """#!/usr/bin/env bash
+cat >/dev/null 2>&1 || true
+url="${*: -1}" fail=0 write=0
+for a in "$@"; do
+  [[ $a == -*f* && $a != --* ]] && fail=1
+  [[ $a == -w || $a == --write-out ]] && write=1
+done
+printf '%s\\n' "${url#http://127.0.0.1:40999}" >>"$STUB_CALLS"
+case $url in
+  */health/liveliness) exit 0 ;;
+  */key/delete*)
+    ((write)) && printf '%s' "$STUB_DELETE_CODE"
+    ((fail && STUB_DELETE_CODE >= 400)) && exit 22
+    exit 0 ;;
+  */key/list*) printf '%s' "$STUB_LIST" ;;
+  */key/generate) printf '{"key":"sk-madeup-new"}' ;;
+esac
+"""
+_LIST_EMPTY = '{"keys": [], "total_count": 0}'
+_LIST_LEFT = '{"keys": ["0f1e2d3c4b5a6978"], "total_count": 1}'  # pragma: allowlist secret
+_LIST_ODD = '{"detail": "x"}'
+
+
+def _seed_keys(tmp_path: Path, delete_code: str, listing: str) -> tuple[int, list[str], str]:
+    """Run `seed.sh keys` with stub kubectl and curl first on PATH."""
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    for name, body in (("kubectl", _STUB_KUBECTL), ("curl", _STUB_CURL)):
+        (stubs / name).write_text(body)
+        (stubs / name).chmod(0o755)
+    calls = tmp_path / "calls"
+    calls.touch()
+    env = {
+        "PATH": f"{stubs}:{os.environ['PATH']}",
+        "STUB_CALLS": str(calls),
+        "STUB_DELETE_CODE": delete_code,
+        "STUB_LIST": listing,
+    }
+    out = subprocess.run(
+        ["bash", str(SEED_SH), "keys"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=env,
+        check=False,
+    )
+    return out.returncode, calls.read_text().splitlines(), out.stdout + out.stderr
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="no jq")
+@pytest.mark.parametrize(
+    ("delete_code", "listing"),
+    [
+        ("500", _LIST_EMPTY),
+        ("401", _LIST_EMPTY),
+        ("200", _LIST_LEFT),
+        ("404", _LIST_LEFT),
+        ("200", _LIST_ODD),
+    ],
+    ids=[
+        "delete-500",
+        "delete-401",
+        "deleted-but-key-left",
+        "miss-but-key-left",
+        "list-no-keys-field",
+    ],
+)
+def test_the_seed_mints_no_key_when_the_old_key_may_still_be_live(
+    tmp_path: Path, delete_code: str, listing: str
+) -> None:
+    """R5a-09, on the PoC-6 seed: a failed `/key/delete`, or a key still listed under the alias,
+    stops the seed with a non-zero exit before `/key/generate`."""
+    rc, calls, output = _seed_keys(tmp_path, delete_code, listing)
+
+    assert rc != 0, output
+    assert "/key/delete" in calls
+    assert "/key/generate" not in calls
+    assert "sk-madeup-new" not in output and "madeup-master" not in output
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="no jq")
+@pytest.mark.parametrize("delete_code", ["200", "404"], ids=["deleted", "miss"])
+def test_the_seed_mints_a_key_when_no_old_key_is_left(tmp_path: Path, delete_code: str) -> None:
+    """R5a-09 control: a delete that worked, or a miss, with no key left under the alias, mints
+    the new key and exits zero; nothing secret is printed."""
+    rc, calls, output = _seed_keys(tmp_path, delete_code, _LIST_EMPTY)
+
+    assert rc == 0, output
+    assert calls.index("/key/delete") < calls.index("/key/generate")
+    assert "sk-madeup-new" not in output and "madeup-master" not in output
 
 
 def test_the_seed_text_grants_only_the_fake_tools() -> None:
@@ -1225,7 +1337,9 @@ def test_the_run_sh_text_reuses_poc05_and_pins_the_context() -> None:
     assert re.search(r'^\s*logs\) "\$P5" logs ;;', text, re.M)
     assert re.search(r'^\s*redact\) "\$P5" redact ;;', text, re.M)
     assert '"$P5" up' in text and '"$P5" delete' in text
-    assert kubectl == ['kctl() { kubectl --context "$CONTEXT" "$@"; }'], kubectl
+    assert kubectl == [], kubectl
+    assert text.index("CONTEXT=kind-$CLUSTER") < text.index('source "$HERE/../lib.sh"')
+    assert KCTL in _code_lines(LIB_SH.read_text())
     assert logs and all(re.search(r'\|\s*"\$P5" redact', ln) for ln in logs), logs
     assert (
         '--as="$DEPLOYER"' in text

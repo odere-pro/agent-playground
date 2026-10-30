@@ -5,6 +5,7 @@ The template A2A server a Python workload ships with (ADR-002, option A). It wra
 ## Shape
 
 - `mapping.py`: chassis events to A2A updates and back. A byte-for-byte copy of `chassis.adapters.a2a.mapping`; a test fails when the two differ.
+- `task_store.py`: `drive_stream` (the event order rules) and `PruningRequestHandler`. A byte-for-byte copy of `chassis.adapters.a2a.task_store`; a test fails when the two differ.
 - `server.py`: `HandleExecutor`, `build_agent_card`, `build_app`, `build_server`, `serve`. Every event `handle` yields is validated with `jsonschema` against the vendored `schemas/events.v0.json` and gets the schema's defaults, so the wire JSON equals what the chassis's own copy produces. Error codes match the chassis copy: `workload.bad_event`, `workload.bad_order`, `workload.no_end`, `workload.exception`, `a2a.unsupported_schema_version`, `a2a.bad_request` (a `chassis.ctx` or `chassis.input` that is not a JSON object).
 - `schemas/events.v0.json`: a copy of `packages/chassis/schemas/events.v0.json`; a test fails when the two differ. `SUPPORTED_SCHEMA_VERSIONS` comes from its `schema_version` consts.
 - The task store is pruned: `PruningRequestHandler` deletes each task once it is terminal, so a long-running sidecar does not keep every task in memory.

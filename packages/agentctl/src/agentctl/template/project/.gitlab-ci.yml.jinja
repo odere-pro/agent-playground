@@ -91,10 +91,11 @@ suites:
     paths: [reports/]
     expire_in: 2 weeks
 
-image:
+# Not `image`: at the top level GitLab reads that as its global keyword.
+build-image:
   extends: .docker
   stage: image
-  needs: [lint, test]
+  needs: [lint, test, suites]
   script:
     - make image IMAGE="$IMAGE"
     - user="$(docker image inspect -f '{{ '{{' }}.Config.User{{ '}}' }}' "$IMAGE")"
@@ -118,7 +119,7 @@ sign:
   # No Docker daemon: cosign talks to the registry itself.
   image: $DOCKER_CLI_IMAGE
   stage: sign
-  needs: [image]
+  needs: [build-image]
   rules: *default-branch
   id_tokens:
     # cosign reads SIGSTORE_ID_TOKEN for keyless signing.

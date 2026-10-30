@@ -14,7 +14,7 @@ from chassis.fakes.feedback import InMemoryFeedback
 from chassis.ports.feedback import Feedback
 from chassis_contracts import FeedbackPortContract
 from fake_langfuse import FakeLangfuse
-from poc07_fb_harness import fake_langfuse, langfuse_port
+from poc_harness.feedback import fake_langfuse, langfuse_port
 
 
 @pytest.fixture

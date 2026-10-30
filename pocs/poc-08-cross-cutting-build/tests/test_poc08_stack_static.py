@@ -35,7 +35,8 @@ from chassis.profiles import REGISTRY
 from chassis.server.config import load_config
 from chassis.server.observability import METRICS_PATH
 from fake_model_server import Script
-from poc08_stack import (
+from poc08_stack_latency import STAGES_OFF, STAGES_ON, Target, measure, report
+from poc_harness.metrics_stack import (
     AGENT,
     CHASSIS,
     CHASSIS_PLAIN,
@@ -53,7 +54,6 @@ from poc08_stack import (
     MAIN_ROUTE,
     PLAIN_INPUT,
     PROMETHEUS,
-    ROOT,
     SCRAPE_JOB,
     STACK,
     STACK_VAR,
@@ -69,7 +69,7 @@ from poc08_stack import (
     read_env_file,
     summarize,
 )
-from poc08_stack_latency import STAGES_OFF, STAGES_ON, Target, measure, report
+from poc_harness.paths import ROOT
 
 HERE = Path(__file__).resolve().parent
 COMPOSE = STACK / "docker-compose.yaml"

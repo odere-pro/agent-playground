@@ -82,6 +82,7 @@ What runs, in namespace `poc04` (Pod Security Standard `restricted`, enforced):
 
 | Folder | What |
 | ------ | ---- |
+| `kind/lib.sh` | `kctl`, `log`, and `die`, sourced by every kind script; each script sets its own `CONTEXT` and `LOG_PREFIX` first |
 | `kind/cluster.yaml` | One node, kind v0.33.0's default image `kindest/node:v1.37.0`, pinned by digest |
 | `kind/poc04/base/` | The fake model server, Valkey (no persistence), the agent Service (chassis port only), the bootstrap ConfigMap (`config: memory`, `state: valkey`), and NetworkPolicies: default deny in and out, then the agent pod may reach only the fake model server, Valkey, and DNS |
 | `kind/poc04/native-sidecar/` | The workload in `initContainers` with `restartPolicy: Always`, the chassis the main container. Chassis `--drain-delay-s 10 --drain-timeout-s 30` (`Connection: close` while draining), grace 50 s |

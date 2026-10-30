@@ -1,4 +1,4 @@
-"""A stand-in for the `claude` CLI, for the `echo-claude-agent` cells. Not a test module.
+"""A stand-in for the `claude` CLI, for the `echo-claude-agent` cells.
 
 The real CLI cannot start offline (it needs its own binary run and a provider route). PoC-6b
 replaced `echo_claude_agent.handle.query_fn` with replayed SDK messages, which never reach the
@@ -95,6 +95,25 @@ class ClaudeCliStandIn:
         text = "".join(getattr(c, "text", "") for c in result.content)
         return text, bool(result.is_error)
 
+    async def _call_all(
+        self, server: Mapping[str, Any], uses: list[ToolUseBlock]
+    ) -> tuple[list[Any], list[dict[str, Any]]]:
+        """Each tool use's result, as the SDK block and as the wire form."""
+        results: list[Any] = []
+        wire: list[dict[str, Any]] = []
+        for use in uses:
+            text, is_error = await self._call(server, use.name, dict(use.input))
+            results.append(ToolResultBlock(tool_use_id=use.id, content=text, is_error=is_error))
+            wire.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": use.id,
+                    "content": text,
+                    "is_error": is_error,
+                }
+            )
+        return results, wire
+
     async def _post(self, base_url: str, headers: dict[str, str], body: dict[str, Any]) -> Any:
         transport = httpx.AsyncHTTPTransport(uds=self.uds)
         async with httpx.AsyncClient(transport=transport, base_url=base_url, timeout=30) as http:
@@ -128,19 +147,7 @@ class ClaudeCliStandIn:
             if not uses:
                 yield _done(turn, used)
                 return
-            results: list[Any] = []
-            wire: list[dict[str, Any]] = []
-            for use in uses:
-                text, is_error = await self._call(server, use.name, dict(use.input))
-                results.append(ToolResultBlock(tool_use_id=use.id, content=text, is_error=is_error))
-                wire.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": use.id,
-                        "content": text,
-                        "is_error": is_error,
-                    }
-                )
+            results, wire = await self._call_all(server, uses)
             yield UserMessage(content=results)
             messages += [
                 {"role": "assistant", "content": reply["content"]},

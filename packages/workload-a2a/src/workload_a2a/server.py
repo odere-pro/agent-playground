@@ -6,11 +6,11 @@ imports the chassis. The one difference in behavior: every yielded event is vali
 and the defaults the schema names are filled in, so both copies put the same JSON on the wire.
 
 `handle` is in its wire form: `(input: dict, ctx: dict)` in, event dicts out (or objects with
-`model_dump`, which the server dumps). The server enforces the order the port promises: `start`
-first, `end` or `error` last, nothing after. A workload failure never reaches the SDK's own
-failure path: an exception is `error {code: "workload.exception"}`, a bad event (one that fails
-the schema, or holds NaN or Infinity, which are not JSON) `error {code: "workload.bad_event"}`,
-both with `TASK_STATE_FAILED`.
+`model_dump`, which the server dumps). `task_store.drive_stream` enforces the order the port
+promises: `start` first, `end` or `error` last, nothing after. A workload failure never reaches the
+SDK's own failure path: an exception is `error {code: "workload.exception"}`, a bad event (one
+that fails the schema, or holds NaN or Infinity, which are not JSON)
+`error {code: "workload.bad_event"}`, both with `TASK_STATE_FAILED`.
 
 The request is read with `mapping.message_to_input`: `chassis.ctx` and `chassis.input` as JSON
 strings, passed to `handle` as is. After the schema-version check and before `handle` runs, a value
@@ -26,15 +26,14 @@ it carries the request's `request_id` and `trace_id`, and it logs one `handle do
 `build_server` gives uvicorn no log config of its own; `serve` and the CLI call
 `logs.configure_logging` (JSON, one object per line).
 
-`PruningRequestHandler` deletes each task from the store once it is terminal, so a long-running
-sidecar does not keep every task in memory (PoC-1 debt, 2026-09-29). `build_server` and `serve`
-run the app on uvicorn, on loopback only unless `allow_any_host` is set (ADR-001: the sidecar
-serves localhost only).
+`task_store.py` is a byte-for-byte copy of the chassis's (ADR-002). It holds `drive_stream` and
+`PruningRequestHandler`, which deletes each task from the store once it is terminal. `build_server`
+and `serve` run the app on uvicorn, on loopback only unless `allow_any_host` is set (ADR-001: the
+sidecar serves localhost only).
 """
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import copy
 import ipaddress
@@ -43,7 +42,7 @@ import logging
 import signal
 import threading
 import time
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
 from types import FrameType
 from typing import Any
@@ -51,9 +50,7 @@ from typing import Any
 import uvicorn
 from a2a.helpers import new_task
 from a2a.server.agent_execution import AgentExecutor, RequestContext
-from a2a.server.context import ServerCallContext
-from a2a.server.events import Event, EventQueue
-from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.events import EventQueue
 from a2a.server.routes import (
     add_a2a_routes_to_fastapi,
     create_agent_card_routes,
@@ -65,12 +62,7 @@ from a2a.types import (
     AgentCard,
     AgentInterface,
     AgentSkill,
-    CancelTaskRequest,
-    Message,
-    SendMessageRequest,
-    Task,
     TaskState,
-    TaskStatusUpdateEvent,
 )
 from a2a.utils.constants import DEFAULT_RPC_URL, PROTOCOL_VERSION_CURRENT, TransportProtocol
 from fastapi import FastAPI
@@ -81,9 +73,14 @@ from workload_a2a import logs, telemetry
 from workload_a2a.mapping import (
     SCHEMA_VERSION_KEY,
     BadJson,
-    dump_json,
     event_to_update,
     message_to_input,
+)
+from workload_a2a.task_store import (
+    PruningRequestHandler,
+    close_stream,
+    drive_stream,
+    error_event,
 )
 
 logger = logging.getLogger(__name__)
@@ -127,15 +124,6 @@ _DEFAULTS: dict[str, dict[str, Any]] = {
     for kind, name in _BRANCHES.items()
 }
 
-_TERMINAL = frozenset(
-    {
-        TaskState.TASK_STATE_COMPLETED,
-        TaskState.TASK_STATE_FAILED,
-        TaskState.TASK_STATE_CANCELED,
-        TaskState.TASK_STATE_REJECTED,
-    }
-)
-
 
 def validate_event(raw: dict[str, Any]) -> dict[str, Any]:
     """Validate one event against the vendored schema and fill its defaults. Raises `ValueError`
@@ -163,27 +151,6 @@ def validate_event(raw: dict[str, Any]) -> dict[str, Any]:
     return event
 
 
-def _as_dict(raw: Any) -> dict[str, Any]:
-    dump = getattr(raw, "model_dump", None)
-    if callable(dump):
-        dumped = dump(mode="json")
-        if isinstance(dumped, dict):
-            return dumped
-    if isinstance(raw, dict):
-        return dict(raw)
-    raise TypeError(f"handle yielded {type(raw).__name__}, not an event dict")
-
-
-def _error(code: str, message: str) -> dict[str, Any]:
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "type": "error",
-        "code": code,
-        "message": message,
-        "retryable": False,
-    }
-
-
 class HandleExecutor(AgentExecutor):
     """Runs `handle` for one task and publishes each event as one A2A update."""
 
@@ -209,7 +176,7 @@ class HandleExecutor(AgentExecutor):
         version = str(context.metadata.get(SCHEMA_VERSION_KEY, SCHEMA_VERSION))
         if version not in SUPPORTED_SCHEMA_VERSIONS:
             await event_to_update(
-                _error(
+                error_event(
                     "a2a.unsupported_schema_version",
                     f"schema version {version!r} is not supported; "
                     f"this server accepts {', '.join(SUPPORTED_SCHEMA_VERSIONS)}",
@@ -221,7 +188,7 @@ class HandleExecutor(AgentExecutor):
         try:
             input, ctx = message_to_input(context)
         except BadJson as exc:
-            await event_to_update(_error("a2a.bad_request", str(exc)), updater)
+            await event_to_update(error_event("a2a.bad_request", str(exc)), updater)
             return
         raw_headers = context.call_context.state.get("headers") if context.call_context else None
         headers = raw_headers if isinstance(raw_headers, dict) else {}
@@ -236,54 +203,12 @@ class HandleExecutor(AgentExecutor):
 
     async def _run(self, stream: AsyncIterator[Any], task_id: str, updater: TaskUpdater) -> None:
         self._running[task_id] = stream
-        started = False
-        terminal = False
-        seen_delta = False
         try:
-            async for raw in stream:
-                if task_id in self._cancelled:
-                    return  # `cancel` already published TASK_STATE_CANCELED
-                try:
-                    yielded = _as_dict(raw)
-                    dump_json(yielded)  # NaN and Infinity are not JSON
-                    event = validate_event(yielded)
-                except (ValueError, TypeError) as exc:
-                    await event_to_update(_error("workload.bad_event", str(exc)), updater)
-                    terminal = True
-                    return
-                kind = event["type"]
-                if (kind == "start") == started:
-                    await event_to_update(
-                        _error("workload.bad_order", f"{kind!r} out of order"), updater
-                    )
-                    terminal = True
-                    return
-                started = True
-                await event_to_update(event, updater, append=seen_delta)
-                seen_delta = seen_delta or kind == "delta"
-                if kind in ("end", "error"):
-                    terminal = True
-                    return
-                if task_id in self._cancelled:
-                    return  # cancelled while publishing: do not resume the generator
-            if not terminal and task_id not in self._cancelled:
-                await event_to_update(
-                    _error("workload.no_end", "handle ended without `end` or `error`"), updater
-                )
-                terminal = True
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # the workload's failure is one error event, not a 500
-            if not terminal and task_id not in self._cancelled:
-                await event_to_update(
-                    _error("workload.exception", f"{type(exc).__name__}: {exc}"), updater
-                )
+            await drive_stream(stream, validate_event, updater, lambda: task_id in self._cancelled)
         finally:
             self._running.pop(task_id, None)
             self._cancelled.discard(task_id)
-            closer = getattr(stream, "aclose", None)
-            if closer is not None:
-                await closer()
+            await close_stream(stream)
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id or ""
@@ -293,74 +218,6 @@ class HandleExecutor(AgentExecutor):
             self._cancelled.add(task_id)
         updater = TaskUpdater(event_queue, task_id, context.context_id or "")
         await updater.update_status(TaskState.TASK_STATE_CANCELED)
-
-
-def _terminal_state(event: Event | Task | Message) -> tuple[str, int] | None:
-    """`(task_id, state)` when the event puts its task in a terminal state."""
-    if isinstance(event, Task) and event.status.state in _TERMINAL:
-        return event.id, event.status.state
-    if isinstance(event, TaskStatusUpdateEvent) and event.status.state in _TERMINAL:
-        return event.task_id, event.status.state
-    return None
-
-
-class PruningRequestHandler(DefaultRequestHandler):
-    """`DefaultRequestHandler` that deletes a task from the store once it is terminal.
-
-    a2a-sdk 1.2 saves every event to the store before it reaches a subscriber, so when the stream
-    has yielded the terminal update, the terminal save is done and a delete cannot race it. A
-    cancel is pruned by `on_cancel_task` after its own terminal write, not by the stream. A task
-    whose client disconnects without a cancel and that then finishes in the background is not
-    pruned; the chassis connector always cancels a task it leaves.
-    """
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._pruning: set[asyncio.Task[None]] = set()
-
-    async def _prune(self, task_id: str, context: ServerCallContext) -> None:
-        try:
-            await self.task_store.delete(task_id, context)
-        except Exception:  # pruning is housekeeping; never fail a request over it
-            logger.exception("could not prune task %s", task_id)
-
-    def _prune_soon(self, task_id: str, context: ServerCallContext) -> None:
-        """A task of its own: the stream may be closing under a cancel, where an await would not
-        run to the end."""
-        task = asyncio.create_task(self._prune(task_id, context))
-        self._pruning.add(task)
-        task.add_done_callback(self._pruning.discard)
-
-    async def on_message_send_stream(
-        self, params: SendMessageRequest, context: ServerCallContext
-    ) -> AsyncGenerator[Event, None]:
-        done: str | None = None
-        try:
-            async with contextlib.aclosing(super().on_message_send_stream(params, context)) as up:
-                async for event in up:
-                    terminal = _terminal_state(event)
-                    if terminal is not None and terminal[1] != TaskState.TASK_STATE_CANCELED:
-                        done = terminal[0]
-                    yield event
-        finally:
-            if done:
-                self._prune_soon(done, context)
-
-    async def on_message_send(
-        self, params: SendMessageRequest, context: ServerCallContext
-    ) -> Task | Message:
-        result: Task | Message = await super().on_message_send(params, context)
-        terminal = _terminal_state(result)
-        if terminal is not None:
-            await self._prune(terminal[0], context)
-        return result
-
-    async def on_cancel_task(
-        self, params: CancelTaskRequest, context: ServerCallContext
-    ) -> Task | None:
-        result: Task | None = await super().on_cancel_task(params, context)
-        await self._prune(params.id, context)
-        return result
 
 
 def build_agent_card(

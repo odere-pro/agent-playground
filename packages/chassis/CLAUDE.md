@@ -22,7 +22,8 @@ Under `packages/chassis/`: `configs/` the bundled specs, `schemas/` the publishe
 - `core` has no network, no product SDK, and no web framework. `make lint` enforces it.
 - A product SDK is imported only under `adapters/`. That covers `openai`, `anthropic`, a2a-sdk, and FastMCP.
 - `valkey`, `aiokafka`, and `minio` are imported only under `adapters/`, inside a lazy factory. Never in `core` or `ports`.
-- `packages/workload-a2a` never imports `chassis`. Its `mapping.py` is a byte-for-byte copy of `adapters/a2a/mapping.py`.
+- The OpenTelemetry SDK and pyjwt are imported only in their adapters.
+- `packages/workload-a2a` never imports `chassis`. Its `mapping.py` and `task_store.py` are byte-for-byte copies of the same files in `adapters/a2a/`.
 
 ## Rules
 
@@ -48,8 +49,8 @@ Under `packages/chassis/`: `configs/` the bundled specs, `schemas/` the publishe
 - Real adapters: `tests/integration/`, marked `network`, run by `make test-integration` (Docker). Never in the gate.
 - `make schemas` after a schema change. A test fails on drift.
 - `make lint` checks the import rules. `make quick` before every commit.
-- PoC-5 adds the `remote` lane (`adapters/a2a/remote.py`), the remote proxy listener (`server/remote_auth.py`), `ToolPort` write mode and the MCP gateway adapter (`adapters/mcp/gateway.py`), the uncorrelated cap, and `spec.trust`. Its scenarios are in `pocs/poc-05-sandboxed/tests/`; the kind ones run with `POC05_KIND=1`.
-- PoC-6 adds the plain-A2A mode of the `remote` lane (`spec.engine.protocol: a2a`, `adapters/a2a/plain.py`) for third-party agents that send no `chassis.event`. It is chassis-only: never edit `mapping.py` for it. It cannot show `tool_call`; the remote's own error text never reaches a `Response`.
-- PoC-7 adds four ports (`AuthPort`, `GuardrailPort`, `EvaluatorPort`, `FeedbackPort`; fakes bound in `tests/test_contracts_poc07.py`) and real adapters: `adapters/otel` (`OtelTelemetry`), `adapters/oidc`, `adapters/litellm/guardrails.py`, `adapters/langfuse`, `adapters/evaluators.py`. In the server: `server/security.py` (caller auth, scopes), `server/guard.py` (the three guard stages), `server/marking.py`, `server/feedback.py`, `server/evaluator_gate.py`. Plus `redaction.py` (regex only, never a named-entity model) and `continued` in `core/trace.py`. The OpenTelemetry SDK and pyjwt are imported only in their adapters. Scenarios: `pocs/poc-07-cross-cutting-decisions/tests/`; the stack drills run with `POC07_STACK=1`.
-- PoC-8 adds `metrics.py` (the registry behind `GET /metrics`), `logs.py` (one JSON line, redacted), `dashboards/` (`python -m chassis.dashboards` writes `deploy/dashboards/`; never edit the JSON), and in the server: `observability.py` (`/metrics`, token and cost counts), `rate_limit.py` (per-caller bucket in `StatePort`, 429 `rate_limited`), `stream_guard.py` and `output_filter.py` (stream secret check, URL allow-list), and `adapters/ai_marking.py` (the `ai_marking` body field). No new port. Scenarios: `pocs/poc-08-cross-cutting-build/tests/`.
+- PoC-5 scenarios: `pocs/poc-05-sandboxed/tests/`. The kind ones run with `POC05_KIND=1`.
+- PoC-6 scenarios: `pocs/poc-06a-bake-off-sidecar-lane/tests/`, `pocs/poc-06b-bake-off-remote-lane/tests/`, `pocs/poc-06c-pretrained-slm/tests/`. The kind ones run with `POC06_KIND=1`.
+- PoC-7 scenarios: `pocs/poc-07-cross-cutting-decisions/tests/`. The stack drills run with `POC07_STACK=1`.
+- PoC-8 scenarios: `pocs/poc-08-cross-cutting-build/tests/`. The stack drills run with `POC08_STACK=1` and `POC08_LITELLM=1`.
 - The full test map is in `docs/guides/chassis-reference.md`.

@@ -4,7 +4,7 @@ Test support shared across PoC folders. The root `CLAUDE.md` rules apply. `READM
 
 ## Rules
 
-- A module goes here only when more than one PoC folder, or a PoC demo, uses it. Folder-local helpers stay in their PoC `tests/`.
+- A module goes here only when more than one PoC, a demo, or a plain script that a drill also uses needs it (that is why `metrics_stack.py` is here). Folder-local helpers stay in their PoC `tests/`.
 - Domain names, never a PoC number, in a module name.
 - Product code never imports this package. An import-linter contract in the root `pyproject.toml` enforces it.
 - Find repo files through `poc_harness.paths.ROOT`, never `Path(__file__).parents[N]`.

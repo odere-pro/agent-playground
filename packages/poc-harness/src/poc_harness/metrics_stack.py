@@ -1,5 +1,5 @@
 """Shared by the PoC-8 stack drill (`test_poc08_stack_metrics.py`) and the latency script
-(`poc08_stack_latency.py`). Not a test module. Opens no socket on import.
+(`poc08_stack_latency.py`). Opens no socket on import.
 
 The stack is `deploy/compose/poc08` (`stack.sh up`). Its ports, the drill's inputs, and the
 helpers that talk to the chassis, Prometheus, and Grafana live here, so the offline static test
@@ -22,7 +22,8 @@ from typing import Any
 
 import httpx
 
-ROOT = Path(__file__).resolve().parents[3]
+from poc_harness.paths import ROOT
+
 STACK = ROOT / "deploy/compose/poc08"
 DASHBOARDS = ROOT / "deploy/dashboards"
 STACK_VAR = "POC08_STACK"

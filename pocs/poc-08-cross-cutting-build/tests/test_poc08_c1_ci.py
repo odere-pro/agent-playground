@@ -34,7 +34,7 @@ from typing import Any
 
 import pytest
 import yaml
-from poc08_harness import ROOT
+from poc_harness.paths import ROOT
 from pytest_socket import SocketBlockedError
 
 WORKFLOWS = ROOT / ".github/workflows"

@@ -37,6 +37,7 @@ POC05 = ROOT / "deploy/kind/poc05"
 POC06 = ROOT / "deploy/kind/poc06"
 HOSTED = POC06 / "hosted"
 HOSTED_SH = POC06 / "hosted.sh"
+LIB_SH = ROOT / "deploy/kind/lib.sh"
 RUN_SH = POC06 / "run.sh"
 SEED_SH = POC06 / "seed.sh"
 MAC_SH = ROOT / "scripts/poc06_mac.sh"
@@ -211,8 +212,9 @@ def test_hosted_sh_is_strict_pins_the_context_and_never_traces() -> None:
     assert not re.search(r"\bset\s+-\w*x", code) and "xtrace" not in code
     assert "--no-verify" not in code and "--force " not in code
     kubectl = [ln for ln in _code(HOSTED_SH) if re.search(r"(?<![\w-])kubectl\s", ln)]
-    allowed = ('kctl() { kubectl --context "$CONTEXT" "$@"; }', "for tool in kubectl")
-    assert all(any(a in ln for a in allowed) for ln in kubectl), kubectl
+    assert all("for tool in kubectl" in ln for ln in kubectl), kubectl
+    assert code.index("CONTEXT=kind-poc05") < code.index('source "$HERE/../lib.sh"')
+    assert 'kctl() { kubectl --context "$CONTEXT" "$@"; }' in _code(LIB_SH)
     assert re.search(r"^\s*up\) up ;;", text, re.M)
     assert re.search(r"^\s*run\) run ", text, re.M)
     assert re.search(r"^\s*down\) down ;;", text, re.M)

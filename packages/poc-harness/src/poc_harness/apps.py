@@ -35,10 +35,10 @@ def fake_model_over_litellm() -> LiteLLMModel:
     return LiteLLMModel("http://fake/v1", agent="poc-02", transport=httpx.ASGITransport(app=app))
 
 
-def chassis_config(engine: Mapping[str, Any]) -> ChassisConfig:
+def chassis_config(engine: Mapping[str, Any], *, version: str = "cfg-poc2") -> ChassisConfig:
     return ChassisConfig.model_validate(
         {
-            "version": "cfg-poc2",
+            "version": version,
             "profile": "fake",
             "agent": {"name": "simplifier", "version": "0.0.1"},
             "spec": {

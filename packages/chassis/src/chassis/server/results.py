@@ -89,7 +89,8 @@ def event_id(request_id: str, event_type: str) -> str:
 
 def key_hash(idempotency_key: str) -> str:
     """The sha256 hex of an idempotency key: what a result event carries instead of the key."""
-    return hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()
+    # `surrogatepass`: as in `server.idempotency.store_key`. A valid key hashes as before.
+    return hashlib.sha256(idempotency_key.encode("utf-8", errors="surrogatepass")).hexdigest()
 
 
 DATASCHEMA = "task-result.v1.json"

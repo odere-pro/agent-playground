@@ -12,10 +12,13 @@ PORT ?= 9000
 PYTEST_FLAGS := --disable-socket --allow-unix-socket --allow-hosts=127.0.0.1,::1
 STRIP_KEYS := for v in $$(env | cut -d= -f1 | grep -E '(_API_KEY|_TOKEN|_SECRET|_PASSWORD)$$' || true); do unset "$$v"; done
 
-.PHONY: platform help setup test lint fmt run image sign load-smoke hostile redteam eval
+.PHONY: platform chassis-env help setup test lint fmt run image sign load-smoke hostile redteam eval
 
 platform: ## Point .platform at PLATFORM_PATH
 	@ln -sfn "$(PLATFORM_PATH)" .platform
+
+chassis-env: platform ## Fill uv's cache for the chassis's own environment; the tests run it offline
+	uv run --project .platform --package chassis --isolated --no-dev --frozen python -c "import chassis"
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  %-8s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -23,7 +26,7 @@ help: ## Show this help
 setup: platform ## Install Python 3.12 and the locked dependencies (writes uv.lock; commit it)
 	uv sync
 
-test: platform ## Every test, offline: the unit tests and the lane contract over A2A
+test: chassis-env ## Every test, offline: the unit tests and the lane contract over A2A
 	@$(STRIP_KEYS); uv run pytest $(PYTEST_FLAGS) --ignore=tests/suites $(ARGS)
 
 lint: platform ## ruff and mypy, strict
@@ -54,14 +57,14 @@ sign: ## suggested: cosign keyless signing of a pushed digest: make sign IMAGE_R
 
 # This agent's own suites (agent_testkit.suites), offline. The platform's full suites, on a real
 # cluster and every engine, stay in the platform's CI.
-load-smoke: platform ## Concurrent runs through the chassis
+load-smoke: chassis-env ## Concurrent runs through the chassis
 	@$(STRIP_KEYS); uv run pytest $(PYTEST_FLAGS) tests/suites/test_load_smoke.py $(ARGS)
 
 hostile: platform ## This agent's source, image, and Compose file against ADR-001
 	@$(STRIP_KEYS); uv run pytest $(PYTEST_FLAGS) tests/suites/test_hostile.py $(ARGS)
 
-redteam: platform ## Attacks on the input, through the chassis guard stage
+redteam: chassis-env ## Attacks on the input, through the chassis guard stage
 	@$(STRIP_KEYS); uv run pytest $(PYTEST_FLAGS) tests/suites/test_redteam.py $(ARGS)
 
-eval: platform ## The golden cases in evals/cases.yaml; writes reports/eval.json
+eval: chassis-env ## The golden cases in evals/cases.yaml; writes reports/eval.json
 	@$(STRIP_KEYS); uv run pytest $(PYTEST_FLAGS) tests/suites/test_eval.py $(ARGS)

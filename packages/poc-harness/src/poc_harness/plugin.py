@@ -18,6 +18,11 @@ from dataclasses import dataclass, field
 import pytest
 
 MARKER = "requires_env"
+MARKERS = (
+    f"{MARKER}(variable, *, context=None, hint=''): a drill; also `network`, skips unless the "
+    "variable is 1, fails if kubectl lacks the context (poc_harness.plugin)",
+    "network: needs a real socket; never part of `make test`",
+)
 KUBECTL_TIMEOUT_S = 10.0
 _CONTEXTS = pytest.StashKey[dict[str, bool]]()
 
@@ -72,6 +77,12 @@ def _context_exists(config: pytest.Config, context: str) -> bool:
     if context not in known:
         known[context] = _kubectl_has(context)
     return known[context]
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Register the markers here, so a run outside the root config does not warn."""
+    for marker in MARKERS:
+        config.addinivalue_line("markers", marker)
 
 
 @pytest.hookimpl(tryfirst=True)

@@ -19,6 +19,10 @@
 set -euo pipefail
 
 CLUSTER="${1:-poc05}"
+# Unused here (this script calls no kubectl); lib.sh needs one, and this is the cluster's.
+CONTEXT=kind-$CLUSTER
+LOG_PREFIX=install-gvisor
+HERE=$(cd "$(dirname "$0")" && pwd)
 # Pinned dated release from https://storage.googleapis.com/gvisor/releases/release/
 # Trust (security review F13, recorded): each pinned sum below was read once from the same channel
 # as the published sum, so the channel was trusted once per arch. zstd comes from the node's
@@ -31,8 +35,8 @@ GVISOR_SHA512_X86_64=4ce35ca83aef7f96b06cde668e0b23aa98b05aa1829508e974196c2a1e0
 # systrap is the default; KVM is not available inside Docker Desktop's VM (spike, question 1).
 RUNSC_PLATFORM=systrap
 
-log() { printf '[install-gvisor] %s\n' "$*" >&2; }
-die() { log "$*"; exit 1; }
+# shellcheck source=deploy/kind/lib.sh
+source "$HERE/../lib.sh"
 
 nodes=$(kind get nodes --name "$CLUSTER")
 [[ -n $nodes ]] || die "no nodes in kind cluster $CLUSTER"

@@ -25,7 +25,7 @@ Each case runs `agentctl new` for one sidecar framework, then the agent's own `m
 The first-build list above is closed, except these:
 
 1. **Criterion 6.** A trial by someone new to the code: [the steps](2026-10-30-new-user-trial.md).
-2. **A hosted CI run.** The agent's CI steps pass from a fresh clone on the Mac. No agent repo exists on a hosted runner, because creating one is the user's call.
+2. **A hosted CI run.** The agent is private on GitHub, `odere-pro/poc09-demo-agent`. The first run (41086415711) passed `lint` and `hostile`. `test` and three suites failed: the kit starts the chassis offline, and a fresh runner's uv cache was empty. `make chassis-env` now fills it. A GitLab try found the `image` keyword bug, then stopped at GitLab's identity verification; this work uses GitHub, so that project is unused.
 3. **The live demo.** `demo/demo.sh --live`: a call from the host through the OpenAI and MCP interfaces, and a debugger attach. `curl` is not allowed in the PoC-9 session.
 4. **The `local` Compose profile.** It needs a running LiteLLM.
 5. **Chassis asks from the kit:** [2026-10-29-testkit-asks.md](2026-10-29-testkit-asks.md).

@@ -1,5 +1,5 @@
-"""The two copies ADR-002 keeps equal: `mapping.py` and the vendored `events.v0.json`. Both files
-are read from the repo by path; the chassis is not imported.
+"""The three copies ADR-002 keeps equal: `mapping.py`, `task_store.py`, and the vendored
+`events.v0.json`. All three files are read from the repo by path; the chassis is not imported.
 """
 
 from __future__ import annotations
@@ -23,6 +23,18 @@ def test_mapping_equals_the_chassis_copy_byte_for_byte() -> None:
 def test_mapping_imports_nothing_from_the_chassis() -> None:
     """The workload's `mapping.py` imports nothing from the chassis."""
     source = (PACKAGE / "mapping.py").read_text()
+    assert "from chassis" not in source and "import chassis" not in source
+
+
+def test_task_store_equals_the_chassis_copy_byte_for_byte() -> None:
+    """The workload's `task_store.py` equals the chassis copy byte for byte (ADR-002)."""
+    chassis_copy = ROOT / "packages/chassis/src/chassis/adapters/a2a/task_store.py"
+    assert (PACKAGE / "task_store.py").read_bytes() == chassis_copy.read_bytes()
+
+
+def test_task_store_imports_nothing_from_the_chassis() -> None:
+    """The workload's `task_store.py` imports nothing from the chassis."""
+    source = (PACKAGE / "task_store.py").read_text()
     assert "from chassis" not in source and "import chassis" not in source
 
 

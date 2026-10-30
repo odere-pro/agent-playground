@@ -15,7 +15,7 @@ import httpx
 import pytest
 from chassis.dashboards import DASHBOARD_DIR, agents_in, dashboard, main, panel_exprs
 from chassis.server import ChassisConfig, create_app
-from promtext import families
+from poc_harness.promtext import families
 
 ROOT = Path(__file__).resolve().parents[3]
 CONFIG: dict[str, Any] = {

@@ -1,15 +1,16 @@
 """PoC-5 CI wiring, offline (plan `docs/plans/2026-10-02-poc-05-sandboxed.md`, section 7, T24).
 
-Exit criterion 1: the hostile suites run in CI, and the no-cluster parts run offline on every
-commit. The offline half: `ci.yml` runs `make check`, and `make check` collects the PoC-5
-offline tests. The kind half: `remote-lane.yml` runs on push and pull request, now that the x86_64
-gVisor sum, the kind remote test files, and the kind and kubectl sha256 sums are all pinned (the
-trigger test requires every one). Whether gVisor starts on a GitHub runner is shown only by a run.
+Exit criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on every
+commit." The offline half: `ci.yml` runs `make check`, and `make check` collects the PoC-5 offline
+tests. The kind half: `remote-lane.yml` runs on push and pull request, now that the x86_64 gVisor
+sum, the kind remote test files, and the kind and kubectl sha256 sums are all pinned (the trigger
+test requires every one). Whether gVisor starts on a GitHub runner is shown only by a run.
 
-Exit criterion 2: a fake workload goes through the `remote` lane on every commit. Offline that is
-the `LaneContract` file in `make check`. On kind, the `test-remote` verb selects the kind remote
-test files by path and fails, naming them, if one is missing. It also runs the kind admission and
-sidecar-control files (R5a-03), so criteria 5 and 7 are checked on the cluster in CI.
+Exit criterion 2: "CI runs a fake workload through the `remote` lane on every commit, and it passes
+the same contract suite as the `sidecar` lane." Offline that is the `LaneContract` file in `make
+check`. On kind, the `test-remote` verb selects the kind remote test files by path and fails, naming
+them, if one is missing. It also runs the kind admission and sidecar-control files (R5a-03), so
+criteria 5 and 7 are checked on the cluster in CI.
 
 Also checked: the workflow pins every action by a full commit SHA, uses no secret, is never
 triggered by `pull_request_target`, always deletes the cluster, and sends every pod log through

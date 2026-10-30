@@ -132,6 +132,7 @@ root_packages = [
   "guardrail_server",
   "agentctl",
   "agent_testkit",
+  "chassis_contracts",
   "poc_harness",
 ]
 include_external_packages = true
@@ -261,6 +262,9 @@ source_modules = [
   "code_runner",
   "fake_langfuse",
   "guardrail_server",
+  "agentctl",
+  "agent_testkit",
+  "chassis_contracts",
 ]
 forbidden_modules = ["poc_harness"]
 

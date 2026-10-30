@@ -55,8 +55,10 @@ def socket_path(name: str = "app.sock") -> Iterator[str]:
 
 @contextmanager
 def on_unix_socket(app: Any, name: str = "app.sock") -> Iterator[str]:
-    """Serve `app` with uvicorn on a fresh Unix socket in a thread (its own event loop, lifespan
-    on); yields the socket path.
+    """Serve `app` with uvicorn on a fresh Unix socket in a thread (its own event loop); yields
+    the socket path. Lifespan is uvicorn's default, `auto`: a FastAPI or Starlette app runs its
+    lifespan, and a failed startup fails here. A raw ASGI app that raises on the `lifespan` scope
+    runs without one, and is served.
     """
     import uvicorn
 

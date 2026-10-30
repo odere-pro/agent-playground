@@ -216,3 +216,25 @@ def test_the_named_marks_carry_their_variable_and_context() -> None:
         "POC05_KIND": ("requires_env", ("POC05_KIND",), "kind-poc05"),
         "POC06_KIND": ("requires_env", ("POC06_KIND",), "kind-poc05"),
     }
+
+
+def test_both_markers_are_registered_outside_the_root_config(pytester: pytest.Pytester) -> None:
+    """The plugin registers its markers, so `--strict-markers` passes with no root `pyproject`."""
+    pytester.makepyfile(
+        """
+        import pytest
+
+        @pytest.mark.network
+        def test_network():
+            pass
+
+        @pytest.mark.requires_env("DRILL_GATE_TEST")
+        def test_drill():
+            pass
+        """
+    )
+
+    # A subprocess: the marker names of this run are cached process-wide and would hide a gap.
+    result = pytester.runpytest_subprocess("--strict-markers", "--collect-only")
+
+    assert result.ret == pytest.ExitCode.OK, result.stdout.str()
