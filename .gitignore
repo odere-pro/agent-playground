@@ -25,3 +25,4 @@ coverage.xml
 pocs/*/notes/hostile/*.jsonl
 .idea/
 .vscode/
+!packages/agentctl/src/agentctl/template/project/.vscode/

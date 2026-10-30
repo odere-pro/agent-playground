@@ -30,7 +30,7 @@ jobs:
     env:
       HELM_VERSION: v3.19.0
       # From https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz.sha256sum
-      HELM_SHA256: a7f81ce08007091b86d8bd696eb4d86b8d0f2e1b9f6c714be62f82f96a594496  # pragma: allowlist secret (public sha256)
+      HELM_SHA256: a7f81ce08007091b86d8bd696eb4d86b8d0f2e1b9f6c714be62f82f96a594496  # pragma: allowlist secret
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
