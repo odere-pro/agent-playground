@@ -24,7 +24,7 @@ The test layers of the PoC plan, and where each lives today.
 - A test that needs a socket is marked `network` and is not part of any gate.
 - HTTP tests use the httpx ASGI transport, which needs no socket.
 
-The pre-commit hook ([scripts/git-hooks/pre-commit](../../scripts/git-hooks/pre-commit)) runs detect-secrets on the staged files first, then `make quick`.
+The pre-commit hook ([scripts/git-hooks/pre-commit](../../scripts/git-hooks/pre-commit)) runs `make lint-staged` first: codespell, shellcheck, yamllint, and detect-secrets on the staged files ([scripts/lint_staged.sh](../../scripts/lint_staged.sh)). Then it runs `make quick`. `make lint-fix` repairs formatting and typos.
 
 ## Test shape
 

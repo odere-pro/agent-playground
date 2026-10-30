@@ -36,6 +36,7 @@ The service chassis for the SLM agent platform, and the nine PoC iterations that
 - `make quick` before every commit. It does not run mypy.
 - `make check` before a PR. It is the CI `check` job, mypy included.
 - `make test` and `make test-poc POC=NN` while you work.
+- `make lint-fix` repairs formatting and typos that the hook or `make lint-extra` reports.
 - `make help` lists every other target, with what it does.
 
 Offline rules, markers, and the pre-commit hook: `docs/guides/testing.md`. Gates and CI jobs: `docs/guides/local-dev.md`.
