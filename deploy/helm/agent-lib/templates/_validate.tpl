@@ -20,10 +20,10 @@ the merged values; prints nothing; fails the render with an "agent-lib:" message
 
 {{- /* Arguments: an allow-list. A flag here can move a listener off loopback or turn auth off,
 and argparse accepts abbreviations, so a deny-list cannot hold. */ -}}
-{{- $safeArg := "^(--log-level(=[a-z]+)?|debug|info|warning|error)$" -}}
+{{- $safeArg := "^(--log-level(=[a-z]+)?|debug|info|warning|error|--drain-(delay|timeout)-s(=[0-9]+)?|[0-9]+)$" -}}
 {{- range concat ($v.workload.args | default list) (dig "extraArgs" (list) $v.chassis) -}}
 {{- if not (regexMatch $safeArg (toString .)) -}}
-{{- fail (printf "agent-lib: argument %q is not allowed: only --log-level" (toString .)) -}}
+{{- fail (printf "agent-lib: argument %q is not allowed: only --log-level and --drain-delay-s or --drain-timeout-s" (toString .)) -}}
 {{- end -}}
 {{- end -}}
 
