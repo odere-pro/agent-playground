@@ -24,7 +24,8 @@ from chassis.server.evaluator_gate import (
     GATE_FALLBACKS,
     GATE_RETRIES,
 )
-from poc08_harness import BAD, FALLBACK_ROUTE, GATE_MARK, GOOD, ROUTE, cell_params, full_stack
+from poc_harness.full_stack import cell_params, full_stack
+from poc_harness.stage_model import BAD, FALLBACK_ROUTE, GATE_MARK, GOOD, ROUTE
 
 RETRIES = 2
 GATE_INPUT = f"simplify: {GATE_MARK} The report was signed by Dana Ruiz on 4 May 2025."

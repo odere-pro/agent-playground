@@ -67,7 +67,10 @@ Steps:
    - Expose a pytest plugin. It holds env gating as one `@requires_env("POC05_KIND")` style marker, which replaces the markers named after each PoC.
    - Remove every `sys.path` insert.
    - Drop the per-PoC mypy excludes.
+   - Done. PR #48 moved the PoC-2 to PoC-6 harnesses. Branch `claude/review-f0c-harness-finish` moved PoC-7 and PoC-8. `grep -rnE "sys\.path\.(insert|append)" pocs --include='*.py'` prints one line: `pocs/poc-04-stateless-scalable/notes/dapr/measure.py:25`. That one insert stays, because `notes/` is dated evidence. No per-PoC mypy exclude is left; the one glob for `pocs/*/tests/conftest.py` stays.
 4. **Rename tests.** Prefix PoC-1 to PoC-4 test files `test_pocNN_*`. Add a `harness-lint` check that every test basename is unique.
+   - Partly done. Every PoC-5 to PoC-8 test file has the prefix, and no two test basenames collide today.
+   - Left: the 34 PoC-1 to PoC-4 test files have no prefix, and `harness-lint` has no basename check.
 5. **Make deploy consistent.** Move PoC-4 kind into `deploy/kind/poc04/`. Keep a thin `deploy/kind/run.sh` that dispatches by PoC. `deploy/helm/` stays for PoC-9.
 6. **Discover CI by glob.** Build the `ci.yml` images matrix from a manifest file (`deploy/images.yaml`), not from inline entries. Add path filters, so a docs-only or one-PoC change skips unrelated jobs. `make check` stays the gate.
 
@@ -149,7 +152,7 @@ Every step is a separate PR into `main`, so each diff stays reviewable. Each PR 
 
 ## Verification
 - After each PR: `make quick` and `make check` pass, and the output tail goes in the PR.
-- WS1: `make test` collects the same test count before and after the harness move, and `pytest --collect-only -q | tail -1` matches. `grep -r "sys.path" pocs/` is empty. `make test-poc POC=02..05` passes.
+- WS1: `make test` collects the same test count before and after the harness move, and `pytest --collect-only -q | tail -1` matches. `grep -rnE "sys\.path\.(insert|append)" pocs --include='*.py'` prints only the dated evidence script `notes/dapr/measure.py`. `make test-poc POC=02..05` passes.
 - WS1/WS2 alias check: `make kind-poc05 ARGS="up"`, then the PoC-5 kind suite with `POC05_KIND=1`, then teardown. Done once, through the lock.
 - WS2 parallelism:
   - Create two worktrees. Run `make setup && make quick` in both at the same time, and both pass.

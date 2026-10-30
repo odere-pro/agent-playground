@@ -38,7 +38,9 @@ from bakeoff.golden import Case, load_gate_cases
 from bakeoff.golden.generate import judge_script, model_script, simulate
 from bakeoff.golden.logic import LOGICS, apply_logic
 from fake_model_server import Script
-from poc08_harness import FETCH, GATE_MARK, LOOK_IT_UP, ROOT, cell_params, full_stack
+from poc_harness.full_stack import cell_params, full_stack
+from poc_harness.paths import ROOT
+from poc_harness.stage_model import FETCH, GATE_MARK, LOOK_IT_UP
 
 THROUGH_CELL = 3
 """suggested: gate cases per cell through the real engine; the offline scorer gives the rest."""

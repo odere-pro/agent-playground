@@ -39,19 +39,17 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-
-# Run as a script, this file's folder is `sys.path[0]`; under pytest, the test folder is on it.
-from poc08_stack import (
+from poc_harness.metrics_stack import (
     CHASSIS_PLAIN,
     CHASSIS_STAGES,
     PLAIN_INPUT,
-    ROOT,
     RUN_TIMEOUT_S,
     TOKEN_KEY,
     bearer,
     read_env_file,
     summarize,
 )
+from poc_harness.paths import ROOT
 
 REQUESTS = 200
 """suggested: per target."""

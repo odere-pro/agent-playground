@@ -1,11 +1,12 @@
 """PoC-8 exit criterion 3: "Every call on every engine has a complete trace, logs with
 `trace_id`, and metrics." (docs/planning/poc/008-PoC-8-build-cross-cutting.md)
 
-This file holds the trace part. Each cell (`poc08_harness.CELLS`: every supported Python engine in
-each lane it can run in offline) runs one call through the chassis with every stage on. The trace
-is complete when it has one `chassis.run` span, a `chassis.model.call` span (the model proxy) for
-each model call the workload made, and a `chassis.tool.call` span (the tool proxy, `/mcp`) when
-the tool is called, all with the run's one trace id. A call with no tool has no tool span.
+This file holds the trace part. Each cell (`poc_harness.full_stack.CELLS`: every supported Python
+engine in each lane it can run in offline) runs one call through the chassis with every stage on.
+The trace is complete when it has one `chassis.run` span, a `chassis.model.call` span (the model
+proxy) for each model call the workload made, and a `chassis.tool.call` span (the tool proxy,
+`/mcp`) when the tool is called, all with the run's one trace id. A call with no tool has no
+tool span.
 
 Metrics and logs: after a tool-calling run, `GET /metrics` (Prometheus text, no token by default)
 counts the request, the model calls, their tokens, and the tool call for the agent. The chassis log
@@ -26,8 +27,9 @@ from typing import Any
 import pytest
 from chassis.core.trace import trace_id_hex
 from chassis.logs import JsonFormatter
-from poc08_harness import LOOK_IT_UP, PLAIN, PORT_LOGGER, ROUTE, cell_params, full_stack
-from promtext import value
+from poc_harness.full_stack import cell_params, full_stack
+from poc_harness.promtext import value
+from poc_harness.stage_model import LOOK_IT_UP, PLAIN, PORT_LOGGER, ROUTE
 
 RUN, MODEL, TOOL = "chassis.run", "chassis.model.call", "chassis.tool.call"
 AGENT = "simplifier"

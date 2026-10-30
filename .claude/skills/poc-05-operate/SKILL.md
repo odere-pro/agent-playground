@@ -12,8 +12,7 @@ Every command below was run on the Mac and is pasted in the notes, unless it say
 - Not for the offline gate: `make check` and `make test-poc POC=05` need no cluster.
 
 ## Rules
-- One worktree on Docker or kind at a time (skill `git-flow`, "Parallel work in worktrees"). Never touch other stacks (`paligo-*`, opensearch).
-- Every `kubectl` call pins `--context kind-poc05`; `run.sh` does this for you.
+- Who may use Docker or kind, and the `kubectl` context: `deploy/CLAUDE.md`. This skill owns bring-up.
 - No secret value in a file, argv, or output. Read a key into the env in a subshell (`run.sh with-gateway`). Print logs only through `run.sh logs`.
 - Never edit a test to make a refusal pass. See the runbook "A refusal test passes when it should fail".
 
@@ -49,13 +48,13 @@ The kind tier, every PoC-5 kind test, through the gateway wrapper:
 ```
 POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs
 ```
-Last good: `90 passed, 2 skipped` in about 2 minutes (2026-10-09). The two skips are contract-suite fixtures the gateway binding does not provide.
+Last good numbers: `pocs/poc-05-sandboxed/notes/2026-10-09-close-runs.md`, section 6. The two skips are contract-suite fixtures the gateway binding does not provide.
 
-The remote lane and the code runner only (what CI will run):
+The remote lane and the code runner only (what CI runs):
 ```
 deploy/kind/poc05/run.sh test-remote
 ```
-Last good: `17 passed` in about 96 s.
+Last good numbers: the same section.
 
 One file:
 ```

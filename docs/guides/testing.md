@@ -34,7 +34,7 @@ The pre-commit hook ([scripts/git-hooks/pre-commit](../../scripts/git-hooks/pre-
 - One behavior per test.
 - Use `pytest.mark.parametrize` instead of a loop.
 - No `if` or `for` around an assert.
-- Helpers live in a harness module, with names from the domain, not from the test.
+- Helpers live in a harness module, with names from the domain, not from the test. Shared ones go in `packages/poc-harness`; see `pocs/CLAUDE.md`.
 - A PoC scenario test's docstring starts with its exit criterion, quoted word for word from the PoC README. More lines are optional.
 
 ## Contract suites
@@ -76,5 +76,7 @@ A drill runs only when its gate variable is `1`. With `requires_env`, the variab
 | `POC05_KIND` | PoC-5 kind suites |
 | `POC06_KIND` | PoC-6 kind tests |
 | `POC07_STACK` | PoC-7 real-service stack tests |
+| `POC08_STACK` | PoC-8 Compose stack drill |
+| `POC08_LITELLM` | PoC-8 LiteLLM drill |
 
-PoC-8 adds no gate variable.
+The PoC-7 and PoC-8 drills use a plain `skipif` on their variable, not `requires_env`. The PoC-8 `conftest.py` also leaves its two drills out of collection unless the variable is `1`.

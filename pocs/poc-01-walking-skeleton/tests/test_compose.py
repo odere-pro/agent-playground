@@ -26,6 +26,7 @@ from typing import Any
 import httpx
 import pytest
 import yaml
+from poc_harness.sse import sse_frames
 
 ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_DIR = ROOT / "deploy/compose"
@@ -296,15 +297,8 @@ def _compose(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]
 
 
 def _sse_frames(lines: Iterable[str]) -> list[tuple[str, dict[str, Any]]]:
-    """`event: <name>` / `data: <json>` pairs, in order."""
-    frames: list[tuple[str, dict[str, Any]]] = []
-    name = ""
-    for line in lines:
-        if line.startswith("event:"):
-            name = line[6:].strip()
-        elif line.startswith("data:"):
-            frames.append((name, json.loads(line[5:])))
-    return frames
+    """`event: <name>` / `data: <json>` pairs, in order, from a stream read line by line."""
+    return sse_frames("\n".join(lines))
 
 
 def poll_until[T](

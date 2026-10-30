@@ -19,6 +19,7 @@ The service chassis for the SLM agent platform, and the nine PoC iterations that
 - `packages/agent-testkit` the PoC-9 fixture kit: runs the chassis in the `fake` profile as its own process and the lane contract over A2A; never imports `chassis`.
 - `packages/guardrail-server` the injection and secret check behind LiteLLM's guardrail API (PoC-7). Prompt Guard 2, or a pattern stand-in offline; plus a LiteLLM stub.
 - `packages/fake-langfuse` a fake of the Langfuse scores and OTLP routes for offline tests (PoC-7).
+- `packages/poc-harness` shared PoC test support, imported as `poc_harness`, with the `requires_env` drill plugin. Product code never imports it.
 - `evals/` the eval tool configs run on the golden set: `deepeval/` (the CI pick) and `promptfoo/` (PoC-7 trial).
 - `pocs/poc-NN-<slug>` one iteration: README (checklist), CLAUDE.md, `tests/`, `demo/`, `notes/`. `pocs/CLAUDE.md` defines `pocs/CURRENT` and the open PoCs.
 - `deploy/` how the stacks run. Read `deploy/CLAUDE.md` first.

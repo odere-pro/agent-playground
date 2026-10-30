@@ -57,18 +57,11 @@ from chassis.server.rate_limit import RATE_LIMITED, REFUSED_COUNTER
 from chassis.server.security import AUTH_REFUSED
 from chassis.server.stream_guard import STAGE as STREAM_STAGE
 from chassis_contracts.redteam import CATEGORIES, Case, load_cases, run_all, run_case, summary
-from poc08_harness import (
-    FETCH,
-    LOOK_IT_UP,
-    OTHER,
-    READER,
-    ROOT,
-    Stack,
-    cell_params,
-    full_stack,
-    litellm_guardrails,
-)
+from poc_harness.full_stack import OTHER, READER, Stack, cell_params, full_stack
+from poc_harness.paths import ROOT
 from poc_harness.sse import sse_frames
+from poc_harness.stage_model import FETCH, LOOK_IT_UP
+from poc_harness.stage_ports import litellm_guardrails
 
 STACK = "litellm"
 POC08_MISSES = {

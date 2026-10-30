@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 from chassis.core.trace import trace_id_hex
-from poc08_harness import cell_params, full_stack
+from poc_harness.full_stack import cell_params, full_stack
 
 
 @pytest.mark.parametrize(("engine", "lane"), cell_params())

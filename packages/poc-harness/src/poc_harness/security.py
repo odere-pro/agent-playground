@@ -1,10 +1,8 @@
-"""Shared harness for the PoC-7 security scenarios (W2). Not a test module.
-
-`secured_chassis(engine, lane, ...)` is PoC-3's `chassis_on_unix_sockets` with the PoC-7 ports
-set: an auth port (`StaticTokens`), a guardrail port, a tools port, and a scripted model. The
+"""`secured_chassis(engine, lane, ...)` is `interfaces.chassis_on_unix_sockets` with the security
+ports set: an auth port (`StaticTokens`), a guardrail port, a tools port, and a scripted model. The
 public app and the proxy app run on Unix sockets; the workload is a real engine (`echo_python`,
 `echo_langgraph`) behind `inprocess` or `sidecar` (A2A over a Unix socket). Its model and MCP calls
-reach the chassis proxy socket through PoC-3's `OutboundRouter`. No TCP, no key.
+reach the chassis proxy socket through `interfaces.OutboundRouter`. No TCP, no key.
 
 The chassis code under test has no engine-specific branch: the same app, the same ports, and only
 `spec.engine` differs per cell.
@@ -38,15 +36,17 @@ from chassis.ports.model import (
     ToolSpec,
     Usage,
 )
-from chassis.server import ChassisConfig, create_app
+from chassis.server import create_app
 from chassis.server.proxy_app import create_proxy_app
 from chassis_contracts.interface import UnixApp, serve_on_unix_sockets
+
+from poc_harness.apps import chassis_config
 from poc_harness.interfaces import OutboundRouter
+from poc_harness.scenario import ROUTE
 from poc_harness.servers import a2a_on_unix_socket
 
 ENGINES = {"echo-python": "echo_python:handle", "echo-langgraph": "echo_langgraph:handle"}
 LANES = ("inprocess", "sidecar")
-ROUTE = "big-default"
 RUNNER = "tok-runner"
 READER = "tok-reader"
 TOKENS = {
@@ -133,22 +133,6 @@ class Secured:
         )
 
 
-def _config(spec: dict[str, Any]) -> ChassisConfig:
-    return ChassisConfig.model_validate(
-        {
-            "version": "cfg-poc7-sec",
-            "profile": "fake",
-            "agent": {"name": "simplifier", "version": "0.0.1"},
-            "spec": {
-                "adapters": {"model": "fake"},
-                "engine": spec,
-                "model": {"route": ROUTE},
-                "prompt": {"version": "simplifier-v1"},
-            },
-        }
-    )
-
-
 @contextmanager
 def secured_chassis(
     engine: str,
@@ -184,7 +168,7 @@ def secured_chassis(
             auth=auth,
             guardrails=guardrails,
         )
-        public = create_app(_config(spec), ports)
+        public = create_app(chassis_config(spec, version="cfg-poc7-sec"), ports)
         proxy = create_proxy_app(public)
         router.add(public, proxy_uds)
         stack.callback(router.remove, public)

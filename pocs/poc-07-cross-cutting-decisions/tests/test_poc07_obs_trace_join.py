@@ -18,42 +18,19 @@ key.
 from __future__ import annotations
 
 import ast
-import asyncio
 import re
-import shutil
-import tempfile
-from collections.abc import AsyncIterator, Iterator
-from contextlib import asynccontextmanager
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
 import pytest
-import uvicorn
-from chassis.adapters.a2a import SidecarConnector
-from chassis.adapters.otel import OtelTelemetry
-from chassis.fakes import InMemoryConfig
-from chassis.fakes.tool import default_tools
-from chassis.ports.bundle import PortBundle
-from chassis.server import create_app
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from poc_harness.apps import chassis_config, client_for, running
-from poc_harness.outbound import route_outbound
-from poc_harness.scenario import AFTER_TOOL, TIMEOUT_S, TOOL_PROMPT
-from poc_harness.scripted_model import ToolLoopModel
+from poc_harness.scenario import AFTER_TOOL
+from poc_harness.trace_join import CALLER_SPAN, CALLER_TRACE, ENGINES, SESSION, run_once
 from workload_a2a import telemetry as workload_telemetry
 
 ROOT = Path(__file__).resolve().parents[3]
 CHASSIS_SRC = ROOT / "packages/chassis/src/chassis"
-CALLER_TRACE = "0af7651916cd43dd8448eb211c80319c"  # pragma: allowlist secret
-CALLER_SPAN = "b7ad6b7169203331"  # pragma: allowlist secret
-SIDECAR_URL = "http://127.0.0.1:9100"
-SESSION = "sess-poc07"
-ENGINES = {
-    "echo-langgraph": "echo_langgraph.handle:handle",
-    "echo-openai-agents": "echo_openai_agents.handle:handle",
-}
-"""The two engines run end to end. Each one's instrumentor is in its own `telemetry.py`."""
 ENGINE_NAMES = re.compile(
     r"langgraph|langchain|openai_agents|openai-agents|pydantic_ai|pydanticai|smolagents|"
     r"claude_agent|crewai|openinference|echo_python|echo-python|echo_typescript|kagent",
@@ -72,32 +49,6 @@ def exporter() -> Iterator[InMemorySpanExporter]:
         workload_telemetry.shutdown()
 
 
-@asynccontextmanager
-async def workload_on_uds(handle_path: str) -> AsyncIterator[str]:
-    """The workload's template A2A server on a Unix socket, on this event loop."""
-    from chassis.adapters.a2a.inprocess import load_handle
-    from workload_a2a.server import build_agent_card, build_app
-
-    card = build_agent_card(name=handle_path, version="0.0.1", url=SIDECAR_URL)
-    folder = Path(tempfile.mkdtemp(prefix="p7-"))
-    uds = str(folder / "a2a.sock")
-    app = build_app(load_handle(handle_path), card)
-    server = uvicorn.Server(uvicorn.Config(app, uds=uds, log_level="warning", lifespan="off"))
-    task = asyncio.create_task(server.serve())
-    try:
-        async with asyncio.timeout(10):
-            while not server.started:
-                if task.done():
-                    task.result()
-                await asyncio.sleep(0.01)
-        yield uds
-    finally:
-        server.should_exit = True
-        server.force_exit = True
-        await task
-        shutil.rmtree(folder, ignore_errors=True)
-
-
 def _hex(span: ReadableSpan) -> tuple[str, str]:
     assert span.context is not None
     return f"{span.context.trace_id:032x}", f"{span.context.span_id:016x}"
@@ -113,33 +64,6 @@ def _named(spans: list[ReadableSpan], name: str) -> list[ReadableSpan]:
 
 def _scope(span: ReadableSpan) -> str:
     return span.instrumentation_scope.name if span.instrumentation_scope else ""
-
-
-async def run_once(
-    engine: str, monkeypatch: pytest.MonkeyPatch, exporter: InMemorySpanExporter
-) -> tuple[dict[str, Any], list[ReadableSpan]]:
-    """One tool-using `/v1/run` through the chassis to `engine` in the sidecar lane."""
-    async with workload_on_uds(ENGINES[engine]) as uds:
-        ports = PortBundle(
-            model=ToolLoopModel(),
-            engine=SidecarConnector(),
-            config=InMemoryConfig(),
-            telemetry=OtelTelemetry(span_exporters=[exporter], service_name="chassis"),
-            tools=default_tools(),
-        )
-        app = create_app(
-            chassis_config({"connector": "sidecar", "url": SIDECAR_URL, "uds": uds}), ports
-        )
-        route_outbound(monkeypatch, app)
-        headers = {
-            "traceparent": f"00-{CALLER_TRACE}-{CALLER_SPAN}-01",
-            "x-session-id": SESSION,
-        }
-        body = {"input": {"text": TOOL_PROMPT}}
-        async with asyncio.timeout(TIMEOUT_S), running(app), client_for(app) as client:
-            response = await client.post("/v1/run", json=body, headers=headers)
-    assert response.status_code == 200, response.text
-    return response.json(), list(exporter.get_finished_spans())
 
 
 @pytest.mark.parametrize("engine", list(ENGINES))

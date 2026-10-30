@@ -28,11 +28,20 @@ def sse_frames(text: str) -> list[Frame]:
 
 def sse_data(text: str, *, named: bool = True) -> list[Any]:
     """The `data:` payloads of an SSE body, JSON-decoded, `[DONE]` kept as the string. With
-    `named=False`, a frame that names its event fails the test (the OpenAI stream names none).
+    `named=False`, every non-empty block must be one `data: ` line with a payload, as the OpenAI
+    stream sends them: a name, a comment, an `id:` line, or an empty frame fails the test.
     """
-    events = sse([text])
-    assert named or not [e for e in events if e.event is not None], f"named frames in {text!r}"
-    return [e.data if e.data == DONE else json.loads(e.data) for e in events if e.data]
+    if not named:
+        _assert_only_data_blocks(text)
+    return [e.data if e.data == DONE else json.loads(e.data) for e in sse([text]) if e.data]
+
+
+def _assert_only_data_blocks(text: str) -> None:
+    """The parser skips what it does not use, so this reads the raw blocks."""
+    for block in text.split("\n\n"):
+        if block.strip():
+            is_one_data_line = block.startswith("data: ") and "\n" not in block
+            assert is_one_data_line and block[6:].strip(), f"not one `data: ` line: {block!r}"
 
 
 def sse_events(text: str) -> list[tuple[str | None, Any]]:
