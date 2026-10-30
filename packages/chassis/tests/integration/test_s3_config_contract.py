@@ -18,6 +18,7 @@ from chassis.ports.config import ConfigUnavailable, LoadedConfig
 from chassis_contracts import ConfigPortContract
 from chassis_contracts.config import Bump, wait_for_version
 from chassis_contracts.containers.minio import make_bucket, minio_container
+from chassis_contracts.events import wait_until
 from minio import Minio
 from testcontainers.community.minio import MinioContainer
 
@@ -140,13 +141,7 @@ async def test_a_failed_poll_is_counted_not_raised_and_polling_goes_on(client: M
     port.subscribe("echo", on_change)
     try:
         client.remove_object(bucket, f"{PREFIX}echo.yaml")  # a delete marker: polls fail
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + 5
-        while True:
-            if port.poll_failures >= 2 or loop.time() >= deadline:
-                break
-            await asyncio.sleep(0.05)
-        assert port.poll_failures >= 2
+        await wait_until(lambda: port.poll_failures >= 2, 5, "two failed polls", interval_s=0.05)
         assert failures and set(failures) == {"echo"}
         await asyncio.to_thread(put_yaml, client, bucket, f"{PREFIX}echo.yaml", {"v": 3})
         after = await port.load("echo")

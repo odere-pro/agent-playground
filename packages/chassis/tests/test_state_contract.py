@@ -9,7 +9,7 @@ import pytest
 from chassis.adapters.valkey.state import PASSWORD_VAR, URL_VAR, USERNAME_VAR, ValkeyState, ttl_ms
 from chassis.fakes.state import InMemoryState, StateUnavailable
 from chassis.ports.state import StatePort
-from chassis_contracts.state import StatePortContract
+from chassis_contracts.state import PassTime, StatePortContract
 
 
 class AlwaysFailingState(InMemoryState):
@@ -20,10 +20,31 @@ class AlwaysFailingState(InMemoryState):
         super()._enter(method, key)
 
 
+class HandClock:
+    """A clock that moves only when a test passes time, so a stall cannot expire an entry."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    async def pass_time(self, seconds: float) -> None:
+        self.now += seconds
+
+
 class TestInMemoryState(StatePortContract):
     @pytest.fixture
-    def state_port(self) -> StatePort:
-        return InMemoryState()
+    def clock(self) -> HandClock:
+        return HandClock()
+
+    @pytest.fixture
+    def state_port(self, clock: HandClock) -> StatePort:
+        return InMemoryState(clock=clock)
+
+    @pytest.fixture
+    def pass_time(self, clock: HandClock) -> PassTime:
+        return clock.pass_time
 
     @pytest.fixture
     def broken_state_port(self) -> StatePort:

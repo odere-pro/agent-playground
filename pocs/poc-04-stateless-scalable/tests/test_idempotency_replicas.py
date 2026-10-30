@@ -5,7 +5,7 @@
 This file covers the whole sentence offline. "The same key" is the `Idempotency-Key` header the
 client sends; "any replica" is the other of two replicas that share one store.
 
-Two chassis replicas (`poc04_harness.replicas_on_unix_sockets`) share one `InMemoryState`, which
+Two chassis replicas (`poc_harness.replicas`) share one `InMemoryState`, which
 stands for Valkey; each runs `echo_python` in the `inprocess` lane, and one `HarnessModel` answers
 both. A first call goes to replica 0 and its repeat to replica 1. The repeat is the stored result:
 the same envelope (or the same frames, `created` aside: a replayed chat format gets a fresh one),
