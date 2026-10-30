@@ -68,7 +68,7 @@ def test_lint_extra_job_pins_the_same_actions_as_the_check_job() -> None:
 
 
 def test_makefile_target_runs_every_tool() -> None:
-    recipe = _recipe("lint-extra")
+    recipe = _recipe("lint-extra") + (ROOT / "scripts" / "check_secrets.sh").read_text()
     for command in TOOLS.values():
         assert re.search(rf"\b{re.escape(command)}\b", recipe), f"lint-extra does not run {command}"
 

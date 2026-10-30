@@ -8,6 +8,11 @@ strip='(_API_KEY|_TOKEN|_SECRET|_PASSWORD|_SECRET_KEY|_PUBLIC_KEY|_MASTER_KEY|_A
 for v in $(env | cut -d= -f1 | grep -E "$strip" || true); do
   unset "$v"
 done
+# A git hook exports GIT_DIR and GIT_INDEX_FILE. With them, a test that runs `git init` in a temp
+# folder rewrites the real repository's config instead, so no test inherits them.
+for v in $(env | cut -d= -f1 | grep -E '^GIT_' || true); do
+  unset "$v"
+done
 # --record-mode=none: model cassettes replay only, whatever `addopts` says. A later
 # `--record-mode` in "$@" wins, which is how `make record-cassettes` re-records (offline too).
 # No --block-network: it also blocks the Unix sockets the sidecar lane uses.
