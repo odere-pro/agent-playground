@@ -46,7 +46,7 @@ No order, size, or dependency change is proposed, so `backlog.py` `ROWS` stays a
 - The baseline is `evals/gate/baseline.json` (`eval-baseline.v0`): a pass rate per engine and lane, `must_pass` and `must_fail` lists. `python -m bakeoff.evalgate` exits 1 on a rate drop, a failed must-pass case, or a must-fail case that passes.
 - `poc08-evals.yml` runs DeepEval and the gate per engine (jobs `evals`, `regression`, `redteam`). Locally: `make evals`, `make evals-regression`, `make redteam`. `kagent-adk` is skipped (kind only).
 - The business-logic regression fails the gate: the `drop-facts` logic gives 0/50 against a 0.780 baseline ([eval-gate note](2026-10-29-eval-gate.md)).
-- Waits on: the first GitHub run of `poc08-evals.yml` (run id and commit go in the README). A real judge's agreement with the labels (the Mac run). The label of g08: it is labelled `pass` and the scripted judge fails its rubric; it sits in neither baseline list.
+- Waits on: a real judge's agreement with the labels (the Mac run). The label of g08: it is labelled `pass` and the scripted judge fails its rubric; it sits in neither baseline list.
 - "About 50 cases per agent" holds for one agent. Every other agent needs its own set; that is 064 D-1's work.
 - suggested: no tolerance on the pass rate while the model is scripted. A hosted model needs a tolerance; record it when the gate first runs on one.
 
