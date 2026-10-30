@@ -22,7 +22,7 @@ chassis:
   # The chassis's scoped LiteLLM virtual key, from a Secret made outside the chart.
   secretEnv:
     - name: LITELLM_API_KEY
-      secretName: example-agent-litellm
+      secretName: example-agent-litellm  # pragma: allowlist secret (a Secret name, no value)
       key: LITELLM_API_KEY
   # The chassis config, mounted at /etc/chassis/config.yaml. The lane and the trust level are read
   # from here: spec.engine.connector (sidecar or remote) and spec.trust (trusted or untrusted).
