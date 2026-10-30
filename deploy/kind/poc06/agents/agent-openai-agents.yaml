@@ -128,7 +128,7 @@ spec:
               readOnly: true
       containers:
         - name: workload
-          image: kind.local/agent-platform/echo-openai-agents:poc06
+          image: kind.local/agent-platform/echo-openai-agents:kind
           imagePullPolicy: Never
           env:
             # The only four variables the workload gets: no key, no Secret.

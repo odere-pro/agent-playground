@@ -22,6 +22,8 @@ from chassis.redaction import redact
 
 SECRET = "secret"  # pragma: allowlist secret
 
+# Hand copy of guardrail_server/classifier.py;
+# packages/contract-suites/tests/test_guardrail_pattern_drift.py pins the drift.
 INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
     re.compile(p, re.I)
     for p in (
@@ -34,6 +36,8 @@ INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
         r"\b(send|post|upload|exfiltrate)\b.{0,60}\bhttps?://",
     )
 )
+# Hand copy of guardrail_server/secret_scan.py;
+# packages/contract-suites/tests/test_guardrail_pattern_drift.py pins the drift.
 SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bsk-[A-Za-z0-9_-]{16,}"),
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),

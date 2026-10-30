@@ -24,6 +24,7 @@ checks as much as it can without a cluster:
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -217,14 +218,24 @@ def test_the_template_variable_reads_a_sandbox_template_pod(policy: Doc) -> None
     assert "request.kind.kind in ['Sandbox', 'SandboxTemplate'] ? object.spec.podTemplate" in expr
 
 
-def test_policy_has_every_rule_and_the_params_check(policy: Doc) -> None:
-    validations = policy["spec"]["validations"]
+def test_policy_has_only_the_params_check_and_rules_1_to_8(policy: Doc) -> None:
+    """Criterion 7: the trust policy holds rule 0 and rules 1 to 8, and no other rule."""
     assert sorted(_messages(policy)) == sorted(["0", *RULES])
-    for v in validations:
-        assert v["reason"] == "Forbidden"
-        if "messageExpression" in v:
-            # The dynamic message starts with the static one, so the kind test's match holds.
-            assert v["messageExpression"].strip().startswith("'" + v["message"]), v["message"]
+
+
+@pytest.mark.parametrize("rule", ["0", *RULES])
+def test_policy_has_every_rule_and_the_params_check(policy: Doc, rule: str) -> None:
+    """Criterion 7: trust rule `rule` is in the policy once, denies as Forbidden, and its dynamic
+    message starts with the static one, so the kind test's match holds."""
+    tag = f"trust rule {rule}: "
+
+    found = [v for v in policy["spec"]["validations"] if v["message"].startswith(tag)]
+
+    assert len(found) == 1, f"trust rule {rule}: found {len(found)} times in policy.yaml"
+    (v,) = found
+    assert v["reason"] == "Forbidden", f"trust rule {rule}"
+    dynamic = v.get("messageExpression", "'" + v["message"]).strip()
+    assert dynamic.startswith("'" + v["message"]), f"trust rule {rule}"
 
 
 def _expressions(policy: Doc) -> Iterator[tuple[str, str]]:
@@ -998,7 +1009,12 @@ def _gvisor_no_token(spec: Doc) -> bool:
 
 def broken_rules(doc: Doc, p: _Params, namespace: str | None = None) -> set[str]:
     """The rules `doc` breaks, by the same logic as the CEL in `policy.yaml`. `namespace` defaults
-    to the object's own; its shape label comes from `base/namespaces.yaml`."""
+    to the object's own; its shape label comes from `base/namespaces.yaml`.
+
+    This is a hand-written model of the rules, not the policy: it never reads `policy.yaml`, so a
+    fixture that agrees with it proves nothing about the CEL by itself. The expression pins in
+    `test_rule_expression_matches_its_pin_when_the_policy_loads` tie the two together offline;
+    `test_poc05_kind_admission.py` runs the real policy."""
     ns = namespace or doc.get("metadata", {}).get("namespace", "")
     ns_shape = _namespace_labels().get(ns, {}).get(SHAPE_LABEL, "")
     template = _template(doc)
@@ -1090,6 +1106,75 @@ def extension_broken_rules(doc: Doc) -> set[str]:
 def all_broken_rules(doc: Doc, p: _Params) -> set[str]:
     trust = set() if doc["kind"] == "SandboxClaim" else broken_rules(doc, p)
     return trust | extension_broken_rules(doc)
+
+
+@pytest.mark.parametrize(
+    ("rule", "pinned"),
+    [
+        ("0", "576534e9e0cef6e0"),
+        ("1", "597275553b86abd2"),
+        ("2", "f64a89cf4cd13116"),
+        ("3", "568074d253513a90"),
+        ("4", "ed1db7cb5b6cb771"),
+        ("5", "e90f7a249dc3490b"),
+        ("6a", "06ca8856518fa312"),
+        ("6b", "2b12dfb159202cb0"),
+        ("6c", "a5113c46e8644e7b"),
+        ("7a", "0583f09d78803e05"),
+        ("7b", "ac07d2f204ef0003"),
+        ("7c", "79e11318ba44d4e2"),
+        ("7d", "9efa9e4543df63f6"),
+        ("8", "7f98972336329322"),
+        ("T1", "ca53815103a2c2af"),
+        ("T2", "11f516c4a675f8e4"),
+        ("T3", "06d8e73ceaac1d74"),
+        ("T4", "8c86a51e84f6d3f6"),
+        ("T5", "3e94decf932b3cf9"),
+        ("C1", "52fb84bdc2365936"),
+        ("C2", "4355e9e17f8aec66"),
+        ("C3", "9ec23d4010e3a8a6"),
+        ("C4", "7bf9639215cf6163"),
+        ("C5", "8c86a51e84f6d3f6"),
+    ],
+)
+def test_rule_expression_matches_its_pin_when_the_policy_loads(
+    all_policies: list[Doc], rule: str, pinned: str
+) -> None:
+    """Criterion 7: each rule's CEL in the loaded policy is the reviewed one, so a deleted or
+    weakened rule fails offline. The model in `broken_rules` is not the policy; this pin is the
+    offline link between them. After a reviewed change to a rule, change the model and the pin."""
+    tag = re.compile(rf"(trust|template|claim) rule {rule}: ")
+    found = [
+        v["expression"]
+        for p in all_policies
+        for v in p["spec"]["validations"]
+        if tag.match(v["message"])
+    ]
+
+    digests = [hashlib.sha256(" ".join(e.split()).encode()).hexdigest()[:16] for e in found]
+
+    assert digests == [pinned], f"rule {rule} changed or is gone: {found}"
+
+
+@pytest.mark.parametrize(
+    ("name", "pinned"),
+    [
+        ("agent-trust-rule", "ce4ee3a01d617e67"),
+        ("sandbox-template-rule", "e3b0c44298fc1c14"),
+        ("sandbox-claim-rule", "e3b0c44298fc1c14"),
+    ],
+)
+def test_policy_variables_match_their_pin_when_the_policy_loads(
+    all_policies: list[Doc], name: str, pinned: str
+) -> None:
+    """Criterion 7: the variables the rules read are the reviewed ones, so a rule cannot be
+    weakened through a variable (say `isRemote`) while its own expression stays pinned."""
+    (p,) = [p for p in all_policies if p["metadata"]["name"] == name]
+    text = "\n".join(f"{v['name']}={v['expression']}" for v in p["spec"].get("variables", []))
+
+    digest = hashlib.sha256(" ".join(text.split()).encode()).hexdigest()[:16]
+
+    assert digest == pinned, f"{name}: a variable changed; review it, then the model and the pin"
 
 
 @pytest.mark.parametrize("fixture", ALL, ids=[f.id for f in ALL])

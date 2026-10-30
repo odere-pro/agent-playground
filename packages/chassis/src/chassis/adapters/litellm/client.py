@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
@@ -26,6 +25,7 @@ from chassis.ports.model import (
     ToolSpec,
     Usage,
 )
+from chassis.redaction import redact_error_text
 
 BASE_URL_VAR = "LITELLM_BASE_URL"
 API_KEY_VAR = "LITELLM_API_KEY"
@@ -86,20 +86,6 @@ def _usage(data: dict[str, Any] | None) -> Usage:
 # suggested: 300 characters of upstream error text; enough to name the cause, short enough for an
 # event and a log line. The epic gives no limit.
 MESSAGE_CAP = 300
-_KEY_SHAPE = re.compile(r"sk-[A-Za-z0-9_-]{8,}")
-# LiteLLM's 401 echo: `Received API Key = sk-...abcd, Key Hash (Token) = <hash>`. The value runs
-# to the next space, comma, or semicolon; a trailing period stays as text.
-_LITELLM_ECHO = re.compile(r"(Received API Key = |Key Hash \(Token\) = )[^\s,;]*[^\s,;.]")
-
-
-def _redact(text: str, api_key: str | None) -> str:
-    """Strip the configured key, anything shaped like one, and LiteLLM's 401 echo of the key
-    suffix and hash. This message travels into events, the proxy body, and `/v1/run` output.
-    """
-    if api_key:
-        text = text.replace(api_key, "[redacted]")
-    text = _LITELLM_ECHO.sub(r"\1[redacted]", text)
-    return _KEY_SHAPE.sub("[redacted]", text)
 
 
 def _error_message(response: httpx.Response, body: bytes, api_key: str | None) -> str:
@@ -121,7 +107,7 @@ def _error_message(response: httpx.Response, body: bytes, api_key: str | None) -
             message = str(data["detail"])
     if not message:
         message = body.decode(errors="replace").strip()
-    message = _redact(message, api_key)[:MESSAGE_CAP]
+    message = redact_error_text(message, api_key)[:MESSAGE_CAP]
     return message or response.reason_phrase or f"HTTP {response.status_code}"
 
 

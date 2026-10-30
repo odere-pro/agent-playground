@@ -44,7 +44,7 @@ With `--model-url URL --model-key-env NAME [--route big-default|local-small]` (h
 | echo-claude-agent | `workload-a2a serve`; needs chassis `POST /v1/messages` | untrusted | remote |
 | kagent-adk | kind only | untrusted | remote (always SKIP here) |
 
-An `untrusted` engine runs only in the `remote` lane (PoC-5, ADR-001 item 8). The registry (`registry.py`) and the chassis config (`spec.trust`) both refuse anything else.
+An `untrusted` engine runs only in the `remote` lane (PoC-5, ADR-001 item 5). The registry (`registry.py`) and the chassis config (`spec.trust`) both refuse anything else.
 
 SKIP reasons: `echo-typescript` has no `dist/` (run `make ts-check`); `echo-claude-agent` while `chassis.server.model_proxy_messages` cannot be imported; `kagent-adk` always; `remote` when the host has no non-loopback IP (the remote proxy binds the pod IP).
 

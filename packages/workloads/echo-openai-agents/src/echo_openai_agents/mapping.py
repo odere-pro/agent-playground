@@ -17,7 +17,6 @@ Output: event dicts in the wire form, `schema_version: "0"` on each.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
 from typing import Any
 
 import httpx
@@ -26,10 +25,12 @@ import openai
 from agents import ModelBehaviorError, RunItemStreamEvent, Usage
 from agents.exceptions import MaxTurnsExceeded
 from agents.stream_events import RawResponsesStreamEvent
+from workload_a2a.events import chain as _chain
+from workload_a2a.events import error as _error
+from workload_a2a.events import event
 
 from echo_openai_agents.tools import ToolFailed
 
-SCHEMA_VERSION = "0"
 _TIMEOUTS = (httpx2.TimeoutException, httpx.TimeoutException, openai.APITimeoutError, TimeoutError)
 _TRANSPORT = (httpx2.TransportError, httpx.TransportError, openai.APIConnectionError)
 _BAD_RESPONSE = (ModelBehaviorError, openai.APIResponseValidationError, json.JSONDecodeError)
@@ -37,10 +38,6 @@ _BAD_RESPONSE = (ModelBehaviorError, openai.APIResponseValidationError, json.JSO
 
 class ToolLoopExceeded(Exception):
     """The model asked for a tool round beyond the allowed number."""
-
-
-def event(kind: str, **fields: Any) -> dict[str, Any]:
-    return {"schema_version": SCHEMA_VERSION, "type": kind, **fields}
 
 
 class EventMapper:
@@ -119,21 +116,6 @@ def _result(output: Any) -> dict[str, Any]:
     return output if isinstance(output, dict) else {"text": str(output)}
 
 
-def _chain(exc: BaseException) -> Iterator[BaseException]:
-    """The exception, its causes and contexts, and the members of any exception group."""
-    seen: set[int] = set()
-    stack = [exc]
-    while stack:
-        current = stack.pop()
-        if id(current) in seen:
-            continue
-        seen.add(id(current))
-        yield current
-        if isinstance(current, BaseExceptionGroup):
-            stack.extend(current.exceptions)
-        stack.extend(e for e in (current.__cause__, current.__context__) if e is not None)
-
-
 def error_event(exc: BaseException) -> dict[str, Any]:
     """One `error`: `tool_loop_exceeded`, `tool_error`, `http_<status>` (retryable for 5xx),
     `timeout` and `connect_error` (retryable), `bad_response`, else `model_error`. Never raises.
@@ -159,7 +141,3 @@ def error_event(exc: BaseException) -> dict[str, Any]:
     if any(isinstance(e, _BAD_RESPONSE) for e in chain):
         return _error("bad_response", str(exc) or type(exc).__name__, False)
     return _error("model_error", str(exc) or type(exc).__name__, False)
-
-
-def _error(code: str, message: str, retryable: bool) -> dict[str, Any]:
-    return event("error", code=code, message=message[:500], retryable=retryable)

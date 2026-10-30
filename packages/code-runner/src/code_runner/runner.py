@@ -138,9 +138,18 @@ def _remove_tree(path: str) -> None:
 
 
 def _make_workdir(code: str, tmp_root: str | Path | None) -> str:
-    workdir = tempfile.mkdtemp(prefix="run-", dir=tmp_root)
+    """A fresh directory with `main.py`. An `OSError` keeps only its reason, never the path."""
+    try:
+        workdir = tempfile.mkdtemp(prefix="run-", dir=tmp_root)
+    except OSError as exc:
+        raise RunnerError(
+            "run_failed", f"cannot make the work directory ({exc.strerror})"
+        ) from None
     try:
         Path(workdir, "main.py").write_text(code, encoding="utf-8")
+    except OSError as exc:
+        _remove_tree(workdir)
+        raise RunnerError("run_failed", f"cannot write the code ({exc.strerror})") from None
     except BaseException:
         _remove_tree(workdir)
         raise

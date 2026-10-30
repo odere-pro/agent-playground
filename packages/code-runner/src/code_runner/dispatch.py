@@ -15,32 +15,28 @@ import asyncio
 import ipaddress
 import json
 import logging
-import re
 import ssl
 import time
+import uuid
 from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 
 import httpx
 from fastmcp import FastMCP
-from fastmcp.exceptions import ToolError
-from mcp.types import ToolAnnotations
-from pydantic import Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from code_runner.runner import DEFAULT_LIMITS, Limits, RunnerError, RunResult
 from code_runner.server import (
     CACHE_SIZE,
-    DEFAULT_TIMEOUT_S,
-    MIN_TIMEOUT_S,
     TOOL_NAME,
     ResultCache,
     fingerprint,
-    resolve_key,
+    new_mcp,
+    register_run_python,
 )
 
 API_GROUP_PATH = "/apis/extensions.agents.x-k8s.io/v1beta1"
@@ -50,6 +46,7 @@ SANDBOX_PORT = 8000
 SANDBOX_PATH = "/mcp"
 API_TIMEOUT_S = 5.0  # suggested: one API request
 SANDBOX_CONNECT_S = 1.0  # suggested: one connect attempt; the retry window is in the config
+DELETE_TRIES = 3  # suggested: a claim delete is tried this many times before it counts as failed
 
 UNAVAILABLE = "sandbox_unavailable"  # nothing ran; safe to retry with the same key
 LOST = "sandbox_lost"  # the sandbox died, did not answer, or answered too much; key freed
@@ -58,7 +55,6 @@ CONNECT_FAILED = (httpx.ConnectError, httpx.ConnectTimeout)
 # Tool error codes the sandbox's own server may answer with; only the code is passed on.
 SANDBOX_CODES = frozenset({"idempotency_key_required", "bad_arguments", "run_failed"})
 
-_NAME = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
 _RPC_ID = 1
 
 log = logging.getLogger("code_runner.dispatch")
@@ -246,7 +242,8 @@ def _answer(content_type: str, data: bytes) -> RunResult:
         if isinstance(result, dict) and result.get("isError") is True:
             raise _tool_error(result)
         return _run_result(result)
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        # RecursionError: deeply nested JSON. Its text never reaches the caller.
         raise _lost("the sandbox gave no usable answer") from None
 
 
@@ -270,6 +267,7 @@ class Dispatcher:
         self._now = now
         self._claims = f"{API_GROUP_PATH}/namespaces/{config.namespace}/sandboxclaims"
         self.delete_failures = 0
+        self._deleting: set[asyncio.Future[None]] = set()
 
     async def call(self, code: str, timeout_s: int, key: str) -> RunResult:
         """A repeated key returns the first result without a claim; a failure frees the key."""
@@ -301,24 +299,30 @@ class Dispatcher:
                 await self._slots.acquire()
         except TimeoutError:
             raise _unavailable("no free sandbox slot") from None
+        # The dispatcher picks the name, so a create whose answer was lost is still deleted.
+        name = f"call-{uuid.uuid4().hex}"
+        may_exist = True  # until the create proves it applied nothing; a cancel keeps it True
         try:
-            name = await self._create()
             try:
+                created = await self._create(name)
+                may_exist = created is not None
+                if not created:
+                    raise _unavailable("no sandbox could be claimed")
                 host = await self._wait_ready(name)
                 return await self._call_sandbox(host, code, timeout_s, key)
             finally:
-                # Shielded: a cancelled call still deletes its claim. shutdownTime is the backstop.
-                await asyncio.shield(self._delete(name))
+                if may_exist:
+                    await self._delete_shielded(name)
         finally:
             self._slots.release()
 
-    def _claim_body(self) -> dict[str, Any]:
-        """The pool name and the lifecycle only: nothing from the caller."""
+    def _claim_body(self, name: str) -> dict[str, Any]:
+        """Our name, the pool name, and the lifecycle only: nothing from the caller."""
         shutdown = self._now() + timedelta(seconds=self.config.shutdown_after_s)
         return {
             "apiVersion": "extensions.agents.x-k8s.io/v1beta1",
             "kind": "SandboxClaim",
-            "metadata": {"generateName": "call-"},
+            "metadata": {"name": name},
             "spec": {
                 "warmPoolRef": {"name": self.config.pool},
                 "lifecycle": {
@@ -328,15 +332,26 @@ class Dispatcher:
             },
         }
 
-    async def _create(self) -> str:
+    async def _delete_shielded(self, name: str) -> None:
+        """Shielded: a cancelled call still deletes its claim. shutdownTime is the backstop. The
+        set holds the task, so a cancelled caller does not leave it unreferenced."""
+        deleting = asyncio.ensure_future(self._delete(name))
+        self._deleting.add(deleting)
+        deleting.add_done_callback(self._deleting.discard)
+        await asyncio.shield(deleting)
+
+    async def _create(self, name: str) -> bool | None:
+        """True when the claim was made. False when it may exist: the answer was lost, or a 5xx.
+        None when nothing was applied: no connection, an unreadable token, a 3xx or 4xx."""
         try:
-            response = await self._api.post(self._claims, json=self._claim_body())
-            name = response.json()["metadata"]["name"] if response.status_code in (200, 201) else ""
-        except (httpx.HTTPError, OSError, ValueError, KeyError, TypeError):
-            name = ""
-        if not isinstance(name, str) or not _NAME.match(name):
-            raise _unavailable("no sandbox could be claimed")
-        return name
+            response = await self._api.post(self._claims, json=self._claim_body(name))
+        except (httpx.ConnectError, httpx.ConnectTimeout, ValueError):
+            return None
+        except (httpx.HTTPError, OSError):
+            return False
+        if response.status_code in (200, 201):
+            return True
+        return False if response.status_code >= 500 else None
 
     async def _wait_ready(self, name: str) -> str:
         try:
@@ -357,16 +372,23 @@ class Dispatcher:
             return None
 
     async def _delete(self, name: str) -> None:
+        """Sent after every create attempt; 404 is fine (the create never applied)."""
+        for attempt in range(DELETE_TRIES):
+            if attempt:
+                await asyncio.sleep(self.config.poll_s)
+            if await self._delete_once(name):
+                return
+        self.delete_failures += 1
+        log.warning("dispatch claim_delete_failed total=%d", self.delete_failures)
+
+    async def _delete_once(self, name: str) -> bool:
         try:
             response = await self._api.delete(
                 f"{self._claims}/{name}", params={"propagationPolicy": "Background"}
             )
-            deleted = response.status_code in (200, 202, 404)
-        except (httpx.HTTPError, OSError):
-            deleted = False
-        if not deleted:
-            self.delete_failures += 1
-            log.warning("dispatch claim_delete_failed total=%d", self.delete_failures)
+        except (httpx.HTTPError, OSError, ValueError):
+            return False
+        return response.status_code in (200, 202, 404)
 
     async def _call_sandbox(self, host: str, code: str, timeout_s: int, key: str) -> RunResult:
         url = f"http://{host}:{SANDBOX_PORT}{SANDBOX_PATH}"
@@ -401,17 +423,19 @@ class Dispatcher:
             await asyncio.sleep(self.config.poll_s)
 
     async def _post(self, url: str, body: dict[str, Any]) -> tuple[str, bytes]:
-        headers = {"Accept": "application/json, text/event-stream"}
+        # identity only: the cap then counts the bytes held, and nothing is inflated.
+        headers = {"Accept": "application/json, text/event-stream", "Accept-Encoding": "identity"}
         cap = self.config.response_cap_bytes
         try:
             async with self._sandbox.stream("POST", url, json=body, headers=headers) as response:
-                if response.status_code != 200:
+                encoding = response.headers.get("content-encoding", "identity").strip().lower()
+                if response.status_code != 200 or encoding != "identity":
                     raise _lost("the sandbox gave no usable answer")
                 data = bytearray()
-                async for chunk in response.aiter_bytes():
-                    data += chunk
-                    if len(data) > cap:
+                async for chunk in response.aiter_raw():
+                    if len(data) + len(chunk) > cap:
                         raise _lost("the sandbox answer was over the size cap")
+                    data += chunk
                 return response.headers.get("content-type", ""), bytes(data)
         except CONNECT_FAILED:
             raise
@@ -423,48 +447,8 @@ class Dispatcher:
 
 def create_dispatch_server(dispatcher: Dispatcher, *, limits: Limits = DEFAULT_LIMITS) -> FastMCP:
     """The MCP server LiteLLM registers as `code_runner`: the same tool, run in a fresh sandbox."""
-    mcp = FastMCP(
-        "code-runner",
-        instructions=(
-            f"{TOOL_NAME} runs Python in a sandbox with no network. "
-            "Print what you need: the result has stdout, stderr, exit_code, timed_out, truncated."
-        ),
-    )
-    max_timeout = int(limits.max_timeout_s)
-
-    @mcp.tool(
-        name=TOOL_NAME,
-        annotations=ToolAnnotations(
-            read_only_hint=False,
-            destructive_hint=False,
-            idempotent_hint=False,
-            open_world_hint=False,
-        ),
-    )
-    async def run_python_tool(
-        code: Annotated[str, Field(description="Python source, run as __main__.")],
-        timeout_s: Annotated[
-            int,
-            Field(ge=MIN_TIMEOUT_S, le=max_timeout, description="Wall-clock limit in seconds."),
-        ] = DEFAULT_TIMEOUT_S,
-        idempotency_key: Annotated[
-            str | None,
-            Field(description="Fallback when the client cannot send _meta.idempotency_key."),
-        ] = None,
-    ) -> RunResult:
-        """Run Python 3.12 (standard library only) with no network and no files kept.
-
-        Each call runs in a fresh sandbox that is deleted afterwards. stdout and stderr are
-        each cut at a fixed size; `truncated` says so. A write tool: the same idempotency key
-        returns the first result without running the code again.
-        """
-        try:
-            key = resolve_key(idempotency_key)
-            if len(code.encode("utf-8")) > limits.max_code_bytes:
-                raise RunnerError("bad_arguments", f"code is over {limits.max_code_bytes} bytes")
-            return await dispatcher.call(code, timeout_s, key)
-        except RunnerError as exc:
-            raise ToolError(str(exc)) from None
+    mcp = new_mcp()
+    register_run_python(mcp, limits, dispatcher.call)
 
     @mcp.custom_route("/health", methods=["GET"])
     async def health(_request: Request) -> JSONResponse:

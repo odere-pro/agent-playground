@@ -45,6 +45,7 @@ def _exporter(config: dict[str, Any], kind: str) -> list[tuple[str, dict[str, An
 
 
 def test_collector_traces_go_to_langfuse_and_jaeger() -> None:
+    """Criterion 1: "by exporter config only": one exporter to Langfuse, one to Jaeger."""
     config = _yaml(COLLECTOR)
     langfuse = _exporter(config, "otlphttp")
     jaeger = _exporter(config, "otlp")
@@ -62,6 +63,7 @@ def test_collector_traces_go_to_langfuse_and_jaeger() -> None:
 
 
 def test_collector_receives_otlp_http_and_reports_health() -> None:
+    """The Collector takes OTLP/HTTP on 4318 and serves a health check on 13133."""
     config = _yaml(COLLECTOR)
     assert config["receivers"]["otlp"]["protocols"]["http"]["endpoint"] == "0.0.0.0:4318"
     assert config["extensions"]["health_check"]["endpoint"] == "0.0.0.0:13133"
@@ -70,6 +72,7 @@ def test_collector_receives_otlp_http_and_reports_health() -> None:
 
 
 def test_collector_logs_pipeline_masks_emails_and_phones() -> None:
+    """Redaction scope: "the OpenTelemetry Collector log pipeline" masks each entity."""
     config = _yaml(COLLECTOR)
     logs = config["service"]["pipelines"]["logs"]
     redactors = [p for p in logs["processors"] if p.startswith("transform/")]
@@ -87,12 +90,14 @@ def test_collector_logs_pipeline_masks_emails_and_phones() -> None:
 
 
 def test_collector_has_no_literal_credential() -> None:
+    """The Collector config holds no Langfuse key, only `${env:LANGFUSE_AUTH}`."""
     text = _code(COLLECTOR)
     assert "Basic " not in text.replace("Basic ${env:LANGFUSE_AUTH}", "")
     assert not re.search(r"(pk|sk)-lf-", text)
 
 
 def test_compose_has_no_default_secret() -> None:
+    """Every variable in the Compose file is `${NAME:?}`, so none has a default."""
     text = COMPOSE.read_text()
     found = _VAR.findall(text)
     assert found, "the compose file reads its secrets from the env file"
@@ -101,6 +106,7 @@ def test_compose_has_no_default_secret() -> None:
 
 
 def test_compose_ports_bind_localhost_only() -> None:
+    """Every published port binds 127.0.0.1 only."""
     services = _yaml(COMPOSE)["services"]
     published = [p for svc in services.values() for p in svc.get("ports", [])]
     assert published
@@ -111,6 +117,7 @@ def test_compose_ports_bind_localhost_only() -> None:
 
 
 def test_compose_collector_starts_after_its_backends() -> None:
+    """The Collector starts after Langfuse and Jaeger; `stack.sh wait` does the health polls."""
     collector = _yaml(COMPOSE)["services"]["otel-collector"]
     depends = collector["depends_on"]
     assert {"langfuse-web", "jaeger"} <= set(depends)
@@ -122,6 +129,7 @@ def test_compose_collector_starts_after_its_backends() -> None:
 
 
 def test_stack_sh_has_a_host_side_wait() -> None:
+    """`stack.sh wait` polls Langfuse, Jaeger, and the Collector from the host."""
     text = STACK_SH.read_text()
     assert re.search(r"^\s*wait\)", text, re.MULTILINE)
     for url in (
@@ -138,6 +146,7 @@ def workflow() -> dict[str, Any]:
 
 
 def test_workflow_triggers_and_permissions(workflow: dict[Any, Any]) -> None:
+    """The stack workflow never uses `pull_request_target` and reads only."""
     text = _code(WORKFLOW)
     assert "pull_request_target" not in text
     assert "secrets." not in text
@@ -148,6 +157,7 @@ def test_workflow_triggers_and_permissions(workflow: dict[Any, Any]) -> None:
 
 
 def test_workflow_pins_every_action_by_sha(workflow: dict[str, Any]) -> None:
+    """The stack workflow pins every action by a full commit SHA."""
     uses = [
         step["uses"] for job in workflow["jobs"].values() for step in job["steps"] if "uses" in step
     ]
@@ -157,6 +167,7 @@ def test_workflow_pins_every_action_by_sha(workflow: dict[str, Any]) -> None:
 
 
 def test_workflow_runs_the_stack_and_always_tears_it_down(workflow: dict[str, Any]) -> None:
+    """The workflow runs the stack tests and always tears the stack down."""
     (job,) = workflow["jobs"].values()
     assert job["timeout-minutes"] <= 30
     runs = [(step.get("if"), step.get("run", "")) for step in job["steps"]]
@@ -206,3 +217,86 @@ def test_compose_service_drops_all_capabilities_when_not_a_listed_deviation(serv
     hardened_or_listed = cap_drop == ["ALL"] or service in _readme_deviations()
 
     assert hardened_or_listed, f"{service}: no cap_drop [ALL] and not in the README deviations"
+
+
+def _statements(block: list[dict[str, Any]], context: str) -> list[str]:
+    """The statements of one OTTL context in a transform's statement list."""
+    return [s for b in block if b["context"] == context for s in b["statements"]]
+
+
+def test_collector_traces_pipeline_redacts_before_the_batch() -> None:
+    """Spans pass a redaction transform before `batch`, as logs do (review R7-10)."""
+    processors = _yaml(COLLECTOR)["service"]["pipelines"]["traces"]["processors"]
+
+    redactors = [p for p in processors if p.startswith("transform/")]
+
+    assert redactors == ["transform/redact_spans"]
+    assert processors.index("transform/redact_spans") < processors.index("batch")
+
+
+@pytest.mark.parametrize("context", ["span", "spanevent"])
+def test_collector_span_rules_match_the_log_attribute_rules(context: str) -> None:
+    """Span and span-event attributes get the same masking rules as log attributes."""
+    processors = _yaml(COLLECTOR)["processors"]
+    logs = _statements(processors["transform/redact"]["log_statements"], "log")
+    log_attributes = [s for s in logs if s.startswith("replace_all_patterns(attributes")]
+
+    statements = _statements(processors["transform/redact_spans"]["trace_statements"], context)
+
+    spans = [s for s in statements if s.startswith("replace_all_patterns(")]
+
+    assert log_attributes
+    assert spans == log_attributes
+
+
+_SAVE = re.compile(
+    r'^set\(cache\["([^"]+)"\], attributes\["\1"\]\) where attributes\["\1"\] != nil$'
+)
+_RESTORE = re.compile(r'^set\(attributes\["([^"]+)"\], cache\["\1"\]\) where cache\["\1"\] != nil$')
+_REPLACE = re.compile(r'^replace_all_patterns\(attributes, "value", "(.*)", "(<[A-Z_]+>)"\)$')
+
+
+def _span_statements() -> list[str]:
+    processors = _yaml(COLLECTOR)["processors"]
+    return _statements(processors["transform/redact_spans"]["trace_statements"], "span")
+
+
+def _run_span_rules(attributes: dict[str, str]) -> dict[str, str]:
+    """The span-context statements applied with Python's `re` (the patterns are RE2-safe)."""
+    cache: dict[str, str] = {}
+    out = dict(attributes)
+    for statement in _span_statements():
+        if save := _SAVE.match(statement):
+            cache.update({k: out[k] for k in [save.group(1)] if k in out})
+        elif restore := _RESTORE.match(statement):
+            out.update({k: cache[k] for k in [restore.group(1)] if k in cache})
+        else:
+            match = _REPLACE.match(statement)
+            assert match, statement
+            out = {k: re.sub(match.group(1), match.group(2), v) for k, v in out.items()}
+    return out
+
+
+def test_collector_span_rules_save_every_chassis_id_key_around_the_masking() -> None:
+    """Each `ID_KEYS` entry is saved before the first mask and put back after the last."""
+    from chassis.adapters.otel import ID_KEYS
+
+    statements = _span_statements()
+    saved = [m.group(1) for s in statements if (m := _SAVE.match(s))]
+    restored = [m.group(1) for s in statements if (m := _RESTORE.match(s))]
+    masks = [i for i, s in enumerate(statements) if _REPLACE.match(s)]
+
+    assert sorted(saved) == sorted(ID_KEYS) == sorted(restored)
+    assert statements[: masks[0]] == statements[: len(saved)]
+    assert len(statements) == len(saved) + len(masks) + len(restored)
+
+
+def test_collector_span_rules_keep_an_id_when_it_looks_like_a_card_number() -> None:
+    """A trace id with 13 digits in a row survives; the same digits in a plain attribute do not."""
+    digits = "4111111111111"
+    attributes = {"trace_id": f"ab{digits}cdef0123456789ab", "note": f"card {digits}"}
+
+    out = _run_span_rules(attributes)
+
+    assert out["trace_id"] == attributes["trace_id"]
+    assert out["note"] == "card <CREDIT_CARD>"

@@ -10,7 +10,7 @@ The sandbox pod is the security boundary, not this code. The server runs any Pyt
 
 - `src/code_runner/runner.py` `run_python(code, timeout_s, *, limits, tmp_root, python)`: the child process. `Limits`, `RunResult`, `RunnerError(code, message)`, `child_env`.
 - `src/code_runner/isolation.py` the Linux-only isolation between calls: `ensure_reaper`, `harden_server`, `descendants`, `sweep`, `nproc_limit`, `lost`. README "Isolation between calls".
-- `src/code_runner/server.py` `create_server(*, limits, tmp_root, cache_size, runner) -> FastMCP`: the tool, the idempotency cache (`ResultCache`), `resolve_key`, `fingerprint`, `GET /health`.
+- `src/code_runner/server.py` `create_server(*, limits, tmp_root, cache_size) -> FastMCP`: the idempotency cache (`ResultCache`), `resolve_key`, `fingerprint`, `GET /health`. `new_mcp` and `register_run_python(mcp, limits, call)` hold the one tool definition both servers use.
 - `src/code_runner/dispatch.py` the dispatcher: `Dispatcher` (a `SandboxClaim` per call; holds the `ResultCache`), `create_dispatch_server`, `DispatchConfig`, the two clients `api_client` and `sandbox_client`. Design: `docs/plans/2026-10-09-poc-05-per-call-sandbox.md`.
 - `src/code_runner/cli.py` `code-runner --host --port --tmp-root --cache-size` serves the tool; `code-runner dispatch --pool --namespace` runs the dispatcher. Both: uvicorn, streamable HTTP at `/mcp`, stateless.
 - `Dockerfile`: uid 10003, root-owned `/app`, read-only root, writes only `/tmp`.

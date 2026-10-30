@@ -140,19 +140,48 @@ def test_policy_and_binding_are_installed() -> None:
     assert params.returncode == 0, params.stderr
 
 
-@pytest.mark.parametrize("fixture", ALL, ids=[f.id for f in ALL])
-def test_fixture_outcome_matches_its_header(fixture: Fixture) -> None:
-    got = kubectl("apply", "--dry-run=server", "-f", str(fixture.path), as_user=fixture.identity)
-    if fixture.expect == "admitted":
-        assert got.returncode == 0, f"{fixture.id}: refused: {got.stderr}"
-        assert "(server dry run)" in got.stdout
-        return
-    assert got.returncode != 0, f"{fixture.id}: admitted: {got.stdout}"
+REJECTED = [f for f in ALL if f.expect == "rejected"]
+ADMITTED = [f for f in ALL if f.expect == "admitted"]
+
+
+def _twin(fixture: Fixture) -> Fixture:
+    """The admitted twin in the rejected fixture's folder."""
+    return _fixture(fixture.path.with_name("admitted.yaml"))
+
+
+def _dry_run(fixture: Fixture) -> subprocess.CompletedProcess[str]:
+    return kubectl("apply", "--dry-run=server", "-f", str(fixture.path), as_user=fixture.identity)
+
+
+def test_every_fixture_is_rejected_or_admitted() -> None:
+    """Exit criterion 7: the two lists below cover every fixture, so none is skipped."""
+    assert len(REJECTED) + len(ADMITTED) == len(ALL) > 0
+
+
+@pytest.mark.parametrize("fixture", REJECTED, ids=[f.id for f in REJECTED])
+def test_rejected_fixture_is_refused_with_its_rule_message(fixture: Fixture) -> None:
+    """Exit criterion 7: a rejected fixture is refused by its rule's policy with its message, not
+    by RBAC. The paired control: its admitted twin, sent the same way, is admitted."""
+    got = _dry_run(fixture)
+    twin = _dry_run(_twin(fixture))
+
     err = _one_line(got.stderr)
+    assert got.returncode != 0, f"{fixture.id}: admitted: {got.stdout}"
     assert not RBAC_REFUSAL.search(err), f"{fixture.id}: refused by RBAC, not admission: {err}"
     assert fixture.message is not None
     assert f"'{fixture.policy}'" in err, f"{fixture.id}: refused by something else: {err}"
     assert fixture.message in err, f"{fixture.id}: wrong message: {err}"
+    assert twin.returncode == 0, f"{fixture.id}: twin refused: {twin.stderr}"
+
+
+@pytest.mark.parametrize("fixture", ADMITTED, ids=[f.id for f in ADMITTED])
+def test_admitted_twin_is_admitted(fixture: Fixture) -> None:
+    """Exit criterion 7: the admitted twin of each rule's fixture passes a server dry run as the
+    identity that may create it, so the rejected fixtures are refused for their rule alone."""
+    got = _dry_run(fixture)
+
+    assert got.returncode == 0, f"{fixture.id}: refused: {got.stderr}"
+    assert "(server dry run)" in got.stdout
 
 
 def can_i(user: str, *args: str) -> str:
@@ -178,16 +207,37 @@ def test_submitter_cannot_create_pods_where_the_chassis_secrets_live() -> None:
     assert can_i(SUBMITTER, "create", "pods", "-n", "poc05-remote") == "yes"
 
 
+WORKLOAD_NAMESPACES = ("poc05-agents", "poc05-remote", "poc05-tools")
+
+
+def admin_can_i(*args: str) -> str:
+    """`can-i` as the kind cluster admin (the context's own user, no `--as`)."""
+    return kubectl("auth", "can-i", *args).stdout.strip()
+
+
+@pytest.mark.parametrize("ns", WORKLOAD_NAMESPACES)
 @pytest.mark.parametrize("user", [SUBMITTER, DEPLOYER], ids=["submitter", "deployer"])
-def test_nobody_but_the_admin_reads_secrets(user: str) -> None:
-    for ns in ("poc05-agents", "poc05-remote", "poc05-tools"):
-        assert can_i(user, "get", "secrets", "-n", ns) == "no", ns
+def test_nobody_but_the_admin_reads_secrets(user: str, ns: str) -> None:
+    """Exit criterion 4 (only the chassis holds credentials): neither the submitter nor the
+    deployer may get Secrets in a workload namespace. The paired control: the cluster admin, who
+    runs `seed.sh`, may."""
+    denied = can_i(user, "get", "secrets", "-n", ns)
+    allowed = admin_can_i("get", "secrets", "-n", ns)
+
+    assert denied == "no", ns
+    assert allowed == "yes", ns
 
 
-def test_submitter_cannot_open_network_edges() -> None:
-    """Review F3: NetworkPolicies and Services select by labels; only the platform writes them."""
-    for resource in ("networkpolicies", "services"):
-        assert can_i(SUBMITTER, "create", resource, "-n", "poc05-remote") == "no", resource
+@pytest.mark.parametrize("resource", ["networkpolicies", "services"])
+def test_submitter_cannot_open_network_edges(resource: str) -> None:
+    """Review F3: NetworkPolicies and Services select by labels; only the platform writes them.
+    The paired control: the platform deployer (`agent-deployer` in `rbac.yaml`) may create the
+    same resource in the same namespace."""
+    denied = can_i(SUBMITTER, "create", resource, "-n", "poc05-remote")
+    allowed = can_i(DEPLOYER, "create", resource, "-n", "poc05-remote")
+
+    assert denied == "no", resource
+    assert allowed == "yes", resource
 
 
 def test_missing_params_deny_everything() -> None:
@@ -207,6 +257,56 @@ def test_missing_params_deny_everything() -> None:
         assert restored.returncode == 0, restored.stderr
     admitted = kubectl("apply", "--dry-run=server", "-f", str(twin), as_user=DEPLOYER)
     assert admitted.returncode == 0, admitted.stderr
+
+
+# Rule 8 in its cloud mode: a made-up digest; a dry run never pulls the image.
+DIGEST = "@sha256:" + "0" * 64
+RULE8_TWIN = FIXTURES / "rule8-pull-policy" / "admitted.yaml"
+RULE8_MESSAGE = "trust rule 8"
+
+
+def _pinned(image: str) -> str:
+    return image.split(":", 1)[0] + DIGEST
+
+
+def _with_digests(pod: dict[str, object]) -> dict[str, object]:
+    """A copy of `pod` with every image's tag replaced by `DIGEST`."""
+    spec = pod["spec"]
+    assert isinstance(spec, dict)
+    pinned = {
+        key: [{**c, "image": _pinned(c["image"])} for c in spec[key]]
+        for key in ("initContainers", "containers")
+        if key in spec
+    }
+    return {**pod, "spec": {**spec, **pinned}}
+
+
+def test_digest_mode_refuses_a_tag_and_admits_its_digest_twin(tmp_path: Path) -> None:
+    """Exit criterion 7, rule 8 with `imageSource: digest` (the cloud mode, review R5a-15): with
+    the params patched to `digest`, a sidecar pod whose images carry only a tag is refused by
+    `agent-trust-rule` with 'trust rule 8', and its twin pinned by `@sha256` is admitted. The
+    params are restored after, also on failure, and the tag-only pod is admitted again."""
+    tagged = yaml.safe_load(RULE8_TWIN.read_text())
+    pinned_path = tmp_path / "rule8-digest.yaml"
+    pinned_path.write_text(yaml.safe_dump(_with_digests(tagged)))
+    ns, name = PARAMS
+    params = str(ADMISSION / "params.yaml")
+    patch = '{"data":{"imageSource":"digest"}}'
+    patched = kubectl("patch", "configmap", name, "-n", ns, "--type", "merge", "-p", patch)
+    assert patched.returncode == 0, patched.stderr
+    try:
+        refused = kubectl("apply", "--dry-run=server", "-f", str(RULE8_TWIN), as_user=DEPLOYER)
+        admitted = kubectl("apply", "--dry-run=server", "-f", str(pinned_path), as_user=DEPLOYER)
+    finally:
+        restored = kubectl("apply", "-f", params)
+        assert restored.returncode == 0, restored.stderr
+    again = kubectl("apply", "--dry-run=server", "-f", str(RULE8_TWIN), as_user=DEPLOYER)
+
+    err = _one_line(refused.stderr)
+    assert refused.returncode != 0, refused.stdout
+    assert "'agent-trust-rule'" in err and RULE8_MESSAGE in err, err
+    assert admitted.returncode == 0, admitted.stderr
+    assert again.returncode == 0, again.stderr
 
 
 def test_submitter_apply_of_the_params_is_forbidden() -> None:
