@@ -1,6 +1,6 @@
 """PoC-6a, one test per exit criterion in the README (numbered 1 to 8 in order). Each one is
-either a real check, or a skip that records why and which later task covers it. Nothing is
-silent: a criterion with no evidence yet is a skip with its reason, not a missing test.
+either a real check, or a skip that records why and where the evidence is. Nothing is silent: a
+criterion with no check here is a skip with its reason, not a missing test.
 
 The scenario evidence for the lanes lives in `test_poc06a_engine_contract.py` (the `EnginePort`
 suite), `test_poc06a_tasks.py` (smoke, simplifier, lookup, `traceparent`), and
@@ -113,17 +113,16 @@ async def test_criterion_2_the_typescript_agent_passes_through_the_generic_sidec
 
 
 def test_criterion_2_the_remote_solution_is_6b() -> None:
-    """Criterion 2 (the remote solution) belongs to part 6b: B4, kagent on kind."""
-    pytest.skip("the remote solution (kagent) is part 6b, task B4; not a 6a sidecar engine")
+    """Criterion 2 (the remote solution) belongs to part 6b, not to a 6a sidecar engine."""
+    pytest.skip("not a 6a sidecar engine; evidence: 6b test_poc06b_plain_a2a_contract.py")
 
 
 # --- Criterion 3 ---
 
 
 def test_criterion_3_every_engine_is_scored_on_every_criterion() -> None:
-    """Criterion 3: the scorecard. Skipped: it is written in W4 (plan A5, `eval-expert` and
-    `docs-editor`), after the hosted-model numbers from the Mac run."""
-    pytest.skip("the scorecard is W4 / plan A5; the numbers come from `make poc06-mac`")
+    """Criterion 3: the scorecard. Skipped: the evidence is checked in its own test file."""
+    pytest.skip("evidence: test_poc06a_scorecard_records.py, notes/2026-10-09-scorecard.md")
 
 
 # --- Criterion 4 ---
@@ -230,15 +229,18 @@ def test_criterion_5_token_overhead_on_a_hosted_model() -> None:
 
 
 def test_criterion_6_what_the_chassis_cannot_control_for_the_remote_solution() -> None:
-    """Criterion 6: the list for the remote solution. Skipped: part 6b, task B4."""
-    pytest.skip("the remote solution is part 6b, task B4")
+    """Criterion 6: the list for the remote solution. Skipped: the evidence is in 6b."""
+    pytest.skip("evidence: contract v5 B.8 and 6b notes/2026-10-09-lanes-b-kind.md")
 
 
 def test_criterion_7_the_adr_names_default_supported_and_rejected_engines() -> None:
-    """Criterion 7: the bake-off ADR, a draft in 6a. Skipped: written in W4 (plan A5, ADR-006)."""
-    pytest.skip("the ADR draft is W4 / plan A5 (ADR-006), after the scorecard")
+    """Criterion 7: the bake-off ADR. Skipped: a document, and its box is the owner's to tick."""
+    pytest.skip(
+        "evidence: docs/planning/adr/006-agent-engines-default-supported-lanes.md, Accepted on "
+        "2026-10-30; the README keeps this box open until the owner ticks it"
+    )
 
 
 def test_criterion_8_handle_and_the_event_schema_are_frozen_as_v1() -> None:
-    """Criterion 8: the freeze. Skipped: part 6b, task B6 (contract v5, `events.v1.json`)."""
-    pytest.skip("the freeze is part 6b, task B6")
+    """Criterion 8: the freeze. Skipped: the evidence is in the chassis's own test file."""
+    pytest.skip("evidence: packages/chassis/tests/test_contract_freeze.py (contract v5 part C)")

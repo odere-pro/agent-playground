@@ -1,6 +1,6 @@
 """PoC-7 exit criterion 2 (evaluator part): each new real evaluator adapter passes the same
 contract suite as its fake (`EvaluatorPortContract`; the fake binds it in
-`packages/chassis/tests/test_contracts_poc07.py`).
+`packages/chassis/tests/test_contracts_cross_cutting_ports.py`).
 
 - `JudgeEvaluator` over the chassis's real `LiteLLMModel`, against the fake model server on a
   Unix socket with a scripted judge. The scores are scripted: this proves the wiring, the prompt,

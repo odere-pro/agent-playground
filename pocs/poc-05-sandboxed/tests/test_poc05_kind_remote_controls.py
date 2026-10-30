@@ -37,6 +37,7 @@ from poc_harness.drills import POC05_KIND
 from poc_harness.kind import (
     AGENTS_NS,
     CHASSIS,
+    METADATA_IP,
     NOT_A_KEY,
     PLATFORM_NS,
     POLICY_DROPPED,
@@ -328,22 +329,36 @@ def test_h30_remote_reaches_no_other_pod(
 # --- H19, H20: no way out ----------------------------------------------------------------------
 
 
-def test_h19_remote_reaches_no_outside_address(caller: str, remote: dict[str, Any]) -> None:
+def test_h19_remote_reaches_no_outside_address(
+    caller: str, remote: dict[str, Any], metadata_listener: str
+) -> None:
     """Criterion 8: "The hostile suites pass in both lanes."
 
     Criterion 8 (partly shown), H19: the control refuses the remote pod's TCP connection to a
-    literal outside address (1.1.1.1:443 and :80; no DNS involved). The allowed controls: in the
-    same call the remote reaches 8091, and the caller pod, which no egress policy holds, reaches
-    the same outside address, so the address answers from this cluster."""
-    https, http, allowed = in_remote(
-        remote, [tcp_check(OUTSIDE_IP, 443), tcp_check(OUTSIDE_IP, 80), tcp_check(PROXY_IP, 8091)]
+    literal outside address (1.1.1.1:443 and :80; no DNS involved) and, given the metadata
+    stand-in on the node, to 169.254.169.254:80. The allowed controls: in the same call the remote
+    reaches 8091, and the caller pod, which no egress policy holds, reaches the same outside
+    address and gets the stand-in's reply, so both answer from this cluster."""
+    metadata = str(METADATA_IP)
+    https, http, meta, allowed = in_remote(
+        remote,
+        [
+            tcp_check(OUTSIDE_IP, 443),
+            tcp_check(OUTSIDE_IP, 80),
+            tcp_check(metadata, 80),
+            tcp_check(PROXY_IP, 8091),
+        ],
     )
     assert https.get("error") == POLICY_DROPPED, https
     assert http.get("error") == POLICY_DROPPED, http
+    assert meta.get("error") == POLICY_DROPPED, meta
     assert allowed.get("connected") is True, allowed
 
-    (outside,) = in_caller(caller, [tcp_check(OUTSIDE_IP, 443)])
+    outside, answered = in_caller(
+        caller, [tcp_check(OUTSIDE_IP, 443), {"kind": "http", "url": f"http://{metadata}/"}]
+    )
     assert outside.get("connected") is True, outside
+    assert answered.get("status") == 200 and metadata_listener in answered["head"], answered
 
 
 def test_h20_remote_has_no_dns(remote: dict[str, Any], remote_chassis: dict[str, Any]) -> None:

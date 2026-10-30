@@ -1,7 +1,7 @@
 """Exit criterion 2, part one: the four new ports exist in the PoC-1 shape. Each is a Protocol
 in `chassis.ports`, has a no-op default in `PortBundle`, a fake registered in `REGISTRY`, and a
-contract suite the fake passes (`packages/chassis/tests/test_contracts_poc07.py`). The real
-adapters bind the same suites in their own tests.
+contract suite the fake passes (`packages/chassis/tests/test_contracts_cross_cutting_ports.py`).
+The real adapters bind the same suites in their own tests.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from chassis.ports.bundle import PortBundle
 from chassis.profiles import PROFILE_DEFAULTS, REGISTRY
 
 ROOT = Path(__file__).resolve().parents[3]
+FAKE_BINDINGS = ROOT / "packages/chassis/tests/test_contracts_cross_cutting_ports.py"
 PORTS = {
     "auth": ("AuthPort", "AuthPortContract", "static"),
     "guardrails": ("GuardrailPort", "GuardrailPortContract", "fake"),
@@ -35,7 +36,7 @@ def test_each_new_port_has_a_default_a_fake_and_a_suite(port: str) -> None:
 
 def test_each_fake_is_bound_to_its_suite() -> None:
     """Ports scope: "each with a fake and a contract suite"; each fake binds its suite."""
-    tree = ast.parse((ROOT / "packages/chassis/tests/test_contracts_poc07.py").read_text())
+    tree = ast.parse(FAKE_BINDINGS.read_text())
     bases = {
         base.id
         for node in ast.walk(tree)

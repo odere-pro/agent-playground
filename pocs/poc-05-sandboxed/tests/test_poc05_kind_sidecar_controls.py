@@ -26,7 +26,6 @@ A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc_harness.drill
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -54,7 +53,6 @@ from poc_harness.kind_controls import (
     SA_DIR,
     allowed_edge,
     container,
-    metadata_stand_in,
     node_reaches_its_api,
     policy_peers_covering,
     secret_refs,
@@ -228,9 +226,3 @@ def test_h01_metadata_address_denied(sidecar: dict[str, Any], metadata_listener:
         )
     assert reached.get("connected") is True, reached
     assert answered.get("status") == 200 and metadata_listener in answered["head"], answered
-
-
-@pytest.fixture
-def metadata_listener() -> Iterator[str]:
-    with metadata_stand_in() as mark:
-        yield mark

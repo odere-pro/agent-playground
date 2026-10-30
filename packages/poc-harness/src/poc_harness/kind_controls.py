@@ -1,5 +1,7 @@
 """Helpers the kind suites of more than one PoC share, on top of `poc_harness.kind`: what a pod spec
 holds, and the stand-ins and live checks the sidecar and remote controls use.
+
+The `metadata_listener` fixture lives here too. A conftest takes it by importing it.
 """
 
 from __future__ import annotations
@@ -11,6 +13,8 @@ import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
+
+import pytest
 
 from poc_harness.kind import (
     METADATA_IP,
@@ -156,3 +160,10 @@ def metadata_stand_in() -> Iterator[str]:
         node_sh(stop)
         left = node_sh(f"ip -4 addr show dev lo | grep -c {METADATA_IP} || true")
         assert left.strip() == "0", f"{METADATA_IP} left on the node's loopback"
+
+
+@pytest.fixture
+def metadata_listener() -> Iterator[str]:
+    """The metadata stand-in for one test; its reply's mark."""
+    with metadata_stand_in() as mark:
+        yield mark

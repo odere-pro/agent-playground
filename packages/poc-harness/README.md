@@ -27,7 +27,7 @@ Test support used by more than one PoC, by a demo, or by a plain script that a d
 | `remote_lane` | The `remote` lane in one process (`remote_lane`, `RemoteLane`, `GatedTools`, `workload_server`), and the `LaneContract` factories. |
 | `kind` | kubectl helpers pinned to `kind-poc05`, `exec_probe` (`ExecFailed`), `probe`, `node_sh`, `unpoliced_caller`, `tcp_check`. |
 | `pod_probe` | `PROBE`, the stdlib script that checks controls from inside a pod. |
-| `kind_controls` | What the sidecar and remote suites share: `secret_refs`, `secret_sources`, `metadata_stand_in`, `node_reaches_its_api`, `traceparent_headers` (a header map). |
+| `kind_controls` | What the sidecar and remote suites share: `secret_refs`, `secret_sources`, `metadata_stand_in` and its fixture `metadata_listener` (a conftest imports it), `node_reaches_its_api`, `traceparent_headers` (a header map). |
 | `manifests` | `load_manifests`, `containers_of`, `container_secret_names`, `secret_names_of`. |
 | `admission_manifests` | The admission objects and fixtures as files, the RBAC model (`can_i`, `CAN_I`). |
 | `admission_model` | A Python model of the admission rules (`AdmissionParams`, `broken_rules`, `all_broken_rules`). |
