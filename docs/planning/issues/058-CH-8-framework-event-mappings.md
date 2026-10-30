@@ -22,6 +22,7 @@ epic_refs: [F.1, B.5]
 - One workload in another language that serves A2A itself and emits the same schema, with its own Dockerfile. suggested: TypeScript.
 - A short guide: how to add a mapping for a new framework.
 - Status after PoC-6 ([scorecard](../../../pocs/poc-06a-bake-off-sidecar-lane/notes/2026-10-09-scorecard.md), [ADR-006](../adr/006-agent-engines-default-supported-lanes.md), proposed): mappings now exist for OpenAI Agents SDK, the TypeScript agent, smolagents (`remote`), and the Claude Agent SDK (`remote`), each in its own file, besides plain Python, PydanticAI, and LangGraph. Mapping size in code lines: PydanticAI 181, LangGraph 224, plain Python 243, OpenAI Agents SDK 295, smolagents 380, Claude 310, TypeScript 551 (with its own A2A server). No engine needed an event change ([contract v5](../../contracts/contract-v5.md), part C). Proposed default: PydanticAI. LangGraph still uses a stand-in MCP client, because the locked `langchain-mcp-adapters` does not import against `mcp` 2. Hosted-model numbers wait on the Mac run. Why: the supported frameworks and their mappings are this issue's.
+- Status after PoC-9: one mapping per supported framework ships in the template as a copy of the echo workload, and `test_the_example_logic_is_the_echo_workload` fails on drift. The TypeScript agent is not in the template.
 
 ## Reuse
 

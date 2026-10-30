@@ -1,6 +1,6 @@
 # Backlog changes from PoC-9
 
-Apply with the `planning-sync` skill when PoC-9 closes.
+Status: **applied, 2026-10-30** with the skill `planning-sync`, as a "Status after PoC-9" bullet at the end of each issue's `## What`. No order, size, or dependency change, so `backlog.py` `ROWS` stays as it is. Each bullet says what was not built.
 
 - **025 H-10 (template repo):** the template lives in `packages/agentctl/src/agentctl/template/`, a Copier template. Add: publish the platform packages.
 - **059 H-15 (agent factory CLI):** `agentctl new` is built. Add: `--no-lock`, and pinning to the platform's `uv.lock`.
