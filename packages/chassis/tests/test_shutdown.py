@@ -26,6 +26,7 @@ from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, cli, create_app
 from chassis.server.lifecycle import Drain, DrainSettings, QuietServer
 from chassis.server.proxy_app import create_proxy_app
+from chassis_contracts.events import wait_until
 
 CONFIG: dict[str, Any] = {
     "version": "cfg-1",
@@ -123,15 +124,6 @@ async def _started(drain: Drain) -> None:
     raise AssertionError("the servers never started")
 
 
-async def _until(condition: Callable[[], bool], what: str) -> None:
-    """Poll a condition no event reports. Bounded, and it fails by name."""
-    for _ in range(3000):
-        if condition():
-            return
-        await asyncio.sleep(0.01)
-    raise AssertionError(what)
-
-
 async def _in_the_delay(gate: DelayGate) -> None:
     """Returns once the signal was handled and the drain sits in its delay."""
     await asyncio.wait_for(gate.entered.wait(), HANG_GUARD_S)
@@ -145,13 +137,15 @@ async def _past_the_delay(drain: Drain, gate: DelayGate) -> None:
     assert drain.task is not None
     await asyncio.wait_for(drain.task, HANG_GUARD_S)
     assert drain.public.servers, "the public server has a listener to close"
-    await _until(
+    await wait_until(
         lambda: not any(server.is_serving() for server in drain.public.servers),
-        "the public listener never closed",
+        HANG_GUARD_S,
+        "the public listener to close",
     )
 
 
 async def test_sigterm_drains_the_in_flight_stream_after_ready_goes_false() -> None:
+    """`/ready` goes 503 first, the stream ends with `end`, and the proxy stops last."""
     handle = Slow()
     with sockets() as (public_uds, proxy_uds):
         gate = DelayGate()
@@ -189,6 +183,7 @@ async def test_sigterm_drains_the_in_flight_stream_after_ready_goes_false() -> N
 
 
 async def test_a_second_signal_forces_exit() -> None:
+    """The second signal sets `force_exit` on every server while a stream stays open."""
     handle = Slow()
     with sockets() as (public_uds, proxy_uds):
         gate = DelayGate()
@@ -209,14 +204,17 @@ async def test_a_second_signal_forces_exit() -> None:
                     assert drain.public.server_state.connections, "the first signal waits for it"
                     assert not served.done() and not drain.public.force_exit
                     os.kill(os.getpid(), signal.SIGINT)
-                    await _until(lambda: drain.public.force_exit, "the second signal was lost")
+                    await wait_until(
+                        lambda: drain.public.force_exit, HANG_GUARD_S, "the second signal"
+                    )
                     assert drain.proxy.force_exit
                     try:
                         await asyncio.wait_for(served, FORCED_EXIT_WAIT_S)
                     except TimeoutError:
+                        assert drain.public.server_state.connections, "only the stream may hold it"
                         pytest.xfail(
-                            "known defect: uvicorn's `wait_closed` waits for the open stream, so "
-                            "a forced exit still ends only at `timeout_s`"
+                            "F8-01: uvicorn's `wait_closed` waits for the open stream, so a "
+                            "forced exit still ends only at `timeout_s`"
                         )
         finally:
             handle.release.set()
@@ -293,6 +291,7 @@ async def _raw_get(uds: str, path: str) -> tuple[bytes, bool]:
 
 
 async def test_while_draining_every_public_response_closes_its_connection() -> None:
+    """During the delay each public response says `close`; the proxy listener keeps its own."""
     handle = Slow()
     handle.release.set()
     with sockets() as (public_uds, proxy_uds):
@@ -325,6 +324,7 @@ async def test_while_draining_every_public_response_closes_its_connection() -> N
 
 
 async def test_a_stream_started_while_draining_closes_after_its_end_event() -> None:
+    """A stream opened during the delay still runs to `end` once the listener is closing."""
     handle = Slow()
     with sockets() as (public_uds, proxy_uds):
         gate = DelayGate()
