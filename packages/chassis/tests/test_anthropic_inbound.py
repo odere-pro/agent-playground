@@ -22,7 +22,7 @@ from anthropic.types import (
     RawMessageDeltaEvent,
     RawMessageStartEvent,
 )
-from chassis.adapters.anthropic_compat.inbound import AnthropicInbound
+from chassis.adapters.anthropic_compat.inbound import TOO_DEEP_MESSAGE, AnthropicInbound
 from chassis.core.envelope import Budget, Request, Response, TaskInput, Versions
 from chassis.core.events import Delta, End, Error, Event, Metrics, Start, ToolCall
 from chassis.core.inbound import Ids, InboundAdapter, Refused, ReplyMeta, Served, public_message
@@ -169,16 +169,40 @@ def test_a_validation_error_inside_a_lazy_iterator_is_a_400() -> None:
     assert refused.headers["x-should-retry"] == "false"
 
 
-def test_to_request_refuses_a_read_key_with_400_when_it_nests_past_the_depth_cap() -> None:
-    """A read key nested 2000 deep is 400 invalid_body, never a RecursionError."""
-    deep: dict[str, Any] = {}
-    for _ in range(2000):
-        deep = {"a": deep}
+def _nested(depth: int) -> dict[str, Any]:
+    """A dict nested `depth` levels deep, `{"a": {"a": ...}}`."""
+    value: dict[str, Any] = {}
+    for _ in range(depth):
+        value = {"a": value}
+    return value
 
-    refused = _refused(_body(temperature=deep))
+
+def test_to_request_refuses_with_400_when_the_body_nests_past_the_python_stack() -> None:
+    """A value nested 2000 deep is 400 invalid_body, never a RecursionError (a plain 500)."""
+    body = _body(temperature=_nested(2000))
+
+    refused = _refused(body)
 
     assert refused.status == 400
-    assert refused.body["error"]["message"].startswith("invalid_body: temperature")
+    assert refused.body["error"]["message"] == f"invalid_body: {TOO_DEEP_MESSAGE}"
+
+
+def test_to_request_still_refuses_tools_as_unsupported_when_its_schema_nests_deep() -> None:
+    """A tools schema 31 levels deep keeps the client-tools refusal, not a depth error."""
+    tool = {"name": "t", "input_schema": {"type": "object", "properties": _nested(31)}}
+
+    refused = _refused(_body(tools=[tool]))
+
+    assert refused.body["error"]["message"].startswith("unsupported_parameter")
+
+
+def test_to_request_accepts_deep_metadata_when_it_fits_the_python_stack() -> None:
+    """Metadata nested 70 deep is read and dropped, as before."""
+    body = _body(metadata=_nested(70))
+
+    request = _map(body)
+
+    assert request.input.text == "hello"
 
 
 def test_a_model_that_is_not_the_agent_is_404_not_found_error() -> None:

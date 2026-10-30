@@ -141,20 +141,15 @@ ErrorKind = Literal[
 ]
 
 
-DEPTH_MAX = 64
-"""suggested: the deepest nesting `materialize` reads. Deeper is 400 `invalid_body`, never a
-`RecursionError` (a plain 500)."""
+TOO_DEEP_MESSAGE = "the body is nested too deeply to read"
 
 
 class InvalidBody(ValueError):
-    """A lazy iterator raised `ValidationError` while it was read, or the body nests deeper than
-    `DEPTH_MAX` (`exc` is None). `str()` names where and why, never the input.
+    """A lazy iterator raised `ValidationError` while it was read. `str()` names where and why,
+    never the input.
     """
 
-    def __init__(self, path: str, exc: ValidationError | None = None) -> None:
-        if exc is None:
-            super().__init__(f"{path or 'body'}: nested deeper than {DEPTH_MAX} levels")
-            return
+    def __init__(self, path: str, exc: ValidationError) -> None:
         parts = []
         for error in exc.errors():
             loc = path or "body"
@@ -164,23 +159,21 @@ class InvalidBody(ValueError):
         super().__init__("; ".join(parts) or f"{path or 'body'}: invalid")
 
 
-def materialize(value: Any, path: str = "", depth: int = 0) -> Any:
+def materialize(value: Any, path: str = "") -> Any:
     """`value` with every mapping as a dict and every other non-string iterable as a list, read
-    once, all the way down to `DEPTH_MAX`. FastAPI hands over `messages`, `system`, and block
-    `content` as lazy `ValidatorIterator`s that validate each item when it is read; their
-    `ValidationError` is raised here as `InvalidBody`.
+    once, all the way down. FastAPI hands over `messages`, `system`, and block `content` as lazy
+    `ValidatorIterator`s that validate each item when it is read; their `ValidationError` is
+    raised here as `InvalidBody`.
     """
-    if depth > DEPTH_MAX:
-        raise InvalidBody(path)
     try:
         if isinstance(value, Mapping):
             return {
-                key: materialize(item, f"{path}.{key}" if path else str(key), depth + 1)
+                key: materialize(item, f"{path}.{key}" if path else str(key))
                 for key, item in value.items()
             }
         if isinstance(value, str | bytes | bytearray) or not isinstance(value, Iterable):
             return value
-        return [materialize(item, f"{path}[{i}]", depth + 1) for i, item in enumerate(value)]
+        return [materialize(item, f"{path}[{i}]") for i, item in enumerate(value)]
     except ValidationError as exc:
         raise InvalidBody(path, exc) from None
 
@@ -297,6 +290,8 @@ class AnthropicInbound:
             raw = materialize(body)
         except InvalidBody as exc:
             raise self._refused("invalid_body", str(exc), ids, served) from None
+        except RecursionError:  # nested past Python's stack: a 400, never a plain 500
+            raise self._refused("invalid_body", TOO_DEEP_MESSAGE, ids, served) from None
         if not isinstance(raw, dict):
             raise self._refused("invalid_body", "the body must be an object", ids, served)
         model = raw.get("model")

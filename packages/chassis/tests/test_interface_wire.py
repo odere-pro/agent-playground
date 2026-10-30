@@ -248,7 +248,7 @@ async def test_native_keeps_detail_text_before_the_handler(
 # --- 3. one SSE event schema --------------------------------------------------------------------
 
 
-def test_sse_event_schema_is_one_object_when_any_route_streams() -> None:
+def test_sse_event_schema_is_the_one_published_object() -> None:
     """The shared SSE event has a required `data` string and optional event, id, and retry."""
     assert SSE_EVENT_SCHEMA == {
         "type": "object",
