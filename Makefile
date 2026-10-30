@@ -103,7 +103,7 @@ quick: ## Iteration gate: format check, lint, and the tests of the packages you 
 	dirs=$$(echo "$$changed" | grep -oE '^(packages|pocs)/[^/]+' | sort -u | while read -r d; do [ -d "$$d" ] && [ -n "$$(find "$$d" -name 'test_*.py' -not -path '*/node_modules/*' -print -quit)" ] && echo "$$d"; done) ; \
 	if [ -n "$$dirs" ]; then echo "testing: $$dirs"; $(PYTEST) $$dirs; else $(PYTEST) -m "not slow"; fi
 
-check: ## Boundary gate: everything CI runs
+check: ## Boundary gate: what the CI `check` job runs (not lint-extra, ts-check, or images)
 	$(MAKE) fmt-check lint type test planning-check harness-lint
 
 planning-sync: ## Regenerate the generated parts of the backlog
