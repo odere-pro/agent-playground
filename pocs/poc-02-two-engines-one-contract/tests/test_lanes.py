@@ -28,25 +28,13 @@ from chassis.core.events import Event, parse_event
 from chassis.ports.engine import EngineConnector
 from fake_model_server import Script
 from fake_model_server import create_app as create_fake_model_app
-from poc02_harness import (
-    EXAMPLE_SCRIPT,
-    ROOT,
-    SIMPLIFIED,
-    SIMPLIFY,
-    TIMEOUT_S,
-    a2a_on_unix_socket,
-    bundle_for,
-    chassis_tools_on_unix_socket,
-    free_port,
-    point_tools_at,
-    request_and_context,
-    require_tcp,
-    serve_tcp,
-    tool_list_failures,
-    typescript_echo,
-    typescript_echo_on_unix_sockets,
-    uds_transport,
-)
+from poc_harness.apps import bundle_for, request_and_context
+from poc_harness.outbound import point_tools_at, tool_list_failures
+from poc_harness.paths import EXAMPLE_SCRIPT, ROOT
+from poc_harness.scenario import SIMPLIFIED, SIMPLIFY, TIMEOUT_S
+from poc_harness.servers import a2a_on_unix_socket, chassis_tools_on_unix_socket
+from poc_harness.sockets import free_port, require_tcp, serve_tcp, uds_transport
+from poc_harness.typescript import typescript_echo, typescript_echo_on_unix_sockets
 
 CASES = [
     pytest.param("chassis.core.handle:echo_wire", "hello big world", id="echo"),

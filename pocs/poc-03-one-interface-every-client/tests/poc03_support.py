@@ -1,7 +1,8 @@
 """Support for this folder's exit-criteria and Schemathesis tests. Not a test module.
 
 `test_openapi_props.py` and `test_exit_criteria.py` import it. The interface contract binding
-(`test_interfaces.py`) has its own harness (`poc03_harness.py`); nothing here is shared with it.
+(`test_interface_contract.py`) has its own harness (`poc_harness.interfaces`); nothing here is
+shared with it.
 
 Two kinds of app, both offline:
 
@@ -11,23 +12,17 @@ Two kinds of app, both offline:
   run goes through the real `inprocess` lane (A2A in memory) to a wire-form `handle`. What the
   client scenarios use.
 
-`serve_on_uds(app)` puts an app on uvicorn over a Unix socket (lifespan on), so the SDKs and the MCP
-client talk real HTTP and real streaming with no TCP. The offline gate allows `AF_UNIX` only.
+The tests serve an app with `poc_harness.sockets.on_unix_socket`, so the SDKs and the MCP client
+talk real HTTP and real streaming with no TCP. The offline gate allows `AF_UNIX` only.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
-import shutil
-import tempfile
 from collections.abc import AsyncIterator, Mapping
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import httpx2
-import uvicorn
 import yaml
 from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Delta, End, Event, Metrics, Start, ToolCall
@@ -110,29 +105,6 @@ tool_calling_wire = wire(tool_calling)
 # --- serving and clients -----------------------------------------------------------------------
 
 
-@asynccontextmanager
-async def serve_on_uds(app: Any) -> AsyncIterator[str]:
-    """Serve `app` on uvicorn over a fresh Unix socket, lifespan on, in this event loop; yields
-    the socket path. The folder is short on purpose: macOS caps a socket path at 104 bytes.
-    """
-    folder = Path(tempfile.mkdtemp(prefix="poc03-"))
-    path = str(folder / "public.sock")
-    server = uvicorn.Server(uvicorn.Config(app, uds=path, log_level="warning", lifespan="on"))
-    task = asyncio.create_task(server.serve())
-    try:
-        async with asyncio.timeout(10):
-            while not server.started:
-                if task.done():
-                    task.result()
-                    raise RuntimeError("uvicorn exited before it started")
-                await asyncio.sleep(0.01)
-        yield path
-    finally:
-        server.should_exit = True
-        await task
-        shutil.rmtree(folder, ignore_errors=True)
-
-
 def uds_http_client(uds: str, **kwargs: Any) -> httpx2.AsyncClient:
     """An `httpx2` client over the Unix socket: the HTTP line both SDKs and FastMCP run on."""
     return httpx2.AsyncClient(transport=httpx2.AsyncHTTPTransport(uds=uds), **kwargs)
@@ -186,18 +158,7 @@ def operations(spec: Mapping[str, Any]) -> dict[tuple[str, str], dict[str, Any]]
     }
 
 
-# --- SSE and markdown --------------------------------------------------------------------------
-
-
-def sse_data(text: str) -> list[Any]:
-    """The `data:` payloads of an SSE body, JSON-decoded, `[DONE]` kept as the string."""
-    out: list[Any] = []
-    for block in text.split("\n\n"):
-        for line in block.splitlines():
-            if line.startswith("data: "):
-                raw = line[len("data: ") :]
-                out.append(raw if raw == "[DONE]" else json.loads(raw))
-    return out
+# --- markdown ---------------------------------------------------------------------------------
 
 
 def markdown_tables(text: str) -> list[list[dict[str, str]]]:

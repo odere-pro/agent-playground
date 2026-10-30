@@ -40,16 +40,12 @@ from chassis.ports.events import CloudEvent, EventPort
 from chassis.profiles import build_ports
 from chassis.server.results import key_hash
 from chassis_contracts.interface import UnixApp
-from poc03_harness import OutboundRouter, patch_outbound
-from poc04_harness import (
-    AGENT,
-    SIMPLIFY,
-    HarnessModel,
-    Replicas,
-    call,
-    replica_config,
-    replicas_on_unix_sockets,
-)
+from poc_harness.interfaces import AGENT, OutboundRouter
+from poc_harness.outbound import patch_outbound
+from poc_harness.replica_calls import call
+from poc_harness.replica_doubles import HarnessModel
+from poc_harness.replicas import Replicas, replica_config, replicas_on_unix_sockets
+from poc_harness.scenario import SIMPLIFY
 
 ENGINE = {"connector": "inprocess", "handle": "echo_python:handle"}
 EXPECTED = {

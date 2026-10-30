@@ -27,7 +27,9 @@ prints the exception line instead of running them."""
 
 
 def test_poc05_demo_names_the_t10_exception_while_the_probe_suite_is_missing() -> None:
-    """Criterion 8 (flagged): without the probe suite, the demo says so instead of skipping, and
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (flagged): without the probe suite, the demo says so instead of skipping, and
     its last line names the exception: a run without the suite never ends a bare "every step ok"
     (review LOW, 2026-10-09). The control: with the suite, the last line is the plain one."""
     text = _text()

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The `network` tests (PoC-4): real adapters against testcontainers, and the PoC-4 scenario tests
 # that need sockets. Sockets on, keys still stripped. Needs Docker; a test skips when Docker is
-# not reachable. Compose and kind drills also need POC04_STACK=1 or POC04_KIND=1.
+# not reachable. Compose and kind drills (the `requires_env` marker) also need POC04_STACK=1 or
+# POC04_KIND=1.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # The narrower list on purpose: the live Langfuse binding

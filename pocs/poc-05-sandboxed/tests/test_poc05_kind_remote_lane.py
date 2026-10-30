@@ -19,7 +19,7 @@ and a scripted model failure. Per-run values are masked: the request id, the too
 trace id and idempotency key, and the names that differ per deployment (agent name, config hash).
 Every event is also parsed with `chassis.core.events.parse_event`.
 
-A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc05_conftest.py`). Run:
+A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc_harness.drills`). Run:
 `POC05_KIND=1 uv run pytest -m network <this file>`.
 """
 
@@ -32,7 +32,10 @@ import pytest
 import yaml
 from chassis.core.events import parse_event
 from chassis_contracts.lane import assert_same
-from poc05_kind import AGENTS_NS, CHASSIS, REMOTE_NS, get_json, kubectl, pod
+from poc_harness.drills import POC05_KIND
+from poc_harness.kind import AGENTS_NS, CHASSIS, REMOTE_NS, get_json, kubectl, pod
+
+pytestmark = POC05_KIND
 
 SIDECAR = "agent-echo"
 REMOTE = "chassis-echo-remote"
@@ -119,7 +122,10 @@ def lanes() -> dict[str, dict[str, dict[str, Any]]]:
 
 
 def test_the_two_deployments_are_the_two_lanes() -> None:
-    """Criterion 2 precondition: `agent-echo` runs the `sidecar` connector and
+    """Criterion 2: "CI runs a fake workload through the `remote` lane on every commit, and it
+    passes the same contract suite as the `sidecar` lane."
+
+    Criterion 2 precondition: `agent-echo` runs the `sidecar` connector and
     `chassis-echo-remote` the `remote` connector, whose workload pod runs on gVisor (H28) and
     holds no chassis; otherwise the comparison below would compare a lane with itself."""
     sidecar, remote = chassis_config(SIDECAR), chassis_config(REMOTE)
@@ -138,7 +144,10 @@ def test_the_two_deployments_are_the_two_lanes() -> None:
 def test_remote_gives_the_sidecar_events_for_the_same_request(
     lanes: dict[str, dict[str, dict[str, Any]]], text: str
 ) -> None:
-    """Criterion 2: the same request to the `sidecar` and the `remote` lane gives the same event
+    """Criterion 2: "CI runs a fake workload through the `remote` lane on every commit, and it
+    passes the same contract suite as the `sidecar` lane."
+
+    Criterion 2: the same request to the `sidecar` and the `remote` lane gives the same event
     list, type for type and field for field (per-run ids masked), and the same envelope. Each
     stream also has the event types the fake model's script makes, so two equal but empty or
     failed streams do not pass."""

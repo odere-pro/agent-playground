@@ -31,17 +31,12 @@ from collections.abc import Iterator
 import pytest
 from chassis.fakes.events import InMemoryBus
 from chassis.ports.state import InMemoryState
-from poc03_harness import OutboundRouter, patch_outbound
-from poc04_harness import (
-    HANG,
-    SIMPLIFIED,
-    SIMPLIFY,
-    HarnessModel,
-    Replicas,
-    SeverableState,
-    call,
-    replicas_on_unix_sockets,
-)
+from poc_harness.interfaces import OutboundRouter
+from poc_harness.outbound import patch_outbound
+from poc_harness.replica_calls import call
+from poc_harness.replica_doubles import HANG, HarnessModel, SeverableState
+from poc_harness.replicas import Replicas, replicas_on_unix_sockets
+from poc_harness.scenario import SIMPLIFIED, SIMPLIFY
 
 LEASE_S = 0.6
 """suggested: short, so the takeover happens well inside the retry's own `timeout_ms`."""

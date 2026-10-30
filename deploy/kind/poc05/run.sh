@@ -544,7 +544,7 @@ REMOTE_TESTS=(
 
 # The remote-lane CI job (.github/workflows/remote-lane.yml) runs this after `up`. A missing file
 # fails the verb by name, so the job never goes green on an empty selection. The code-runner file
-# calls the tool through the gateway, so the run goes through with_gateway (it skips without it).
+# calls the tool through the gateway, so the run goes through with_gateway (it fails without it).
 run_tests_remote() {
   local f missing=()
   for f in "${REMOTE_TESTS[@]}"; do

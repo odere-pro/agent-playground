@@ -15,12 +15,12 @@ the admitted twins alone would then pass, so the rejected ones are what proves t
 Neither identity can write the platform's params, and with the params gone every request is
 denied.
 
-The per-call plan's `can-i` lists (`CAN_I`, imported from the static test, so the two never drift)
-and the check that no agent-sandbox object owns a NetworkPolicy close the security review's
-required changes 1, 2, and 4 on the cluster.
+The per-call plan's `can-i` lists (`CAN_I`, in `poc_harness.admission_manifests`, so the static
+and kind tests never drift) and the check that no agent-sandbox object owns a NetworkPolicy close
+the security review's required changes 1, 2, and 4 on the cluster.
 
 A kind test: marked `network` and skipped unless `POC05_KIND=1` and the `kind-poc05` context
-exists (`poc05_conftest.py`). Needs `deploy/kind/poc05/base/` and `admission/` applied (T19).
+exists (`poc_harness.drills`). Needs `deploy/kind/poc05/base/` and `admission/` applied (T19).
 """
 
 from __future__ import annotations
@@ -33,11 +33,15 @@ from pathlib import Path
 
 import pytest
 import yaml
-from poc05_kind import get_json
-from test_poc05_admission_static import CAN_I
-from test_poc05_admission_static import DEPLOYER as DEPLOYER_ACCOUNT
-from test_poc05_admission_static import DISPATCHER as DISPATCHER_ACCOUNT
-from test_poc05_admission_static import SUBMITTER as SUBMITTER_ACCOUNT
+from poc_harness.admission_manifests import CAN_I
+from poc_harness.admission_manifests import DEPLOYER as DEPLOYER_ACCOUNT
+from poc_harness.admission_manifests import DISPATCHER as DISPATCHER_ACCOUNT
+from poc_harness.admission_manifests import SUBMITTER as SUBMITTER_ACCOUNT
+from poc_harness.drills import POC05_KIND
+from poc_harness.kind import get_json
+from poc_harness.manifests import load_manifests
+
+pytestmark = POC05_KIND
 
 ROOT = Path(__file__).resolve().parents[3]
 ADMISSION = ROOT / "deploy/kind/poc05/admission"
@@ -154,13 +158,19 @@ def _dry_run(fixture: Fixture) -> subprocess.CompletedProcess[str]:
 
 
 def test_every_fixture_is_rejected_or_admitted() -> None:
-    """Exit criterion 7: the two lists below cover every fixture, so none is skipped."""
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Exit criterion 7: the two lists below cover every fixture, so none is skipped."""
     assert len(REJECTED) + len(ADMITTED) == len(ALL) > 0
 
 
 @pytest.mark.parametrize("fixture", REJECTED, ids=[f.id for f in REJECTED])
 def test_rejected_fixture_is_refused_with_its_rule_message(fixture: Fixture) -> None:
-    """Exit criterion 7: a rejected fixture is refused by its rule's policy with its message, not
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Exit criterion 7: a rejected fixture is refused by its rule's policy with its message, not
     by RBAC. The paired control: its admitted twin, sent the same way, is admitted."""
     got = _dry_run(fixture)
     twin = _dry_run(_twin(fixture))
@@ -176,7 +186,10 @@ def test_rejected_fixture_is_refused_with_its_rule_message(fixture: Fixture) -> 
 
 @pytest.mark.parametrize("fixture", ADMITTED, ids=[f.id for f in ADMITTED])
 def test_admitted_twin_is_admitted(fixture: Fixture) -> None:
-    """Exit criterion 7: the admitted twin of each rule's fixture passes a server dry run as the
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Exit criterion 7: the admitted twin of each rule's fixture passes a server dry run as the
     identity that may create it, so the rejected fixtures are refused for their rule alone."""
     got = _dry_run(fixture)
 
@@ -218,7 +231,10 @@ def admin_can_i(*args: str) -> str:
 @pytest.mark.parametrize("ns", WORKLOAD_NAMESPACES)
 @pytest.mark.parametrize("user", [SUBMITTER, DEPLOYER], ids=["submitter", "deployer"])
 def test_nobody_but_the_admin_reads_secrets(user: str, ns: str) -> None:
-    """Exit criterion 4 (only the chassis holds credentials): neither the submitter nor the
+    """Criterion 4: "No provider key or internal credential is visible in any workload container or
+    remote pod, and neither holds a service account token."
+
+    Exit criterion 4 (only the chassis holds credentials): neither the submitter nor the
     deployer may get Secrets in a workload namespace. The paired control: the cluster admin, who
     runs `seed.sh`, may."""
     denied = can_i(user, "get", "secrets", "-n", ns)
@@ -282,7 +298,10 @@ def _with_digests(pod: dict[str, object]) -> dict[str, object]:
 
 
 def test_digest_mode_refuses_a_tag_and_admits_its_digest_twin(tmp_path: Path) -> None:
-    """Exit criterion 7, rule 8 with `imageSource: digest` (the cloud mode, review R5a-15): with
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Exit criterion 7, rule 8 with `imageSource: digest` (the cloud mode, review R5a-15): with
     the params patched to `digest`, a sidecar pod whose images carry only a tag is refused by
     `agent-trust-rule` with 'trust rule 8', and its twin pinned by `@sha256` is admitted. The
     params are restored after, also on failure, and the tag-only pod is admitted again."""
@@ -332,7 +351,10 @@ def _control(account: tuple[str, str]) -> CanI:
 
 @pytest.mark.parametrize("case", CAN_I, ids=[f"{a[1]}-{v}-{r}-{ns}" for a, v, r, _, ns, _ in CAN_I])
 def test_can_i_on_kind_matches_the_design(case: CanI) -> None:
-    """Exit criterion 7 (admission and its RBAC), per-call plan "RBAC"; security review of the
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Exit criterion 7 (admission and its RBAC), per-call plan "RBAC"; security review of the
     design, required changes 2 and 4. The dispatcher may only create, get, and delete claims in
     `poc05-tools`; the submitter may create no pod in `poc05-tools` and no claim, template, or pool
     in any `poc05-*` namespace. Every `no` is checked next to its identity's `yes` control (the
@@ -346,7 +368,10 @@ def test_can_i_on_kind_matches_the_design(case: CanI) -> None:
 
 
 def test_submitter_cannot_create_pods_in_tools_after_admission() -> None:
-    """Exit criterion 7, security review of the design, required change 4: after `run.sh
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Exit criterion 7, security review of the design, required change 4: after `run.sh
     admission` the submitter has no binding in `poc05-tools`, so it cannot fill the shared quota or
     start a pod next to the warm pool. Controls: the deployer may, and the submitter may in
     `poc05-remote`."""
@@ -371,8 +396,8 @@ DEFAULT_DENY = ROOT / "deploy/kind/poc05/base/default-deny.yaml"
 def _policies_in(path: Path, namespace: str | None = None) -> set[tuple[str, str]]:
     return {
         (namespace or d["metadata"]["namespace"], d["metadata"]["name"])
-        for d in yaml.safe_load_all(path.read_text())
-        if d and d.get("kind") == "NetworkPolicy"
+        for d in load_manifests(path)
+        if d.get("kind") == "NetworkPolicy"
     }
 
 
@@ -390,7 +415,9 @@ def _agent_sandbox_owned(policy: dict[str, object]) -> bool:
 
 
 def test_no_network_policy_is_owned_by_an_agent_sandbox_object() -> None:
-    """Exit criterion 8 (code runs sandboxed with no egress); template rule T1 and the security
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Exit criterion 8 (code runs sandboxed with no egress); template rule T1 and the security
     review of the design, required change 1: a `SandboxTemplate` left `Managed` makes the
     controller write a NetworkPolicy that allows internet egress (B2). No NetworkPolicy in any
     `poc05-*` namespace has an owner from `agents.x-k8s.io` or `extensions.agents.x-k8s.io`.

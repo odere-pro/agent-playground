@@ -16,8 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import secrets
-import socket
-import threading
 import time
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
@@ -28,6 +26,7 @@ from chassis.adapters.dapr import DaprEvents
 from chassis.ports.events import CloudEvent, EventHandler, EventPort, Subscription
 from chassis_contracts.containers.dapr import DaprSidecar, dapr_with_kafka
 from chassis_contracts.events import EventPortContract
+from chassis_contracts.serving import free_port, serve_in_thread
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route, Router
@@ -51,13 +50,6 @@ class _Current:
         await Router(routes=self.port.inbound_routes())(scope, receive, send)
 
 
-def _free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port: int = probe.getsockname()[1]
-        return port
-
-
 @pytest.fixture(scope="module")
 def current() -> _Current:
     return _Current()
@@ -65,19 +57,11 @@ def current() -> _Current:
 
 @pytest.fixture(scope="module")
 def app_port(current: _Current) -> Iterator[int]:
-    port = _free_port()
+    port = free_port()
     app = Starlette(routes=[Route("/dapr/{rest:path}", current)])
-    server = uvicorn.Server(
-        uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", lifespan="off")
-    )
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
-    deadline = time.monotonic() + 10
-    while not server.started and time.monotonic() < deadline:
-        time.sleep(0.05)
-    yield port
-    server.should_exit = True
-    thread.join(timeout=10)
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", lifespan="off")
+    with serve_in_thread([config], start_timeout_s=10):
+        yield port
 
 
 @pytest.fixture(scope="module")

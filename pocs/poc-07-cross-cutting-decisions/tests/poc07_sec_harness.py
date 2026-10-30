@@ -41,8 +41,8 @@ from chassis.ports.model import (
 from chassis.server import ChassisConfig, create_app
 from chassis.server.proxy_app import create_proxy_app
 from chassis_contracts.interface import UnixApp, serve_on_unix_sockets
-from poc02_harness import a2a_on_unix_socket
-from poc03_harness import OutboundRouter
+from poc_harness.interfaces import OutboundRouter
+from poc_harness.servers import a2a_on_unix_socket
 
 ENGINES = {"echo-python": "echo_python:handle", "echo-langgraph": "echo_langgraph:handle"}
 LANES = ("inprocess", "sidecar")

@@ -73,10 +73,10 @@ from chassis_contracts.interface import UnixApp, serve_on_unix_sockets
 from guardrail_server import PatternClassifier
 from guardrail_server import create_app as create_guard
 from guardrail_server.litellm_stub import StubSettings, create_stub
-from poc02_harness import a2a_on_unix_socket
-from poc05_harness import WORKLOAD_TOKEN_ENV, Tokens
-from poc06_harness import ENGINES
 from poc08_claude_cli import ClaudeCliStandIn
+from poc_harness.bakeoff_tasks import ENGINES
+from poc_harness.lane_tokens import WORKLOAD_TOKEN_ENV, Tokens
+from poc_harness.servers import a2a_on_unix_socket
 
 ROOT = Path(__file__).resolve().parents[3]
 TRUSTED_ENGINES = ("echo-python", "echo-pydanticai", "echo-langgraph", "echo-openai-agents")
@@ -344,7 +344,7 @@ def _set(monkeypatch: pytest.MonkeyPatch, dotted: str, value: object) -> None:
 
 def wire_engine(monkeypatch: pytest.MonkeyPatch, engine: str, uds: str, home: Path) -> None:
     """Point the engine's test-only model and MCP hooks at `uds`, and set the two URLs. Test
-    wiring: each engine names its hooks differently (`poc06_harness.ENGINES`)."""
+    wiring: each engine names its hooks differently (`poc_harness.bakeoff_tasks.ENGINES`)."""
     monkeypatch.setenv("CHASSIS_MODEL_URL", f"{PROXY_URL}/v1")
     monkeypatch.setenv("CHASSIS_TOOL_URL", f"{PROXY_URL}/mcp")
     spec = ENGINES[engine]

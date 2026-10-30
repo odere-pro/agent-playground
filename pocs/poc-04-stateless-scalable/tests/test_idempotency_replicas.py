@@ -24,19 +24,12 @@ from typing import Any
 
 import pytest
 from chassis.ports.state import InMemoryState
-from poc03_harness import OutboundRouter, patch_outbound
-from poc04_harness import (
-    FAIL,
-    SIMPLIFIED,
-    SIMPLIFY,
-    SLOW,
-    HarnessModel,
-    OffsetClock,
-    Replicas,
-    call,
-    replicas_on_unix_sockets,
-    without_created,
-)
+from poc_harness.interfaces import OutboundRouter
+from poc_harness.outbound import patch_outbound
+from poc_harness.replica_calls import call, without_created
+from poc_harness.replica_doubles import FAIL, SLOW, HarnessModel, OffsetClock
+from poc_harness.replicas import Replicas, replicas_on_unix_sockets
+from poc_harness.scenario import SIMPLIFIED, SIMPLIFY
 
 TTL_S = 60.0
 """suggested: short enough to step past with the offset clock."""

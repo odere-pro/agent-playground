@@ -6,14 +6,12 @@ Each test names the exit criterion in docs/planning/poc/001-PoC-1-walking-skelet
 from __future__ import annotations
 
 import importlib
-import json
 import os
-import socket
 import subprocess
 import sys
 import time
 import tomllib
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +19,8 @@ import httpx
 import pytest
 from chassis.core.envelope import Response
 from chassis.server import create_app, load_config
-from chassis.server.proxy_app import create_proxy_app
+from poc_harness.sockets import free_port
+from poc_harness.sse import sse_frames
 
 ROOT = Path(__file__).resolve().parents[3]
 FAKE_CONFIG = ROOT / "packages/chassis/configs/fake.yaml"
@@ -30,18 +29,12 @@ READY_TIMEOUT_S = 15.0
 
 
 @pytest.fixture
-def app_with_workload_routed_back() -> Iterator[Any]:
+def app_with_workload_routed_back(route_workload_to: Callable[[Any], Any]) -> Any:
     """The fake profile's app, with the workload's model call routed to the chassis's proxy app
     over an ASGI transport (the workload's test-only hook), so it reaches the fake model. The
     proxy app shares the public app's state; the public port has no model route (PoC-2 split).
     """
-    app = create_app(load_config(FAKE_CONFIG))
-    workload: Any = importlib.import_module("echo_python.handle")
-    workload.transport = httpx.ASGITransport(app=create_proxy_app(app))
-    try:
-        yield app
-    finally:
-        workload.transport = None
+    return route_workload_to(create_app(load_config(FAKE_CONFIG)))
 
 
 async def test_chassis_serve_starts_from_config() -> None:
@@ -90,15 +83,6 @@ def test_chassis_package_holds_no_business_logic() -> None:
     assert offenders == []
 
 
-def _frames(text: str) -> list[tuple[str, dict[str, Any]]]:
-    out: list[tuple[str, dict[str, Any]]] = []
-    for block in text.split("\n\n"):
-        if block.strip():
-            event, data = block.splitlines()[:2]
-            out.append((event.removeprefix("event: "), json.loads(data.removeprefix("data: "))))
-    return out
-
-
 async def test_stream_and_complete_carry_the_same_output(
     app_with_workload_routed_back: Any,
 ) -> None:
@@ -115,7 +99,7 @@ async def test_stream_and_complete_carry_the_same_output(
     ):
         complete = Response.model_validate((await client.post("/v1/run", json=body)).json())
         streamed = await client.post("/v1/run", json={**body, "stream": True})
-    frames = _frames(streamed.text)
+    frames = sse_frames(streamed.text)
     assert frames[0][0] == "start" and frames[-1][0] == "response"
     text = "".join(f[1]["text"] for f in frames if f[0] == "delta")
     final = Response.model_validate(frames[-1][1])
@@ -124,12 +108,6 @@ async def test_stream_and_complete_carry_the_same_output(
     assert complete.versions.config and complete.versions.model_route == "fake-route"
     assert complete.versions.prompt == "simplifier-v1"
     assert final.versions == complete.versions
-
-
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
 
 
 def wait_until_ready(probe: Callable[[], bool], timeout_s: float, interval_s: float = 0.2) -> bool:
@@ -158,8 +136,8 @@ def test_chassis_serve_subprocess_answers_health(request: pytest.FixtureRequest)
     """
     if request.config.getoption("--disable-socket", default=False):
         pytest.skip("sockets are disabled; run without --disable-socket to cover the launcher")
-    port = _free_port()
-    proxy_port = _free_port()
+    port = free_port()
+    proxy_port = free_port()
     proc = subprocess.Popen(
         [
             sys.executable,

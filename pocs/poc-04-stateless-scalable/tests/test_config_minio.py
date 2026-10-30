@@ -11,7 +11,6 @@ Run with `scripts/check_integration.sh pocs/poc-04-stateless-scalable/tests/test
 
 from __future__ import annotations
 
-import asyncio
 import copy
 import io
 import uuid
@@ -29,11 +28,13 @@ from chassis.server import ChassisConfig, create_app
 from chassis.server.config_loader import ConfigRejected
 from chassis_contracts.containers.minio import make_bucket, minio_container
 from minio import Minio
+from poc_harness.waits import wait_until_async
 from testcontainers.community.minio import MinioContainer
 
 pytestmark = pytest.mark.network
 
 POLL_S = 0.1
+WAIT_S = 5.0
 KEY = "agents/echo.yaml"
 
 GOOD: dict[str, Any] = {
@@ -87,13 +88,6 @@ async def versions(client: httpx.AsyncClient) -> dict[str, Any]:
     assert res.status_code == 200, res.text
     out: dict[str, Any] = res.json()["versions"]
     return out
-
-
-async def until(check: Any, timeout_s: float = 5.0) -> None:
-    deadline = asyncio.get_running_loop().time() + timeout_s
-    while not await check():
-        assert asyncio.get_running_loop().time() < deadline, "timed out"
-        await asyncio.sleep(POLL_S)
 
 
 class Running:
@@ -152,7 +146,7 @@ async def _reload_to_minio_2(chassis: Running) -> None:
     async def reloaded() -> bool:
         return bool((await versions(chassis.client))["model_route"] == "route-2")
 
-    await until(reloaded)
+    await wait_until_async(reloaded, "the new route", WAIT_S, interval=POLL_S)
 
 
 @pytest.fixture
@@ -196,7 +190,7 @@ async def test_a_bad_store_document_is_refused_when_it_comes_from_s3(
     async def refused() -> bool:
         return reloaded.rejected() >= 1
 
-    await until(refused)
+    await wait_until_async(refused, "the refusal", WAIT_S, interval=POLL_S)
 
     assert (await versions(reloaded.client))["config"].startswith("minio-2+")
     assert reloaded.telemetry.counter_value("chassis.config.reloaded") == 1
@@ -213,7 +207,7 @@ async def test_the_last_good_config_stays_when_the_store_document_is_not_yaml(
     async def poll_failed() -> bool:
         return reloaded.store.poll_failures > failures
 
-    await until(poll_failed)
+    await wait_until_async(poll_failed, "a failed poll", WAIT_S, interval=POLL_S)
 
     assert (await versions(reloaded.client))["config"].startswith("minio-2+")
     assert reloaded.telemetry.counter_value("chassis.config.reloaded") == 1

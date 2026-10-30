@@ -1,4 +1,4 @@
-"""The Compose scale stack, live (plan, sections 8a and 10). Every test here is a `stack` drill:
+"""The Compose scale stack, live (plan, sections 8a and 10). Every test here is a Compose drill:
 it needs Docker, the images of `deploy/compose/scale.sh build`, and POC04_STACK=1. Each test
 brings up project `poc04` and takes it down again. Evidence of the recorded run:
 `notes/2026-10-01-drills.md`.
@@ -17,13 +17,14 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import time
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
 import pytest
+from poc_harness.drills import POC04_STACK
+from poc_harness.waits import wait_until
 
 ROOT = Path(__file__).resolve().parents[3]
 SCALE = ROOT / "deploy" / "compose" / "scale.sh"
@@ -51,7 +52,7 @@ print(json.dumps({
 """
 """Run in chassis-1: each way out prints `reached` or the error that stopped it."""
 
-pytestmark = [pytest.mark.stack, pytest.mark.network]
+pytestmark = POC04_STACK
 
 
 def scale(*args: str, timeout_s: float = 400) -> None:
@@ -68,15 +69,13 @@ def one_pair() -> Iterator[None]:
 
 
 def wait_ready(client: httpx.Client, timeout_s: float = 60) -> None:
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
+    def ready() -> bool:
         try:
-            if client.get("/ready").status_code == 200:
-                return
+            return client.get("/ready").status_code == 200
         except httpx.HTTPError:
-            pass
-        time.sleep(1)
-    pytest.fail(f"{URL}/ready not 200 in {timeout_s} s")
+            return False
+
+    wait_until(ready, f"{URL}/ready to answer 200", timeout_s, interval=1)
 
 
 @pytest.mark.usefixtures("one_pair")

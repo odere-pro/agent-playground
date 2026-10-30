@@ -2,10 +2,10 @@
 criterion word for word (skill `poc-iteration`).
 
 Offline. The client scenarios serve the app built from `packages/chassis/configs/fake.yaml` on
-uvicorn over a Unix socket (`poc03_support.serve_on_uds`), with no injected ports: the fake profile
-builds them and each run goes through the real `inprocess` lane (A2A in memory) to a wire-form
-`handle`. The SDKs and the MCP client speak real HTTP and real SSE to it; the gate allows `AF_UNIX`
-only.
+uvicorn over a Unix socket (`poc_harness.sockets.on_unix_socket`), with no injected ports: the fake
+profile builds them and each run goes through the real `inprocess` lane (A2A in memory) to a
+wire-form `handle`. The SDKs and the MCP client speak real HTTP and real SSE to it; the gate allows
+`AF_UNIX` only.
 
 A criterion whose evidence has not landed yet is `xfail(strict=True)`, narrowed with `raises=` to
 the missing file or module, so any other failure is a real one and the landing turns it into a
@@ -53,10 +53,10 @@ from poc03_support import (
     markdown_tables,
     mcp_client,
     run_body_schema,
-    serve_on_uds,
-    sse_data,
     uds_http_client,
 )
+from poc_harness.sockets import on_unix_socket
+from poc_harness.sse import sse_data
 
 TEXT = "hello big world"
 KEY = "placeholder-not-a-key"
@@ -326,11 +326,12 @@ async def test_exit_3_the_sdks_work_with_only_a_base_url_change(sdk: str) -> Non
     name. Retries, timeouts, and headers stay the SDK's own.
     """
     app = lane_app()
-    async with asyncio.timeout(TIMEOUT_S), serve_on_uds(app) as uds:
-        if sdk == "openai":
-            await _openai_both_ways(uds)
-        else:
-            await _anthropic_both_ways(uds)
+    with on_unix_socket(app) as uds:
+        async with asyncio.timeout(TIMEOUT_S):
+            if sdk == "openai":
+                await _openai_both_ways(uds)
+            else:
+                await _anthropic_both_ways(uds)
 
 
 # --- 4 -----------------------------------------------------------------------------------------
@@ -344,10 +345,11 @@ async def test_exit_4_an_mcp_client_lists_the_agents_tool_and_runs_it() -> None:
     returns the native response envelope; the run is labeled `interface: mcp`.
     """
     app = lane_app()
-    async with asyncio.timeout(TIMEOUT_S), serve_on_uds(app) as uds, mcp_client(uds) as client:
-        tools = await client.list_tools()
-        result = await client.call_tool(AGENT, {"input": {"text": TEXT}})
-        telemetry = app.state.ports.telemetry
+    with on_unix_socket(app) as uds:
+        async with asyncio.timeout(TIMEOUT_S), mcp_client(uds) as client:
+            tools = await client.list_tools()
+            result = await client.call_tool(AGENT, {"input": {"text": TEXT}})
+            telemetry = app.state.ports.telemetry
     assert [tool.name for tool in tools] == [AGENT]
     assert result.is_error is False
     envelope = result.structured_content
@@ -397,8 +399,9 @@ async def test_exit_5_mcp_tools_and_rest_come_from_one_openapi_spec() -> None:
     with no `mcp_component_fn`, and no tool is written by hand.
     """
     app = lane_app()
-    async with asyncio.timeout(TIMEOUT_S), serve_on_uds(app) as uds, mcp_client(uds) as client:
-        [listed] = await client.list_tools()
+    with on_unix_socket(app) as uds:
+        async with asyncio.timeout(TIMEOUT_S), mcp_client(uds) as client:
+            [listed] = await client.list_tools()
     body = run_body_schema(app.openapi())
     schema = listed.input_schema
     assert schema["type"] == body["type"] == "object"
@@ -604,9 +607,6 @@ async def test_exit_6_the_handled_gaps_behave_as_listed(gap: str) -> None:
     """
     handle, check = BEHAVIORS[gap]
     app = lane_app(handle) if handle else lane_app()
-    async with (
-        asyncio.timeout(TIMEOUT_S),
-        serve_on_uds(app) as uds,
-        uds_http_client(uds, base_url=BASE) as http,
-    ):
-        await check(http, uds)
+    with on_unix_socket(app) as uds:
+        async with asyncio.timeout(TIMEOUT_S), uds_http_client(uds, base_url=BASE) as http:
+            await check(http, uds)

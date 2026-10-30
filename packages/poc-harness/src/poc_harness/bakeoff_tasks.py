@@ -1,6 +1,6 @@
-"""Shared harness for the PoC-6 bake-off tests. Not a test module; the test files import it.
+"""The bake-off tasks: what PoC-6a, 6b, 6c, 7, and 8 run and how they judge it.
 
-Holds the three benchmark tasks as data, a pass check for each, the engine registry, and an
+Holds the three benchmark tasks as data, a pass check for each, the engine table, and an
 in-process tool stub with both read-only tools. Everything runs offline: the model is the fake
 model server on `scripts/bakeoff.yaml`, the tools are `fake_mcp_server` over an ASGI transport.
 The chassis is never imported here: a workload is driven through its wire-form `handle`.
@@ -12,15 +12,17 @@ import importlib
 import json
 from collections.abc import AsyncIterator, Callable, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Any
 
 import httpx2
 import jsonschema
+from bakeoff.registry import Engine as RegistryEngine
+from bakeoff.registry import get_engine, lanes_for
 from fake_mcp_server.server import FakeMcpState, create_app
 
-ROOT = Path(__file__).resolve().parents[3]
+from poc_harness.paths import ROOT
+
 BAKEOFF_SCRIPT = ROOT / "packages/fake-model-server/scripts/bakeoff.yaml"
 EVENTS_SCHEMA = json.loads((ROOT / "packages/chassis/schemas/events.v0.json").read_text())
 ROUTE = "big-default"
@@ -157,7 +159,7 @@ CHECKS: dict[str, Callable[[Sequence[Mapping[str, Any]]], Verdict]] = {
     "lookup": check_lookup,
 }
 
-# --- The engine registry ------------------------------------------------------------------------
+# --- The engine table ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -175,64 +177,54 @@ class Engine:
     lane: str
     model_hook: str | None
     tool_hook: str | None
-    hooks_extra: tuple[str, ...] = field(default=())
+
+
+def trust_of(entry: RegistryEngine) -> str:
+    """The trust word of a `bakeoff.registry` engine."""
+    return "trusted" if entry.trusted else "untrusted"
+
+
+def _engine(name: str, model_hook: str | None, tool_hook: str | None) -> Engine:
+    """Everything but the hooks comes from `bakeoff.registry`, the one place trust is set."""
+    entry = get_engine(name)
+    return Engine(
+        name=name,
+        handle=entry.handle or "node",
+        language="typescript" if entry.runner == "node" else entry.runner,
+        trust=trust_of(entry),
+        lane="sidecar" if "sidecar" in lanes_for(entry) else "remote",
+        model_hook=model_hook,
+        tool_hook=tool_hook,
+    )
 
 
 ENGINES: dict[str, Engine] = {
     e.name: e
     for e in (
-        Engine(
-            "echo-python",
-            "echo_python:handle",
-            "python",
-            "trusted",
-            "sidecar",
-            "echo_python.handle.transport",
-            "echo_python.tools.client_factory",
-        ),
-        Engine(
+        _engine("echo-python", "echo_python.handle.transport", "echo_python.tools.client_factory"),
+        _engine(
             "echo-pydanticai",
-            "echo_pydanticai:handle",
-            "python",
-            "trusted",
-            "sidecar",
             "echo_pydanticai.handle.model_transport",
             "echo_pydanticai.handle.tool_transport",
         ),
-        Engine(
+        _engine(
             "echo-langgraph",
-            "echo_langgraph:handle",
-            "python",
-            "trusted",
-            "sidecar",
             "echo_langgraph.handle.model_transport",
             "echo_langgraph.tools.transport",
         ),
-        Engine(
+        _engine(
             "echo-openai-agents",
-            "echo_openai_agents:handle",
-            "python",
-            "trusted",
-            "sidecar",
             "echo_openai_agents.handle.transport",
             "echo_openai_agents.tools.transport",
         ),
-        Engine("echo-typescript", "node", "typescript", "trusted", "sidecar", None, None),
-        Engine(
+        _engine("echo-typescript", None, None),
+        _engine(
             "echo-claude-agent",
-            "echo_claude_agent:handle",
-            "python",
-            "untrusted",
-            "remote",
             "echo_claude_agent.handle.transport",
             "echo_claude_agent.tools.transport",
         ),
-        Engine(
+        _engine(
             "echo-smolagents",
-            "echo_smolagents:handle",
-            "python",
-            "untrusted",
-            "remote",
             "echo_smolagents.handle.transport",
             "echo_smolagents.tools.transport",
         ),

@@ -1,15 +1,15 @@
 """PoC-6b on kind, exit criteria 1 and 4: every PoC-6 engine runs the three benchmark tasks (smoke,
 simplifier, lookup) through its chassis's `POST /v1/run` in the PoC-5 cluster, in its lane, and
-passes `poc06_harness`'s checks.
+passes `poc_harness.bakeoff_tasks`'s checks.
 
-The six deployments (`poc06b_kind.ENGINES`): `echo-openai-agents` and `echo-typescript` as sidecar
+The six deployments (`bakeoff_kind.ENGINES`): `echo-openai-agents` and `echo-typescript` as sidecar
 pods; `echo-smolagents`, `echo-claude-agent`, `echo-typescript`, and `kagent-adk` as remotes on
 gVisor behind their own chassis. The model is the fake model server on the PoC-6 script, behind
 LiteLLM, and the tools are the fake MCP server's two read-only tools behind the LiteLLM MCP
 gateway, so a run crosses every hop a real one does. Each call goes from inside the chassis
 container to its pod IP, with the image's Python.
 
-Two adaptations to the hop through the gateway, both in `poc06b_kind.gateway_view` and recorded in
+Two adaptations to the hop through the gateway, both in `bakeoff_kind.gateway_view` and recorded in
 its docstring: the tool name carries the gateway's `fake_tools-` prefix, and a text-only result is
 read as the object it holds. Nothing else about an event is changed.
 
@@ -23,15 +23,15 @@ Known gap:
   tool calls ("what the chassis cannot see"), so a `tool_call` event there is a failure of the
   limit, not a pass.
 
-A kind test: marked `kind` (and `network`), skipped unless `POC06_KIND=1` (`poc06b_conftest.py`).
+A kind test: marked `POC06_KIND` (`poc_harness.drills`), so also `network`, and skipped unless
+`POC06_KIND=1`.
 Run: `deploy/kind/poc06/run.sh test`.
 """
 
 from __future__ import annotations
 
 import pytest
-from poc06_harness import CHECKS, LOOKUP, Task
-from poc06b_kind import (
+from poc_harness.bakeoff_kind import (
     ENGINES,
     TASKS,
     KindEngine,
@@ -39,8 +39,10 @@ from poc06b_kind import (
     gateway_view,
     run_stream,
 )
+from poc_harness.bakeoff_tasks import CHECKS, LOOKUP, Task
+from poc_harness.drills import POC06_KIND
 
-pytestmark = pytest.mark.kind
+pytestmark = POC06_KIND
 
 CASES = [
     pytest.param(engine, name, id=f"{engine.id}-{name}")
@@ -59,7 +61,7 @@ def test_the_engine_passes_the_task_through_its_chassis(engine: KindEngine, name
     """Exit criteria 1 and 4: smoke (`end ok` after a `delta`, the whole answer `Hello.`), the
     simplifier (every fact kept), and the lookup (`glossary_lookup{term: SLM}` then
     `acronym_expand{acronym: RAG}`, both results non-null, the answer holds both facts), each
-    checked by `poc06_harness`. A failure prints the raw events."""
+    checked by `poc_harness.bakeoff_tasks`. A failure prints the raw events."""
     task = task_named(name)
     result = run_stream(engine, engine.text(task))
     assert result.status == 200, (result.status, result.head)

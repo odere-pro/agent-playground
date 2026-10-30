@@ -2,10 +2,10 @@
 
 Each test names the exit criterion in docs/planning/poc/002-PoC-2-two-engines-one-contract.md it
 covers. No network for the Python engines: each workload's outbound HTTP is routed into the
-chassis app over ASGI (`poc02_harness.route_outbound`), where the model proxy calls the fake model
-server through the real LiteLLM adapter. No TCP for the TypeScript echo either: it listens on a
-Unix socket (`UDS`) and calls the fake model server over another (`CHASSIS_MODEL_UDS`). It skips
-only when its `node_modules` is absent (`npm ci`).
+chassis app over ASGI (`poc_harness.outbound.route_outbound`), where the model proxy calls the
+fake model server through the real LiteLLM adapter. No TCP for the TypeScript echo either: it
+listens on a Unix socket (`UDS`) and calls the fake model server over another
+(`CHASSIS_MODEL_UDS`). It skips only when its `node_modules` is absent (`npm ci`).
 """
 
 from __future__ import annotations
@@ -25,22 +25,12 @@ from chassis_contracts.engine import JSON_VALUES_HANDLE
 from chassis_contracts.helpers import make_request
 from fake_model_server import Script
 from fake_model_server import create_app as create_fake_model_app
-from poc02_harness import (
-    EXAMPLE_SCRIPT,
-    SIMPLIFIED,
-    SIMPLIFY,
-    TIMEOUT_S,
-    bundle_for,
-    chassis_app,
-    client_for,
-    engine_params,
-    route_outbound,
-    run_handle,
-    running,
-    sse_frames,
-    tool_list_failures,
-    typescript_echo_on_unix_sockets,
-)
+from poc_harness.apps import bundle_for, chassis_app, client_for, run_handle, running
+from poc_harness.outbound import route_outbound, tool_list_failures
+from poc_harness.paths import EXAMPLE_SCRIPT
+from poc_harness.scenario import SIMPLIFIED, SIMPLIFY, TIMEOUT_S, engine_params
+from poc_harness.sse import sse_frames
+from poc_harness.typescript import typescript_echo_on_unix_sockets
 
 
 @pytest.mark.parametrize("engine", engine_params())
