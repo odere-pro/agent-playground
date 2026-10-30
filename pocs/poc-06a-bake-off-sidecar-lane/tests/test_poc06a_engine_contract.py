@@ -6,7 +6,7 @@ non-Python agent passes the same suite, with no change to the chassis core).
 engines of `poc06_harness.ENGINES`, so a new engine is one registry line:
 
 - `TestEngineInMemory`: each Python engine behind the chassis's own `inprocess` connector, served
-  by the chassis app (`poc02_harness.chassis_app`).
+  by the chassis app (`poc_harness.apps.chassis_app`).
 - `TestEngineOverA2A`: each engine behind `SidecarConnector` on a Unix socket. A Python engine is
   served by `workload-a2a`; the TypeScript agent is the built `dist` (`node dist/src/main.js`).
 
@@ -30,7 +30,6 @@ from chassis.ports.engine import EngineConnector
 from chassis_contracts import EngineConnectorContract
 from chassis_contracts.engine import JSON_VALUES_HANDLE
 from chassis_contracts.helpers import make_request
-from poc02_harness import a2a_on_unix_socket, chassis_app, running
 from poc06_harness import ENGINES, SMOKE
 from poc06a_harness import (
     Backends,
@@ -40,6 +39,8 @@ from poc06a_harness import (
     sidecar_engines,
     wire_python_engine,
 )
+from poc_harness.apps import chassis_app, running
+from poc_harness.servers import a2a_on_unix_socket
 
 SIDECAR_ENGINES = list(sidecar_engines())
 PYTHON_ENGINES = list(python_engines())

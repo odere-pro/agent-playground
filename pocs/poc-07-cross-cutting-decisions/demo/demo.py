@@ -88,17 +88,11 @@ async def _trace_and_feedback(engine: str, mp: pytest.MonkeyPatch) -> int:
     from chassis.server.feedback import FEEDBACK_RECEIVED, FeedbackEvents
     from chassis_contracts.events import assert_valid_cloudevent
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-    from poc02_harness import (
-        AFTER_TOOL,
-        ROUTE,
-        TIMEOUT_S,
-        TOOL_PROMPT,
-        ToolLoopModel,
-        client_for,
-        route_outbound,
-        running,
-    )
     from poc07_fb_harness import fake_langfuse, langfuse_port
+    from poc_harness.apps import client_for, running
+    from poc_harness.outbound import route_outbound
+    from poc_harness.scenario import AFTER_TOOL, ROUTE, TIMEOUT_S, TOOL_PROMPT
+    from poc_harness.scripted_model import ToolLoopModel
     from test_poc07_obs_trace_join import workload_on_uds
     from workload_a2a import telemetry as workload_telemetry
 

@@ -1,7 +1,7 @@
 """Shared harness for the PoC-4 scenario tests: N chassis replicas behind one store. Not a test
 module; the tests import it.
 
-Builds on `poc03_harness` (the outbound router, the agent, the engines) and `poc02_harness` (the
+Builds on `poc03_harness` (the outbound router, the agent, the engines) and `poc_harness` (the
 workload template server on a Unix socket, the TypeScript echo):
 
 - **Replicas.** `replicas_on_unix_sockets(n, target, lane, ...)` serves N chassis, each a public
@@ -51,8 +51,10 @@ from chassis.ports.state import InMemoryState, StatePort, StateUnavailable
 from chassis.server import ChassisConfig, create_app
 from chassis.server.proxy_app import create_proxy_app
 from chassis_contracts.interface import BASE_URL, Chassis, UnixApp, serve_on_unix_sockets
-from poc02_harness import CHASSIS_PROXY_URL, ROUTE, SIDECAR_URL, on_unix_socket, typescript_echo
 from poc03_harness import AGENT, ENGINES, SIMPLIFIED, SIMPLIFY, TYPESCRIPT, OutboundRouter
+from poc_harness.scenario import CHASSIS_PROXY_URL, ROUTE, SIDECAR_URL
+from poc_harness.sockets import on_unix_socket
+from poc_harness.typescript import typescript_echo
 
 __all__ = [
     "AGENT",

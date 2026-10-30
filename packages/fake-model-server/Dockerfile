@@ -25,6 +25,7 @@ COPY packages/fake-langfuse/pyproject.toml packages/fake-langfuse/
 COPY packages/guardrail-server/pyproject.toml packages/guardrail-server/
 COPY packages/agentctl/pyproject.toml packages/agentctl/
 COPY packages/agent-testkit/pyproject.toml packages/agent-testkit/
+COPY packages/poc-harness/pyproject.toml packages/poc-harness/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package fake-model-server --no-install-workspace
 COPY packages/fake-model-server/src packages/fake-model-server/src

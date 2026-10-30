@@ -42,13 +42,6 @@ from fake_mcp_server.server import FakeMcpState
 from fake_mcp_server.server import create_app as create_tool_app
 from fake_model_server import Script
 from fake_model_server import create_app as create_model_app
-from poc02_harness import (
-    TYPESCRIPT_ECHO,
-    a2a_on_unix_socket,
-    bundle_for,
-    on_unix_socket,
-    typescript_echo,
-)
 from poc06_harness import (
     BAKEOFF_SCRIPT,
     CHECKS,
@@ -60,6 +53,11 @@ from poc06_harness import (
     Task,
     Verdict,
 )
+from poc_harness.apps import bundle_for
+from poc_harness.paths import TYPESCRIPT_ECHO
+from poc_harness.servers import a2a_on_unix_socket
+from poc_harness.sockets import on_unix_socket
+from poc_harness.typescript import typescript_echo
 
 LANES = ("inprocess", "sidecar")
 TOOL_HOST = "tools.invalid"

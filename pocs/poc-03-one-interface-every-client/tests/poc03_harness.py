@@ -1,6 +1,6 @@
 """Shared harness for the PoC-3 interface suite binding. Not a test module; the binding imports it.
 
-It reuses the PoC-2 harness by import (`poc02_harness`: the workload template server on a Unix
+It reuses the PoC-2 harness by import (`poc_harness`: the workload template server on a Unix
 socket, the TypeScript echo, the outbound patch) and adds what PoC-3 needs on top:
 
 - **A real chassis on Unix sockets.** `chassis_on_unix_sockets(target, lane, ...)` serves the
@@ -8,8 +8,8 @@ socket, the TypeScript echo, the outbound patch) and adds what PoC-3 needs on to
   (`chassis_contracts.interface.serve_on_unix_sockets`). The public app runs its lifespan; the
   proxy app shares its state. No TCP anywhere.
 - **Both lanes for every Python engine.** `inprocess` loads the handle by path; `sidecar` serves
-  it with `workload_a2a` on a Unix socket (`poc02_harness.a2a_on_unix_socket`). That covers the
-  framework workloads too, which PoC-2 ran in the `sidecar` lane only in Compose.
+  it with `workload_a2a` on a Unix socket (`poc_harness.servers.a2a_on_unix_socket`). That covers
+  the framework workloads too, which PoC-2 ran in the `sidecar` lane only in Compose.
 - **The TypeScript echo** in the `sidecar` lane only, on a Unix socket, its model calls going to
   the chassis's proxy socket (`CHASSIS_MODEL_UDS`).
 - **Outbound routing by run.** A Python workload's model and MCP calls (any non-Unix-socket
@@ -17,7 +17,7 @@ socket, the TypeScript echo, the outbound patch) and adds what PoC-3 needs on to
   request's `traceparent` names (`OutboundRouter`). Several chassis can then run at once (the
   suite keeps one per engine and lane), and a call that names no run fails loudly instead of
   landing on the wrong chassis. Each response is read in full before the workload sees it
-  (`poc02_harness.patch_outbound`), which is fine for these model calls; no timing here.
+  (`poc_harness.outbound.patch_outbound`), which is fine for these model calls; no timing here.
 - **Model calls from cassettes.** Each engine's chassis gets the real `LiteLLMModel` over a
   `CassetteTransport` (`cassettes`); replay never reaches a model.
 """
@@ -25,7 +25,6 @@ socket, the TypeScript echo, the outbound patch) and adds what PoC-3 needs on to
 from __future__ import annotations
 
 import shutil
-import sys
 import tempfile
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
@@ -44,23 +43,11 @@ from chassis.ports.model import ModelPort
 from chassis.server import ChassisConfig, create_app
 from chassis.server.proxy_app import create_proxy_app
 from chassis_contracts.interface import Chassis, UnixApp, serve_on_unix_sockets
-
-_POC02_TESTS = Path(__file__).resolve().parents[2] / "poc-02-two-engines-one-contract" / "tests"
-if str(_POC02_TESTS) not in sys.path:
-    sys.path.insert(0, str(_POC02_TESTS))
-
-from poc02_harness import (  # noqa: E402  (the PoC-2 tests folder is put on the path above)
-    CHASSIS_PROXY_URL,
-    EXAMPLE_SCRIPT,
-    ROOT,
-    ROUTE,
-    SIMPLIFIED,
-    SIMPLIFY,
-    a2a_on_unix_socket,
-    patch_outbound,
-    tool_list_failures,
-    typescript_echo,
-)
+from poc_harness.outbound import patch_outbound, tool_list_failures
+from poc_harness.paths import EXAMPLE_SCRIPT, ROOT
+from poc_harness.scenario import CHASSIS_PROXY_URL, ROUTE, SIMPLIFIED, SIMPLIFY
+from poc_harness.servers import a2a_on_unix_socket
+from poc_harness.typescript import typescript_echo
 
 __all__ = [
     "AGENT",

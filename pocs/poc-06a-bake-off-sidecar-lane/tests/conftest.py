@@ -1,7 +1,7 @@
-"""Puts the PoC-2 to PoC-5 test folders on `sys.path`, so a PoC-6 test can build on `poc02_harness`,
-`poc03_harness`, `poc04_harness`, and `poc05_harness`. Excluded from mypy (pyproject.toml), like
-the PoC-4 and PoC-5 conftests: a second top-level `conftest` module would clash with the chassis
-one.
+"""Puts the PoC-2 to PoC-5 test folders on `sys.path`, so a PoC-6 test can build on
+`poc03_harness`, `poc04_harness`, and `poc05_harness` (the PoC-2 helpers are in `poc_harness`).
+Excluded from mypy (pyproject.toml), like the PoC-4 and PoC-5 conftests: a second top-level
+`conftest` module would clash with the chassis one.
 """
 
 from __future__ import annotations

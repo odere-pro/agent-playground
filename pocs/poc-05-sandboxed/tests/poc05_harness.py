@@ -47,7 +47,10 @@ from chassis.ports.model import ToolCallRequest
 from chassis.ports.tool import ToolDefinition, ToolResult
 from chassis.server import ChassisConfig, create_app
 from chassis.server.remote_auth import create_remote_proxy_app, remote_tokens
-from poc02_harness import ROUTE, point_tools_at, running, uds_transport
+from poc_harness.apps import running
+from poc_harness.outbound import point_tools_at
+from poc_harness.scenario import ROUTE
+from poc_harness.sockets import uds_transport
 
 __all__ = [
     "HOLD",

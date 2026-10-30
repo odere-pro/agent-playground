@@ -73,10 +73,10 @@ from chassis_contracts.interface import UnixApp, serve_on_unix_sockets
 from guardrail_server import PatternClassifier
 from guardrail_server import create_app as create_guard
 from guardrail_server.litellm_stub import StubSettings, create_stub
-from poc02_harness import a2a_on_unix_socket
 from poc05_harness import WORKLOAD_TOKEN_ENV, Tokens
 from poc06_harness import ENGINES
 from poc08_claude_cli import ClaudeCliStandIn
+from poc_harness.servers import a2a_on_unix_socket
 
 ROOT = Path(__file__).resolve().parents[3]
 TRUSTED_ENGINES = ("echo-python", "echo-pydanticai", "echo-langgraph", "echo-openai-agents")

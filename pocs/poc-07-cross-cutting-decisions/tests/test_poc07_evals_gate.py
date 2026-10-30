@@ -31,7 +31,6 @@ from chassis.server.evaluator_gate import (
     SCORE_SPAN,
     GatedEngine,
 )
-from poc02_harness import a2a_on_unix_socket, fake_model_over_litellm
 from poc06_harness import ENGINES, ROUTE
 from poc06a_harness import Backends, wire_python_engine
 from poc07_evals_harness import (
@@ -42,6 +41,8 @@ from poc07_evals_harness import (
     JUDGE_ROUTE,
     serve_gate_backends,
 )
+from poc_harness.apps import fake_model_over_litellm
+from poc_harness.servers import a2a_on_unix_socket
 
 TWO_ENGINES = ["echo-python", "echo-langgraph"]
 

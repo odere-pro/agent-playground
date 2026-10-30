@@ -1,0 +1,22 @@
+[project]
+name = "poc-harness"
+version = "0.1.0"
+description = "Test support that more than one PoC folder, or a PoC demo, uses: apps, outbound routing, sockets."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "chassis",
+  "chassis-contracts",
+  "fake-model-server",
+  "workload-a2a",
+  "httpx>=0.28",
+  "httpx2>=2.13.1,<3",
+  "pytest>=8.4",
+  "uvicorn>=0.30",
+]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "poc_harness"

@@ -7,9 +7,7 @@ workload's model call goes back into the chassis app, through the proxy, to the 
 
 from __future__ import annotations
 
-import importlib
-import json
-from collections.abc import Iterator
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -24,8 +22,8 @@ from chassis.core.events import parse_event
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel, ScriptRule
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
-from chassis.server.proxy_app import create_proxy_app
 from google.protobuf import json_format
+from poc_harness.sse import sse_frames
 
 ROOT = Path(__file__).resolve().parents[3]
 FAKE_CONFIG = ROOT / "packages/chassis/configs/fake.yaml"
@@ -65,26 +63,11 @@ def _ports() -> PortBundle:
 
 
 @pytest.fixture
-def app() -> Iterator[Any]:
+def app(route_workload_to: Callable[[Any], Any]) -> Any:
     """The chassis app with `engine: inprocess`, and the workload's model call routed into its
     proxy app over an ASGI transport, so it goes through the chassis proxy to `ScriptedModel`.
     """
-    app = create_app(ChassisConfig.model_validate(CONFIG), _ports())
-    workload: Any = importlib.import_module("echo_python.handle")
-    workload.transport = httpx.ASGITransport(app=create_proxy_app(app))
-    try:
-        yield app
-    finally:
-        workload.transport = None
-
-
-def _frames(text: str) -> list[tuple[str, dict[str, Any]]]:
-    out: list[tuple[str, dict[str, Any]]] = []
-    for block in text.split("\n\n"):
-        if block.strip():
-            event, data = block.splitlines()[:2]
-            out.append((event.removeprefix("event: "), json.loads(data.removeprefix("data: "))))
-    return out
+    return route_workload_to(create_app(ChassisConfig.model_validate(CONFIG), _ports()))
 
 
 async def test_plugin_answers_over_a2a_in_memory(app: Any) -> None:
@@ -105,7 +88,7 @@ async def test_plugin_answers_over_a2a_in_memory(app: Any) -> None:
     assert complete.metrics["input_tokens"] == 10 and complete.metrics["output_tokens"] == 5
     assert complete.metrics["model_route"] == "big-default"
     assert complete.versions.prompt == "simplifier-v1"
-    frames = _frames(streamed.text)
+    frames = sse_frames(streamed.text)
     assert [f[0] for f in frames][:2] == ["start", "delta"]
     assert [f[0] for f in frames][-3:] == ["metrics", "end", "response"]
     assert "".join(f[1]["text"] for f in frames if f[0] == "delta") == SIMPLIFIED

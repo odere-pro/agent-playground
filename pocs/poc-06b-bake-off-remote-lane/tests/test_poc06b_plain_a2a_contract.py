@@ -3,10 +3,10 @@ contract suite against an agent shaped like a third party.
 
 `chassis_contracts.EngineConnectorContract`, the suite every lane binds, bound to
 `RemoteConnector` with `spec.engine.protocol: a2a` (built through `EngineSpec`, the way
-`chassis serve` builds it). The agent is `plain_a2a_stub`: an a2a-sdk server that streams the shape
-the kagent-adk probe recorded and sends no `chassis.event`. It sits behind the template server's
-own bearer check, with the token from the PoC-5 harness (`Tokens`, `TOKEN_ENV`), so a missing
-bearer would fail every case. Unix sockets only; no key.
+`chassis serve` builds it). The agent is `poc_harness.plain_a2a`: an a2a-sdk server that streams
+the shape the kagent-adk probe recorded and sends no `chassis.event`. It sits behind the template
+server's own bearer check, with the token from the PoC-5 harness (`Tokens`, `TOKEN_ENV`), so a
+missing bearer would fail every case. Unix sockets only; no key.
 
 Two cases skip, by design: the JSON-values and `traceparent`-in-`ctx` cases need a workload
 that echoes `ctx` back as a chassis `end`. A third-party agent receives no `ctx` and no
@@ -29,8 +29,8 @@ from chassis.ports.bundle import PortBundle
 from chassis.server.config import EngineSpec
 from chassis_contracts import EngineConnectorContract
 from chassis_contracts.helpers import make_context
-from plain_a2a_stub import ANSWER, USAGE_KEY, PlainStub, kagent_script, stub_app
 from poc05_harness import REMOTE_URL, TOKEN_ENV, Tokens, app_on_socket
+from poc_harness.plain_a2a import ANSWER, USAGE_KEY, PlainStub, kagent_script, stub_app
 from workload_a2a.auth import BearerTokenMiddleware
 
 

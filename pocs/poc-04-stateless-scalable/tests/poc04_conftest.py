@@ -2,7 +2,7 @@
 skips that file, since a second top-level `conftest` module would clash with the chassis one.
 
 Puts the PoC-2 and PoC-3 test folders on `sys.path`, so `poc04_harness` builds on
-`poc02_harness` and `poc03_harness`.
+`poc03_harness` (the PoC-2 helpers are in `poc_harness`).
 
 Drills need a running stack and are `network` tests: a Compose drill (marker `stack`, or any test
 in `test_compose_scale.py`) is skipped unless `POC04_STACK=1`; a kind drill (marker `kind`, or any

@@ -37,16 +37,10 @@ from chassis.ports.bundle import PortBundle
 from chassis.server import create_app
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from poc02_harness import (
-    AFTER_TOOL,
-    TIMEOUT_S,
-    TOOL_PROMPT,
-    ToolLoopModel,
-    chassis_config,
-    client_for,
-    route_outbound,
-    running,
-)
+from poc_harness.apps import chassis_config, client_for, running
+from poc_harness.outbound import route_outbound
+from poc_harness.scenario import AFTER_TOOL, TIMEOUT_S, TOOL_PROMPT
+from poc_harness.scripted_model import ToolLoopModel
 from workload_a2a import telemetry as workload_telemetry
 
 ROOT = Path(__file__).resolve().parents[3]

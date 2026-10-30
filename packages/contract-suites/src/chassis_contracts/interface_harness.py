@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import threading
-import time
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, ExitStack, contextmanager
 from dataclasses import dataclass, field
@@ -26,6 +24,7 @@ from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
 from chassis_contracts.inbound import Logical, sse
+from chassis_contracts.serving import serve_in_thread
 
 INTERFACES = ("native", "openai", "anthropic", "mcp")
 
@@ -123,56 +122,22 @@ def serve_on_unix_sockets(apps: Sequence[UnixApp], start_timeout_s: float = 20.0
     """Serve each app with uvicorn on its Unix socket, all on one event loop in one thread, so
     apps that share state (the public app and its proxy app) share a loop too. Returns once every
     server listens; raises when one ends before that (a failed lifespan, say). Stops them all on
-    exit.
+    exit. The thread runner is `chassis_contracts.serving.serve_in_thread`.
     """
     import uvicorn
 
-    servers = [
-        uvicorn.Server(
-            uvicorn.Config(
-                a.app,
-                uds=a.uds,
-                log_level="warning",
-                lifespan="on" if a.lifespan else "off",
-                timeout_graceful_shutdown=2,
-            )
+    configs = [
+        uvicorn.Config(
+            a.app,
+            uds=a.uds,
+            log_level="warning",
+            lifespan="on" if a.lifespan else "off",
+            timeout_graceful_shutdown=2,
         )
         for a in apps
     ]
-    ended: list[str] = []
-    failure: list[BaseException] = []
-
-    async def one(server: uvicorn.Server, uds: str) -> None:
-        try:
-            await server.serve()
-        finally:
-            ended.append(uds)
-
-    async def main() -> None:
-        await asyncio.gather(*(one(s, a.uds) for s, a in zip(servers, apps, strict=True)))
-
-    def run() -> None:
-        try:
-            asyncio.run(main())
-        except BaseException as exc:
-            failure.append(exc)
-
-    thread = threading.Thread(target=run, daemon=True, name="uvicorn-uds")
-    thread.start()
-    try:
-        deadline = time.monotonic() + start_timeout_s
-        while not all(s.started for s in servers):
-            if ended or failure or not thread.is_alive() or time.monotonic() > deadline:
-                raise RuntimeError(
-                    f"uvicorn did not start on {[a.uds for a in apps]}"
-                    f" (ended: {ended}, error: {failure!r})"
-                )
-            time.sleep(0.02)
+    with serve_in_thread(configs, start_timeout_s, name="uvicorn-uds"):
         yield
-    finally:
-        for server in servers:
-            server.should_exit = True
-        thread.join(timeout=15)
 
 
 # --- The four clients ---

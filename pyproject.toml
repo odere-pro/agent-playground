@@ -54,6 +54,7 @@ members = [
   "packages/guardrail-server",
   "packages/agentctl",
   "packages/agent-testkit",
+  "packages/poc-harness",
 ]
 
 [tool.uv.sources]
@@ -74,6 +75,7 @@ fake-langfuse = { workspace = true }
 guardrail-server = { workspace = true }
 agentctl = { workspace = true }
 agent-testkit = { workspace = true }
+poc-harness = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["packages", "pocs", "scripts/tests"]
@@ -82,8 +84,8 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
   "slow: takes more than a few seconds (import-lint, subprocesses)",
   "network: needs a real socket; never part of `make test`",
-  "stack: a PoC-4 Compose drill; runs only with POC04_STACK=1 (also `network`)",
-  "kind: a kind drill; PoC-4 runs it only with POC04_KIND=1, PoC-5 only with POC05_KIND=1 (also `network`)",
+  "stack: a drill against a running Compose stack; a conftest gates it on an env flag (also `network`)",
+  "kind: a drill against a running kind cluster; a conftest gates it on an env flag (also `network`)",
 ]
 
 [tool.ruff]
@@ -104,13 +106,7 @@ files = ["packages", "pocs", "scripts"]
 # `notes/` holds one-off measurement and drill scripts kept as evidence, not maintained code.
 exclude = [
   "docs/planning",
-  "pocs/poc-04-stateless-scalable/tests/conftest\\.py$",
-  "pocs/poc-05-sandboxed/tests/conftest\\.py$",
-  "pocs/poc-06a-bake-off-sidecar-lane/tests/conftest\\.py$",
-  "pocs/poc-06b-bake-off-remote-lane/tests/conftest\\.py$",
-  "pocs/poc-06c-pretrained-slm/tests/conftest\\.py$",
-  "pocs/poc-07-cross-cutting-decisions/tests/conftest\\.py$",
-  "pocs/poc-08-cross-cutting-build/tests/conftest\\.py$",
+  "pocs/[^/]+/tests/conftest\\.py$",
   "packages/agentctl/tests/conftest\\.py$",
   "pocs/[^/]+/notes/",
 ]
@@ -137,6 +133,7 @@ root_packages = [
   "guardrail_server",
   "agentctl",
   "agent_testkit",
+  "poc_harness",
 ]
 include_external_packages = true
 
@@ -247,6 +244,26 @@ type = "forbidden"
 source_modules = ["chassis.core", "chassis.ports", "chassis.fakes", "chassis.server", "chassis.profiles"]
 forbidden_modules = ["opentelemetry"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "poc_harness is test support: product code never imports it"
+type = "forbidden"
+source_modules = [
+  "chassis",
+  "echo_python",
+  "workload_a2a",
+  "echo_pydanticai",
+  "echo_langgraph",
+  "echo_openai_agents",
+  "echo_claude_agent",
+  "echo_smolagents",
+  "bakeoff",
+  "fake_mcp_server",
+  "code_runner",
+  "fake_langfuse",
+  "guardrail_server",
+]
+forbidden_modules = ["poc_harness"]
 
 [[tool.importlinter.contracts]]
 name = "testcontainers is a test tool: never imported by the chassis"

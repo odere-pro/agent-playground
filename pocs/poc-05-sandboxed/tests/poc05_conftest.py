@@ -2,7 +2,7 @@
 skips that file, since a second top-level `conftest` module would clash with the chassis one.
 
 Puts the PoC-2, PoC-3, and PoC-4 test folders on `sys.path`, so a PoC-5 harness can build on
-`poc02_harness`, `poc03_harness`, and `poc04_harness`.
+`poc03_harness` and `poc04_harness` (the PoC-2 helpers are in `poc_harness`).
 
 Kind tests need the `kind-poc05` cluster and are `network` tests: every test in a file named
 `test_poc05_kind_*.py`, or any test here marked `kind`, is marked `network` and skipped unless

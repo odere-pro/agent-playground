@@ -21,17 +21,10 @@ from urllib.parse import urlparse
 
 import pytest
 import yaml
-from poc02_harness import (
-    MODEL_URL,
-    ROOT,
-    SIMPLIFY,
-    TIMEOUT_S,
-    chassis_app,
-    engine_params,
-    route_outbound,
-    run_handle,
-    running,
-)
+from poc_harness.apps import chassis_app, run_handle, running
+from poc_harness.outbound import route_outbound
+from poc_harness.paths import ROOT
+from poc_harness.scenario import MODEL_URL, SIMPLIFY, TIMEOUT_S, engine_params
 
 FRAMEWORK_RULE = "no agent framework anywhere in the chassis"
 FRAMEWORK_DISTRIBUTIONS = ("pydantic-ai", "pydantic_ai", "langgraph", "langchain", "crewai")
