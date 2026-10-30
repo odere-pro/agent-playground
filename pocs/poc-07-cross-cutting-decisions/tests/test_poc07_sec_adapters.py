@@ -23,6 +23,7 @@ BINDINGS = {
 
 @pytest.mark.parametrize("filename", sorted(BINDINGS))
 def test_the_real_adapter_binds_the_fakes_suite(filename: str) -> None:
+    """Criterion 2: "Each new real adapter passes the same contract suite as its fake": security."""
     binder, suite = BINDINGS[filename]
     tree = ast.parse((TESTS / filename).read_text())
     classes = {node.name: node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)}
@@ -32,5 +33,6 @@ def test_the_real_adapter_binds_the_fakes_suite(filename: str) -> None:
 
 
 def test_the_registry_names_both_adapters_by_config() -> None:
+    """Criterion 2: "Each new real adapter" is built by name from `spec.adapters`."""
     assert callable(REGISTRY["auth"]["oidc"])
     assert callable(REGISTRY["guardrails"]["litellm"])

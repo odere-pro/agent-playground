@@ -88,10 +88,11 @@ case "${1:-}" in
     rm -f "$env_file"
     ;;
   digests)
-    # Prints image@digest for each image, to pin them in docker-compose.yaml.
+    # Prints image@digest for each image, to pin them in docker-compose.yaml. The pinned digest
+    # is dropped first, so the tag is resolved again and a newer digest shows.
     make_env
     "${compose[@]}" config --images | sort -u | while read -r image; do
-      docker buildx imagetools inspect "$image" --format '{{.Name}}@{{.Manifest.Digest}}'
+      docker buildx imagetools inspect "${image%@*}" --format '{{.Name}}@{{.Manifest.Digest}}'
     done
     ;;
   env)

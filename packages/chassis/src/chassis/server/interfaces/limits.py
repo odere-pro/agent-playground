@@ -14,11 +14,13 @@ The interfaces have no auth yet (PoC-8), so the caller sets the run budget. Two 
   for an adapter that lets one through.
 - `BodyLimit`, a pure ASGI middleware on the public app (`install_body_limit`): a body over
   `body_bytes_max` is 413 before it is parsed or validated. A `Content-Length` over the cap is
-  refused without reading; a body with no length is read up to the cap and refused at the first
-  byte over it, else replayed to the app. The 413 body is the route's format: OpenAI's and
-  Anthropic's error shapes on their routes (`limit_exceeded`, `invalid_request_error`), `{"detail":
-  str}` elsewhere (`/v1/run`, `/v1/mcp`). The MCP tool's in-process call to `/v1/run` passes
-  through it too. The cap is read per request from the app's live config.
+  refused without reading. Every other body, with a length at or under the cap or with none, is
+  read and counted up to the cap and refused at the first byte over it, else replayed to the app:
+  a length is never trusted to pass a body (it can sit beside `Transfer-Encoding: chunked`). The
+  413 body is the route's format: OpenAI's and Anthropic's error shapes on their routes
+  (`limit_exceeded`, `invalid_request_error`), `{"detail": str}` elsewhere (`/v1/run`,
+  `/v1/mcp`). The MCP tool's in-process call to `/v1/run` passes through it too. The cap is read
+  per request from the app's live config.
 """
 
 from __future__ import annotations
@@ -34,7 +36,7 @@ from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from chassis.core.envelope import Request
-from chassis.core.inbound import InboundAdapter, Refused, ReplyMeta
+from chassis.core.inbound import InboundAdapter, Refused, ReplyMeta, over_cap
 from chassis.server.config import ChassisConfig, LimitsSpec
 from chassis.server.interfaces.ids import resolve_ids
 
@@ -45,6 +47,7 @@ __all__ = [
     "enforce_limits",
     "install_body_limit",
     "limit_problem",
+    "live_messages_max",
     "messages_over",
 ]
 
@@ -53,10 +56,16 @@ LIMIT_EXCEEDED = "limit_exceeded"
 
 
 def messages_over(count: int, limits: LimitsSpec, what: str = "messages") -> str | None:
-    """Why `count` turns are too many, or None."""
-    if count > limits.messages_max:
-        return f"{what}: {count} is more than the limit of {limits.messages_max}"
-    return None
+    """Why `count` turns are too many, or None. The text is `over_cap`'s, the one the chat
+    adapters send for their raw `messages`."""
+    return over_cap(count, limits.messages_max, what)
+
+
+def live_messages_max(config: ChassisConfig | None) -> int | None:
+    """`spec.limits.messages_max` of `config`, or None with no config. The chat routes set it on
+    their adapter at mount and again per request from the live config, so a reload applies to
+    the next request."""
+    return None if config is None else config.spec.limits.messages_max
 
 
 def limit_problem(request: Request, limits: LimitsSpec) -> str | None:
@@ -94,6 +103,13 @@ def body_too_large_message(limit: int) -> str:
     return f"the request body is larger than the limit of {limit} bytes"
 
 
+def _declared_over(length: str | None, limit: int) -> bool:
+    """`Content-Length` is a number over `limit`. Anything else is decided by counting."""
+    return (
+        length is not None and length.isascii() and length.strip().isdigit() and int(length) > limit
+    )
+
+
 class BodyLimit:
     """Pure ASGI: 413 for a body over the limit, before the app reads it (module docstring).
     `public` is the FastAPI app, read for the route's format at the time of a refusal and for the
@@ -117,13 +133,11 @@ class BodyLimit:
             await self.app(scope, receive, send)
             return
         limit = self.limit
-        length = Headers(scope=scope).get("content-length")
-        if length is not None:
-            if length.isascii() and length.strip().isdigit() and int(length) > limit:
-                await self._refuse(scope, receive, send, limit)
-                return
-            await self.app(scope, receive, send)
+        if _declared_over(Headers(scope=scope).get("content-length"), limit):
+            await self._refuse(scope, receive, send, limit)
             return
+        # Counted whatever `Content-Length` says: a small length can sit beside
+        # `Transfer-Encoding: chunked`, so the header is only an early refusal, never a pass.
         buffered: list[Message] = []
         total = 0
         while True:

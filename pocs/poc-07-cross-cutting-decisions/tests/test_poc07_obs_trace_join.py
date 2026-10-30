@@ -152,7 +152,7 @@ async def run_once(
 async def test_one_trace_joins_chassis_workload_framework_model_and_tool(
     engine: str, monkeypatch: pytest.MonkeyPatch, exporter: InMemorySpanExporter
 ) -> None:
-    """Exit criterion 4, and 5 (observability) through the parametrization over two engines.
+    """Criterion 4: "One trace joins the chassis and workload containers", on two engines (5).
 
     One trace id, the caller's, on every span of the run, with parent links: the caller's span ->
     `chassis.run` -> `chassis.engine.run` (the A2A connector) -> `workload.handle` (the workload,
@@ -232,10 +232,11 @@ def _code_tokens(path: Path) -> list[str]:
 
 
 def test_the_chassis_has_no_engine_specific_branch() -> None:
-    """Exit criterion 5 (observability): the chassis code names no engine, framework, or
-    instrumentor. Each engine's instrumentor is in the workload's own `telemetry.py`; the template
-    server and its tracing (`workload_a2a.server`, `workload_a2a.telemetry`) are engine-agnostic
-    too."""
+    """Criterion 5: "no engine-specific code outside the workload's event mapping" (observability).
+
+    The chassis code names no engine, framework, or instrumentor. Each engine's instrumentor is in
+    the workload's own `telemetry.py`; the template server and its tracing (`workload_a2a.server`,
+    `workload_a2a.telemetry`) are engine-agnostic too."""
     offenders = [
         f"{path.relative_to(ROOT)}: {token}"
         for path in sorted(CHASSIS_SRC.rglob("*.py"))

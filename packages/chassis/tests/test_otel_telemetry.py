@@ -229,6 +229,24 @@ def test_an_exception_marks_the_span_and_propagates(
     assert exported.end_time is not None
 
 
+def test_span_exception_text_is_redacted_when_the_body_raises(
+    otel: OtelTelemetry, exporter: InMemorySpanExporter
+) -> None:
+    """An exception's message reaches the exported span only after redaction (review R7-02)."""
+    with pytest.raises(ValueError), otel.span("chassis.run"):
+        raise ValueError("mail jane@example.com")
+
+    exported = _finished(exporter, "chassis.run")
+    event_values = [str(v) for e in exported.events for v in (e.attributes or {}).values()]
+    span_values = [str(v) for v in (exported.attributes or {}).values()]
+
+    assert not [v for v in event_values + span_values if "jane@example.com" in v]
+    assert [e.name for e in exported.events] == ["exception"]
+    assert dict(exported.events[0].attributes or {})["exception.type"] == "ValueError"
+    assert exported.status.status_code is StatusCode.ERROR
+    assert exported.status.description == "ValueError"
+
+
 def test_counter_labels_reach_the_metric(otel: OtelTelemetry, reader: InMemoryMetricReader) -> None:
     otel.counter("chassis.requests", agent="echo", interface="native")
     data = reader.get_metrics_data()

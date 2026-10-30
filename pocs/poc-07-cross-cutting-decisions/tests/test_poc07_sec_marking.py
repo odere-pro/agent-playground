@@ -77,6 +77,7 @@ def _config(url: str, uds: str) -> ChassisConfig:
 async def test_marking_and_redaction_hold_on_every_engine(
     engine_name: str, backends: Backends, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Criterion 5: "Each concern works on at least two engines": marking and redaction."""
     engine = ENGINES[engine_name]
     backends.reset()
     wire_python_engine(monkeypatch, engine, backends)

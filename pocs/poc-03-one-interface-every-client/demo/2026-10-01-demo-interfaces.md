@@ -2,7 +2,7 @@
 
 Recorded 2026-10-01T11:02:37Z by deploy/compose/demo-interfaces.sh.
 
-Command, from the repo root, Docker 29.7.2, empty `.env`: `deploy/compose/demo-interfaces.sh`. Exit code 0, last line `result: every call ok`. Everything below "Summary" is the script's output as written, unedited.
+Command, from the repo root, Docker 29.7.2, empty `.env`: `deploy/compose/demo-interfaces.sh`. Exit code 0, last line `result: every call ok`. The "Summary" section was written by hand after the run. Everything from the first "Workload python" heading to the end is the script's output as written, unedited. The containers are named `poc02-*` because the demo reuses PoC-2's sidecar stack, and `deploy/compose/docker-compose.sidecar.yaml` sets the Compose project name `poc02`.
 
 ## Summary (added by hand after the run)
 
@@ -21,7 +21,7 @@ What was not shown, or only in part:
 - **"Every call streams" does not hold for MCP.** The MCP tool returns one result (`result (one message: the MCP tool does not stream)`): the generated tool calls `/v1/run` with `stream` false. MCP progress notifications are not used.
 - **Lanes.** Only the `sidecar` lane ran. The `inprocess` lane was not demoed in Compose.
 - **MCP client.** The plan names Claude Code or Claude Desktop. The demo used `fastmcp.Client` over streamable HTTP; no desktop client was connected.
-- **Real models and LiteLLM with auth on.** These were not run: there is no provider key, and none was invented. The gateway entry is only in `litellm/config.yaml` (fake). `config.local.yaml` has none. With auth on, the server needs a grant per key or team instead of `allow_all_keys`.
+- **Real models and LiteLLM with auth on.** These were not run: there is no provider key, and none was invented. The gateway entry is only in `litellm/config.yaml` (fake). `config.local.yaml` has none. The gateway's key setting is in the [debt note, "Demo only"](../notes/2026-10-01-debt.md#demo-only).
 - **No key in any log.** The check had nothing to look for: `LITELLM_API_KEY` was empty.
 - **An earlier run was discarded.** A first run at about 10:55Z was cut off after the python engine, because a second copy of the demo (a pytest run of the `network` test) started at the same time and took the stack down. All of the python calls in that run had passed. The record below is the clean second run.
 

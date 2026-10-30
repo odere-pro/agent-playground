@@ -42,6 +42,8 @@ def backends() -> Iterator[Backends]:
 
 
 class TestPoc07EvalsJudgeEvaluator(EvaluatorPortContract):
+    """Criterion 2 (judge): "Each new real adapter passes the same contract suite as its fake"."""
+
     @pytest.fixture
     def outage(self, backends: Backends) -> Outage:
         return Outage(httpx.AsyncHTTPTransport(uds=backends.model_uds))
@@ -59,6 +61,8 @@ class TestPoc07EvalsJudgeEvaluator(EvaluatorPortContract):
 
 
 class TestPoc07EvalsEncoderEvaluator(EvaluatorPortContract):
+    """Criterion 2 (encoder): "Each new real adapter passes the same contract suite as its fake"."""
+
     @pytest.fixture
     def outage(self) -> Outage:
         return Outage(httpx.ASGITransport(app=tei_stub()))
@@ -75,8 +79,10 @@ class TestPoc07EvalsEncoderEvaluator(EvaluatorPortContract):
 async def test_poc07_evals_both_evaluators_are_picked_by_spec_adapters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Criterion 2: `spec.adapters.evaluator: judge | encoder` builds these classes from the
-    environment, through `REGISTRY`; a swap is a config change."""
+    """Criterion 2: "Each new real adapter" is picked by `spec.adapters`, not in code.
+
+    `spec.adapters.evaluator: judge | encoder` builds these classes from the environment, through
+    `REGISTRY`; a swap is a config change."""
     from chassis.profiles import resolve
 
     monkeypatch.setenv("LITELLM_BASE_URL", "http://litellm.invalid/v1")

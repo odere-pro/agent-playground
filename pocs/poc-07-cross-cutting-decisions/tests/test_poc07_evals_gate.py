@@ -114,6 +114,7 @@ def routes(calls: list[dict[str, Any]]) -> list[str]:
 async def test_poc07_evals_gate_retries_once_then_falls_back(
     engine: str, backends: Backends, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Criterion 5: "Each concern works on at least two engines": retry, then fallback."""
     body, telemetry, calls = await gated_run(engine, backends, monkeypatch)
     assert body["status"] == "fallback", body
     assert body["output"]["text"] == GOOD
@@ -136,6 +137,7 @@ async def test_poc07_evals_gate_retries_once_then_falls_back(
 async def test_poc07_evals_async_mode_never_changes_the_answer(
     engine: str, backends: Backends, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Criterion 5: "Each concern works on at least two engines": async keeps the answer."""
     body, telemetry, calls = await gated_run(engine, backends, monkeypatch, evaluator_mode="async")
     assert body["status"] == "ok" and body["output"]["text"] == BAD
     assert routes(calls) == [ROUTE, JUDGE_ROUTE]  # scored once, after the answer
@@ -152,6 +154,7 @@ async def test_poc07_evals_async_mode_never_changes_the_answer(
 async def test_poc07_evals_sample_rate_zero_makes_no_evaluator_call(
     engine: str, backends: Backends, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Criterion 5: "Each concern works on at least two engines": rate 0 makes no judge call."""
     body, telemetry, calls = await gated_run(
         engine, backends, monkeypatch, evaluator_sample_rate=0.0
     )
@@ -164,6 +167,7 @@ async def test_poc07_evals_sample_rate_zero_makes_no_evaluator_call(
 async def test_poc07_evals_gate_off_makes_no_evaluator_call(
     engine: str, backends: Backends, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Criterion 5: "Each concern works on at least two engines": gate off makes no judge call."""
     body, telemetry, calls = await gated_run(engine, backends, monkeypatch, evaluator_gate=False)
     assert body["status"] == "ok" and body["output"]["text"] == BAD
     assert routes(calls) == [ROUTE]
