@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 POC04_STACK = pytest.mark.requires_env("POC04_STACK")
@@ -16,3 +18,13 @@ POC06_KIND = pytest.mark.requires_env(
     "POC06_KIND", context="kind-poc05", hint="make kind-poc06 ARGS=up"
 )
 """The PoC-6 kind cluster is up. It is the PoC-5 cluster with PoC-6 installed on it."""
+
+
+def required_env(*names: str) -> list[str]:
+    """The value of each variable. A missing one fails the test: a drill was asked for, and an
+    all-skip run would exit 0 having checked nothing.
+    """
+    missing = [name for name in names if not os.environ.get(name)]
+    if missing:
+        pytest.fail(f"a drill needs {', '.join(missing)}", pytrace=False)
+    return [os.environ[name] for name in names]

@@ -1,5 +1,5 @@
 """PoC-5 exit criteria 1 and 6, the offline part: the remote lane's own credential, driven in
-process through the whole lane (`poc05_harness.remote_lane`), no cluster and no TCP.
+process through the whole lane (`poc_harness.remote_lane`), no cluster and no TCP.
 
 - Criterion 1 (offline part): the checks below run in `make test` on every commit.
 - Criterion 6: the remote pod reaches only the chassis's model and tool proxies, and only with
@@ -24,17 +24,9 @@ import yaml
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from chassis.server.cli import parse_args
 from chassis.server.remote_auth import AUTH_FAILED
-from poc05_harness import (
-    REPLY,
-    ROUTE,
-    TOKEN_ENV,
-    RemoteLane,
-    Tokens,
-    new_token,
-    new_trace_id,
-    remote_lane,
-    traceparent,
-)
+from poc_harness.lane_tokens import TOKEN_ENV, Tokens, new_token, new_trace_id, traceparent
+from poc_harness.remote_lane import REPLY, RemoteLane, remote_lane
+from poc_harness.scenario import ROUTE
 
 CHAT = "/v1/chat/completions"
 
@@ -58,7 +50,11 @@ def _code(body: Any) -> str:
 async def test_h17_remote_listener_needs_its_own_token_and_a_run_in_flight(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Exit criteria 6 and 1 (offline), H17: the chassis's remote listener answers 401 to a call
+    """Criteria 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential." 1: "The hostile suites run in CI; the parts that need no cluster run
+    offline on every commit."
+
+    Exit criteria 6 and 1 (offline), H17: the chassis's remote listener answers 401 to a call
     with no token and with another token, and the same call with the remote's own token inside a
     run answers 200 (the allowed control). With the right token and no run in flight (a trace id
     no run has, or a run that has ended) it answers 403 `run_required`.
@@ -86,7 +82,11 @@ async def test_h17_remote_listener_needs_its_own_token_and_a_run_in_flight(
 async def test_h17_workload_server_refuses_a_caller_without_the_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Exit criteria 6 and 1 (offline), H17: the workload's A2A server (`workload-a2a serve
+    """Criteria 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential." 1: "The hostile suites run in CI; the parts that need no cluster run
+    offline on every commit."
+
+    Exit criteria 6 and 1 (offline), H17: the workload's A2A server (`workload-a2a serve
     --require-token-env`) answers 401 on the agent card and on the JSON-RPC endpoint to a caller
     with no token or another token. The control: the same card fetch with the token answers 200,
     the chassis's `RemoteConnector` probes it, and a run through it ends `ok`.
@@ -111,7 +111,11 @@ async def test_h17_workload_server_refuses_a_caller_without_the_token(
 async def test_a_request_through_the_remote_lane_is_charged_to_its_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Exit criteria 6 and 1 (offline), H17 control: a normal request goes chassis -> A2A with
+    """Criteria 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential." 1: "The hostile suites run in CI; the parts that need no cluster run
+    offline on every commit."
+
+    Exit criteria 6 and 1 (offline), H17 control: a normal request goes chassis -> A2A with
     the token -> `echo_python` -> the remote listener with the token -> the model port, and its
     events come back. The model call is charged to the run: its `chassis.model.call` span is
     correlated to the run's request id and trace id, and no call is uncorrelated or refused.
@@ -143,7 +147,11 @@ def _leaks(tokens: set[str], texts: list[str]) -> list[str]:
 async def test_the_token_is_in_no_log_span_or_event(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Exit criteria 6 and 1 (offline), H17: during a run through the remote lane (complete and
+    """Criteria 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential." 1: "The hostile suites run in CI; the parts that need no cluster run
+    offline on every commit."
+
+    Exit criteria 6 and 1 (offline), H17: during a run through the remote lane (complete and
     streamed), and refused calls on both sides, no token value appears in any log record at
     DEBUG, any span name or attribute, any counter label, the telemetry fake's logs, the events,
     the envelope, or the connector's `repr`. The control: the capture did see the run (the
@@ -190,7 +198,11 @@ ROTATIONS = {
 async def test_h17_a_rotation_accepts_the_previous_token_on_both_sides(
     order: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Exit criteria 6 and 1 (offline), H17 during a token rotation (plan section 2.2): with one
+    """Criteria 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential." 1: "The hostile suites run in CI; the parts that need no cluster run
+    offline on every commit."
+
+    Exit criteria 6 and 1 (offline), H17 during a token rotation (plan section 2.2): with one
     side swapped and the other not, a run through the lane ends `ok`; the remote listener (in a
     run) and the workload's server each accept both the old and the new token (the controls),
     and each refuses a third token with 401.
@@ -251,7 +263,11 @@ def test_h13_cli_refuses_a_wildcard_or_loopback_remote_proxy_host(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Exit criteria 6 and 1 (offline), H13: `chassis serve --remote-proxy-host` refuses a
+    """Criteria 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential." 1: "The hostile suites run in CI; the parts that need no cluster run
+    offline on every commit."
+
+    Exit criteria 6 and 1 (offline), H13: `chassis serve --remote-proxy-host` refuses a
     wildcard (`0.0.0.0`, `::`) and loopback (`127.0.0.1`, `::1`, `localhost`) with status 2; the
     control, the pod IP with the same config and token, is accepted. Argument checking only;
     nothing binds.
@@ -270,7 +286,11 @@ def test_h13_cli_refuses_a_wildcard_or_loopback_remote_proxy_host(
 def test_h13_cli_refuses_a_proxy_host_off_loopback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Exit criteria 6 and 1 (offline), H13: the loopback proxy listener (`--proxy-host`, no
+    """Criteria 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential." 1: "The hostile suites run in CI; the parts that need no cluster run
+    offline on every commit."
+
+    Exit criteria 6 and 1 (offline), H13: the loopback proxy listener (`--proxy-host`, no
     auth) refuses `0.0.0.0` and the pod IP with status 2; the control, `127.0.0.1`, is accepted.
     The remote lane's listener also needs its token variable: unset, the pod IP is refused.
     """

@@ -40,44 +40,65 @@ def refused(data: dict[str, Any]) -> str:
 
 @pytest.mark.parametrize("engine", [SIDECAR, INPROCESS], ids=["sidecar", "inprocess"])
 def test_untrusted_outside_the_remote_lane_is_refused(engine: dict[str, Any]) -> None:
-    """Criterion 7: `spec.trust: untrusted` in the sidecar or inprocess lane is refused at load."""
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Criterion 7: `spec.trust: untrusted` in the sidecar or inprocess lane is refused at load."""
     message = refused(config(trust="untrusted", engine=engine))
     assert "spec.trust: untrusted needs spec.engine.connector: remote" in message
 
 
 def test_untrusted_in_the_remote_lane_loads() -> None:
-    """Criterion 7: the allowed control, `untrusted` in the remote lane loads."""
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Criterion 7: the allowed control, `untrusted` in the remote lane loads."""
     loaded = load_config(config(trust="untrusted", engine=REMOTE))
     assert loaded.spec.trust == "untrusted"
     assert loaded.spec.engine.connector == "remote"
 
 
 def test_trusted_in_the_remote_lane_loads() -> None:
-    """Criterion 7: a trusted workload may run in the remote lane too."""
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Criterion 7: a trusted workload may run in the remote lane too."""
     assert load_config(config(trust="trusted", engine=REMOTE)).spec.trust == "trusted"
 
 
 def test_cloud_without_trust_is_refused_naming_the_field() -> None:
-    """Criterion 7: the cloud profile refuses a config with no `spec.trust`, naming the field."""
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Criterion 7: the cloud profile refuses a config with no `spec.trust`, naming the field."""
     message = refused(config("cloud", adapters=CLOUD_ADAPTERS, engine=SIDECAR))
     assert "spec.trust" in message
     assert "cloud" in message
 
 
 def test_cloud_with_trust_loads() -> None:
-    """Criterion 7: the allowed control, cloud with `spec.trust` set loads."""
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Criterion 7: the allowed control, cloud with `spec.trust` set loads."""
     loaded = load_config(config("cloud", trust="trusted", adapters=CLOUD_ADAPTERS, engine=SIDECAR))
     assert loaded.spec.trust == "trusted"
 
 
 @pytest.mark.parametrize("profile", ["fake", "local"])
 def test_trust_defaults_to_trusted_outside_cloud(profile: str) -> None:
-    """Criterion 7: outside cloud, `spec.trust` defaults to trusted."""
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Criterion 7: outside cloud, `spec.trust` defaults to trusted."""
     assert load_config(config(profile)).spec.trust == "trusted"
 
 
 def test_an_unknown_trust_value_is_refused() -> None:
-    """Criterion 7: a trust value other than trusted or untrusted is refused."""
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Criterion 7: a trust value other than trusted or untrusted is refused."""
     assert "trust" in refused(config(trust="maybe"))
 
 

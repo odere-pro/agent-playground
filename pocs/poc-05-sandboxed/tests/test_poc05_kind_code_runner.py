@@ -28,7 +28,7 @@ standard-library code. Each refusal sits next to its allowed control in the same
 - `/dev/shm` is an 8Mi memory `emptyDir`: a write past it fails with ENOSPC.
 - The claim for a call is gone, with its pod, within 10 s (`suggested:`) of the call's end.
 
-A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc05_conftest.py`). It needs the
+A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc_harness.drills`). It needs the
 gateway URL and the chassis's key in the environment. Run:
 `POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network <this file>`.
 """
@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import shutil
 import subprocess
 import time
@@ -47,7 +46,8 @@ from typing import Any
 
 import pytest
 from chassis.adapters.mcp.gateway import McpGatewayTools
-from poc05_kind import (
+from poc_harness.drills import POC05_KIND, required_env
+from poc_harness.kind import (
     AGENTS_NS,
     CONTEXT,
     PLATFORM_NS,
@@ -63,10 +63,12 @@ from poc05_kind import (
     pods,
     probe,
     service_ip,
-    tcp,
+    tcp_check,
     unpoliced_caller,
     warm_sandboxes,
 )
+
+pytestmark = POC05_KIND
 
 URL_VAR = "POC05_GATEWAY_MCP_URL"
 KEY_VAR = "POC05_CHASSIS_VIRTUAL_KEY"
@@ -219,9 +221,7 @@ print(json.dumps({"host": socket.gethostname()}))
 
 
 async def open_port() -> McpGatewayTools:
-    url, key = os.environ.get(URL_VAR), os.environ.get(KEY_VAR)
-    if not url or not key:
-        pytest.skip(f"set {URL_VAR} and {KEY_VAR} (run.sh with-gateway exports them)")
+    url, key = required_env(URL_VAR, KEY_VAR)  # `run.sh with-gateway` exports them
     port = McpGatewayTools(url, key)
     await port.refresh()
     return port
@@ -304,7 +304,9 @@ def dispatcher_state() -> tuple[str, int]:
 
 
 async def test_code_runs_on_gvisor_with_no_egress(caller: str, tools: McpGatewayTools) -> None:
-    """Criterion 8 (partly shown), H28 and H19 for the tool lane: the `SandboxTemplate` and every
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), H28 and H19 for the tool lane: the `SandboxTemplate` and every
     pool pod have `runtimeClassName: gvisor`; the code ran in a pool pod (its hostname) and sees
     gVisor's kernel. The control drops (a timeout) the code's TCP to a literal outside address,
     to LiteLLM, to the dispatcher, and to the API server (node IP:6443 and the Service VIP). The
@@ -318,11 +320,11 @@ async def test_code_runs_on_gvisor_with_no_egress(caller: str, tools: McpGateway
     assert pool and all(p["spec"]["runtimeClassName"] == "gvisor" for p in pool), pool
 
     targets = {
-        "outside": tcp(OUTSIDE_IP, 443),
-        "litellm": tcp(service_ip(PLATFORM_NS, "litellm"), 4000),
-        "dispatch": tcp(pod(PLATFORM_NS, DISPATCH)["status"]["podIP"], 8000),
-        "api_node": tcp(node_ip(), API_PORT),
-        "api_vip": tcp(service_ip("default", "kubernetes"), 443),
+        "outside": tcp_check(OUTSIDE_IP, 443),
+        "litellm": tcp_check(service_ip(PLATFORM_NS, "litellm"), 4000),
+        "dispatch": tcp_check(pod(PLATFORM_NS, DISPATCH)["status"]["podIP"], 8000),
+        "api_node": tcp_check(node_ip(), API_PORT),
+        "api_vip": tcp_check(service_ip("default", "kubernetes"), 443),
     }
     seen = await run_python(
         tools,
@@ -353,7 +355,9 @@ async def test_code_runs_on_gvisor_with_no_egress(caller: str, tools: McpGateway
 
 
 def test_only_the_dispatcher_reaches_a_sandbox(caller: str) -> None:
-    """Criterion 8 (partly shown), H30 for the tool lane: the live policy on the pool pods admits
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), H30 for the tool lane: the live policy on the pool pods admits
     ingress only from the dispatcher, on 8000. The control drops (a timeout) a TCP connection to
     a warm sandbox's pod IP:8000 from LiteLLM (the caller before the per-call layout) and from an
     unpoliced pod in `default`. The allowed control: the dispatcher connects to the same address
@@ -370,7 +374,7 @@ def test_only_the_dispatcher_reaches_a_sandbox(caller: str) -> None:
     assert not policy.get("egress"), policy
 
     target = warm_pool_ready()[0]
-    sandbox = tcp(target["status"]["podIP"], 8000)
+    sandbox = tcp_check(target["status"]["podIP"], 8000)
     (from_dispatch,) = in_platform(DISPATCH, [sandbox])
     (from_litellm,) = in_platform("litellm", [sandbox])
     (from_caller,) = in_caller(caller, [sandbox])
@@ -385,7 +389,9 @@ def test_only_the_dispatcher_reaches_a_sandbox(caller: str) -> None:
 
 
 async def test_process_limit_refuses_forks_past_the_allowance(tools: McpGatewayTools) -> None:
-    """Criterion 8 (partly shown), H23 for the tool lane: the control refuses a new process with
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), H23 for the tool lane: the control refuses a new process with
     EAGAIN once a call has started about 31 (the uid's tasks at the call's start plus 32,
     `RLIMIT_NPROC`). The allowed control: a call that starts 5 children starts all 5, no
     refusal."""
@@ -408,7 +414,9 @@ def burst_outcome(result: Any) -> str:
 async def test_python_child_burst_is_isolated_from_a_concurrent_caller(
     tools: McpGatewayTools, other_caller: McpGatewayTools
 ) -> None:
-    """Criterion 8 (partly shown), the security review's HIGH (054 H-16), H23 for the tool lane:
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), the security review's HIGH (054 H-16), H23 for the tool lane:
     one call forks about 31 Python children (ordinary code, inside the per-call limits). The
     design lets that call end either way: a result, or `sandbox_lost` if its own sandbox ends
     (how-it-works, the dispatcher's answer); never another error. The allowed control: another
@@ -428,7 +436,9 @@ async def test_python_child_burst_is_isolated_from_a_concurrent_caller(
 async def test_python_child_burst_leaves_the_dispatcher_up(
     tools: McpGatewayTools, other_caller: McpGatewayTools
 ) -> None:
-    """Criterion 8 (partly shown), the security review's HIGH (054 H-16), H23 for the tool lane:
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), the security review's HIGH (054 H-16), H23 for the tool lane:
     a call that forks about 31 Python children took the old shared runner to its memory limit and
     a restart for every caller. Now, after that call ends, the dispatcher is the same pod with the
     same restart count. The allowed control: the next call (5 children), by another caller,
@@ -445,7 +455,9 @@ async def test_python_child_burst_leaves_the_dispatcher_up(
 
 
 async def test_code_cannot_write_the_root_and_can_write_tmp(tools: McpGatewayTools) -> None:
-    """Criterion 8 (partly shown), H21 for the tool lane (review R5a-14): the sandbox's root file
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), H21 for the tool lane (review R5a-14): the sandbox's root file
     system is read-only, so the control refuses a write to `/var/tmp/poc05` with EROFS. The
     allowed control in the same call: the write to `/tmp/poc05` works."""
     seen = await run_python(tools, ROOT_WRITES)
@@ -458,7 +470,9 @@ async def test_code_cannot_write_the_root_and_can_write_tmp(tools: McpGatewayToo
 
 
 async def test_files_do_not_cross_calls(tools: McpGatewayTools) -> None:
-    """Criterion 8 (partly shown), B12 for the code runner (the security review's file-leak
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), B12 for the code runner (the security review's file-leak
     MEDIUM): call A writes `/tmp/<name>` and `/dev/shm/<name>`; call B, run after it, sees
     neither, and ran on another host. The allowed control: call A reads both files back inside
     its own call."""
@@ -472,7 +486,9 @@ async def test_files_do_not_cross_calls(tools: McpGatewayTools) -> None:
 
 
 async def test_dev_shm_is_bounded_by_the_per_call_pod(tools: McpGatewayTools) -> None:
-    """Criterion 8 (partly shown), the security review's `/dev/shm` LOW as accepted on
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), the security review's `/dev/shm` LOW as accepted on
     2026-10-09 (platform-security, owner 055 CH-6): under gVisor the 8Mi cap does not hold
     (`test_dev_shm_is_capped`), so the bound is the per-call pod. A call that writes to
     `/dev/shm` ran in a pool pod whose spec sets memory limit and request to 256Mi. The second
@@ -499,7 +515,9 @@ async def test_dev_shm_is_bounded_by_the_per_call_pod(tools: McpGatewayTools) ->
     ),
 )
 async def test_dev_shm_is_capped(tools: McpGatewayTools) -> None:
-    """Criterion 8 (partly shown), the security review's `/dev/shm` LOW: `/dev/shm` in a sandbox
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), the security review's `/dev/shm` LOW: `/dev/shm` in a sandbox
     is an 8Mi memory `emptyDir`. The control refuses a write past the cap with ENOSPC after
     about 8 MiB. The allowed control in the same call: a 1 MiB write works."""
     seen = await run_python(tools, SHM_FILL.format(limit=SHM_CAP_MIB * 2))
@@ -539,7 +557,9 @@ def gone(kind: str, name: str) -> bool:
 
 
 async def test_claim_is_gone_after_the_call(tools: McpGatewayTools) -> None:
-    """Criterion 8 (partly shown), the per-call sandbox plan: the claim a call makes, and its
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), the per-call sandbox plan: the claim a call makes, and its
     sandbox pod, are gone within 10 s (`suggested:`) of the call's end. The allowed control: a
     watch on claims during the call saw the claim created and bound to the pod the code ran in
     (its hostname)."""

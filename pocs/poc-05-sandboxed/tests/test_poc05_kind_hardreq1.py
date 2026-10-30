@@ -26,7 +26,7 @@ closed connection never counts. The control: a run through that chassis
 publishes its result event, read back from the topic with the chassis's own SCRAM user, inside
 the chassis container (aiokafka; the password read from its env there and never returned).
 
-A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc05_conftest.py`). Run:
+A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc_harness.drills`). Run:
 `POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network <this file>`.
 """
 
@@ -38,7 +38,8 @@ import uuid
 from typing import Any
 
 import pytest
-from poc05_kind import (
+from poc_harness.drills import POC05_KIND
+from poc_harness.kind import (
     AGENTS_NS,
     CHASSIS,
     NOT_A_KEY,
@@ -54,6 +55,8 @@ from poc05_kind import (
     probe,
     service_ip,
 )
+
+pytestmark = POC05_KIND
 
 # The gateway lists a tool as `<server>-<tool>`; the chassis's `/mcp` passes the name on.
 GLOSSARY = "fake_tools-glossary_lookup"
@@ -74,7 +77,10 @@ def in_chassis(pod_name: str, checks: list[dict[str, Any]]) -> list[dict[str, An
 
 
 def test_litellm_refuses_the_workload_without_the_chassis_key(sidecar: str) -> None:
-    """Criterion 3, LiteLLM: the control refuses a model call from the workload with no key and
+    """Criterion 3: "From the workload container, every internal service refuses a call without the
+    chassis's credential. Through the chassis, the same calls succeed."
+
+    Criterion 3, LiteLLM: the control refuses a model call from the workload with no key and
     with a key it did not issue (401); the same call through the chassis's model proxy is 200,
     and from the chassis container with its own key, 200."""
     litellm = f"http://{service_ip(PLATFORM_NS, 'litellm')}:4000/v1"
@@ -97,7 +103,10 @@ def test_litellm_refuses_the_workload_without_the_chassis_key(sidecar: str) -> N
 
 
 def test_mcp_gateway_refuses_the_workload_without_the_chassis_key(sidecar: str) -> None:
-    """Criterion 3, the MCP gateway (H07): the control refuses the MCP handshake from the workload
+    """Criterion 3: "From the workload container, every internal service refuses a call without the
+    chassis's credential. Through the chassis, the same calls succeed."
+
+    Criterion 3, the MCP gateway (H07): the control refuses the MCP handshake from the workload
     with no key and with a key it did not issue (401, no tool); through the chassis's `/mcp` the
     same handshake lists the glossary tool, and the chassis's own key lists it at the gateway."""
     gateway = f"http://{service_ip(PLATFORM_NS, 'litellm')}:4000/mcp/"
@@ -126,7 +135,10 @@ def test_mcp_gateway_refuses_the_workload_without_the_chassis_key(sidecar: str) 
 
 
 def test_valkey_refuses_the_workload_without_the_chassis_password(sidecar: str) -> None:
-    """Criterion 3, Valkey: the control refuses a command from the workload with no AUTH (NOAUTH)
+    """Criterion 3: "From the workload container, every internal service refuses a call without the
+    chassis's credential. Through the chassis, the same calls succeed."
+
+    Criterion 3, Valkey: the control refuses a command from the workload with no AUTH (NOAUTH)
     and with the chassis's user name and a wrong password (WRONGPASS); the same PING after AUTH
     with the chassis's password, from the chassis container, is PONG."""
     valkey = service_ip(PLATFORM_NS, "valkey")
@@ -165,7 +177,10 @@ def test_valkey_refuses_the_workload_without_the_chassis_password(sidecar: str) 
 
 
 def test_minio_refuses_the_workload_and_any_unsigned_call(sidecar: str) -> None:
-    """Criterion 3, MinIO: the control refuses the workload at the network (no edge from any
+    """Criterion 3: "From the workload container, every internal service refuses a call without the
+    chassis's credential. Through the chassis, the same calls succeed."
+
+    Criterion 3, MinIO: the control refuses the workload at the network (no edge from any
     chassis pod, review F10: the connection to the Service and to the pod IP never opens), while
     the workload's allowed edge to LiteLLM connects in the same test. Both drops are timeouts.
     MinIO is up on the address the workload tried: inside its pod, an unsigned call to its own
@@ -405,7 +420,10 @@ def exec_json(pod_name: str, container: str, script: str, *args: str) -> dict[st
 
 
 def test_kafka_refuses_the_workload_without_the_chassis_credential(events_pod: str) -> None:
-    """Criterion 3, the broker (H11): from the workload container of `agent-echo-events`, which
+    """Criterion 3: "From the workload container, every internal service refuses a call without the
+    chassis's credential. Through the chassis, the same calls succeed."
+
+    Criterion 3, the broker (H11): from the workload container of `agent-echo-events`, which
     shares the chassis's network namespace and so every edge it has, the broker answers
     ApiVersions (reachable: a refusal here is by credential, not a policy timeout), closes a
     Metadata request sent with no SASL login, and answers error 58 to SCRAM-SHA-512 with an empty

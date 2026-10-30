@@ -29,8 +29,9 @@ from chassis.ports.bundle import PortBundle
 from chassis.server.config import EngineSpec
 from chassis_contracts import EngineConnectorContract
 from chassis_contracts.helpers import make_context
-from poc05_harness import REMOTE_URL, TOKEN_ENV, Tokens, app_on_socket
+from poc_harness.lane_tokens import REMOTE_URL, TOKEN_ENV, Tokens
 from poc_harness.plain_a2a import ANSWER, USAGE_KEY, PlainStub, kagent_script, stub_app
+from poc_harness.sockets import on_unix_socket_on_this_loop
 from workload_a2a.auth import BearerTokenMiddleware
 
 
@@ -53,7 +54,7 @@ async def _plain_remote(
 ) -> AsyncIterator[RemoteConnector]:
     """The stub behind the bearer check, and a set-up `RemoteConnector` in plain mode."""
     app = BearerTokenMiddleware(stub_app(stub or PlainStub(kagent_script)), tokens.workload)
-    async with app_on_socket(app, "plain.sock") as uds:
+    async with on_unix_socket_on_this_loop(app, "plain.sock") as uds:
         connector = RemoteConnector()
         ports = PortBundle(
             model=ScriptedModel(),

@@ -27,7 +27,8 @@ from typing import Any
 import yaml
 from chassis.core.results import TASK_COMPLETED, TASK_FAILED
 from chassis.server.config import load_config
-from test_poc05_admission_static import _Params, broken_rules
+from poc_harness.admission_model import AdmissionParams, broken_rules
+from poc_harness.manifests import container_secret_names, containers_of, load_manifests
 
 ROOT = Path(__file__).resolve().parents[3]
 POC05 = ROOT / "deploy/kind/poc05"
@@ -48,12 +49,10 @@ MEMORY_LIMIT_MAX_MI = 768
 Doc = dict[str, Any]
 
 
-def _docs(path: Path) -> list[Doc]:
-    return [d for d in yaml.safe_load_all(path.read_text()) if isinstance(d, dict)]
-
-
 def _one(path: Path, kind: str, name: str) -> Doc:
-    (doc,) = [d for d in _docs(path) if d["kind"] == kind and d["metadata"]["name"] == name]
+    (doc,) = [
+        d for d in load_manifests(path) if d["kind"] == kind and d["metadata"]["name"] == name
+    ]
     return doc
 
 
@@ -79,10 +78,6 @@ def _pod_spec(doc: Doc) -> Doc:
     return dict(doc["spec"]["template"]["spec"])
 
 
-def _containers(spec: Doc) -> list[Doc]:
-    return [*spec.get("initContainers", []), *spec["containers"]]
-
-
 def _listeners(props: dict[str, str]) -> dict[str, tuple[str, str]]:
     """Listener name -> (host, security protocol)."""
     protocols = dict(p.split(":", 1) for p in props["listener.security.protocol.map"].split(","))
@@ -92,16 +87,6 @@ def _listeners(props: dict[str, str]) -> dict[str, tuple[str, str]]:
         host = rest.rpartition(":")[0]
         out[name] = (host, protocols[name])
     return out
-
-
-def _secret_names(container: Doc) -> set[str]:
-    names = {
-        e["valueFrom"]["secretKeyRef"]["name"]
-        for e in container.get("env", [])
-        if "secretKeyRef" in e.get("valueFrom", {})
-    }
-    names |= {f["secretRef"]["name"] for f in container.get("envFrom", []) if "secretRef" in f}
-    return names
 
 
 def _secret_volumes(spec: Doc) -> dict[str, str]:
@@ -174,7 +159,7 @@ def test_scram_users_come_from_the_secret_only() -> None:
     spec = _pod_spec(_one(KAFKA, "Deployment", "kafka"))
     assert set(_secret_volumes(spec).values()) == {SECRET}
     (container,) = spec["containers"]
-    assert _secret_names(container) == set()
+    assert set(container_secret_names(container)) == set()
     mounts = {m["name"]: m["mountPath"] for m in container["volumeMounts"]}
     (volume,) = _secret_volumes(spec)
     start = _start_sh()
@@ -191,7 +176,7 @@ def test_scram_users_come_from_the_secret_only() -> None:
 
 def test_no_secret_object_under_kind_poc05_holds_kafka_sasl() -> None:
     for path in sorted(POC05.rglob("*.yaml")):
-        for doc in _docs(path):
+        for doc in load_manifests(path):
             if doc.get("kind") == "Secret":
                 assert doc["metadata"]["name"] != SECRET, path
 
@@ -203,9 +188,9 @@ def test_the_secret_reaches_only_the_chassis_container_of_the_events_agent() -> 
     """
     spec = _pod_spec(_one(AGENT, "Deployment", "agent-echo-events"))
     assert _secret_volumes(spec) == {}
-    users = {c["name"]: _secret_names(c) for c in _containers(spec)}
+    users = {c["name"]: set(container_secret_names(c)) for c in containers_of(spec)}
     assert users == {"chassis": {SECRET}, "workload": set()}, users
-    (chassis,) = [c for c in _containers(spec) if c["name"] == "chassis"]
+    (chassis,) = [c for c in containers_of(spec) if c["name"] == "chassis"]
     assert chassis["image"].startswith(CHASSIS_IMAGE)
     env = {e["name"]: e for e in chassis["env"]}
     assert env["KAFKA_SECURITY_PROTOCOL"]["value"] == "SASL_PLAINTEXT"
@@ -216,13 +201,13 @@ def test_the_secret_reaches_only_the_chassis_container_of_the_events_agent() -> 
     for path in sorted(POC05.rglob("*.yaml")):
         if "agent-sandbox" in path.parts or "fixtures" in path.parts:
             continue
-        for doc in _docs(path):
+        for doc in load_manifests(path):
             template = doc.get("spec", {}).get("template", {}) if isinstance(doc, dict) else {}
             if not isinstance(template, dict) or "spec" not in template:
                 continue
             pod = template["spec"]
             if SECRET in set(_secret_volumes(pod).values()) or any(
-                SECRET in _secret_names(c) for c in _containers(pod)
+                SECRET in set(container_secret_names(c)) for c in containers_of(pod)
             ):
                 named.add(doc["metadata"]["name"])
     assert named == {"kafka", "agent-echo-events"}, named
@@ -240,7 +225,7 @@ def test_the_events_config_publishes_through_kafka() -> None:
 
 def test_the_events_agent_passes_the_admission_rules() -> None:
     """The Python model of `admission/policy.yaml`: the only Secret user is the chassis image."""
-    params = _Params.of(_docs(PARAMS)[0])
+    params = AdmissionParams.of(load_manifests(PARAMS)[0])
     doc = _one(AGENT, "Deployment", "agent-echo-events")
     assert broken_rules(doc, params, "poc05-agents") == set()
 
@@ -270,7 +255,7 @@ def test_the_network_policy_admits_the_events_agent_on_the_sasl_port_only() -> N
 def test_the_platform_namespace_denies_by_default() -> None:
     deny = [
         d
-        for d in _docs(DEFAULT_DENY)
+        for d in load_manifests(DEFAULT_DENY)
         if d["kind"] == "NetworkPolicy" and d["metadata"].get("namespace") == "poc05-platform"
     ]
     assert len(deny) == 1
@@ -334,7 +319,7 @@ def _assert_events_pod_hardened(doc: Doc) -> None:
     assert spec["securityContext"]["seccompProfile"] == {"type": "RuntimeDefault"}
     for key in ("hostNetwork", "hostPID", "hostIPC", "shareProcessNamespace"):
         assert not spec.get(key), key
-    for c in _containers(spec):
+    for c in containers_of(spec):
         sc = c["securityContext"]
         assert sc["runAsNonRoot"] is True, c["name"]
         assert sc["readOnlyRootFilesystem"] is True, c["name"]

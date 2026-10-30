@@ -16,7 +16,7 @@ is built from). Both go as the cluster admin, so RBAC refuses neither; the root 
 its twin only in its user, so the trust rule admits it and PodSecurity alone refuses it. Nothing
 is created.
 
-A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc05_conftest.py`). Run:
+A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc_harness.drills`). Run:
 `POC05_KIND=1 uv run pytest -m network <this file>`.
 """
 
@@ -29,7 +29,8 @@ from typing import Any
 
 import pytest
 import yaml
-from poc05_kind import (
+from poc_harness.drills import POC05_KIND
+from poc_harness.kind import (
     AGENTS_NS,
     REMOTE_NS,
     SIDECAR_POD,
@@ -40,6 +41,8 @@ from poc05_kind import (
     pod,
     warm_sandboxes,
 )
+
+pytestmark = POC05_KIND
 
 REPO = Path(__file__).resolve().parents[3]
 FIXTURES = REPO / "deploy" / "kind" / "poc05" / "admission" / "fixtures"
@@ -111,7 +114,9 @@ def node_status() -> dict[str, int]:
 
 @pytest.mark.parametrize("lane", LANES, ids=[lane.id for lane in LANES])
 def test_untrusted_container_runs_with_no_capability_no_new_privs_and_seccomp(lane: Lane) -> None:
-    """Criterion 8 (partly shown), review R5a-08: in the lane's untrusted container,
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), review R5a-08: in the lane's untrusted container,
     `/proc/self/status` shows `CapEff` all zero and `Seccomp` 2 (a filter), `no_new_privs` is 1,
     and the uid is the pod spec's non-zero `runAsUser`. The paired control: the same fields on the
     kind node, a privileged root process, show a non-zero `CapEff` and uid 0."""
@@ -159,7 +164,9 @@ def dry_run(path: Path) -> tuple[int, str]:
 def test_root_pod_is_refused_by_pod_security_next_to_its_twin(
     namespace: str, tmp_path: Path
 ) -> None:
-    """Criterion 8 (partly shown), review R5a-08: a root pod sent with `--dry-run=server` to a
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), review R5a-08: a root pod sent with `--dry-run=server` to a
     workload namespace is refused by PodSecurity `restricted`. The paired control: its non-root
     twin, the same pod as the admission fixture, is admitted."""
     twin = TWINS[namespace]

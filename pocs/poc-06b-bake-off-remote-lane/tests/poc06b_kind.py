@@ -1,5 +1,5 @@
 """Shared helpers for the PoC-6b kind tests. Not a test module; the `test_poc06b_kind_*.py` files
-import it. The cluster is PoC-5's (`kind-poc05`), so the PoC-5 helpers (`poc05_kind`) do the
+import it. The cluster is PoC-5's (`kind-poc05`), so the PoC-5 helpers (`poc_harness.kind`) do the
 kubectl calls, and this file adds what PoC-6 needs on top:
 
 - `KindEngine`: the six PoC-6 engine deployments (two sidecar pods, four remotes) as data;
@@ -8,7 +8,7 @@ kubectl calls, and this file adds what PoC-6 needs on top:
 - `NODE_PROBE` and `probe_in`: the PoC-5 in-pod probe for an image with no Python (Node), and the
   one entry point that picks the right probe for a pod.
 
-Every kubectl call pins `--context kind-poc05` (through `poc05_kind.kubectl`). A credential is
+Every kubectl call pins `--context kind-poc05` (through `poc_harness.kind.kubectl`). A credential is
 never returned: a check names its env variable (`auth_env`) and the probe reads it in the pod.
 """
 
@@ -21,8 +21,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from poc05_kind import AGENTS_NS, CHASSIS, PROBE, REMOTE_NS, WORKLOAD, kubectl
 from poc06_harness import LOOKUP, SIMPLIFIER, SMOKE, Task, Verdict, answer_text
+from poc_harness.kind import AGENTS_NS, CHASSIS, REMOTE_NS, WORKLOAD, kubectl
+from poc_harness.pod_probe import PROBE
 
 ROOT = Path(__file__).resolve().parents[3]
 GATEWAY_PREFIX = "fake_tools-"
@@ -243,8 +244,8 @@ PYTHONS = ("python", "python3", "/.kagent/.venv/bin/python", "/app/.venv/bin/pyt
 def probe_python(
     namespace: str, pod_name: str, container: str, checks: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
-    """The PoC-5 probe (`poc05_kind.PROBE`) with the first Python the image has. An image with
-    none is an exception: the test is marked xfail with `NO_PYTHON`, not dropped."""
+    """The PoC-5 probe (`poc_harness.pod_probe.PROBE`) with the first Python the image has. An
+    image with none is an exception: the test is marked xfail with `NO_PYTHON`, not dropped."""
     for exe in PYTHONS:
         got = kubectl(
             "exec", "-n", namespace, pod_name, "-c", container, "--",

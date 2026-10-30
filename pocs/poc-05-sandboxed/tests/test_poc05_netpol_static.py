@@ -35,612 +35,29 @@ from __future__ import annotations
 import copy
 import re
 import subprocess
-from collections.abc import Iterator
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
-
-ROOT = Path(__file__).resolve().parents[3]
-POC05 = ROOT / "deploy/kind/poc05"
-EDGES = Path(__file__).resolve().parent / "fixtures/netpol_edges.yaml"
-RUN_SH = POC05 / "run.sh"
-CLUSTER = POC05 / "cluster.yaml"
-SENTINEL = "__API_SERVER_IP__/32"
-
-NAME = "app.kubernetes.io/name"
-NS_LABEL = "kubernetes.io/metadata.name"
-POD_KINDS = {"Deployment", "StatefulSet", "DaemonSet", "Job", "Pod", "Sandbox", "SandboxTemplate"}
-POD_TEMPLATE_KINDS = {"Sandbox", "SandboxTemplate"}  # the pod template is `spec.podTemplate`
-BOTH = {"Ingress", "Egress"}
-ANY_PORT = "ANY"
-
-Doc = dict[str, Any]
-Labels = tuple[tuple[str, str], ...]
-
-
-def _fmt(labels: Labels) -> str:
-    return ",".join(f"{k}={v}" for k, v in labels) or "*"
-
-
-@dataclass(frozen=True)
-class Sel:
-    """Namespace plus the pod labels a selector requires; no labels means every pod."""
-
-    ns: str
-    labels: Labels
-
-    def __str__(self) -> str:
-        return f"{self.ns}/{_fmt(self.labels)}"
-
-    def matches(self, pod: Pod) -> bool:
-        return pod.ns == self.ns and set(self.labels) <= set(pod.labels)
-
-
-@dataclass(frozen=True)
-class Pod:
-    ns: str
-    name: str
-    labels: Labels
-
-    @property
-    def app(self) -> str:
-        return dict(self.labels).get(NAME, self.name)
-
-    def __str__(self) -> str:
-        return f"{self.ns}/{self.name}"
-
-
-@dataclass(frozen=True)
-class Policy:
-    ns: str
-    name: str
-    doc: Doc
-    source: str
-
-    @property
-    def spec(self) -> Doc:
-        return dict(self.doc["spec"])
-
-    def label(self) -> str:
-        return f"{self.source}:{self.ns}/{self.name}"
-
-
-@dataclass(frozen=True)
-class Rule:
-    policy: Policy
-    direction: str
-    peers: tuple[Sel, ...] | None  # None: the rule names no peer (any source or destination)
-    ports: tuple[str, ...]  # PROTO/NUMBER, or ANY
-
-
-@dataclass
-class Model:
-    policies: list[Policy]
-    pods: list[Pod]
-    externals: list[Pod]
-    namespaces: dict[str, Doc]
-
-
-# ---- loading ----------------------------------------------------------------------------------
-
-
-def _yaml_files(excluded: tuple[str, ...]) -> Iterator[Path]:
-    for path in sorted(POC05.rglob("*.yaml")):
-        rel = path.relative_to(POC05).as_posix()
-        if rel.startswith("base/agent-sandbox/") or rel.startswith(excluded):
-            continue
-        yield path
-
-
-def _docs(path: Path) -> list[Doc]:
-    return [d for d in yaml.safe_load_all(path.read_text()) if isinstance(d, dict)]
-
-
-def _dir_namespace(path: Path) -> str | None:
-    kustomization = path.parent / "kustomization.yaml"
-    if not kustomization.exists():
-        return None
-    return dict(yaml.safe_load(kustomization.read_text())).get("namespace")
-
-
-def _doc_namespace(path: Path, doc: Doc) -> str:
-    ns = doc.get("metadata", {}).get("namespace") or _dir_namespace(path)
-    assert ns, (
-        f"{path.relative_to(POC05)}: {doc['kind']}/{doc['metadata']['name']} has no namespace"
-    )
-    return str(ns)
-
-
-def load_policies() -> list[Policy]:
-    out: list[Policy] = []
-    for path in _yaml_files(()):
-        out.extend(
-            Policy(
-                _doc_namespace(path, doc),
-                str(doc["metadata"]["name"]),
-                doc,
-                path.relative_to(POC05).as_posix(),
-            )
-            for doc in _docs(path)
-            if doc.get("kind", "").endswith("NetworkPolicy")
-        )
-    return out
-
-
-def _template_labels(doc: Doc) -> dict[str, str]:
-    kind = doc["kind"]
-    if kind == "Pod":
-        return dict(doc["metadata"].get("labels", {}))
-    template = doc["spec"]["podTemplate"] if kind in POD_TEMPLATE_KINDS else doc["spec"]["template"]
-    return dict(template.get("metadata", {}).get("labels", {}))
-
-
-def load_pods() -> list[Pod]:
-    out: list[Pod] = []
-    for path in _yaml_files(("admission/",)):
-        for doc in _docs(path):
-            if doc.get("kind") in POD_KINDS:
-                labels = tuple(sorted(_template_labels(doc).items()))
-                out.append(Pod(_doc_namespace(path, doc), str(doc["metadata"]["name"]), labels))
-    return out
-
-
-def load_namespaces() -> dict[str, Doc]:
-    docs = _docs(POC05 / "base/namespaces.yaml")
-    return {str(d["metadata"]["name"]): d for d in docs if d["kind"] == "Namespace"}
-
-
-EXPECT: Doc = yaml.safe_load(EDGES.read_text())
-
-
-def _sel(raw: Doc) -> Sel:
-    return Sel(raw["ns"], tuple(sorted(raw["labels"].items())))
-
-
-def load_model() -> Model:
-    externals = [
-        Pod(
-            e["ns"],
-            "external-" + "-".join(e["labels"].values()),
-            tuple(sorted(e["labels"].items())),
-        )
-        for e in EXPECT["external_pods"]
-    ]
-    return Model(load_policies(), load_pods(), externals, load_namespaces())
-
-
-# ---- parsing ----------------------------------------------------------------------------------
-
-
-def _match_labels(selector: Doc | None, where: str, problems: list[str]) -> Labels:
-    selector = selector or {}
-    extra = set(selector) - {"matchLabels"}
-    if extra:
-        problems.append(f"{where}: unsupported selector keys {sorted(extra)}")
-    return tuple(sorted((selector.get("matchLabels") or {}).items()))
-
-
-def _peer(policy: Policy, raw: Doc, where: str, problems: list[str]) -> Sel | None:
-    """One peer as a Sel. Records a problem and returns None for a peer that allows too much."""
-    if set(raw) == {"ipBlock"}:  # checked by `ip_block_problems`, against the fixture
-        return None
-    extra = set(raw) - {"podSelector", "namespaceSelector"}
-    if extra:  # anything else is not modeled
-        problems.append(f"{where}: peer keys {sorted(extra)} are not allowed")
-        return None
-    ns = policy.ns
-    if "namespaceSelector" in raw:
-        ns_labels = dict(_match_labels(raw["namespaceSelector"], where, problems))
-        if set(ns_labels) != {NS_LABEL}:
-            problems.append(
-                f"{where}: namespaceSelector must be exactly {NS_LABEL}=<name> "
-                f"(an empty or wider one allows every namespace), got {ns_labels}"
-            )
-            return None
-        ns = ns_labels[NS_LABEL]
-    labels = _match_labels(raw.get("podSelector"), where, problems)
-    if not labels:
-        problems.append(f"{where}: peer selects every pod in {ns} (empty or missing podSelector)")
-        return None
-    return Sel(ns, labels)
-
-
-def _ports(raw_ports: list[Doc] | None, where: str, problems: list[str]) -> tuple[str, ...]:
-    if not raw_ports:
-        return (ANY_PORT,)
-    out = []
-    for p in raw_ports:
-        if "endPort" in p or not isinstance(p.get("port"), int):
-            problems.append(f"{where}: port {p} must be one numbered port")
-            continue
-        out.append(f"{p.get('protocol', 'TCP')}/{p['port']}")
-    return tuple(out)
-
-
-def parse_rules(policies: list[Policy], problems: list[str]) -> list[Rule]:
-    rules: list[Rule] = []
-    for policy in policies:
-        if policy.doc["kind"] != "NetworkPolicy":
-            continue
-        types = set(policy.spec.get("policyTypes") or [])
-        for direction, rule_key, peer_key in (
-            ("Ingress", "ingress", "from"),
-            ("Egress", "egress", "to"),
-        ):
-            raw_rules = policy.spec.get(rule_key) or []
-            if raw_rules and direction not in types:
-                problems.append(f"{policy.label()}: {rule_key} rules but policyTypes lacks it")
-            for i, raw in enumerate(raw_rules):
-                where = f"{policy.label()} {rule_key}[{i}]"
-                raw_peers = raw.get(peer_key) or []
-                ports = _ports(raw.get("ports"), where, problems)
-                if not raw_peers:
-                    if direction == "Egress":
-                        problems.append(
-                            f"{where}: no `to` peer allows every destination (metadata, API)"
-                        )
-                    elif ports == (ANY_PORT,):
-                        problems.append(f"{where}: no `from` and no ports allows everything")
-                    rules.append(Rule(policy, direction, None, ports))
-                    continue
-                peers = [_peer(policy, p, where, problems) for p in raw_peers]
-                rules.append(Rule(policy, direction, tuple(p for p in peers if p), ports))
-    return rules
-
-
-def _walk(node: Any) -> Iterator[str]:
-    if isinstance(node, dict):
-        for key, value in node.items():
-            yield str(key)
-            yield from _walk(value)
-    elif isinstance(node, list):
-        for item in node:
-            yield from _walk(item)
-
-
-def structure_problems(model: Model) -> list[str]:
-    """No ipBlock but the fixture's, no other policy kind, no wide peer, no peerless egress."""
-    problems = [
-        f"{policy.label()}: kind {policy.doc['kind']} is not modeled"
-        for policy in model.policies
-        if policy.doc["kind"] != "NetworkPolicy"
-    ]
-    problems += ip_block_problems(model)
-    parse_rules(model.policies, problems)
-    return sorted(set(problems))
-
-
-# ---- the one ipBlock: the dispatcher to the API server ----------------------------------------
-
-
-def _ip_block_rules(policy: Policy) -> list[tuple[str, Doc]]:
-    """(direction, rule) for every rule of `policy` that has an ipBlock peer."""
-    return [
-        (direction, raw)
-        for direction, rule_key, peer_key in (
-            ("Ingress", "ingress", "from"),
-            ("Egress", "egress", "to"),
-        )
-        for raw in policy.spec.get(rule_key) or []
-        if any("ipBlock" in peer for peer in raw.get(peer_key) or [])
-    ]
-
-
-def ip_block_problems(model: Model) -> list[str]:
-    """Exactly the fixture's ipBlocks: each in its policy, on its one pod, `/32`, its ports only."""
-    wanted = {(e["policy"]["ns"], e["policy"]["name"]): e for e in EXPECT["ip_blocks"]}
-    problems: list[str] = []
-    total = sum(1 for p in model.policies for key in _walk(p.doc) if key == "ipBlock")
-    if total != len(wanted):
-        problems.append(f"expected {len(wanted)} ipBlock across every PoC-5 policy, found {total}")
-    for policy in model.policies:
-        rules = _ip_block_rules(policy)
-        entry = wanted.get((policy.ns, policy.name))
-        if entry is None:
-            if rules or "ipBlock" in set(_walk(policy.doc)):
-                problems.append(f"{policy.label()}: uses an ipBlock")
-            continue
-        problems += _one_ip_block_problems(model, policy, entry, rules)
-    return problems
-
-
-def _one_ip_block_problems(
-    model: Model, policy: Policy, entry: Doc, rules: list[tuple[str, Doc]]
-) -> list[str]:
-    where = policy.label()
-    problems: list[str] = []
-    pod = _sel(entry["pod"])
-    if policy.ns != pod.ns or _policy_labels(policy) != pod.labels:
-        problems.append(f"{where}: podSelector must be exactly {pod}")
-    selected = _selected(model, policy)
-    if len(selected) != 1:
-        problems.append(f"{where}: selects {[str(p) for p in selected]}, want one pod")
-    if not entry["cidr"].endswith("/32"):
-        problems.append(f"{where}: fixture cidr {entry['cidr']} is not a /32")
-    if len(rules) != 1:
-        problems.append(f"{where}: {len(rules)} rules hold an ipBlock, want one")
-    for direction, raw in rules:
-        if direction != "Egress":
-            problems.append(f"{where}: an ipBlock in an {direction} rule")
-        if raw.get("to") != [{"ipBlock": {"cidr": entry["cidr"]}}]:
-            problems.append(
-                f"{where}: `to` must hold only ipBlock {entry['cidr']} with no except, "
-                f"got {raw.get('to')}"
-            )
-        ports = _ports(raw.get("ports"), where, problems)
-        if ports != tuple(entry["ports"]):
-            problems.append(f"{where}: ports {ports}, want exactly {entry['ports']}")
-    return problems
-
-
-# ---- edges ------------------------------------------------------------------------------------
-
-Edge = tuple[str, str, str]  # source, destination, port
-
-
-def computed_edges(model: Model) -> tuple[set[Edge], set[Edge]]:
-    """(egress edges, ingress edges) as the policies state them, by selector."""
-    egress: set[Edge] = set()
-    ingress: set[Edge] = set()
-    for rule in parse_rules(model.policies, []):
-        own = Sel(rule.policy.ns, _policy_labels(rule.policy))
-        for peer in rule.peers or ():
-            for port in rule.ports:
-                if rule.direction == "Egress":
-                    egress.add((str(own), str(peer), port))
-                else:
-                    ingress.add((str(peer), str(own), port))
-        if rule.peers is None and rule.direction == "Ingress":
-            for port in rule.ports:
-                ingress.add(("any", str(own), port))
-    return egress, ingress
-
-
-def _policy_labels(policy: Policy) -> Labels:
-    return tuple(sorted(((policy.spec.get("podSelector") or {}).get("matchLabels") or {}).items()))
-
-
-def fixture_edges() -> tuple[set[Edge], set[Edge]]:
-    def expand(entries: list[Doc]) -> set[Edge]:
-        out: set[Edge] = set()
-        for e in entries:
-            src = "any" if e["src"] == "any" else str(_sel(e["src"]))
-            out.update((src, str(_sel(e["dst"])), port) for port in e["ports"])
-        return out
-
-    return expand(EXPECT["egress"]), expand(EXPECT["ingress"])
-
-
-def edge_diff(model: Model) -> list[str]:
-    got_e, got_i = computed_edges(model)
-    want_e, want_i = fixture_edges()
-    out = []
-    for name, got, want in (("egress", got_e, want_e), ("ingress", got_i, want_i)):
-        out += [f"extra {name} (in manifests, not in fixture): {e}" for e in sorted(got - want)]
-        out += [f"missing {name} (in fixture, not in manifests): {e}" for e in sorted(want - got)]
-    return out
-
-
-# ---- default deny -----------------------------------------------------------------------------
-
-
-def default_deny_problems(model: Model) -> list[str]:
-    workload_ns = {p.ns for p in model.pods}
-    problems = [
-        f"namespace {ns} holds pods but is not in base/namespaces.yaml"
-        for ns in sorted(workload_ns - set(model.namespaces))
-    ]
-    for ns in sorted(model.namespaces):
-        denies = [p for p in model.policies if p.ns == ns and p.name == "default-deny"]
-        if len(denies) != 1:
-            problems.append(f"{ns}: expected one default-deny policy, found {len(denies)}")
-            continue
-        spec = denies[0].spec
-        if spec.get("podSelector") != {}:
-            problems.append(f"{ns}: default-deny must select all pods (podSelector: {{}})")
-        if set(spec.get("policyTypes") or []) != BOTH:
-            problems.append(f"{ns}: default-deny must name both Ingress and Egress")
-        if spec.get("ingress") or spec.get("egress"):
-            problems.append(f"{ns}: default-deny must have no allow rules")
-    return problems
-
-
-# ---- concrete resolution (which pods a selector reaches) --------------------------------------
-
-
-def _selected(model: Model, policy: Policy) -> list[Pod]:
-    sel = Sel(policy.ns, _policy_labels(policy))
-    return [p for p in model.pods + model.externals if sel.matches(p)]
-
-
-def _port_ok(rule: Rule, port: str) -> bool:
-    return ANY_PORT in rule.ports or port in rule.ports
-
-
-def _rules(model: Model) -> list[Rule]:
-    return parse_rules(model.policies, [])
-
-
-def egress_allowed(model: Model, rules: list[Rule], src: Pod, dst: Pod, port: str) -> bool:
-    return any(
-        r.direction == "Egress"
-        and src in _selected(model, r.policy)
-        and any(peer.matches(dst) for peer in r.peers or ())
-        and _port_ok(r, port)
-        for r in rules
-    )
-
-
-def ingress_allowed(model: Model, rules: list[Rule], src: Pod, dst: Pod, port: str) -> bool:
-    return any(
-        r.direction == "Ingress"
-        and dst in _selected(model, r.policy)
-        and (r.peers is None or any(peer.matches(src) for peer in r.peers))
-        and _port_ok(r, port)
-        for r in rules
-    )
-
-
-def concrete_egress(model: Model, src: Pod) -> set[tuple[Pod, str]]:
-    out: set[tuple[Pod, str]] = set()
-    for r in _rules(model):
-        if r.direction == "Egress" and src in _selected(model, r.policy):
-            for peer in r.peers or ():
-                out.update(
-                    (d, port)
-                    for d in model.pods + model.externals
-                    if peer.matches(d)
-                    for port in r.ports
-                )
-    return out
-
-
-def concrete_ingress(model: Model, dst: Pod) -> set[tuple[Pod | None, str]]:
-    """Who may send to `dst`: (source pod, or None for any source, port)."""
-    out: set[tuple[Pod | None, str]] = set()
-    for r in _rules(model):
-        if r.direction == "Ingress" and dst in _selected(model, r.policy):
-            if r.peers is None:
-                out.update((None, port) for port in r.ports)
-            for peer in r.peers or ():
-                out.update((s, port) for s in model.pods if peer.matches(s) for port in r.ports)
-    return out
-
-
-# ---- matching sides and dead selectors --------------------------------------------------------
-
-
-def one_sided_problems(model: Model) -> list[str]:
-    rules = _rules(model)
-    problems: set[str] = set()
-    for rule in rules:
-        selected = [p for p in _selected(model, rule.policy) if p in model.pods]
-        for peer in rule.peers or ():
-            others = [p for p in model.pods if peer.matches(p)]
-            for port in rule.ports:
-                for mine in selected:
-                    for other in others:
-                        if rule.direction == "Egress":
-                            if not ingress_allowed(model, rules, mine, other, port):
-                                problems.add(f"egress {mine} -> {other} {port}: no ingress side")
-                        elif not egress_allowed(model, rules, other, mine, port):
-                            problems.add(f"ingress {other} -> {mine} {port}: no egress side")
-    return sorted(problems)
-
-
-def dead_selector_problems(model: Model) -> list[str]:
-    """A selector that no pod template carries allows nothing, silently (a typo)."""
-    problems: set[str] = set()
-    for rule in _rules(model):
-        for peer in rule.peers or ():
-            if not any(peer.matches(p) for p in model.pods + model.externals):
-                problems.add(f"{rule.policy.label()}: peer {peer} matches no pod template")
-    for policy in model.policies:
-        if _policy_labels(policy) and not _selected(model, policy):
-            sel = Sel(policy.ns, _policy_labels(policy))
-            problems.add(f"{policy.label()}: podSelector {sel} matches no pod template")
-    return sorted(problems)
-
-
-# ---- DNS --------------------------------------------------------------------------------------
-
-
-NO_DNS = {"remote-echo", "code-runner", "code-runner-dispatch"}
-
-
-def dns_problems(model: Model) -> list[str]:
-    allowed = set(EXPECT["dns_allowed"])
-    dns_pods = {p for p in model.externals if dict(p.labels).get("k8s-app") == "kube-dns"}
-    got: set[str] = set()
-    problems = []
-    for pod in model.pods:
-        for dst, port in concrete_egress(model, pod):
-            number = port.split("/")[-1]
-            if dst in dns_pods:
-                if number == "53":
-                    got.add(pod.app)
-                else:
-                    problems.append(f"{pod}: reaches kube-dns on {port}, not 53")
-            elif number == "53" or number == ANY_PORT:
-                problems.append(f"{pod}: port {port} to {dst}, DNS only goes to kube-dns")
-    problems += [f"{a}: has DNS but the fixture does not list it" for a in sorted(got - allowed)]
-    problems += [f"{a}: fixture lists DNS but no policy allows it" for a in sorted(allowed - got)]
-    for pod in model.pods:
-        if pod.app in NO_DNS and pod.app in got:
-            problems.append(f"{pod}: the remote sandbox and the code runner have no DNS")
-    return problems
-
-
-# ---- the remote sandbox and the code runner ---------------------------------------------------
-
-
-def _chassis_ports(model: Model, chassis: Pod) -> set[int]:
-    ports: set[int] = set()
-    for path in _yaml_files(("admission/",)):
-        for doc in _docs(path):
-            if doc.get("kind") == "Deployment" and doc["metadata"]["name"] == chassis.name:
-                for c in doc["spec"]["template"]["spec"]["containers"]:
-                    ports.update(int(p["containerPort"]) for p in c.get("ports", []))
-    return ports
-
-
-def isolation_problems(model: Model) -> list[str]:
-    problems: list[str] = []
-    by_name = {p.name: p for p in model.pods}
-    remotes = [p for p in model.pods if p.ns == "poc05-remote"]
-    if not remotes:
-        problems.append("no pod in poc05-remote")
-    for remote in remotes:
-        chassis = by_name.get(f"chassis-{remote.name.removeprefix('remote-')}-remote")
-        if chassis is None:
-            problems.append(f"{remote}: no chassis pod chassis-<name>-remote")
-            continue
-        listener = {p for p in _chassis_ports(model, chassis) if p == 8091}
-        got_out = {(str(d), port) for d, port in concrete_egress(model, remote)}
-        if got_out != {(str(chassis), "TCP/8091")}:
-            problems.append(f"{remote}: egress must be only {chassis} TCP/8091, got {got_out}")
-        if not listener:
-            problems.append(f"{chassis}: does not declare the remote listener port 8091")
-        got_in = {(str(s), port) for s, port in concrete_ingress(model, remote)}
-        if got_in != {(str(chassis), "TCP/9000")}:
-            problems.append(f"{remote}: ingress must be only {chassis} TCP/9000, got {got_in}")
-        on_8091 = {(str(s), p) for s, p in concrete_ingress(model, chassis) if p.endswith("/8091")}
-        if on_8091 != {(str(remote), "TCP/8091")}:
-            problems.append(f"{chassis}: 8091 must take only {remote}, got {on_8091}")
-    return problems + _code_runner_problems(model)
-
-
-def _apps(model: Model, app: str) -> set[tuple[str, str]]:
-    return {(str(p), "TCP/8000") for p in model.pods if p.app == app}
-
-
-def _code_runner_problems(model: Model) -> list[str]:
-    """The per-call sandboxes: no egress, only the dispatcher in. The dispatcher: only LiteLLM in,
-    only the sandboxes out (pods; its API server ipBlock is `ip_block_problems`)."""
-    problems: list[str] = []
-    runners = [p for p in model.pods if p.ns == "poc05-tools"]
-    if not runners:
-        problems.append("no pod in poc05-tools")
-    for runner in runners:
-        if concrete_egress(model, runner):
-            problems.append(f"{runner}: must have no egress, got {concrete_egress(model, runner)}")
-        got_in = {(str(s), port) for s, port in concrete_ingress(model, runner)}
-        if got_in != _apps(model, "code-runner-dispatch"):
-            problems.append(f"{runner}: ingress must be only the dispatcher TCP/8000, got {got_in}")
-    dispatchers = [p for p in model.pods if p.app == "code-runner-dispatch"]
-    if [str(p) for p in dispatchers] != ["poc05-platform/code-runner-dispatch"]:
-        problems.append(f"want one dispatcher pod in poc05-platform, got {dispatchers}")
-    for dispatcher in dispatchers:
-        got_out = {(str(d), port) for d, port in concrete_egress(model, dispatcher)}
-        if got_out != _apps(model, "code-runner"):
-            problems.append(f"{dispatcher}: pod egress must be only the sandboxes, got {got_out}")
-        got_in = {(str(s), port) for s, port in concrete_ingress(model, dispatcher)}
-        if got_in != _apps(model, "litellm"):
-            problems.append(f"{dispatcher}: ingress must be only LiteLLM TCP/8000, got {got_in}")
-    return problems
+from poc_harness.manifests import Doc, load_manifests
+from poc_harness.netpol_checks import (
+    NO_DNS,
+    computed_edges,
+    dead_selector_problems,
+    default_deny_problems,
+    dns_problems,
+    edge_diff,
+    ip_block_problems,
+    isolation_problems,
+    one_sided_problems,
+    selected_pods,
+    structure_problems,
+)
+from poc_harness.netpol_model import EXPECT, NAME, NS_LABEL, SENTINEL, Model, Policy, load_model
+from poc_harness.paths import KIND_POC05
+
+RUN_SH = KIND_POC05 / "run.sh"
+CLUSTER = KIND_POC05 / "cluster.yaml"
 
 
 # ---- the tests --------------------------------------------------------------------------------
@@ -652,7 +69,10 @@ def model() -> Model:
 
 
 def test_poc05_netpol_default_deny_in_every_namespace(model: Model) -> None:
-    """Exit criterion 5 (offline part): every PoC-5 namespace default-denies ingress and egress.
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Exit criterion 5 (offline part): every PoC-5 namespace default-denies ingress and egress.
 
     Anything the later policies do not allow by label is refused, including the metadata address
     and the Kubernetes API.
@@ -662,7 +82,10 @@ def test_poc05_netpol_default_deny_in_every_namespace(model: Model) -> None:
 
 
 def test_poc05_netpol_no_rule_can_reach_metadata_or_api(model: Model) -> None:
-    """Exit criterion 5 (offline part): no policy has an ipBlock but the dispatcher's, and no
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Exit criterion 5 (offline part): no policy has an ipBlock but the dispatcher's, and no
     any-destination rule.
 
     The metadata service (169.254.169.254) and the Kubernetes API (Service IP, node on 6443) are
@@ -675,7 +98,9 @@ def test_poc05_netpol_no_rule_can_reach_metadata_or_api(model: Model) -> None:
 
 
 def test_poc05_netpol_one_ip_block_only_for_the_dispatcher(model: Model) -> None:
-    """Exit criterion 8 (offline part): the one ipBlock in PoC-5 is the dispatcher's API egress.
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Exit criterion 8 (offline part): the one ipBlock in PoC-5 is the dispatcher's API egress.
 
     Exactly one ipBlock across every PoC-5 policy. It is in policy `code-runner-dispatch` in
     poc05-platform, whose podSelector selects only the dispatcher; its egress rule holds only that
@@ -687,13 +112,16 @@ def test_poc05_netpol_one_ip_block_only_for_the_dispatcher(model: Model) -> None
     assert ip_block_problems(model) == []
     (policy,) = [p for p in model.policies if p.name == "code-runner-dispatch"]
     assert policy.source == "platform/network-policy.yaml"
-    assert SENTINEL in (POC05 / policy.source).read_text()
-    (pod,) = _selected(model, policy)
+    assert SENTINEL in (KIND_POC05 / policy.source).read_text()
+    (pod,) = selected_pods(model, policy)
     assert str(pod) == "poc05-platform/code-runner-dispatch"
 
 
 def test_poc05_netpol_edges_equal_the_fixture(model: Model) -> None:
-    """Exit criterion 5 (offline part): the allowed edges equal `fixtures/netpol_edges.yaml`.
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Exit criterion 5 (offline part): the allowed edges equal `fixtures/netpol_edges.yaml`.
 
     An extra edge fails and a missing edge fails, in both directions of every rule.
     """
@@ -703,7 +131,10 @@ def test_poc05_netpol_edges_equal_the_fixture(model: Model) -> None:
 
 
 def test_poc05_netpol_dns_only_for_the_listed_pods(model: Model) -> None:
-    """Exit criterion 6 (offline part): kube-dns on 53 only for the fixture's pods.
+    """Criterion 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential."
+
+    Exit criterion 6 (offline part): kube-dns on 53 only for the fixture's pods.
 
     The remote sandbox, the code runner, and its dispatcher have no DNS: a name lookup gets no
     answer. The dispatcher uses `KUBERNETES_SERVICE_HOST` and pod IPs.
@@ -713,7 +144,10 @@ def test_poc05_netpol_dns_only_for_the_listed_pods(model: Model) -> None:
 
 
 def test_poc05_netpol_every_edge_has_both_sides(model: Model) -> None:
-    """Exit criterion 5 (offline part): each egress edge has its ingress allowance, and back.
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Exit criterion 5 (offline part): each egress edge has its ingress allowance, and back.
 
     A one-sided rule would pass here and fail at bring-up (default deny drops the packet).
     """
@@ -721,7 +155,10 @@ def test_poc05_netpol_every_edge_has_both_sides(model: Model) -> None:
 
 
 def test_poc05_netpol_no_selector_is_dead(model: Model) -> None:
-    """Exit criterion 5 (offline part): every selector matches a pod template under poc05.
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Exit criterion 5 (offline part): every selector matches a pod template under poc05.
 
     A typo in a label allows nothing, silently, and the edge looks present in review.
     """
@@ -729,7 +166,10 @@ def test_poc05_netpol_no_selector_is_dead(model: Model) -> None:
 
 
 def test_poc05_netpol_remote_and_code_runner_are_boxed_in(model: Model) -> None:
-    """Exit criterion 6 (offline part): the remote has one way out and the runner has none.
+    """Criterion 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential."
+
+    Exit criterion 6 (offline part): the remote has one way out and the runner has none.
 
     The remote sandbox's only egress is its chassis's remote listener port (8091); its only
     ingress is its chassis on 9000; the chassis takes 8091 only from that remote. Each per-call
@@ -753,7 +193,10 @@ def _mutated(model: Model, policy_name: str, change: Any) -> Model:
 
 
 def test_poc05_netpol_checks_bite_ipblock(model: Model) -> None:
-    """Exit criterion 5 (offline part): control passes, an added ipBlock fails the check."""
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Exit criterion 5 (offline part): control passes, an added ipBlock fails the check."""
     assert structure_problems(model) == []
     bad = _mutated(
         model,
@@ -764,7 +207,10 @@ def test_poc05_netpol_checks_bite_ipblock(model: Model) -> None:
 
 
 def test_poc05_netpol_checks_bite_empty_peer(model: Model) -> None:
-    """Exit criterion 5 (offline part): empty peers and peerless egress fail the checks."""
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Exit criterion 5 (offline part): empty peers and peerless egress fail the checks."""
     assert structure_problems(model) == []
     wide = _mutated(
         model,
@@ -787,7 +233,10 @@ def test_poc05_netpol_checks_bite_empty_peer(model: Model) -> None:
 
 
 def test_poc05_netpol_checks_bite_extra_and_missing_edge(model: Model) -> None:
-    """Exit criterion 5 (offline part): a changed port is both an extra and a missing edge."""
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Exit criterion 5 (offline part): a changed port is both an extra and a missing edge."""
     assert edge_diff(model) == []
     bad = _mutated(
         model,
@@ -800,7 +249,10 @@ def test_poc05_netpol_checks_bite_extra_and_missing_edge(model: Model) -> None:
 
 
 def test_poc05_netpol_checks_bite_one_sided_and_dead(model: Model) -> None:
-    """Exit criterion 5 (offline part): a removed ingress side and a typo selector both fail."""
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Exit criterion 5 (offline part): a removed ingress side and a typo selector both fail."""
     assert one_sided_problems(model) == [] and dead_selector_problems(model) == []
     one_sided = _mutated(model, "postgres", lambda s: s["ingress"].clear())
     assert any(
@@ -815,7 +267,10 @@ def test_poc05_netpol_checks_bite_one_sided_and_dead(model: Model) -> None:
 
 
 def test_poc05_netpol_checks_bite_remote_dns_and_runner_egress(model: Model) -> None:
-    """Exit criterion 6 (offline part): DNS on the remote and any runner egress fail."""
+    """Criterion 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential."
+
+    Exit criterion 6 (offline part): DNS on the remote and any runner egress fail."""
     assert dns_problems(model) == [] and isolation_problems(model) == []
     dns = {
         "to": [
@@ -849,7 +304,9 @@ def _api_rule(spec: Doc) -> Doc:
 
 
 def test_poc05_netpol_checks_bite_the_dispatcher_ip_block(model: Model) -> None:
-    """Exit criterion 8 (offline part): control passes; each widening of the one ipBlock fails."""
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Exit criterion 8 (offline part): control passes; each widening of the one ipBlock fails."""
     assert ip_block_problems(model) == []
 
     def bad(change: Any) -> list[str]:
@@ -877,7 +334,7 @@ def test_poc05_netpol_checks_bite_the_dispatcher_ip_block(model: Model) -> None:
 
 def _fill(ip: str, text: str | None = None) -> subprocess.CompletedProcess[str]:
     """`run.sh api-ip-fill IP`: the fill step as a filter, stdin to stdout, no cluster call."""
-    source = (POC05 / "platform/network-policy.yaml").read_text() if text is None else text
+    source = (KIND_POC05 / "platform/network-policy.yaml").read_text() if text is None else text
     return subprocess.run(
         ["bash", str(RUN_SH), "api-ip-fill", ip],
         input=source,
@@ -893,13 +350,15 @@ def _cluster_subnets() -> dict[str, str]:
 
 
 def test_poc05_run_sh_fills_the_api_server_ip() -> None:
-    """Exit criterion 8 (offline part): the control. A node address replaces the sentinel, once."""
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Exit criterion 8 (offline part): the control. A node address replaces the sentinel, once."""
     out = _fill("172.18.0.2")
     assert out.returncode == 0, out.stderr
     assert SENTINEL not in out.stdout
     assert out.stdout.count("cidr: 172.18.0.2/32") == 1
     policies = [d for d in yaml.safe_load_all(out.stdout) if d]
-    assert len(policies) == len(_docs(POC05 / "platform/network-policy.yaml"))
+    assert len(policies) == len(load_manifests(KIND_POC05 / "platform/network-policy.yaml"))
 
 
 @pytest.mark.parametrize(
@@ -921,7 +380,9 @@ def test_poc05_run_sh_fills_the_api_server_ip() -> None:
     ],
 )
 def test_poc05_run_sh_refuses_a_bad_api_server_ip(ip: str, why: str) -> None:
-    """Exit criterion 8 (offline part): `run.sh` never writes a sentinel, link-local, pod-range,
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Exit criterion 8 (offline part): `run.sh` never writes a sentinel, link-local, pod-range,
     or service-range block. Nothing reaches stdout, so nothing is applied."""
     out = _fill(ip)
     assert out.returncode != 0, f"{why}: {ip!r} was accepted"
@@ -931,9 +392,11 @@ def test_poc05_run_sh_refuses_a_bad_api_server_ip(ip: str, why: str) -> None:
 
 def test_poc05_run_sh_refuses_input_without_exactly_one_sentinel() -> None:
     """A policy file whose sentinel was replaced by a literal address in git is refused."""
-    filled = (POC05 / "platform/network-policy.yaml").read_text().replace(SENTINEL, "1.2.3.4/32")
+    filled = (
+        (KIND_POC05 / "platform/network-policy.yaml").read_text().replace(SENTINEL, "1.2.3.4/32")
+    )
     assert _fill("172.18.0.2", filled).returncode != 0
-    twice = (POC05 / "platform/network-policy.yaml").read_text() + f"\n# {SENTINEL}\n"
+    twice = (KIND_POC05 / "platform/network-policy.yaml").read_text() + f"\n# {SENTINEL}\n"
     assert _fill("172.18.0.2", twice).returncode != 0
 
 

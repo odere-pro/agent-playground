@@ -1,5 +1,5 @@
 """PoC-5 admission, offline: the trust rule's ValidatingAdmissionPolicy, its binding, its params,
-the submitter's and deployer's RBAC, and the paired fixtures under `deploy/kind/poc05/admission/`
+and the paired fixtures under `deploy/kind/poc05/admission/`
 (plan `docs/plans/2026-10-02-poc-05-sandboxed.md`, section 2.5; ADR-005 decisions 4 and 5; security
 review `notes/2026-10-02-review-security.md` F1 to F3: rules 6, 7, and 8). The per-call sandbox
 (plan `docs/plans/2026-10-09-poc-05-per-call-sandbox.md`, sections "RBAC" and "Admission", task 4)
@@ -10,8 +10,8 @@ Exit criterion 7 (offline part): "Admission rejects `untrusted` and a third-part
 `sidecar`." A policy that fails to compile enforces nothing (spike question 5), so this file
 checks as much as it can without a cluster:
 
-- the policies, bindings, params, and RBAC parse and carry the fields the design names;
-- a model of the RBAC answers the design's `kubectl auth can-i` lists as the kind test expects;
+- the policies, bindings, and params parse and carry the fields the design names;
+- `test_poc05_admission_rbac_static.py` checks the RBAC;
 - every CEL expression uses only the optional lookup form `[?'key']` (the spike found that
   `.?'key'` does not compile), has balanced delimiters, and names only variables defined above it;
 - each rule (1 to 5, 6a to 6c, 7a to 7d, 8, T1 to T3, C1 to C5) has a rejected fixture and an
@@ -26,111 +26,73 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass
-from pathlib import Path
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
 import yaml
-
-ROOT = Path(__file__).resolve().parents[3]
-ADMISSION = ROOT / "deploy/kind/poc05/admission"
-FIXTURES = ADMISSION / "fixtures"
-NAMESPACES = ROOT / "deploy/kind/poc05/base/namespaces.yaml"
-
-POLICY_NAME = "agent-trust-rule"
-PARAMS_NAME = "agent-trust-params"
-PARAMS_NAMESPACE = "agent-platform-system"
-ENFORCE_LABEL = ("agents.platform/admission", "enforce")
-ENFORCED_NAMESPACES = {"poc05-agents", "poc05-remote", "poc05-tools"}
-SUBMITTER = ("poc05-tenant", "submitter")
-DEPLOYER = ("agent-platform-system", "deployer")
-DISPATCHER = ("poc05-platform", "code-runner-dispatch")
-# Per-call sandbox plan, "RBAC": the submitter loses poc05-tools (security review, required 4).
-SUBMITTER_NAMESPACES = {"poc05-remote"}
-SHAPE_LABEL = "agents.platform/pod-shape"
-NAMESPACE_SHAPES = {"poc05-agents": "chassis", "poc05-remote": "remote", "poc05-tools": "tool"}
-TRUST = "agents.platform/trust"
-LANE = "agents.platform/lane"
-ROLE = "agents.platform/role"
-NAME = "app.kubernetes.io/name"
-PREFIX = "kind.local/agent-platform/"
-RULES = ("1", "2", "3", "4", "5", "6a", "6b", "6c", "7a", "7b", "7c", "7d", "8")
-EXT_GROUP = "extensions.agents.x-k8s.io"
-TEMPLATE_RULES = ("T1", "T2", "T3", "T4", "T5")
-CLAIM_RULES = ("C1", "C2", "C3", "C4", "C5")
-# Extension policy name to the one resource it matches and its rules. Two policies, not one: a
-# policy matching both kinds would read `object.spec.env` on a SandboxTemplate, which has no env.
-EXTENSION_POLICIES = {
-    "sandbox-template-rule": ("sandboxtemplates", TEMPLATE_RULES),
-    "sandbox-claim-rule": ("sandboxclaims", CLAIM_RULES),
-}
-# The fields of the v1.0.5 extension CRDs the rules read (design section "agent-sandbox v1.0.5").
-EXTENSION_FIELDS = {
-    "sandbox-template-rule": {
-        "networkPolicyManagement",
-        "envVarsInjectionPolicy",
-        "volumeClaimTemplatesPolicy",
-        "volumeClaimTemplates",
-        "networkPolicy",
-    },
-    "sandbox-claim-rule": {
-        "env",
-        "additionalPodMetadata",
-        "additionalPodMetadata.labels",
-        "additionalPodMetadata.annotations",
-        "warmPoolRef",
-        "warmPoolRef.name",
-        "lifecycle",
-        "lifecycle.shutdownPolicy",
-        "lifecycle.shutdownTime",
-        "volumeClaimTemplates",
-    },
-}
-POOL = "code-runner"
-ADMISSION_OBJECTS = {
-    "params.yaml",
-    "rbac.yaml",
-    "policy.yaml",
-    "binding.yaml",
-    "extension-policy.yaml",
-    "extension-binding.yaml",
-}
+from poc_harness.admission_manifests import (
+    ADMISSION,
+    ADMISSION_OBJECTS,
+    CLAIM_RULES,
+    ENFORCE_LABEL,
+    ENFORCED_NAMESPACES,
+    EXT_GROUP,
+    EXTENSION_FIELDS,
+    EXTENSION_POLICIES,
+    FIXTURES,
+    LANE,
+    NAME,
+    NAMESPACE_SHAPES,
+    PARAMS_NAME,
+    PARAMS_NAMESPACE,
+    POLICY_NAME,
+    POOL,
+    PREFIX,
+    ROLE,
+    RULES,
+    SHAPE_LABEL,
+    SUBMITTER,
+    TEMPLATE_RULES,
+    TRUST,
+    Fixture,
+    all_fixtures,
+    namespace_labels,
+    one_of_kind,
+    read_fixture,
+    template_of,
+)
+from poc_harness.admission_model import (
+    AdmissionParams,
+    all_broken_rules,
+    broken_rules,
+    extension_broken_rules,
+)
+from poc_harness.manifests import containers_of, load_manifests
 
 Doc = dict[str, Any]
 
 
-def _load_all(path: Path) -> list[Doc]:
-    return [d for d in yaml.safe_load_all(path.read_text()) if d]
-
-
-def _one(path: Path, kind: str) -> Doc:
-    docs = [d for d in _load_all(path) if d.get("kind") == kind]
-    assert len(docs) == 1, f"{path.name}: expected one {kind}, found {len(docs)}"
-    return docs[0]
-
-
 @pytest.fixture(scope="module")
 def policy() -> Doc:
-    return _one(ADMISSION / "policy.yaml", "ValidatingAdmissionPolicy")
+    return one_of_kind(ADMISSION / "policy.yaml", "ValidatingAdmissionPolicy")
 
 
 @pytest.fixture(scope="module")
 def binding() -> Doc:
-    return _one(ADMISSION / "binding.yaml", "ValidatingAdmissionPolicyBinding")
+    return one_of_kind(ADMISSION / "binding.yaml", "ValidatingAdmissionPolicyBinding")
 
 
 @pytest.fixture(scope="module")
 def extension_policies() -> dict[str, Doc]:
-    docs = _load_all(ADMISSION / "extension-policy.yaml")
+    docs = load_manifests(ADMISSION / "extension-policy.yaml")
     assert all(d["kind"] == "ValidatingAdmissionPolicy" for d in docs)
     return {d["metadata"]["name"]: d for d in docs}
 
 
 @pytest.fixture(scope="module")
 def extension_bindings() -> dict[str, Doc]:
-    docs = _load_all(ADMISSION / "extension-binding.yaml")
+    docs = load_manifests(ADMISSION / "extension-binding.yaml")
     assert all(d["kind"] == "ValidatingAdmissionPolicyBinding" for d in docs)
     return {d["metadata"]["name"]: d for d in docs}
 
@@ -142,12 +104,7 @@ def all_policies(policy: Doc, extension_policies: dict[str, Doc]) -> list[Doc]:
 
 @pytest.fixture(scope="module")
 def params() -> Doc:
-    return _one(ADMISSION / "params.yaml", "ConfigMap")
-
-
-@pytest.fixture(scope="module")
-def rbac() -> list[Doc]:
-    return _load_all(ADMISSION / "rbac.yaml")
+    return one_of_kind(ADMISSION / "params.yaml", "ConfigMap")
 
 
 def _messages(policy: Doc) -> dict[str, str]:
@@ -219,13 +176,19 @@ def test_the_template_variable_reads_a_sandbox_template_pod(policy: Doc) -> None
 
 
 def test_policy_has_only_the_params_check_and_rules_1_to_8(policy: Doc) -> None:
-    """Criterion 7: the trust policy holds rule 0 and rules 1 to 8, and no other rule."""
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Criterion 7: the trust policy holds rule 0 and rules 1 to 8, and no other rule."""
     assert sorted(_messages(policy)) == sorted(["0", *RULES])
 
 
 @pytest.mark.parametrize("rule", ["0", *RULES])
 def test_policy_has_every_rule_and_the_params_check(policy: Doc, rule: str) -> None:
-    """Criterion 7: trust rule `rule` is in the policy once, denies as Forbidden, and its dynamic
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Criterion 7: trust rule `rule` is in the policy once, denies as Forbidden, and its dynamic
     message starts with the static one, so the kind test's match holds."""
     tag = f"trust rule {rule}: "
 
@@ -433,16 +396,8 @@ def test_binding_denies_in_the_enforced_namespaces_with_platform_params(binding:
     }
 
 
-def _namespace_labels() -> dict[str, dict[str, str]]:
-    return {
-        d["metadata"]["name"]: dict(d["metadata"].get("labels", {}))
-        for d in _load_all(NAMESPACES)
-        if d.get("kind") == "Namespace"
-    }
-
-
 def test_the_selector_picks_exactly_the_workload_namespaces() -> None:
-    labels = _namespace_labels()
+    labels = namespace_labels()
     labelled = {n for n, lab in labels.items() if lab.get(ENFORCE_LABEL[0]) == ENFORCE_LABEL[1]}
     assert labelled == ENFORCED_NAMESPACES
     assert {PARAMS_NAMESPACE, SUBMITTER[0], "poc05-smoke"} <= set(labels)
@@ -450,7 +405,7 @@ def test_the_selector_picks_exactly_the_workload_namespaces() -> None:
 
 def test_each_enforced_namespace_names_one_pod_shape() -> None:
     """Rule 7a reads it through `namespaceObject` (review F3)."""
-    labels = _namespace_labels()
+    labels = namespace_labels()
     assert {n: labels[n].get(SHAPE_LABEL) for n in ENFORCED_NAMESPACES} == NAMESPACE_SHAPES
     assert all(SHAPE_LABEL not in lab for n, lab in labels.items() if n not in NAMESPACE_SHAPES)
 
@@ -458,7 +413,7 @@ def test_each_enforced_namespace_names_one_pod_shape() -> None:
 def test_params_live_in_the_platform_namespace_and_list_our_repositories(params: Doc) -> None:
     assert params["metadata"]["name"] == PARAMS_NAME
     assert params["metadata"]["namespace"] == PARAMS_NAMESPACE
-    p = _Params.of(params)
+    p = AdmissionParams.of(params)
     # A registry host no public registry serves (review F1): never a bare Docker Hub namespace.
     assert p.prefix == PREFIX
     assert p.prefix.split("/")[0].count(".") >= 1, "the prefix must start with a registry host"
@@ -469,256 +424,10 @@ def test_params_live_in_the_platform_namespace_and_list_our_repositories(params:
     assert all(":" not in r and "@" not in r for r in p.trusted), "repositories, not tags"
 
 
-# --- RBAC -------------------------------------------------------------------------------------
-
-
-def _bindings_to(rbac: list[Doc], account: tuple[str, str]) -> list[Doc]:
-    ns, name = account
-    return [
-        d
-        for d in rbac
-        if d["kind"] in {"RoleBinding", "ClusterRoleBinding"}
-        and any(
-            s.get("kind") == "ServiceAccount" and s.get("name") == name and s.get("namespace") == ns
-            for s in d.get("subjects", [])
-        )
-    ]
-
-
-def _roles(rbac: list[Doc]) -> dict[tuple[str, str], Doc]:
-    return {
-        (d["kind"], d["metadata"]["name"]): d for d in rbac if d["kind"] in {"Role", "ClusterRole"}
-    }
-
-
-def _role_of(rbac: list[Doc], binding: Doc) -> Doc:
-    return _roles(rbac)[(binding["roleRef"]["kind"], binding["roleRef"]["name"])]
-
-
-def can_i(
-    rbac: list[Doc], account: tuple[str, str], verb: str, resource: str, group: str, ns: str
-) -> bool:
-    """`kubectl auth can-i` for the RoleBindings in rbac.yaml (no ClusterRoleBinding is used)."""
-    return any(
-        group in rule["apiGroups"] and resource in rule["resources"] and verb in rule["verbs"]
-        for b in _bindings_to(rbac, account)
-        if b["metadata"].get("namespace") == ns
-        for rule in _role_of(rbac, b)["rules"]
-    )
-
-
-def _resources(rbac: list[Doc], account: tuple[str, str]) -> set[str]:
-    roles = _roles(rbac)
-    return {
-        r
-        for b in _bindings_to(rbac, account)
-        for rule in roles[(b["roleRef"]["kind"], b["roleRef"]["name"])]["rules"]
-        for r in rule["resources"]
-    }
-
-
-def test_accounts_carry_no_token(rbac: list[Doc]) -> None:
-    accounts = {
-        (a["metadata"]["namespace"], a["metadata"]["name"]): a
-        for a in rbac
-        if a["kind"] == "ServiceAccount"
-    }
-    assert set(accounts) == {SUBMITTER, DEPLOYER}
-    assert all(a["automountServiceAccountToken"] is False for a in accounts.values())
-
-
-def test_submitter_cannot_create_pods_where_the_chassis_secrets_live(rbac: list[Doc]) -> None:
-    """Review F2: a pod creator reads every Secret in its namespace through the pod."""
-    found = _bindings_to(rbac, SUBMITTER)
-    assert all(b["kind"] == "RoleBinding" for b in found), "no cluster-wide grant"
-    assert {b["metadata"]["namespace"] for b in found} == SUBMITTER_NAMESPACES
-    assert "poc05-agents" not in SUBMITTER_NAMESPACES
-
-
-def test_deployer_deploys_every_workload_namespace(rbac: list[Doc]) -> None:
-    found = _bindings_to(rbac, DEPLOYER)
-    assert all(b["kind"] == "RoleBinding" for b in found), "no cluster-wide grant"
-    assert {b["metadata"]["namespace"] for b in found} == ENFORCED_NAMESPACES
-    needed = {"pods", "configmaps", "services", "serviceaccounts", "deployments", "sandboxes"}
-    assert needed | {"networkpolicies"} <= _resources(rbac, DEPLOYER)
-
-
-@pytest.mark.parametrize(
-    "account", [SUBMITTER, DEPLOYER, DISPATCHER], ids=["submitter", "deployer", "dispatcher"]
-)
-def test_tenant_and_deployer_cannot_touch_params_policy_rbac_or_secrets(
-    rbac: list[Doc], account: tuple[str, str]
-) -> None:
-    roles = _roles(rbac)
-    forbidden = {
-        "secrets",
-        "namespaces",
-        "validatingadmissionpolicies",
-        "validatingadmissionpolicybindings",
-        "roles",
-        "rolebindings",
-        "clusterroles",
-        "clusterrolebindings",
-        "resourcequotas",
-    }
-    for b in _bindings_to(rbac, account):
-        assert b["metadata"]["namespace"] != PARAMS_NAMESPACE
-        role = roles[(b["roleRef"]["kind"], b["roleRef"]["name"])]
-        for rule in role["rules"]:
-            assert "*" not in rule["verbs"] and "*" not in rule["resources"]
-            assert "*" not in rule["apiGroups"]
-            assert not set(rule["resources"]) & forbidden, rule
-            for verb in ("escalate", "bind", "impersonate"):
-                assert verb not in rule["verbs"]
-
-
-def test_submitter_cannot_open_network_edges_or_services(rbac: list[Doc]) -> None:
-    """Review F3: Services and NetworkPolicies select by labels; only the platform writes them."""
-    assert not {"networkpolicies", "services"} & _resources(rbac, SUBMITTER)
-
-
-def test_deployer_applies_templates_and_pools_but_never_claims(rbac: list[Doc]) -> None:
-    """`run.sh workloads` applies tools/ as the deployer; claims are the dispatcher's alone."""
-    for ns in ENFORCED_NAMESPACES:
-        for resource in ("sandboxtemplates", "sandboxwarmpools"):
-            assert can_i(rbac, DEPLOYER, "create", resource, EXT_GROUP, ns), (resource, ns)
-        assert not can_i(rbac, DEPLOYER, "create", "sandboxclaims", EXT_GROUP, ns), ns
-
-
-def test_the_dispatcher_role_is_create_get_delete_on_claims_in_tools(rbac: list[Doc]) -> None:
-    (b,) = _bindings_to(rbac, DISPATCHER)
-    assert b["kind"] == "RoleBinding"
-    assert b["metadata"]["namespace"] == "poc05-tools"
-    role = _role_of(rbac, b)
-    assert role["kind"] == "Role" and role["metadata"]["namespace"] == "poc05-tools"
-    (rule,) = role["rules"]
-    assert rule["apiGroups"] == [EXT_GROUP]
-    assert rule["resources"] == ["sandboxclaims"]
-    assert sorted(rule["verbs"]) == ["create", "delete", "get"]
-    assert "resourceNames" not in rule, "claims have generated names"
-
-
-def test_the_dispatcher_account_is_not_made_here(rbac: list[Doc]) -> None:
-    """platform/code-runner-dispatch.yaml owns the ServiceAccount; this file only binds it."""
-    assert not [
-        d for d in rbac if d["kind"] == "ServiceAccount" and d["metadata"]["name"] == DISPATCHER[1]
-    ]
-
-
-TOOLS = "poc05-tools"
-# Per-call sandbox plan, "RBAC": the `kubectl auth can-i` lists the kind test checks. Each refusal
-# sits next to a control that the same identity may do.
-CAN_I: list[tuple[tuple[str, str], str, str, str, str, bool]] = [
-    *[
-        (DISPATCHER, v, "sandboxclaims", EXT_GROUP, TOOLS, True)
-        for v in ("create", "get", "delete")
-    ],
-    *[
-        (DISPATCHER, v, "sandboxclaims", EXT_GROUP, TOOLS, False)
-        for v in ("list", "watch", "update", "patch")
-    ],
-    (DISPATCHER, "create", "sandboxclaims", EXT_GROUP, "poc05-remote", False),
-    (DISPATCHER, "create", "sandboxtemplates", EXT_GROUP, TOOLS, False),
-    (DISPATCHER, "create", "sandboxwarmpools", EXT_GROUP, TOOLS, False),
-    (DISPATCHER, "create", "pods", "", TOOLS, False),
-    (DISPATCHER, "get", "secrets", "", TOOLS, False),
-    (DISPATCHER, "get", "secrets", "", "poc05-platform", False),
-    (SUBMITTER, "create", "pods", "", "poc05-remote", True),
-    (SUBMITTER, "create", "pods", "", TOOLS, False),
-    *[
-        (SUBMITTER, "create", r, EXT_GROUP, ns, False)
-        for r in ("sandboxclaims", "sandboxtemplates", "sandboxwarmpools")
-        for ns in sorted(ENFORCED_NAMESPACES)
-    ],
-]
-
-
-@pytest.mark.parametrize("case", CAN_I, ids=[f"{a[1]}-{v}-{r}-{ns}" for a, v, r, _, ns, _ in CAN_I])
-def test_can_i_matches_the_design(
-    rbac: list[Doc], case: tuple[tuple[str, str], str, str, str, str, bool]
-) -> None:
-    account, verb, resource, group, ns, allowed = case
-    assert can_i(rbac, account, verb, resource, group, ns) is allowed
-
-
-def test_the_tools_quota_caps_claims_pods_and_memory(rbac: list[Doc]) -> None:
-    """A stolen dispatcher token starts at most a handful of sandboxes (suggested: values)."""
-    (quota,) = [d for d in rbac if d["kind"] == "ResourceQuota"]
-    assert quota["metadata"]["namespace"] == TOOLS
-    assert quota["spec"]["hard"] == {
-        f"count/sandboxclaims.{EXT_GROUP}": "4",
-        "pods": "6",
-        "limits.memory": "1536Mi",
-    }
-
-
-def test_only_the_platform_role_may_edit_the_params(rbac: list[Doc]) -> None:
-    in_platform = [
-        d for d in rbac if d["metadata"].get("namespace") == PARAMS_NAMESPACE and "rules" in d
-    ]
-    assert len(in_platform) == 1
-    (rule,) = in_platform[0]["rules"]
-    assert rule["resources"] == ["configmaps"]
-    assert rule["resourceNames"] == [PARAMS_NAME]
-    platform_bindings = [
-        d
-        for d in rbac
-        if d["kind"] == "RoleBinding" and d["metadata"].get("namespace") == PARAMS_NAMESPACE
-    ]
-    assert len(platform_bindings) == 1
-    assert all(s["kind"] == "Group" for s in platform_bindings[0]["subjects"])
-
-
 # --- fixtures ---------------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class Fixture:
-    path: Path
-    expect: str
-    rule: str
-    message: str | None
-    differs: tuple[str, ...]
-    doc: Doc
-
-    @property
-    def twin(self) -> Path:
-        return self.path.parent / "admitted.yaml"
-
-    @property
-    def id(self) -> str:
-        return f"{self.path.parent.name}/{self.path.stem}"
-
-
-HEADER = re.compile(r"^#\s*(expect|rule|message|differs):\s*(.*?)\s*$")
-
-
-def _fixture(path: Path) -> Fixture:
-    fields: dict[str, str] = {}
-    for line in path.read_text().splitlines():
-        if not line.startswith("#"):
-            break
-        m = HEADER.match(line)
-        if m:
-            fields[m.group(1)] = m.group(2)
-    docs = _load_all(path)
-    assert len(docs) == 1, f"{path}: one object per fixture"
-    differs = tuple(p.strip() for p in fields.get("differs", "").split(",") if p.strip())
-    return Fixture(
-        path=path,
-        expect=fields.get("expect", ""),
-        rule=fields.get("rule", ""),
-        message=fields.get("message"),
-        differs=differs,
-        doc=docs[0],
-    )
-
-
-def _all_fixtures() -> list[Fixture]:
-    return [_fixture(p) for p in sorted(FIXTURES.glob("*/*.yaml"))]
-
-
-ALL = _all_fixtures() if FIXTURES.is_dir() else []
+ALL = all_fixtures() if FIXTURES.is_dir() else []
 REJECTED = [f for f in ALL if f.expect == "rejected"]
 # A SandboxClaim describes no pod; the trust rule does not match it.
 PODS = [f for f in ALL if f.doc["kind"] != "SandboxClaim"]
@@ -732,7 +441,7 @@ def test_every_rule_has_a_rejected_fixture_and_an_admitted_twin() -> None:
         assert rejected, f"rule {rule}: no rejected fixture"
         for f in rejected:
             assert f.twin.is_file(), f"{f.id}: no admitted twin"
-            assert _fixture(f.twin).expect == "admitted"
+            assert read_fixture(f.twin).expect == "admitted"
 
 
 def test_workload_kinds_are_covered_too() -> None:
@@ -748,7 +457,7 @@ def test_the_review_cases_have_fixtures() -> None:
         c.get("image")
         for f in REJECTED
         if f.rule == "3"
-        for c in _containers(_template(f.doc)["spec"])
+        for c in containers_of(template_of(f.doc)["spec"])
     }
     assert "docker.io/agent-platform/echo-python:poc05" in images
     assert "agent-platform/echo-python:poc05" in images
@@ -756,7 +465,7 @@ def test_the_review_cases_have_fixtures() -> None:
         c.get("imagePullPolicy")
         for f in REJECTED
         if f.rule == "8"
-        for c in _template(f.doc)["spec"]["containers"]
+        for c in template_of(f.doc)["spec"]["containers"]
     }
     assert {"Always", "IfNotPresent"} <= pulls
 
@@ -812,9 +521,9 @@ def test_fixture_images_use_the_params_prefix_or_are_meant_not_to() -> None:
     for f in ALL:
         if f.expect != "admitted" or f.doc["kind"] == "SandboxClaim":
             continue
-        if _template(f.doc)["metadata"]["labels"].get(LANE) == "remote":
+        if template_of(f.doc)["metadata"]["labels"].get(LANE) == "remote":
             continue
-        for c in _containers(_template(f.doc)["spec"]):
+        for c in containers_of(template_of(f.doc)["spec"]):
             assert c["image"].startswith(PREFIX), (f.id, c["image"])
 
 
@@ -886,7 +595,7 @@ def _pod_path(path: str) -> str:
 def test_twins_differ_only_in_the_field_the_rule_reads(fixture: Fixture) -> None:
     """The pitfall rule: if the twins differed in more, the admitted one could pass for another
     reason and prove nothing about this rule."""
-    twin = _fixture(fixture.twin)
+    twin = read_fixture(fixture.twin)
     diff = _diff(fixture.doc, twin.doc)
     assert diff, f"{fixture.id}: identical to its twin"
     assert sorted(diff) == sorted(fixture.differs), f"{fixture.id}: differs in {diff}"
@@ -896,32 +605,13 @@ def test_twins_differ_only_in_the_field_the_rule_reads(fixture: Fixture) -> None
         )
 
 
-def _containers(spec: Doc) -> list[Doc]:
-    return [
-        *spec.get("initContainers", []),
-        *spec["containers"],
-        *spec.get("ephemeralContainers", []),
-    ]
-
-
-def _template(doc: Doc) -> Doc:
-    kind = doc["kind"]
-    if kind == "Pod":
-        return doc
-    if kind == "CronJob":
-        return dict(doc["spec"]["jobTemplate"]["spec"]["template"])
-    if kind in {"Sandbox", "SandboxTemplate"}:
-        return dict(doc["spec"]["podTemplate"])
-    return dict(doc["spec"]["template"])
-
-
 @pytest.mark.parametrize("fixture", PODS, ids=[f.id for f in PODS])
 def test_fixtures_meet_the_restricted_pod_security_standard(fixture: Fixture) -> None:
     """The enforced namespaces run PSA `restricted`: a fixture that broke it would be rejected by
     PSA on kind, and an admitted twin would then fail for the wrong reason."""
-    spec = _template(fixture.doc)["spec"]
+    spec = template_of(fixture.doc)["spec"]
     pod_sc = spec.get("securityContext", {})
-    for c in _containers(spec):
+    for c in containers_of(spec):
         sc = c.get("securityContext", {})
         assert sc.get("allowPrivilegeEscalation") is False, (fixture.id, c["name"])
         assert sc.get("capabilities", {}).get("drop") == ["ALL"], (fixture.id, c["name"])
@@ -931,181 +621,6 @@ def test_fixtures_meet_the_restricted_pod_security_standard(fixture: Fixture) ->
 
 
 # --- the rule model ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class _Params:
-    prefix: str
-    trusted: tuple[str, ...]
-    image_source: str = "pull-never"
-
-    @classmethod
-    def of(cls, doc: Doc) -> _Params:
-        data = doc.get("data", {})
-        trusted = tuple(
-            r.strip() for r in data.get("trustedRepositories", "").split(",") if r.strip()
-        )
-        return cls(
-            prefix=data.get("registryPrefix", ""),
-            trusted=trusted,
-            image_source=data.get("imageSource", ""),
-        )
-
-
-def _is_repo(image: str, repo: str) -> bool:
-    return image == repo or image.startswith((repo + ":", repo + "@"))
-
-
-TOKEN_SECRET = re.compile(r"remote-[a-z0-9]([-a-z0-9]*[a-z0-9])?-token")
-
-
-def _secret_names(spec: Doc) -> Iterator[str]:
-    for c in _containers(spec):
-        for e in c.get("env", []):
-            ref = e.get("valueFrom", {}).get("secretKeyRef")
-            if ref is not None:
-                yield str(ref.get("name", ""))
-        for f in c.get("envFrom", []):
-            if "secretRef" in f:
-                yield str(f["secretRef"].get("name", ""))
-    for v in spec.get("volumes", []):
-        if "secret" in v:
-            yield str(v["secret"].get("secretName", ""))
-        for s in v.get("projected", {}).get("sources", []):
-            if "secret" in s:
-                yield str(s["secret"].get("name", ""))
-
-
-def _projected_token(spec: Doc) -> bool:
-    return any(
-        "serviceAccountToken" in s
-        for v in spec.get("volumes", [])
-        for s in v.get("projected", {}).get("sources", [])
-    )
-
-
-def _uses_secret(c: Doc, secret_volumes: set[str]) -> bool:
-    return (
-        any("secretKeyRef" in e.get("valueFrom", {}) for e in c.get("env", []))
-        or any("secretRef" in f for f in c.get("envFrom", []))
-        or any(m["name"] in secret_volumes for m in c.get("volumeMounts", []))
-    )
-
-
-def _secret_volumes(spec: Doc) -> set[str]:
-    return {
-        v["name"]
-        for v in spec.get("volumes", [])
-        if "secret" in v or any("secret" in s for s in v.get("projected", {}).get("sources", []))
-    }
-
-
-def _gvisor_no_token(spec: Doc) -> bool:
-    return (
-        spec.get("runtimeClassName") == "gvisor"
-        and spec.get("automountServiceAccountToken") is False
-    )
-
-
-def broken_rules(doc: Doc, p: _Params, namespace: str | None = None) -> set[str]:
-    """The rules `doc` breaks, by the same logic as the CEL in `policy.yaml`. `namespace` defaults
-    to the object's own; its shape label comes from `base/namespaces.yaml`.
-
-    This is a hand-written model of the rules, not the policy: it never reads `policy.yaml`, so a
-    fixture that agrees with it proves nothing about the CEL by itself. The expression pins in
-    `test_rule_expression_matches_its_pin_when_the_policy_loads` tie the two together offline;
-    `test_poc05_kind_admission.py` runs the real policy."""
-    ns = namespace or doc.get("metadata", {}).get("namespace", "")
-    ns_shape = _namespace_labels().get(ns, {}).get(SHAPE_LABEL, "")
-    template = _template(doc)
-    labels = template.get("metadata", {}).get("labels", {})
-    spec = template["spec"]
-    containers = _containers(spec)
-    images = [c.get("image", "") for c in containers]
-    chassis_repo = p.prefix + "chassis"
-    chassis = [i for i in images if _is_repo(i, chassis_repo)]
-    workload = [i for i in images if i not in chassis]
-    trust = labels.get(TRUST, "")
-    sidecar = bool(chassis) and bool(workload)
-    remote = not chassis and (labels.get(LANE, "") == "remote" or trust == "untrusted")
-    shape = "chassis" if chassis else ("remote" if remote else "tool")
-    names = list(_secret_names(spec))
-    own_token = labels.get(NAME, "") + "-token"
-    secret_users = [
-        c.get("image", "") for c in containers if _uses_secret(c, _secret_volumes(spec))
-    ]
-    if p.image_source == "pull-never":
-        own_store = all(c.get("imagePullPolicy") == "Never" for c in containers)
-    else:
-        own_store = all("@sha256:" in i for i in images)
-
-    checks: dict[str, Callable[[], bool]] = {
-        "0": lambda: (
-            p.prefix != "" and bool(p.trusted) and p.image_source in {"pull-never", "digest"}
-        ),
-        "1": lambda: trust in {"trusted", "untrusted"},
-        "2": lambda: not (sidecar and trust == "untrusted"),
-        "3": lambda: remote or all(i.startswith(p.prefix) for i in images),
-        "4": lambda: (
-            not (sidecar and trust == "trusted")
-            or all(
-                any(_is_repo(i, r) for r in p.trusted) for i in workload if i.startswith(p.prefix)
-            )
-        ),
-        "5": lambda: (
-            not remote
-            or (
-                _gvisor_no_token(spec)
-                and not _projected_token(spec)
-                and all(TOKEN_SECRET.fullmatch(n) for n in names)
-            )
-        ),
-        "6a": lambda: len(chassis) <= 1,
-        "6b": lambda: all(
-            not c.get("command") for c in containers if c.get("image", "") in chassis
-        ),
-        "6c": lambda: remote or all(i in chassis for i in secret_users),
-        "7a": lambda: shape == ns_shape,
-        "7b": lambda: labels.get(ROLE, "") != "chassis" or bool(chassis),
-        "7c": lambda: (
-            not remote or all(not TOKEN_SECRET.fullmatch(n) or n == own_token for n in names)
-        ),
-        "7d": lambda: shape != "tool" or _gvisor_no_token(spec),
-        "8": lambda: remote or own_store,
-    }
-    return {n for n, ok in checks.items() if not ok()}
-
-
-def extension_broken_rules(doc: Doc) -> set[str]:
-    """The template and claim rules `doc` breaks, by the same logic as `extension-policy.yaml`."""
-    spec = doc.get("spec", {})
-    if doc["kind"] == "SandboxTemplate":
-        checks = {
-            "T1": spec.get("networkPolicyManagement") == "Unmanaged",
-            "T2": spec.get("envVarsInjectionPolicy", "Disallowed") == "Disallowed",
-            "T3": spec.get("volumeClaimTemplatesPolicy", "Disallowed") == "Disallowed",
-            "T4": not spec.get("volumeClaimTemplates"),
-            "T5": "networkPolicy" not in spec,
-        }
-    elif doc["kind"] == "SandboxClaim":
-        lifecycle = spec.get("lifecycle", {})
-        checks = {
-            "C1": not spec.get("env"),
-            "C2": not any(
-                (spec.get("additionalPodMetadata") or {}).get(k) for k in ("labels", "annotations")
-            ),
-            "C3": spec.get("warmPoolRef", {}).get("name") == POOL,
-            "C4": lifecycle.get("shutdownPolicy") == "Delete" and "shutdownTime" in lifecycle,
-            "C5": not spec.get("volumeClaimTemplates"),
-        }
-    else:
-        checks = {}
-    return {n for n, ok in checks.items() if not ok}
-
-
-def all_broken_rules(doc: Doc, p: _Params) -> set[str]:
-    trust = set() if doc["kind"] == "SandboxClaim" else broken_rules(doc, p)
-    return trust | extension_broken_rules(doc)
 
 
 @pytest.mark.parametrize(
@@ -1140,7 +655,10 @@ def all_broken_rules(doc: Doc, p: _Params) -> set[str]:
 def test_rule_expression_matches_its_pin_when_the_policy_loads(
     all_policies: list[Doc], rule: str, pinned: str
 ) -> None:
-    """Criterion 7: each rule's CEL in the loaded policy is the reviewed one, so a deleted or
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Criterion 7: each rule's CEL in the loaded policy is the reviewed one, so a deleted or
     weakened rule fails offline. The model in `broken_rules` is not the policy; this pin is the
     offline link between them. After a reviewed change to a rule, change the model and the pin."""
     tag = re.compile(rf"(trust|template|claim) rule {rule}: ")
@@ -1167,7 +685,10 @@ def test_rule_expression_matches_its_pin_when_the_policy_loads(
 def test_policy_variables_match_their_pin_when_the_policy_loads(
     all_policies: list[Doc], name: str, pinned: str
 ) -> None:
-    """Criterion 7: the variables the rules read are the reviewed ones, so a rule cannot be
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Criterion 7: the variables the rules read are the reviewed ones, so a rule cannot be
     weakened through a variable (say `isRemote`) while its own expression stays pinned."""
     (p,) = [p for p in all_policies if p["metadata"]["name"] == name]
     text = "\n".join(f"{v['name']}={v['expression']}" for v in p["spec"].get("variables", []))
@@ -1181,7 +702,7 @@ def test_policy_variables_match_their_pin_when_the_policy_loads(
 def test_the_rule_model_agrees_with_each_fixture(fixture: Fixture, params: Doc) -> None:
     """A rejected fixture breaks exactly its own rule, so its message is the one the kind test
     sees; an admitted twin breaks none."""
-    broken = all_broken_rules(fixture.doc, _Params.of(params))
+    broken = all_broken_rules(fixture.doc, AdmissionParams.of(params))
     expected = {fixture.rule} if fixture.expect == "rejected" else set()
     assert broken == expected, f"{fixture.id}: breaks {sorted(broken)}"
 
@@ -1192,13 +713,13 @@ def test_the_rule_model_fails_closed_on_empty_params() -> None:
         "metadata": {"namespace": "poc05-tools", "labels": {TRUST: "trusted"}},
         "spec": {"containers": [{"name": "a", "image": PREFIX + "echo-python:1"}]},
     }
-    assert "0" in broken_rules(pod, _Params(prefix="", trusted=()))
-    assert "0" in broken_rules(pod, _Params(prefix=PREFIX, trusted=("x",), image_source=""))
+    assert "0" in broken_rules(pod, AdmissionParams(prefix="", trusted=()))
+    assert "0" in broken_rules(pod, AdmissionParams(prefix=PREFIX, trusted=("x",), image_source=""))
 
 
 def test_the_digest_mode_needs_a_digest_on_every_image() -> None:
     """The cloud setting of rule 8 (`imageSource: digest`), in the model only."""
-    p = _Params(prefix=PREFIX, trusted=(PREFIX + "echo-python",), image_source="digest")
+    p = AdmissionParams(prefix=PREFIX, trusted=(PREFIX + "echo-python",), image_source="digest")
     pod: Doc = {
         "kind": "Pod",
         "metadata": {

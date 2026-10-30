@@ -18,7 +18,7 @@ H23 never exhausts the cap (under gVisor that would end the sandbox): it reads t
 cgroup on the node and compares it with the kubelet's configured `podPidsLimit`. The per-call
 process limit inside the code runner is in `test_poc05_kind_code_runner.py`.
 
-A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc05_conftest.py`). Run:
+A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc_harness.drills`). Run:
 `POC05_KIND=1 uv run pytest -m network <this file>`.
 """
 
@@ -33,7 +33,8 @@ from typing import Any
 
 import pytest
 import yaml
-from poc05_kind import (
+from poc_harness.drills import POC05_KIND
+from poc_harness.kind import (
     AGENTS_NS,
     CHASSIS,
     NOT_A_KEY,
@@ -50,10 +51,13 @@ from poc05_kind import (
     pod,
     probe,
     service_ip,
-    tcp,
+    tcp_check,
     unpoliced_caller,
     warm_sandboxes,
 )
+from poc_harness.kind_controls import secret_sources, traceparent_headers
+
+pytestmark = POC05_KIND
 
 REPO = Path(__file__).resolve().parents[3]
 CLUSTER_YAML = REPO / "deploy" / "kind" / "poc05" / "cluster.yaml"
@@ -64,10 +68,6 @@ TOKEN_ENV = "CHASSIS_API_TOKEN"
 TOKEN_SECRET = "remote-echo-token"  # pragma: allowlist secret (a Secret name)
 OUTSIDE_IP = "1.1.1.1"  # a literal public address: no DNS involved
 DISPATCH = "code-runner-dispatch"
-
-
-def traceparent(trace_id: str) -> dict[str, str]:
-    return {"traceparent": f"00-{trace_id}-00f067aa0ba902b7-01"}
 
 
 @pytest.fixture(scope="module")
@@ -138,14 +138,17 @@ def _access_lines(logs: str) -> Iterator[str]:
 def test_h17_listener_answers_only_the_remote_token_inside_a_run(
     remote: dict[str, Any], remote_chassis: dict[str, Any]
 ) -> None:
-    """Criterion 6, H17: the control refuses a model call to the remote listener (8091, from the
+    """Criterion 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential."
+
+    Criterion 6, H17: the control refuses a model call to the remote listener (8091, from the
     remote pod) with no token (401) and with a token it did not issue (401), and refuses the
     remote's own token outside a run (403 `run_required`). The allowed control: inside a run with
     that same traceparent, the remote's calls with its own token are answered 200 (the run ends
     `ok` with the fake model's reply, and the listener's 200 count for the remote's IP grows);
     after the run the same call is 403 again."""
     url = f"http://{PROXY_IP}:8091/v1"
-    trace = traceparent(uuid.uuid4().hex)
+    trace = traceparent_headers(uuid.uuid4().hex)
     bare, stranger, outside = in_remote(
         remote,
         [
@@ -182,24 +185,28 @@ def test_h17_listener_answers_only_the_remote_token_inside_a_run(
 def test_h18_listener_refuses_every_caller_but_the_remote_pod(
     caller: str, remote: dict[str, Any], remote_chassis: dict[str, Any]
 ) -> None:
-    """Criterion 6, H18/H30: the control refuses a TCP connection to the remote listener (8091,
+    """Criterion 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential."
+
+    Criterion 6, H18/H30: the control refuses a TCP connection to the remote listener (8091,
     by its ClusterIP and by the chassis pod IP) from a pod outside poc05-remote that carries the
     remote's label (`default`, no egress policy) and from the sidecar workload in `agent-echo`.
     The allowed controls: the same caller reaches the chassis's public port 8080 on the same pod
     IP, so its own egress works; the remote pod connects to 8091 by both addresses."""
     chassis_ip = remote_chassis["status"]["podIP"]
     to_proxy, to_pod, public = in_caller(
-        caller, [tcp(PROXY_IP, 8091), tcp(chassis_ip, 8091), tcp(chassis_ip, 8080)]
+        caller,
+        [tcp_check(PROXY_IP, 8091), tcp_check(chassis_ip, 8091), tcp_check(chassis_ip, 8080)],
     )
     assert to_proxy.get("error") == POLICY_DROPPED, to_proxy
     assert to_pod.get("error") == POLICY_DROPPED, to_pod
     assert public.get("connected") is True, public
 
     sidecar = pod(AGENTS_NS, SIDECAR_POD)["metadata"]["name"]
-    (lateral,) = probe(AGENTS_NS, sidecar, WORKLOAD, [tcp(PROXY_IP, 8091)])
+    (lateral,) = probe(AGENTS_NS, sidecar, WORKLOAD, [tcp_check(PROXY_IP, 8091)])
     assert lateral.get("error") == POLICY_DROPPED, lateral
 
-    by_proxy, by_pod = in_remote(remote, [tcp(PROXY_IP, 8091), tcp(chassis_ip, 8091)])
+    by_proxy, by_pod = in_remote(remote, [tcp_check(PROXY_IP, 8091), tcp_check(chassis_ip, 8091)])
     assert by_proxy.get("connected") is True, by_proxy
     assert by_pod.get("connected") is True, by_pod
 
@@ -207,19 +214,29 @@ def test_h18_listener_refuses_every_caller_but_the_remote_pod(
 def test_h18_remote_port_refuses_every_caller_but_its_chassis(
     caller: str, remote: dict[str, Any], remote_chassis: dict[str, Any]
 ) -> None:
-    """Criterion 6, H18: the control refuses a TCP connection to the remote's A2A port (9000, by
+    """Criterion 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential."
+
+    Criterion 6, H18: the control refuses a TCP connection to the remote's A2A port (9000, by
     the pod IP and the Service) from the labeled caller in `default`. The allowed control: the
     remote's own chassis connects to the same port by both addresses, and the caller reaches
     another pod's open port (the chassis's 8080)."""
     remote_ip, svc = remote["status"]["podIP"], service_ip(REMOTE_NS, REMOTE)
     by_pod, by_svc, public = in_caller(
-        caller, [tcp(remote_ip, 9000), tcp(svc, 9000), tcp(remote_chassis["status"]["podIP"], 8080)]
+        caller,
+        [
+            tcp_check(remote_ip, 9000),
+            tcp_check(svc, 9000),
+            tcp_check(remote_chassis["status"]["podIP"], 8080),
+        ],
     )
     assert by_pod.get("error") == POLICY_DROPPED, by_pod
     assert by_svc.get("error") == POLICY_DROPPED, by_svc
     assert public.get("connected") is True, public
 
-    own_pod, own_svc = in_chassis(remote_chassis, [tcp(remote_ip, 9000), tcp(svc, 9000)])
+    own_pod, own_svc = in_chassis(
+        remote_chassis, [tcp_check(remote_ip, 9000), tcp_check(svc, 9000)]
+    )
     assert own_pod.get("connected") is True, own_pod
     assert own_svc.get("connected") is True, own_svc
 
@@ -239,12 +256,12 @@ def h30_targets(remote_chassis: dict[str, Any]) -> dict[str, dict[str, Any]]:
     sandboxes = warm_sandboxes()
     assert sandboxes, "no Running code-runner pod (the warm pool is empty)"
     return {
-        "agent_echo_web": tcp(pod(AGENTS_NS, SIDECAR_POD)["status"]["podIP"], 8080),
-        "own_chassis_web": tcp(remote_chassis["status"]["podIP"], 8080),
-        "litellm": tcp(service_ip(PLATFORM_NS, "litellm"), 4000),
-        "valkey": tcp(service_ip(PLATFORM_NS, "valkey"), 6379),
-        "dispatch": tcp(service_ip(PLATFORM_NS, DISPATCH), 8000),
-        "sandbox": tcp(sandboxes[0]["status"]["podIP"], 8000),
+        "agent_echo_web": tcp_check(pod(AGENTS_NS, SIDECAR_POD)["status"]["podIP"], 8080),
+        "own_chassis_web": tcp_check(remote_chassis["status"]["podIP"], 8080),
+        "litellm": tcp_check(service_ip(PLATFORM_NS, "litellm"), 4000),
+        "valkey": tcp_check(service_ip(PLATFORM_NS, "valkey"), 6379),
+        "dispatch": tcp_check(service_ip(PLATFORM_NS, DISPATCH), 8000),
+        "sandbox": tcp_check(sandboxes[0]["status"]["podIP"], 8000),
     }
 
 
@@ -253,7 +270,7 @@ def h30_from_remote(
     remote: dict[str, Any], h30_targets: dict[str, dict[str, Any]]
 ) -> dict[str, dict[str, Any]]:
     """The remote pod's results for every target and for 8091 (key `listener`), in one call."""
-    checks = [*h30_targets.values(), tcp(PROXY_IP, 8091)]
+    checks = [*h30_targets.values(), tcp_check(PROXY_IP, 8091)]
     *refused, allowed = in_remote(remote, checks)
     return {**dict(zip(h30_targets, refused, strict=True)), "listener": allowed}
 
@@ -276,7 +293,10 @@ def h30_from_peers(
 
 
 def test_h30_targets_are_all_named(h30_targets: dict[str, dict[str, Any]]) -> None:
-    """Criterion 6, H30: the parametrized list and the probed targets are the same six."""
+    """Criterion 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential."
+
+    Criterion 6, H30: the parametrized list and the probed targets are the same six."""
     assert tuple(h30_targets) == H30_TARGETS
 
 
@@ -286,7 +306,10 @@ def test_h30_remote_reaches_no_other_pod(
     h30_from_remote: dict[str, dict[str, Any]],
     h30_from_peers: dict[str, dict[str, Any]],
 ) -> None:
-    """Criterion 6, H30: the control refuses (a policy drop, a timeout) the remote pod's TCP
+    """Criterion 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential."
+
+    Criterion 6, H30: the control refuses (a policy drop, a timeout) the remote pod's TCP
     connection to the target: another agent (`agent-echo`'s public port), its own chassis's public
     port, LiteLLM, Valkey, the code-runner dispatcher's Service, or a warm code-runner sandbox by
     pod IP. The allowed controls: 8091 connects in the same call, and the target is up from an
@@ -306,23 +329,27 @@ def test_h30_remote_reaches_no_other_pod(
 
 
 def test_h19_remote_reaches_no_outside_address(caller: str, remote: dict[str, Any]) -> None:
-    """Criterion 8 (partly shown), H19: the control refuses the remote pod's TCP connection to a
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), H19: the control refuses the remote pod's TCP connection to a
     literal outside address (1.1.1.1:443 and :80; no DNS involved). The allowed controls: in the
     same call the remote reaches 8091, and the caller pod, which no egress policy holds, reaches
     the same outside address, so the address answers from this cluster."""
     https, http, allowed = in_remote(
-        remote, [tcp(OUTSIDE_IP, 443), tcp(OUTSIDE_IP, 80), tcp(PROXY_IP, 8091)]
+        remote, [tcp_check(OUTSIDE_IP, 443), tcp_check(OUTSIDE_IP, 80), tcp_check(PROXY_IP, 8091)]
     )
     assert https.get("error") == POLICY_DROPPED, https
     assert http.get("error") == POLICY_DROPPED, http
     assert allowed.get("connected") is True, allowed
 
-    (outside,) = in_caller(caller, [tcp(OUTSIDE_IP, 443)])
+    (outside,) = in_caller(caller, [tcp_check(OUTSIDE_IP, 443)])
     assert outside.get("connected") is True, outside
 
 
 def test_h20_remote_has_no_dns(remote: dict[str, Any], remote_chassis: dict[str, Any]) -> None:
-    """Criterion 8 (partly shown), H20: the remote lane has no DNS at all (its policy has no port
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), H20: the remote lane has no DNS at all (its policy has no port
     53 rule), so DNS cannot carry data out. The control refuses the remote's A query to kube-dns
     by its ClusterIP and by a CoreDNS pod IP, and to an outside resolver (1.1.1.1), and its own
     resolver finds no name. The allowed control: the same A query from its chassis (which may use
@@ -357,7 +384,9 @@ def test_h20_remote_has_no_dns(remote: dict[str, Any], remote_chassis: dict[str,
 
 
 def test_h21_root_is_read_only_and_tmp_is_writable(remote: dict[str, Any]) -> None:
-    """Criterion 8 (partly shown), H21: `/proc/mounts` shows `/` mounted `ro`, and the control
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), H21: `/proc/mounts` shows `/` mounted `ro`, and the control
     refuses a write into `/var/tmp` (mode 1777 on the root file system, so permissions would allow
     it) with EROFS. The allowed control: the same write to `/tmp` works."""
     spec = remote["spec"]["containers"][0]["securityContext"]
@@ -378,7 +407,9 @@ def test_h21_root_is_read_only_and_tmp_is_writable(remote: dict[str, Any]) -> No
 
 
 def test_h23_pids_cap_is_the_configured_limit(remote: dict[str, Any]) -> None:
-    """Criterion 8 (partly shown), H23: the remote pod's pids cgroup on the node has `pids.max`
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), H23: the remote pod's pids cgroup on the node has `pids.max`
     equal to the kubelet's `podPidsLimit`, which is the value `cluster.yaml` configures (256).
     The cap is never exhausted here. The allowed control: `pids.current` is above zero and under
     the cap, so the sandbox's processes run inside it."""
@@ -399,7 +430,9 @@ def test_h23_pids_cap_is_the_configured_limit(remote: dict[str, Any]) -> None:
 
 
 def test_h28_remote_runs_on_gvisor_next_to_a_runc_pod(remote: dict[str, Any]) -> None:
-    """Criterion 8 (partly shown), H28: the remote pod has `runtimeClassName: gvisor`, the
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), H28: the remote pod has `runtimeClassName: gvisor`, the
     RuntimeClass's handler is `runsc`, the node's containerd ran its sandbox with `runsc`, and the
     kernel it sees is gVisor's (`/proc/version`). The control: `agent-echo`'s workload, on the
     default runtime, sees the node's real kernel and its sandbox handler is not `runsc`."""
@@ -431,37 +464,11 @@ def test_h28_remote_runs_on_gvisor_next_to_a_runc_pod(remote: dict[str, Any]) ->
 # --- One secret: the remote's own token, nothing else ------------------------------------------
 
 
-def secret_sources(spec: dict[str, Any]) -> list[tuple[str, str, str]]:
-    """Every place a pod spec takes a Secret: (container, env name or kind, Secret name)."""
-    found = []
-    containers = [
-        *spec.get("initContainers", []),
-        *spec.get("containers", []),
-        *spec.get("ephemeralContainers", []),
-    ]
-    for c in containers:
-        for e in c.get("env", []):
-            ref = (e.get("valueFrom") or {}).get("secretKeyRef")
-            if ref:
-                found.append((c["name"], e["name"], ref["name"]))
-        found.extend(
-            (c["name"], "envFrom", e["secretRef"]["name"])
-            for e in c.get("envFrom", [])
-            if "secretRef" in e
-        )
-    for v in spec.get("volumes", []):
-        if "secret" in v:
-            found.append(("volume", v["name"], v["secret"]["secretName"]))
-        for source in (v.get("projected") or {}).get("sources", []):
-            if "secret" in source:
-                found.append(("volume", v["name"], source["secret"]["name"]))
-            if "serviceAccountToken" in source:
-                found.append(("volume", v["name"], "serviceAccountToken"))
-    return found
-
-
 def test_remote_holds_one_secret_its_own_token(remote: dict[str, Any]) -> None:
-    """Criterion 4 (decision 2026-10-08: the remote's own token is allowed, nothing else), H25 for
+    """Criterion 4: "No provider key or internal credential is visible in any workload container or
+    remote pod, and neither holds a service account token."
+
+    Criterion 4 (decision 2026-10-08: the remote's own token is allowed, nothing else), H25 for
     the remote lane: the control refuses every other Secret. The pod spec takes exactly one value
     from a Secret, `CHASSIS_API_TOKEN` from `remote-echo-token` in the workload container; no
     `envFrom` Secret, no Secret or projected volume, no service account token

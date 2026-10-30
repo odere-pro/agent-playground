@@ -82,9 +82,10 @@ def proxy_for(app: Any) -> Any:
     return create_proxy_app(app)
 
 
-def bundle_for(connector: EngineConnector) -> PortBundle:
+def bundle_for(connector: EngineConnector, *, model: ModelPort | None = None) -> PortBundle:
+    """The ports a connector's `setup` takes. Default model: LiteLLM over the fake model server."""
     return PortBundle(
-        model=fake_model_over_litellm(),
+        model=model or fake_model_over_litellm(),
         engine=connector,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),

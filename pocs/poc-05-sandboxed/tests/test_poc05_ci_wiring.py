@@ -26,7 +26,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
+from poc_harness.workflows import (
+    PINNED,
+    SHA256,
+    load_workflow,
+    workflow_runs,
+    workflow_steps,
+    workflow_triggers,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github/workflows"
@@ -37,7 +44,6 @@ PYPROJECT = ROOT / "pyproject.toml"
 RUN_SH = ROOT / "deploy/kind/poc05/run.sh"
 INSTALL_GVISOR = ROOT / "deploy/kind/poc05/install-gvisor.sh"
 TESTS = Path(__file__).resolve().parent
-PINNED = re.compile(r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
 REMOTE_TESTS = (
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_lane.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py",
@@ -47,38 +53,12 @@ REMOTE_TESTS = (
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_runtime_hardening.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py",
 )
-SHA256 = re.compile(r"^[0-9a-f]{64}$")
-
-
-def _workflow(path: Path) -> dict[str, Any]:
-    doc = yaml.safe_load(path.read_text())
-    assert isinstance(doc, dict), path
-    # YAML 1.1 reads the bare key `on` as the boolean True.
-    if True in doc:
-        doc["on"] = doc.pop(True)
-    return doc
-
-
-def _steps(doc: dict[str, Any]) -> list[dict[str, Any]]:
-    steps: list[dict[str, Any]] = []
-    for job in doc["jobs"].values():
-        steps.extend(job.get("steps", []))
-    return steps
-
-
-def _runs(doc: dict[str, Any]) -> str:
-    return "\n".join(str(s.get("run", "")) for s in _steps(doc))
 
 
 @pytest.fixture(scope="module")
 def remote_lane() -> dict[str, Any]:
     assert REMOTE_LANE.is_file(), "missing .github/workflows/remote-lane.yml"
-    return _workflow(REMOTE_LANE)
-
-
-def _triggers(doc: dict[str, Any]) -> set[str]:
-    triggers = doc["on"]
-    return set(triggers) if isinstance(triggers, (dict, list)) else {triggers}
+    return load_workflow(REMOTE_LANE)
 
 
 def _job_env(doc: dict[str, Any]) -> dict[str, Any]:
@@ -93,7 +73,7 @@ def test_poc05_remote_lane_runs_on_push_with_everything_pinned(
     """The job runs on push and pull request (and by hand), so all three must hold (security
     review item 3): the x86_64 gVisor sum is pinned, the kind remote test files exist, and
     `KIND_SHA256` and `KUBECTL_SHA256` are pinned in the job env."""
-    assert _triggers(remote_lane) == {"push", "pull_request", "workflow_dispatch"}
+    assert workflow_triggers(remote_lane) == {"push", "pull_request", "workflow_dispatch"}
     gvisor = INSTALL_GVISOR.read_text()
     assert re.search(r"^GVISOR_SHA512_X86_64=[0-9a-f]{128}$", gvisor, re.M), "x86_64 not pinned"
     missing = [f for f in REMOTE_TESTS if not (ROOT / f).is_file()]
@@ -106,7 +86,7 @@ def test_poc05_remote_lane_runs_on_push_with_everything_pinned(
 def test_poc05_no_workflow_uses_pull_request_target() -> None:
     """Security review item 3: a fork's code never runs with this repo's token."""
     for path in sorted(WORKFLOWS.glob("*.y*ml")):
-        assert "pull_request_target" not in _triggers(_workflow(path)), path.name
+        assert "pull_request_target" not in workflow_triggers(load_workflow(path)), path.name
         code = [ln for ln in path.read_text().splitlines() if not ln.lstrip().startswith("#")]
         assert not any("pull_request_target" in ln for ln in code), path.name
 
@@ -122,7 +102,7 @@ def test_poc05_remote_lane_job_shape(remote_lane: dict[str, Any]) -> None:
 
 
 def test_poc05_every_action_pinned_by_sha(remote_lane: dict[str, Any]) -> None:
-    uses = [s["uses"] for s in _steps(remote_lane) if "uses" in s]
+    uses = [s["uses"] for s in workflow_steps(remote_lane) if "uses" in s]
     assert uses, "expected checkout and setup-uv"
     for ref in uses:
         assert PINNED.match(ref), f"not pinned by a 40-hex SHA: {ref}"
@@ -133,15 +113,17 @@ def test_poc05_every_action_pinned_by_sha(remote_lane: dict[str, Any]) -> None:
 
 
 def test_poc05_remote_lane_reuses_ci_pins(remote_lane: dict[str, Any]) -> None:
-    ci_pins = {s["uses"].split("@")[0]: s["uses"] for s in _steps(_workflow(CI)) if "uses" in s}
-    for ref in (s["uses"] for s in _steps(remote_lane) if "uses" in s):
+    ci_pins = {
+        s["uses"].split("@")[0]: s["uses"] for s in workflow_steps(load_workflow(CI)) if "uses" in s
+    }
+    for ref in (s["uses"] for s in workflow_steps(remote_lane) if "uses" in s):
         action = ref.split("@")[0]
         assert action in ci_pins, f"{action} has no SHA in ci.yml; use a run step instead"
         assert ref == ci_pins[action], f"{action} pinned differently from ci.yml"
 
 
 def test_poc05_remote_lane_brings_up_and_runs_remote_suite(remote_lane: dict[str, Any]) -> None:
-    runs = _runs(remote_lane)
+    runs = workflow_runs(remote_lane)
     up = runs.find("deploy/kind/poc05/run.sh up")
     test = runs.find("deploy/kind/poc05/run.sh test-remote")
     assert up >= 0 and test > up, "the job must run run.sh up, then run.sh test-remote"
@@ -192,7 +174,7 @@ def test_poc05_remote_lane_tools_checked_by_checksum(remote_lane: dict[str, Any]
     """Security review item 3: kind and kubectl are checked against sums pinned in the job env,
     not a sum fetched from the same release. The shape check before any download stays, so a
     blanked sum fails closed."""
-    runs = _runs(remote_lane)
+    runs = workflow_runs(remote_lane)
     env = _job_env(remote_lane)
     assert env.get("KIND_VERSION") == "v0.33.0"
     assert env.get("KUBECTL_VERSION") == "v1.37.0"
@@ -210,7 +192,7 @@ def test_poc05_remote_lane_tools_checked_by_checksum(remote_lane: dict[str, Any]
 
 
 def test_poc05_remote_lane_always_deletes(remote_lane: dict[str, Any]) -> None:
-    deletes = [s for s in _steps(remote_lane) if "run.sh delete" in str(s.get("run", ""))]
+    deletes = [s for s in workflow_steps(remote_lane) if "run.sh delete" in str(s.get("run", ""))]
     assert deletes, "no delete step"
     assert any(str(s.get("if", "")).strip() == "always()" for s in deletes)
 
@@ -218,7 +200,9 @@ def test_poc05_remote_lane_always_deletes(remote_lane: dict[str, Any]) -> None:
 def test_poc05_remote_lane_logs_on_failure(remote_lane: dict[str, Any]) -> None:
     """The failure step prints pod logs through `run.sh logs` (pinned to kind-poc05 by `kctl`)
     and the probe results through `run.sh redact`."""
-    failing = [s for s in _steps(remote_lane) if str(s.get("if", "")).strip() == "failure()"]
+    failing = [
+        s for s in workflow_steps(remote_lane) if str(s.get("if", "")).strip() == "failure()"
+    ]
     runs = "\n".join(str(s.get("run", "")) for s in failing)
     assert "deploy/kind/poc05/run.sh logs" in runs
     assert "deploy/kind/poc05/run.sh redact" in runs
@@ -300,15 +284,18 @@ def test_poc05_remote_lane_uses_no_secret() -> None:
 
 
 def test_poc05_ci_runs_make_check() -> None:
-    """The offline gate runs on every push on every branch and on every pull request, read-only
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    The offline gate runs on every push on every branch and on every pull request, read-only
     (PoC-3 exit criterion 1 needs every commit on every branch)."""
-    ci = _workflow(CI)
+    ci = load_workflow(CI)
     triggers = ci["on"]
     assert isinstance(triggers, dict)
     assert set(triggers) == {"push", "pull_request"}
     assert not triggers["push"], "push must not be narrowed by a branch filter (PoC-3 exit 1)"
     assert ci.get("permissions") == {"contents": "read"}
-    assert re.search(r"^\s*make check\s*$", _runs(ci), re.M)
+    assert re.search(r"^\s*make check\s*$", workflow_runs(ci), re.M)
 
 
 def test_poc05_make_check_collects_poc05_offline_tests() -> None:

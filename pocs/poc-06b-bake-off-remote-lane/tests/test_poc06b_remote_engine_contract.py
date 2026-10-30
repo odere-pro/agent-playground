@@ -2,7 +2,7 @@
 `EngineConnectorContract` suite in the `remote` lane, over A2A on a Unix socket.
 
 Each engine is served by its own template A2A server (`workload-a2a`) with `--require-token-env`
-on, and driven by `RemoteConnector` with the per-remote bearer token (`poc05_harness`:
+on, and driven by `RemoteConnector` with the per-remote bearer token (`poc_harness.remote_lane`:
 `Tokens`, `remote_lane_connector`). A missing or wrong bearer would fail every case. No TCP,
 no key; `*_API_KEY` and `*_TOKEN` are not read from the environment.
 
@@ -42,8 +42,10 @@ from chassis_contracts.engine import JSON_VALUES_HANDLE
 from chassis_contracts.helpers import make_context, make_request
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
 from fake_model_server import Script, create_app
-from poc05_harness import Tokens, app_on_socket, remote_lane_connector
 from poc06_harness import ENGINES, SMOKE
+from poc_harness.lane_tokens import Tokens
+from poc_harness.remote_lane import remote_lane_connector
+from poc_harness.sockets import on_unix_socket_on_this_loop
 
 SMOLAGENTS_SCRIPT = (
     Path(__file__).resolve().parents[3]
@@ -92,7 +94,7 @@ def _wire_claude(monkeypatch: pytest.MonkeyPatch) -> None:
 
 async def _wire_smolagents(monkeypatch: pytest.MonkeyPatch, stack: list[Any]) -> None:
     """The fake model server on a Unix socket; the workload's sync model hook points at it."""
-    cm = app_on_socket(create_app(Script.from_yaml(SMOLAGENTS_SCRIPT)), "model.sock")
+    cm = on_unix_socket_on_this_loop(create_app(Script.from_yaml(SMOLAGENTS_SCRIPT)), "model.sock")
     uds = await cm.__aenter__()
     stack.append(cm)
     monkeypatch.setattr(

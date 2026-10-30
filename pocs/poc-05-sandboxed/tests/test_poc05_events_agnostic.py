@@ -85,7 +85,10 @@ AGNOSTIC_FILES = [
 
 
 def test_the_events_port_and_core_import_no_broker_client_in_source() -> None:
-    """Exit criterion 1 (offline): no file of `chassis.ports.events` or `chassis.core` names a
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    Exit criterion 1 (offline): no file of `chassis.ports.events` or `chassis.core` names a
     broker client in an import. The control: the same scan finds `aiokafka` in the Kafka
     adapter, so an empty result is not a scan that sees nothing.
     """
@@ -111,7 +114,10 @@ def _loaded_brokers(*modules: str) -> list[str]:
 
 
 def test_the_events_port_and_core_load_no_broker_client_at_run_time() -> None:
-    """Exit criterion 1 (offline): importing `chassis.ports.events` and `chassis.core`, with all
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    Exit criterion 1 (offline): importing `chassis.ports.events` and `chassis.core`, with all
     they import in turn, loads no broker client module. The control: importing the Kafka
     adapter the same way does load `aiokafka`.
     """
@@ -177,7 +183,10 @@ BINDINGS = _bindings()
 
 @pytest.mark.parametrize("adapter", sorted(_events_adapters()))
 def test_every_events_adapter_binds_the_contract_suite_or_is_excused(adapter: str) -> None:
-    """Exit criterion 1 (offline): an `events` adapter other than `none` has a `Test*` class
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    Exit criterion 1 (offline): an `events` adapter other than `none` has a `Test*` class
     that subclasses `EventPortContract` and uses its implementation, or an entry in
     `EXCEPTIONS` with a reason. The control: `InMemoryBus` is found bound offline, so the search
     sees the bindings it is meant to see.
@@ -192,7 +201,10 @@ def test_every_events_adapter_binds_the_contract_suite_or_is_excused(adapter: st
 
 
 def test_every_exception_names_a_registered_adapter_and_gives_a_reason() -> None:
-    """Exit criterion 1 (offline): `EXCEPTIONS` holds no stale or empty entry."""
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    Exit criterion 1 (offline): `EXCEPTIONS` holds no stale or empty entry."""
     adapters = _events_adapters()
     stale = {name: reason for name, reason in EXCEPTIONS.items() if name not in adapters}
     empty = [name for name, reason in EXCEPTIONS.items() if not reason.strip()]
@@ -235,7 +247,10 @@ BROKER_CONFIGS = {"agents/chassis/echo-events.yaml": "kafka"}
 
 
 def test_poc05_agent_configs_run_no_broker_but_the_h11_agent() -> None:
-    """Exit criterion 1 (offline): every PoC-5 chassis config sets `spec.adapters.events` to
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    Exit criterion 1 (offline): every PoC-5 chassis config sets `spec.adapters.events` to
     `none` or leaves it out (the profile default, `none` in every profile), except
     `echo-events.yaml`, which sets `kafka`. The control: the two agent configs (`echo`,
     `echo-remote`) and the H11 one are found.

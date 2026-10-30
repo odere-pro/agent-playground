@@ -10,7 +10,7 @@ Test support that more than one PoC folder, or a PoC demo, uses. It replaces the
 | `scenario` | The scripted prompts and answers, the route, the URLs a workload calls, `TIMEOUT_S`, the Python engines, `engine_params`. |
 | `apps` | The chassis app with injected ports (`chassis_app`, `chassis_config`, `bundle_for`, `proxy_for`), `running`, `client_for`, `run_handle`. |
 | `outbound` | A workload's outbound HTTP routed into an ASGI app and recorded (`route_outbound`, `patch_outbound`), and the workloads' MCP hooks (`point_tools_at`). |
-| `sockets` | `on_unix_socket`, `serve_tcp`, `require_tcp`, `uds_transport`, `free_port`. |
+| `sockets` | `socket_path`, `on_unix_socket` (thread), `on_unix_socket_on_this_loop` (the test's loop), `serve_on_this_loop`, `serve_tcp`, `require_tcp`, `uds_transport`, `free_port`. |
 | `servers` | `a2a_on_unix_socket` (the workload template server) and `chassis_tools_on_unix_socket`. |
 | `scripted_model` | `ToolLoopModel`: calls the tool once, then answers. |
 | `typescript` | The TypeScript echo as a child process (`typescript_echo`, `typescript_echo_on_unix_sockets`). |
@@ -22,7 +22,18 @@ Test support that more than one PoC folder, or a PoC demo, uses. It replaces the
 | `replica_doubles` | `HarnessModel`, `SeverableState`, `RecordingTaskStore`, `OffsetClock`, and the `SLOW`, `HANG`, `FAIL` prompts. |
 | `replica_calls` | One call through any interface (`call`, `Reply`), `without_created`. |
 | `plugin` | The `requires_env` drill gate, a pytest plugin loaded by entry point. |
-| `drills` | The named marks: `POC04_STACK`, `POC04_KIND`, `POC05_KIND`, `POC06_KIND`. |
+| `drills` | The named marks: `POC04_STACK`, `POC04_KIND`, `POC05_KIND`, `POC06_KIND`. `required_env`: a variable a drill needs, or a failure. |
+| `lane_tokens` | Who holds which token in a `remote` lane (`Tokens`), `new_token`, `new_trace_id`, `traceparent` (the header value). |
+| `remote_lane` | The `remote` lane in one process (`remote_lane`, `RemoteLane`, `GatedTools`, `workload_server`), and the `LaneContract` factories. |
+| `kind` | kubectl helpers pinned to `kind-poc05`, `exec_probe`, `probe`, `node_sh`, `unpoliced_caller`, `tcp_check`. |
+| `pod_probe` | `PROBE`, the stdlib script that checks controls from inside a pod. |
+| `kind_controls` | What the sidecar and remote suites share: `secret_refs`, `secret_sources`, `metadata_stand_in`, `node_reaches_its_api`, `traceparent_headers` (a header map). |
+| `manifests` | `load_manifests`, `containers_of`, `container_secret_names`, `secret_names_of`. |
+| `admission_manifests` | The admission objects and fixtures as files, the RBAC model (`can_i`, `CAN_I`). |
+| `admission_model` | A Python model of the admission rules (`AdmissionParams`, `broken_rules`, `all_broken_rules`). |
+| `netpol_model` | The NetworkPolicies parsed from `deploy/kind/poc05/`. |
+| `netpol_checks` | The checks over that model, each returning a list of problems. |
+| `workflows` | GitHub workflow readers (`load_workflow`, `workflow_steps`, `workflow_runs`, `workflow_triggers`), `PINNED`, `SHA256`. |
 | `waits` | `wait_until` and `wait_until_async`: poll, and fail on timeout. |
 
 ## Use

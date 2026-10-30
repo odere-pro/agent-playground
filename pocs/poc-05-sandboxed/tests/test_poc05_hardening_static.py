@@ -32,7 +32,8 @@ from typing import Any
 import pytest
 import yaml
 from chassis.server.config import ChassisConfig, load_config
-from test_poc05_admission_static import _Params, broken_rules
+from poc_harness.admission_model import AdmissionParams, broken_rules
+from poc_harness.manifests import container_secret_names, load_manifests
 
 ROOT = Path(__file__).resolve().parents[3]
 POC05 = ROOT / "deploy/kind/poc05"
@@ -51,10 +52,6 @@ DISPATCHER = "code-runner-dispatch"
 EXTENSIONS = "extensions.agents.x-k8s.io/v1beta1"
 
 Doc = dict[str, Any]
-
-
-def _load_all(path: Path) -> list[Doc]:
-    return [d for d in yaml.safe_load_all(path.read_text()) if d]
 
 
 @dataclass(frozen=True)
@@ -106,7 +103,7 @@ def _objects(folder: str) -> list[tuple[str, Doc]]:
     for resource in kust["resources"]:
         out.extend(
             (doc.get("metadata", {}).get("namespace", namespace), doc)
-            for doc in _load_all(POC05 / folder / resource)
+            for doc in load_manifests(POC05 / folder / resource)
         )
     return out
 
@@ -148,16 +145,6 @@ def _tmp_volume(pod: Pod, container: Doc) -> Doc | None:
         if m["mountPath"] == "/tmp":
             return _volumes(pod)[m["name"]]
     return None
-
-
-def _secret_refs(container: Doc) -> Iterator[str]:
-    for e in container.get("env", []):
-        ref = e.get("valueFrom", {}).get("secretKeyRef")
-        if ref is not None:
-            yield str(ref.get("name"))
-    for f in container.get("envFrom", []):
-        if "secretRef" in f:
-            yield str(f["secretRef"].get("name"))
 
 
 def _flag(args: list[str], name: str) -> str | None:
@@ -208,7 +195,10 @@ NO_PROJECTED_TOKEN_PODS = [p for p in ALL_PODS if p.id not in PROJECTED_TOKEN_PO
 
 @pytest.mark.parametrize("pod", ALL_PODS, ids=_ids(ALL_PODS))
 def test_pod_has_no_token_and_no_host_access(pod: Pod) -> None:
-    """Criterion 5: no automounted token, no host namespace, and no hostPath volume in any pod."""
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Criterion 5: no automounted token, no host namespace, and no hostPath volume in any pod."""
     spec = pod.spec
 
     host_fields = [
@@ -223,7 +213,10 @@ def test_pod_has_no_token_and_no_host_access(pod: Pod) -> None:
 
 @pytest.mark.parametrize("pod", NO_PROJECTED_TOKEN_PODS, ids=_ids(NO_PROJECTED_TOKEN_PODS))
 def test_pod_has_no_projected_token_when_it_is_not_the_dispatcher(pod: Pod) -> None:
-    """Criterion 5: no pod but those in `PROJECTED_TOKEN_PODS` projects a service account token."""
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Criterion 5: no pod but those in `PROJECTED_TOKEN_PODS` projects a service account token."""
     projected = [
         v["name"]
         for v in pod.spec.get("volumes", [])
@@ -235,7 +228,10 @@ def test_pod_has_no_projected_token_when_it_is_not_the_dispatcher(pod: Pod) -> N
 
 
 def test_projected_token_exemption_names_a_scanned_pod() -> None:
-    """Criterion 5: the exemption names a real pod, so a typo cannot widen it silently."""
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Criterion 5: the exemption names a real pod, so a typo cannot widen it silently."""
     assert set(_ids(ALL_PODS)) >= PROJECTED_TOKEN_PODS
 
 
@@ -270,7 +266,10 @@ POD_CONTAINERS = [
 
 @pytest.mark.parametrize(("container", "pod_sc"), POD_CONTAINERS)
 def test_container_runs_as_a_non_root_user(container: Doc, pod_sc: Doc) -> None:
-    """Criterion 5: the container sets runAsNonRoot and a uid above 0, itself or from its pod."""
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Criterion 5: the container sets runAsNonRoot and a uid above 0, itself or from its pod."""
     sc = container.get("securityContext", {})
 
     uid = sc.get("runAsUser", pod_sc.get("runAsUser"))
@@ -281,13 +280,19 @@ def test_container_runs_as_a_non_root_user(container: Doc, pod_sc: Doc) -> None:
 
 @pytest.mark.parametrize(("container", "pod_sc"), POD_CONTAINERS)
 def test_container_has_a_read_only_root_filesystem(container: Doc, pod_sc: Doc) -> None:
-    """Criterion 5: the container's root file system is read-only."""
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Criterion 5: the container's root file system is read-only."""
     assert container.get("securityContext", {}).get("readOnlyRootFilesystem") is True
 
 
 @pytest.mark.parametrize(("container", "pod_sc"), POD_CONTAINERS)
 def test_container_cannot_escalate_privilege(container: Doc, pod_sc: Doc) -> None:
-    """Criterion 5: the container is not privileged and cannot gain privilege."""
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Criterion 5: the container is not privileged and cannot gain privilege."""
     sc = container.get("securityContext", {})
 
     assert sc.get("allowPrivilegeEscalation") is False
@@ -296,7 +301,10 @@ def test_container_cannot_escalate_privilege(container: Doc, pod_sc: Doc) -> Non
 
 @pytest.mark.parametrize(("container", "pod_sc"), POD_CONTAINERS)
 def test_container_drops_all_capabilities(container: Doc, pod_sc: Doc) -> None:
-    """Criterion 5: capabilities drop is `[ALL]` and none are added."""
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Criterion 5: capabilities drop is `[ALL]` and none are added."""
     caps = container.get("securityContext", {}).get("capabilities", {})
 
     assert caps.get("drop") == ["ALL"]
@@ -305,7 +313,10 @@ def test_container_drops_all_capabilities(container: Doc, pod_sc: Doc) -> None:
 
 @pytest.mark.parametrize(("container", "pod_sc"), POD_CONTAINERS)
 def test_container_uses_the_runtime_default_seccomp_profile(container: Doc, pod_sc: Doc) -> None:
-    """Criterion 5: the seccomp profile is RuntimeDefault, set on the container or its pod."""
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Criterion 5: the seccomp profile is RuntimeDefault, set on the container or its pod."""
     sc = container.get("securityContext", {})
 
     seccomp = sc.get("seccompProfile", pod_sc.get("seccompProfile", {}))
@@ -315,7 +326,10 @@ def test_container_uses_the_runtime_default_seccomp_profile(container: Doc, pod_
 
 @pytest.mark.parametrize(("container", "pod_sc"), POD_CONTAINERS)
 def test_container_has_cpu_and_memory_limits(container: Doc, pod_sc: Doc) -> None:
-    """Criterion 5: the container sets both a cpu and a memory limit."""
+    """Criterion 5: "From the workload container, the cloud metadata service, the Kubernetes API,
+    and the chassis's public port on localhost are unreachable."
+
+    Criterion 5: the container sets both a cpu and a memory limit."""
     limits = container.get("resources", {}).get("limits", {})
 
     assert limits.get("cpu") and limits.get("memory"), f"limits {limits}"
@@ -372,7 +386,7 @@ def test_secrets_reach_the_chassis_container_only(pod: Pod) -> None:
         assert "projected" not in v, f"{pod.id}: projected volume"
     lane = pod.labels.get("agents.platform/lane")
     for c in pod.containers():
-        refs = set(_secret_refs(c))
+        refs = set(container_secret_names(c))
         if _is_chassis(c):
             continue
         if lane == "remote":
@@ -385,7 +399,7 @@ def test_the_remote_token_is_the_only_secret_in_the_remote_namespace() -> None:
     for pod in WORKLOAD_PODS:
         if pod.namespace != "poc05-remote":
             continue
-        refs = {r for c in pod.containers() for r in _secret_refs(c)}
+        refs = {r for c in pod.containers() for r in container_secret_names(c)}
         assert refs == {f"{pod.name}-token"}, pod.id
         assert all(TOKEN_SECRET.fullmatch(r) for r in refs), pod.id
 
@@ -558,7 +572,7 @@ def test_remote_probes_are_tcp() -> None:
 @pytest.mark.parametrize("pod", WORKLOAD_PODS, ids=_ids(WORKLOAD_PODS))
 def test_every_workload_pod_passes_the_admission_rules(pod: Pod) -> None:
     """The Python model of `admission/policy.yaml` (test_poc05_admission_static.py)."""
-    params = _Params.of(_load_all(PARAMS)[0])
+    params = AdmissionParams.of(load_manifests(PARAMS)[0])
     assert broken_rules(_as_admitted(pod), params, pod.namespace) == set(), pod.id
 
 
@@ -581,7 +595,7 @@ def _policies() -> list[tuple[Path, Doc]]:
     return [
         (path, doc)
         for path in sorted(POC05.rglob("*.yaml"))
-        for doc in _load_all(path)
+        for doc in load_manifests(path)
         if doc.get("kind") == "NetworkPolicy"
     ]
 

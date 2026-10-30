@@ -21,10 +21,12 @@ Run: `deploy/kind/poc06/run.sh test`.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from poc05_kind import (
+from poc06b_kind import SIDECARS, KindEngine, probe_in
+from poc_harness.kind import (
     AGENTS_NS,
     CHASSIS,
     CHASSIS_SECRET_ENV,
@@ -37,16 +39,15 @@ from poc05_kind import (
     pod,
     probe,
     service_ip,
-    tcp,
+    tcp_check,
     unpoliced_caller,
 )
-from poc06b_kind import SIDECARS, KindEngine, probe_in
-from test_poc05_kind_sidecar_controls import (
+from poc_harness.kind_controls import (
     API_PORT,
     SA_DIR,
     allowed_edge,
     container,
-    metadata_listener,  # noqa: F401  (a fixture, used by name below)
+    metadata_stand_in,
     node_reaches_its_api,
     policy_peers_covering,
     secret_refs,
@@ -55,6 +56,12 @@ from test_poc05_kind_sidecar_controls import (
 pytestmark = pytest.mark.kind
 
 ENGINE_IDS = [e.id for e in SIDECARS]
+
+
+@pytest.fixture
+def metadata_listener() -> Iterator[str]:
+    with metadata_stand_in() as mark:
+        yield mark
 
 
 def sidecar_pod(engine: KindEngine) -> dict[str, Any]:
@@ -148,7 +155,7 @@ def test_kubernetes_api_unreachable_from_the_workload(engine: KindEngine) -> Non
 
 
 @pytest.mark.parametrize("engine", SIDECARS, ids=ENGINE_IDS)
-def test_metadata_address_denied(engine: KindEngine, metadata_listener: str) -> None:  # noqa: F811
+def test_metadata_address_denied(engine: KindEngine, metadata_listener: str) -> None:
     """H01: the control refuses egress to 169.254.169.254: no live NetworkPolicy in a PoC-5
     namespace (PoC-6 pods are in two of them) allows it, so each namespace's default deny
     applies, and the workload's connection to a live listener there is dropped (a timeout), while
@@ -168,7 +175,7 @@ def test_metadata_address_denied(engine: KindEngine, metadata_listener: str) -> 
     meta, fetched, allowed = in_workload(
         engine,
         sidecar,
-        [tcp(str(METADATA_IP), 80), {"kind": "http", "url": url}, allowed_edge()],
+        [tcp_check(str(METADATA_IP), 80), {"kind": "http", "url": url}, allowed_edge()],
     )
     assert meta.get("error") == POLICY_DROPPED, meta
     assert "status" not in fetched, fetched
@@ -176,7 +183,7 @@ def test_metadata_address_denied(engine: KindEngine, metadata_listener: str) -> 
 
     with unpoliced_caller() as caller:
         reached, answered = in_caller(
-            caller, [tcp(str(METADATA_IP), 80), {"kind": "http", "url": url}]
+            caller, [tcp_check(str(METADATA_IP), 80), {"kind": "http", "url": url}]
         )
     assert reached.get("connected") is True, reached
     assert answered.get("status") == 200 and metadata_listener in answered["head"], answered

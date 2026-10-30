@@ -15,7 +15,7 @@ runner's half is `test_poc05_kind_code_runner.py` (`test_dev_shm_is_capped`, str
 
 Every write is checked from outside the pod: `kubectl exec` of echo-python's own Python (T10 is
 dropped). The fill stops at 40 MiB and removes its files on every path. A kind test: marked
-`network`, skipped unless `POC05_KIND=1` (`poc05_conftest.py`). Run:
+`network`, skipped unless `POC05_KIND=1` (`poc_harness.drills`). Run:
 `POC05_KIND=1 uv run pytest -m network <this file>`.
 """
 
@@ -25,7 +25,10 @@ import json
 from typing import Any
 
 import pytest
-from poc05_kind import REMOTE_NS, WORKLOAD, kubectl, node_sh, pod
+from poc_harness.drills import POC05_KIND
+from poc_harness.kind import REMOTE_NS, WORKLOAD, kubectl, node_sh, pod
+
+pytestmark = POC05_KIND
 
 REMOTE = "remote-echo"
 SHM_CAP_MIB = 32  # suggested: the remote's /tmp sizeLimit; no /dev/shm cap is set today
@@ -86,7 +89,9 @@ def shm_fill(remote: dict[str, Any], limit: int) -> dict[str, Any]:
 
 
 def test_dev_shm_takes_a_small_write(remote: dict[str, Any]) -> None:
-    """Criterion 8 (partly shown), the control: the remote's `/dev/shm` takes a 1 MiB write that
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), the control: the remote's `/dev/shm` takes a 1 MiB write that
     reads back, and nothing is left behind."""
     assert remote["spec"]["runtimeClassName"] == "gvisor"
     seen = shm_fill(remote, 0)
@@ -104,7 +109,9 @@ def test_dev_shm_takes_a_small_write(remote: dict[str, Any]) -> None:
     ),
 )
 def test_dev_shm_is_capped_at_32mi(remote: dict[str, Any]) -> None:
-    """Criterion 8 (partly shown), the `/dev/shm` LOW for the remote lane: a write past 32 MiB
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), the `/dev/shm` LOW for the remote lane: a write past 32 MiB
     fails with ENOSPC. The allowed control in the same call: a 1 MiB write works."""
     seen = shm_fill(remote, FILL_MIB)
     assert seen["small"] is None, seen
@@ -114,7 +121,9 @@ def test_dev_shm_is_capped_at_32mi(remote: dict[str, Any]) -> None:
 
 
 def test_remote_pod_memory_limit_bounds_dev_shm(remote: dict[str, Any]) -> None:
-    """Criterion 8 (partly shown), the bound that holds: the workload container's memory limit is
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8 (partly shown), the bound that holds: the workload container's memory limit is
     256Mi, and the pod cgroup on the node enforces it (`memory.max`). The control: the pod's
     `memory.current` is above zero and under that limit, so the sandbox runs inside it."""
     (workload,) = [c for c in remote["spec"]["containers"] if c["name"] == WORKLOAD]

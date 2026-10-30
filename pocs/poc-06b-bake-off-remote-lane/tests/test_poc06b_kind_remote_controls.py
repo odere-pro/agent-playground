@@ -37,7 +37,13 @@ from typing import Any
 
 import pytest
 import yaml
-from poc05_kind import (
+from poc06b_kind import (
+    PYTHONS,
+    REMOTES,
+    KindEngine,
+    probe_in,
+)
+from poc_harness.kind import (
     AGENTS_NS,
     CALLER_IMAGE,
     CALLER_NS,
@@ -54,16 +60,10 @@ from poc05_kind import (
     pod,
     probe,
     service_ip,
-    tcp,
+    tcp_check,
     unpoliced_caller,
 )
-from poc06b_kind import (
-    PYTHONS,
-    REMOTES,
-    KindEngine,
-    probe_in,
-)
-from test_poc05_kind_remote_controls import secret_sources, traceparent
+from poc_harness.kind_controls import secret_sources, traceparent_headers
 
 pytestmark = pytest.mark.kind
 
@@ -152,7 +152,7 @@ def test_listener_answers_only_the_remote_token_inside_a_run(engine: KindEngine)
     answered the model calls."""
     remote = remote_pod(engine)
     assert engine.proxy_ip is not None
-    trace = traceparent(uuid.uuid4().hex)
+    trace = traceparent_headers(uuid.uuid4().hex)
     chat_url = f"http://{engine.proxy_ip}:8091/v1/chat/completions"
     messages_url = f"http://{engine.proxy_ip}:8091/v1/messages"
     stranger = {"Authorization": f"Bearer {NOT_A_KEY}"}
@@ -185,7 +185,7 @@ def test_remote_reaches_no_other_chassis_listener(engine: KindEngine) -> None:
     remote = remote_pod(engine)
     others = [e.proxy_ip for e in REMOTES if e is not engine] + [POC05_PROXY_IP]
     assert engine.proxy_ip is not None
-    checks = [tcp(str(ip), 8091) for ip in others] + [tcp(engine.proxy_ip, 8091)]
+    checks = [tcp_check(str(ip), 8091) for ip in others] + [tcp_check(engine.proxy_ip, 8091)]
     *refused, allowed = in_remote(engine, remote, checks)
     for check, result in zip(checks, refused, strict=False):
         assert result.get("error") == POLICY_DROPPED, (check, result)
@@ -202,7 +202,12 @@ def test_remote_port_refuses_every_caller_but_its_chassis(engine: KindEngine, ca
     chassis = chassis_pod(engine)
     remote_ip, svc = remote["status"]["podIP"], service_ip(REMOTE_NS, engine.pod)
     by_pod, by_svc, public = in_caller(
-        caller, [tcp(remote_ip, 9000), tcp(svc, 9000), tcp(chassis["status"]["podIP"], 8080)]
+        caller,
+        [
+            tcp_check(remote_ip, 9000),
+            tcp_check(svc, 9000),
+            tcp_check(chassis["status"]["podIP"], 8080),
+        ],
     )
     assert by_pod.get("error") == POLICY_DROPPED, by_pod
     assert by_svc.get("error") == POLICY_DROPPED, by_svc
@@ -210,10 +215,10 @@ def test_remote_port_refuses_every_caller_but_its_chassis(engine: KindEngine, ca
 
     other = next(e for e in REMOTES if e is not engine and e.name != "kagent-adk")
     other_chassis = chassis_pod(other)
-    (lateral,) = in_chassis(other_chassis, [tcp(remote_ip, 9000)])
+    (lateral,) = in_chassis(other_chassis, [tcp_check(remote_ip, 9000)])
     assert lateral.get("error") == POLICY_DROPPED, lateral
 
-    own_pod, own_svc = in_chassis(chassis, [tcp(remote_ip, 9000), tcp(svc, 9000)])
+    own_pod, own_svc = in_chassis(chassis, [tcp_check(remote_ip, 9000), tcp_check(svc, 9000)])
     assert own_pod.get("connected") is True, own_pod
     assert own_svc.get("connected") is True, own_svc
 
@@ -230,13 +235,15 @@ def test_remote_reaches_no_outside_address(engine: KindEngine, caller: str) -> N
     remote = remote_pod(engine)
     assert engine.proxy_ip is not None
     https, http, allowed = in_remote(
-        engine, remote, [tcp(OUTSIDE_IP, 443), tcp(OUTSIDE_IP, 80), tcp(engine.proxy_ip, 8091)]
+        engine,
+        remote,
+        [tcp_check(OUTSIDE_IP, 443), tcp_check(OUTSIDE_IP, 80), tcp_check(engine.proxy_ip, 8091)],
     )
     assert https.get("error") == POLICY_DROPPED, https
     assert http.get("error") == POLICY_DROPPED, http
     assert allowed.get("connected") is True, allowed
 
-    (outside,) = in_caller(caller, [tcp(OUTSIDE_IP, 443)])
+    (outside,) = in_caller(caller, [tcp_check(OUTSIDE_IP, 443)])
     assert outside.get("connected") is True, outside
 
 
