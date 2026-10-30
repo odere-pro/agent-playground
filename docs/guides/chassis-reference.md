@@ -107,6 +107,7 @@ Each is built by `from_env()` and loaded lazily.
 - `s3/` is `S3Config`, registered as `minio` and `s3`.
   - It runs the minio SDK in `asyncio.to_thread` and reads `CONFIG_S3_*`.
   - It reads `<prefix><name>.yaml`.
+  - It refuses a document over 256 KiB, one with a YAML alias, or one nested deeper than 64, each as `ConfigUnavailable`. suggested: both caps.
   - `subscribe` polls `stat_object` every `CONFIG_POLL_INTERVAL_S` (suggested 5, ±10% jitter).
   - A failed poll is counted, never raised.
 - `kafka/` is `KafkaEvents`.
@@ -207,7 +208,8 @@ Each is built by `from_env()` and loaded lazily.
 - `spec.idempotency` is `IdempotencySpec`: `enabled`, `ttl_s`, `lease_s`, `wait_poll_ms`, `max_entry_bytes`.
 - `spec.events` is `EventsSpec` with `result_events`. A non-null `consume` is refused at load until event-triggered runs exist.
 - `spec.engine.protocol` is `chassis` (the default) or `a2a`. `a2a` is for `connector: remote` only. `spec.engine.a2a` is `{usage_key: null, context_id: omit | trace_id}`. It needs `protocol: a2a`. Both are restart-only. `as_mapping()` leaves them out for `sidecar` and `inprocess`. suggested: the names and defaults.
-- `RELOADABLE` and `RESTART_ONLY` list the field paths a reload may and may not change.
+- `RELOADABLE` lists the field paths a reload may change. Every other path is restart-only.
+- `spec.idempotency.ttl_s` is at most `TTL_S_MAX` (30 days) and `lease_s` at most `LEASE_S_MAX` (one hour). Neither may be `.inf` or `.nan`. suggested: both caps.
 - suggested: every default.
 
 ### config_loader.py
@@ -218,6 +220,9 @@ Each is built by `from_env()` and loaded lazily.
 - `on_change` swaps `state.config` in one assignment. Or it refuses with `invalid` or `restart_required` and keeps the last good config.
 - Metrics: `chassis.config.reloaded` and `chassis.config.rejected{reason}`.
 - A store document's version is `<version>+<hash12>`, or `<hash12>`.
+- A document the hash cannot read (mixed key types, nesting too deep) is `invalid`.
+- The pipeline's `Idempotency` takes the new `spec.idempotency` through `Idempotency.reload`.
+- A port that polls (`PollingConfig` in `ports/config.py`) gets an `on_poll_failed` hook that counts `chassis.config.poll_failed`.
 
 ### idempotency.py
 

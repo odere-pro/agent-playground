@@ -10,8 +10,8 @@ defaults) there is no store document: the bootstrap is the config, and a reload 
 
 **One live config.** `state.config` is the active `ChassisConfig`. A reload swaps it in one
 assignment, so every reader that reads `state.config` per request sees the new one on its next
-request, and a run keeps the `Context` it opened with. When `state.idempotency` exists, its
-`.spec` is set to the new `spec.idempotency` in the same step (only `ttl_s` may differ).
+request, and a run keeps the `Context` it opened with. The pipeline's `Idempotency` takes the
+new `spec.idempotency` through `Idempotency.reload` on its next use (only `ttl_s` may differ).
 
 **What may change.** Only the paths in `RELOADABLE` (`chassis.server.config`). A document that
 changes any other leaf path is refused with `restart_required`.
@@ -36,8 +36,9 @@ from collections.abc import Mapping
 from typing import Any, Literal
 
 from pydantic import ValidationError
+from starlette.datastructures import State
 
-from chassis.ports.config import ConfigPort, LoadedConfig, Unsubscribe
+from chassis.ports.config import ConfigPort, LoadedConfig, PollingConfig, Unsubscribe
 from chassis.ports.telemetry import TelemetryPort
 from chassis.profiles import merge_adapters
 from chassis.server.config import RELOADABLE, ChassisConfig, content_hash
@@ -90,18 +91,21 @@ def parse_document(data: Mapping[str, Any]) -> ChassisConfig:
     <content hash>` when the document sets a `version`, the content hash (12 hex) alone when it
     does not. So a document whose content changed without a bump of its `version` still reports
     a new `versions.config`. Raises `ConfigRejected("invalid", paths)`; the paths are Pydantic's
-    `loc`, never a value.
+    `loc`, never a value. A document the hash cannot read (mixed key types such as `1:` next to
+    `foo:`, or nesting too deep) is `invalid` with no paths.
     """
     if not isinstance(data, Mapping):
         raise ConfigRejected("invalid", [])
-    doc = dict(data)
-    digest = content_hash(data)
-    named = doc.get("version")
-    doc["version"] = digest if named is None else f"{named}+{digest}"
     try:
+        digest = content_hash(data)
+        doc = dict(data)
+        named = doc.get("version")
+        doc["version"] = digest if named is None else f"{named}+{digest}"
         return ChassisConfig.model_validate(doc)
     except ValidationError as exc:
         raise ConfigRejected("invalid", _invalid_paths(exc)) from None
+    except (TypeError, RecursionError):
+        raise ConfigRejected("invalid", []) from None
 
 
 def _leaves(value: Any, prefix: str = "") -> dict[str, Any]:
@@ -134,7 +138,7 @@ class ConfigReloader:
 
     def __init__(
         self,
-        state: Any,
+        state: State,
         port: ConfigPort,
         bootstrap: ChassisConfig,
         *,
@@ -163,9 +167,6 @@ class ConfigReloader:
 
     def _activate(self, config: ChassisConfig) -> None:
         self._state.config = config  # one assignment: the swap
-        idempotency = getattr(self._state, "idempotency", None)
-        if idempotency is not None and hasattr(idempotency, "spec"):
-            idempotency.spec = config.spec.idempotency
 
     async def start(self) -> None:
         """Set the first config, then subscribe. Raises `ConfigRejected`, `ConfigNotFound`, or
@@ -183,16 +184,19 @@ class ConfigReloader:
         self._unsubscribe = self._port.subscribe(self.name, self.on_change)
 
     def _count_poll_failures(self) -> None:
-        """A port that polls (`S3Config`) and has no `on_poll_failed` hook yet gets one that
-        counts `chassis.config.poll_failed` in telemetry. Other ports are left alone."""
-        if not hasattr(self._port, "on_poll_failed") or self._port.on_poll_failed is not None:
+        """A port that polls (`PollingConfig`, such as `S3Config`) and has no `on_poll_failed`
+        hook yet gets one that counts `chassis.config.poll_failed` in telemetry. Other ports are
+        left alone. `profiles.py` builds the port before telemetry exists, so the hook is set
+        here, not at construction."""
+        port = self._port
+        if not isinstance(port, PollingConfig) or port.on_poll_failed is not None:
             return
         telemetry = self._telemetry
 
         def count(name: str, exc: BaseException) -> None:
             telemetry.counter(POLL_FAILED, reason=type(exc).__name__)
 
-        self._port.on_poll_failed = count
+        port.on_poll_failed = count
 
     async def stop(self) -> None:
         unsubscribe, self._unsubscribe = self._unsubscribe, None

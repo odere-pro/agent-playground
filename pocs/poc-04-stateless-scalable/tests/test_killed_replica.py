@@ -1,4 +1,9 @@
-"""PoC-4 exit criterion 3: "A replica killed mid-run loses no request that the client retries."
+"""PoC-4 exit criterion 3, in the README's words:
+
+"A killed replica loses no request that the client retries."
+
+This file covers it at the store, over two replicas: a replica killed while it runs a call, one
+killed after it ran the call, and one cut off from the store while it keeps running.
 
 Two replicas share one `InMemoryState` (standing for Valkey). Replica 0 sees the store through a
 `SeverableState`; `sever()` is its SIGKILL as the store sees it: from then on nothing it does

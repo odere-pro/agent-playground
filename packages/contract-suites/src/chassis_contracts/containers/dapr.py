@@ -21,14 +21,15 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from testcontainers.community.kafka import KafkaContainer
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 
-from chassis_contracts.containers.kafka import KAFKA_IMAGE
+from chassis_contracts.containers.kafka import KAFKA_IMAGE, PinnedKafkaContainer
 
-DAPRD_IMAGE = "daprio/daprd:1.16.0"
-"""The tag `deploy/compose/docker-compose.scale-dapr.yaml` pins (by digest there)."""
+DAPRD_IMAGE = (
+    "daprio/daprd:1.16.0@sha256:e5c959c05d406c8dd5b0cb8132b3f1aacf6f81fbd64efc0adb430dd533d32c05"
+)
+"""The exact image `deploy/compose/docker-compose.scale-dapr.yaml` pins."""
 DAPR_HTTP_PORT = 3500
 APP_ID = "echo"
 """The app id the PoC components are scoped to; it is also the Kafka consumer group."""
@@ -92,7 +93,7 @@ def dapr_with_kafka(
     """Start Kafka and daprd on one network; yield the sidecar; remove both and the network."""
     with Network() as network:
         kafka = (
-            KafkaContainer(KAFKA_IMAGE)
+            PinnedKafkaContainer(KAFKA_IMAGE)
             .with_kraft()
             .with_network(network)
             .with_network_aliases("kafka")

@@ -1,4 +1,8 @@
-"""Exit criterion 6, the chassis half: stopping a pair fails nothing in flight (plan section 6).
+"""PoC-4 exit criterion 6, in the README's words:
+
+"Stopping a pair under load fails no request in flight: the workload finishes its `handle` calls before it exits."
+
+This file covers the chassis half: the chassis drains its runs in flight (plan section 6).
 
 A real chassis pair (the public server and the proxy server, both `QuietServer`s on Unix sockets,
 in this test's loop so it can take a real SIGTERM) runs a real workload template server
@@ -10,7 +14,7 @@ the drain delay (every public response in between carries `Connection: close`, t
 not); the run still finishes, including its model call, because the proxy listener
 stays up until the public server has stopped. The workload side of the drain is
 `test_workload_drain.py`; the Compose drill is `test_compose_scale.py` (`network`).
-"""
+"""  # noqa: E501
 
 from __future__ import annotations
 
@@ -173,6 +177,7 @@ def _events(text: str) -> list[dict[str, Any]]:
 
 
 async def test_the_chassis_drains_in_flight_runs_and_ready_goes_false_first() -> None:
+    """Exit criterion 6, chassis half: `/ready` says draining first; the run in flight ends."""
     with pair_and_workload(DrainSettings(delay_s=0.3, timeout_s=10)) as (drain, workload, pub, _):
         served = asyncio.create_task(drain.serve())
         await _started(drain)
@@ -187,6 +192,7 @@ async def test_the_chassis_drains_in_flight_runs_and_ready_goes_false_first() ->
 
 
 async def test_the_proxy_listener_outlives_the_public_one() -> None:
+    """Exit criterion 6, chassis half: the run's model call after SIGTERM still answers 200."""
     with pair_and_workload(DrainSettings(delay_s=0.2, timeout_s=10)) as (drain, workload, pub, _):
         served = asyncio.create_task(drain.serve())
         await _started(drain)

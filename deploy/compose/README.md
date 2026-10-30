@@ -72,7 +72,7 @@ The gateway is the `mcp_servers.chassis_agent` entry in `litellm/config.yaml`: L
 
 ## Scale stack (PoC-4)
 
-`docker-compose.scale.yaml` is a file of its own, project `poc04`, network `poc04`. Traefik on `127.0.0.1:18080` balances over explicit pairs `chassis-N` and `workload-N`; each workload joins its chassis's network namespace, as in the sidecar variant. The chassis reaches the fake model server directly (no LiteLLM in the measured path), keeps state in Valkey, and reads its agent config from MinIO (`s3://agent-configs/agents/echo.yaml`, seeded by `minio-init` on every `up`). Design: `docs/plans/2026-10-01-poc-04-stateless-scalable.md`, section 8a. Rules: `SECURITY.md`, section 7.
+`docker-compose.scale.yaml` is a file of its own, project `poc04`, network `poc04`. That network is internal, with no way out; Traefik alone also joins `poc04-edge` to publish its port. Traefik on `127.0.0.1:18080` balances over explicit pairs `chassis-N` and `workload-N`; each workload joins its chassis's network namespace, as in the sidecar variant. The chassis reaches the fake model server directly (no LiteLLM in the measured path), keeps state in Valkey, and reads its agent config from MinIO (`s3://agent-configs/agents/echo.yaml`, seeded by `minio-init` on every `up`). Design: `docs/plans/2026-10-01-poc-04-stateless-scalable.md`, section 8a. Rules: `SECURITY.md`, section 7.
 
 | Pairs | Profiles | Services |
 | ----- | -------- | -------- |

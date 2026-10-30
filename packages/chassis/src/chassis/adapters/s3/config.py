@@ -4,7 +4,10 @@
 `load(name)` reads `<prefix><name>.yaml` and returns its YAML mapping. The version is the S3
 version id when the bucket keeps versions, else the ETag without quotes. A missing object is
 `ConfigNotFound`; any other store failure, and a document that is not a YAML mapping, is
-`ConfigUnavailable`. No message or log line holds a credential.
+`ConfigUnavailable`. No message or log line holds a credential. A document is untrusted input:
+one over `MAX_DOCUMENT_BYTES` is refused unread past the cap, and one with a YAML alias (an
+alias bomb) or nested past `MAX_DEPTH` is refused from its event stream before it is built; each
+is `ConfigUnavailable`. The parse runs in a thread, off the event loop.
 
 `subscribe(name, callback)` polls `stat_object` on the running loop every `poll_interval_s`,
 with jitter so replicas do not poll together. A changed version is loaded and handed to
@@ -31,6 +34,7 @@ from chassis.ports.config import (
     ConfigNotFound,
     ConfigUnavailable,
     LoadedConfig,
+    PollFailed,
     Unsubscribe,
 )
 
@@ -46,8 +50,15 @@ CONNECT_TIMEOUT_S = 5.0
 READ_TIMEOUT_S = 10.0
 RETRIES = 2
 NOT_FOUND = frozenset({"NoSuchKey"})
-
-PollFailed = Callable[[str, BaseException], None]
+MAX_DOCUMENT_BYTES = 256 * 1024
+"""suggested: 256 KiB, the largest config document. A real one is a few KiB."""
+MAX_DEPTH = 64
+"""suggested: the deepest nesting of mappings and sequences. A real config is under 10. PyYAML's
+pure-Python parser is quadratic in depth, so depth is capped before the document is built."""
+# libyaml's event parser is iterative and linear; the pure-Python one is the fallback.
+_EVENT_LOADER: Any = yaml.CSafeLoader if yaml.__with_libyaml__ else yaml.SafeLoader
+_OPEN = (yaml.MappingStartEvent, yaml.SequenceStartEvent)
+_CLOSE = (yaml.MappingEndEvent, yaml.SequenceEndEvent)
 
 
 def _flag(value: str) -> bool:
@@ -81,6 +92,33 @@ def _why(exc: BaseException) -> str:
     if isinstance(exc, S3Error):
         return f"S3 error {exc.code}"
     return type(exc).__name__
+
+
+def _refuse_shape(name: str, body: bytes) -> None:
+    """Walk the YAML event stream, which builds nothing: an alias, or nesting past `MAX_DEPTH`,
+    is `ConfigUnavailable` before any node exists, so an alias bomb never expands."""
+    depth = 0
+    for event in yaml.parse(body, _EVENT_LOADER):
+        if isinstance(event, yaml.AliasEvent):
+            raise ConfigUnavailable(f"config {name!r} uses a YAML alias, which is refused")
+        if isinstance(event, _OPEN):
+            depth += 1
+            if depth > MAX_DEPTH:
+                raise ConfigUnavailable(f"config {name!r} nests deeper than {MAX_DEPTH}")
+        elif isinstance(event, _CLOSE):
+            depth -= 1
+
+
+def _parse(name: str, body: bytes) -> Any:
+    """The YAML document in `body`. `ConfigUnavailable` when it is over the cap, has an alias,
+    nests past `MAX_DEPTH`, or is not valid YAML."""
+    if len(body) > MAX_DOCUMENT_BYTES:
+        raise ConfigUnavailable(f"config {name!r} is larger than {MAX_DOCUMENT_BYTES} bytes")
+    try:
+        _refuse_shape(name, body)
+        return yaml.safe_load(body)
+    except (yaml.YAMLError, RecursionError) as exc:
+        raise ConfigUnavailable(f"config {name!r} is not valid YAML") from exc
 
 
 class S3Config:
@@ -136,7 +174,7 @@ class S3Config:
     def _get(self, name: str) -> tuple[str, bytes]:
         response = self._client.get_object(self.bucket, self._key(name))
         try:
-            body = response.read()
+            body = response.read(MAX_DOCUMENT_BYTES + 1)  # one past the cap tells "too big"
             version = _version(
                 response.headers.get("x-amz-version-id"), response.headers.get("ETag")
             )
@@ -161,10 +199,7 @@ class S3Config:
 
     async def load(self, name: str) -> LoadedConfig:
         version, body = await self._call(name, self._get)
-        try:
-            data: Any = yaml.safe_load(body)
-        except yaml.YAMLError as exc:
-            raise ConfigUnavailable(f"config {name!r} is not valid YAML") from exc
+        data = await asyncio.to_thread(_parse, name, body)
         if not isinstance(data, dict):
             raise ConfigUnavailable(f"config {name!r} is not a YAML mapping")
         self._seen[name] = version

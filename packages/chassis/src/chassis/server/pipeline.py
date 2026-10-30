@@ -178,7 +178,7 @@ class RunPipeline:
         idem = self._idempotency
         if idem is None or idem.state is not ports.state or idem.telemetry is not ports.telemetry:
             idem = self._idempotency = Idempotency(ports.state, spec, ports.telemetry)
-        idem.spec = spec
+        idem.reload(spec)
         return idem
 
     async def finished(self, run: Run) -> None:

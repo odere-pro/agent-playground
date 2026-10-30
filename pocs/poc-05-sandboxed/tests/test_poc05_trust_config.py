@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 from chassis.ports.tool import NoTools, ToolError, ToolPort
 from chassis.profiles import REGISTRY, AdapterNotAvailable, resolve
-from chassis.server.config import RELOADABLE, RESTART_ONLY, ChassisConfig, load_config
+from chassis.server.config import RELOADABLE, ChassisConfig, load_config
 from chassis.server.config_loader import restart_required
 from pydantic import ValidationError
 
@@ -234,7 +234,6 @@ def test_the_uncorrelated_cap_reloads_and_trust_does_not() -> None:
     assert restart_required(old, capped) == []
     untrusted = load_config(config(engine=REMOTE, trust="untrusted"))
     assert restart_required(old, untrusted) == ["spec.trust"]
-    assert "spec.trust" in RESTART_ONLY
     assert not any(path == "spec.trust" or path.startswith("spec.trust.") for path in RELOADABLE)
 
 
