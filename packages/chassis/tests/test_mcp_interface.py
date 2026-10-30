@@ -123,6 +123,7 @@ def _run_body_schema(app: FastAPI) -> dict[str, Any]:
 
 
 async def test_lists_exactly_one_tool_named_after_the_agent() -> None:
+    """The agent MCP endpoint lists one tool, and it carries the agent's name."""
     async with _serving(_app()) as client:
         tools = await client.list_tools()
     assert [t.name for t in tools] == ["echo"]
@@ -146,6 +147,7 @@ async def test_tool_input_schema_is_the_openapi_request_schema_of_run() -> None:
 
 
 async def test_calling_the_tool_returns_the_native_response_envelope() -> None:
+    """A tool call returns the native response envelope as structured content."""
     app = _app()
     async with _serving(app) as client:
         result = await client.call_tool("echo", {"input": {"text": "hello"}})
@@ -160,6 +162,7 @@ async def test_calling_the_tool_returns_the_native_response_envelope() -> None:
 
 
 async def test_stream_true_in_the_arguments_is_read_as_false() -> None:
+    """A tool call that asks to stream still gets one JSON envelope with the joined output."""
     engine = FakeEngine(events=[Delta(text="a"), Delta(text="b"), End(output={"text": "ab"})])
     async with _serving(_app(engine)) as client:
         result = await client.call_tool("echo", {"input": {"text": "x"}, "stream": True})
@@ -170,6 +173,7 @@ async def test_stream_true_in_the_arguments_is_read_as_false() -> None:
 
 
 async def test_telemetry_is_labeled_mcp() -> None:
+    """A tool call is counted and spanned as interface `mcp`, never as `native`."""
     app = _app()
     async with _serving(app) as client:
         await client.call_tool("echo", {"input": {"text": "x"}})
@@ -181,6 +185,7 @@ async def test_telemetry_is_labeled_mcp() -> None:
 
 
 async def test_a_body_trace_id_in_flight_is_reminted_not_409() -> None:
+    """A tool call reusing a busy body trace id gets a new id and succeeds, counted."""
     in_flight = asyncio.Event()
     release = asyncio.Event()
 
@@ -229,6 +234,7 @@ async def test_a_run_with_status_error_is_a_tool_result_not_an_mcp_error() -> No
 
 
 async def test_a_body_naming_another_agent_is_a_tool_error() -> None:
+    """A tool call whose arguments name another agent comes back as a tool error."""
     async with _serving(_app()) as client:
         result = await client.call_tool(
             "echo", {"agent": "other", "input": {"text": "x"}}, raise_on_error=False
@@ -240,6 +246,7 @@ async def test_a_body_naming_another_agent_is_a_tool_error() -> None:
 
 
 async def test_a_direct_caller_sending_the_header_only_loses_streaming() -> None:
+    """The `mcp` interface header on a native call turns off streaming; others stay native."""
     app = _app()
     transport = httpx.ASGITransport(app=app)
     async with (
@@ -271,6 +278,7 @@ async def test_a_direct_caller_sending_the_header_only_loses_streaming() -> None
 
 
 async def test_503_before_ready() -> None:
+    """Before startup the agent MCP endpoint answers 503 with a plain not-ready detail."""
     app = _app()
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://c") as client:
@@ -280,6 +288,7 @@ async def test_503_before_ready() -> None:
 
 
 async def test_503_after_the_lifespan_ends() -> None:
+    """After shutdown the agent MCP endpoint answers 503 again."""
     app = _app()
     async with _serving(app) as client:
         await client.list_tools()
@@ -320,18 +329,21 @@ async def test_the_tool_call_has_no_client_timeout() -> None:
 
 
 def test_mcp_path_is_not_in_the_openapi_spec() -> None:
+    """The agent MCP route is mounted but left out of the OpenAPI spec."""
     app = _app()
     assert MCP_PATH not in app.openapi()["paths"]
     assert MCP_PATH in {getattr(r, "path", None) for r in app.routes}
 
 
 def test_mcp_off_mounts_nothing() -> None:
+    """With MCP turned off in the config, no route and no MCP server are set up."""
     app = _app(config=_config(mcp=False))
     assert MCP_PATH not in {getattr(r, "path", None) for r in app.routes}
     assert getattr(app.state, "agent_mcp", None) is None
 
 
 async def test_mcp_off_is_404() -> None:
+    """With MCP turned off in the config, a post to the MCP path is 404."""
     app = _app(config=_config(mcp=False))
     transport = httpx.ASGITransport(app=app)
     async with (
@@ -352,6 +364,7 @@ def test_the_tool_endpoint_on_the_proxy_app_is_another_route() -> None:
 
 @pytest.mark.parametrize("name", ["echo", "summarizer"])
 async def test_the_tool_is_named_after_the_configured_agent(name: str) -> None:
+    """The tool name follows the configured agent name, and its parameters are plain JSON."""
     config = ChassisConfig.model_validate({**CONFIG, "agent": {"name": name, "version": "1"}})
     app = _app(config=config)
     tools = await app.state.agent_mcp.list_tools()

@@ -106,6 +106,10 @@ async def _drive(limit: BodyLimit, scope: Scope, receive: Receive) -> list[Messa
     return sent
 
 
+async def _ignore(message: Message) -> None:
+    """A `send` that drops every message."""
+
+
 def _app(engine: FakeEngine | None = None, **ports: Any) -> FastAPI:
     bundle = PortBundle(
         model=ScriptedModel(),
@@ -156,6 +160,41 @@ async def test_body_limit_passes_the_whole_body_when_the_length_is_honest() -> N
     sent = await _drive(limit, scope, _chunked_receive(chunks=LIMIT // CHUNK))
 
     assert (sent[0]["status"], b"".join(inner.read)) == (200, b"x" * LIMIT)
+
+
+async def test_body_limit_replays_one_joined_message_when_the_body_came_in_chunks() -> None:
+    """A body sent in many chunks reaches the app as one message, so memory is the body's size."""
+    inner = _RecordingApp()
+    limit = BodyLimit(inner, limit=LIMIT, public=FastAPI())
+    scope = _http_scope([(b"transfer-encoding", b"chunked")])
+
+    await _drive(limit, scope, _chunked_receive(chunks=LIMIT // CHUNK))
+
+    assert inner.read == [b"x" * LIMIT]
+
+
+async def test_body_limit_replays_the_chunks_then_the_disconnect_when_the_client_leaves() -> None:
+    """A client that leaves mid-body: the app reads the chunks so far, then the disconnect."""
+    messages: list[Message] = [
+        {"type": "http.request", "body": b"ab", "more_body": True},
+        {"type": "http.disconnect"},
+    ]
+    seen: list[Message] = []
+
+    async def receive() -> Message:
+        return messages.pop(0)
+
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
+        seen.extend([await receive(), await receive()])
+
+    await BodyLimit(app, limit=LIMIT, public=FastAPI())(
+        scope=_http_scope([]), receive=receive, send=_ignore
+    )
+
+    assert seen == [
+        {"type": "http.request", "body": b"ab", "more_body": True},
+        {"type": "http.disconnect"},
+    ]
 
 
 async def test_body_limit_refuses_without_reading_when_the_length_is_over() -> None:
