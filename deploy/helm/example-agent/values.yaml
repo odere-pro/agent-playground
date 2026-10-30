@@ -1,0 +1,61 @@
+# example-agent values. Only what differs from the library's defaults (agent-lib.defaults in
+# ../agent-lib/templates/_values.tpl); every key is listed in ../README.md.
+#
+# No secret value is in this file, and none may be: the chassis reads its credentials from
+# Secrets made outside the chart (PoC-5: seed.sh, through a pipe). The workload gets no Secret;
+# the chart fails the render if a value tries to give it one.
+
+# The workload image, pinned by tag (or by digest). Its uid is 10002 (deploy/README.md).
+workload:
+  image: kind.local/agent-platform/echo-python:poc09
+
+chassis:
+  # The chassis tag is set once, in the library chart. To hold this service on the previous
+  # chassis tag, set one value:
+  #   image:
+  #     tag: poc08
+  env:
+    - name: LITELLM_BASE_URL
+      value: http://litellm.platform.svc.cluster.local:4000/v1
+    - name: LITELLM_MCP_URL
+      value: http://litellm.platform.svc.cluster.local:4000/mcp/
+  # The chassis's scoped LiteLLM virtual key, from a Secret made outside the chart.
+  secretEnv:
+    - name: LITELLM_API_KEY
+      secretName: example-agent-litellm
+      key: LITELLM_API_KEY
+  # The chassis config, mounted at /etc/chassis/config.yaml. The lane and the trust level are read
+  # from here: spec.engine.connector (sidecar or remote) and spec.trust (trusted or untrusted).
+  # The chart fills spec.engine.url (and, remote, spec.engine.auth) when they are empty.
+  config:
+    profile: local
+    agent:
+      name: example-agent
+      version: 0.0.1
+    spec:
+      trust: trusted
+      adapters:
+        model: litellm
+        config: memory
+        state: memory
+        telemetry: memory
+        tools: mcp
+        events: none
+      engine:
+        connector: sidecar
+      model:
+        route: fake-chat
+
+# What the chassis pod may reach besides DNS: peers by label, never an ipBlock.
+networkPolicy:
+  chassisEgress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: platform
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
+      ports:
+        - port: 4000
+          protocol: TCP
