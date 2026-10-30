@@ -8,6 +8,9 @@ with `"\n"` (suggested), an assistant's `tool_calls` become `ToolCallRequest`s w
 carried on any role. A key the port does not carry is ignored when its value is null or empty
 (`is_empty`), as SDKs echo `refusal`, `audio`, `function_call`, and `annotations` back. Anything
 else raises `UnsupportedMessage`, whose `param` names it: `messages[<i>].<field>`.
+
+`UnsupportedMessage`, `is_empty`, and `text_of` are format-neutral: they live in
+`chassis.adapters.chat_common` and are re-exported here under the same names.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from chassis.adapters.chat_common import UnsupportedMessage, is_empty, text_of
 from chassis.ports.model import ModelMessage, ToolCallRequest
 
 __all__ = [
@@ -34,30 +38,6 @@ ROLES = frozenset({"system", "user", "assistant", "tool"})
 MESSAGE_KEYS = frozenset({"role", "content", "name", "tool_calls", "tool_call_id"})
 
 
-class UnsupportedMessage(ValueError):
-    """A message the port cannot carry unchanged. `param` names it: `messages[<i>].<field>`."""
-
-    def __init__(self, param: str, message: str) -> None:
-        super().__init__(f"{param}: {message}")
-        self.param = param
-        self.message = message
-
-    def body(self) -> dict[str, Any]:
-        return {
-            "error": {
-                "code": "unsupported_message",
-                "type": "invalid_request_error",
-                "param": self.param,
-                "message": self.message,
-            }
-        }
-
-
-def is_empty(value: Any) -> bool:
-    """Null or empty: what SDKs echo back for a field they did not use."""
-    return value is None or (isinstance(value, str | list | dict) and not value)
-
-
 def refuse_extra(
     value: dict[str, Any], allowed: frozenset[str], param: str, *, by: str = "the model port"
 ) -> None:
@@ -68,29 +48,6 @@ def refuse_extra(
     for key, item in value.items():
         if key not in allowed and not is_empty(item):
             raise UnsupportedMessage(f"{param}.{key}", f"{key} is not supported by {by}")
-
-
-def text_of(value: Any, param: str) -> str | None:
-    """The content as text: a string or null as is, text parts joined with `"\n"`. Any other
-    part raises `UnsupportedMessage` at `param`.
-    """
-    if value is None or isinstance(value, str):
-        return value
-    if not isinstance(value, list):
-        raise UnsupportedMessage(param, "content must be a string, a list of text parts, or null")
-    texts: list[str] = []
-    for j, part in enumerate(value):
-        if not (
-            isinstance(part, dict)
-            and part.get("type") == "text"
-            and isinstance(part.get("text"), str)
-        ):
-            kind = part.get("type") if isinstance(part, dict) else type(part).__name__
-            raise UnsupportedMessage(
-                param, f"content part {j} is {kind!r}; only text parts are supported"
-            )
-        texts.append(part["text"])
-    return "\n".join(texts)
 
 
 def tool_calls_of(value: Any, param: str) -> list[ToolCallRequest]:

@@ -16,6 +16,11 @@ mints an id: the router resolves the ids (`chassis.server.interfaces.ids`) and b
 it is a string, else the output as compact JSON with sorted keys) and `rest_of_answer(output,
 streamed)`, what a stream still sends after its deltas.
 
+**The chat formats' shared decisions**, so OpenAI and Anthropic cannot drift: `run_failure` (the
+code and text for a failed run, `NO_END_MESSAGE` when it never ended), `id_headers`,
+`retry_header`, `token_counts` (usage from `Response.metrics`), `task_input` (`input.data`'s
+`system` and `history`), and `over_cap` (the `messages_max` text, also `spec.limits`'s).
+
 The router owns the run (`chassis.server.interfaces.serve`): it calls `error` for `not_ready`
 before the request is mapped, for an `error` event in complete mode, and for an `error` event
 before the first `delta` in stream mode (the hold rule), when the format answers errors as HTTP.
@@ -30,11 +35,13 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from chassis.core.collector import collect
-from chassis.core.envelope import Request, Response, Versions
+from chassis.core.envelope import Request, Response, TaskInput, Versions
 from chassis.core.events import Event
 
 __all__ = [
+    "ENGINE_ERROR",
     "INVALID_BODY_CODES",
+    "NO_END_MESSAGE",
     "PUBLIC_MESSAGES",
     "RUN_FAILED",
     "Ids",
@@ -46,9 +53,15 @@ __all__ = [
     "Served",
     "StreamReply",
     "answer_text",
+    "id_headers",
+    "over_cap",
     "public_message",
     "rest_of_answer",
+    "retry_header",
+    "run_failure",
     "status_for",
+    "task_input",
+    "token_counts",
 ]
 
 Interface = Literal["native", "openai", "anthropic", "mcp"]
@@ -292,3 +305,56 @@ def rest_of_answer(output: Mapping[str, Any] | None, streamed: str) -> str:
     """
     answer = answer_text(output)
     return answer[len(streamed) :] if answer.startswith(streamed) else ""
+
+
+ENGINE_ERROR = "engine_error"
+"""The code of a run that failed with no code of its own, or never ended."""
+
+NO_END_MESSAGE = "the run ended without an end event"
+"""The text for a run with status `error` and no `error` event: it never finished."""
+
+
+def run_failure(response: Response) -> tuple[str, str]:
+    """`(code, message)` a chat format answers for a run with status `error`: the `error` event's
+    code (else `engine_error`) and its `public_message`, or `engine_error` and `NO_END_MESSAGE`
+    when the output carries no error (the run ended without `end`).
+    """
+    found = response.output.get("error")
+    error = found if isinstance(found, Mapping) else {}
+    code = str(error.get("code") or ENGINE_ERROR)
+    return code, public_message(code) if error else NO_END_MESSAGE
+
+
+def id_headers(ids: Ids) -> dict[str, str]:
+    """`x-request-id` and `x-trace-id`: the id headers every chassis format sends."""
+    return {"x-request-id": ids.request_id, "x-trace-id": ids.trace_id}
+
+
+def retry_header(retryable: bool) -> dict[str, str]:
+    """`x-should-retry`, which the OpenAI and Anthropic SDKs read before their own retry rule."""
+    return {"x-should-retry": "true" if retryable else "false"}
+
+
+def token_counts(metrics: Mapping[str, Any]) -> tuple[int, int]:
+    """`(input_tokens, output_tokens)` of a run's metrics, 0 when unset."""
+    return int(metrics.get("input_tokens", 0)), int(metrics.get("output_tokens", 0))
+
+
+def task_input(text: str, system_parts: Iterable[str], history: list[dict[str, str]]) -> TaskInput:
+    """The chat formats' `TaskInput`: `data.system` is `system_parts` joined with `"\n"` when
+    there are any, then `data.history` (`[{"role", "text"}]`) when not empty. Key order is fixed.
+    """
+    data: dict[str, Any] = {}
+    parts = list(system_parts)
+    if parts:
+        data["system"] = "\n".join(parts)
+    if history:
+        data["history"] = history
+    return TaskInput(text=text, data=data)
+
+
+def over_cap(count: int, cap: int | None, what: str) -> str | None:
+    """Why `count` of `what` is too many for `cap`, or None; None `cap` is no cap."""
+    if cap is not None and count > cap:
+        return f"{what}: {count} is more than the limit of {cap}"
+    return None

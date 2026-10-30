@@ -647,3 +647,37 @@ async def test_a_takeover_after_a_wait_runs_with_the_budget_left() -> None:
         res = await client.post("/v1/run", json=body, headers={"Idempotency-Key": KEY})
     assert res.status_code == 200, res.text
     assert len(budgets) == 1 and 2500 <= budgets[0] <= 3000, budgets
+
+
+async def test_a_keyed_call_whose_trace_id_is_in_use_releases_its_claim() -> None:
+    """A keyed call refused 409 `trace_id_in_use` frees its key at once: the store holds no entry,
+    and a retry with the same key and a fresh trace id runs."""
+    in_flight = asyncio.Event()
+    release = asyncio.Event()
+
+    async def wait(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
+        if input.text == "first":
+            in_flight.set()
+            await asyncio.wait_for(release.wait(), timeout=5)
+        yield End(output={"text": input.text})
+
+    state = InMemoryState()
+    app = _app(state, FakeEngine(handle=wait))
+    trace = "t-in-use"
+    headers = {"Idempotency-Key": KEY}
+    async with _clients(app) as (client,):
+        first = asyncio.create_task(
+            client.post("/v1/run", json={"trace_id": trace, "input": {"text": "first"}})
+        )
+        await asyncio.wait_for(in_flight.wait(), timeout=5)
+        body = {"trace_id": trace, "input": {"text": "a"}}
+        refused = await client.post("/v1/run", json=body, headers=headers)
+        entry = await state.get(store_key(AGENT, KEY))
+        release.set()
+        await first
+        retry = await client.post("/v1/run", json={"input": {"text": "a"}}, headers=headers)
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["detail"]["code"] == "trace_id_in_use"
+    assert entry is None  # the claim was released
+    assert retry.status_code == 200 and REPLAYED not in retry.headers
+    assert _engine(app).runs == 2
