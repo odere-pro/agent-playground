@@ -1,10 +1,15 @@
-"""PoC-4 exit criterion 8: "Any hidden state in the chassis or a workload is found and listed."
+"""PoC-4 exit criterion 8: "Engines that keep hidden state are listed, with a way to move the
+state out or a note to reject them."
+
+This file covers the first clause: it finds the hidden state an engine keeps, by behavior and by
+inspection. The list and the way out for each engine are in `notes/2026-10-01-hidden-state.md`.
 
 For each engine (echo-python, echo-pydanticai, echo-langgraph, echo-typescript) in the `sidecar`
 lane, two replicas, each with its own workload instance. Run A carries a marker and goes to
 replica 0. Then run B goes to replica 0 (the reused workload) and to replica 1 (a fresh one).
 Nothing from A may show in B: not in B's answer, not in what B sends the model, and the reused
-workload answers B as the fresh one does. The 057 H-19 kept-data check, with the fake model.
+workload answers B as the fresh one does. The 057 H-19 kept-data check, with the fake model. The
+runs happen once per engine, in the `runs` fixture; each test checks one channel.
 
 What each engine could keep, and what is checked:
 
@@ -23,7 +28,7 @@ What each engine could keep, and what is checked:
 - **Files.** Nothing is written into the workload's package folder. The real check of "nothing
   outside /tmp" is the Compose drill (`docker diff` on read-only roots, `test_compose_scale.py`).
 
-The list, with ways out, is `notes/2026-10-xx-hidden-state.md` (the docs package writes it).
+The list, with ways out, is `notes/2026-10-01-hidden-state.md`.
 Offline: Unix sockets only. The TypeScript cell skips when its `node_modules` is absent.
 """
 
@@ -84,72 +89,153 @@ def _globals() -> dict[str, str]:
     return seen
 
 
-async def _until_pruned(live: set[str]) -> None:
+PYTHON_ENGINES = [engine for engine, handle in ENGINES.items() if handle is not None]
+"""The engines whose workload runs the Python A2A template server, with its task store."""
+
+
+async def _until_pruned(live: set[str], label: str) -> None:
+    """Wait up to `PRUNE_WAIT_S` for `live` to empty; fail with `label` if it does not."""
     for _ in range(int(PRUNE_WAIT_S / 0.02)):
         if not live:
             return
         await asyncio.sleep(0.02)
+    pytest.fail(f"{label}: the A2A server kept a finished task after {PRUNE_WAIT_S} s: {live}")
 
 
-@pytest.fixture
-def router() -> Iterator[OutboundRouter]:
-    routed = OutboundRouter()
+class Runs:
+    """What runs A and B left behind on one engine, recorded once for every test."""
+
+    def __init__(self, marker: str) -> None:
+        self.marker = marker
+        self.a: Any = None
+        self.b_reused: Any = None
+        self.b_fresh: Any = None
+        self.a_texts: list[str] = []
+        self.reused_texts: list[str] = []
+        self.fresh_texts: list[str] = []
+        self.globals_before: dict[str, str] = {}
+        self.globals_after: dict[str, str] = {}
+        self.tasks_seen: list[bool] = []
+        self.tasks_kept: list[set[str]] = []
+        self.files_before: dict[str, int] = {}
+        self.files_after: dict[str, int] = {}
+
+
+async def _run_a_then_b(replicas: Any, model: HarnessModel, runs: Runs) -> None:
+    """Run A with the marker on replica 0, then run B on replica 0 and on replica 1. Record what
+    each channel holds, then wait for each A2A task store to prune its finished tasks."""
+    runs.globals_before = _globals()
+    runs.a = await call(replicas[0], "native", f"simplify: remember {runs.marker}", key=None)
+    after_a = len(model.calls)
+    runs.b_reused = await call(replicas[0], "native", "simplify: what did I say?", key=None)
+    after_reused = len(model.calls)
+    runs.b_fresh = await call(replicas[1], "native", "simplify: what did I say?", key=None)
+    texts = model.user_texts()
+    runs.a_texts = texts[:after_a]
+    runs.reused_texts = texts[after_a:after_reused]
+    runs.fresh_texts = texts[after_reused:]
+    runs.globals_after = _globals()
+    stores = [w.task_store for w in replicas.workloads if w is not None and w.task_store]
+    runs.tasks_seen = [bool(store.ever) for store in stores]
+    await asyncio.gather(
+        *(_until_pruned(store.live, f"replica {i}") for i, store in enumerate(stores))
+    )
+    runs.tasks_kept = [set(store.live) for store in stores]
+
+
+@pytest.fixture(scope="module", params=list(ENGINES))
+def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
+    """Runs A and B on one engine, once for every test of that engine."""
+    engine: str = request.param
+    folder = WORKLOADS / FOLDERS[engine]
+    recorded = Runs(f"MARKER-{uuid.uuid4().hex[:12]}")
+    recorded.files_before = _files(folder)
+    router = OutboundRouter()
     patch = pytest.MonkeyPatch()
-    patch_outbound(patch, routed.send)
+    patch_outbound(patch, router.send)
+    model = HarnessModel()
     try:
-        yield routed
+        with replicas_on_unix_sockets(2, engine, "sidecar", model=model, router=router) as replicas:
+            asyncio.run(_run_a_then_b(replicas, model, recorded))
     finally:
         patch.undo()
-    assert routed.unrouted == [], routed.unrouted
+    recorded.files_after = _files(folder)
+    yield recorded
+    assert router.unrouted == [], router.unrouted
 
 
 def _answer(body: dict[str, Any]) -> Any:
-    """What B answered, without its per-run ids."""
+    """What a run answered, without its per-run ids."""
     return {k: v for k, v in body.items() if k not in RUN_IDS}
 
 
-@pytest.mark.parametrize("engine", list(ENGINES))
-async def test_run_b_sees_nothing_of_run_a_on_a_reused_workload(
-    engine: str, router: OutboundRouter
+def test_run_a_reaches_the_model_with_its_marker_when_sent_to_replica_0(runs: Runs) -> None:
+    """Exit criterion 8, the setup the other checks rely on: run A answers ok and its marker is
+    in what the workload sends the model."""
+    a = runs.a
+
+    assert a.status == 200 and a.body["status"] == "ok", a
+    assert any(runs.marker in text for text in runs.a_texts), "A never ran"
+
+
+def test_run_b_answers_the_same_when_sent_to_the_reused_or_a_fresh_workload(runs: Runs) -> None:
+    """Exit criterion 8, the answer: run B answers the same on the reused workload as on a fresh
+    one, and it is the plain simplified text."""
+    reused, fresh = runs.b_reused, runs.b_fresh
+
+    assert (reused.status, fresh.status) == (200, 200), (reused, fresh)
+    assert reused.body["output"]["text"] == SIMPLIFIED, reused.body
+    assert _answer(reused.body) == _answer(fresh.body)
+
+
+def test_run_b_answer_holds_no_marker_when_run_a_carried_one(runs: Runs) -> None:
+    """Exit criterion 8, the answer: neither B answer holds A's marker."""
+    bodies = [str(runs.b_reused.body), str(runs.b_fresh.body)]
+
+    assert [body for body in bodies if runs.marker in body] == [], "A leaked into B's answer"
+
+
+def test_run_b_model_calls_hold_no_marker_when_run_a_carried_one(runs: Runs) -> None:
+    """Exit criterion 8, the model input: B calls the model on both workloads, and no call of B
+    holds A's marker."""
+    b_texts = runs.reused_texts + runs.fresh_texts
+
+    assert runs.reused_texts and runs.fresh_texts, "B made no model call"
+    assert [text for text in b_texts if runs.marker in text] == [], "A leaked into B"
+
+
+def test_reused_workload_sends_the_model_what_a_fresh_one_does_when_run_b_follows_run_a(
+    runs: Runs,
 ) -> None:
-    """Exit criterion 8, per engine: after run A (with a marker) on replica 0, run B answers the
-    same on the reused workload (replica 0) and on a fresh one (replica 1); no model call of B
-    holds the marker; no A2A task is kept; no workload module global moved; no file was written
-    in the workload's folder."""
-    marker = f"MARKER-{uuid.uuid4().hex[:12]}"
-    folder = WORKLOADS / FOLDERS[engine]
-    files_before = _files(folder)
-    model = HarnessModel()
-    with replicas_on_unix_sockets(2, engine, "sidecar", model=model, router=router) as replicas:
-        globals_before = _globals()
-        a = await call(replicas[0], "native", f"simplify: remember {marker}", key=None)
-        assert a.status == 200 and a.body["status"] == "ok", a
-        after_a = len(model.calls)
-        assert any(marker in text for text in model.user_texts()[:after_a]), "A never ran"
-        b_reused = await call(replicas[0], "native", "simplify: what did I say?", key=None)
-        after_reused = len(model.calls)
-        b_fresh = await call(replicas[1], "native", "simplify: what did I say?", key=None)
-        texts = model.user_texts()
-        globals_after = _globals()
-        for workload in replicas.workloads:
-            if workload is not None and workload.task_store is not None:
-                assert workload.task_store.ever, "the task store saw no task"
-                await _until_pruned(workload.task_store.live)
-                assert workload.task_store.live == set(), "the A2A server kept a finished task"
-    assert b_reused.status == b_fresh.status == 200, (b_reused, b_fresh)
-    assert b_reused.body["output"]["text"] == SIMPLIFIED, b_reused.body
-    assert _answer(b_reused.body) == _answer(b_fresh.body)
-    assert marker not in str(b_reused.body) and marker not in str(b_fresh.body)
-    reused_calls, fresh_calls = texts[after_a:after_reused], texts[after_reused:]
-    assert reused_calls and fresh_calls, "B made no model call"
-    assert not any(marker in text for text in reused_calls + fresh_calls), "A leaked into B"
-    assert reused_calls == fresh_calls, "the reused workload sent the model something else"
-    assert globals_after == globals_before, {
-        k: (globals_before.get(k), v)
-        for k, v in globals_after.items()
-        if globals_before.get(k) != v
+    """Exit criterion 8, the model input: what the reused workload sends the model for B is what
+    the fresh one sends."""
+    assert runs.reused_texts == runs.fresh_texts, (
+        "the reused workload sent the model something else"
+    )
+
+
+@pytest.mark.parametrize("runs", PYTHON_ENGINES, indirect=True)
+def test_no_a2a_task_is_kept_when_runs_a_and_b_have_ended(runs: Runs) -> None:
+    """Exit criterion 8, the task store: each replica's A2A server saw a task and kept none once
+    it ended. (echo-typescript prunes in its own process; `test/prune.test.ts` checks it.)"""
+    assert runs.tasks_seen == [True, True], "a task store saw no task"
+    assert runs.tasks_kept == [set(), set()], "the A2A server kept a finished task"
+
+
+def test_no_workload_module_global_changes_when_runs_a_and_b_run(runs: Runs) -> None:
+    """Exit criterion 8, module globals: no plain-data global of a workload package moved."""
+    moved = {
+        k: (runs.globals_before.get(k), v)
+        for k, v in runs.globals_after.items()
+        if runs.globals_before.get(k) != v
     }
-    assert _files(folder) == files_before, "the workload wrote into its package folder"
+
+    assert runs.globals_after == runs.globals_before, moved
+
+
+def test_no_file_is_written_in_the_workload_folder_when_runs_a_and_b_run(runs: Runs) -> None:
+    """Exit criterion 8, files: the workload wrote nothing into its package folder."""
+    assert runs.files_after == runs.files_before, "the workload wrote into its package folder"
 
 
 def test_langgraph_compiles_its_graph_without_a_checkpointer_or_store() -> None:
