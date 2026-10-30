@@ -67,7 +67,10 @@ Steps:
    - Expose a pytest plugin. It holds env gating as one `@requires_env("POC05_KIND")` style marker, which replaces the markers named after each PoC.
    - Remove every `sys.path` insert.
    - Drop the per-PoC mypy excludes.
+   - Done. PR #48 moved the PoC-2 to PoC-6 harnesses. Branch `claude/review-f0c-harness-finish` moved PoC-7 and PoC-8. `grep -rn "sys.path" pocs/*/tests pocs/*/demo` prints nothing. No per-PoC mypy exclude is left; the one glob for `pocs/*/tests/conftest.py` stays.
 4. **Rename tests.** Prefix PoC-1 to PoC-4 test files `test_pocNN_*`. Add a `harness-lint` check that every test basename is unique.
+   - Partly done. Every PoC-5 to PoC-8 test file has the prefix, and no two test basenames collide today.
+   - Left: the 34 PoC-1 to PoC-4 test files have no prefix, and `harness-lint` has no basename check.
 5. **Make deploy consistent.** Move PoC-4 kind into `deploy/kind/poc04/`. Keep a thin `deploy/kind/run.sh` that dispatches by PoC. `deploy/helm/` stays for PoC-9.
 6. **Discover CI by glob.** Build the `ci.yml` images matrix from a manifest file (`deploy/images.yaml`), not from inline entries. Add path filters, so a docs-only or one-PoC change skips unrelated jobs. `make check` stays the gate.
 

@@ -5,6 +5,8 @@ Iteration folders. Read the folder's own `CLAUDE.md` and README before working i
 - Skill `poc-iteration` owns how a PoC opens, runs, and closes (`.claude/skills/poc-iteration/SKILL.md`). That includes the evidence a checkbox needs.
 - Scenario tests live in `pocs/poc-NN-*/tests/`. Their shape, docstring included, is in `docs/guides/testing.md` ("Test shape"). A criterion without a test is not done.
 - Code that outlives the iteration goes to `packages/`, never into the PoC folder. The PoC folder holds tests, demo scripts, and notes.
+- Test support used by more than one PoC, by a demo, or by a plain script that a drill also uses goes in `packages/poc-harness` (import `poc_harness`). A helper only one PoC uses stays in that PoC's `tests/`.
+- A PoC never reaches into another PoC's `tests/` folder. No `sys.path` insert.
 - Measurements are dated files in `notes/`, with the command that produced them, so they can be re-run.
 
 ## `CURRENT`

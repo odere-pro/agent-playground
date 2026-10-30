@@ -1,6 +1,6 @@
 # poc-harness
 
-Test support that more than one PoC folder, or a PoC demo, uses. It replaces the `sys.path` inserts that let a later PoC import an earlier PoC's harness. Not product code: nothing in `packages/*/src` imports it (`make lint` enforces it).
+Test support used by more than one PoC, by a demo, or by a plain script that a drill also uses. That last case is why `metrics_stack` is here. It replaces the `sys.path` inserts that let a later PoC import an earlier PoC's harness. Not product code: nothing in `packages/*/src` imports it (`make lint` enforces it).
 
 ## Modules
 
