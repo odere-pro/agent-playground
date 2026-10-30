@@ -241,7 +241,62 @@ def test_collector_span_rules_match_the_log_attribute_rules(context: str) -> Non
     logs = _statements(processors["transform/redact"]["log_statements"], "log")
     log_attributes = [s for s in logs if s.startswith("replace_all_patterns(attributes")]
 
-    spans = _statements(processors["transform/redact_spans"]["trace_statements"], context)
+    statements = _statements(processors["transform/redact_spans"]["trace_statements"], context)
+
+    spans = [s for s in statements if s.startswith("replace_all_patterns(")]
 
     assert log_attributes
     assert spans == log_attributes
+
+
+_SAVE = re.compile(
+    r'^set\(cache\["([^"]+)"\], attributes\["\1"\]\) where attributes\["\1"\] != nil$'
+)
+_RESTORE = re.compile(r'^set\(attributes\["([^"]+)"\], cache\["\1"\]\) where cache\["\1"\] != nil$')
+_REPLACE = re.compile(r'^replace_all_patterns\(attributes, "value", "(.*)", "(<[A-Z_]+>)"\)$')
+
+
+def _span_statements() -> list[str]:
+    processors = _yaml(COLLECTOR)["processors"]
+    return _statements(processors["transform/redact_spans"]["trace_statements"], "span")
+
+
+def _run_span_rules(attributes: dict[str, str]) -> dict[str, str]:
+    """The span-context statements applied with Python's `re` (the patterns are RE2-safe)."""
+    cache: dict[str, str] = {}
+    out = dict(attributes)
+    for statement in _span_statements():
+        if save := _SAVE.match(statement):
+            cache.update({k: out[k] for k in [save.group(1)] if k in out})
+        elif restore := _RESTORE.match(statement):
+            out.update({k: cache[k] for k in [restore.group(1)] if k in cache})
+        else:
+            match = _REPLACE.match(statement)
+            assert match, statement
+            out = {k: re.sub(match.group(1), match.group(2), v) for k, v in out.items()}
+    return out
+
+
+def test_collector_span_rules_save_every_chassis_id_key_around_the_masking() -> None:
+    """Each `ID_KEYS` entry is saved before the first mask and put back after the last."""
+    from chassis.adapters.otel import ID_KEYS
+
+    statements = _span_statements()
+    saved = [m.group(1) for s in statements if (m := _SAVE.match(s))]
+    restored = [m.group(1) for s in statements if (m := _RESTORE.match(s))]
+    masks = [i for i, s in enumerate(statements) if _REPLACE.match(s)]
+
+    assert sorted(saved) == sorted(ID_KEYS) == sorted(restored)
+    assert statements[: masks[0]] == statements[: len(saved)]
+    assert len(statements) == len(saved) + len(masks) + len(restored)
+
+
+def test_collector_span_rules_keep_an_id_when_it_looks_like_a_card_number() -> None:
+    """A trace id with 13 digits in a row survives; the same digits in a plain attribute do not."""
+    digits = "4111111111111"
+    attributes = {"trace_id": f"ab{digits}cdef0123456789ab", "note": f"card {digits}"}
+
+    out = _run_span_rules(attributes)
+
+    assert out["trace_id"] == attributes["trace_id"]
+    assert out["note"] == "card <CREDIT_CARD>"
