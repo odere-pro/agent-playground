@@ -23,9 +23,10 @@ fmt: ## Format code
 	uv run ruff format .
 	uv run ruff check --fix .
 
-lint-fix: ## Fix what the linters can fix: ruff format, ruff fixes, codespell typos
+lint-fix: ## Fix what the linters can fix: ruff format, ruff fixes, codespell typos, secrets baseline lines
 	$(MAKE) fmt
 	uv run codespell -w docs packages pocs deploy scripts .github
+	scripts/check_secrets.sh --refresh
 
 lint-staged: ## The fast lint-extra checks on staged files (the pre-commit hook runs this)
 	scripts/lint_staged.sh
@@ -46,7 +47,7 @@ lint-extra: ## Extra linters: shellcheck, actionlint, hadolint, codespell, yamll
 	uv run hadolint --config .hadolint.yaml $$(git ls-files '*Dockerfile')
 	uv run codespell docs packages pocs deploy scripts .github
 	uv run yamllint --strict -c .yamllint.yaml .github deploy pocs/*/tests/fixtures
-	git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline
+	scripts/check_secrets.sh
 
 type: ## mypy, strict
 	uv run mypy
