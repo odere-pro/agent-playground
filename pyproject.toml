@@ -26,7 +26,10 @@ dev = [
   # `make lint-extra`: linters shipped as wheels, so uv.lock pins each binary by hash.
   "shellcheck-py==0.11.0.1",
   "actionlint-py==1.7.12.25",
-  "hadolint-py==2.15.1.2",
+  # The 2.15.1.2 macOS wheel on PyPI is corrupt (its hash matches the lock, but the binary does not
+  # inflate), so a Mac takes 2.14.0.1. Linux, and so CI, keeps 2.15.1.2.
+  "hadolint-py==2.15.1.2; sys_platform != 'darwin'",
+  "hadolint-py==2.14.0.1; sys_platform == 'darwin'",
   "codespell==2.4.3",
   "yamllint==1.38.0",
   "detect-secrets==1.5.0",
@@ -69,7 +72,7 @@ fake-langfuse = { workspace = true }
 guardrail-server = { workspace = true }
 
 [tool.pytest.ini_options]
-testpaths = ["packages", "pocs"]
+testpaths = ["packages", "pocs", "scripts/tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [

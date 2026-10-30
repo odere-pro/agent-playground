@@ -15,7 +15,7 @@ House style: plain words, short sentences, one idea per sentence, US spelling. T
 Rules:
 - The epic is read-only. Planning docs change through `make planning-sync` and `make planning-check`; order, sizes, and dependencies live in `docs/planning/tools/backlog.py`, never in frontmatter.
 - A folder's `CLAUDE.md` says what is there, the rules, how to test, and what not to do, in under 40 lines. If the code moved, the file moves with it.
-- A PoC README's checklist changes only with evidence: the test name or the command output.
+- A PoC README's checklist changes only with evidence, as skill `poc-iteration` defines it ("Close").
 - A plan or review in `docs/plans/` has a `Status:` line and is dated in its file name.
 
 Report what you changed and run `make planning-check` and `make harness-lint` when you touched their inputs.

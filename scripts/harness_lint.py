@@ -5,8 +5,9 @@ Runs in `make check` and CI. Exit code 1 on any finding. It catches an agent tha
 skill that does not exist, a hook that settings.json names but the disk lacks, a PoC folder
 without its README or CLAUDE.md, and a plan without a Status line. It also keeps the root
 CLAUDE.md agent and skill lists equal to the disk, caps CLAUDE.md size, checks that repo paths
-cited in CLAUDE.md files exist, and rejects two test files with the same name (test folders
-have no __init__.py, so pytest cannot import both).
+cited in CLAUDE.md files exist, rejects two test files with the same name (test folders
+have no __init__.py, so pytest cannot import both), and checks that every test a PoC README cites
+(`::test_x`, `::TestX`) is defined under packages/ or pocs/. Drift is a finding, not a traceback.
 """
 
 from __future__ import annotations
@@ -95,9 +96,13 @@ def check_folders() -> None:
             if not (pkg / name).exists():
                 say(f"{pkg.relative_to(ROOT)}: missing {name}")
     pocs = ROOT / "pocs"
-    current = (pocs / "CURRENT").read_text().strip()
-    if not (pocs / current).is_dir():
-        say(f"pocs/CURRENT names {current!r}, which does not exist")
+    current_file = pocs / "CURRENT"
+    if not current_file.is_file():
+        say("pocs/CURRENT is missing")
+    else:
+        current = current_file.read_text().strip()
+        if not current or not (pocs / current).is_dir():
+            say(f"pocs/CURRENT names {current!r}, which does not exist")
     for poc in sorted(p for p in pocs.iterdir() if p.is_dir() and p.name.startswith("poc-")):
         for name in ("README.md", "CLAUDE.md", "tests", "demo", "notes"):
             if not (poc / name).exists():
@@ -117,22 +122,26 @@ def check_plans() -> None:
             say(f"{path.relative_to(ROOT)}: status {m.group(1)!r} not in {sorted(STATUSES)}")
 
 
-def repo_files(pattern: str, under: Path = ROOT) -> list[Path]:
-    return sorted(p for p in under.rglob(pattern) if not SKIP_DIRS & set(p.relative_to(ROOT).parts))
+def repo_files(pattern: str, under: Path | None = None) -> list[Path]:
+    base = ROOT if under is None else under
+    return sorted(p for p in base.rglob(pattern) if not SKIP_DIRS & set(p.relative_to(ROOT).parts))
 
 
 def check_index() -> None:
     text = (ROOT / "CLAUDE.md").read_text()
     delegation = text.split("## Delegation", 1)[-1]
-    table, _, skills_line = delegation.partition("Skills:")
+    table, has_skills, skills_line = delegation.partition("Skills:")
+    if not has_skills:
+        say("CLAUDE.md: no `Skills:` line under ## Delegation")
     listed_agents = set(re.findall(r"\| `([a-z0-9-]+)` \|", table))
-    listed_skills = set(re.findall(r"`([a-z0-9-]+)`", skills_line.splitlines()[0]))
+    first_line = skills_line.splitlines()[0] if skills_line else ""
+    listed_skills = set(re.findall(r"`([a-z0-9-]+)`", first_line)) if has_skills else None
     agents = {p.stem for p in (CLAUDE / "agents").glob("*.md")}
     skills = {p.name for p in (CLAUDE / "skills").iterdir() if p.is_dir()}
-    for kind, on_disk, listed in (
-        ("agent", agents, listed_agents),
-        ("skill", skills, listed_skills),
-    ):
+    pairs = [("agent", agents, listed_agents)]
+    if listed_skills is not None:
+        pairs.append(("skill", skills, listed_skills))
+    for kind, on_disk, listed in pairs:
         for name in sorted(on_disk - listed):
             say(f"CLAUDE.md: {kind} {name!r} exists but is not listed")
         for name in sorted(listed - on_disk):
@@ -163,6 +172,31 @@ def check_test_names() -> None:
                 say(f"{rel}: same file name as {other}; pytest cannot import both")
 
 
+# A README evidence citation: `::test_name` or `::TestClass`, after a file or another `::` part.
+CITED_TEST = re.compile(r"::((?:test_|Test)\w+)")
+DEFINED_TEST = re.compile(r"^\s*(?:async\s+def|def|class)\s+((?:test_|Test)\w+)", re.M)
+
+
+def defined_test_names() -> set[str]:
+    """Every `test_*` function or method and `Test*` class under packages/ and pocs/. A method a
+    contract suite defines (chassis_contracts) counts, so an inherited test resolves too."""
+    names: set[str] = set()
+    for top in ("packages", "pocs"):
+        for path in repo_files("*.py", ROOT / top):
+            names.update(DEFINED_TEST.findall(path.read_text(errors="replace")))
+    return names
+
+
+def check_cited_tests() -> None:
+    defined = defined_test_names()
+    for readme in sorted((ROOT / "pocs").glob("*/README.md")):
+        rel = readme.relative_to(ROOT)
+        for number, line in enumerate(readme.read_text().splitlines(), start=1):
+            for name in CITED_TEST.findall(line):
+                if name not in defined:
+                    say(f"{rel}:{number}: cites test {name!r}, which no test file defines")
+
+
 def main() -> int:
     check_agents()
     check_skills()
@@ -172,6 +206,7 @@ def main() -> int:
     check_index()
     check_claude_md()
     check_test_names()
+    check_cited_tests()
     for f in findings:
         print(f"harness-lint: {f}")
     print("harness-lint: ok" if not findings else f"harness-lint: {len(findings)} finding(s)")
