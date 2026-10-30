@@ -17,6 +17,8 @@ never holds the text or a score; the score is logged on the server.
 
 Both POST routes refuse more than `MAX_TEXTS` texts or `MAX_TOTAL_CHARS` characters with 413, and
 answer a fixed 503 when the classifier raises. A 422 names the field, never the value sent.
+The caps run after the body is parsed: they bound the classifier's work, not memory. Cap the
+body size in front of the server (suggested: at the reverse proxy).
 
 `POST /v1/check` (`{"text", "input_type"?, "checks"?}` -> `{"allowed", "reasons"}`) is a
 convenience for a caller that is not LiteLLM (a smoke test, the red-team runner's report).

@@ -74,7 +74,7 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 from chassis.core.trace import parse_traceparent, trace_id_hex
 from chassis.metrics import MetricsRegistry, observe_span
 from chassis.ports.telemetry import Span
-from chassis.redaction import redact, redact_value
+from chassis.redaction import redact, redact_error_text, redact_value
 
 __all__ = ["BAGGAGE_KEYS", "ID_KEYS", "LogSink", "OtelTelemetry"]
 
@@ -142,11 +142,14 @@ def _attribute(key: str, value: Any) -> Any:
 
 
 def _record_exception(otel_span: trace.Span, exc: BaseException) -> None:
-    """The `exception` event with the type and the redacted message, never `str(exc)` raw."""
+    """The `exception` event with the type and the message without PII or keys, never raw."""
     # No stack trace: its source lines can quote the raw message, which redaction may miss.
     otel_span.add_event(
         "exception",
-        {"exception.type": type(exc).__name__, "exception.message": redact(str(exc))},
+        {
+            "exception.type": type(exc).__name__,
+            "exception.message": redact_error_text(redact(str(exc)), None),
+        },
     )
 
 
