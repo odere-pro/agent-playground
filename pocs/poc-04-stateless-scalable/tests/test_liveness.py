@@ -5,7 +5,9 @@ A real chassis app with a real `SidecarConnector` probes a real workload templat
 (`workload_a2a`, serving the chassis echo) on a Unix socket. The hang is played by a gate in front
 of the workload app: while it is shut, every request waits and never answers, as with
 `docker pause`. No hang switch goes into the workload. The probe settings are small so the test
-runs in well under a second of probing.
+runs in well under a second of probing. A probe that must succeed gets a wide timeout
+(`PATIENT`): the wait for the workload to answer again is real time on a real socket, and a 100 ms
+limit there would test the machine's load.
 
 The restart itself (the workload's own exec liveness probe in kind) is `test_kind.py`, `network`.
 """
@@ -16,6 +18,7 @@ import asyncio
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from typing import Any
 
 import httpx
@@ -30,6 +33,10 @@ from poc_harness.sockets import on_unix_socket
 
 HANDLE = "chassis.core.handle:echo_wire"
 FAST = ProbeSettings(interval_s=0.02, timeout_s=0.1, failures=3)
+PATIENT = replace(FAST, timeout_s=10.0)
+"""suggested: for the probe that must succeed. Only a hang reaches the timeout."""
+READY_POLLS = 3000
+"""Up to 30 s: a hang guard."""
 
 
 class Gate:
@@ -84,7 +91,7 @@ def _app(uds: str) -> Any:
 
 
 async def _wait_for_ready(client: httpx.AsyncClient, status: int) -> httpx.Response:
-    for _ in range(300):
+    for _ in range(READY_POLLS):
         response = await client.get("/ready")
         if response.status_code == status:
             return response
@@ -115,6 +122,7 @@ async def test_ready_comes_back_when_the_workload_answers() -> None:
         async with _client(app) as client, app.router.lifespan_context(app):
             gate.open.clear()
             await _wait_for_ready(client, 503)
+            app.state.readiness.settings = PATIENT
             gate.open.set()
             back = await _wait_for_ready(client, 200)
             assert back.json() == {"status": "ready"}

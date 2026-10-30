@@ -12,7 +12,8 @@ test lets it go, then calls the chassis's model proxy with the run's `traceparen
 SIGTERM arrives mid-run. `/ready` answers 503 `draining` first; the public listener closes after
 the drain delay (every public response in between carries `Connection: close`, the proxy's do
 not); the run still finishes, including its model call, because the proxy listener
-stays up until the public server has stopped. The workload side of the drain is
+stays up until the public server has stopped. The drain delay is a `DelayGate`, so the test ends
+it, not the machine's speed. The workload side of the drain is
 `test_workload_drain.py`; the Compose drill is `test_compose_scale.py` (`network`).
 """  # noqa: E501
 
@@ -43,8 +44,27 @@ from chassis.server.lifecycle import Drain, DrainSettings, QuietServer
 from chassis.server.proxy_app import create_proxy_app
 from poc_harness.scenario import SIDECAR_URL
 from poc_harness.sockets import on_unix_socket
+from poc_harness.waits import wait_until_async
 
 ROUTE = "fake-route"
+HANG_GUARD_S = 30.0
+"""Only a hang reaches this; every wait below ends on an event or a condition."""
+
+
+class DelayGate:
+    """The drain's `sleep`: sets `entered` when the drain reaches its delay, and returns only
+    after `release`.
+    """
+
+    def __init__(self) -> None:
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+        self.delays: list[float] = []
+
+    async def __call__(self, seconds: float) -> None:
+        self.delays.append(seconds)
+        self.entered.set()
+        await self.release.wait()
 
 
 class SlowWorkload:
@@ -81,13 +101,14 @@ class SlowWorkload:
 @contextmanager
 def pair_and_workload(
     settings: DrainSettings,
-) -> Iterator[tuple[Drain, SlowWorkload, str, str]]:
+) -> Iterator[tuple[Drain, DelayGate, SlowWorkload, str]]:
     from workload_a2a.server import build_app
 
     with tempfile.TemporaryDirectory(prefix="p4g-") as folder:  # short: macOS caps the path
         public_uds = str(Path(folder, "public.sock"))
         proxy_uds = str(Path(folder, "proxy.sock"))
         workload = SlowWorkload(proxy_uds)
+        gate = DelayGate()
         card = build_agent_card(name="slow", version="0.0.1", url=SIDECAR_URL)
         try:
             with on_unix_socket(build_app(wire(workload), card), "a2a.sock") as uds:
@@ -121,10 +142,10 @@ def pair_and_workload(
                 )
                 proxy = QuietServer(uvicorn.Config(proxy_app, uds=proxy_uds, lifespan="off"))
                 yield (
-                    Drain(public, proxy, settings, state=app.state),
+                    Drain(public, proxy, settings, state=app.state, sleep=gate),
+                    gate,
                     workload,
                     public_uds,
-                    proxy_uds,
                 )
         finally:
             workload.release.set()
@@ -144,9 +165,24 @@ async def _started(drain: Drain) -> None:
     raise AssertionError("the chassis never started")
 
 
-async def _run_and_sigterm(drain: Drain, workload: SlowWorkload, public_uds: str) -> dict[str, Any]:
-    """Start a streaming run, SIGTERM mid-run, check `/ready`, let the run finish. Returns what
-    the client saw.
+async def _past_the_delay(drain: Drain, gate: DelayGate) -> None:
+    """End the drain delay. Returns once the public listener has closed."""
+    gate.release.set()
+    assert drain.task is not None
+    await asyncio.wait_for(drain.task, HANG_GUARD_S)
+    assert drain.public.servers, "the public server has a listener to close"
+    await wait_until_async(
+        lambda: not any(server.is_serving() for server in drain.public.servers),
+        "the public listener to close",
+        HANG_GUARD_S,
+    )
+
+
+async def _run_and_sigterm(
+    drain: Drain, gate: DelayGate, workload: SlowWorkload, public_uds: str
+) -> dict[str, Any]:
+    """Start a streaming run, SIGTERM mid-run, check `/ready` inside the drain delay, end the
+    delay, let the run finish. Returns what the client saw.
     """
     seen: dict[str, Any] = {}
     async with _client(public_uds) as client:
@@ -154,13 +190,14 @@ async def _run_and_sigterm(drain: Drain, workload: SlowWorkload, public_uds: str
         async with client.stream("POST", "/v1/run", json=body) as stream:
             frames = stream.aiter_text()
             text = await anext(frames)
-            await asyncio.to_thread(workload.waiting.wait, 10)
+            assert await asyncio.to_thread(workload.waiting.wait, HANG_GUARD_S)
             os.kill(os.getpid(), signal.SIGTERM)
-            await asyncio.sleep(0.05)
+            await asyncio.wait_for(gate.entered.wait(), HANG_GUARD_S)
             ready = await client.get("/ready")
             seen["ready"] = (ready.status_code, ready.json())
             seen["health"] = (await client.get("/health")).status_code
-            await asyncio.sleep(drain.settings.delay_s + 0.2)  # the public listener is closing
+            seen["order_in_the_delay"] = list(drain.order)
+            await _past_the_delay(drain, gate)
             seen["order_at_release"] = list(drain.order)
             workload.release.set()
             text += "".join([chunk async for chunk in frames])
@@ -179,25 +216,37 @@ def _events(text: str) -> list[dict[str, Any]]:
 
 async def test_the_chassis_drains_in_flight_runs_and_ready_goes_false_first() -> None:
     """Exit criterion 6, chassis half: `/ready` says draining first; the run in flight ends."""
-    with pair_and_workload(DrainSettings(delay_s=0.3, timeout_s=10)) as (drain, workload, pub, _):
+    with pair_and_workload(DrainSettings(delay_s=0.3, timeout_s=10)) as (
+        drain,
+        gate,
+        workload,
+        pub,
+    ):
         served = asyncio.create_task(drain.serve())
         await _started(drain)
-        seen = await _run_and_sigterm(drain, workload, pub)
+        seen = await _run_and_sigterm(drain, gate, workload, pub)
         await asyncio.wait_for(served, 10)
     assert seen["ready"] == (503, {"status": "not ready", "reason": "draining"})
     assert seen["health"] == 200
     events = _events(seen["text"])
     assert events[0]["type"] == "start" and events[-1]["type"] == "end", events
     assert "".join(e.get("text", "") for e in events if e["type"] == "delta") == "half done"
+    assert seen["order_in_the_delay"] == ["draining"], "the delay holds the listener open"
     assert seen["order_at_release"] == ["draining", "public closing"]
+    assert gate.delays == [0.3]
 
 
 async def test_the_proxy_listener_outlives_the_public_one() -> None:
     """Exit criterion 6, chassis half: the run's model call after SIGTERM still answers 200."""
-    with pair_and_workload(DrainSettings(delay_s=0.2, timeout_s=10)) as (drain, workload, pub, _):
+    with pair_and_workload(DrainSettings(delay_s=0.2, timeout_s=10)) as (
+        drain,
+        gate,
+        workload,
+        pub,
+    ):
         served = asyncio.create_task(drain.serve())
         await _started(drain)
-        await _run_and_sigterm(drain, workload, pub)
+        await _run_and_sigterm(drain, gate, workload, pub)
         await asyncio.wait_for(served, 10)
     assert workload.model_status == 200, "the model call after the public listener closed"
     assert workload.model_connection != "close", "only the public listener closes connections"
