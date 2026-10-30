@@ -33,19 +33,23 @@ so it is `untrusted` and runs in the `remote` lane only.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import shutil
 import tempfile
 from collections import deque
-from collections.abc import AsyncIterator, Callable
-from contextlib import suppress
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from contextlib import aclosing, suppress
 from pathlib import Path
 from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions, query
 from claude_agent_sdk.types import McpHttpServerConfig
+from workload_a2a.events import DEFAULT_TIMEOUT_S as DEFAULT_TIMEOUT_S
+from workload_a2a.events import MAX_MESSAGE, event
+from workload_a2a.events import timeout_s as timeout_s
 
-from {{ package_name }}.mapping import EventMapper, error_event, event
+from {{ package_name }}.mapping import EventMapper, error_event
 
 PROMPT_VERSION = "simplifier-v1"
 SYSTEM_PROMPT = "Rewrite in plain words. Short sentences. Keep every fact."
@@ -58,8 +62,6 @@ DEFAULT_TOOL_URL = "http://127.0.0.1:8090/mcp"
 HOME_BASE_VAR = "CLAUDE_AGENT_HOME_BASE"
 DEFAULT_HOME_BASE = "/tmp"
 MCP_SERVER = "chassis"
-# suggested: 30 s when `ctx.budget.timeout_ms` is not set; the epic gives none.
-DEFAULT_TIMEOUT_S = 30.0
 # suggested: 3 tool rounds and the answer.
 MAX_TURNS = 4
 # The CLI refuses to start without a credential. The loopback proxy ignores it; the remote lane
@@ -87,17 +89,12 @@ OVERRIDDEN = frozenset(
 )
 GUARDED_PREFIXES = ("ANTHROPIC_", "CLAUDE_")
 
+log = logging.getLogger(__name__)
+
 query_fn: Callable[..., AsyncIterator[Any]] = query
 """Test-only hook: the SDK's `query`. A test replaces it with a fake that yields SDK message
 objects, so no CLI starts. (This replaces the skeleton's `transport` hooks: the CLI is the HTTP
 client here, and this process makes no model or MCP request of its own.)"""
-
-
-def timeout_s(ctx: dict[str, Any]) -> float:
-    budget = ctx.get("budget")
-    if isinstance(budget, dict) and budget.get("timeout_ms"):
-        return float(budget["timeout_ms"]) / 1000
-    return DEFAULT_TIMEOUT_S
 
 
 def unclean_names() -> list[str]:
@@ -175,8 +172,50 @@ async def handle(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[di
             retryable=False,
         )
         return
-    route = str(ctx.get("model_route") or DEFAULT_ROUTE)
     token = os.environ.get(TOKEN_VAR) or None
+    # The shell tool can print the CLI's env, so the token can be in any event, not just errors.
+    async with aclosing(_scrubbed(_run(input, ctx, token), token)) as events:
+        async for out in events:
+            yield out
+
+
+async def _scrubbed(
+    events: AsyncGenerator[dict[str, Any], None], token: str | None
+) -> AsyncGenerator[dict[str, Any], None]:
+    """The events with the token removed. An `error` message is scrubbed on its full text, then
+    cut to `MAX_MESSAGE`. Delta text is scrubbed across chunks: the last `len(token) - 1` chars
+    are held back and sent, scrubbed, before the next other event. The joined delta text and the
+    order of events are kept; only where the text is split into deltas can change."""
+    keep = len(token) - 1 if token else 0
+    held = ""
+    async with aclosing(events) as stream:
+        async for out in stream:
+            if out["type"] == "delta" and keep:
+                text = _scrub(held + str(out["text"]), token)
+                held = text[-keep:]
+                if text[:-keep]:
+                    yield {**out, "text": text[:-keep]}
+                continue
+            if held:
+                yield event("delta", text=held)
+                held = ""
+            yield _final(_scrub(out, token))
+    if held:
+        yield event("delta", text=held)
+
+
+def _final(out: dict[str, Any]) -> dict[str, Any]:
+    """An `error` gets its (already scrubbed) message cut to `MAX_MESSAGE`; others pass."""
+    if out["type"] != "error":
+        return out
+    return {**out, "message": str(out["message"])[:MAX_MESSAGE]}
+
+
+async def _run(
+    input: dict[str, Any], ctx: dict[str, Any], token: str | None
+) -> AsyncGenerator[dict[str, Any], None]:
+    """One CLI run in a fresh home: the mapped events, then at most one `error`."""
+    route = str(ctx.get("model_route") or DEFAULT_ROUTE)
     mapper = EventMapper(route)
     stderr_tail: deque[str] = deque(maxlen=3)
     home: Path | None = None
@@ -184,42 +223,70 @@ async def handle(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[di
     final: dict[str, Any] | None = None
     try:
         home = _make_home()
-        cwd = home / "work"
-        cwd.mkdir()
-        options = build_options(ctx, route, token, home, cwd, stderr_tail.append)
+        options = _options(ctx, route, token, home, stderr_tail.append)
         stream = query_fn(prompt=str(input.get("text") or ""), options=options)
-        deadline = asyncio.get_running_loop().time() + timeout_s(ctx)
-        # Read to the end of the stream, also after the result: the CLI then exits by itself and
-        # has written its last files before the run dir is removed.
-        while True:
-            try:
-                async with asyncio.timeout_at(deadline):
-                    message = await anext(stream)
-            except StopAsyncIteration:
-                break
-            except Exception:
-                if mapper.done:  # the result is in; a late exit error adds nothing
-                    break
-                raise
-            for out in mapper.map(message):
+        async with aclosing(_mapped(stream, mapper, timeout_s(ctx))) as events:
+            async for out in events:
                 if out["type"] == "error":
                     final = out
                 else:
                     yield out
     except Exception as exc:
-        final = error_event(exc)
-        if final["code"] == "cli_error" and stderr_tail:
-            final["message"] += " | " + " | ".join(stderr_tail)
+        final = _failure(exc, stderr_tail, token)
     finally:
         await _close(stream)
         if home is not None:
             shutil.rmtree(home, ignore_errors=True)
     if final is not None:
-        yield _scrub(final, token)
+        yield final
     elif not mapper.done:
         yield event(
             "error", code="model_error", message="the run ended with no result", retryable=False
         )
+
+
+def _options(
+    ctx: dict[str, Any],
+    route: str,
+    token: str | None,
+    home: Path,
+    stderr: Callable[[str], None],
+) -> ClaudeAgentOptions:
+    cwd = home / "work"
+    cwd.mkdir()
+    return build_options(ctx, route, token, home, cwd, stderr)
+
+
+async def _mapped(
+    stream: AsyncIterator[Any], mapper: EventMapper, seconds: float
+) -> AsyncGenerator[dict[str, Any], None]:
+    """The events for each SDK message until the stream ends or the deadline passes."""
+    deadline = asyncio.get_running_loop().time() + seconds
+    # Read to the end of the stream, also after the result: the CLI then exits by itself and
+    # has written its last files before the run dir is removed.
+    while True:
+        try:
+            async with asyncio.timeout_at(deadline):
+                message = await anext(stream)
+        except StopAsyncIteration:
+            return
+        except Exception:
+            if mapper.done:  # the result is in; a late exit error adds nothing
+                return
+            raise
+        for out in mapper.map(message):
+            yield out
+
+
+def _failure(exc: BaseException, stderr_tail: deque[str], token: str | None) -> dict[str, Any]:
+    """The `error` for an exception; a `cli_error` gets the last stderr lines. The message is not
+    cut here: `_scrubbed` removes the token from the full text, then cuts it to `MAX_MESSAGE`."""
+    error = error_event(exc)
+    if error["code"] != "cli_error" or not stderr_tail:
+        return error
+    tail = [_scrub(line, token) for line in stderr_tail]
+    log.warning("the CLI failed; its last stderr lines: %s", " | ".join(tail))
+    return {**error, "message": str(error["message"]) + " | " + " | ".join(stderr_tail)}
 
 
 def _make_home() -> Path:
@@ -236,7 +303,14 @@ async def _close(stream: AsyncIterator[Any] | None) -> None:
             await aclose()
 
 
-def _scrub(error: dict[str, Any], token: str | None) -> dict[str, Any]:
-    if token:
-        error["message"] = str(error["message"]).replace(token, "[redacted]")
-    return error
+def _scrub(value: Any, token: str | None) -> Any:
+    """A copy of `value` with the token replaced in every string, at any depth."""
+    if not token:
+        return value
+    if isinstance(value, str):
+        return value.replace(token, "[redacted]")
+    if isinstance(value, dict):
+        return {_scrub(key, token): _scrub(item, token) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_scrub(item, token) for item in value]
+    return value
