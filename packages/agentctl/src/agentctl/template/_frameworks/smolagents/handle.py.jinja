@@ -36,11 +36,14 @@ from typing import Any
 import httpx2
 import openai
 from smolagents.monitoring import LogLevel  # type: ignore[import-untyped]
+from workload_a2a.events import DEFAULT_TIMEOUT_S as DEFAULT_TIMEOUT_S
+from workload_a2a.events import event
+from workload_a2a.events import timeout_s as timeout_s
 
 from {{ package_name }} import tools
 from {{ package_name }}.agent import INSTRUCTIONS, MAX_STEPS, PROMPT_VERSION, ChassisModel
 from {{ package_name }}.agent import SimplifierAgent as _Agent
-from {{ package_name }}.mapping import EventMapper, ToolFailure, error_event, event
+from {{ package_name }}.mapping import EventMapper, ToolFailure, error_event
 
 __all__ = ["PROMPT_VERSION", "handle", "transport"]
 
@@ -48,8 +51,6 @@ DEFAULT_ROUTE = "big-default"
 MODEL_URL_VAR = "CHASSIS_MODEL_URL"
 DEFAULT_MODEL_URL = "http://127.0.0.1:8090/v1"
 TOKEN_VAR = "CHASSIS_API_TOKEN"
-# suggested: 30 s per call when `ctx.budget.timeout_ms` is not set; the epic gives none.
-DEFAULT_TIMEOUT_S = 30.0
 # The openai SDK refuses an empty key, so it gets this placeholder, never an `*_API_KEY` variable.
 # It is not sent either: `_scrub_headers` removes the header. The chassis model proxy ignores
 # `Authorization` anyway and adds the real, scoped key itself; only the chassis holds credentials.
@@ -61,13 +62,6 @@ example `httpx2.HTTPTransport(uds=...)`; the openai client here is the sync one,
 is). The MCP hook is the async `{{ package_name }}.tools.transport`."""
 
 _DONE = object()
-
-
-def timeout_s(ctx: dict[str, Any]) -> float:
-    budget = ctx.get("budget")
-    if isinstance(budget, dict) and budget.get("timeout_ms"):
-        return float(budget["timeout_ms"]) / 1000
-    return DEFAULT_TIMEOUT_S
 
 
 def _scrub_headers(token: str | None) -> Any:

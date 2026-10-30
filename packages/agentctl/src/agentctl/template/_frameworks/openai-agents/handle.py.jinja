@@ -34,8 +34,8 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import AsyncExitStack, aclosing
 from typing import Any
 
 import httpx2
@@ -53,10 +53,13 @@ from agents.mcp import MCPServer
 from agents.tracing import set_trace_processors
 from openai import AsyncOpenAI
 from workload_a2a import telemetry as workload_telemetry
+from workload_a2a.events import DEFAULT_TIMEOUT_S as DEFAULT_TIMEOUT_S
+from workload_a2a.events import event
+from workload_a2a.events import timeout_s as timeout_s
 
 from {{ package_name }} import telemetry as engine_telemetry
 from {{ package_name }} import tools
-from {{ package_name }}.mapping import EventMapper, ToolLoopExceeded, error_event, event
+from {{ package_name }}.mapping import EventMapper, ToolLoopExceeded, error_event
 
 log = logging.getLogger(__name__)
 
@@ -68,8 +71,6 @@ DEFAULT_MODEL_URL = "http://127.0.0.1:8090/v1"
 TOKEN_VAR = "CHASSIS_API_TOKEN"
 TOOL_URL_VAR = "CHASSIS_TOOL_URL"
 DEFAULT_TOOL_URL = "http://127.0.0.1:8090/mcp"
-# suggested: 30 s per call when `ctx.budget.timeout_ms` is not set; the epic gives none.
-DEFAULT_TIMEOUT_S = 30.0
 # suggested: 3 tool rounds, the same cap as echo-python.
 MAX_TOOL_ROUNDS = 3
 # The openai SDK refuses an empty key, so it gets this placeholder, never an `*_API_KEY` variable.
@@ -87,13 +88,6 @@ workload_telemetry.register_instrumentor(engine_telemetry.instrument)
 transport: httpx2.AsyncBaseTransport | None = None
 """Test-only hook: when set, model calls go through this `httpx2` transport, not a socket. The
 MCP hook is `{{ package_name }}.tools.transport`."""
-
-
-def timeout_s(ctx: dict[str, Any]) -> float:
-    budget = ctx.get("budget")
-    if isinstance(budget, dict) and budget.get("timeout_ms"):
-        return float(budget["timeout_ms"]) / 1000
-    return DEFAULT_TIMEOUT_S
 
 
 async def _drop_authorization(request: httpx2.Request) -> None:
@@ -147,48 +141,77 @@ async def handle(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[di
     mapper = EventMapper(route)
     try:
         async with AsyncExitStack() as stack:
-            model_http = _model_client(headers, timeout, token)
-            stack.push_async_callback(model_http.aclose)
-            client = AsyncOpenAI(
-                base_url=os.environ.get(MODEL_URL_VAR, DEFAULT_MODEL_URL).rstrip("/"),
-                api_key=token or PLACEHOLDER_API_KEY,
-                admin_api_key="",  # never fall back to OPENAI_ADMIN_KEY
-                http_client=model_http,
-                max_retries=0,  # the chassis owns retries and fallback
-                timeout=timeout,
-            )
-            tool_headers = {**headers, "authorization": f"Bearer {token}"} if token else headers
-            server = tools.build_server(
-                os.environ.get(TOOL_URL_VAR, DEFAULT_TOOL_URL), tool_headers, timeout, token=token
-            )
-            mcp_servers: list[MCPServer] = []
-            try:
-                await server.connect()  # type: ignore[no-untyped-call]
-            except Exception as exc:  # unreachable: the run goes on with no tools
-                tools.count_list_failure(exc)
-            else:
-                stack.push_async_callback(server.cleanup)
-                mcp_servers.append(server)
-            agent = Agent(
-                name="simplifier",
-                instructions=SYSTEM_PROMPT,
-                model=OpenAIChatCompletionsModel(model=route, openai_client=client),
-                mcp_servers=mcp_servers,
-            )
-            result = Runner.run_streamed(
-                agent,
-                text,
-                max_turns=MAX_TOOL_ROUNDS + 1,
-                hooks=_RoundLimit(),
-                run_config=RunConfig(tracing_disabled=not engine_telemetry.TRACING.enabled),
-            )
-            try:
-                async for ev in result.stream_events():
-                    for out in mapper.map(ev):
-                        yield out
-            finally:
-                result.cancel()
-            for out in mapper.finish(result.context_wrapper.usage):
-                yield out
+            agent = await _agent(stack, route, headers, timeout, token)
+            async with aclosing(_stream(agent, text, mapper)) as events:
+                async for out in events:
+                    yield out
     except Exception as exc:
         yield error_event(exc)
+
+
+async def _agent(
+    stack: AsyncExitStack,
+    route: str,
+    headers: dict[str, str],
+    call_timeout: float,
+    token: str | None,
+) -> Agent[Any]:
+    """The agent on the chassis model proxy, with the chassis MCP server when it is reachable.
+    Each client is closed by `stack`."""
+    model_http = _model_client(headers, call_timeout, token)
+    stack.push_async_callback(model_http.aclose)
+    client = AsyncOpenAI(
+        base_url=os.environ.get(MODEL_URL_VAR, DEFAULT_MODEL_URL).rstrip("/"),
+        api_key=token or PLACEHOLDER_API_KEY,
+        admin_api_key="",  # never fall back to OPENAI_ADMIN_KEY
+        http_client=model_http,
+        max_retries=0,  # the chassis owns retries and fallback
+        timeout=call_timeout,
+    )
+    return Agent(
+        name="simplifier",
+        instructions=SYSTEM_PROMPT,
+        model=OpenAIChatCompletionsModel(model=route, openai_client=client),
+        mcp_servers=await _mcp_servers(stack, headers, call_timeout, token),
+    )
+
+
+async def _mcp_servers(
+    stack: AsyncExitStack, headers: dict[str, str], call_timeout: float, token: str | None
+) -> list[MCPServer]:
+    """The chassis MCP server, connected; none when it is unreachable."""
+    tool_headers = {**headers, "authorization": f"Bearer {token}"} if token else headers
+    server = tools.build_server(
+        os.environ.get(TOOL_URL_VAR, DEFAULT_TOOL_URL), tool_headers, call_timeout, token=token
+    )
+    mcp_servers: list[MCPServer] = []
+    try:
+        await server.connect()  # type: ignore[no-untyped-call]
+    except Exception as exc:  # unreachable: the run goes on with no tools
+        tools.count_list_failure(exc)
+    else:
+        stack.push_async_callback(server.cleanup)
+        mcp_servers.append(server)
+    return mcp_servers
+
+
+async def _stream(
+    agent: Agent[Any], text: str, mapper: EventMapper
+) -> AsyncGenerator[dict[str, Any]]:
+    """One streamed run, mapped: the events, then `metrics` and `end`. The run is cancelled when
+    the stream stops, also early."""
+    result = Runner.run_streamed(
+        agent,
+        text,
+        max_turns=MAX_TOOL_ROUNDS + 1,
+        hooks=_RoundLimit(),
+        run_config=RunConfig(tracing_disabled=not engine_telemetry.TRACING.enabled),
+    )
+    try:
+        async for ev in result.stream_events():
+            for out in mapper.map(ev):
+                yield out
+    finally:
+        result.cancel()
+    for out in mapper.finish(result.context_wrapper.usage):
+        yield out
