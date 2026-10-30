@@ -26,6 +26,10 @@ jobs:
           enable-cache: true
       - name: Sync
         run: uv sync --all-packages --locked
+      # `uv sync --locked` caches wheels, but no registry index data. The PoC-9 scaffold tests run
+      # `uv lock` with UV_OFFLINE=1, which needs that data, so fetch it before the offline gate.
+      - name: Cache the registry index for offline uv lock
+        run: uv lock --check --refresh
       # The same gate developers run. CI and local must not diverge.
       - name: Check
         run: make check
