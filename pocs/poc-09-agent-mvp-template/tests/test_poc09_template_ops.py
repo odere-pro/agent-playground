@@ -58,6 +58,7 @@ ANSWERS: dict[str, str] = {
     "connector": "sidecar",
     "trust": "trusted",
     "platform_path": "../agent-platform",
+    "platform_ref": "0" * 40,
 }
 PROFILES = ("fake", "local")
 KEY_NAME = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD)", re.IGNORECASE)
@@ -169,17 +170,12 @@ def test_every_owned_file_exists_and_renders_without_leftovers(agent: Path) -> N
     assert "acme-glossary" in (agent / "deploy/compose/docker-compose.yaml").read_text()
 
 
-def test_platform_path_absolute_or_relative(tmp_path: Path) -> None:
-    """A relative `platform_path` is relative to the agent root; the Compose file is two deeper."""
-    rel = yaml.safe_load(
-        (render_tree(tmp_path / "rel", ANSWERS) / "deploy/compose/docker-compose.yaml").read_text()
-    )
-    absolute = {**ANSWERS, "platform_path": "/opt/agent-platform"}
-    abs_ = yaml.safe_load(
-        (render_tree(tmp_path / "abs", absolute) / "deploy/compose/docker-compose.yaml").read_text()
-    )
-    assert rel["services"]["fake-model-server"]["build"]["context"] == "../../../agent-platform"
-    assert abs_["services"]["fake-model-server"]["build"]["context"] == "/opt/agent-platform"
+def test_compose_builds_from_the_platform_link_not_a_path_of_this_machine(tmp_path: Path) -> None:
+    """The Compose file works from any clone: it names `.platform`, which `make` links."""
+    agent = render_tree(tmp_path / "agent", {**ANSWERS, "platform_path": "/opt/agent-platform"})
+    compose = yaml.safe_load((agent / "deploy/compose/docker-compose.yaml").read_text())
+    assert compose["services"]["fake-model-server"]["build"]["context"] == "../../.platform"
+    assert "/opt/agent-platform" not in (agent / "deploy/compose/docker-compose.yaml").read_text()
 
 
 # --- Compose: profiles, keys, ports, debuggers ----------------------------------------------------
@@ -193,7 +189,10 @@ def test_each_profile_runs_the_chassis_and_the_workload_as_sidecar(
     chassis, workload = f"chassis-{profile}", f"workload-{profile}"
     assert {chassis, workload, "debugpy"} <= set(active)
     assert active[workload]["network_mode"] == f"service:{chassis}"
-    assert active[workload]["build"] == {"context": "../..", "dockerfile": "Dockerfile"}
+    assert active[workload]["build"]["context"] == "../.."
+    assert active[workload]["build"]["additional_contexts"] == {
+        "workload-a2a": "../../.platform/packages/workload-a2a"
+    }
     assert active[chassis]["image"].startswith("${CHASSIS_IMAGE:-")
     assert "build" not in active[chassis], "the chassis image is pinned, never built here"
     sidecars = [
@@ -259,7 +258,9 @@ def test_every_published_port_is_on_loopback_and_only_on_the_chassis(
             assert not ports, f"{name} publishes {ports}"
             continue
         targets = [c for _, _, c in ports]
-        assert sorted(targets) == [CHASSIS_DEBUG, WORKLOAD_DEBUG, APP_PORT], name
+        # debugpy has no login: its ports are published only where no key lives.
+        want = [APP_PORT] if name == "chassis-local" else [CHASSIS_DEBUG, WORKLOAD_DEBUG, APP_PORT]
+        assert sorted(targets) == sorted(want), name
         assert SIDECAR_PORT not in targets and 8090 not in targets
         host_ports = [h for _, h, _ in ports]
         assert len(set(host_ports)) == len(host_ports), "debug ports must be distinct"
@@ -273,9 +274,15 @@ def test_a_debugger_is_attached_to_each_container(compose: dict[str, Any], profi
         assert "debugpy:/opt/debugpy:ro" in svc["volumes"]
         assert svc["environment"]["PYTHONPATH"] == "/opt/debugpy"
         assert env_default(svc["environment"]["DEBUGPY_WAIT"]) == "0", "wait-for-client is off"
-    assert env_default(workload["environment"]["DEBUGPY_LISTEN"]) == f"auto:{WORKLOAD_DEBUG}"
+    want = f"auto:{WORKLOAD_DEBUG}" if profile == "fake" else ""
+    assert env_default(workload["environment"]["DEBUGPY_LISTEN"]) == want
     assert compose["services"]["debugpy"]["network_mode"] == "none"
     assert chassis["depends_on"]["debugpy"] == {"condition": "service_completed_successfully"}
+
+
+def test_the_chassis_image_is_never_pulled_by_its_default_name(compose: dict[str, Any]) -> None:
+    for name in ("chassis-fake", "chassis-local"):
+        assert env_default(compose["services"][name]["pull_policy"]) == "never", name
 
 
 def test_chassis_debugger_is_on_in_fake_and_opt_in_where_it_would_expose_the_key(
@@ -393,7 +400,9 @@ def test_github_ci_runs_every_stage_through_make(workflow: dict[str, Any]) -> No
     assert 'make "$TARGET"' in runs["suites"]
     assert "make image" in runs["image"] and "PUSH=1" in runs["image"]
     assert "make sign" in runs["sign"] and "cosign verify" in runs["sign"]
-    assert set(jobs["image"]["needs"]) == {"lint", "test"}
+    assert set(jobs["image"]["needs"]) == {"lint", "test", "suites"}
+    assert "PLATFORM_PATH" in runs["image"], "the image needs the platform checkout"
+    assert "uv lock --check" in runs["lint"]
 
 
 def test_github_signing_is_keyless_and_default_branch_only(workflow: dict[str, Any]) -> None:

@@ -54,6 +54,7 @@ dev = [
   "fake-model-server",
   "fastmcp==4.0.10",
   "jsonschema==4.26.0",
+  "types-jsonschema==4.26.0.20260518",
   "pytest==9.1.1",
   "pytest-asyncio==1.4.0",
   "pytest-socket==0.8.1",
@@ -70,9 +71,9 @@ module-name = "{{ package_name }}"
 
 # suggested: path sources into the platform checkout for the PoC; a package index later.
 [tool.uv.sources]
-workload-a2a = { path = "{{ platform_path }}/packages/workload-a2a", editable = true }
-agent-testkit = { path = "{{ platform_path }}/packages/agent-testkit", editable = true }
-fake-model-server = { path = "{{ platform_path }}/packages/fake-model-server", editable = true }
+workload-a2a = { path = ".platform/packages/workload-a2a", editable = true }
+agent-testkit = { path = ".platform/packages/agent-testkit", editable = true }
+fake-model-server = { path = ".platform/packages/fake-model-server", editable = true }
 
 [tool.agent-testkit]
 handle = "{{ package_name }}:handle"

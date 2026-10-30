@@ -21,6 +21,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 SIDECAR_FRAMEWORKS = ("python", "pydanticai", "langgraph", "openai-agents")
+REMOTE_FRAMEWORKS = ("smolagents", "claude-agent")
 TREE = (
     ".copier-answers.yml",
     "uv.lock",
@@ -49,15 +50,18 @@ def _env() -> dict[str, str]:
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "GIT_CONFIG_NOSYSTEM": "1",
         "UV_OFFLINE": "1",
+        # The offline cache: CI's setup-uv keeps it here, not in the default folder under $HOME.
+        **{key: os.environ[key] for key in ("UV_CACHE_DIR",) if key in os.environ},
     }
 
 
-def _scaffold(tmp_path: Path, framework: str) -> Path:
+def _scaffold(tmp_path: Path, framework: str, connector: str = "sidecar") -> Path:
+    tmp_path.mkdir(exist_ok=True)
     name = f"poc09-{framework}"
     done = subprocess.run(
         [
             *(sys.executable, "-m", "agentctl", "new", name, "--kind", "transformer"),
-            *("--framework", framework, "--connector", "sidecar", "--dest", str(tmp_path)),
+            *("--framework", framework, "--connector", connector, "--dest", str(tmp_path)),
             *("--platform-path", str(ROOT)),
         ],
         env=_env(),
@@ -105,3 +109,28 @@ def test_c1_scaffolded_make_test_passes_offline(tmp_path: Path, framework: str) 
         timeout=900,
     )
     assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-2000:]
+
+
+CI_STEPS = ("lint", "test", "load-smoke", "hostile", "redteam", "eval")
+"""The template CI's steps that need no registry. `image` and `sign` need Docker and a push."""
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("framework", (*SIDECAR_FRAMEWORKS, *REMOTE_FRAMEWORKS))
+def test_c4_ci_steps_pass_from_a_fresh_clone(tmp_path: Path, framework: str) -> None:
+    """Criterion 4, what a runner does: clone the agent, the platform at another path, no edits."""
+    connector = "remote" if framework in REMOTE_FRAMEWORKS else "sidecar"
+    source = _scaffold(tmp_path / "made", framework, connector)
+    runner = tmp_path / "runner"
+    runner.mkdir()
+    (runner / "platform").symlink_to(ROOT, target_is_directory=True)
+    agent = runner / "agent"
+    subprocess.run(["git", "clone", "-q", str(source), str(agent)], env=_env(), check=True)
+    env = {**_env(), "PLATFORM_PATH": str(runner / "platform")}
+    for step in CI_STEPS:
+        done = subprocess.run(
+            ["make", step], cwd=agent, env=env, capture_output=True, text=True, timeout=900
+        )
+        assert done.returncode == 0, (step, done.stdout[-3000:], done.stderr[-2000:])
+    assert subprocess.run(["uv", "lock", "--check"], cwd=agent, env=env).returncode == 0
+    assert _git(agent, "status", "--porcelain") == ""

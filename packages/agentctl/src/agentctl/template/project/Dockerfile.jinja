@@ -1,5 +1,5 @@
 # {{ agent_name }}: `handle` served over A2A by workload-a2a. `make image` builds it:
-#   docker build --build-context workload-a2a={{ platform_path }}/packages/workload-a2a -t {{ agent_name }} .
+#   docker build --build-context workload-a2a=.platform/packages/workload-a2a -t {{ agent_name }} .
 # The platform package comes in as a named build context at the path uv.lock names. Base and uv
 # pinned by digest, the same as the platform's workload images. Bump both on purpose.
 ARG PYTHON_IMAGE=python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
@@ -8,7 +8,7 @@ FROM ${PYTHON_IMAGE} AS build
 COPY --from=ghcr.io/astral-sh/uv:0.11.23@sha256:d0a0a753ab981624b49c97abc98821c1c09f4ca69d1ef5cee69c501be3d88479 /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/app/.venv
 WORKDIR /app
-COPY --from=workload-a2a . {{ platform_path }}/packages/workload-a2a
+COPY --from=workload-a2a . .platform/packages/workload-a2a
 COPY pyproject.toml uv.lock ./
 # `--frozen`, not `--locked`: the dev path sources (the test kit) are not in the image. CI runs
 # `uv lock --check` outside it. The chassis is never installed.

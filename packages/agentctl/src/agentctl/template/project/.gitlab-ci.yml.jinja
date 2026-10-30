@@ -1,6 +1,5 @@
 # {{ agent_name }} CI on GitLab: the same stages and the same `make` targets as
-# .github/workflows/ci.yml. Read that file's header for what each target checks and which suites
-# are stand-ins (hostile, redteam, and eval run the platform's suites from PLATFORM_PATH).
+# .github/workflows/ci.yml. Read that file's header for what each target checks.
 #
 # The platform checkout: PLATFORM_REPO_URL at PLATFORM_REF (CI/CD variables; suggested: pin
 # PLATFORM_REF to a commit SHA). For a private repository, put a read token in the URL through a
@@ -14,7 +13,7 @@ stages: [lint, test, suites, image, sign]
 
 variables:
   PLATFORM_REPO_URL: https://github.com/odere-pro/agent-playground.git
-  PLATFORM_REF: main
+  PLATFORM_REF: {{ platform_ref }}
   PLATFORM_PATH: /tmp/platform
   # The python and uv the platform's images use.
   UV_IMAGE: ghcr.io/astral-sh/uv:0.11.23-python3.12-trixie-slim@sha256:bf72061021b1039aff0aee1c73da3f54e845b318502c3f5382e1c704dd800ba8

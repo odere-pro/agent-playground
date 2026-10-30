@@ -1,0 +1,12 @@
+# The golden cases `make eval` runs through the chassis. Add your own: `contains` is text the JSON
+# of the output must hold, so a change that breaks the logic fails here.
+cases:
+  - id: greeting
+    input: {text: hello big world}
+{%- if framework == 'smolagents' %}
+    # The fake model writes no `<code>` block, so this ends in an error (tests/test_contract.py).
+    # Replace it when you give the agent a model that does.
+    expect: {status: error}
+{%- else %}
+    expect: {contains: ok}
+{%- endif %}

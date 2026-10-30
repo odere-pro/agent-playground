@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
-# The platform checkout. CI checks it out elsewhere and sets PLATFORM_PATH.
+# The platform checkout. CI checks it out elsewhere and sets PLATFORM_PATH. `pyproject.toml` and
+# `uv.lock` name it as `.platform/`, a link made here, so they hold no path of this machine.
 PLATFORM_PATH ?= {{ platform_path }}
 PLATFORM := $(PLATFORM_PATH)
 IMAGE ?= {{ agent_name }}
@@ -11,30 +12,33 @@ PORT ?= 9000
 PYTEST_FLAGS := --disable-socket --allow-unix-socket --allow-hosts=127.0.0.1,::1
 STRIP_KEYS := for v in $$(env | cut -d= -f1 | grep -E '(_API_KEY|_TOKEN|_SECRET|_PASSWORD)$$' || true); do unset "$$v"; done
 
-.PHONY: help setup test lint fmt run image sign load-smoke hostile redteam eval
+.PHONY: platform help setup test lint fmt run image sign load-smoke hostile redteam eval
+
+platform: ## Point .platform at PLATFORM_PATH
+	@ln -sfn "$(PLATFORM_PATH)" .platform
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  %-8s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-setup: ## Install Python 3.12 and the locked dependencies (writes uv.lock; commit it)
+setup: platform ## Install Python 3.12 and the locked dependencies (writes uv.lock; commit it)
 	uv sync
 
-test: ## Every test, offline: the unit tests and the lane contract over A2A
-	@$(STRIP_KEYS); uv run pytest $(PYTEST_FLAGS) $(ARGS)
+test: platform ## Every test, offline: the unit tests and the lane contract over A2A
+	@$(STRIP_KEYS); uv run pytest $(PYTEST_FLAGS) --ignore=tests/suites $(ARGS)
 
-lint: ## ruff and mypy, strict
+lint: platform ## ruff and mypy, strict
 	uv run ruff format --check .
 	uv run ruff check .
 	uv run mypy
 
-fmt: ## Format
+fmt: platform ## Format
 	uv run ruff format .
 	uv run ruff check --fix .
 
-run: ## Serve handle over A2A on loopback (the chassis reaches it at 127.0.0.1:$(PORT))
+run: platform ## Serve handle over A2A on loopback (the chassis reaches it at 127.0.0.1:$(PORT))
 	uv run workload-a2a serve --handle {{ package_name }}:handle --name {{ agent_name }} --version 0.1.0 --port $(PORT)
 
-image: ## Build the hardened workload image: make image [IMAGE=ref] [PUSH=1 IMAGE_METADATA=file]
+image: platform ## Build the hardened workload image: make image [IMAGE=ref] [PUSH=1 IMAGE_METADATA=file]
 ifeq ($(PUSH),1)
 	mkdir -p $(dir $(IMAGE_METADATA))
 	docker buildx build --build-context workload-a2a=$(PLATFORM)/packages/workload-a2a -t $(IMAGE) \
@@ -48,17 +52,16 @@ sign: ## suggested: cosign keyless signing of a pushed digest: make sign IMAGE_R
 	@test -n "$(IMAGE_REF)" || { echo "set IMAGE_REF=<image>@<digest>"; exit 2; }
 	cosign sign --yes $(IMAGE_REF)
 
-# Stand-ins, PoC-9: the next four run the platform's own suites from PLATFORM_PATH, on the
-# platform's engines. They do not run this agent's cases yet; that needs the suites to ship in
-# agent-testkit (see the platform's pocs/poc-09-agent-mvp-template/notes).
-load-smoke: ## stand-in: the platform's offline PoC-4 scenario tests
-	cd $(PLATFORM) && scripts/check_offline.sh pocs/poc-04-stateless-scalable -q
+# This agent's own suites (agent_testkit.suites), offline. The platform's full suites, on a real
+# cluster and every engine, stay in the platform's CI.
+load-smoke: platform ## Concurrent runs through the chassis
+	@$(STRIP_KEYS); uv run pytest $(PYTEST_FLAGS) tests/suites/test_load_smoke.py $(ARGS)
 
-hostile: ## stand-in: the platform's offline hostile suite (PoC-5)
-	cd $(PLATFORM) && scripts/check_offline.sh pocs/poc-05-sandboxed/tests/test_poc05_hostile_offline.py -q
+hostile: platform ## This agent's source, image, and Compose file against ADR-001
+	@$(STRIP_KEYS); uv run pytest $(PYTEST_FLAGS) tests/suites/test_hostile.py $(ARGS)
 
-redteam: ## stand-in: the platform's red-team set (PoC-8)
-	$(MAKE) -C $(PLATFORM) redteam
+redteam: platform ## Attacks on the input, through the chassis guard stage
+	@$(STRIP_KEYS); uv run pytest $(PYTEST_FLAGS) tests/suites/test_redteam.py $(ARGS)
 
-eval: ## stand-in: the platform's offline eval gate (PoC-8)
-	$(MAKE) -C $(PLATFORM) evals
+eval: platform ## The golden cases in evals/cases.yaml; writes reports/eval.json
+	@$(STRIP_KEYS); uv run pytest $(PYTEST_FLAGS) tests/suites/test_eval.py $(ARGS)

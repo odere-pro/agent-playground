@@ -1,0 +1,12 @@
+"""Attacks on the input, through the chassis guard stage."""
+
+from agent_testkit.suites import RedTeamInputs
+
+
+class TestRedTeamInputs(RedTeamInputs):
+{%- if trust == 'untrusted' %}
+    # This engine can end in an error offline, not an answer (see tests/test_contract.py).
+    run_statuses = ("ok", "fallback", "error")
+{%- else %}
+    pass
+{%- endif %}

@@ -16,7 +16,16 @@ the merged values; prints nothing; fails the render with an "agent-lib:" message
 */}}
 {{- define "agent-lib.validate" -}}
 {{- $v := . -}}
-{{- $credential := "(?i)(^|_)(API_?KEY|KEY|TOKEN|PASSWORD|PASSWD|SECRET|CREDENTIALS?)($|_)" -}}
+{{- $credential := "(?i)(^|_)(API_?KEY|KEY|TOKEN|PGPASSWORD|PASSWORD|PASSWD|SECRET|CREDENTIALS?)($|_)" -}}
+
+{{- /* Arguments: an allow-list. A flag here can move a listener off loopback or turn auth off,
+and argparse accepts abbreviations, so a deny-list cannot hold. */ -}}
+{{- $safeArg := "^(--log-level(=[a-z]+)?|debug|info|warning|error|--drain-(delay|timeout)-s(=[0-9]+)?|[0-9]+)$" -}}
+{{- range concat ($v.workload.args | default list) (dig "extraArgs" (list) $v.chassis) -}}
+{{- if not (regexMatch $safeArg (toString .)) -}}
+{{- fail (printf "agent-lib: argument %q is not allowed: only --log-level and --drain-delay-s or --drain-timeout-s" (toString .)) -}}
+{{- end -}}
+{{- end -}}
 
 {{- /* The workload. */ -}}
 {{- $workloadKeys := list "image" "pullPolicy" "port" "args" "env" "probeCommand" "resources" "tmpSizeLimit" -}}
@@ -136,8 +145,11 @@ the merged values; prints nothing; fails the render with an "agent-lib:" message
 {{- if not (regexMatch "^([0-9]{1,3}\\.){3}[0-9]{1,3}$" (toString $v.remote.proxyClusterIP)) -}}
 {{- fail "agent-lib: the remote lane needs remote.proxyClusterIP, a fixed IPv4 ClusterIP inside the cluster's Service range: the remote pod has no DNS" -}}
 {{- end -}}
-{{- if not $v.remote.runtimeClassName -}}
-{{- fail "agent-lib: remote.runtimeClassName is empty; the remote lane runs under gVisor" -}}
+{{- if ne (toString $v.remote.runtimeClassName) "gvisor" -}}
+{{- fail "agent-lib: remote.runtimeClassName must be gvisor; the remote lane runs under gVisor" -}}
+{{- end -}}
+{{- if not $v.remote.namespace -}}
+{{- fail "agent-lib: the remote lane needs remote.namespace, apart from the chassis's" -}}
 {{- end -}}
 {{- $auth := dig "spec" "engine" "auth" (dict) $v.chassis.config -}}
 {{- if and $auth.token_env (ne $auth.token_env "REMOTE_TOKEN") -}}

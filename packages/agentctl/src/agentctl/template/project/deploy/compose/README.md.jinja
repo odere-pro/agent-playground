@@ -55,9 +55,10 @@ The `debugpy` service copies debugpy and `debug/sitecustomize.py` into the volum
 | Variable | Default | Meaning |
 | -------- | ------- | ------- |
 | `CHASSIS_DEBUGPY_LISTEN` | `auto:5678` in `fake`, empty (off) in `local` | `auto:<port>` listens on the container address; empty turns it off |
-| `WORKLOAD_DEBUGPY_LISTEN` | `auto:5679` | the same, for the workload; set it empty to turn it off |
+| `WORKLOAD_DEBUGPY_LISTEN` | `auto:5679` in `fake`, empty (off) in `local` | the same, for the workload. In `local`, anyone who reaches it can spend the key through the proxy |
 | `CHASSIS_DEBUGPY_WAIT`, `WORKLOAD_DEBUGPY_WAIT` | `0` | `1` blocks the process until a client attaches |
-| `CHASSIS_PORT`, `CHASSIS_DEBUG_PORT`, `WORKLOAD_DEBUG_PORT` | `8080`, `5678`, `5679` | host ports, always on `127.0.0.1` |
+| `CHASSIS_PORT`, `CHASSIS_DEBUG_PORT`, `WORKLOAD_DEBUG_PORT` | `8080`, `5678`, `5679` | host ports, always on `127.0.0.1`. The debug ports are published in `fake` only; in `local`, publish them yourself in an override file |
+| `CHASSIS_PULL_POLICY` | `never` | set it to `missing` only with a `CHASSIS_IMAGE` you pinned by digest |
 
 Attach from VS Code: open the repo, Run and Debug, pick "Attach: chassis", "Attach: workload", or "Attach: chassis + workload" (`.vscode/launch.json`). VS Code needs the Python Debugger extension (`ms-python.debugpy`). The path mappings point the chassis at `{{ platform_path }}/packages/chassis/src` and the workload at `src/`. To stop on the first line of a request, set a breakpoint in your `handle` and send a `/v1/run`. To debug start-up, set `*_DEBUGPY_WAIT=1`; with the workload waiting, the chassis stays `starting` until you attach (up to 120 s).
 
