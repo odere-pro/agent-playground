@@ -24,6 +24,7 @@ Agents with `limited` risk and above must mark every output as AI-generated (E.4
 - The same flag on result events, so stored records keep it.
 - A short guide for client app teams: how to read the flags and show a disclosure.
 - Proposed in PoC-7 ([ADR-008](../adr/008-security-identity-guardrails-defense-in-depth.md), [contract v6](../../contracts/contract-v6.md); the user accepts it at the PoC-7 pull request): the marking is two response headers, `X-AI-Generated` and `X-AI-Disclosure-Required`, on every public interface, complete and streaming, because `Response` is frozen (contract v5, part C). Still open here: a body field in the OpenAI and Anthropic formats, and the flag on result events (suggested: a CloudEvent extension attribute).
+- Status after PoC-8 ([contract v7](../../contracts/contract-v7.md) part E): built: the `ai_marking` body field in the OpenAI and Anthropic formats, complete and every chunk; the CloudEvent extension `aigenerated` on result events; `Access-Control-Expose-Headers` for the two flags (`packages/chassis/tests/test_marking_body.py`). Add to acceptance: a consumer on a chassis older than PoC-8 must read an event with `aigenerated`; `CloudEvent` has `extra="forbid"`, so an older one rejects it. Open, user decision: (a) accept and drop unknown extensions in `CloudEvent` from now on, or (b) keep `forbid` and roll consumers out before producers for every new extension. suggested: (a). Still open from PoC-7: legal on disclosure for `minimal` with marking on.
 
 ## Out of scope
 
