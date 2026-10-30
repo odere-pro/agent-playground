@@ -464,7 +464,7 @@ case $url in
 esac
 """
 _LIST_EMPTY = '{"keys": [], "total_count": 0}'
-_LIST_LEFT = '{"keys": ["0f1e2d3c4b5a6978"], "total_count": 1}'
+_LIST_LEFT = '{"keys": ["0f1e2d3c4b5a6978"], "total_count": 1}'  # pragma: allowlist secret
 _LIST_ODD = '{"detail": "x"}'
 
 
