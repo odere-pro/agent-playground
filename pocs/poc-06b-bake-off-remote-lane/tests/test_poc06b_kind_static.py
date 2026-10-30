@@ -1577,6 +1577,49 @@ def test_the_hosted_sh_text_scrubs_the_exact_provider_key() -> None:
     assert after_put.index("up done") < after_put.index("unset key")
 
 
+@pytest.mark.parametrize(
+    "revert",
+    [
+        "delete networkpolicy litellm-hosted-egress",
+        '( unpatch_litellm "$orig" )',
+        'delete secret "$PROVIDER_SECRET"',
+    ],
+)
+def test_the_hosted_sh_text_runs_each_security_revert_in_down_when_one_before_fails(
+    revert: str,
+) -> None:
+    """A failed revert in `down` is logged and marked, so the next revert still runs."""
+    down = _function((POC06 / "hosted.sh").read_text(), "down")
+
+    after = down[down.index(revert) :].split("\n", 2)
+
+    assert after[0].endswith("||"), after[0]
+    assert re.fullmatch(r'\s*\{ log "error: [^"]+"; reverted=0; \}', after[1]), after[1]
+
+
+def test_the_hosted_sh_text_fails_down_when_a_security_revert_failed() -> None:
+    """`down` returns 1 before "down done" when any security revert failed."""
+    down = _function((POC06 / "hosted.sh").read_text(), "down")
+
+    tail = down[down.index("if ((reverted == 0)); then") :]
+
+    assert "reverted=1" in down.split("\n")[1]
+    assert tail.index("return 1") < tail.index('log "down done"')
+
+
+def test_the_run_sh_text_refuses_an_unpinned_kagent_base_before_the_build() -> None:
+    """`build_kagent` stops on any kagent `FROM` base other than the two it pins and `base`."""
+    run = RUN_SH.read_text()
+
+    check = _function(run, "check_kagent_bases")
+    build = _function(run, "build_kagent")
+
+    assert "'ghcr.io/astral-sh/uv:${UV_VERSION}' | debian:bookworm-slim | base) ;;" in check
+    assert "*) die \"kagent: unpinned base image '$image'" in check
+    assert 'die "kagent: no FROM line' in check
+    assert build.index("check_kagent_bases") < build.index("docker build")
+
+
 def test_the_run_sh_text_pins_every_kagent_base_image_by_digest() -> None:
     """R6-28: kagent's python/Dockerfile names `ghcr.io/astral-sh/uv:${UV_VERSION}` and
     `debian:bookworm-slim` by tag. `build_kagent` overrides both with a multi-arch index digest,
