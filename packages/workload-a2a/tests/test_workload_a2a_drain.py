@@ -52,22 +52,26 @@ def uds_path() -> Iterator[str]:
 
 
 def test_build_server_sets_the_drain_timeout(uds_path: str) -> None:
+    """`build_server` sets uvicorn's graceful shutdown to the drain timeout."""
     server = build_server(_slow(asyncio.Event(), 0), CARD, port=0, uds=uds_path, drain_timeout_s=7)
     assert server.config.timeout_graceful_shutdown == 7
 
 
 def test_build_server_refuses_a_negative_drain_timeout(uds_path: str) -> None:
+    """`build_server` refuses a negative drain timeout."""
     with pytest.raises(ValueError, match="drain_timeout_s"):
         build_server(_slow(asyncio.Event(), 0), CARD, port=0, uds=uds_path, drain_timeout_s=-1)
 
 
 def test_build_server_drain_timeout_defaults_to_30_s(uds_path: str) -> None:
+    """The drain timeout defaults to 30 seconds."""
     server = build_server(_slow(asyncio.Event(), 0), CARD, port=0, uds=uds_path)
     assert DEFAULT_DRAIN_TIMEOUT_S == 30
     assert server.config.timeout_graceful_shutdown == DEFAULT_DRAIN_TIMEOUT_S
 
 
 def test_cli_passes_drain_timeout(uds_path: str) -> None:
+    """`--drain-timeout-s` reaches the server, with the default when unset."""
     argv = ["serve", "--handle", "echo_python:handle", "--uds", uds_path]
     assert cli.build(argv).config.timeout_graceful_shutdown == DEFAULT_DRAIN_TIMEOUT_S
     server = cli.build([*argv, "--drain-timeout-s", "2"])
@@ -75,6 +79,7 @@ def test_cli_passes_drain_timeout(uds_path: str) -> None:
 
 
 def test_cli_refuses_a_negative_drain_timeout(uds_path: str) -> None:
+    """`--drain-timeout-s` refuses a negative value."""
     argv = ["serve", "--handle", "echo_python:handle", "--uds", uds_path, "--drain-timeout-s"]
     with pytest.raises(SystemExit, match="drain-timeout-s"):
         cli.build([*argv, "-1"])
@@ -118,6 +123,7 @@ async def _start(server: uvicorn.Server) -> asyncio.Task[None]:
 
 
 async def test_stop_mid_call_finishes_the_call(uds_path: str) -> None:
+    """SIGTERM mid-call lets the call finish with its end event."""
     started = asyncio.Event()
     server = build_server(_slow(started, 0.5), CARD, port=0, uds=uds_path, drain_timeout_s=10)
     serving = await _start(server)
@@ -135,6 +141,7 @@ async def test_stop_mid_call_finishes_the_call(uds_path: str) -> None:
 
 
 async def test_a_call_longer_than_the_drain_timeout_is_cut(uds_path: str) -> None:
+    """A call longer than the drain timeout is cut and gets no end event."""
     started = asyncio.Event()
     server = build_server(_slow(started, 30), CARD, port=0, uds=uds_path, drain_timeout_s=1)
     serving = await _start(server)

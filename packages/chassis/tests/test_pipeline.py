@@ -54,6 +54,7 @@ def _request(pipeline: RunPipeline, request_id: str = "r1", **fields: Any) -> Re
 
 
 async def test_create_app_stores_one_pipeline_that_follows_readiness() -> None:
+    """`create_app` stores one pipeline that is ready only inside the lifespan."""
     app = _app()
     pipeline = app.state.pipeline
     assert isinstance(pipeline, RunPipeline) and pipeline.ready is False
@@ -70,6 +71,7 @@ async def test_create_app_stores_one_pipeline_that_follows_readiness() -> None:
 
 
 async def test_open_refuses_a_trace_id_in_use_before_the_engine_runs() -> None:
+    """`open` refuses a trace id in use before the engine runs, and counts it."""
     started: list[str] = []
 
     async def note(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
@@ -94,6 +96,7 @@ async def test_open_refuses_a_trace_id_in_use_before_the_engine_runs() -> None:
 
 
 async def test_events_hold_the_record_and_close_it_when_the_engine_ends() -> None:
+    """The run record is held while events flow and closed when the engine ends."""
     held: list[bool] = []
     holder: dict[str, Any] = {}
 
@@ -130,6 +133,7 @@ async def test_events_hold_the_record_and_close_it_when_the_engine_ends() -> Non
 
 
 async def test_open_labels_the_run_with_its_interface() -> None:
+    """`open` labels the span and the request counter with the interface."""
     app = _app()
     async with app.router.lifespan_context(app):
         pipeline: RunPipeline = app.state.pipeline
@@ -144,6 +148,7 @@ async def test_open_labels_the_run_with_its_interface() -> None:
 
 
 async def test_served_is_the_agent_and_versions_from_the_config() -> None:
+    """`served` is the agent and versions from the config."""
     pipeline: RunPipeline = _app().state.pipeline
     served = pipeline.served
     assert (served.agent, served.agent_version) == ("echo", "0.0.1")
@@ -151,6 +156,7 @@ async def test_served_is_the_agent_and_versions_from_the_config() -> None:
 
 
 async def test_close_is_idempotent_and_never_frees_another_run() -> None:
+    """`close` is idempotent and never frees another run's trace id."""
     app = _app()
     async with app.router.lifespan_context(app):
         pipeline: RunPipeline = app.state.pipeline
@@ -165,6 +171,7 @@ async def test_close_is_idempotent_and_never_frees_another_run() -> None:
 
 
 async def test_a_stream_whose_body_is_never_iterated_frees_the_trace_id() -> None:
+    """A stream whose body is never iterated still frees the trace id."""
     iterated: list[str] = []
 
     async def body() -> AsyncIterator[str]:
@@ -190,6 +197,7 @@ async def test_a_stream_whose_body_is_never_iterated_frees_the_trace_id() -> Non
 
 
 async def test_a_stream_runs_its_close_hook_even_when_the_body_is_never_iterated() -> None:
+    """A stream runs its close hook even when the body is never iterated."""
     closed: list[str] = []
 
     async def body() -> AsyncIterator[str]:
@@ -217,6 +225,8 @@ async def test_a_stream_runs_its_close_hook_even_when_the_body_is_never_iterated
 
 
 async def test_an_engine_exception_becomes_one_engine_error_event() -> None:
+    """An engine exception becomes one `engine_error` event."""
+
     async def boom(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
         yield Start(request_id=ctx.request_id)
         raise ValueError("kaput")

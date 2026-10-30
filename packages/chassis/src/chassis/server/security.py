@@ -14,6 +14,10 @@ the header is absent or not a bearer). Then the route's scope from `spec.securit
 - `read_scope`: `/manifest`, `/openapi.json`, `/docs`, `/docs/oauth2-redirect`, `/redoc`.
 - Any other path needs a valid token and no scope (it is a 404 anyway).
 
+Only `http` is checked and only `lifespan` passes through unchecked. Every other scope type is
+refused, as on the remote listener: a websocket is closed with 1008 before accept, any other type
+is dropped, and the app never sees it (review R2-29).
+
 `unauthenticated` is 401 with `WWW-Authenticate: Bearer`; `auth_unavailable` is 503 with
 `Retry-After` (suggested: 1 s); a missing scope is 403 `forbidden`, and its `WWW-Authenticate`
 names the scope (`error="insufficient_scope"`, RFC 6750). Bodies are the route's format: OpenAI's
@@ -165,8 +169,12 @@ class CallerAuth:
         self.public = public
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
+        if scope["type"] == "lifespan":
             await self.app(scope, receive, send)
+            return
+        if scope["type"] != "http":  # as the remote listener (review R2-29): never reach the app
+            if scope["type"] == "websocket":
+                await send({"type": "websocket.close", "code": 1008})  # before accept
             return
         path: str = scope["path"]
         kind = path_class(path)

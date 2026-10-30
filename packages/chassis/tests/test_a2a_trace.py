@@ -29,6 +29,7 @@ TRACEPARENT = re.compile(r"00-([0-9a-f]{32})-([0-9a-f]{16})-01")
 
 
 def test_a_w3c_trace_id_passes_through() -> None:
+    """A trace id that is already W3C hex passes through unchanged."""
     tid = "4bf92f3577b34da6a3ce929d0e0e4736"
     assert trace_id_hex(tid) == tid
 
@@ -37,10 +38,12 @@ def test_a_w3c_trace_id_passes_through() -> None:
     "tid", ["trace-1", "4BF92F3577B34DA6A3CE929D0E0E4736", "abc", "4bf92f35" * 5, ""]
 )
 def test_any_other_id_is_hashed(tid: str) -> None:
+    """Any other trace id becomes the first 32 hex of its SHA-256."""
     assert trace_id_hex(tid) == hashlib.sha256(tid.encode()).hexdigest()[:32]
 
 
 def test_traceparent_carries_the_run_trace_id() -> None:
+    """The `traceparent` carries the run's trace id and a non-zero span id."""
     ctx = make_context(make_request())
     header = traceparent_for(ctx)
     match = TRACEPARENT.fullmatch(header)
@@ -50,11 +53,13 @@ def test_traceparent_carries_the_run_trace_id() -> None:
 
 
 def test_span_id_is_new_per_call() -> None:
+    """Each `traceparent_for` call draws a new span id."""
     ctx = make_context(make_request())
     assert len({traceparent_for(ctx).split("-")[2] for _ in range(20)}) == 20
 
 
 def test_trace_imports_only_the_standard_library() -> None:
+    """`chassis.core.trace` imports only the standard library."""
     tree = ast.parse(Path(trace.__file__).read_text())
     roots: set[str] = set()
     for node in ast.walk(tree):
@@ -66,6 +71,7 @@ def test_trace_imports_only_the_standard_library() -> None:
 
 
 def test_traceparent_uses_the_run_span_id_when_it_is_w3c() -> None:
+    """A W3C span id from the run is used as is."""
     ctx = make_context(make_request())
     span = "00f067aa0ba902b7"
     assert traceparent_for(ctx, span_id=span) == f"00-{trace_id_hex(ctx.trace_id)}-{span}-01"
@@ -80,6 +86,7 @@ def test_traceparent_draws_a_span_id_when_the_adapter_has_none(span: str | None)
 
 
 def test_context_traceparent_is_optional() -> None:
+    """`Context.traceparent` defaults to None and may be left out."""
     ctx = make_context(make_request())
     assert ctx.traceparent is None
     dumped = ctx.model_dump(mode="json")
@@ -115,6 +122,7 @@ def _check(ctx_seen: dict[str, Any], header: str | None, ctx: Context) -> None:
 
 
 async def test_sidecar_ctx_traceparent_equals_the_header() -> None:
+    """In the sidecar lane, `ctx.traceparent` equals the header the server saw."""
     seen: list[dict[str, Any]] = []
     card = build_agent_card(name="trace", version="1", url=SIDECAR_URL)
     recorder = Recorder(build_app(_catching(seen), card))
@@ -133,6 +141,7 @@ async def test_sidecar_ctx_traceparent_equals_the_header() -> None:
 
 
 async def test_inprocess_ctx_traceparent_equals_the_header() -> None:
+    """In the inprocess lane, `ctx.traceparent` equals the header the server saw."""
     seen: list[dict[str, Any]] = []
     connector = InProcessConnector()
     await connector.setup(
@@ -153,6 +162,7 @@ async def test_inprocess_ctx_traceparent_equals_the_header() -> None:
 
 
 async def test_each_run_sets_its_own_ctx_traceparent() -> None:
+    """Each run sets its own `ctx.traceparent` and ignores the caller's value."""
     seen: list[dict[str, Any]] = []
     connector = InProcessConnector()
     await connector.setup(

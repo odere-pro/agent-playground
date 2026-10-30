@@ -137,33 +137,56 @@ test("events out: delta is an artifact update on `output`, the event in artifact
   assert.equal(next.kind === "artifactUpdate" && next.data.append, true);
 });
 
-test("events out: states and native parts per the contract table", () => {
-  const cases: [ChassisEvent, TaskState, Part["content"] | null][] = [
-    [ev("start", { request_id: "r" }), TaskState.TASK_STATE_WORKING, null],
-    [ev("metrics", { input_tokens: 12 }), TaskState.TASK_STATE_WORKING, null],
-    [
-      ev("tool_call", { call_id: "c1", name: "glossary_lookup", arguments: { term: "SLM" }, result: null }),
-      TaskState.TASK_STATE_WORKING,
-      { $case: "data", value: { call_id: "c1", name: "glossary_lookup", arguments: { term: "SLM" }, result: null } },
-    ],
-    [ev("end", { status: "ok" }), TaskState.TASK_STATE_COMPLETED, null],
-    [ev("end", { status: "retry", output: { a: 1 } }), TaskState.TASK_STATE_COMPLETED, { $case: "data", value: { a: 1 } }],
-    [ev("error", { code: "x", message: "boom" }), TaskState.TASK_STATE_FAILED, { $case: "text", value: "boom" }],
-  ];
-  for (const [event, state, content] of cases) {
-    const update = eventToUpdate(event, "t", "c", false);
-    assert.equal(update.kind, "statusUpdate");
-    if (update.kind !== "statusUpdate") continue;
-    assert.equal(update.data.status?.state, state, String(event.type));
-    assert.equal(update.data.metadata?.[EVENT_KEY], JSON.stringify(event));
-    const message = update.data.status?.message;
-    if (content === null) assert.equal(message, undefined, String(event.type));
-    else {
-      assert.equal(message?.role, Role.ROLE_AGENT);
-      assert.deepEqual(message?.parts[0]?.content, content, String(event.type));
-    }
-  }
-});
+/** The status update an event maps to; fails the test when it maps to anything else. */
+function statusOf(event: ChassisEvent): Extract<AgentExecutionEvent, { kind: "statusUpdate" }>["data"] {
+  const update = eventToUpdate(event, "t", "c", false);
+  assert.ok(update.kind === "statusUpdate", `${event.type} is a status update`);
+  return update.data;
+}
+
+const START = ev("start", { request_id: "r" });
+const METRICS = ev("metrics", { input_tokens: 12 });
+const TOOL_CALL = ev("tool_call", { call_id: "c1", name: "glossary_lookup", arguments: { term: "SLM" }, result: null });
+const END = ev("end", { status: "ok" });
+const END_OUTPUT = ev("end", { status: "retry", output: { a: 1 } });
+const ERROR = ev("error", { code: "x", message: "boom" });
+
+const STATE_CASES: [string, ChassisEvent, TaskState][] = [
+  ["start", START, TaskState.TASK_STATE_WORKING],
+  ["metrics", METRICS, TaskState.TASK_STATE_WORKING],
+  ["tool_call", TOOL_CALL, TaskState.TASK_STATE_WORKING],
+  ["end", END, TaskState.TASK_STATE_COMPLETED],
+  ["end with output", END_OUTPUT, TaskState.TASK_STATE_COMPLETED],
+  ["error", ERROR, TaskState.TASK_STATE_FAILED],
+];
+
+for (const [label, event, state] of STATE_CASES) {
+  test(`events out: ${label} is a status update in state ${TaskState[state]} with the event as metadata`, () => {
+    const data = statusOf(event);
+    assert.deepEqual([data.status?.state, data.metadata?.[EVENT_KEY]], [state, JSON.stringify(event)]);
+  });
+}
+
+const BARE_CASES: [string, ChassisEvent][] = [["start", START], ["metrics", METRICS], ["end", END]];
+
+for (const [label, event] of BARE_CASES) {
+  test(`events out: ${label} carries no message`, () => {
+    assert.equal(statusOf(event).status?.message, undefined);
+  });
+}
+
+const PART_CASES: [string, ChassisEvent, Part["content"]][] = [
+  ["tool_call", TOOL_CALL, { $case: "data", value: { call_id: "c1", name: "glossary_lookup", arguments: { term: "SLM" }, result: null } }],
+  ["end with output", END_OUTPUT, { $case: "data", value: { a: 1 } }],
+  ["error", ERROR, { $case: "text", value: "boom" }],
+];
+
+for (const [label, event, content] of PART_CASES) {
+  test(`events out: ${label} carries an agent message with its native part`, () => {
+    const message = statusOf(event).status?.message;
+    assert.deepEqual([message?.role, message?.parts[0]?.content], [Role.ROLE_AGENT, content]);
+  });
+}
 
 test("executor: submitted task first, then one A2A event per chassis event, in order", async () => {
   const stub = stubFetch(200, sseBody(["Plain ", "words."]));

@@ -81,6 +81,7 @@ def echo_python() -> Iterator[Any]:
 
 
 async def test_echo_gives_the_same_events_as_inprocess() -> None:
+    """Echo over the sidecar socket gives the same events as `inprocess`."""
     request = make_request(text="the same over both lanes")
     async with serve_uds(_app(echo_wire)) as path:
         over_socket = await _run(await _sidecar(path), request)
@@ -90,6 +91,7 @@ async def test_echo_gives_the_same_events_as_inprocess() -> None:
 
 
 async def test_echo_python_gives_the_same_events_as_inprocess(echo_python: Any) -> None:
+    """`echo_python` over the sidecar gives the same events as `inprocess`."""
     request = make_request(text="simplify: the quick brown fox")
     async with serve_uds(_app(echo_python.handle)) as path:
         over_socket = await _run(await _sidecar(path), request)
@@ -118,15 +120,17 @@ async def test_deltas_arrive_one_at_a_time() -> None:
     async with serve_uds(_app(gated)) as path:
         connector = await _sidecar(path)
         seen: list[Event] = []
+        at_first: list[tuple[bool, bool]] = []  # (gate set, handle finished) at the first delta
         try:
             async with asyncio.timeout(5):
                 async for event in connector.run(request, make_context(request)):
                     seen.append(event)
                     if isinstance(event, Delta) and event.text == "first ":
-                        assert not gate.is_set() and not finished.is_set()
+                        at_first.append((gate.is_set(), finished.is_set()))
                         gate.set()
         finally:
             await connector.close()
+    assert at_first == [(False, False)]
     assert seen == [
         Start(request_id=request.request_id),
         Delta(text="first "),
@@ -136,6 +140,7 @@ async def test_deltas_arrive_one_at_a_time() -> None:
 
 
 async def test_timeout_mid_run_yields_a2a_timeout_and_cancels() -> None:
+    """A timeout mid-run is a retryable `a2a.timeout` and sends `CancelTask`."""
     closed = asyncio.Event()
 
     async def stuck(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[Any]:
@@ -161,6 +166,7 @@ async def test_timeout_mid_run_yields_a2a_timeout_and_cancels() -> None:
 
 
 async def test_closing_the_stream_early_cancels_the_task() -> None:
+    """Closing the event stream early sends `CancelTask`."""
     closed = asyncio.Event()
 
     async def parked(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[Any]:
@@ -200,15 +206,17 @@ async def test_a_sidecar_that_dies_mid_stream_is_a2a_transport() -> None:
     async with serve_uds_server(_app(parked)) as (path, server):
         connector = await _sidecar(path)
         seen: list[Event] = []
+        killed: list[int] = []
         try:
             async with asyncio.timeout(5):
                 async for event in connector.run(request, make_context(request)):
                     seen.append(event)
                     if isinstance(event, Start):
                         await started.wait()
-                        assert kill_connections(server) >= 1
+                        killed.append(kill_connections(server))
         finally:
             await connector.close()
+    assert len(killed) == 1 and killed[0] >= 1, killed
     assert [e.type for e in seen] == ["start", "error"]
     error = seen[-1]
     assert isinstance(error, Error) and error.code == "a2a.transport" and error.retryable
@@ -218,6 +226,8 @@ async def test_a_sidecar_that_dies_mid_stream_is_a2a_transport() -> None:
 
 
 async def test_every_request_of_a_run_carries_the_traceparent() -> None:
+    """Every request of a run carries a `traceparent` with the run's trace id."""
+
     async def stuck(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[Any]:
         yield {"type": "start", "request_id": ctx["request_id"]}
         await asyncio.Event().wait()
@@ -229,13 +239,13 @@ async def test_every_request_of_a_run_carries_the_traceparent() -> None:
         await _run(await _sidecar(path), request)
     rpc = recorder.rpc()
     assert len(rpc) == 2
-    for seen in rpc:
-        match = TRACEPARENT.fullmatch(seen.headers.get("traceparent", ""))
-        assert match is not None, seen.headers
-        assert match.group(1) == trace_id_hex(request.trace_id)
+    matches = [TRACEPARENT.fullmatch(seen.headers.get("traceparent", "")) for seen in rpc]
+    trace_ids = [m.group(1) if m else None for m in matches]
+    assert trace_ids == [trace_id_hex(request.trace_id)] * 2, [s.headers for s in rpc]
 
 
 async def test_the_traceparent_keeps_a_w3c_trace_id() -> None:
+    """A W3C trace id passes into the `traceparent` unchanged."""
     w3c = "4bf92f3577b34da6a3ce929d0e0e4736"
     request = make_request().model_copy(update={"trace_id": w3c})
     recorder = Recorder(_app(echo_wire))
@@ -246,6 +256,7 @@ async def test_the_traceparent_keeps_a_w3c_trace_id() -> None:
 
 
 async def test_inprocess_sets_the_same_traceparent() -> None:
+    """The `inprocess` lane sets the same `traceparent`."""
     connector = await _inprocess("chassis.core.handle:echo_wire")
     transport: Any = connector.transport
     recorder = Recorder(transport.app)
@@ -258,6 +269,7 @@ async def test_inprocess_sets_the_same_traceparent() -> None:
 
 
 async def test_each_run_gets_its_own_span_id() -> None:
+    """Each run gets its own span id in the `traceparent`."""
     recorder = Recorder(_app(echo_wire))
     async with serve_uds(recorder) as path:
         connector = await _sidecar(path)
@@ -272,6 +284,7 @@ async def test_each_run_gets_its_own_span_id() -> None:
 
 
 async def test_the_card_fetch_is_outside_any_run() -> None:
+    """The agent card fetch carries no `traceparent`."""
     recorder = Recorder(_app(echo_wire))
     async with serve_uds(recorder) as path:
         connector = await _sidecar(path)
@@ -284,6 +297,7 @@ async def test_the_card_fetch_is_outside_any_run() -> None:
 
 
 async def test_one_span_per_run_with_the_task_id() -> None:
+    """Each run is one `chassis.engine.run` span with the A2A task id."""
     async with serve_uds(_app(echo_wire)) as path:
         connector = SidecarConnector()
         bundle = _bundle(connector)
@@ -314,6 +328,7 @@ async def test_one_span_per_run_with_the_task_id() -> None:
     ],
 )
 async def test_a_non_loopback_url_is_refused(url: str) -> None:
+    """A sidecar URL that is not plain loopback is refused (ADR-001)."""
     connector = SidecarConnector()
     with pytest.raises(ValueError, match="ADR-001"):
         await connector.setup({"url": url}, _bundle(connector))
@@ -321,18 +336,21 @@ async def test_a_non_loopback_url_is_refused(url: str) -> None:
 
 @pytest.mark.parametrize("url", ["http://127.0.0.1:9000", "http://localhost:9000/"])
 async def test_loopback_urls_are_accepted(url: str) -> None:
+    """Loopback sidecar URLs are accepted."""
     async with serve_uds(_app(echo_wire, url=url)) as path:
         connector = await _sidecar(path, url)
         await connector.close()
 
 
 async def test_url_is_required() -> None:
+    """The sidecar lane needs `engine.url`."""
     connector = SidecarConnector()
     with pytest.raises(ValueError, match=r"engine\.url"):
         await connector.setup({"connector": "sidecar"}, _bundle(connector))
 
 
 async def test_a_card_that_points_off_host_is_refused() -> None:
+    """An agent card that points off the host is refused (ADR-001)."""
     async with serve_uds(_app(echo_wire, url="http://10.0.0.5:9000")) as path:
         connector = SidecarConnector()
         with pytest.raises(ValueError, match="ADR-001"):
@@ -340,6 +358,7 @@ async def test_a_card_that_points_off_host_is_refused() -> None:
 
 
 async def test_setup_against_a_dead_socket_fails_clearly(tmp_path: Path) -> None:
+    """Setup against a dead socket fails with an error naming the URL."""
     connector = SidecarConnector()
     dead = str(tmp_path / "nobody-home.sock")
     with pytest.raises(RuntimeError, match=re.escape(SIDECAR_URL)):
@@ -347,6 +366,7 @@ async def test_setup_against_a_dead_socket_fails_clearly(tmp_path: Path) -> None
 
 
 async def test_run_before_setup_is_an_error() -> None:
+    """A run before setup raises a clear error."""
     connector = SidecarConnector()
     request = make_request()
     with pytest.raises(RuntimeError, match="sidecar connector is not set up"):
@@ -363,11 +383,13 @@ def test_registry_builds_the_sidecar_connector() -> None:
 
 
 def test_engine_spec_names_url_and_uds() -> None:
+    """The engine spec passes `url` and `uds` to the connector."""
     spec = EngineSpec(connector="sidecar", url=SIDECAR_URL, uds="/tmp/a.sock")
     assert spec.as_mapping() == {"connector": "sidecar", "url": SIDECAR_URL, "uds": "/tmp/a.sock"}
 
 
 def test_sidecar_yaml_loads() -> None:
+    """The bundled `sidecar.yaml` loads and picks the lane by connector only."""
     config = load_config(SIDECAR_YAML)
     assert config.profile == "local"
     assert config.spec.engine.connector == "sidecar"
@@ -389,6 +411,7 @@ def _tcp_allowed() -> bool:
 
 @pytest.mark.network
 async def test_over_tcp_on_loopback() -> None:
+    """The sidecar lane runs over TCP on loopback when sockets are allowed."""
     if not _tcp_allowed():
         pytest.skip("TCP is disabled (the offline gate); run with `uv run pytest -m network`")
     import uvicorn

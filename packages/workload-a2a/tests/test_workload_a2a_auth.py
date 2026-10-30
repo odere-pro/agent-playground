@@ -57,37 +57,35 @@ def token_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.usefixtures("token_env")
-async def test_missing_header_is_401_with_the_fixed_body() -> None:
+@pytest.mark.parametrize("path", [CARD_PATH, "/", "/anything"])
+async def test_missing_header_is_401_with_the_fixed_body(path: str) -> None:
+    """With no `Authorization` header, every path is the fixed 401, card included."""
     async with _client(_guarded()) as http:
-        for path in (CARD_PATH, "/", "/anything"):
-            response = await http.get(path)
-            assert response.status_code == 401
-            assert response.content == UNAUTHORIZED_BODY
-            assert response.headers["content-type"] == "application/json"
-            assert response.headers["www-authenticate"] == "Bearer"
+        response = await http.get(path)
+    assert response.status_code == 401
+    assert response.content == UNAUTHORIZED_BODY
+    assert response.headers["content-type"] == "application/json"
+    assert response.headers["www-authenticate"] == "Bearer"
 
 
 @pytest.mark.usefixtures("token_env")
-async def test_wrong_and_malformed_tokens_are_401_with_the_same_body() -> None:
-    headers = [
-        {"Authorization": "Bearer nope"},
-        {"Authorization": f"Bearer {TOKEN}x"},
-        {"Authorization": "Bearer "},
-        {"Authorization": TOKEN},
-        {"Authorization": f"Basic {TOKEN}"},
-    ]
+@pytest.mark.parametrize(
+    "header",
+    ["Bearer nope", f"Bearer {TOKEN}x", "Bearer ", TOKEN, f"Basic {TOKEN}"],
+    ids=["wrong", "suffixed", "empty-bearer", "no-scheme", "basic"],
+)
+async def test_wrong_and_malformed_tokens_are_401_with_the_same_body(header: str) -> None:
+    """Each wrong or malformed token is the same fixed 401."""
     async with _client(_guarded()) as http:
-        bodies = set()
-        for h in headers:
-            response = await http.get(CARD_PATH, headers=h)
-            assert response.status_code == 401, h
-            bodies.add(response.content)
-        assert bodies == {UNAUTHORIZED_BODY}
-        assert TOKEN.encode() not in UNAUTHORIZED_BODY
+        response = await http.get(CARD_PATH, headers={"Authorization": header})
+    assert response.status_code == 401
+    assert response.content == UNAUTHORIZED_BODY
+    assert TOKEN.encode() not in UNAUTHORIZED_BODY
 
 
 @pytest.mark.usefixtures("token_env")
 async def test_right_token_reaches_the_card_and_message_send() -> None:
+    """The right token reaches the agent card and the JSON-RPC route."""
     auth = {"Authorization": f"Bearer {TOKEN}"}
     async with _client(_guarded()) as http:
         card = await http.get(CARD_PATH, headers=auth)
@@ -99,6 +97,7 @@ async def test_right_token_reaches_the_card_and_message_send() -> None:
 
 @pytest.mark.usefixtures("token_env")
 async def test_message_send_without_token_never_reaches_the_handler() -> None:
+    """`message/send` with no token is the fixed 401."""
     async with _client(_guarded()) as http:
         rpc = await http.post("/", json={"jsonrpc": "2.0", "id": 1, "method": "message/send"})
         assert rpc.status_code == 401
@@ -106,12 +105,14 @@ async def test_message_send_without_token_never_reaches_the_handler() -> None:
 
 
 async def test_without_the_flag_the_server_is_open() -> None:
+    """Without `--require-token-env` the server is open."""
     server = cli.build(_argv())
     async with _client(server.config.app) as http:
         assert (await http.get(CARD_PATH)).status_code == 200
 
 
 async def test_non_http_scopes_pass_through() -> None:
+    """The bearer middleware passes the lifespan scope through."""
     seen: list[str] = []
 
     async def inner(scope: Any, receive: Any, send: Any) -> None:
@@ -126,6 +127,7 @@ async def test_non_http_scopes_pass_through() -> None:
 def test_start_refused_when_the_variable_is_missing_or_empty(
     monkeypatch: pytest.MonkeyPatch, value: str | None
 ) -> None:
+    """Start-up is refused, naming the variable, when it is unset or blank."""
     if value is None:
         monkeypatch.delenv(ENV, raising=False)
     else:
@@ -136,6 +138,7 @@ def test_start_refused_when_the_variable_is_missing_or_empty(
 
 
 def test_read_token_error_names_the_variable_not_a_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`read_token` names the variable in its error, never a value."""
     monkeypatch.delenv(ENV, raising=False)
     with pytest.raises(ValueError, match=ENV):
         read_token(ENV)
@@ -145,12 +148,14 @@ def test_read_token_error_names_the_variable_not_a_value(monkeypatch: pytest.Mon
 
 @pytest.mark.usefixtures("token_env")
 def test_error_messages_never_carry_the_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A start-up error never carries the token."""
     with pytest.raises(SystemExit) as exc:
         cli.build(_argv("--require-token-env", ENV, "--handle", "nope:missing"))
     assert TOKEN not in str(exc.value.code)
 
 
 def test_non_loopback_host_refused_without_the_flag() -> None:
+    """A non-loopback host is refused without `--require-token-env`."""
     with pytest.raises(SystemExit) as exc:
         cli.build(_argv("--host", "0.0.0.0"))
     assert "loopback" in str(exc.value.code)
@@ -158,12 +163,14 @@ def test_non_loopback_host_refused_without_the_flag() -> None:
 
 @pytest.mark.usefixtures("token_env")
 def test_non_loopback_host_allowed_with_the_flag() -> None:
+    """A non-loopback host is allowed with `--require-token-env`."""
     server = cli.build(_argv("--host", "0.0.0.0", "--require-token-env", ENV))
     assert server.config.host == "0.0.0.0"
 
 
 @pytest.mark.usefixtures("token_env")
 async def test_token_is_in_no_log_record_at_debug(caplog: pytest.LogCaptureFixture) -> None:
+    """The token is in no log record at DEBUG during a full run."""
     import importlib
     import logging
 
@@ -202,39 +209,41 @@ async def test_token_is_in_no_log_record_at_debug(caplog: pytest.LogCaptureFixtu
         workload.transport = None
     assert responses
     assert caplog.records
-    for record in caplog.records:
-        assert TOKEN not in record.getMessage()
-        assert TOKEN not in str(record.args)
-        assert TOKEN not in str(record.__dict__)
+    blobs = [r.getMessage() + str(r.args) + str(r.__dict__) for r in caplog.records]
+    assert [blob for blob in blobs if TOKEN in blob] == []
 
 
 # Rotation: `--previous-token-env` makes the server accept the old token as well.
 
 
 @pytest.mark.usefixtures("token_env")
+@pytest.mark.parametrize("token", [TOKEN, PREVIOUS], ids=["current", "previous"])
 async def test_previous_token_is_accepted_with_the_current_one(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, token: str
 ) -> None:
+    """With `--previous-token-env`, both the current and the previous token pass."""
     monkeypatch.setenv(PREV_ENV, PREVIOUS)
     async with _client(_guarded_with_previous()) as http:
-        for token in (TOKEN, PREVIOUS):
-            response = await http.get(CARD_PATH, headers={"Authorization": f"Bearer {token}"})
-            assert response.status_code == 200, token
+        response = await http.get(CARD_PATH, headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
 
 
 @pytest.mark.usefixtures("token_env")
+@pytest.mark.parametrize(
+    "header",
+    ["Bearer some-other-token", f"Bearer {PREVIOUS}x", "Bearer ", None],
+    ids=["other", "previous-suffixed", "empty-bearer", "missing"],
+)
 async def test_a_third_token_is_refused_with_the_fixed_body(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, header: str | None
 ) -> None:
+    """Any token but the current and previous is the fixed 401."""
     monkeypatch.setenv(PREV_ENV, PREVIOUS)
+    headers = {} if header is None else {"Authorization": header}
     async with _client(_guarded_with_previous()) as http:
-        for header in ("Bearer some-other-token", f"Bearer {PREVIOUS}x", "Bearer "):
-            response = await http.get(CARD_PATH, headers={"Authorization": header})
-            assert response.status_code == 401, header
-            assert response.content == UNAUTHORIZED_BODY
-        missing = await http.get(CARD_PATH)
-        assert missing.status_code == 401
-        assert missing.content == UNAUTHORIZED_BODY
+        response = await http.get(CARD_PATH, headers=headers)
+    assert response.status_code == 401
+    assert response.content == UNAUTHORIZED_BODY
 
 
 @pytest.mark.usefixtures("token_env")
@@ -242,6 +251,7 @@ async def test_a_third_token_is_refused_with_the_fixed_body(
 async def test_unset_or_empty_previous_is_ignored(
     monkeypatch: pytest.MonkeyPatch, value: str | None
 ) -> None:
+    """An unset or blank previous token is ignored and lets no empty bearer in."""
     if value is None:
         monkeypatch.delenv(PREV_ENV, raising=False)
     else:
@@ -249,16 +259,19 @@ async def test_unset_or_empty_previous_is_ignored(
     assert read_previous_token(PREV_ENV) is None
     async with _client(_guarded_with_previous()) as http:
         ok = await http.get(CARD_PATH, headers={"Authorization": f"Bearer {TOKEN}"})
-        assert ok.status_code == 200
         # An empty previous must not let an empty bearer value in.
-        for header in ("Bearer ", "Bearer    ", "Bearer anything"):
-            refused = await http.get(CARD_PATH, headers={"Authorization": header})
-            assert refused.status_code == 401, header
+        refused = [
+            (await http.get(CARD_PATH, headers={"Authorization": header})).status_code
+            for header in ("Bearer ", "Bearer    ", "Bearer anything")
+        ]
+    assert ok.status_code == 200
+    assert refused == [401, 401, 401]
 
 
 def test_previous_flag_without_require_token_is_a_start_up_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """`--previous-token-env` without `--require-token-env` is a start-up error."""
     monkeypatch.setenv(PREV_ENV, PREVIOUS)
     with pytest.raises(SystemExit) as exc:
         cli.build(_argv("--previous-token-env", PREV_ENV))
@@ -267,10 +280,10 @@ def test_previous_flag_without_require_token_is_a_start_up_error(
 
 
 def test_middleware_repr_and_errors_hide_both_tokens() -> None:
+    """The middleware's `repr`, `str`, and errors hide both tokens."""
     guard = BearerTokenMiddleware(None, TOKEN, PREVIOUS)
-    for text in (repr(guard), str(guard)):
-        assert TOKEN not in text
-        assert PREVIOUS not in text
+    shown = [text for text in (repr(guard), str(guard)) if TOKEN in text or PREVIOUS in text]
+    assert shown == []
     with pytest.raises(ValueError, match="empty") as exc:
         BearerTokenMiddleware(None, TOKEN, "")
     assert TOKEN not in str(exc.value)
@@ -280,6 +293,7 @@ def test_middleware_repr_and_errors_hide_both_tokens() -> None:
 async def test_neither_token_is_in_a_log_record_at_debug(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Neither token is in a log record at DEBUG."""
     import logging
 
     monkeypatch.setenv(PREV_ENV, PREVIOUS)
@@ -288,13 +302,12 @@ async def test_neither_token_is_in_a_log_record_at_debug(
         for token in (TOKEN, PREVIOUS, "wrong"):
             await http.get(CARD_PATH, headers={"Authorization": f"Bearer {token}"})
     assert caplog.records
-    for record in caplog.records:
-        blob = record.getMessage() + str(record.args) + str(record.__dict__)
-        assert TOKEN not in blob
-        assert PREVIOUS not in blob
+    blobs = [r.getMessage() + str(r.args) + str(r.__dict__) for r in caplog.records]
+    assert [blob for blob in blobs if TOKEN in blob or PREVIOUS in blob] == []
 
 
 async def test_header_is_stripped_after_a_previous_token_match() -> None:
+    """`Authorization` is stripped after a previous-token match."""
     seen: list[list[tuple[bytes, bytes]]] = []
 
     async def inner(scope: Any, receive: Any, send: Any) -> None:
