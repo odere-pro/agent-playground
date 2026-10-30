@@ -54,21 +54,21 @@ Can any client call any engine the same way, through native, OpenAI, Anthropic, 
   - Cassettes: one per engine in `tests/cassettes/interfaces/`, replayed with `--record-mode=none`. `make record-cassettes` re-records offline.
 - [x] Schemathesis property tests generated from the OpenAPI spec. · evidence:
   - Tests: `tests/test_openapi_props.py::test_every_operation_meets_its_spec`.
-  - Tests, the three findings: `::test_finding_run_refuses_a_value_of_the_wrong_json_type`, `::test_finding_an_undecodable_body_gets_the_formats_error_shape`, `::test_finding_a_streamed_answer_fits_the_declared_event_stream_schema`. All pass; none is `xfail`.
+  - Tests, the three findings: `::test_run_refuses_a_value_of_the_wrong_json_type_with_422`, `::test_an_undecodable_sdk_body_is_400_in_the_formats_error_shape`, `::test_a_streamed_answer_fits_the_declared_event_stream_schema`. All pass; none is `xfail`.
   - Run: `21 passed in 15.71s`.
 
 ## Exit criteria
 
 Each one has a scenario test in `tests/` or a recorded reason it cannot have one yet.
 
-- [x] The interface contract suite and the Schemathesis tests run offline in CI on every commit. · evidence: `tests/test_exit_criteria.py::test_exit_1_the_suites_run_offline_in_ci_on_every_commit[interface-contract]`, `[schemathesis]`; both run in `make check` (below)
-- [x] The contract suite passes for all engines and all interfaces, over both transports. · evidence: `tests/test_exit_criteria.py::test_exit_2_the_contract_suite_covers_all_engines_interfaces_and_both_transports`; `tests/test_interface_contract.py` (49 cells run, 15 skip with a reason, above). Caveat: the TypeScript echo runs in `sidecar` only, and MCP is complete only.
+- [x] The interface contract suite and the Schemathesis tests run offline in CI on every commit. · evidence: `tests/test_exit_criteria.py::test_exit_1_the_suites_run_offline_in_ci_on_every_commit[interface-contract]`, `[schemathesis]`; both run in `make check` (below). The other `test_exit_1_*` tests in that file prove "offline" and "in CI on every commit": no `network` marker, the CI triggers, `make check`, the offline script, the gate flags, and collection.
+- [x] The contract suite passes for all engines and all interfaces, over both transports. · evidence: `tests/test_exit_criteria.py::test_exit_2_the_contract_suite_covers_all_engines_interfaces_and_both_transports`, `::test_exit_2_only_the_two_legitimate_groups_of_cells_skip`; `tests/test_interface_contract.py` (49 cells run, 15 skip with a reason, above). Caveat: the TypeScript echo runs in `sidecar` only, and MCP is complete only.
 - [x] The OpenAI and Anthropic SDKs work with only a base URL change. · evidence: `tests/test_exit_criteria.py::test_exit_3_the_sdks_work_with_only_a_base_url_change[openai]`, `[anthropic]`. The test's client transport is a Unix socket (no TCP in the gate); `model` is the agent's name (ADR-003, item 3).
 - [x] An MCP client lists the agent's tool and runs it. · evidence: `tests/test_exit_criteria.py::test_exit_4_an_mcp_client_lists_the_agents_tool_and_runs_it`
-- [x] The MCP tools and the REST API come from the same OpenAPI spec (no hand-written tool definitions). · evidence: `tests/test_exit_criteria.py::test_exit_5_mcp_tools_and_rest_come_from_one_openapi_spec`; `InterfaceContract::test_mcp_tool_schema_is_the_openapi_request_schema`
-- [x] Any gaps between the formats are listed (for example tool calls or stop reasons that do not map one to one), with how each is handled. · evidence: [notes/2026-10-01-format-gaps.md](notes/2026-10-01-format-gaps.md); `tests/test_exit_criteria.py::test_exit_6_the_gaps_note_lists_each_gap_with_how_it_is_handled`, `::test_exit_6_the_handled_gaps_behave_as_listed[client-tools]`, `[n-above-1]`, `[images]`, `[model]`, `[own-tool-calls]`, `[stop-reasons]`, `[mcp-stream]`, `[other-endpoints]`
+- [x] The MCP tools and the REST API come from the same OpenAPI spec (no hand-written tool definitions). · evidence: `tests/test_exit_criteria.py::test_exit_5_mcp_tools_and_rest_come_from_one_openapi_spec`, `::test_exit_5_the_agents_tool_is_an_openapi_tool`, `::test_exit_5_the_tool_follows_a_change_to_the_spec`, `::test_exit_5_no_tool_is_written_by_hand`, `::test_exit_5_build_agent_mcp_builds_from_the_spec_alone`, `::test_exit_5_only_the_mcp_interface_calls_build_agent_mcp`; `InterfaceContract::test_mcp_tool_schema_is_the_openapi_request_schema`
+- [x] Any gaps between the formats are listed (for example tool calls or stop reasons that do not map one to one), with how each is handled. · evidence: [notes/2026-10-01-format-gaps.md](notes/2026-10-01-format-gaps.md); `tests/test_exit_criteria.py::test_exit_6_the_gaps_note_lists_each_gap_with_how_it_is_handled`, `::test_exit_6_the_gaps_note_lists_every_gap_the_behavior_test_checks`, `::test_exit_6_the_handled_gaps_behave_as_listed[client-tools]`, `[n-above-1]`, `[images]`, `[model]`, `[own-tool-calls]`, `[stop-reasons]`, `[mcp-stream]`, `[other-endpoints]`
 
-`scripts/check_offline.sh pocs/poc-03-one-interface-every-client/tests/test_exit_criteria.py -q -rA` on 2026-10-01: `16 passed in 14.02s`.
+`scripts/check_offline.sh pocs/poc-03-one-interface-every-client/tests/test_exit_criteria.py -q -rA` on 2026-10-01: `16 passed in 14.02s`. The core review split these tests. The same command with `-q` on 2026-10-30: `40 passed in 16.86s`.
 
 Gate runs on 2026-10-01:
 

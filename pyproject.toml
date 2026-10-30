@@ -300,4 +300,5 @@ forbidden_modules = ["fastapi", "starlette", "httpx", "openai", "anthropic", "li
 skip = "uv.lock,package-lock.json,*.png,*.svg,*/cassettes/*,*/notes/*/raw/*,*/demo/*-demo-*.md,*/node_modules/*,*/dist/*,*/.venv/*"
 # te: the mermaid participant alias for "Tool endpoint" (docs/guides/poc-05-how-it-works.md).
 # hel: a streamed token in a test fixture ("Hel" + "lo", packages/chassis/tests/test_inbound.py).
-ignore-words-list = "te,hel"
+# passtime: the `PassTime` type in the state contract suite (chassis_contracts/state.py).
+ignore-words-list = "hel,passtime,te"

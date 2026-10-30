@@ -165,7 +165,7 @@ def _key_reads(text: str) -> list[str]:
         'Deno.env.get("SERVICE_TOKEN")',
     ],
 )
-def test_key_read_catches(source: str) -> None:
+def test_key_read_check_flags_a_key_like_name_in_every_env_read_form(source: str) -> None:
     """Exit criterion: no workload container holds a key. The source check catches a read of any
     key-like name in every Python, Node, and Deno form.
     """
@@ -185,7 +185,7 @@ def test_key_read_catches(source: str) -> None:
         "max_tokens = int(input_tokens)",
     ],
 )
-def test_key_read_ignores(source: str) -> None:
+def test_key_read_check_passes_other_names_and_key_words_outside_an_env_read(source: str) -> None:
     """Exit criterion: no workload container holds a key. The source check matches names, not
     values: the proxy URLs, the bind, and a key-like word outside an environment read pass.
     """
@@ -295,7 +295,7 @@ def test_dockerfile_env_reads_continuation_lines() -> None:
         ("PYDANTIC_AI_NO_BANNER", False),
     ],
 )
-def test_key_name(name: str, caught: bool) -> None:
+def test_key_name_rule_flags_key_like_names_in_any_case(name: str, caught: bool) -> None:
     """Exit criterion: no workload container holds a key. The name rule is case-insensitive
     `KEY|TOKEN|SECRET|PASSWORD` and leaves the proxy URLs and the bind alone.
     """

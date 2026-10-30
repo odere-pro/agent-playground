@@ -16,20 +16,45 @@ A `network` test: Docker needed; run with `make test-integration` or
 from __future__ import annotations
 
 import asyncio
+import threading
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 
 import pytest
 from chassis.adapters.valkey.state import ValkeyState
+from chassis.ports.model import ModelMessage
 from chassis_contracts.containers.valkey import ValkeyServer, valkey_container
 from poc_harness.interfaces import OutboundRouter
 from poc_harness.outbound import patch_outbound
 from poc_harness.replica_calls import call
-from poc_harness.replica_doubles import SLOW, HarnessModel
+from poc_harness.replica_doubles import HarnessModel
 from poc_harness.replicas import Replicas, replicas_on_unix_sockets
 from poc_harness.scenario import SIMPLIFY
+from poc_harness.waits import wait_until_async
 
 pytestmark = pytest.mark.network
+
+GATED = "simplify: GATED"
+"""suggested: a prompt `GatedModel` holds in the model until the test lets it go."""
+HANG_GUARD_S = 10.0
+"""Only a hang reaches this."""
+
+
+class GatedModel(HarnessModel):
+    """`HarnessModel`, holding a `GATED` call until `release`. It sets `entered` then. Runs on the
+    replicas' loop, in another thread, so its signals are `threading.Event`s.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    async def _wait(self, messages: Sequence[ModelMessage]) -> None:
+        if any(GATED in (m.content or "") for m in messages if m.role == "user"):
+            self.entered.set()
+            await asyncio.to_thread(self.release.wait, HANG_GUARD_S)
+        await super()._wait(messages)
 
 
 @pytest.fixture(scope="module")
@@ -53,7 +78,7 @@ def pair(valkey_server: ValkeyServer) -> Iterator[Replicas]:
             2,
             "echo_python",
             "inprocess",
-            model=HarnessModel(),
+            model=GatedModel(),
             router=router,
             state=clients,
             adapters={"state": "valkey"},
@@ -82,10 +107,26 @@ async def test_concurrent_duplicates_run_once_through_valkey(pair: Replicas) -> 
     """Exit criterion 2 (in flight): one key on both replicas at once runs the engine once; the
     claim in Valkey makes the duplicate wait and replay."""
     key = f"valkey-{uuid.uuid4().hex}"
-    a, b = await asyncio.gather(
-        call(pair[0], "native", SLOW, key=key), call(pair[1], "native", SLOW, key=key)
-    )
+    model = pair.model
+    assert isinstance(model, GatedModel)
+    first = asyncio.create_task(call(pair[0], "native", GATED, key=key))
+    entered = await asyncio.to_thread(model.entered.wait, HANG_GUARD_S)
+    assert entered, "the first call never reached the model"
+
+    duplicate = asyncio.create_task(call(pair[1], "native", GATED, key=key))
+    try:
+        await wait_until_async(
+            lambda: pair.counter("chassis.idempotency.waited") == 1,
+            "the duplicate to wait on the first call",
+            HANG_GUARD_S,
+        )
+        answered_early = duplicate.done()
+    finally:
+        model.release.set()
+    a, b = await asyncio.gather(first, duplicate)
+
+    assert not answered_early, "the duplicate answered while the first call held the key"
     assert a.status == b.status == 200 and a.body == b.body, (a, b)
-    assert sorted([a.replayed, b.replayed]) == [False, True]
+    assert (a.replayed, b.replayed) == (False, True)
     assert pair.engine_runs() == 1
     assert len(pair.model.calls) == 1

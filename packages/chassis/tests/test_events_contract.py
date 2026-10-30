@@ -4,12 +4,17 @@ suite in `tests/integration/test_kafka_events_contract.py`.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 
 import pytest
 from chassis.fakes import InMemoryBus
 from chassis.ports.events import EventPort
-from chassis_contracts.events import EventPortContract, make_event
+from chassis_contracts.events import EventPortContract, Settle, make_event
+
+SETTLE_LOOP_TURNS = 100
+"""The bus does no I/O and retries with `sleep(0)`, so all it can still do happens in loop turns,
+and this count does not depend on machine load. Far more turns than one delivery or retry takes."""
 
 
 class TestInMemoryBus(EventPortContract):
@@ -24,6 +29,14 @@ class TestInMemoryBus(EventPortContract):
         bus = InMemoryBus()
         bus.fail_next_publish(times=1_000)
         return bus
+
+    @pytest.fixture
+    def settle(self) -> Settle:
+        async def turn_the_loop() -> None:
+            for _ in range(SETTLE_LOOP_TURNS):
+                await asyncio.sleep(0)
+
+        return turn_the_loop
 
 
 async def test_published_records_every_event_and_fail_next_publish_fails_once() -> None:

@@ -5,7 +5,7 @@
 This file covers the whole sentence offline. "The same key" is the `Idempotency-Key` header the
 client sends; "any replica" is the other of two replicas that share one store.
 
-Two chassis replicas (`poc04_harness.replicas_on_unix_sockets`) share one `InMemoryState`, which
+Two chassis replicas (`poc_harness.replicas`) share one `InMemoryState`, which
 stands for Valkey; each runs `echo_python` in the `inprocess` lane, and one `HarnessModel` answers
 both. A first call goes to replica 0 and its repeat to replica 1. The repeat is the stored result:
 the same envelope (or the same frames, `created` aside: a replayed chat format gets a fresh one),
@@ -18,18 +18,21 @@ Offline: Unix sockets only.
 from __future__ import annotations
 
 import asyncio
+import threading
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 import pytest
+from chassis.ports.model import ModelMessage
 from chassis.ports.state import InMemoryState
 from poc_harness.interfaces import OutboundRouter
 from poc_harness.outbound import patch_outbound
 from poc_harness.replica_calls import call, without_created
-from poc_harness.replica_doubles import FAIL, SLOW, HarnessModel, OffsetClock
+from poc_harness.replica_doubles import FAIL, HarnessModel, OffsetClock
 from poc_harness.replicas import Replicas, replicas_on_unix_sockets
 from poc_harness.scenario import SIMPLIFIED, SIMPLIFY
+from poc_harness.waits import wait_until_async
 
 TTL_S = 60.0
 """suggested: short enough to step past with the offset clock."""
@@ -50,13 +53,37 @@ CASES = [
 ]
 
 
+GATED = "simplify: GATED"
+"""suggested: a prompt `GatedModel` holds in the model until the test lets it go."""
+HANG_GUARD_S = 10.0
+"""Only a hang reaches this."""
+
+
+class GatedModel(HarnessModel):
+    """`HarnessModel`, holding a `GATED` call until `release`. It sets `entered` then. Runs on the
+    replicas' loop, in another thread, so its signals are `threading.Event`s.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    async def _wait(self, messages: Sequence[ModelMessage]) -> None:
+        if any(GATED in (m.content or "") for m in messages if m.role == "user"):
+            self.entered.set()
+            await asyncio.to_thread(self.release.wait, HANG_GUARD_S)
+        await super()._wait(messages)
+
+
 class Pair:
     def __init__(self, replicas: Replicas, clock: OffsetClock) -> None:
         self.replicas = replicas
         self.clock = clock
 
     @property
-    def model(self) -> HarnessModel:
+    def model(self) -> GatedModel:
+        assert isinstance(self.replicas.model, GatedModel)
         return self.replicas.model
 
 
@@ -72,7 +99,7 @@ def pair() -> Iterator[Pair]:
             2,
             "echo_python",
             "inprocess",
-            model=HarnessModel(),
+            model=GatedModel(),
             router=router,
             state=InMemoryState(clock=clock),
             idempotency=IDEMPOTENCY,
@@ -136,17 +163,31 @@ async def test_concurrent_duplicates_run_once(pair: Pair) -> None:
     """Exit criterion 2 (in flight): two calls with one key at once, one per replica, run the
     engine once; the duplicate waits for the first result and replays it."""
     key = _key()
-    runs, calls = pair.replicas.engine_runs(), len(pair.model.calls)
-    a, b = await asyncio.gather(
-        call(pair.replicas[0], "native", SLOW, key=key),
-        call(pair.replicas[1], "native", SLOW, key=key),
-    )
+    replicas = pair.replicas
+    runs, calls = replicas.engine_runs(), len(pair.model.calls)
+    waited = replicas.counter("chassis.idempotency.waited")
+    first = asyncio.create_task(call(replicas[0], "native", GATED, key=key))
+    entered = await asyncio.to_thread(pair.model.entered.wait, HANG_GUARD_S)
+    assert entered, "the first call never reached the model"
+
+    duplicate = asyncio.create_task(call(replicas[1], "native", GATED, key=key))
+    try:
+        await wait_until_async(
+            lambda: replicas.counter("chassis.idempotency.waited") == waited + 1,
+            "the duplicate to wait on the first call",
+            HANG_GUARD_S,
+        )
+        answered_early = duplicate.done()
+    finally:
+        pair.model.release.set()
+    a, b = await asyncio.gather(first, duplicate)
+
+    assert not answered_early, "the duplicate answered while the first call held the key"
     assert a.status == b.status == 200, (a, b)
     assert a.body == b.body
-    assert sorted([a.replayed, b.replayed]) == [False, True]
-    assert pair.replicas.engine_runs() - runs == 1
+    assert (a.replayed, b.replayed) == (False, True)
+    assert replicas.engine_runs() - runs == 1
     assert len(pair.model.calls) - calls == 1
-    assert pair.replicas.counter("chassis.idempotency.waited") >= 1
 
 
 async def test_a_cached_result_replays_as_a_stream(pair: Pair) -> None:

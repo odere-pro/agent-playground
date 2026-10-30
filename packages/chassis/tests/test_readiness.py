@@ -29,6 +29,30 @@ CONFIG: dict[str, Any] = {
 }
 
 FAST = ProbeSettings(interval_s=0.01, timeout_s=0.05, failures=3)
+HANG_GUARD_S = 30.0
+
+
+class HeldSleep:
+    """The monitor's `sleep`: returns at once until wait number `hold_at`, then sets `held` and
+    stays there until cancelled. So the test knows how many probes ran, without real time.
+    """
+
+    def __init__(self, hold_at: int) -> None:
+        self.hold_at = hold_at
+        self.held = asyncio.Event()
+        self.cancelled = False
+        self.waits: list[float] = []
+
+    async def __call__(self, seconds: float) -> None:
+        self.waits.append(seconds)
+        if len(self.waits) < self.hold_at:
+            return
+        self.held.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
 
 
 class HangingEngine(FakeEngine):
@@ -125,16 +149,18 @@ async def test_a_probe_that_raises_counts_as_a_failure() -> None:
 async def test_the_monitor_task_starts_and_stops() -> None:
     """The monitor task probes while started and stops probing after `stop`."""
     engine = FakeEngine(handle=echo)
-    monitor = ReadinessMonitor(engine, FAST)
+    sleep = HeldSleep(hold_at=3)
+    monitor = ReadinessMonitor(engine, FAST, sleep=sleep)
+
     monitor.start()
-    for _ in range(100):
-        if engine.probes >= 2:
-            break
-        await asyncio.sleep(0.01)
-    await monitor.stop()
-    seen = engine.probes
-    await asyncio.sleep(0.05)
-    assert seen >= 2 and engine.probes == seen, "the task probes, then stops"
+    await asyncio.wait_for(sleep.held.wait(), HANG_GUARD_S)
+    stopping = asyncio.create_task(monitor.stop())
+    await asyncio.wait({stopping}, timeout=HANG_GUARD_S)
+
+    assert stopping.done(), "stop cancels the task; left alone, it would sleep forever"
+    assert sleep.waits == [FAST.interval_s] * 3
+    assert sleep.cancelled, "stop cancels the task in its sleep, so no probe can follow"
+    assert engine.probes == 2
 
 
 async def test_ready_says_starting_then_ready_then_draining() -> None:

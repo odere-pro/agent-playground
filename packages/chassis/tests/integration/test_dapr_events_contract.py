@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import secrets
-import time
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
@@ -25,13 +24,14 @@ import uvicorn
 from chassis.adapters.dapr import DaprEvents
 from chassis.ports.events import CloudEvent, EventHandler, EventPort, Subscription
 from chassis_contracts.containers.dapr import DaprSidecar, dapr_with_kafka
-from chassis_contracts.events import EventPortContract
+from chassis_contracts.events import EventPortContract, Settle, wait_until
 from chassis_contracts.serving import free_port, serve_in_thread
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route, Router
 from starlette.types import Receive, Scope, Send
 
+SUBSCRIBE_TIMEOUT_S = 30.0
 COMPONENTS = Path(__file__).resolve().parents[4] / "deploy" / "compose" / "dapr"
 API_TOKEN = secrets.token_hex(16)
 APP_TOKEN = secrets.token_hex(16)
@@ -92,13 +92,17 @@ class _RestartOnSubscribe:
         if self.dirty:
             await asyncio.to_thread(self.sidecar.restart)
             self.port.endpoint = self.sidecar.endpoint
-            deadline = time.monotonic() + 30
-            while not self.topics <= await asyncio.to_thread(self.sidecar.subscribed_topics):
-                if time.monotonic() > deadline:
-                    raise TimeoutError(f"daprd did not subscribe to {sorted(self.topics)}")
-                await asyncio.sleep(0.25)
+            await wait_until(
+                self._all_topics_subscribed,
+                SUBSCRIBE_TIMEOUT_S,
+                f"daprd to subscribe to {sorted(self.topics)}",
+                interval_s=0.25,
+            )
             self.dirty = False
         await self.port.publish(topic, event)
+
+    async def _all_topics_subscribed(self) -> bool:
+        return self.topics <= await asyncio.to_thread(self.sidecar.subscribed_topics)
 
     async def aclose(self) -> None:
         await self.port.aclose()
@@ -137,10 +141,10 @@ class TestDaprEvents(EventPortContract):
         ),
     )
     async def test_after_max_attempts_the_event_goes_to_the_dead_letter_topic(
-        self, event_port: EventPort, topic: str, deliver_timeout_s: float, quiet_s: float
+        self, event_port: EventPort, topic: str, deliver_timeout_s: float, settle: Settle
     ) -> None:
         await super().test_after_max_attempts_the_event_goes_to_the_dead_letter_topic(
-            event_port, topic, deliver_timeout_s, quiet_s
+            event_port, topic, deliver_timeout_s, settle
         )
 
     @pytest.mark.xfail(

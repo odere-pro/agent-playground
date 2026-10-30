@@ -46,13 +46,15 @@ import uvicorn
 from chassis.adapters.a2a import InProcessConnector, SidecarConnector
 from chassis.adapters.a2a.inprocess import load_handle
 from chassis.core.envelope import Context, Request, TaskInput
-from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes import ScriptedModel
 from chassis.ports.bundle import PortBundle
 from chassis.ports.engine import EngineConnector
-from chassis_contracts.helpers import make_context, make_request
+from chassis_contracts.helpers import make_context
 from fake_model_server import Script
 from fake_model_server import create_app as create_fake_model_app
 from fastmcp import FastMCP
+from poc_harness.apps import bundle_for, request_and_context
+from poc_harness.scenario import ROUTE
 from workload_a2a.server import build_agent_card, build_app
 
 POC = Path(__file__).resolve().parents[1]
@@ -60,7 +62,6 @@ ROOT = POC.parents[1]
 EXAMPLE_SCRIPT = ROOT / "packages/fake-model-server/scripts/example.yaml"
 SIDECAR_URL = "http://127.0.0.1:9000"
 """What the connector's config names. Over `uds` the host and port only fill the `Host` header."""
-ROUTE = "big-default"
 GLOSSARY = "glossary: what is SLM?"
 SIMPLIFY = "simplify: the quick brown fox"
 DELTA_COUNTS = (1, 10, 100)
@@ -196,7 +197,7 @@ def ms(seconds: float) -> str:
 
 
 def request_for(text: str, *, data: dict[str, Any] | None = None, n: int = 0) -> Request:
-    request = make_request(text=text, request_id=f"req-measure-{n}")
+    request, _ = request_and_context(text, f"req-measure-{n}")
     return request.model_copy(update={"input": TaskInput(text=text, data=dict(data or {}))})
 
 
@@ -205,12 +206,7 @@ def context_for(request: Request) -> Context:
 
 
 def bundle(connector: EngineConnector) -> PortBundle:
-    return PortBundle(
-        model=ScriptedModel(),
-        engine=connector,
-        config=InMemoryConfig(),
-        telemetry=InMemoryTelemetry(),
-    )
+    return bundle_for(connector, model=ScriptedModel())
 
 
 class CountingTransport(httpx2.AsyncBaseTransport):
