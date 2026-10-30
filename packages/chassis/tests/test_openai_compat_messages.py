@@ -33,11 +33,13 @@ ANTHROPIC_MODULES = sorted(Path(anthropic_compat.__file__).parent.glob("*.py"))
 
 
 def test_the_model_proxy_uses_the_shared_mapping() -> None:
+    """The model proxy reuses the shared message mapping and error class, not copies."""
     assert model_proxy.to_port_message is messages.to_port_message
     assert model_proxy.UnsupportedMessage is messages.UnsupportedMessage
 
 
 def test_the_public_names() -> None:
+    """The shared helpers check emptiness, join text, refuse extras, and map tool calls."""
     assert messages.is_empty(None) and messages.is_empty("") and messages.is_empty([])
     assert not messages.is_empty("x") and not messages.is_empty(0)
     assert messages.text_of(

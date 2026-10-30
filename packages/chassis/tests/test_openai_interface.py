@@ -117,6 +117,7 @@ async def _say(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
 
 
 async def test_complete_through_the_app() -> None:
+    """A plain post gets a ChatCompletion with ids, usage, a request count, and one run span."""
     app = _app()
     async with _client(app) as client, app.router.lifespan_context(app):
         res = await client.post(PATH, json=_body())
@@ -138,6 +139,7 @@ async def test_complete_through_the_app() -> None:
 
 
 async def test_stream_through_the_app() -> None:
+    """A streamed post gets SSE chunks: role, two deltas, a finish with usage, then done."""
     app = _app(FakeEngine(handle=_say))
     async with _client(app) as client, app.router.lifespan_context(app):
         res = await client.post(PATH, json=_body("go", stream=True))
@@ -155,6 +157,7 @@ async def test_stream_through_the_app() -> None:
 
 
 async def test_the_workload_gets_system_and_history_in_data_and_nothing_else() -> None:
+    """The engine sees only the last text plus system and history data, never tuning params."""
     app = _app(FakeEngine(handle=_say))
     body = {
         "model": "echo",
@@ -203,6 +206,7 @@ async def test_an_error_before_any_text_is_an_http_error(
 
 
 async def test_an_error_after_text_is_an_error_frame_when_streamed() -> None:
+    """An error after text is an error frame in a stream and an HTTP 504 in a complete answer."""
     app = _app(FakeEngine(handle=_say))
     async with _client(app) as client, app.router.lifespan_context(app):
         streamed = await client.post(PATH, json=_body("fail-late", stream=True))
@@ -214,39 +218,78 @@ async def test_an_error_after_text_is_an_error_frame_when_streamed() -> None:
     assert complete.status_code == 504 and complete.json()["error"]["code"] == "a2a.timeout"
 
 
-async def test_refused_validation_and_not_ready_are_openai_errors() -> None:
+async def test_openai_route_is_503_not_ready_when_the_app_has_not_started() -> None:
+    """Before startup the route answers 503 `not_ready`, says retry, and never runs the engine."""
     engine = FakeEngine(handle=_say)
     app = _app(engine)
+
     async with _client(app) as client:
-        not_ready = await client.post(PATH, json=_body())
-        async with app.router.lifespan_context(app):
-            wrong_model = await client.post(PATH, json=_body(model="gpt-4o"))
-            refused = await client.post(PATH, json=_body(n=3))
-            bad_role = await client.post(
-                PATH, json={"model": "echo", "messages": [{"role": "bogus", "content": "x"}]}
-            )
-            bad_part = await client.post(
-                PATH,
-                json={"model": "echo", "messages": [{"role": "user", "content": [{"x": 1}]}]},
-            )
-            no_messages = await client.post(PATH, json={"model": "echo"})
-            not_json = await client.post(
-                PATH, content=b"{", headers={"content-type": "application/json"}
-            )
-    assert not_ready.status_code == 503 and not_ready.json()["error"]["code"] == "not_ready"
-    assert not_ready.headers["x-should-retry"] == "true"
-    assert wrong_model.status_code == 404
-    assert wrong_model.json()["error"]["code"] == "model_not_found"
-    assert refused.status_code == 400 and refused.json()["error"]["param"] == "n"
-    for res in (bad_role, bad_part, no_messages, not_json):
-        assert res.status_code == 400, res.text
-        error = res.json()["error"]
-        assert (error["type"], error["code"]) == ("invalid_request_error", "invalid_body")
-        assert res.headers["x-should-retry"] == "false"
+        res = await client.post(PATH, json=_body())
+
+    assert res.status_code == 503 and res.json()["error"]["code"] == "not_ready"
+    assert res.headers["x-should-retry"] == "true"
+    assert engine.runs == 0
+
+
+async def test_openai_route_is_404_model_not_found_when_model_names_another_agent() -> None:
+    """A `model` that is not this agent is 404 `model_not_found`, and the engine never runs."""
+    engine = FakeEngine(handle=_say)
+    app = _app(engine)
+
+    async with _client(app) as client, app.router.lifespan_context(app):
+        res = await client.post(PATH, json=_body(model="gpt-4o"))
+
+    assert res.status_code == 404 and res.json()["error"]["code"] == "model_not_found"
+    assert engine.runs == 0
+
+
+async def test_openai_route_is_400_naming_the_param_when_a_param_is_refused() -> None:
+    """A refused param such as `n` is 400 with the param named, and the engine never runs."""
+    engine = FakeEngine(handle=_say)
+    app = _app(engine)
+
+    async with _client(app) as client, app.router.lifespan_context(app):
+        res = await client.post(PATH, json=_body(n=3))
+
+    assert res.status_code == 400 and res.json()["error"]["param"] == "n"
+    assert engine.runs == 0
+
+
+INVALID_BODIES: list[Any] = [
+    pytest.param(
+        {"json": {"model": "echo", "messages": [{"role": "bogus", "content": "x"}]}}, id="bad role"
+    ),
+    pytest.param(
+        {"json": {"model": "echo", "messages": [{"role": "user", "content": [{"x": 1}]}]}},
+        id="bad part",
+    ),
+    pytest.param({"json": {"model": "echo"}}, id="no messages"),
+    pytest.param(
+        {"content": b"{", "headers": {"content-type": "application/json"}}, id="invalid json"
+    ),
+]
+
+
+@pytest.mark.parametrize("request_kwargs", INVALID_BODIES)
+async def test_openai_route_is_400_invalid_body_when_the_body_is_invalid(
+    request_kwargs: dict[str, Any],
+) -> None:
+    """An invalid body is 400 `invalid_body`, says do not retry, and never runs the engine."""
+    engine = FakeEngine(handle=_say)
+    app = _app(engine)
+
+    async with _client(app) as client, app.router.lifespan_context(app):
+        res = await client.post(PATH, **request_kwargs)
+
+    assert res.status_code == 400, res.text
+    error = res.json()["error"]
+    assert (error["type"], error["code"]) == ("invalid_request_error", "invalid_body")
+    assert res.headers["x-should-retry"] == "false"
     assert engine.runs == 0
 
 
 async def test_ignored_parameters_are_counted_per_name() -> None:
+    """Tuning params and the auth header are counted; user fields are not counted or logged."""
     app = _app()
     body = _body(temperature=0.2, seed=3, user="person", metadata={"k": "v"})
     async with _client(app) as client, app.router.lifespan_context(app):
@@ -264,6 +307,7 @@ async def test_ignored_parameters_are_counted_per_name() -> None:
 
 
 async def test_one_traceparent_twice_at_once_never_conflicts() -> None:
+    """A second call reusing a busy traceparent gets a new trace id instead of a conflict."""
     in_flight = asyncio.Event()
     release = asyncio.Event()
 
@@ -291,6 +335,7 @@ async def test_one_traceparent_twice_at_once_never_conflicts() -> None:
 
 
 async def test_spec_interfaces_openai_false_unmounts_it() -> None:
+    """Turning the OpenAI interface off makes the route 404 and drops it from the OpenAPI spec."""
     off = {**CONFIG, "spec": {**CONFIG["spec"], "interfaces": {"openai": False}}}
     app = _app(config=off)
     async with _client(app) as client, app.router.lifespan_context(app):
@@ -299,6 +344,7 @@ async def test_spec_interfaces_openai_false_unmounts_it() -> None:
 
 
 def test_openapi_declares_the_openai_interface() -> None:
+    """The spec declares the operation, a required body, both reply types, and error shapes."""
     spec = _app().openapi()
     op = spec["paths"][PATH]["post"]
     assert op["operationId"] == "chat_completions"
@@ -321,6 +367,7 @@ def test_openapi_declares_the_openai_interface() -> None:
 
 
 async def test_the_openai_sdk_completes_and_streams() -> None:
+    """The official client gets the text and usage, both complete and streamed with usage on."""
     app = _app()
     async with _sdk(app) as client, app.router.lifespan_context(app):
         completion = await client.chat.completions.create(
@@ -342,6 +389,7 @@ async def test_the_openai_sdk_completes_and_streams() -> None:
 
 
 async def test_the_openai_sdk_reads_the_raw_headers() -> None:
+    """Through the SDK's raw response, the status header and request id are readable."""
     app = _app()
     async with _sdk(app) as client, app.router.lifespan_context(app):
         raw = await client.chat.completions.with_raw_response.create(
@@ -376,6 +424,7 @@ async def test_the_openai_sdk_request_id_is_the_chassis_request_id() -> None:
 async def test_the_sdk_raises_the_right_class_and_does_not_retry_a_final_error(
     stream: bool,
 ) -> None:
+    """A final engine error raises InternalServerError once; the SDK does not retry it."""
     engine = FakeEngine(handle=_say)
     app = _app(engine)
     async with _sdk(app) as client, app.router.lifespan_context(app):
@@ -388,6 +437,7 @@ async def test_the_sdk_raises_the_right_class_and_does_not_retry_a_final_error(
 
 
 async def test_the_sdk_retries_a_retryable_error_as_told() -> None:
+    """A retryable 503 is retried by the SDK once, so the engine runs twice."""
     engine = FakeEngine(handle=_say)
     app = _app(engine)
     async with _sdk(app, max_retries=1) as client, app.router.lifespan_context(app):
@@ -400,6 +450,7 @@ async def test_the_sdk_retries_a_retryable_error_as_told() -> None:
 
 
 async def test_the_sdk_raises_on_a_mid_stream_error_frame() -> None:
+    """An error frame mid-stream raises in the SDK with the public message."""
     app = _app(FakeEngine(handle=_say))
     got: list[str] = []
     async with _sdk(app) as client, app.router.lifespan_context(app):
@@ -447,6 +498,7 @@ async def test_the_sdk_raises_on_a_mid_stream_error_frame() -> None:
 async def test_the_sdk_raises_on_a_refused_request(
     kwargs: dict[str, Any], error: type[openai.APIStatusError], code: str
 ) -> None:
+    """Each refused request raises the matching SDK error with its code; nothing runs."""
     engine = FakeEngine(handle=_say)
     app = _app(engine)
     call: dict[str, Any] = {

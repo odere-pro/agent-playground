@@ -87,12 +87,14 @@ def _minted(value: str) -> bool:
 
 
 def test_ids_from_the_body_win_for_trace_and_request() -> None:
+    """Body ids win for the trace and request, while the idempotency header beats the body key."""
     headers = {"traceparent": TRACEPARENT, "idempotency-key": "hdr-key"}
     got = resolve_ids(headers, request_id="r", trace_id="t", idempotency_key="body-key")
     assert got == ResolvedIds(Ids("r", "t", "hdr-key"), trace_from="body", key_from="header")
 
 
 def test_ids_from_headers_when_the_body_leaves_them_unset() -> None:
+    """With no body ids, the trace and key come from headers; the request id is always minted."""
     got = resolve_ids({"traceparent": TRACEPARENT, "idempotency-key": "hdr-key"})
     assert got.trace_from == "traceparent"
     assert (got.ids.trace_id, got.ids.idempotency_key) == (TRACE, "hdr-key")
@@ -101,6 +103,7 @@ def test_ids_from_headers_when_the_body_leaves_them_unset() -> None:
 
 @pytest.mark.parametrize("traceparent", [None, "", "garbage", f"ff-{TRACE}-00f067aa0ba902b7-01"])
 def test_ids_are_minted_when_nothing_valid_is_given(traceparent: str | None) -> None:
+    """A missing or malformed traceparent and empty body ids give three fresh, distinct ids."""
     headers = {} if traceparent is None else {"traceparent": traceparent}
     got = resolve_ids(headers, request_id="", trace_id="", idempotency_key="")
     assert got.trace_from == "minted"
@@ -109,6 +112,7 @@ def test_ids_are_minted_when_nothing_valid_is_given(traceparent: str | None) -> 
 
 
 def test_body_idempotency_key_is_used_without_the_header() -> None:
+    """With no idempotency header, the key from the body is used."""
     assert resolve_ids({}, idempotency_key="body-key").ids.idempotency_key == "body-key"
 
 
@@ -126,6 +130,7 @@ def test_body_idempotency_key_is_used_without_the_header() -> None:
 def test_only_a_native_body_trace_id_keeps_its_409(
     trace_from: Any, interface: Interface, expected: bool
 ) -> None:
+    """Only a native call whose trace id came from the body may not be reminted."""
     ids = ResolvedIds(Ids("r", "t", "i"), trace_from=trace_from)
     assert may_remint(ids, interface) is expected
 
@@ -135,6 +140,7 @@ def _request(pipeline: RunPipeline, request_id: str, trace_id: str = TRACE) -> R
 
 
 async def test_open_run_remints_once_and_counts_it() -> None:
+    """A busy trace id is reminted for a non-native run and counted; a native one is refused."""
     app = _app()
     async with app.router.lifespan_context(app):
         pipeline: RunPipeline = app.state.pipeline
@@ -177,6 +183,7 @@ class _Source:
 
 
 async def test_hold_peeks_to_the_first_delta_and_continues_the_same_iterator() -> None:
+    """Hold reads up to the first delta, then replays all events once from the same source."""
     events: list[Event] = [
         Start(request_id="r"),
         Metrics(input_tokens=1),
@@ -222,6 +229,7 @@ async def test_hold_stops_at_an_error_before_any_text(events: list[Event], read:
 
 
 async def test_hold_on_end_and_on_a_stream_without_a_terminal_event() -> None:
+    """Hold stops at an end event, and a stream that just stops gives no decider and no error."""
     ended = await hold(_Source([Start(request_id="r"), End()]).gen())
     assert isinstance(ended.decider, End) and ended.error is None
     source = _Source([Start(request_id="r")])
@@ -257,6 +265,7 @@ async def test_held_events_enter_and_leave_the_run_in_one_context() -> None:
 
 
 async def test_aclose_ends_a_held_run_that_was_never_streamed() -> None:
+    """Closing a held run that never streamed closes the source after the events already read."""
     source = _Source([Start(request_id="r"), Delta(text="a"), End()])
     held = await hold(source.gen())
     await held.aclose()
@@ -361,6 +370,7 @@ async def _say(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
 
 
 async def test_serve_complete_and_stream_through_the_adapter() -> None:
+    """Serve answers complete and streamed calls through the adapter, with ids and spans."""
     app = _plain_app(FakeEngine(handle=_say))
     async with _client(app) as client, app.router.lifespan_context(app):
         complete = await client.post("/plain", json={"text": "hi"})
@@ -394,6 +404,7 @@ async def test_serve_complete_and_stream_through_the_adapter() -> None:
 async def test_serve_answers_an_error_before_text_as_http(
     text: str, status: int, should_retry: str, stream: bool
 ) -> None:
+    """An error before any text is an HTTP error in JSON with the retry header, streamed or not."""
     app = _plain_app(FakeEngine(handle=_say))
     async with _client(app) as client, app.router.lifespan_context(app):
         res = await client.post("/plain", json={"text": text, "stream": stream})
@@ -407,6 +418,7 @@ async def test_serve_answers_an_error_before_text_as_http(
 
 
 async def test_serve_error_after_text_is_a_frame_in_stream_and_http_in_complete() -> None:
+    """An error after text is a frame in a stream and an HTTP 504 in a complete answer."""
     app = _plain_app(FakeEngine(handle=_say))
     async with _client(app) as client, app.router.lifespan_context(app):
         streamed = await client.post("/plain", json={"text": "fail-late", "stream": True})
@@ -416,6 +428,7 @@ async def test_serve_error_after_text_is_a_frame_in_stream_and_http_in_complete(
 
 
 async def test_serve_refused_not_ready_and_validation_use_the_adapter() -> None:
+    """Not ready, refused, and invalid calls answer in the adapter's shape; native keeps its 422."""
     engine = FakeEngine(handle=_say)
     app = _plain_app(engine)
     async with _client(app) as client:
@@ -440,6 +453,7 @@ async def test_serve_refused_not_ready_and_validation_use_the_adapter() -> None:
 
 
 async def test_serve_remints_a_header_trace_id_in_use_for_a_non_native_interface() -> None:
+    """A second call with a busy header trace id gets a new id and is counted, not refused."""
     in_flight = asyncio.Event()
     release = asyncio.Event()
 
@@ -468,6 +482,7 @@ async def test_serve_remints_a_header_trace_id_in_use_for_a_non_native_interface
 
 
 async def test_native_run_reads_traceparent_and_idempotency_key_when_the_body_has_none() -> None:
+    """The native route takes trace and key from headers when the body has none."""
     app = _app()
     headers = {"traceparent": TRACEPARENT, "Idempotency-Key": "key-1"}
     body = {"input": {"text": "x"}}
@@ -490,6 +505,7 @@ async def test_native_run_reads_traceparent_and_idempotency_key_when_the_body_ha
 
 
 async def test_native_run_remints_a_traceparent_in_use_but_keeps_409_for_a_body_trace_id() -> None:
+    """A busy header trace id is reminted, while a busy body trace id is 409 `trace_id_in_use`."""
     in_flight = asyncio.Event()
     release = asyncio.Event()
 
@@ -519,6 +535,7 @@ async def test_native_run_remints_a_traceparent_in_use_but_keeps_409_for_a_body_
 
 
 async def test_native_run_labels_telemetry_native() -> None:
+    """Native calls, complete and streamed, are counted and spanned with interface `native`."""
     app = _app()
     async with _client(app) as client, app.router.lifespan_context(app):
         await client.post("/v1/run", json={"input": {"text": "x"}})
@@ -533,6 +550,7 @@ async def test_native_run_labels_telemetry_native() -> None:
 
 
 def test_spec_interfaces_default_on_and_refuse_unknown_keys() -> None:
+    """All three interfaces are on by default, one can be turned off, and an unknown key fails."""
     config = ChassisConfig.model_validate(CONFIG)
     assert config.spec.interfaces.model_dump() == {"openai": True, "anthropic": True, "mcp": True}
     off = {**CONFIG, "spec": {**CONFIG["spec"], "interfaces": {"openai": False}}}
@@ -575,6 +593,7 @@ def test_create_app_serves_run_health_and_ready_when_built_with_defaults() -> No
 
 
 def test_openapi_names_every_operation_and_declares_run_responses() -> None:
+    """Every operation has an explicit id, and the run operation declares its replies and errors."""
     spec = _app().openapi()
     assert spec["openapi"].startswith("3.1")
     ops = {
@@ -613,6 +632,7 @@ def test_openapi_names_every_operation_and_declares_run_responses() -> None:
 
 
 async def test_health_and_ready_bodies_are_unchanged() -> None:
+    """Health says ok, and ready says 503 starting before startup and 200 ready after."""
     app = _app()
     async with _client(app) as client:
         assert (await client.get("/health")).json() == {"status": "ok"}
