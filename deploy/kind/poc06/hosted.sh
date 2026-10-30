@@ -47,6 +47,7 @@
 set -euo pipefail
 
 CONTEXT=kind-poc05
+LOG_PREFIX=hosted-poc06
 PLATFORM=poc05-platform
 AGENTS=poc05-agents
 REMOTE=poc05-remote
@@ -74,9 +75,8 @@ ENGINES=(
 KAGENT_CM=remote-kagent-adk-config
 KAGENT_SELECTOR=app.kubernetes.io/name=remote-kagent-adk
 
-kctl() { kubectl --context "$CONTEXT" "$@"; }
-log() { printf '[hosted-poc06] %s\n' "$*" >&2; }
-die() { log "$*"; exit 1; }
+# shellcheck source=deploy/kind/lib.sh
+source "$HERE/../lib.sh"
 
 [[ $HOSTED_MODEL =~ ^[A-Za-z0-9._/:-]+$ ]] || die "POC06_HOSTED_MODEL has characters outside [A-Za-z0-9._/:-]"
 [[ $REPEAT =~ ^[0-9]+$ ]] || die "POC06_REPEAT must be a number"

@@ -14,6 +14,7 @@ set -euo pipefail
 
 CLUSTER=poc04
 CONTEXT=kind-$CLUSTER
+LOG_PREFIX=kind-poc04
 NS=poc04
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
@@ -25,9 +26,8 @@ IMAGES=(
   agent-platform/echo-typescript:poc04
 )
 
-kctl() { kubectl --context "$CONTEXT" "$@"; }
-log() { printf '[kind-poc04] %s\n' "$*" >&2; }
-die() { log "$*"; exit 1; }
+# shellcheck source=deploy/kind/lib.sh
+source "$HERE/lib.sh"
 
 overlay() {
   local variant=$1 engine=${2:-python}

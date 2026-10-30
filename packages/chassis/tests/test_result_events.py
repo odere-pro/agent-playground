@@ -33,6 +33,7 @@ from chassis.server.results import (
     PUBLISHED,
     ResultPublisher,
     event_id,
+    key_hash,
 )
 from chassis_contracts.events import assert_valid_cloudevent
 from fastapi import FastAPI
@@ -252,3 +253,22 @@ def test_the_event_id_is_fixed_per_run_and_type() -> None:
     assert one != event_id("r2", TASK_COMPLETED)
     assert one != event_id("r1", TASK_FAILED)
     assert one and len(one) == 32
+
+
+@pytest.mark.parametrize("key", ["key-1", "ключ-é-键-🔑"], ids=["ascii", "non_ascii"])
+def test_key_hash_keeps_the_sha256_when_the_key_is_valid_unicode(key: str) -> None:
+    """A key with no lone surrogate hashes as it did under strict UTF-8."""
+    before = hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+    hashed = key_hash(key)
+
+    assert hashed == before
+
+
+def test_key_hash_returns_the_sha256_when_the_key_is_a_lone_surrogate() -> None:
+    """A lone surrogate (valid JSON, invalid UTF-8) is hashed, not raised."""
+    key = "\ud800"
+
+    hashed = key_hash(key)
+
+    assert hashed == hashlib.sha256(b"\xed\xa0\x80").hexdigest()
