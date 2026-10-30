@@ -84,8 +84,8 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
   "slow: takes more than a few seconds (import-lint, subprocesses)",
   "network: needs a real socket; never part of `make test`",
-  "stack: a drill against a running Compose stack; a conftest gates it on an env flag (also `network`)",
   "kind: a drill against a running kind cluster; a conftest gates it on an env flag (also `network`)",
+  "requires_env(variable, *, context=None, hint=''): a drill; also `network`, skips unless the variable is 1, fails if kubectl lacks the context (poc_harness.plugin)",
 ]
 
 [tool.ruff]

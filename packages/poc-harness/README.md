@@ -16,8 +16,14 @@ Test support that more than one PoC folder, or a PoC demo, uses. It replaces the
 | `typescript` | The TypeScript echo as a child process (`typescript_echo`, `typescript_echo_on_unix_sockets`). |
 | `mcp_client` | A plain JSON-RPC MCP client (`mcp_request`, `mcp_session`, `glossary_over_mcp`). |
 | `interfaces` | A real chassis on Unix sockets for one engine and lane (`chassis_on_unix_sockets`), `OutboundRouter`, `ENGINES`, `AGENT`, `LANES`. |
-| `sse` | `sse_frames` (`(event, payload)` pairs) and `sse_data` (payloads alone): thin wrappers over `chassis_contracts.inbound.sse`. |
+| `sse` | `sse_frames` (`(event, payload)` pairs), `sse_data` (payloads alone), and `sse_events` (names optional, non-JSON data kept): thin wrappers over `chassis_contracts.inbound.sse`. |
 | `plain_a2a` | A plain A2A stub agent (no chassis), for the remote connector tests and PoC-6b. |
+| `replicas` | N chassis behind one store (`replicas_on_unix_sockets`, `Replicas`, `replica_config`). |
+| `replica_doubles` | `HarnessModel`, `SeverableState`, `RecordingTaskStore`, `OffsetClock`, and the `SLOW`, `HANG`, `FAIL` prompts. |
+| `replica_calls` | One call through any interface (`call`, `Reply`), `without_created`. |
+| `plugin` | The `requires_env` drill gate, a pytest plugin loaded by entry point. |
+| `drills` | The named marks: `POC04_STACK`, `POC04_KIND`, `POC05_KIND`, `POC06_KIND`. |
+| `waits` | `wait_until` and `wait_until_async`: poll, and fail on timeout. |
 
 ## Use
 

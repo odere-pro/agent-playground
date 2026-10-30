@@ -6,7 +6,7 @@ Exit criteria covered (docs/planning/poc/004-PoC-4-stateless-scalable.md):
   rolling restart." Both drills, for both variants (`native-sidecar`, `prestop`) and both engines
   (`echo-python`, `echo-typescript`), through `deploy/kind/run.sh`.
 
-Every test here is a `kind` drill (poc04_conftest.py marks the whole file `kind` and `network`):
+Every test here is a kind drill (`POC04_KIND` from `poc_harness.drills`, so also `network`):
 skipped unless `POC04_KIND=1`, and never part of the offline gate. They need the cluster up with
 the images loaded first: `deploy/kind/run.sh up native-sidecar` (create, build, load, apply).
 
@@ -29,6 +29,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from poc_harness.drills import POC04_KIND
 
 ROOT = Path(__file__).resolve().parents[3]
 RUN = ROOT / "deploy/kind/run.sh"
@@ -38,7 +39,7 @@ ENGINES = ("python", "typescript")
 ROLLING_S = 90
 SUMMARY = re.compile(r"sent (\d+), ok (\d+), failed (\d+)")
 
-pytestmark = pytest.mark.kind
+pytestmark = POC04_KIND
 
 
 def run(*args: str, timeout_s: float) -> subprocess.CompletedProcess[str]:

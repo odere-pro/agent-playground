@@ -33,3 +33,16 @@ def sse_data(text: str, *, named: bool = True) -> list[Any]:
     events = sse([text])
     assert named or not [e for e in events if e.event is not None], f"named frames in {text!r}"
     return [e.data if e.data == DONE else json.loads(e.data) for e in events if e.data]
+
+
+def sse_events(text: str) -> list[tuple[str | None, Any]]:
+    """`(event name or None, data as JSON, or the raw string when it is not JSON)` per frame with
+    data. For a body that may mix named frames, unnamed frames, and `[DONE]`."""
+    return [(event.event, _json_or_raw(event.data)) for event in sse([text]) if event.data]
+
+
+def _json_or_raw(data: str) -> Any:
+    try:
+        return json.loads(data)
+    except json.JSONDecodeError:
+        return data

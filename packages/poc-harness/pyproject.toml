@@ -14,6 +14,9 @@ dependencies = [
   "uvicorn>=0.30",
 ]
 
+[project.entry-points.pytest11]
+poc_harness = "poc_harness.plugin"
+
 [build-system]
 requires = ["uv_build>=0.8,<0.12"]
 build-backend = "uv_build"
