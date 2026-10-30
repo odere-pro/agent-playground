@@ -38,8 +38,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import pytest
-from poc06_harness import SMOKE
 from poc06b_kind import REMOTES, KindEngine, run_stream
+from poc_harness.bakeoff_tasks import SMOKE
 
 ROUNDS = 2
 DEFAULT_N = 8

@@ -21,7 +21,7 @@ from chassis.core.events import Delta, End, Error, Event, ToolCall
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.ports.bundle import PortBundle
 from chassis_contracts.helpers import make_context, make_request
-from plain_a2a_stub import PlainStub, S, artifact, status, stub_app, task
+from poc_harness.plain_a2a import PlainStub, S, artifact, status, stub_app, task
 from test_remote_connector import REMOTE_URL, RequireBearer
 
 TOKEN_ENV = "POC06_TEST_SCRUB_TOKEN"

@@ -28,9 +28,8 @@ from chassis.core.events import Event, parse_event
 from chassis.ports.engine import EngineConnector
 from fake_model_server import Script
 from fake_model_server import create_app as create_fake_model_app
-from poc02_harness import (
+from poc_harness.engines import (
     EXAMPLE_SCRIPT,
-    ROOT,
     SIMPLIFIED,
     SIMPLIFY,
     TIMEOUT_S,
@@ -47,6 +46,7 @@ from poc02_harness import (
     typescript_echo_on_unix_sockets,
     uds_transport,
 )
+from poc_harness.paths import ROOT
 
 CASES = [
     pytest.param("chassis.core.handle:echo_wire", "hello big world", id="echo"),

@@ -35,7 +35,6 @@ from typing import Any
 
 import httpx
 import httpx2
-import poc05_harness
 import pytest
 import yaml
 from chassis.core.inbound import public_message
@@ -47,11 +46,12 @@ from chassis.server.cli import build_all, parse_args
 from chassis.server.proxy_app import create_proxy_app
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
-from poc05_harness import (
+from poc_harness import sandbox as poc05_harness
+from poc_harness.engines import ROUTE
+from poc_harness.sandbox import (
     HOLD,
     REMOTE_PROXY_URL,
     REPLY,
-    ROUTE,
     HeldRun,
     RemoteLane,
     new_token,

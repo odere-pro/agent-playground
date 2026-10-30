@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import pytest
 from chassis.core.trace import trace_id_hex
-from poc06_harness import ENGINES, LOOKUP, TASKS, Task
-from poc06a_harness import (
+from poc_harness.bakeoff_tasks import ENGINES, LOOKUP, TASKS, Task
+from poc_harness.sidecar_lane import (
     Backends,
     Seen,
     SidecarAddress,

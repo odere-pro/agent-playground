@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-# Installed by `make setup`. The same gate as `make quick`.
+# Installed by `make setup`. A secret scan of the staged files, then the same gate as `make quick`.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
+# Added, copied, or modified files only; NUL-separated so any file name is safe.
+staged=()
+while IFS= read -r -d '' f; do
+  staged+=("$f")
+done < <(git diff --cached --name-only --diff-filter=ACM -z)
+if [ "${#staged[@]}" -gt 0 ]; then
+  uv run detect-secrets-hook --baseline .secrets.baseline "${staged[@]}"
+fi
 make quick

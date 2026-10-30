@@ -25,7 +25,7 @@ import json
 from typing import Any
 
 import pytest
-from poc05_kind import REMOTE_NS, WORKLOAD, kubectl, node_sh, pod
+from poc_harness.kind import REMOTE_NS, WORKLOAD, kubectl, node_sh, pod
 
 REMOTE = "remote-echo"
 SHM_CAP_MIB = 32  # suggested: the remote's /tmp sizeLimit; no /dev/shm cap is set today

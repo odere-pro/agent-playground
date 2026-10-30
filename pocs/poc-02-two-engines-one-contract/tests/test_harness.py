@@ -21,7 +21,7 @@ import httpx
 import httpx2
 import pytest
 from chassis.fakes.tool import default_tools
-from poc02_harness import (
+from poc_harness.engines import (
     MCP_PATH,
     MODEL_URL,
     ROUTE,

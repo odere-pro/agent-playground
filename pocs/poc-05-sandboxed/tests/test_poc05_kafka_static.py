@@ -27,7 +27,7 @@ from typing import Any
 import yaml
 from chassis.core.results import TASK_COMPLETED, TASK_FAILED
 from chassis.server.config import load_config
-from test_poc05_admission_static import _Params, broken_rules
+from poc_harness.admission_policy import _Params, broken_rules
 
 ROOT = Path(__file__).resolve().parents[3]
 POC05 = ROOT / "deploy/kind/poc05"

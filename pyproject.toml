@@ -39,6 +39,7 @@ dev = [
 members = [
   "packages/chassis",
   "packages/contract-suites",
+  "packages/poc-harness",
   "packages/fake-model-server",
   "packages/workloads/echo-python",
   "packages/workload-a2a",
@@ -57,6 +58,7 @@ members = [
 [tool.uv.sources]
 chassis = { workspace = true }
 chassis-contracts = { workspace = true }
+poc-harness = { workspace = true }
 fake-model-server = { workspace = true }
 echo-python = { workspace = true }
 workload-a2a = { workspace = true }
@@ -78,8 +80,8 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
   "slow: takes more than a few seconds (import-lint, subprocesses)",
   "network: needs a real socket; never part of `make test`",
-  "stack: a PoC-4 Compose drill; runs only with POC04_STACK=1 (also `network`)",
-  "kind: a kind drill; PoC-4 runs it only with POC04_KIND=1, PoC-5 only with POC05_KIND=1 (also `network`)",
+  "stack: a drill against a running Compose stack; also `network`; runs only with its gate variable set (POC04_STACK=1)",
+  "kind: a drill against a kind cluster; also `network`; runs only with its gate variable set (POC04_KIND, POC05_KIND, or POC06_KIND =1) and, where named, the kubectl context",
 ]
 
 [tool.ruff]
@@ -100,12 +102,8 @@ files = ["packages", "pocs", "scripts"]
 # `notes/` holds one-off measurement and drill scripts kept as evidence, not maintained code.
 exclude = [
   "docs/planning",
-  "pocs/poc-04-stateless-scalable/tests/conftest\\.py$",
-  "pocs/poc-05-sandboxed/tests/conftest\\.py$",
-  "pocs/poc-06a-bake-off-sidecar-lane/tests/conftest\\.py$",
-  "pocs/poc-06b-bake-off-remote-lane/tests/conftest\\.py$",
-  "pocs/poc-06c-pretrained-slm/tests/conftest\\.py$",
-  "pocs/poc-07-cross-cutting-decisions/tests/conftest\\.py$",
+  # A PoC conftest is a second top-level `conftest` module, which would clash with the chassis one.
+  "pocs/[^/]+/tests/conftest\\.py$",
   "pocs/[^/]+/notes/",
 ]
 plugins = ["pydantic.mypy"]
@@ -129,6 +127,7 @@ root_packages = [
   "code_runner",
   "fake_langfuse",
   "guardrail_server",
+  "poc_harness",
 ]
 include_external_packages = true
 
@@ -181,6 +180,7 @@ forbidden_modules = [
   "code_runner",
   "fake_langfuse",
   "guardrail_server",
+  "poc_harness",
 ]
 # `allow_indirect_imports` stays unset so an indirect import counts too. The connector loads
 # `spec.engine.handle` by dotted path at runtime through `importlib`, which this does not see.

@@ -29,8 +29,8 @@ from chassis.ports.bundle import PortBundle
 from chassis.server.config import EngineSpec
 from chassis_contracts import EngineConnectorContract
 from chassis_contracts.helpers import make_context
-from plain_a2a_stub import ANSWER, USAGE_KEY, PlainStub, kagent_script, stub_app
-from poc05_harness import REMOTE_URL, TOKEN_ENV, Tokens, app_on_socket
+from poc_harness.plain_a2a import ANSWER, USAGE_KEY, PlainStub, kagent_script, stub_app
+from poc_harness.sandbox import REMOTE_URL, TOKEN_ENV, Tokens, app_on_socket
 from workload_a2a.auth import BearerTokenMiddleware
 
 

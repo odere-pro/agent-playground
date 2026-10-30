@@ -24,9 +24,9 @@ import yaml
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from chassis.server.cli import parse_args
 from chassis.server.remote_auth import AUTH_FAILED
-from poc05_harness import (
+from poc_harness.engines import ROUTE
+from poc_harness.sandbox import (
     REPLY,
-    ROUTE,
     TOKEN_ENV,
     RemoteLane,
     Tokens,

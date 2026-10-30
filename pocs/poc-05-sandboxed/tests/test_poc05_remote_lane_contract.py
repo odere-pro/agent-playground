@@ -21,7 +21,7 @@ from typing import ClassVar
 
 import pytest
 from chassis_contracts import LaneContract, LaneFactory
-from poc05_harness import Tokens, inprocess_lane, remote_lane_connector, sidecar_lane
+from poc_harness.sandbox import Tokens, inprocess_lane, remote_lane_connector, sidecar_lane
 
 
 class TestPoc05ThreeLanes(LaneContract):

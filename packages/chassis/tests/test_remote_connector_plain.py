@@ -27,7 +27,7 @@ from chassis.core.events import Delta, End, Error, Event, Metrics, Start
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.ports.bundle import PortBundle
 from chassis_contracts.helpers import make_context, make_request
-from plain_a2a_stub import (
+from poc_harness.plain_a2a import (
     ANSWER,
     CHUNKS,
     KAGENT_USAGE,

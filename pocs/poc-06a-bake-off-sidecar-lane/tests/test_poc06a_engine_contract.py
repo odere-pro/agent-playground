@@ -30,9 +30,9 @@ from chassis.ports.engine import EngineConnector
 from chassis_contracts import EngineConnectorContract
 from chassis_contracts.engine import JSON_VALUES_HANDLE
 from chassis_contracts.helpers import make_request
-from poc02_harness import a2a_on_unix_socket, chassis_app, running
-from poc06_harness import ENGINES, SMOKE
-from poc06a_harness import (
+from poc_harness.bakeoff_tasks import ENGINES, SMOKE
+from poc_harness.engines import a2a_on_unix_socket, chassis_app, running
+from poc_harness.sidecar_lane import (
     Backends,
     SidecarAddress,
     python_engines,

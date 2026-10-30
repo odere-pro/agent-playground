@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
+from poc_harness.workflows import PINNED, SHA256, _runs, _steps, _triggers, _workflow
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github/workflows"
@@ -36,45 +36,18 @@ PYPROJECT = ROOT / "pyproject.toml"
 RUN_SH = ROOT / "deploy/kind/poc05/run.sh"
 INSTALL_GVISOR = ROOT / "deploy/kind/poc05/install-gvisor.sh"
 TESTS = Path(__file__).resolve().parent
-PINNED = re.compile(r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
 REMOTE_TESTS = (
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_lane.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_shm.py",
 )
-SHA256 = re.compile(r"^[0-9a-f]{64}$")
-
-
-def _workflow(path: Path) -> dict[str, Any]:
-    doc = yaml.safe_load(path.read_text())
-    assert isinstance(doc, dict), path
-    # YAML 1.1 reads the bare key `on` as the boolean True.
-    if True in doc:
-        doc["on"] = doc.pop(True)
-    return doc
-
-
-def _steps(doc: dict[str, Any]) -> list[dict[str, Any]]:
-    steps: list[dict[str, Any]] = []
-    for job in doc["jobs"].values():
-        steps.extend(job.get("steps", []))
-    return steps
-
-
-def _runs(doc: dict[str, Any]) -> str:
-    return "\n".join(str(s.get("run", "")) for s in _steps(doc))
 
 
 @pytest.fixture(scope="module")
 def remote_lane() -> dict[str, Any]:
     assert REMOTE_LANE.is_file(), "missing .github/workflows/remote-lane.yml"
     return _workflow(REMOTE_LANE)
-
-
-def _triggers(doc: dict[str, Any]) -> set[str]:
-    triggers = doc["on"]
-    return set(triggers) if isinstance(triggers, (dict, list)) else {triggers}
 
 
 def _job_env(doc: dict[str, Any]) -> dict[str, Any]:

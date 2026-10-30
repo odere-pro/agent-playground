@@ -26,7 +26,6 @@ from collections.abc import Iterator
 import pytest
 from chassis.fakes.events import InMemoryBus
 from chassis.ports.state import InMemoryState
-from poc03_harness import OutboundRouter, patch_outbound
 from poc04_harness import (
     HANG,
     SIMPLIFIED,
@@ -37,6 +36,8 @@ from poc04_harness import (
     call,
     replicas_on_unix_sockets,
 )
+from poc_harness.engines import patch_outbound
+from poc_harness.interfaces import OutboundRouter
 
 LEASE_S = 0.6
 """suggested: short, so the takeover happens well inside the retry's own `timeout_ms`."""

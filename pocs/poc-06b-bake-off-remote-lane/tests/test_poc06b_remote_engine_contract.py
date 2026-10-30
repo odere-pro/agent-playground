@@ -42,8 +42,8 @@ from chassis_contracts.engine import JSON_VALUES_HANDLE
 from chassis_contracts.helpers import make_context, make_request
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
 from fake_model_server import Script, create_app
-from poc05_harness import Tokens, app_on_socket, remote_lane_connector
-from poc06_harness import ENGINES, SMOKE
+from poc_harness.bakeoff_tasks import ENGINES, SMOKE
+from poc_harness.sandbox import Tokens, app_on_socket, remote_lane_connector
 
 SMOLAGENTS_SCRIPT = (
     Path(__file__).resolve().parents[3]

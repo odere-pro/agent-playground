@@ -26,7 +26,7 @@ from typing import Any
 import httpx
 import pytest
 from a2a.client import ClientConfig, ClientFactory
-from poc02_harness import (
+from poc_harness.engines import (
     CHASSIS_PROXY_URL,
     TYPESCRIPT_ECHO,
     TYPESCRIPT_URL,

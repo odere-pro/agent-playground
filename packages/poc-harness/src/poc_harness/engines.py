@@ -56,7 +56,8 @@ from chassis_contracts.helpers import make_context, make_request
 from fake_model_server import Script
 from fake_model_server import create_app as create_fake_model_app
 
-ROOT = Path(__file__).resolve().parents[3]
+from poc_harness.paths import ROOT
+
 POC = ROOT / "pocs/poc-02-two-engines-one-contract"
 EXAMPLE_SCRIPT = ROOT / "packages/fake-model-server/scripts/example.yaml"
 TYPESCRIPT_ECHO = ROOT / "packages/workloads/echo-typescript"

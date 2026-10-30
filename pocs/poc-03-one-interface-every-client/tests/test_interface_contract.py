@@ -38,21 +38,23 @@ from chassis_contracts.interface import LOGICAL, Chassis, ExpectedAnswer, Interf
 from chassis_contracts.recording import CassetteTransport
 from fake_model_server import Script
 from fake_model_server import create_app as create_fake_model_app
-from poc03_harness import (
+from poc_harness.engines import (
+    EXAMPLE_SCRIPT,
+    SIMPLIFIED,
+    SIMPLIFY,
+    patch_outbound,
+    tool_list_failures,
+)
+from poc_harness.interfaces import (
     AGENT,
     CASSETTES,
     ENGINES,
-    EXAMPLE_SCRIPT,
     LANES,
     MODEL_BASE_URL,
     PYTHON_ENGINES,
-    SIMPLIFIED,
-    SIMPLIFY,
     TEST_KEY,
     OutboundRouter,
     chassis_on_unix_sockets,
-    patch_outbound,
-    tool_list_failures,
 )
 
 

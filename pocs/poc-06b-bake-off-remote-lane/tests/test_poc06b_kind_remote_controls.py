@@ -37,7 +37,13 @@ from typing import Any
 
 import pytest
 import yaml
-from poc05_kind import (
+from poc06b_kind import (
+    PYTHONS,
+    REMOTES,
+    KindEngine,
+    probe_in,
+)
+from poc_harness.kind import (
     AGENTS_NS,
     CALLER_IMAGE,
     CALLER_NS,
@@ -57,13 +63,7 @@ from poc05_kind import (
     tcp,
     unpoliced_caller,
 )
-from poc06b_kind import (
-    PYTHONS,
-    REMOTES,
-    KindEngine,
-    probe_in,
-)
-from test_poc05_kind_remote_controls import secret_sources, traceparent
+from poc_harness.remote_controls import secret_sources, traceparent
 
 pytestmark = pytest.mark.kind
 

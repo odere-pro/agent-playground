@@ -37,7 +37,7 @@ from chassis.ports.bundle import PortBundle
 from chassis.server import create_app
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from poc02_harness import (
+from poc_harness.engines import (
     AFTER_TOOL,
     TIMEOUT_S,
     TOOL_PROMPT,

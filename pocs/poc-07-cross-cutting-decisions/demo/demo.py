@@ -4,6 +4,9 @@
     python demo.py evals DIR                       # eval-report.v0 summaries in DIR, side by side
     python demo.py gate --engine echo-langgraph    # sync gate: judge fails, retry, fallback
 
+Run it with the PoC-7 `tests/` folder on `PYTHONPATH` (`demo.sh` sets it): it imports the PoC-7
+harnesses and two test modules from there.
+
 Offline: Unix sockets and ASGI transports only, no key. The fake Langfuse key pair is the
 harness's literal test pair and is never printed.
 """
@@ -14,24 +17,11 @@ import argparse
 import asyncio
 import json
 import logging
-import sys
 import threading
 from pathlib import Path
 from typing import Any
 
-HERE = Path(__file__).resolve().parent
-POCS = HERE.parents[1]
-for _tests in (
-    "poc-02-two-engines-one-contract",
-    "poc-03-one-interface-every-client",
-    "poc-04-stateless-scalable",
-    "poc-05-sandboxed",
-    "poc-06a-bake-off-sidecar-lane",
-    "poc-07-cross-cutting-decisions",
-):
-    sys.path.insert(0, str(POCS / _tests / "tests"))
-
-import pytest  # noqa: E402  (MonkeyPatch only, for the harnesses' hooks)
+import pytest  # MonkeyPatch only, for the harnesses' hooks
 
 CALLER_TRACE = "0af7651916cd43dd8448eb211c80319c"  # pragma: allowlist secret
 CALLER_SPAN = "b7ad6b7169203331"  # pragma: allowlist secret
@@ -88,7 +78,8 @@ async def _trace_and_feedback(engine: str, mp: pytest.MonkeyPatch) -> int:
     from chassis.server.feedback import FEEDBACK_RECEIVED, FeedbackEvents
     from chassis_contracts.events import assert_valid_cloudevent
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-    from poc02_harness import (
+    from poc07_fb_harness import fake_langfuse, langfuse_port
+    from poc_harness.engines import (
         AFTER_TOOL,
         ROUTE,
         TIMEOUT_S,
@@ -98,7 +89,6 @@ async def _trace_and_feedback(engine: str, mp: pytest.MonkeyPatch) -> int:
         route_outbound,
         running,
     )
-    from poc07_fb_harness import fake_langfuse, langfuse_port
     from test_poc07_obs_trace_join import workload_on_uds
     from workload_a2a import telemetry as workload_telemetry
 
@@ -262,8 +252,8 @@ def evals(folder: Path, tool: str, engines: list[str]) -> int:
 
 
 async def _gate(engine: str, mp: pytest.MonkeyPatch) -> int:
-    from poc06_harness import ROUTE
     from poc07_evals_harness import BAD, FALLBACK_ROUTE, GATE_INPUT, GOOD, serve_gate_backends
+    from poc_harness.bakeoff_tasks import ROUTE
     from test_poc07_evals_gate import gated_run, routes
 
     with serve_gate_backends() as backends:

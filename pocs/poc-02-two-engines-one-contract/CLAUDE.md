@@ -5,7 +5,7 @@ Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still appl
 ## What is here
 
 - `README.md`: the question, the scope and exit-criteria checklists with evidence per box, the gate tails, how to run, and the notes index. The source of truth for what this iteration proved.
-- `tests/`: one scenario test per exit criterion, docstring names it. `test_engines.py` (the four engines, the `EnginePort` suite, response shape), `test_lanes.py` (`sidecar` against `inprocess`, the lane suite, the TypeScript twin), `test_tools.py`, `test_run_correlation.py`, `test_boundaries.py` (no framework, no key), `test_compose_sidecar.py`, `test_records.py`. `poc02_harness.py` routes a workload's HTTP back into the chassis app.
+- `tests/`: one scenario test per exit criterion, docstring names it. `test_engines.py` (the four engines, the `EnginePort` suite, response shape), `test_lanes.py` (`sidecar` against `inprocess`, the lane suite, the TypeScript twin), `test_tools.py`, `test_run_correlation.py`, `test_boundaries.py` (no framework, no key), `test_compose_sidecar.py`, `test_records.py`. `packages/poc-harness/src/poc_harness/engines.py` routes a workload's HTTP back into the chassis app.
 - `demo/`: `measure.py` (the measurements script) and `2026-10-01-demo-sidecar.md` (the Compose demo record).
 - `notes/`: the open decisions, the measurements, the debt, and `backlog-changes.md`.
 

@@ -32,7 +32,7 @@ import pytest
 import yaml
 from chassis.core.events import parse_event
 from chassis_contracts.lane import assert_same
-from poc05_kind import AGENTS_NS, CHASSIS, REMOTE_NS, get_json, kubectl, pod
+from poc_harness.kind import AGENTS_NS, CHASSIS, REMOTE_NS, get_json, kubectl, pod
 
 SIDECAR = "agent-echo"
 REMOTE = "chassis-echo-remote"

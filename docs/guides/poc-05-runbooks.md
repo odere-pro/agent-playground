@@ -116,7 +116,7 @@ sandboxwarmpool.extensions.agents.x-k8s.io/code-runner   2       2         45s
 $ kubectl --context kind-poc05 -n poc05-tools get pods -L agents.x-k8s.io/claim-uid
 ```
 
-Settled means: no claim, and every Running pod is Ready and has no `agents.x-k8s.io/claim-uid` label. That is what `warm_pool_ready()` in `poc05_kind.py` waits for.
+Settled means: no claim, and every Running pod is Ready and has no `agents.x-k8s.io/claim-uid` label. That is what `warm_pool_ready()` in `packages/poc-harness/src/poc_harness/kind.py` waits for.
 
 **Cause, one of:**
 

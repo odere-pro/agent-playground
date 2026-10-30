@@ -16,9 +16,8 @@ from pathlib import Path
 
 import pytest
 from chassis.ports.bundle import PortBundle
-from poc02_harness import (
+from poc_harness.engines import (
     AFTER_TOOL,
-    ROOT,
     TIMEOUT_S,
     TOOL_PROMPT,
     ToolLoopModel,
@@ -32,6 +31,7 @@ from poc02_harness import (
     sse_frames,
     tool_list_failures,
 )
+from poc_harness.paths import ROOT
 
 CHASSIS_SRC = ROOT / "packages/chassis/src/chassis"
 WORKLOADS = ROOT / "packages/workloads"

@@ -26,6 +26,9 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 POC="$ROOT/pocs/poc-07-cross-cutting-decisions"
 DEMO_PY="pocs/poc-07-cross-cutting-decisions/demo/demo.py"
+# demo.py imports the PoC-7 test harnesses and two test modules; the shared ones come from the
+# poc-harness package.
+export PYTHONPATH="$POC/tests${PYTHONPATH:+:$PYTHONPATH}"
 OUT=${1:-"$POC/demo/$(date -u +%F)-demo-cross-cutting-offline.md"}
 TMP=$(mktemp -d)
 cleanup() { rm -rf "$TMP"; }

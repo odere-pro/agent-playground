@@ -30,7 +30,6 @@ Run: `deploy/kind/poc06/run.sh test`.
 from __future__ import annotations
 
 import pytest
-from poc06_harness import CHECKS, LOOKUP, Task
 from poc06b_kind import (
     ENGINES,
     TASKS,
@@ -39,6 +38,7 @@ from poc06b_kind import (
     gateway_view,
     run_stream,
 )
+from poc_harness.bakeoff_tasks import CHECKS, LOOKUP, Task
 
 pytestmark = pytest.mark.kind
 

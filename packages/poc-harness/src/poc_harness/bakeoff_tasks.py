@@ -13,14 +13,14 @@ import json
 from collections.abc import AsyncIterator, Callable, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import httpx2
 import jsonschema
 from fake_mcp_server.server import FakeMcpState, create_app
 
-ROOT = Path(__file__).resolve().parents[3]
+from poc_harness.paths import ROOT
+
 BAKEOFF_SCRIPT = ROOT / "packages/fake-model-server/scripts/bakeoff.yaml"
 EVENTS_SCHEMA = json.loads((ROOT / "packages/chassis/schemas/events.v0.json").read_text())
 ROUTE = "big-default"

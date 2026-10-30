@@ -46,7 +46,7 @@ from typing import Any
 
 import pytest
 from chassis.adapters.mcp.gateway import McpGatewayTools
-from poc05_kind import (
+from poc_harness.kind import (
     AGENTS_NS,
     CONTEXT,
     PLATFORM_NS,

@@ -37,7 +37,7 @@ from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.lifecycle import Drain, DrainSettings, QuietServer
 from chassis.server.proxy_app import create_proxy_app
-from poc02_harness import SIDECAR_URL, on_unix_socket
+from poc_harness.engines import SIDECAR_URL, on_unix_socket
 
 ROUTE = "fake-route"
 

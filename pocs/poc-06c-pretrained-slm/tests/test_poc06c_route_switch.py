@@ -31,8 +31,8 @@ from chassis.ports.bundle import PortBundle
 from chassis.ports.engine import EngineConnector, Lane
 from chassis.server import ChassisConfig, create_app
 from chassis.server.config_loader import changed_paths, restart_required
-from poc06_harness import CHECKS, ENGINES, TASKS, Task
-from poc06a_harness import (
+from poc_harness.bakeoff_tasks import CHECKS, ENGINES, TASKS, Task
+from poc_harness.sidecar_lane import (
     Backends,
     SidecarAddress,
     connected,

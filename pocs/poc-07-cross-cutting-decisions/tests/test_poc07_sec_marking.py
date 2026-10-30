@@ -27,9 +27,9 @@ from chassis.ports.state import InMemoryState
 from chassis.server import ChassisConfig, create_app
 from chassis.server.marking import AI_GENERATED_HEADER, DISCLOSURE_HEADER
 from chassis.server.results import ResultPublisher
-from poc02_harness import a2a_on_unix_socket
-from poc06_harness import ENGINES, ROUTE, SMOKE
-from poc06a_harness import Backends, serve_backends, wire_python_engine
+from poc_harness.bakeoff_tasks import ENGINES, ROUTE, SMOKE
+from poc_harness.engines import a2a_on_unix_socket
+from poc_harness.sidecar_lane import Backends, serve_backends, wire_python_engine
 
 ENGINE_NAMES = ("echo-python", "echo-langgraph")
 EMAIL = "jane.doe@example.com"

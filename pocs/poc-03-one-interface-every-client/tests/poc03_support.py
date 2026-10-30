@@ -1,7 +1,8 @@
 """Support for this folder's exit-criteria and Schemathesis tests. Not a test module.
 
 `test_openapi_props.py` and `test_exit_criteria.py` import it. The interface contract binding
-(`test_interfaces.py`) has its own harness (`poc03_harness.py`); nothing here is shared with it.
+(`test_interfaces.py`) has its own harness (`poc_harness.interfaces`); nothing here is shared
+with it.
 
 Two kinds of app, both offline:
 

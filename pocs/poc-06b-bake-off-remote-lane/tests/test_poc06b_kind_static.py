@@ -43,9 +43,9 @@ import pytest
 import yaml
 from chassis.server.config import ChassisConfig, load_config
 from fake_model_server import Script
-from poc06_harness import LOOKUP, SIMPLIFIER, SMOKE
-from test_poc05_admission_static import _Params, broken_rules
-from test_poc05_ci_wiring import PINNED, SHA256, _runs, _steps, _triggers, _workflow
+from poc_harness.admission_policy import _Params, broken_rules
+from poc_harness.bakeoff_tasks import LOOKUP, SIMPLIFIER, SMOKE
+from poc_harness.workflows import PINNED, SHA256, _runs, _steps, _triggers, _workflow
 
 ROOT = Path(__file__).resolve().parents[3]
 POC05 = ROOT / "deploy/kind/poc05"

@@ -19,7 +19,7 @@ from typing import Any
 import httpx
 import pytest
 from chassis.fakes import ScriptedModel
-from poc02_harness import (
+from poc_harness.engines import (
     SIMPLIFY,
     TIMEOUT_S,
     TOOL_PROMPT,

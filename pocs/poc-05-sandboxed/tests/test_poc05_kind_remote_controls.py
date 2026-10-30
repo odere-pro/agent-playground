@@ -33,7 +33,7 @@ from typing import Any
 
 import pytest
 import yaml
-from poc05_kind import (
+from poc_harness.kind import (
     AGENTS_NS,
     CHASSIS,
     NOT_A_KEY,
@@ -54,6 +54,7 @@ from poc05_kind import (
     unpoliced_caller,
     warm_sandboxes,
 )
+from poc_harness.remote_controls import secret_sources, traceparent
 
 REPO = Path(__file__).resolve().parents[3]
 CLUSTER_YAML = REPO / "deploy" / "kind" / "poc05" / "cluster.yaml"
@@ -64,10 +65,6 @@ TOKEN_ENV = "CHASSIS_API_TOKEN"
 TOKEN_SECRET = "remote-echo-token"  # pragma: allowlist secret (a Secret name)
 OUTSIDE_IP = "1.1.1.1"  # a literal public address: no DNS involved
 DISPATCH = "code-runner-dispatch"
-
-
-def traceparent(trace_id: str) -> dict[str, str]:
-    return {"traceparent": f"00-{trace_id}-00f067aa0ba902b7-01"}
 
 
 @pytest.fixture(scope="module")
@@ -381,35 +378,6 @@ def test_h28_remote_runs_on_gvisor_next_to_a_runc_pod(remote: dict[str, Any]) ->
 
 
 # --- One secret: the remote's own token, nothing else ------------------------------------------
-
-
-def secret_sources(spec: dict[str, Any]) -> list[tuple[str, str, str]]:
-    """Every place a pod spec takes a Secret: (container, env name or kind, Secret name)."""
-    found = []
-    containers = [
-        *spec.get("initContainers", []),
-        *spec.get("containers", []),
-        *spec.get("ephemeralContainers", []),
-    ]
-    for c in containers:
-        for e in c.get("env", []):
-            ref = (e.get("valueFrom") or {}).get("secretKeyRef")
-            if ref:
-                found.append((c["name"], e["name"], ref["name"]))
-        found.extend(
-            (c["name"], "envFrom", e["secretRef"]["name"])
-            for e in c.get("envFrom", [])
-            if "secretRef" in e
-        )
-    for v in spec.get("volumes", []):
-        if "secret" in v:
-            found.append(("volume", v["name"], v["secret"]["secretName"]))
-        for source in (v.get("projected") or {}).get("sources", []):
-            if "secret" in source:
-                found.append(("volume", v["name"], source["secret"]["name"]))
-            if "serviceAccountToken" in source:
-                found.append(("volume", v["name"], "serviceAccountToken"))
-    return found
 
 
 def test_remote_holds_one_secret_its_own_token(remote: dict[str, Any]) -> None:

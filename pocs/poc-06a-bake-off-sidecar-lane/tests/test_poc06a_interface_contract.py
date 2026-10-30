@@ -32,20 +32,17 @@ from chassis_contracts.interface import LOGICAL, Chassis, ExpectedAnswer, Interf
 from chassis_contracts.recording import CassetteTransport
 from fake_model_server import Script
 from fake_model_server import create_app as create_fake_model_app
-from poc03_harness import (
+from poc_harness.engines import EXAMPLE_SCRIPT, SIMPLIFIED, SIMPLIFY, patch_outbound
+from poc_harness.interfaces import (
     AGENT,
-    EXAMPLE_SCRIPT,
     LANES,
     MODEL_BASE_URL,
-    SIMPLIFIED,
-    SIMPLIFY,
     TEST_KEY,
     OutboundRouter,
     chassis_on_unix_sockets,
-    patch_outbound,
 )
-from poc03_harness import ENGINES as POC03_ENGINES
-from poc06a_harness import python_engines
+from poc_harness.interfaces import ENGINES as POC03_ENGINES
+from poc_harness.sidecar_lane import python_engines
 
 CASSETTES = Path(__file__).resolve().parent / "cassettes" / "interfaces"
 HANDLES = {name: engine.handle for name, engine in python_engines().items()}

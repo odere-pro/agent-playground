@@ -25,7 +25,7 @@ from chassis_contracts.engine import JSON_VALUES_HANDLE
 from chassis_contracts.helpers import make_request
 from fake_model_server import Script
 from fake_model_server import create_app as create_fake_model_app
-from poc02_harness import (
+from poc_harness.engines import (
     EXAMPLE_SCRIPT,
     SIMPLIFIED,
     SIMPLIFY,

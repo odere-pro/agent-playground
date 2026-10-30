@@ -31,16 +31,8 @@ import pytest
 from chassis.fakes.model import ScriptedModel, ScriptRule
 from chassis.ports.model import ModelChunk, ModelMessage, ModelResult, ToolCallRequest, ToolSpec
 from chassis_contracts.interface import BASE_URL, Chassis
-from poc02_harness import AFTER_TOOL, TOOL_PROMPT
-from poc03_harness import (
-    ENGINES,
-    SIMPLIFIED,
-    SIMPLIFY,
-    TYPESCRIPT,
-    OutboundRouter,
-    chassis_on_unix_sockets,
-    patch_outbound,
-)
+from poc_harness.engines import AFTER_TOOL, SIMPLIFIED, SIMPLIFY, TOOL_PROMPT, patch_outbound
+from poc_harness.interfaces import ENGINES, TYPESCRIPT, OutboundRouter, chassis_on_unix_sockets
 
 LANE = "sidecar"
 HANG = "simplify: HANG until the deadline"

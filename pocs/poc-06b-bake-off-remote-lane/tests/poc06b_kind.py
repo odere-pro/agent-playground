@@ -21,8 +21,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from poc05_kind import AGENTS_NS, CHASSIS, PROBE, REMOTE_NS, WORKLOAD, kubectl
-from poc06_harness import LOOKUP, SIMPLIFIER, SMOKE, Task, Verdict, answer_text
+from poc_harness.bakeoff_tasks import LOOKUP, SIMPLIFIER, SMOKE, Task, Verdict, answer_text
+from poc_harness.kind import AGENTS_NS, CHASSIS, PROBE, REMOTE_NS, WORKLOAD, kubectl
 
 ROOT = Path(__file__).resolve().parents[3]
 GATEWAY_PREFIX = "fake_tools-"

@@ -24,7 +24,8 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from poc05_kind import (
+from poc06b_kind import SIDECARS, KindEngine, probe_in
+from poc_harness.kind import (
     AGENTS_NS,
     CHASSIS,
     CHASSIS_SECRET_ENV,
@@ -40,8 +41,7 @@ from poc05_kind import (
     tcp,
     unpoliced_caller,
 )
-from poc06b_kind import SIDECARS, KindEngine, probe_in
-from test_poc05_kind_sidecar_controls import (
+from poc_harness.sidecar_controls import (
     API_PORT,
     SA_DIR,
     allowed_edge,

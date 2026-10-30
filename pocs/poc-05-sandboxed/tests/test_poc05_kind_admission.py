@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from poc05_kind import get_json
+from poc_harness.kind import get_json
 from test_poc05_admission_static import CAN_I
 from test_poc05_admission_static import DEPLOYER as DEPLOYER_ACCOUNT
 from test_poc05_admission_static import DISPATCHER as DISPATCHER_ACCOUNT

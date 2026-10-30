@@ -38,7 +38,7 @@ import uuid
 from typing import Any
 
 import pytest
-from poc05_kind import (
+from poc_harness.kind import (
     AGENTS_NS,
     CHASSIS,
     NOT_A_KEY,

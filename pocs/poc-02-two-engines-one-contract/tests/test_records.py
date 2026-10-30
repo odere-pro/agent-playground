@@ -10,7 +10,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from poc02_harness import POC, ROOT
+from poc_harness.engines import POC
+from poc_harness.paths import ROOT
 
 NOTES = POC / "notes"
 DATED = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9-]+\.md$")
