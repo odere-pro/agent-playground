@@ -1,5 +1,6 @@
-"""PoC-4 exit criterion 8: "Engines that keep hidden state are listed, with a way to move the
-state out or a note to reject them."
+"""PoC-4 exit criterion 8, in the README's words:
+
+"Engines that keep hidden state are listed, with a way to move the state out or a note to reject them."
 
 This file covers the first clause: it finds the hidden state an engine keeps, by behavior and by
 inspection. The list and the way out for each engine are in `notes/2026-10-01-hidden-state.md`.
@@ -30,7 +31,7 @@ What each engine could keep, and what is checked:
 
 The list, with ways out, is `notes/2026-10-01-hidden-state.md`.
 Offline: Unix sockets only. The TypeScript cell skips when its `node_modules` is absent.
-"""
+"""  # noqa: E501
 
 from __future__ import annotations
 

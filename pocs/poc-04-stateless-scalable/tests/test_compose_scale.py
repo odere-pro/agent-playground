@@ -3,8 +3,14 @@ it needs Docker, the images of `deploy/compose/scale.sh build`, and POC04_STACK=
 brings up project `poc04` and takes it down again. Evidence of the recorded run:
 `notes/2026-10-01-drills.md`.
 
+The README's exit criteria the drills here give evidence for:
+
+- 2: "A repeated call with the same key returns the same result on any replica."
+- 3: "A killed replica loses no request that the client retries."
+- 6: "Stopping a pair under load fails no request in flight: the workload finishes its `handle` calls before it exits."
+
     POC04_STACK=1 uv run pytest pocs/poc-04-stateless-scalable/tests/test_compose_scale.py -v
-"""
+"""  # noqa: E501
 
 from __future__ import annotations
 
@@ -75,8 +81,8 @@ def wait_ready(client: httpx.Client, timeout_s: float = 60) -> None:
 
 @pytest.mark.usefixtures("one_pair")
 def test_smoke_one_run_through_traefik_and_its_replay() -> None:
-    """Criterion 1 (smoke): one `POST /v1/run` through Traefik answers 200, and the same key
-    again is a replay of the same envelope."""
+    """Exit criterion 2, on one pair through Traefik (the smoke run): one `POST /v1/run` answers
+    200, and the same key again is a replay of the same envelope."""
     with httpx.Client(base_url=URL, timeout=30) as client:
         wait_ready(client)
         key = str(uuid.uuid4())
@@ -119,9 +125,9 @@ def run_drill(mode: str, tmp_path: Path) -> dict[str, object]:
 
 
 def test_kill_drill_loses_nothing_and_replays_retried_keys(tmp_path: Path) -> None:
-    """Criteria 2 and 3: SIGKILL one of 2 pairs under retried load; no request is lost, and each
-    retried key sent again returns the same envelope with `Idempotent-Replayed: true` from the
-    surviving replica."""
+    """Exit criteria 2 and 3: SIGKILL one of 2 pairs under retried load; no request is lost, and
+    each retried key sent again returns the same envelope with `Idempotent-Replayed: true` from
+    the surviving replica."""
     report = run_drill("kill", tmp_path)
     assert report["passed"] is True
     assert report["lost"] == 0
@@ -132,7 +138,7 @@ def test_kill_drill_loses_nothing_and_replays_retried_keys(tmp_path: Path) -> No
 
 
 def test_graceful_drill_fails_nothing_without_retry(tmp_path: Path) -> None:
-    """Criterion 6: SIGTERM one of 2 chassis under load with no client retry; zero failures."""
+    """Exit criterion 6, live: SIGTERM one of 2 chassis under load, no client retry; none fail."""
     report = run_drill("graceful", tmp_path)
     assert report["passed"] is True
     load = report["load"]

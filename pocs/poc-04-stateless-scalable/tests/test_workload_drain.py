@@ -1,11 +1,15 @@
-"""Exit criterion 6, workload side: a workload that gets SIGTERM mid-call finishes the call, then
-exits (plan section 6). Each workload runs as a subprocess on a Unix socket, no TCP.
+"""PoC-4 exit criterion 6, in the README's words:
+
+"Stopping a pair under load fails no request in flight: the workload finishes its `handle` calls before it exits."
+
+This file covers the workload half: a workload that gets SIGTERM mid-call finishes the call,
+then exits (plan section 6). Each workload runs as a subprocess on a Unix socket, no TCP.
 
 - `workload_a2a` (`workload-a2a serve --drain-timeout-s`) serves a slow handle defined in the
   subprocess itself (`--handle __main__:slow`).
 - The TypeScript echo (`node dist/src/main.js`) calls a model on another Unix socket that stalls
   mid-stream, so its call is in flight when SIGTERM lands.
-"""
+"""  # noqa: E501
 
 from __future__ import annotations
 
@@ -144,6 +148,7 @@ async def _sigterm_mid_call(
 
 
 async def test_workload_a2a_finishes_in_flight_handle_on_sigterm(folder: Path) -> None:
+    """Exit criterion 6, workload half: the A2A template finishes its call, then exits 0."""
     uds, marker = folder / "a2a.sock", folder / "started"
     cmd = [sys.executable, "-c", SLOW_WORKLOAD, "serve", "--handle", "__main__:slow"]
     cmd += ["--uds", str(uds), "--drain-timeout-s", "10", "--log-level", "warning"]
@@ -219,6 +224,7 @@ def _typescript(folder: Path, model_uds: str, drain_ms: int) -> tuple[Any, Path]
 
 
 async def test_typescript_workload_finishes_in_flight_handle_on_sigterm(folder: Path) -> None:
+    """Exit criterion 6, workload half: the TypeScript echo finishes its call, then exits 0."""
     model = _StallingModel(HOLD_S)
     with on_unix_socket(model, "model.sock") as model_uds:
         proc, uds = _typescript(folder, model_uds, drain_ms=10_000)
@@ -235,6 +241,7 @@ async def test_typescript_workload_finishes_in_flight_handle_on_sigterm(folder: 
 async def test_typescript_workload_exits_1_when_a_call_outlives_the_drain_timeout(
     folder: Path,
 ) -> None:
+    """Exit criterion 6, its limit: past the drain timeout the TypeScript echo exits 1."""
     model = _StallingModel(hold_s=30)
     with on_unix_socket(model, "model.sock") as model_uds:
         proc, uds = _typescript(folder, model_uds, drain_ms=300)

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any
 
@@ -217,8 +217,59 @@ async def test_disabled_means_no_check() -> None:
     assert _engine(app).runs == 2 and state.calls == []
 
 
-@pytest.mark.parametrize("interface", INTERFACES)
-async def test_same_key_other_input_is_422(interface: str) -> None:
+Shape = Callable[[httpx.Response], dict[str, Any]]
+"""What one interface's refusal says, read from its body and headers."""
+
+CONFLICT_SHAPES = [
+    pytest.param(
+        "native",
+        lambda r: {
+            "code": r.json()["detail"]["code"],
+            "has a message": bool(r.json()["detail"]["message"]),
+        },
+        {"code": "idempotency_conflict", "has a message": True},
+        id="native",
+    ),
+    pytest.param(
+        "openai",
+        lambda r: {
+            "code": r.json()["error"]["code"],
+            "type": r.json()["error"]["type"],
+            "x-should-retry": r.headers.get("x-should-retry"),
+        },
+        {
+            "code": "idempotency_conflict",
+            "type": "invalid_request_error",
+            "x-should-retry": "false",
+        },
+        id="openai",
+    ),
+    pytest.param(
+        "anthropic",
+        lambda r: {
+            "type": r.json()["error"]["type"],
+            "message names the code": r.json()["error"]["message"].startswith(
+                "idempotency_conflict"
+            ),
+            "x-should-retry": r.headers.get("x-should-retry"),
+        },
+        {
+            "type": "invalid_request_error",
+            "message names the code": True,
+            "x-should-retry": "false",
+        },
+        id="anthropic",
+    ),
+]
+"""Per interface: how to read its 422 `idempotency_conflict`, and what it must say."""
+
+
+@pytest.mark.parametrize(("interface", "shape", "expected"), CONFLICT_SHAPES)
+async def test_same_key_other_input_is_422(
+    interface: str, shape: Shape, expected: dict[str, Any]
+) -> None:
+    """The same key with another input on the other replica is 422 `idempotency_conflict`, in
+    this interface's error shape, and runs nothing."""
     state = InMemoryState()
     first, second = _app(state), _app(state)
     headers = {"Idempotency-Key": KEY}
@@ -229,18 +280,7 @@ async def test_same_key_other_input_is_422(interface: str) -> None:
         res = await two.post(path, json=body, headers=headers)
     assert res.status_code == 422, res.text
     assert REPLAYED not in res.headers
-    data = res.json()
-    if interface == "native":
-        assert data["detail"]["code"] == "idempotency_conflict"
-        assert data["detail"]["message"]
-    elif interface == "openai":
-        assert data["error"]["code"] == "idempotency_conflict"
-        assert data["error"]["type"] == "invalid_request_error"
-        assert res.headers["x-should-retry"] == "false"
-    else:
-        assert data["error"]["type"] == "invalid_request_error"
-        assert data["error"]["message"].startswith("idempotency_conflict")
-        assert res.headers["x-should-retry"] == "false"
+    assert shape(res) == expected, res.text
     assert _engine(second).runs == 0
 
 
@@ -270,8 +310,38 @@ class _BrokenState(InMemoryState):
         raise StateUnavailable("down")
 
 
-@pytest.mark.parametrize("interface", INTERFACES)
-async def test_state_unavailable_is_503_for_a_keyed_call(interface: str) -> None:
+UNAVAILABLE_SHAPES = [
+    pytest.param(
+        "native",
+        lambda r: {"detail is text": isinstance(r.json()["detail"], str)},
+        {"detail is text": True},
+        id="native",
+    ),
+    pytest.param(
+        "openai",
+        lambda r: {
+            "type": r.json()["error"]["type"],
+            "x-should-retry": r.headers.get("x-should-retry"),
+        },
+        {"type": "server_error", "x-should-retry": "true"},
+        id="openai",
+    ),
+    pytest.param(
+        "anthropic",
+        lambda r: {"type": r.json()["error"]["type"]},
+        {"type": "overloaded_error"},
+        id="anthropic",
+    ),
+]
+"""Per interface: how to read its 503 `state_unavailable`, and what it must say."""
+
+
+@pytest.mark.parametrize(("interface", "shape", "expected"), UNAVAILABLE_SHAPES)
+async def test_state_unavailable_is_503_for_a_keyed_call(
+    interface: str, shape: Shape, expected: dict[str, Any]
+) -> None:
+    """A failing store refuses a keyed call with 503 in this interface's error shape; a call
+    with no key still runs."""
     app = _app(_BrokenState())
     path, body = _call(interface)
     async with _clients(app) as (client,):
@@ -279,14 +349,7 @@ async def test_state_unavailable_is_503_for_a_keyed_call(interface: str) -> None
         plain = await client.post(path, json=body)
     assert keyed.status_code == 503, keyed.text
     assert plain.status_code == 200
-    data = keyed.json()
-    if interface == "native":
-        assert isinstance(data["detail"], str)
-    elif interface == "openai":
-        assert data["error"]["type"] == "server_error"
-        assert keyed.headers["x-should-retry"] == "true"
-    else:
-        assert data["error"]["type"] == "overloaded_error"
+    assert shape(keyed) == expected, keyed.text
     assert _engine(app).runs == 1
 
 
@@ -514,18 +577,47 @@ class _CutOff:
         return call
 
 
-@pytest.mark.parametrize(
-    ("interface", "stream"), [("native", False), ("native", True), ("openai", True)]
-)
-async def test_a_replica_cut_off_from_the_store_is_fenced_and_one_result_is_kept(
-    interface: str, stream: bool
-) -> None:
+class CutOffRun:
+    """What happened when replica A was cut off from the store mid-run and B retried the key."""
+
+    def __init__(self) -> None:
+        self.lease_s = 0.0
+        self.fenced_after_s = 0.0
+        self.cancelled: list[bool] = []
+        self.answer_a: Any = None
+        self.answer_b: Any = None
+        self.again_a: Any = None
+        self.runs: tuple[int, int] = (0, 0)
+        self.published: list[Any] = []
+        self.entry: dict[str, Any] = {}
+
+
+async def _fence_replica_a(
+    first: FastAPI, view: _CutOff, clock: _FakeClock, ticker: _Ticker
+) -> float:
+    """Cut replica A off and step its renew ticker until A fences itself. Returns the store time
+    that passed."""
+    view.cut = True
+    start = clock.now
+    for _ in range(10):
+        if _telemetry(first).counter_value("chassis.idempotency.fenced"):
+            break
+        clock.now += ticker.waits[-1]
+        ticker.ticks.put_nowait(None)
+        for _ in range(5):
+            await asyncio.sleep(0)
+    return clock.now - start
+
+
+async def _cut_off_run(interface: str, stream: bool) -> CutOffRun:
+    """Replica A runs a keyed call that never ends; A is cut off from the store and fences itself;
+    once A's lease ends, replica B runs the key, and A is asked again."""
+    run = CutOffRun()
     clock, ticker = _FakeClock(), _Ticker()
     shared = InMemoryState(clock=clock)
     view = _CutOff(shared)
     bus = InMemoryBus()
     started = asyncio.Event()
-    cancelled: list[bool] = []
 
     async def stuck(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
         yield Start(request_id=ctx.request_id)
@@ -533,7 +625,7 @@ async def test_a_replica_cut_off_from_the_store_is_fenced_and_one_result_is_kept
         try:
             await asyncio.Event().wait()
         except asyncio.CancelledError:
-            cancelled.append(True)
+            run.cancelled.append(True)
             raise
         yield End(output={"text": "never"})
 
@@ -558,6 +650,7 @@ async def test_a_replica_cut_off_from_the_store_is_fenced_and_one_result_is_kept
     headers = {"Idempotency-Key": KEY}
     async with _clients(first, second) as (one, two):
         spec = config.spec.idempotency
+        run.lease_s = spec.lease_s
         first.state.pipeline._idempotency = Idempotency(
             view,
             spec,
@@ -579,43 +672,109 @@ async def test_a_replica_cut_off_from_the_store_is_fenced_and_one_result_is_kept
         call_a = asyncio.create_task(one.post(path, json=body, headers=headers))
         await asyncio.wait_for(started.wait(), 2)
         await asyncio.sleep(0)
-        view.cut = True
-        start = clock.now
-        for _ in range(10):
-            if _telemetry(first).counter_value("chassis.idempotency.fenced"):
-                break
-            clock.now += ticker.waits[-1]
-            ticker.ticks.put_nowait(None)
-            for _ in range(5):
-                await asyncio.sleep(0)
-        assert clock.now - start < spec.lease_s  # fenced before the lease can pass on
-        answer_a = await asyncio.wait_for(call_a, 2)
+        run.fenced_after_s = await _fence_replica_a(first, view, clock, ticker)
+        run.answer_a = await asyncio.wait_for(call_a, 2)
 
         clock.now += spec.lease_s  # the store lease of replica A ends
         view.cut = False
-        answer_b = await two.post(path, json=body, headers=headers)
-        again_a = await one.post(path, json=body, headers=headers)
+        run.answer_b = await two.post(path, json=body, headers=headers)
+        run.again_a = await one.post(path, json=body, headers=headers)
 
-    assert cancelled == [True]
-    if stream and interface == "native":
-        assert answer_a.status_code == 200
-        frames = _frames(answer_a.text)
-        errors = [f for f in frames if f.get("type") == "error"]
-        assert [(e["code"], e["retryable"]) for e in errors] == [("idempotency_in_progress", True)]
-        assert frames[-1]["status"] == "error"
-    else:
-        assert answer_a.status_code == 409, answer_a.text
-        if interface == "native":
-            assert answer_a.json()["detail"]["code"] == "idempotency_in_progress"
-        else:
-            assert answer_a.headers["x-should-retry"] == "true"
-    assert answer_b.status_code == 200 and REPLAYED not in answer_b.headers
-    assert again_a.status_code == 200 and again_a.headers[REPLAYED] == "true"
-    assert _engine(first).runs == 1 and _engine(second).runs == 1
-    assert len(bus.published) == 1  # only replica B's run is reported
-    entry = json.loads(await shared.get(store_key(AGENT, KEY)) or b"")
-    assert entry["state"] == "done"
-    assert entry["request"]["request_id"] == bus.published[0][1].subject
+    run.runs = (_engine(first).runs, _engine(second).runs)
+    run.published = list(bus.published)
+    run.entry = json.loads(await shared.get(store_key(AGENT, KEY)) or b"")
+    return run
+
+
+CUT_OFF_CASES = [
+    pytest.param(("native", False), id="native-complete"),
+    pytest.param(("native", True), id="native-stream"),
+    pytest.param(("openai", True), id="openai-stream"),
+]
+"""The interfaces and modes the cut-off case runs in."""
+
+
+@pytest.fixture(params=CUT_OFF_CASES)
+async def cut_off(request: pytest.FixtureRequest) -> CutOffRun:
+    """One cut-off run in the interface and mode of `request.param`."""
+    interface, stream = request.param
+    return await _cut_off_run(interface, stream)
+
+
+def _native_complete_fence(res: httpx.Response) -> dict[str, Any]:
+    return {"status": res.status_code, "code": res.json()["detail"]["code"]}
+
+
+def _native_stream_fence(res: httpx.Response) -> dict[str, Any]:
+    frames = _frames(res.text)
+    errors = [f for f in frames if f.get("type") == "error"]
+    return {
+        "status": res.status_code,
+        "errors": [(e["code"], e["retryable"]) for e in errors],
+        "last status": frames[-1]["status"],
+    }
+
+
+def _openai_fence(res: httpx.Response) -> dict[str, Any]:
+    return {"status": res.status_code, "x-should-retry": res.headers.get("x-should-retry")}
+
+
+FENCE_SHAPES = [
+    pytest.param(
+        ("native", False),
+        _native_complete_fence,
+        {"status": 409, "code": "idempotency_in_progress"},
+        id="native-complete",
+    ),
+    pytest.param(
+        ("native", True),
+        _native_stream_fence,
+        {"status": 200, "errors": [("idempotency_in_progress", True)], "last status": "error"},
+        id="native-stream",
+    ),
+    pytest.param(
+        ("openai", True),
+        _openai_fence,
+        {"status": 409, "x-should-retry": "true"},
+        id="openai-stream",
+    ),
+]
+"""Per case: how to read replica A's fenced answer, and what it must say. A native stream has
+already sent 200, so it ends with a retryable error frame instead."""
+
+
+async def test_a_cut_off_replica_fences_itself_before_its_lease_can_pass_on(
+    cut_off: CutOffRun,
+) -> None:
+    """Replica A, cut off from the store mid-run, cancels its run before the lease ends."""
+    assert cut_off.fenced_after_s < cut_off.lease_s
+    assert cut_off.cancelled == [True]
+
+
+@pytest.mark.parametrize(("cut_off", "shape", "expected"), FENCE_SHAPES, indirect=["cut_off"])
+async def test_a_cut_off_replica_answers_retryable_in_progress_when_it_fences(
+    cut_off: CutOffRun, shape: Shape, expected: dict[str, Any]
+) -> None:
+    """Replica A's client gets `idempotency_in_progress`, retryable, in its interface's shape."""
+    assert shape(cut_off.answer_a) == expected, cut_off.answer_a.text
+
+
+async def test_the_other_replica_takes_the_key_over_when_a_fenced_lease_ends(
+    cut_off: CutOffRun,
+) -> None:
+    """Replica B runs the key once A's lease ends; A asked again replays B's result."""
+    assert cut_off.answer_b.status_code == 200 and REPLAYED not in cut_off.answer_b.headers
+    assert cut_off.again_a.status_code == 200 and cut_off.again_a.headers[REPLAYED] == "true"
+    assert cut_off.runs == (1, 1)
+
+
+async def test_only_the_takeover_result_is_kept_and_published_when_a_replica_was_fenced(
+    cut_off: CutOffRun,
+) -> None:
+    """One result event, from B's run, and the store keeps B's finished result."""
+    assert len(cut_off.published) == 1  # only replica B's run is reported
+    assert cut_off.entry["state"] == "done"
+    assert cut_off.entry["request"]["request_id"] == cut_off.published[0][1].subject
 
 
 async def test_a_takeover_after_a_wait_runs_with_the_budget_left() -> None:
