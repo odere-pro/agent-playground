@@ -1,0 +1,65 @@
+# PoC-9 exit criterion 5 (docs/planning/poc/009-PoC-9-agent-mvp-template.md; backlog 024 CH-3):
+# "The library chart renders a pod with both containers, secrets in the chassis container only,
+# and the Service on the chassis port."
+#
+# What it runs: `helm lint` and `helm template` on deploy/helm/example-agent (which
+# includes deploy/helm/agent-lib), through pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py
+# under the offline gate (scripts/check_offline.sh: no socket, no key). The test skips when helm
+# is not on PATH; here POC09_HELM_REQUIRED=1 turns that skip into a failure.
+#
+# Trigger: push, pull_request, and workflow_dispatch. Never pull_request_target. No secret is used.
+# helm is pinned by version and by a sha256 in the job env, read once from the project's published
+# sha256 file; the job never fetches a sum from the same release. It goes first on PATH, ahead of
+# the runner's preinstalled helm, and the step checks the version it got.
+# HELM_SHA256 was read on 2026-10-30 from get.helm.sh and matches the v3.19.0 GitHub release notes.
+# An empty or malformed sum fails the install step closed; it never installs an unchecked binary.
+name: poc09-helm
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  poc09-helm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HELM_VERSION: v3.19.0
+      # From https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz.sha256sum
+      HELM_SHA256: a7f81ce08007091b86d8bd696eb4d86b8d0f2e1b9f6c714be62f82f96a594496
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@887a942a15af3a7626099df99e897a18d9e5ab3a # v5.1.0
+        with:
+          version: "0.11.23"
+          # No uv cache on pull_request: PR code cannot poison what a push run restores.
+          enable-cache: ${{ github.event_name != 'pull_request' }}
+      - name: Install helm
+        run: |
+          set -euo pipefail
+          [[ ${HELM_SHA256} =~ ^[0-9a-f]{64}$ ]] ||
+            { echo "::error::HELM_SHA256 is not pinned; refusing to install helm"; exit 1; }
+          tarball="helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          mkdir -p "$RUNNER_TEMP/helm/bin"
+          cd "$RUNNER_TEMP/helm"
+          curl -fsSLo "$tarball" "https://get.helm.sh/${tarball}"
+          echo "${HELM_SHA256}  ${tarball}" | sha256sum -c -
+          tar -xzf "$tarball" linux-amd64/helm
+          install -m 0755 linux-amd64/helm bin/helm
+          echo "$RUNNER_TEMP/helm/bin" >> "$GITHUB_PATH"
+          bin/helm version --short | grep -F "${HELM_VERSION}+"
+      - name: Sync
+        run: uv sync --all-packages --locked
+      - name: Chart tests
+        env:
+          POC09_HELM_REQUIRED: "1"
+        run: |
+          set -euo pipefail
+          command -v helm
+          scripts/check_offline.sh -v -rs pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py

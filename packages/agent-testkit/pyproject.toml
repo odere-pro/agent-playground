@@ -1,0 +1,20 @@
+[project]
+name = "agent-testkit"
+version = "0.1.0"
+description = "The test fixture kit for business logic authors: starts the workload and the chassis (fake profile) as separate processes and runs the lane contract over A2A; never imports the chassis (PoC-9)"
+requires-python = ">=3.12,<3.13"
+# Only what a workload's environment may hold. Not `chassis`, not `chassis-contracts` (it pulls in
+# `chassis`): the chassis runs from its own environment, started by `uv` (see README).
+dependencies = [
+  "workload-a2a",
+  "a2a-sdk[http-server]>=1.2,<2",
+  "httpx>=0.28",
+  "pytest>=8.4",
+]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "agent_testkit"

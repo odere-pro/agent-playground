@@ -1,0 +1,77 @@
+{%- set platform = platform_path if platform_path.startswith('/') else '../../' ~ platform_path -%}
+# deploy/compose
+
+`{{ agent_name }}` on your machine: the chassis and the workload as two containers, in the `sidecar` lane, with a debugger in each. One file, `docker-compose.yaml`, two profiles.
+
+| Profile | Chassis config | Model | Keys |
+| ------- | -------------- | ----- | ---- |
+| `fake` | `config/fake.yaml` | the platform's scripted fake model server | none |
+| `local` | `config/agent.yaml` | your LiteLLM (or another OpenAI-compatible endpoint) at `LITELLM_BASE_URL` | `LITELLM_API_KEY`, chassis container only |
+
+Both profiles run the same services:
+
+| Service | What | Published on the host |
+| ------- | ---- | --------------------- |
+| `chassis-<profile>` | the pinned chassis image; owns the network namespace and the public port | `127.0.0.1:8080` (app), `127.0.0.1:5678` (chassis debugger), `127.0.0.1:5679` (workload debugger) |
+| `workload-<profile>` | your `handle`, built from the root `Dockerfile`; A2A on `127.0.0.1:9000` inside the namespace | nothing |
+| `debugpy` | one shot: fills the debug volume, then exits | nothing |
+| `fake-model-server` (`fake` only) | scripted model answers | nothing |
+
+## Run
+
+From the repo root:
+
+```bash
+dc() { docker compose -f deploy/compose/docker-compose.yaml "$@"; }   # bash and zsh
+
+# Offline: no key, no internet once the images exist.
+dc --profile fake up -d --wait --build
+curl -s 127.0.0.1:8080/ready
+curl -s -X POST 127.0.0.1:8080/v1/run -H 'content-type: application/json' \
+  -d '{"input": {"text": "hello"}}'
+dc --profile fake down
+
+# Real models through your LiteLLM. The key reaches the chassis container only.
+export LITELLM_BASE_URL=http://host.docker.internal:4000/v1   # Docker Desktop; on Linux, a reachable address
+read -rs LITELLM_API_KEY && export LITELLM_API_KEY             # typed, not stored in a file
+dc --profile local up -d --wait --build
+dc --profile local down
+```
+
+Swap the workload after a code change: `dc --profile fake up -d --wait --build --force-recreate chassis-fake workload-fake`. Recreate both: a restarted chassis gets a new network namespace and the old workload is cut off. There is no restart policy for that reason.
+
+## Images
+
+- The chassis: `CHASSIS_IMAGE`, default `agent-platform/chassis:poc09`. suggested: set it to the released `name:tag@sha256:<digest>`. Until a release exists, build it from the platform checkout:
+  `docker build -f {{ platform_path }}/packages/chassis/Dockerfile -t agent-platform/chassis:poc09 {{ platform_path }}`
+- The fake model server: built from `{{ platform }}` (relative to this folder) by `--build`.
+- The workload: built from the root `Dockerfile` by `--build`, tagged `{{ agent_name }}:dev`.
+- debugpy: `debug/debugpy.Dockerfile`, the platform's pinned python base, debugpy pinned by hash in `debug/requirements.txt`.
+
+## Debuggers
+
+The `debugpy` service copies debugpy and `debug/sitecustomize.py` into the volume `{{ agent_name }}-debugpy-1.8.22`. The chassis and the workload mount it read-only and set `PYTHONPATH=/opt/debugpy`. The hook starts debugpy in PID 1 only, the service process; healthchecks and debugpy's own adapter skip it. Neither image changes.
+
+| Variable | Default | Meaning |
+| -------- | ------- | ------- |
+| `CHASSIS_DEBUGPY_LISTEN` | `auto:5678` in `fake`, empty (off) in `local` | `auto:<port>` listens on the container address; empty turns it off |
+| `WORKLOAD_DEBUGPY_LISTEN` | `auto:5679` | the same, for the workload; set it empty to turn it off |
+| `CHASSIS_DEBUGPY_WAIT`, `WORKLOAD_DEBUGPY_WAIT` | `0` | `1` blocks the process until a client attaches |
+| `CHASSIS_PORT`, `CHASSIS_DEBUG_PORT`, `WORKLOAD_DEBUG_PORT` | `8080`, `5678`, `5679` | host ports, always on `127.0.0.1` |
+
+Attach from VS Code: open the repo, Run and Debug, pick "Attach: chassis", "Attach: workload", or "Attach: chassis + workload" (`.vscode/launch.json`). VS Code needs the Python Debugger extension (`ms-python.debugpy`). The path mappings point the chassis at `{{ platform_path }}/packages/chassis/src` and the workload at `src/`. To stop on the first line of a request, set a breakpoint in your `handle` and send a `/v1/run`. To debug start-up, set `*_DEBUGPY_WAIT=1`; with the workload waiting, the chassis stays `starting` until you attach (up to 120 s).
+
+Who can reach a debugger. debugpy has no authentication: whoever connects runs code in that process.
+
+- The host publishes both ports on `127.0.0.1` only.
+- Every container on the Compose network reaches both, through the chassis's address.
+- The workload shares the chassis's namespace, so it reaches the chassis's debugger. In `fake` that holds no key, so it is on. In `local` it would hand the workload `LITELLM_API_KEY`, so it is off by default. Turn it on (`CHASSIS_DEBUGPY_LISTEN=auto:5678`) only with a workload you trust, and never with a shared or production key.
+
+## Keys and network
+
+- `LITELLM_API_KEY` is set on `chassis-local` only, from your shell or an untracked `deploy/compose/.env`. No service has `env_file`. No workload variable names a key, token, secret, or password.
+- The workload's environment is the four platform variables (`CHASSIS_MODEL_URL`, `CHASSIS_TOOL_URL`, `HOST`, `PORT`) and the two debugger variables.
+- Every container drops all capabilities, sets `no-new-privileges`, and has a read-only root with a tmpfs `/tmp`. The chassis runs as `10001:10001`, the workload as `10002:10002`, the fake model server as `10004:10004` (the platform's uid table).
+- Egress is not enforced here. A Compose network has open egress, and `internal: true` would also drop the published ports. In `local`, the workload can reach `host.docker.internal` without the chassis, for example an unauthenticated local model server. The deny-all egress rule is the Kubernetes NetworkPolicy of the Helm chart. Compose is never the boundary for untrusted code: untrusted workloads run in the `remote` lane.
+
+The rules come from the platform's `deploy/compose/SECURITY.md`, sections 1 to 3 and 6, and ADR-001.

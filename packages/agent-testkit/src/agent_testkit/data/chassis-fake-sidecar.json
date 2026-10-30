@@ -1,0 +1,14 @@
+{
+  "profile": "fake",
+  "agent": {"name": "set-by-the-kit", "version": "0.0.0"},
+  "spec": {
+    "adapters": {"model": "fake", "config": "memory", "telemetry": "memory"},
+    "engine": {
+      "connector": "sidecar",
+      "url": "http://127.0.0.1:9000",
+      "uds": "set-by-the-kit"
+    },
+    "model": {"route": "fake-route"},
+    "prompt": {"version": "testkit-v1"}
+  }
+}

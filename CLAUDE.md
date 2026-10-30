@@ -15,6 +15,8 @@ The service chassis for the SLM agent platform, and the nine PoC iterations that
 - `packages/workloads` what runs behind the chassis, one folder per workload (PoC-6 adds `echo-openai-agents`, `echo-smolagents`, `echo-claude-agent`).
 - `packages/bakeoff` the PoC-6 bake-off kit: `python -m bakeoff smoke|run`, one `/v1/run` per engine, lane, and task.
 - `packages/workload-a2a` the template A2A server a Python workload ships with; never imports `chassis` (ADR-002).
+- `packages/agentctl` the PoC-9 agent factory: `agentctl new` renders the service template (Copier) into a new repo pinned to the platform.
+- `packages/agent-testkit` the PoC-9 fixture kit: runs the chassis in the `fake` profile as its own process and the lane contract over A2A; never imports `chassis`.
 - `packages/guardrail-server` the injection and secret check behind LiteLLM's guardrail API (PoC-7). Prompt Guard 2, or a pattern stand-in offline; plus a LiteLLM stub.
 - `packages/fake-langfuse` a fake of the Langfuse scores and OTLP routes for offline tests (PoC-7).
 - `evals/` the eval tool configs run on the golden set: `deepeval/` (the CI pick) and `promptfoo/` (PoC-7 trial).
@@ -24,11 +26,12 @@ The service chassis for the SLM agent platform, and the nine PoC iterations that
   - PoC-5: `deploy/kind/poc05/` (`make kind-poc05`).
   - PoC-6: `deploy/kind/poc06/` (`make kind-poc06`; kagent-adk built from pinned source) and `deploy/compose/poc06/` for the Mac run.
   - PoC-7: `deploy/compose/poc07/stack.sh` (Langfuse v4, OTel Collector, Jaeger) and `deploy/agent-scan/` (Snyk Agent Scan in a sandbox).
-  - PoC-8: `deploy/dashboards/` (written by `python -m chassis.dashboards`). PoC-9: `deploy/helm/` (empty).
+  - PoC-8: `deploy/dashboards/` (written by `python -m chassis.dashboards`). PoC-9: `deploy/helm/` (the library chart `agent-lib` and `example-agent`).
 - `scripts/` the gate scripts, the git hook, and `scripts/poc06_mac.sh`, the one Mac command (`make poc06-mac`).
 - `docs/` contracts, guides, templates, and `plans/`. Start at `docs/README.md`.
   - Chassis modules: `docs/guides/chassis-reference.md`.
   - How a PoC works: `docs/guides/poc-04-how-it-works.md`, `poc-05-how-it-works.md`, `poc-06-how-it-works.md`.
+  - A new agent's business logic: `docs/guides/how-to-add-business-logic.md`.
 
 ## Commands
 

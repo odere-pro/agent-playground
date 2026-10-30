@@ -1,0 +1,57 @@
+# The PoC-9 service template. `agentctl new` renders it; `copier copy` and `copier update` work too.
+# Other parts of PoC-9 (the Compose profiles, CI, the guide) rely on these variable names: keep
+# them. Every file under `project/` is rendered; `_frameworks/` holds one folder of example
+# business logic per supported engine (ADR-006), copied from packages/workloads/echo-*.
+_min_copier_version: "9.4"
+_subdirectory: project
+_templates_suffix: .jinja
+_answers_file: .copier-answers.yml
+
+agent_name:
+  type: str
+  help: The agent's name, a DNS label (lower case letters, digits, and dashes)
+  validator: >-
+    {% if not (agent_name | regex_search('^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$')) %}
+    agent_name must be a DNS label: lower case letters, digits, and dashes, 1 to 63 characters,
+    starting with a letter and not ending with a dash
+    {% endif %}
+
+package_name:
+  type: str
+  help: The Python package, derived from agent_name
+  default: "{{ agent_name | replace('-', '_') }}"
+  when: false
+
+kind:
+  type: str
+  help: What the agent is for
+  choices: [transformer, evaluator, tool]
+  default: transformer
+
+framework:
+  type: str
+  help: The engine of the business logic (ADR-006); pydanticai is the default
+  choices: [python, pydanticai, langgraph, openai-agents, smolagents, claude-agent]
+  default: pydanticai
+
+trust:
+  type: str
+  help: Derived from framework. smolagents and the Claude Agent SDK run model-written code
+  default: "{{ 'untrusted' if framework in ['smolagents', 'claude-agent'] else 'trusted' }}"
+  when: false
+
+connector:
+  type: str
+  help: The lane (ADR-001). An untrusted framework runs only in remote
+  choices: [sidecar, remote]
+  default: "{{ 'remote' if framework in ['smolagents', 'claude-agent'] else 'sidecar' }}"
+  validator: >-
+    {% if framework in ['smolagents', 'claude-agent'] and connector != 'remote' %}
+    {{ framework }} is untrusted: it runs only with connector remote (spec.trust, ADR-001 item 5)
+    {% endif %}
+
+platform_path:
+  type: str
+  help: The absolute path of the agent-platform checkout (path sources for workload-a2a and the kit)
+  validator: >-
+    {% if not platform_path.startswith('/') %}platform_path must be an absolute path{% endif %}

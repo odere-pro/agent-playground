@@ -1,0 +1,202 @@
+{%- set live = framework in ['python', 'pydanticai', 'langgraph', 'openai-agents'] -%}
+{%- set hooked = framework != 'claude-agent' -%}
+"""Unit tests of the business logic: `handle` called directly, no socket, no key, no chassis.
+{%- if framework in ['python', 'pydanticai', 'langgraph', 'openai-agents', 'smolagents'] %}
+The model is the platform's fake model server, reached through the module's test-only transport
+hook. Replace the example assertions with your own when you change `handle`.
+{%- else %}
+The Claude Agent SDK runs its own CLI, so these tests check the event mapping; the lane
+contract (`test_contract.py`) runs the whole agent.
+{%- endif %}
+"""
+
+from __future__ import annotations
+{% if framework == 'pydanticai' %}
+import asyncio
+{%- endif %}
+import importlib
+import inspect
+import json
+{%- if hooked %}
+from collections.abc import {{ "AsyncIterator" if framework == "pydanticai" else "Iterator" }}
+{%- endif %}
+{%- if framework == 'pydanticai' %}
+from contextlib import asynccontextmanager
+{%- endif %}
+from importlib.resources import files
+from typing import Any
+{% if framework == 'python' %}
+import httpx
+{%- endif %}
+{%- if hooked %}
+import httpx2
+{%- endif %}
+import jsonschema
+{%- if hooked %}
+import pytest
+{%- endif %}
+{%- if live %}
+from fake_model_server import Script, create_app
+{%- endif %}
+{%- if framework == 'pydanticai' %}
+from fastmcp import FastMCP
+{%- endif %}
+
+from {{ package_name }} import handle
+{%- if framework != 'python' %}
+from {{ package_name }}.mapping import error_event
+{%- endif %}
+
+handle_module: Any = importlib.import_module("{{ package_name }}.handle")
+{%- if framework in ['python', 'langgraph', 'openai-agents', 'smolagents'] %}
+tools_module: Any = importlib.import_module("{{ package_name }}.tools")
+{%- endif %}
+EVENTS_SCHEMA = json.loads(files("workload_a2a").joinpath("schemas/events.v0.json").read_text())
+{%- if live %}
+REPLY = "Plain words. Short sentences. Same facts."
+SCRIPT = Script.model_validate(
+    {
+        "rules": [
+            {"match": "fail", "error": {"status": 500, "message": "scripted failure"}},
+            {
+                "match": "simplify",
+                "reply": REPLY,
+                "usage": {"prompt_tokens": 42, "completion_tokens": 9},
+            },
+        ]
+    }
+)
+{%- endif %}
+CTX: dict[str, Any] = {
+    "request_id": "req-1",
+    "trace_id": "0af7651916cd43dd8448eb211c80319c",
+    "agent": "{{ agent_name }}",
+    "agent_version": "0.1.0",
+    "budget": {"max_tokens": 2000, "timeout_ms": 30000},
+    "model_route": "big-default",
+}
+{%- if hooked %}
+
+
+def _refuse(request: httpx2.Request) -> httpx2.Response:
+    raise httpx2.ConnectError("refused", request=request)
+{%- endif %}
+{% if framework == 'python' %}
+
+@pytest.fixture(autouse=True)
+def model() -> Iterator[None]:
+    """The fake model on an in-memory transport; the tool endpoint refuses, so no tools run."""
+    handle_module.transport = httpx.ASGITransport(app=create_app(SCRIPT))
+    tools_module.client_factory = lambda headers, timeout: httpx2.AsyncClient(
+        transport=httpx2.MockTransport(_refuse), headers=headers, timeout=timeout
+    )
+    yield
+    handle_module.transport = None
+    tools_module.client_factory = tools_module.default_client_factory
+{% elif framework == 'pydanticai' %}
+
+def _tool_stub() -> FastMCP:
+    server: FastMCP = FastMCP(name="chassis-tools-stub")
+
+    @server.tool
+    def glossary_lookup(term: str) -> dict[str, str]:
+        """Look up a platform term."""
+        return {"term": term, "definition": "stub"}
+
+    return server
+
+
+@asynccontextmanager
+async def _lifespan(app: Any) -> AsyncIterator[None]:
+    """The MCP stub's lifespan in a task of its own: anyio's cancel scopes must exit there."""
+    ready, stop = asyncio.Event(), asyncio.Event()
+
+    async def hold() -> None:
+        async with app.router.lifespan_context(app):
+            ready.set()
+            await stop.wait()
+
+    task = asyncio.create_task(hold())
+    await ready.wait()
+    try:
+        yield
+    finally:
+        stop.set()
+        await task
+
+
+@pytest.fixture(autouse=True)
+async def model(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
+    """The fake model and a stub of the chassis tool endpoint, both on in-memory transports."""
+    mcp_app = _tool_stub().http_app(path="/mcp", stateless_http=True)
+    model_app = create_app(SCRIPT)
+    monkeypatch.setattr(handle_module, "model_transport", httpx2.ASGITransport(app=model_app))
+    monkeypatch.setattr(handle_module, "tool_transport", httpx2.ASGITransport(app=mcp_app))
+    async with _lifespan(mcp_app):
+        yield
+{% elif framework in ['langgraph', 'openai-agents'] %}
+
+@pytest.fixture(autouse=True)
+def model(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """The fake model on an in-memory transport; the tool endpoint refuses, so no tools run."""
+    monkeypatch.setattr(
+        handle_module,
+        "{{ 'model_transport' if framework == 'langgraph' else 'transport' }}",
+        httpx2.ASGITransport(app=create_app(SCRIPT)),
+    )
+    monkeypatch.setattr(tools_module, "transport", httpx2.MockTransport(_refuse))
+    yield
+{% elif framework == 'smolagents' %}
+
+@pytest.fixture(autouse=True)
+def model(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """The model and the tool endpoint both refuse: the run must end in one `error`."""
+    monkeypatch.setattr(handle_module, "transport", httpx2.MockTransport(_refuse))
+    monkeypatch.setattr(tools_module, "transport", httpx2.MockTransport(_refuse))
+    yield
+{% endif %}
+
+async def _run(text: str) -> list[dict[str, Any]]:
+    events = [e async for e in handle({"text": text, "data": {}}, CTX)]
+    for event in events:
+        jsonschema.validate(event, EVENTS_SCHEMA)
+    kinds = [e["type"] for e in events]
+    assert kinds[0] == "start" and kinds[-1] in ("end", "error")
+    return events
+
+
+def test_handle_is_an_async_generator() -> None:
+    assert inspect.isasyncgenfunction(handle)
+
+
+{%- if framework != 'python' %}
+
+
+def test_a_timeout_maps_to_one_schema_valid_error() -> None:
+    event = error_event(TimeoutError("slow"))
+    jsonschema.validate(event, EVENTS_SCHEMA)
+    assert event["type"] == "error"
+{%- endif %}
+{%- if framework in ['python', 'pydanticai', 'langgraph', 'openai-agents'] %}
+
+
+async def test_streams_the_reply_then_metrics_and_end() -> None:
+    events = await _run("simplify: the quick brown fox")
+    kinds = [e["type"] for e in events]
+    assert kinds[-2:] == ["metrics", "end"]
+    assert "".join(e["text"] for e in events if e["type"] == "delta") == REPLY
+    assert (events[-2]["input_tokens"], events[-2]["output_tokens"]) == (42, 9)
+
+
+async def test_a_model_failure_is_one_error_event() -> None:
+    events = await _run("fail please")
+    assert [e["type"] for e in events] == ["start", "error"]
+    assert events[-1]["code"] == "http_500" and events[-1]["retryable"] is True
+{%- elif framework == 'smolagents' %}
+
+
+async def test_an_unreachable_model_is_one_error_event() -> None:
+    events = await _run("simplify: x")
+    assert [e["type"] for e in events] == ["start", "error"]
+    assert events[-1]["code"] == "connect_error"
+{%- endif %}
