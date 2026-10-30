@@ -51,6 +51,19 @@ TRACEPARENT = re.compile(r"00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})")
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
 
 
+MCP_PATH = "/v1/mcp"
+MCP_HEADERS = {"accept": "application/json, text/event-stream"}
+MCP_VERSION = "2025-06-18"
+
+
+def _mcp_request(request_id: int, method: str) -> dict[str, Any]:
+    params: dict[str, Any] = {}
+    if method == "initialize":
+        client = {"name": "agent-testkit", "version": "0"}
+        params = {"protocolVersion": MCP_VERSION, "capabilities": {}, "clientInfo": client}
+    return {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
+
+
 def canonical(value: Any) -> str:
     """JSON with sorted keys: equal only when every value and every number type is equal."""
     return json.dumps(value, sort_keys=True, allow_nan=False)
@@ -166,6 +179,21 @@ class WorkloadContract:
             assert http.get("/health").status_code == 200
             ready = http.get("/ready")
         assert ready.status_code == 200, ready.text
+
+    def test_an_mcp_client_finds_the_agent(self, chassis: Chassis) -> None:
+        """The agent is one MCP tool at `/v1/mcp`: the two calls any MCP client starts with."""
+        with chassis.client(timeout=30.0) as http:
+            hello = http.post(MCP_PATH, json=_mcp_request(1, "initialize"), headers=MCP_HEADERS)
+            assert hello.status_code == 200, hello.text
+            assert "protocolVersion" in hello.text
+            session = {"mcp-session-id": hello.headers.get("mcp-session-id", "")}
+            done = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+            http.post(MCP_PATH, json=done, headers={**MCP_HEADERS, **session})
+            tools = http.post(
+                MCP_PATH, json=_mcp_request(2, "tools/list"), headers={**MCP_HEADERS, **session}
+            )
+        assert tools.status_code == 200, tools.text
+        assert '"inputSchema"' in tools.text, tools.text
 
     def test_a_run_returns_the_envelope_with_the_callers_ids(self, chassis: Chassis) -> None:
         ids = {

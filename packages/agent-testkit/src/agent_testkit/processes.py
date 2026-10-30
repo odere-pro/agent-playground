@@ -26,7 +26,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -63,6 +63,12 @@ _GUARD = """raise ImportError(
     "(ADR-002, agent-testkit)"
 )
 """
+
+
+REMOTE_WORKLOAD_TOKEN = "CHASSIS_API_TOKEN"
+"""What `workload-a2a serve --require-token-env` reads in the remote lane."""
+REMOTE_CHASSIS_TOKEN = "REMOTE_TOKEN"
+"""What `spec.engine.auth.token_env` names; the chassis sends it to the workload."""
 
 
 class StartError(RuntimeError):
@@ -232,7 +238,8 @@ def _scratch() -> Iterator[Path]:
         shutil.rmtree(root, ignore_errors=True)
 
 
-def workload_argv(ref: AgentRef, uds: str) -> list[str]:
+def workload_argv(ref: AgentRef, listen: Sequence[str]) -> list[str]:
+    """`listen` is `--uds <path>`, or `--host`, `--port`, and the token flag in the remote lane."""
     return [
         sys.executable,
         "-m",
@@ -242,8 +249,7 @@ def workload_argv(ref: AgentRef, uds: str) -> list[str]:
         ref.handle,
         "--name",
         ref.name,
-        "--uds",
-        uds,
+        *listen,
         "--drain-timeout-s",
         "1",
         "--log-level",
@@ -258,14 +264,24 @@ def start_workload(
     env: Mapping[str, str] | None = None,
     block_chassis: bool = True,
     timeout_s: float = WORKLOAD_START_S,
+    remote_token: str | None = None,
 ) -> Iterator[Workload]:
-    """Start the workload's A2A server and wait for its agent card. `env` adds variables."""
+    """Start the workload's A2A server and wait for its agent card. `env` adds variables.
+
+    With `remote_token` it serves the `remote` lane: TCP on loopback, the bearer token required.
+    There is no Unix socket, so `start_chassis` is what waits for it, through `/ready`.
+    """
     agent = AgentRef.of(ref)
     with _scratch() as root:
         uds = str(root / "workload.sock")
-        (proxy_port,) = free_ports(1)
+        proxy_port, tcp_port = free_ports(2)
         proxy = f"http://127.0.0.1:{proxy_port}"
         child = clean_env(os.environ)
+        listen = ["--uds", uds]
+        if remote_token is not None:
+            child[REMOTE_WORKLOAD_TOKEN] = remote_token
+            listen = ["--host", "127.0.0.1", "--port", str(tcp_port)]
+            listen += ["--require-token-env", REMOTE_WORKLOAD_TOKEN]
         child.update(
             {
                 "CHASSIS_MODEL_URL": f"{proxy}/v1",
@@ -278,9 +294,13 @@ def start_workload(
             paths = [str(_guard_dir(root)), child.get("PYTHONPATH", "")]
             child["PYTHONPATH"] = os.pathsep.join(p for p in paths if p)
         process = _spawn(
-            f"workload {agent.handle}", workload_argv(agent, uds), child, root / "workload.log"
+            f"workload {agent.handle}", workload_argv(agent, listen), child, root / "workload.log"
         )
         try:
+            if remote_token is not None:
+                url = f"http://127.0.0.1:{tcp_port}"
+                yield Workload(agent, url, "", proxy_port, process)
+                return
             _wait_for(process, uds, CARD_PATH, timeout_s)
             yield Workload(agent, BASE_URL, uds, proxy_port, process)
         finally:
@@ -296,6 +316,13 @@ def chassis_config(workload: Workload, adapters: Mapping[str, str] | None = None
     config["agent"]["name"] = workload.ref.name
     config["spec"]["engine"]["url"] = workload.url
     config["spec"]["engine"]["uds"] = workload.uds
+    if not workload.uds:
+        config["spec"]["trust"] = "untrusted"
+        config["spec"]["engine"] = {
+            "connector": "remote",
+            "url": workload.url,
+            "auth": {"scheme": "bearer", "token_env": REMOTE_CHASSIS_TOKEN},
+        }
     return config
 
 
@@ -330,16 +357,17 @@ def start_chassis(
     *,
     timeout_s: float = CHASSIS_START_S,
     adapters: Mapping[str, str] | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> Iterator[Chassis]:
     """Start the chassis in the `fake` profile in front of `workload`; wait for `/ready`."""
     with _scratch() as root:
         uds = str(root / "chassis.sock")
         config = root / "chassis.yaml"  # JSON is YAML
         config.write_text(json.dumps(chassis_config(workload, adapters), indent=2))
-        env = clean_env(os.environ, drop=("PYTHONPATH", *UV_VARIABLES))
-        env["PYTHONUNBUFFERED"] = "1"
+        child = clean_env(os.environ, drop=("PYTHONPATH", *UV_VARIABLES))
+        child.update({"PYTHONUNBUFFERED": "1", **(env or {})})
         argv = chassis_argv(source, config, uds, workload.proxy_port)
-        process = _spawn("chassis", argv, env, root / "chassis.log")
+        process = _spawn("chassis", argv, child, root / "chassis.log")
         try:
             _wait_for(process, uds, "/ready", timeout_s)
             yield Chassis(BASE_URL, uds, workload, source, process)

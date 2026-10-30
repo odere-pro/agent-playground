@@ -7,7 +7,7 @@
 
 ## Status
 
-Proposed, 2026-10-28. The user accepts it at the PoC-7 pull request.
+Accepted, 2026-10-30, by the user. Proposed 2026-10-28. Its open questions stay open; a change to one of them needs a new ADR or an edit here.
 
 The trial is done for the offline tool. Part of the gate's numbers waits:
 
