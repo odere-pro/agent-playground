@@ -61,11 +61,13 @@ def _error_body(refused: Refused) -> ErrorResponse:
 
 
 def test_is_an_inbound_adapter_for_anthropic() -> None:
+    """The Anthropic mapping meets the inbound adapter protocol as interface `anthropic`."""
     assert isinstance(ADAPTER, InboundAdapter)
     assert ADAPTER.interface == "anthropic"
 
 
 def test_one_user_turn_is_the_plain_native_request() -> None:
+    """A body with one user turn maps to a plain request whose budget is the body's `max_tokens`."""
     request = _map(_body())
     assert request == Request(
         request_id="r1",
@@ -81,6 +83,7 @@ def test_one_user_turn_is_the_plain_native_request() -> None:
 
 
 def test_system_history_and_text_blocks_map_onto_input() -> None:
+    """System blocks join into `system`, earlier turns are history, the last blocks are the text."""
     body = _body(
         system=[{"type": "text", "text": "be brief"}, {"type": "text", "text": "be kind"}],
         stream=True,
@@ -111,6 +114,7 @@ def test_system_history_and_text_blocks_map_onto_input() -> None:
 
 
 def test_a_system_string_and_system_role_messages_join_in_order() -> None:
+    """Top-level system text comes first, then system-role message text, joined by newlines."""
     body = _body(
         system="top",
         messages=[{"role": "system", "content": "inline"}, {"role": "user", "content": "q"}],
@@ -119,11 +123,13 @@ def test_a_system_string_and_system_role_messages_join_in_order() -> None:
 
 
 def test_empty_system_is_not_set() -> None:
+    """An empty system string or list leaves `system` out of the input data."""
     assert _map(_body(system="")).input.data == {}
     assert _map(_body(system=[])).input.data == {}
 
 
 def test_ids_and_agent_are_the_given_ones_not_the_body_or_headers() -> None:
+    """Ids and agent come from the caller's arguments, never from headers or body metadata."""
     headers = {"traceparent": "00-" + "a" * 32 + "-" + "b" * 16 + "-01", "idempotency-key": "k"}
     request = _map(_body(metadata={"user_id": "u-1"}), headers)
     assert Ids.of(request) == IDS
@@ -131,6 +137,7 @@ def test_ids_and_agent_are_the_given_ones_not_the_body_or_headers() -> None:
 
 
 def test_to_request_is_pure() -> None:
+    """Mapping the same body twice gives equal requests and leaves the body unchanged."""
     body = _body(
         system="s", messages=[{"role": "user", "content": [{"type": "text", "text": "x"}]}]
     )
@@ -162,7 +169,20 @@ def test_a_validation_error_inside_a_lazy_iterator_is_a_400() -> None:
     assert refused.headers["x-should-retry"] == "false"
 
 
+def test_to_request_refuses_a_read_key_with_400_when_it_nests_past_the_depth_cap() -> None:
+    """A read key nested 2000 deep is 400 invalid_body, never a RecursionError."""
+    deep: dict[str, Any] = {}
+    for _ in range(2000):
+        deep = {"a": deep}
+
+    refused = _refused(_body(temperature=deep))
+
+    assert refused.status == 400
+    assert refused.body["error"]["message"].startswith("invalid_body: temperature")
+
+
 def test_a_model_that_is_not_the_agent_is_404_not_found_error() -> None:
+    """A model other than this agent is 404 `not_found_error`, naming both models, with no retry."""
     refused = _refused(_body(model="claude-opus-4"))
     assert refused.status == 404
     error = _error_body(refused)
@@ -248,6 +268,7 @@ REFUSED: list[tuple[str, dict[str, Any], str]] = [
 def test_refused_bodies_are_400_in_the_anthropic_error_shape(
     body: dict[str, Any], param: str
 ) -> None:
+    """Each refused body is 400 `invalid_request_error`, names what was refused, says no retry."""
     refused = _refused(body)
     assert refused.status == 400
     error = _error_body(refused)
@@ -272,6 +293,7 @@ def test_refused_bodies_are_400_in_the_anthropic_error_shape(
     ],
 )
 def test_empty_or_harmless_forms_of_refused_params_are_accepted(extra: dict[str, Any]) -> None:
+    """Empty or default forms of refused params map to the same request as a plain body."""
     assert _map(_body(**extra)) == _map(_body())
 
 
@@ -292,6 +314,7 @@ IGNORED_BODY = _body(
 
 
 def test_ignored_parameters_do_not_change_the_request_and_are_reported() -> None:
+    """Tuning params leave the request unchanged and are listed; personal fields are not listed."""
     headers = {"anthropic-version": "2023-06-01", "anthropic-beta": "x", "x-api-key": "sk-no"}
     assert _map(IGNORED_BODY, headers) == _map(_body())
     assert ADAPTER.ignored(IGNORED_BODY) == [
@@ -346,6 +369,7 @@ def _response(
 
 
 def test_complete_is_an_official_message_with_usage_and_headers() -> None:
+    """A finished run is a valid Message with end_turn, usage counts, and ids in the headers."""
     reply = ADAPTER.complete(_response({"text": "hi there"}), _meta())
     assert reply.status == 200
     message = Message.model_validate(reply.body)
@@ -366,11 +390,13 @@ def test_complete_is_an_official_message_with_usage_and_headers() -> None:
 
 @pytest.mark.parametrize("status", ["retry", "fallback"])
 def test_retry_and_fallback_are_a_normal_answer_with_the_status_header(status: str) -> None:
+    """A run that ended by retry or fallback is a 200 answer; only the status header tells."""
     reply = ADAPTER.complete(_response({"text": "x"}, status=status), _meta())
     assert reply.status == 200 and reply.headers["x-chassis-status"] == status
 
 
 def test_no_text_is_empty_content_and_structured_output_is_compact_json() -> None:
+    """Empty text gives no content blocks; structured output is one compact, sorted JSON block."""
     empty = Message.model_validate(ADAPTER.complete(_response({"text": ""}), _meta()).body)
     assert empty.content == []
     data = {"b": 1, "a": [1, 2]}
@@ -401,6 +427,7 @@ async def _stream(events: Sequence[Event]) -> tuple[dict[str, str], list[tuple[s
 
 
 async def test_stream_is_the_official_event_sequence() -> None:
+    """A stream sends the official events in order with summed usage and no tool calls."""
     headers, frames = await _stream(
         [
             Start(request_id="r1"),
@@ -445,11 +472,13 @@ async def test_stream_is_the_official_event_sequence() -> None:
 
 
 async def test_stream_without_text_opens_no_block() -> None:
+    """A run with no text streams only the message start, delta, and stop events."""
     _, frames = await _stream([Start(request_id="r1"), End(output={"text": ""})])
     assert [name for name, _ in frames] == ["message_start", "message_delta", "message_stop"]
 
 
 async def test_stream_of_structured_output_sends_the_json_text_once() -> None:
+    """Structured output streams as one compact JSON text delta inside one block."""
     _, frames = await _stream([Start(request_id="r1"), End(output={"b": 2, "a": 1})])
     texts = [d["delta"]["text"] for n, d in frames if n == "content_block_delta"]
     assert texts == ['{"a":1,"b":2}']
@@ -457,11 +486,13 @@ async def test_stream_of_structured_output_sends_the_json_text_once() -> None:
 
 
 async def test_stream_sends_the_rest_of_an_end_text_that_extends_the_deltas() -> None:
+    """When the end text extends the streamed deltas, only the missing tail is sent."""
     _, frames = await _stream([Delta(text="ab"), End(output={"text": "abcd"})])
     assert [d["delta"]["text"] for n, d in frames if n == "content_block_delta"] == ["ab", "cd"]
 
 
 async def test_error_mid_stream_is_an_error_event_and_then_the_end() -> None:
+    """An error after text sends one error event, stops the stream, and does not repeat the text."""
     _, frames = await _stream(
         [
             Start(request_id="r1"),
@@ -497,6 +528,7 @@ async def test_error_mid_stream_is_an_error_event_and_then_the_end() -> None:
 def test_error_status_type_and_should_retry_per_code(
     code: str, retryable: bool, status: int, kind: str, should_retry: str
 ) -> None:
+    """Each error code maps to its status, Anthropic error type, retry header, and the run's ids."""
     meta = ReplyMeta(ids=IDS, served=SERVED, created=0)
     reply = ADAPTER.error(code, "why", retryable, meta)
     assert reply.status == status

@@ -141,12 +141,20 @@ ErrorKind = Literal[
 ]
 
 
+DEPTH_MAX = 64
+"""suggested: the deepest nesting `materialize` reads. Deeper is 400 `invalid_body`, never a
+`RecursionError` (a plain 500)."""
+
+
 class InvalidBody(ValueError):
-    """A lazy iterator raised `ValidationError` while it was read. `str()` names where and why,
-    never the input.
+    """A lazy iterator raised `ValidationError` while it was read, or the body nests deeper than
+    `DEPTH_MAX` (`exc` is None). `str()` names where and why, never the input.
     """
 
-    def __init__(self, path: str, exc: ValidationError) -> None:
+    def __init__(self, path: str, exc: ValidationError | None = None) -> None:
+        if exc is None:
+            super().__init__(f"{path or 'body'}: nested deeper than {DEPTH_MAX} levels")
+            return
         parts = []
         for error in exc.errors():
             loc = path or "body"
@@ -156,21 +164,23 @@ class InvalidBody(ValueError):
         super().__init__("; ".join(parts) or f"{path or 'body'}: invalid")
 
 
-def materialize(value: Any, path: str = "") -> Any:
+def materialize(value: Any, path: str = "", depth: int = 0) -> Any:
     """`value` with every mapping as a dict and every other non-string iterable as a list, read
-    once, all the way down. FastAPI hands over `messages`, `system`, and block `content` as lazy
-    `ValidatorIterator`s that validate each item when it is read; their `ValidationError` is
-    raised here as `InvalidBody`.
+    once, all the way down to `DEPTH_MAX`. FastAPI hands over `messages`, `system`, and block
+    `content` as lazy `ValidatorIterator`s that validate each item when it is read; their
+    `ValidationError` is raised here as `InvalidBody`.
     """
+    if depth > DEPTH_MAX:
+        raise InvalidBody(path)
     try:
         if isinstance(value, Mapping):
             return {
-                key: materialize(item, f"{path}.{key}" if path else str(key))
+                key: materialize(item, f"{path}.{key}" if path else str(key), depth + 1)
                 for key, item in value.items()
             }
         if isinstance(value, str | bytes | bytearray) or not isinstance(value, Iterable):
             return value
-        return [materialize(item, f"{path}[{i}]") for i, item in enumerate(value)]
+        return [materialize(item, f"{path}[{i}]", depth + 1) for i, item in enumerate(value)]
     except ValidationError as exc:
         raise InvalidBody(path, exc) from None
 
