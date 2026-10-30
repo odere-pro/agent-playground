@@ -1,0 +1,60 @@
+# PoC-8 stack drill: the chassis the dashboards are checked against (service `chassis`).
+# Every PoC-8 stage is on, so every panel of deploy/dashboards/echo.json has data after the drill:
+#   - auth: `static` (CHASSIS_STATIC_TOKENS, made by stack.sh from a generated token);
+#   - rate limit per caller in Valkey, fail_closed: a run that gets an answer proves Valkey
+#     answered the bucket check (a store outage would be 503 `state_unavailable`);
+#   - guardrails: `fake` (KeywordGuardrails), the offline stand-in, at input, tool output, output;
+#   - the evaluator gate: the `judge` adapter on the fake model server (route `judge`), one retry,
+#     then `spec.model.fallback_route`;
+#   - feedback: `memory`, with its request-to-trace lookup in Valkey;
+#   - prices, so the cost panel has data; marking (`risk_class: limited`).
+# The model is the fake model server (fake-model/poc08.yaml). No key anywhere.
+profile: local
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  adapters:
+    model: litellm
+    config: memory
+    telemetry: memory
+    tools: fake
+    state: valkey
+    events: none
+    auth: static
+    guardrails: fake
+    evaluator: judge
+    feedback: memory
+  engine:
+    connector: inprocess
+    handle: echo_python:handle
+  model:
+    route: big-default
+    fallback_route: fallback-route
+  prompt:
+    version: simplifier-v1
+  limits:
+    rate_limit: true
+    # suggested: room for the drill's runs (about 14 calls), small enough that a burst of 60
+    # meets 429 `rate_limited` (the drill's last test).
+    requests_per_minute: 60
+    request_burst: 30
+    rate_limit_on_unavailable: fail_closed
+  guardrails:
+    input: true
+    tool_output: true
+    output: true
+  harness:
+    evaluator_gate: true
+    threshold: 0.7
+    retries: 1
+    evaluator_mode: sync
+  feedback:
+    enabled: true
+  observability:
+    # suggested: made-up prices in USD per million tokens, only so the cost panel has data.
+    prices:
+      big-default: {input_per_mtok: 3, output_per_mtok: 15}
+      fallback-route: {input_per_mtok: 1, output_per_mtok: 5}
+  governance:
+    risk_class: limited

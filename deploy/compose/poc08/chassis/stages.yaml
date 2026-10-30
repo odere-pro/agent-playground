@@ -1,0 +1,47 @@
+# PoC-8 latency, "stages on" (service `chassis-stages`). The same agent and model as plain.yaml,
+# with the PoC-8 request stages on:
+#   - auth: `static` (the caller's bearer is checked on every run);
+#   - rate limit per caller in Valkey (fail_closed), with a limit the measurement never meets;
+#   - guardrails: `fake` (KeywordGuardrails) at input, tool output, and output, the stream secret
+#     check, and the output URL filter;
+#   - feedback: `memory`, so every run writes its request-to-trace lookup to Valkey;
+#   - marking (`risk_class: limited`).
+# The evaluator gate is off: it adds a judge call per run, a model cost, not a request stage.
+profile: local
+agent:
+  name: echo-stages
+  version: 0.0.1
+spec:
+  adapters:
+    model: litellm
+    config: memory
+    telemetry: memory
+    tools: fake
+    state: valkey
+    events: none
+    auth: static
+    guardrails: fake
+    evaluator: none
+    feedback: memory
+  engine:
+    connector: inprocess
+    handle: echo_python:handle
+  model:
+    route: big-default
+  prompt:
+    version: simplifier-v1
+  limits:
+    rate_limit: true
+    # suggested: far above the measurement's rate, so the bucket is checked on every call and
+    # never refuses one.
+    requests_per_minute: 600000
+    request_burst: 100000
+    rate_limit_on_unavailable: fail_closed
+  guardrails:
+    input: true
+    tool_output: true
+    output: true
+  feedback:
+    enabled: true
+  governance:
+    risk_class: limited

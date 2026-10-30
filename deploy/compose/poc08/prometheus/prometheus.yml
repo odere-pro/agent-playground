@@ -1,0 +1,16 @@
+# Prometheus of the PoC-8 stack: scrapes `GET /metrics` of the three chassis on the Compose
+# network. `/metrics` needs no token (`spec.observability.metrics_scope` unset).
+# suggested: 5 s, so the drill waits seconds, not minutes, for a scrape.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: chassis
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+          - chassis:8080
+          - chassis-stages:8080
+          - chassis-plain:8080

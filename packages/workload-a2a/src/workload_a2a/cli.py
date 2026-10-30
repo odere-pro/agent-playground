@@ -7,7 +7,8 @@ of TCP, for tests and local runs. On SIGTERM it finishes in-flight `handle` call
 bearer check on every request and is the only way to bind a host that is not loopback without
 `--allow-any-host` (PoC-5 section 2.4). `--previous-token-env NAME` (only with
 `--require-token-env`) also accepts the token in `$NAME` while a rotation runs; an unset or empty
-variable is ignored.
+variable is ignored. Logs are JSON, one object per line (`logs.configure_logging`, set up at start
+with the card name as `agent` and `--log-level`).
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from typing import cast
 import uvicorn
 
 from workload_a2a.auth import BearerTokenMiddleware, read_previous_token, read_token
+from workload_a2a.logs import configure_logging
 from workload_a2a.server import (
     DEFAULT_DRAIN_TIMEOUT_S,
     WireHandle,
@@ -91,7 +93,10 @@ def _card_url(host: str, port: int | None) -> str:
 
 def build(argv: Sequence[str] | None = None) -> uvicorn.Server:
     """Parse the command line and build the server. Exits with the reason on a bad argument."""
-    args = _parser().parse_args(argv)
+    return _build(_parser().parse_args(argv))
+
+
+def _build(args: argparse.Namespace) -> uvicorn.Server:
     if args.port is None and not args.uds:
         raise SystemExit("workload-a2a: --port is required unless --uds is given")
     if args.drain_timeout_s < 0:
@@ -126,4 +131,8 @@ def build(argv: Sequence[str] | None = None) -> uvicorn.Server:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    build(argv).run()
+    """Build the server, set up JSON logs, run."""
+    args = _parser().parse_args(argv)
+    server = _build(args)
+    configure_logging(agent=args.name or args.handle, level=args.log_level)
+    server.run()

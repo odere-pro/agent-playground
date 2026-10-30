@@ -9,6 +9,7 @@ The template A2A server a Python workload ships with (ADR-002, option A). It wra
 - `schemas/events.v0.json`: a copy of `packages/chassis/schemas/events.v0.json`; a test fails when the two differ. `SUPPORTED_SCHEMA_VERSIONS` comes from its `schema_version` consts.
 - The task store is pruned: `PruningRequestHandler` deletes each task once it is terminal, so a long-running sidecar does not keep every task in memory.
 - `auth.py`: `BearerTokenMiddleware`, the remote lane's bearer check (PoC-5). Standard library only, no `chassis` import.
+- `logs.py`: the log format, one JSON object per line with the chassis's field names (`time`, `level`, `logger`, `message`, `agent`). A line logged inside `handle` also carries the request's `request_id` and 32-hex `trace_id`, so it joins the chassis's lines and the trace. The CLI and `serve` set it up at start, uvicorn's lines included. The lines are not redacted in process; the OTel Collector redacts workload logs (ADR-007 item 7).
 - `telemetry.py`: workload-side tracing (PoC-7). One `workload.handle` span per task, in the chassis's trace, plus the hook each engine uses to turn on its instrumentor. It is a no-op without the `otel` extra (`workload-a2a[otel]`); see the module docstring.
 - Localhost only: the server binds `127.0.0.1` by default and refuses a host that is not loopback unless you pass `allow_any_host` (ADR-001). `--require-token-env` is the other way to bind a non-loopback host.
 

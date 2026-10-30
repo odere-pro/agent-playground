@@ -284,7 +284,8 @@ const UNLISTENABLE = { UDS: join(tmpdir(), "no-such-folder-ts-main", "a2a.sock")
 
 test("main: a listen error exits 2 and stderr names the listen", () => {
   const { status, stderr } = startUp([], UNLISTENABLE);
-  assert.deepEqual([status, /echo-typescript: listen E[A-Z]+/.test(stderr)], [2, true]);
+  // One JSON log line (src/log.ts): level error, the agent, and the listen error as the message.
+  assert.deepEqual([status, /"level":"error".*"message":"listen E[A-Z]+.*"agent":"echo-typescript"/.test(stderr)], [2, true]);
 });
 
 test("main: a listen error never prints the ready line", () => {

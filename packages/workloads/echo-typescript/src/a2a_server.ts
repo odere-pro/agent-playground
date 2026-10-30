@@ -24,10 +24,12 @@ import express, { type Express } from "express";
 
 import { bearerAuth } from "./auth.js";
 import type { ChassisEvent, Context, Handle } from "./handle.js";
+import { idsOf, log, withRequest, type RequestIds } from "./log.js";
 import { SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS, validateEvent, type Json } from "./schema.js";
 
 export { SUPPORTED_SCHEMA_VERSIONS } from "./schema.js";
 
+const LOGGER = "echo_typescript.a2a_server";
 export const EVENT_KEY = "chassis.event";
 export const CTX_KEY = "chassis.ctx";
 export const INPUT_KEY = "chassis.input";
@@ -85,6 +87,15 @@ export function requestToInput(request: SendMessageRequest): [Json, Context] {
   return [{ text: typeof text === "string" && text ? text : null, data: data ?? {} }, { ...ctx }];
 }
 
+/** The request's log ids from `chassis.ctx`; none when it is absent or not readable. */
+function logIds(request: SendMessageRequest): RequestIds {
+  try {
+    return idsOf(readJson(request.metadata as Json | undefined, CTX_KEY) ?? {});
+  } catch {
+    return {}; // `run` answers a2a.bad_request
+  }
+}
+
 // --- Events out ---
 
 /**
@@ -128,7 +139,18 @@ export class HandleExecutor implements AgentExecutor {
   private readonly running = new Map<string, { abort: AbortController; contextId: string }>();
   constructor(private readonly handle: Handle) {}
 
-  execute = async (context: RequestContext, bus: ExecutionEventBus): Promise<void> => {
+  /** `run` inside the request's log ids (`src/log.ts`), then one `handle done` line. */
+  execute = (context: RequestContext, bus: ExecutionEventBus): Promise<void> =>
+    withRequest(logIds(context.request), async () => {
+      const begun = Date.now();
+      try {
+        await this.run(context, bus);
+      } finally {
+        log("info", LOGGER, "handle done", { task_id: context.taskId, duration_ms: Date.now() - begun });
+      }
+    });
+
+  private run = async (context: RequestContext, bus: ExecutionEventBus): Promise<void> => {
     const { taskId, contextId } = context;
     const history = context.request.message ? [context.request.message] : [];
     bus.publish(AgentEvent.task({ id: taskId, contextId, status: { state: TaskState.TASK_STATE_SUBMITTED, message: undefined, timestamp: new Date().toISOString() }, artifacts: [], history, metadata: undefined }));

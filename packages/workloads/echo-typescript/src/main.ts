@@ -12,7 +12,7 @@
 // DRAIN_TIMEOUT_MS (suggested default 30000) forces exit 1. `--drain-timeout-s N`, the flag of the
 // Python workloads' `workload-a2a serve`, sets the same bound in seconds and wins over the variable;
 // the PoC-4 scale stack passes it to every workload image. A bad value of either is refused at
-// start (exit 2).
+// start (exit 2). Every line it writes is one JSON object (`src/log.ts`), `agent` = the card name.
 
 import { lstatSync, rmSync } from "node:fs";
 
@@ -21,6 +21,11 @@ import { buildAgentCard, buildApp } from "./a2a_server.js";
 import { drainOnSignals, drainTimeoutMs } from "./drain.js";
 import { handle } from "./handle.js";
 import { bindHost, portOf } from "./host.js";
+import { log, setLogAgent } from "./log.js";
+
+const NAME = "echo-typescript";
+const LOGGER = "echo_typescript.main";
+setLogAgent(NAME);
 
 const uds = process.env["UDS"] || undefined;
 let host: string;
@@ -33,12 +38,12 @@ try {
   drainMs = serve.drainTimeoutS !== undefined ? serve.drainTimeoutS * 1000 : drainTimeoutMs(process.env);
   port = portOf(process.env);
 } catch (err) {
-  console.error(`echo-typescript: ${err instanceof Error ? err.message : String(err)}`);
+  log("error", LOGGER, err instanceof Error ? err.message : String(err));
   process.exit(2);
 }
 // The card names the bound host, or 127.0.0.1 for a wildcard bind.
 const cardHost = ["0.0.0.0", "::", ""].includes(host) ? "127.0.0.1" : host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
-const card = buildAgentCard({ name: "echo-typescript", version: "0.1.0", url: `http://${cardHost}:${port}` });
+const card = buildAgentCard({ name: NAME, version: "0.1.0", url: `http://${cardHost}:${port}` });
 const app = buildApp(handle, card, serve);
 
 function removeStaleSocket(path: string): void {
@@ -46,7 +51,7 @@ function removeStaleSocket(path: string): void {
     if (!lstatSync(path).isSocket()) throw new Error(`UDS=${path} exists and is not a socket`);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
-    console.error(`echo-typescript: ${err instanceof Error ? err.message : String(err)}`);
+    log("error", LOGGER, err instanceof Error ? err.message : String(err));
     process.exit(2);
   }
   rmSync(path);
@@ -57,16 +62,16 @@ if (uds) {
   removeStaleSocket(uds);
   server = app.listen(uds, (err) => {
     if (err) return; // the "error" listener below reports it
-    console.log(`echo-typescript: A2A on unix:${uds} (card: /.well-known/agent-card.json)`);
+    log("info", LOGGER, `A2A on unix:${uds} (card: /.well-known/agent-card.json)`);
   });
 } else {
   server = app.listen(port, host, (err) => {
     if (err) return; // the "error" listener below reports it
-    console.log(`echo-typescript: A2A on http://${host}:${port}/ (card: /.well-known/agent-card.json)`);
+    log("info", LOGGER, `A2A on http://${host}:${port}/ (card: /.well-known/agent-card.json)`);
   });
 }
 server.on("error", (err) => {
-  console.error(`echo-typescript: ${err.message}`);
+  log("error", LOGGER, err.message);
   process.exit(2);
 });
 drainOnSignals(server, drainMs);

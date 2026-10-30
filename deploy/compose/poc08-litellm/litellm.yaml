@@ -1,0 +1,65 @@
+# LiteLLM for the PoC-8 drill: the model router with its real guardrails and its OpenTelemetry
+# callback, auth on. Mounted read-only at /etc/litellm/config.yaml. No credential in this file:
+# the master key and the database URL come from the environment, which stack.sh fills from its
+# git-ignored env file. The chassis gets a virtual key that stack.sh mints (ADR-001 hard
+# requirement 1); the master key stays in this container.
+#
+# Shapes from deploy/kind/poc05/platform/litellm/config.yaml (the same image, auth on, Postgres)
+# and packages/guardrail-server/litellm/config.yaml (the three guardrail names the chassis's
+# LiteLLMGuardrails calls). Field names not run on this image before: `default_on`, the presidio
+# api bases, `callbacks: ["otel"]`. The drill is their check.
+
+model_list:
+  # The chassis config's route (chassis.yaml, `spec.model.route`). The fake model server takes no
+  # key; it sits on the internal network only.
+  - model_name: big-default
+    litellm_params:
+      model: openai/fake-model
+      api_base: http://fake-model-server:8081/v1
+      api_key: fake  # pragma: allowlist secret (a placeholder; the fake takes no key)
+
+# ADR-008 item 4: every guardrail is on for every call (`default_on`), so no key can skip it,
+# and the chassis's guard stages call the same names through `POST /guardrails/apply_guardrail`.
+guardrails:
+  # LiteLLM's built-in Presidio hook against the analyzer and anonymizer containers. With no
+  # `pii_entities_config`, every entity the analyzer finds is masked as `<ENTITY_TYPE>`.
+  - guardrail_name: pii-mask
+    litellm_params:
+      guardrail: presidio
+      mode: pre_call
+      default_on: true
+      presidio_language: en
+      presidio_analyzer_api_base: os.environ/PRESIDIO_ANALYZER_API_BASE
+      presidio_anonymizer_api_base: os.environ/PRESIDIO_ANONYMIZER_API_BASE
+  # The injection check: guardrail-server with the pattern stand-in, not Prompt Guard 2 (no
+  # Hugging Face token in CI). Its numbers are never Prompt Guard 2 numbers.
+  - guardrail_name: prompt-guard
+    litellm_params:
+      guardrail: generic_guardrail_api
+      mode: pre_call
+      default_on: true
+      api_base: http://guardrail-server:8095
+      additional_provider_specific_params:
+        checks: [injection]
+  - guardrail_name: secret-guard
+    litellm_params:
+      guardrail: generic_guardrail_api
+      mode: post_call
+      default_on: true
+      api_base: http://guardrail-server:8095
+      additional_provider_specific_params:
+        checks: [secrets]
+
+litellm_settings:
+  # LiteLLM's own spans (ADR-007 item 4: model call spans and spend). The exporter reads
+  # OTEL_EXPORTER, OTEL_ENDPOINT, and OTEL_SERVICE_NAME from the container env (Collector, 4318).
+  # The chassis sends `traceparent`, so these spans join the run's trace.
+  callbacks: ["otel"]
+  # Keep token counts, drop request and response content from logs and spans.
+  turn_off_message_logging: true
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  # Virtual keys live in Postgres (the `postgres` service).
+  database_url: os.environ/DATABASE_URL
