@@ -6,6 +6,10 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.slow  # starts a nested pytest run
+
 ROOT = Path(__file__).resolve().parents[2]
 
 STRIPPED = (
@@ -57,5 +61,6 @@ def _run_check_offline(tmp_path: Path) -> subprocess.CompletedProcess[str]:
 
 
 def test_check_offline_strips_every_credential_suffix(tmp_path: Path) -> None:
+    """check_offline.sh unsets every credential suffix and keeps other variables."""
     result = _run_check_offline(tmp_path)
     assert result.returncode == 0, result.stdout[-2000:] + result.stderr[-2000:]

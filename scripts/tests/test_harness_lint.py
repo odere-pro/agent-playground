@@ -62,6 +62,7 @@ def _minimal_tree(root: Path) -> None:
 
 
 def test_the_minimal_tree_is_clean(lint: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
+    """A tree with every wired file in place gives no finding."""
     assert lint.main() == 0
     assert capsys.readouterr().out.strip() == "harness-lint: ok"
 
@@ -69,6 +70,7 @@ def test_the_minimal_tree_is_clean(lint: ModuleType, capsys: pytest.CaptureFixtu
 def test_a_missing_current_file_is_a_finding(
     lint: ModuleType, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """No pocs/CURRENT is one finding and exit 1, not a traceback."""
     (lint.ROOT / "pocs" / "CURRENT").unlink()
     assert lint.main() == 1
     out = capsys.readouterr().out
@@ -79,6 +81,7 @@ def test_a_missing_current_file_is_a_finding(
 def test_a_claude_md_with_no_skills_line_is_a_finding(
     lint: ModuleType, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """A CLAUDE.md with no Skills: line is one finding, not a traceback."""
     claude_md = lint.ROOT / "CLAUDE.md"
     claude_md.write_text(claude_md.read_text().replace("Skills: `flow`.\n", ""))
     assert lint.main() == 1
@@ -88,6 +91,7 @@ def test_a_claude_md_with_no_skills_line_is_a_finding(
 def test_a_stale_test_citation_fails_and_names_the_readme_line(
     lint: ModuleType, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """A README citing a test no file defines fails and names the line."""
     readme = lint.ROOT / "pocs" / "poc-01-x" / "README.md"
     readme.write_text(readme.read_text() + "- [x] old: `tests/test_a.py::test_old_name[*]`\n")
     assert lint.main() == 1
@@ -100,6 +104,7 @@ def test_a_stale_test_citation_fails_and_names_the_readme_line(
 def test_a_class_citation_counts_methods_inherited_from_a_contract_suite(
     lint: ModuleType, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """A cited method inherited from a contract suite counts as defined."""
     _write(
         lint.ROOT / "packages" / "suite" / "src" / "suite" / "contract.py",
         "class PortContract:\n    async def test_streams(self):\n        pass\n",
@@ -114,6 +119,7 @@ def test_a_class_citation_counts_methods_inherited_from_a_contract_suite(
 
 
 def test_a_stale_class_citation_fails(lint: ModuleType, capsys: pytest.CaptureFixture[str]) -> None:
+    """A README citing a test class no file defines fails."""
     readme = lint.ROOT / "pocs" / "poc-01-x" / "README.md"
     readme.write_text(readme.read_text() + "see `::TestGone`\n")
     assert lint.main() == 1
