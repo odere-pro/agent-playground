@@ -22,7 +22,7 @@ Under `packages/chassis/`: `configs/` the bundled specs, `schemas/` the publishe
 - `core` has no network, no product SDK, and no web framework. `make lint` enforces it.
 - A product SDK is imported only under `adapters/`. That covers `openai`, `anthropic`, a2a-sdk, and FastMCP.
 - `valkey`, `aiokafka`, and `minio` are imported only under `adapters/`, inside a lazy factory. Never in `core` or `ports`.
-- `packages/workload-a2a` never imports `chassis`. Its `mapping.py` is a byte-for-byte copy of `adapters/a2a/mapping.py`.
+- `packages/workload-a2a` never imports `chassis`. Its `mapping.py` and `task_store.py` are byte-for-byte copies of the same files in `adapters/a2a/`.
 
 ## Rules
 

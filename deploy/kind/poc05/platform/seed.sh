@@ -25,9 +25,11 @@
 set -euo pipefail
 
 CONTEXT=kind-poc05
+LOG_PREFIX=seed
 PLATFORM=poc05-platform
 AGENTS=poc05-agents
 REMOTE=poc05-remote
+HERE=$(cd "$(dirname "$0")" && pwd)
 MODEL="fake-chat"
 
 # One LiteLLM virtual key per chassis instance (T13's pods), with its MCP tool allow-list per
@@ -40,9 +42,8 @@ SERVICES=(
 # No probe entries: T10 is dropped (2026-10-02), so no pod would mount them (security review, 8).
 REMOTES=(echo)
 
-kctl() { kubectl --context "$CONTEXT" "$@"; }
-log() { printf '[seed] %s\n' "$*" >&2; }
-die() { log "$*"; exit 1; }
+# shellcheck source=deploy/kind/lib.sh
+source "$HERE/../../lib.sh"
 
 new_secret() { openssl rand -hex "${1:-32}"; }
 new_id() { printf 'chassis%s' "$(openssl rand -hex 8)"; }
