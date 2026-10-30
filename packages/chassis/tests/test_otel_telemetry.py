@@ -229,18 +229,22 @@ def test_an_exception_marks_the_span_and_propagates(
     assert exported.end_time is not None
 
 
+@pytest.mark.parametrize(
+    "secret",
+    ["jane@example.com", "sk-abcdefgh12345"],  # pragma: allowlist secret
+)
 def test_span_exception_text_is_redacted_when_the_body_raises(
-    otel: OtelTelemetry, exporter: InMemorySpanExporter
+    otel: OtelTelemetry, exporter: InMemorySpanExporter, secret: str
 ) -> None:
     """An exception's message reaches the exported span only after redaction (review R7-02)."""
     with pytest.raises(ValueError), otel.span("chassis.run"):
-        raise ValueError("mail jane@example.com")
+        raise ValueError(f"upstream said {secret}")
 
     exported = _finished(exporter, "chassis.run")
     event_values = [str(v) for e in exported.events for v in (e.attributes or {}).values()]
     span_values = [str(v) for v in (exported.attributes or {}).values()]
 
-    assert not [v for v in event_values + span_values if "jane@example.com" in v]
+    assert not [v for v in event_values + span_values if secret in v]
     assert [e.name for e in exported.events] == ["exception"]
     assert dict(exported.events[0].attributes or {})["exception.type"] == "ValueError"
     assert exported.status.status_code is StatusCode.ERROR

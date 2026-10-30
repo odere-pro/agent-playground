@@ -102,6 +102,7 @@ def _launcher() -> ModuleType:
 
 
 def test_workflow_triggers_and_never_pull_request_target() -> None:
+    """Security: "Snyk Agent Scan in CI": the workflow never uses `pull_request_target`."""
     code = [ln for ln in WORKFLOW.read_text().splitlines() if not ln.lstrip().startswith("#")]
     assert not any("pull_request_target" in ln for ln in code)
     # PyYAML reads the bare key `on` as True.
@@ -110,6 +111,7 @@ def test_workflow_triggers_and_never_pull_request_target() -> None:
 
 
 def test_workflow_permissions_are_read_only() -> None:
+    """Security: "Snyk Agent Scan in CI": the workflow reads only."""
     wf = _workflow()
     assert wf["permissions"] in ({}, {"contents": "read"})
     for job in wf["jobs"].values():
@@ -117,17 +119,20 @@ def test_workflow_permissions_are_read_only() -> None:
 
 
 def test_every_action_is_pinned_by_a_full_commit_sha() -> None:
+    """Security: "Snyk Agent Scan in CI": every action is pinned by SHA."""
     uses = [step["uses"] for step in _steps() if "uses" in step]
     assert uses, "the workflow uses no action"
     assert [u for u in uses if not PINNED.match(u)] == []
 
 
 def test_checkout_keeps_no_token() -> None:
+    """Security: "Snyk Agent Scan in CI": the checkout keeps no token."""
     checkout = [s for s in _steps() if s.get("uses", "").startswith("actions/checkout@")]
     assert checkout and all(s["with"]["persist-credentials"] is False for s in checkout)
 
 
 def test_the_scan_runs_through_scan_sh_and_the_token_is_only_in_its_env() -> None:
+    """Security: "Snyk Agent Scan in CI": only the scan step gets the token."""
     steps = _steps()
     scan = [s for s in steps if "deploy/agent-scan/scan.sh" in s.get("run", "")]
     assert len(scan) == 1
@@ -139,12 +144,14 @@ def test_the_scan_runs_through_scan_sh_and_the_token_is_only_in_its_env() -> Non
 
 
 def test_a_missing_token_is_a_clear_skip_not_a_failure() -> None:
+    """Security: "Snyk Agent Scan in CI": no token is a skip notice."""
     text = SCAN_SH.read_text()
     assert re.search(rf'-z "\$\{{{TOKEN}:-\}}"', text), "scan.sh does not test for a missing token"
     assert "::notice" in text and "skip" in text.lower()
 
 
 def test_the_report_is_uploaded_as_an_artifact() -> None:
+    """Security: "Snyk Agent Scan in CI": the report is uploaded."""
     upload = [s for s in _steps() if s.get("uses", "").startswith("actions/upload-artifact@")]
     assert len(upload) == 1
     assert upload[0]["if"] == "always()"
@@ -155,6 +162,7 @@ def test_the_report_is_uploaded_as_an_artifact() -> None:
 
 
 def test_every_docker_run_is_sandboxed() -> None:
+    """Security: "Snyk Agent Scan in CI": every `docker run` is sandboxed."""
     runs = _docker_runs()
     assert len(runs) >= 2, "expected an inspect run and a scan run"
     for tokens in runs:
@@ -206,6 +214,7 @@ def test_scan_sh_mounts_only_the_scan_inputs_read_only_when_a_docker_run_starts(
 
 
 def test_the_inspect_phase_has_no_network_and_no_token() -> None:
+    """Security: "Snyk Agent Scan in CI": inspect has no network, no token."""
     inspect = [t for t in _docker_runs() if "inspect" in t]
     assert len(inspect) == 1
     assert _flag_values(inspect[0], "--network") == ["none"]
@@ -216,6 +225,7 @@ def test_the_inspect_phase_has_no_network_and_no_token() -> None:
 
 
 def test_every_mcp_server_package_is_in_the_scan_config() -> None:
+    """Every MCP server package in the repo is in the scan config."""
     servers = json.loads(CONFIG.read_text())["mcpServers"]
     packages = _mcp_server_packages()
     assert {"fake-mcp-server", "code-runner"} <= packages
@@ -237,6 +247,7 @@ def test_every_mcp_server_package_is_in_the_scan_config() -> None:
     ],
 )
 def test_the_launcher_serves_each_servers_real_tools(name: str, tools: set[str]) -> None:
+    """The launcher serves each server's real tools, each with a description."""
     from fastmcp import Client
 
     async def listed() -> dict[str, str]:
@@ -249,5 +260,6 @@ def test_the_launcher_serves_each_servers_real_tools(name: str, tools: set[str])
 
 
 def test_the_launcher_refuses_an_unknown_server() -> None:
+    """The launcher refuses a server it does not know."""
     with pytest.raises(SystemExit):
         _launcher().build("not-a-server")
