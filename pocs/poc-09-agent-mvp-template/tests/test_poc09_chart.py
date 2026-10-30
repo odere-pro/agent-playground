@@ -335,6 +335,15 @@ def test_remote_lane_services_and_policies(chart: Charts, tmp_path: Path) -> Non
 # --- refusals ---------------------------------------------------------------------------------
 
 REFUSED: dict[str, tuple[dict[str, Any], str]] = {
+    "chassis arg moves the listener": (
+        {"chassis": {"extraArgs": ["--host", "0.0.0.0"]}},
+        "is not allowed",
+    ),
+    "chassis arg abbreviated": ({"chassis": {"extraArgs": ["--ho=0.0.0.0"]}}, "is not allowed"),
+    "workload arg disables remote auth": (
+        {"workload": {"args": ["--require-token-env", ""]}},
+        "is not allowed",
+    ),
     "workload secretEnv": (
         {"workload": {"secretEnv": [{"name": "X", "secretName": "s", "key": "k"}]}},
         "workload.secretEnv",

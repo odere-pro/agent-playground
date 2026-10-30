@@ -13,7 +13,7 @@ stages: [lint, test, suites, image, sign]
 
 variables:
   PLATFORM_REPO_URL: https://github.com/odere-pro/agent-playground.git
-  PLATFORM_REF: main
+  PLATFORM_REF: {{ platform_ref }}
   PLATFORM_PATH: /tmp/platform
   # The python and uv the platform's images use.
   UV_IMAGE: ghcr.io/astral-sh/uv:0.11.23-python3.12-trixie-slim@sha256:bf72061021b1039aff0aee1c73da3f54e845b318502c3f5382e1c704dd800ba8

@@ -15,7 +15,7 @@ STRIP_KEYS := for v in $$(env | cut -d= -f1 | grep -E '(_API_KEY|_TOKEN|_SECRET|
 .PHONY: platform help setup test lint fmt run image sign load-smoke hostile redteam eval
 
 platform: ## Point .platform at PLATFORM_PATH
-	@ln -sfn $(PLATFORM_PATH) .platform
+	@ln -sfn "$(PLATFORM_PATH)" .platform
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  %-8s %s\n", $$1, $$2}' $(MAKEFILE_LIST)

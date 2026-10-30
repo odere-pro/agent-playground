@@ -6,6 +6,13 @@ _min_copier_version: "9.4"
 _subdirectory: project
 _templates_suffix: .jinja
 _answers_file: .copier-answers.yml
+# The Compose stack is the sidecar shape: the workload shares the chassis's network. An agent in
+# the remote lane must never run that way, so it gets no Compose file; it runs under deploy/helm.
+_exclude:
+  - "{% if connector == 'remote' %}deploy{% endif %}"
+  - "{% if connector == 'remote' %}.vscode{% endif %}"
+  - copier.yml
+  - .git
 
 agent_name:
   type: str
@@ -55,3 +62,8 @@ platform_path:
   help: The absolute path of the agent-platform checkout (path sources for workload-a2a and the kit)
   validator: >-
     {% if not platform_path.startswith('/') %}platform_path must be an absolute path{% endif %}
+
+platform_ref:
+  type: str
+  help: The platform commit CI checks out, a 40-character SHA; agentctl sets it
+  default: ""

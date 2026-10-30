@@ -21,6 +21,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 SIDECAR_FRAMEWORKS = ("python", "pydanticai", "langgraph", "openai-agents")
+REMOTE_FRAMEWORKS = ("smolagents", "claude-agent")
 TREE = (
     ".copier-answers.yml",
     "uv.lock",
@@ -52,13 +53,13 @@ def _env() -> dict[str, str]:
     }
 
 
-def _scaffold(tmp_path: Path, framework: str) -> Path:
+def _scaffold(tmp_path: Path, framework: str, connector: str = "sidecar") -> Path:
     tmp_path.mkdir(exist_ok=True)
     name = f"poc09-{framework}"
     done = subprocess.run(
         [
             *(sys.executable, "-m", "agentctl", "new", name, "--kind", "transformer"),
-            *("--framework", framework, "--connector", "sidecar", "--dest", str(tmp_path)),
+            *("--framework", framework, "--connector", connector, "--dest", str(tmp_path)),
             *("--platform-path", str(ROOT)),
         ],
         env=_env(),
@@ -113,10 +114,11 @@ CI_STEPS = ("lint", "test", "load-smoke", "hostile", "redteam", "eval")
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("framework", SIDECAR_FRAMEWORKS)
+@pytest.mark.parametrize("framework", (*SIDECAR_FRAMEWORKS, *REMOTE_FRAMEWORKS))
 def test_c4_ci_steps_pass_from_a_fresh_clone(tmp_path: Path, framework: str) -> None:
     """Criterion 4, what a runner does: clone the agent, the platform at another path, no edits."""
-    source = _scaffold(tmp_path / "made", framework)
+    connector = "remote" if framework in REMOTE_FRAMEWORKS else "sidecar"
+    source = _scaffold(tmp_path / "made", framework, connector)
     runner = tmp_path / "runner"
     runner.mkdir()
     (runner / "platform").symlink_to(ROOT, target_is_directory=True)

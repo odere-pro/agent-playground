@@ -58,6 +58,7 @@ ANSWERS: dict[str, str] = {
     "connector": "sidecar",
     "trust": "trusted",
     "platform_path": "../agent-platform",
+    "platform_ref": "0" * 40,
 }
 PROFILES = ("fake", "local")
 KEY_NAME = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD)", re.IGNORECASE)
@@ -257,7 +258,9 @@ def test_every_published_port_is_on_loopback_and_only_on_the_chassis(
             assert not ports, f"{name} publishes {ports}"
             continue
         targets = [c for _, _, c in ports]
-        assert sorted(targets) == [CHASSIS_DEBUG, WORKLOAD_DEBUG, APP_PORT], name
+        # debugpy has no login: its ports are published only where no key lives.
+        want = [APP_PORT] if name == "chassis-local" else [CHASSIS_DEBUG, WORKLOAD_DEBUG, APP_PORT]
+        assert sorted(targets) == sorted(want), name
         assert SIDECAR_PORT not in targets and 8090 not in targets
         host_ports = [h for _, h, _ in ports]
         assert len(set(host_ports)) == len(host_ports), "debug ports must be distinct"
@@ -271,9 +274,15 @@ def test_a_debugger_is_attached_to_each_container(compose: dict[str, Any], profi
         assert "debugpy:/opt/debugpy:ro" in svc["volumes"]
         assert svc["environment"]["PYTHONPATH"] == "/opt/debugpy"
         assert env_default(svc["environment"]["DEBUGPY_WAIT"]) == "0", "wait-for-client is off"
-    assert env_default(workload["environment"]["DEBUGPY_LISTEN"]) == f"auto:{WORKLOAD_DEBUG}"
+    want = f"auto:{WORKLOAD_DEBUG}" if profile == "fake" else ""
+    assert env_default(workload["environment"]["DEBUGPY_LISTEN"]) == want
     assert compose["services"]["debugpy"]["network_mode"] == "none"
     assert chassis["depends_on"]["debugpy"] == {"condition": "service_completed_successfully"}
+
+
+def test_the_chassis_image_is_never_pulled_by_its_default_name(compose: dict[str, Any]) -> None:
+    for name in ("chassis-fake", "chassis-local"):
+        assert env_default(compose["services"][name]["pull_policy"]) == "never", name
 
 
 def test_chassis_debugger_is_on_in_fake_and_opt_in_where_it_would_expose_the_key(
@@ -391,7 +400,9 @@ def test_github_ci_runs_every_stage_through_make(workflow: dict[str, Any]) -> No
     assert 'make "$TARGET"' in runs["suites"]
     assert "make image" in runs["image"] and "PUSH=1" in runs["image"]
     assert "make sign" in runs["sign"] and "cosign verify" in runs["sign"]
-    assert set(jobs["image"]["needs"]) == {"lint", "test"}
+    assert set(jobs["image"]["needs"]) == {"lint", "test", "suites"}
+    assert "PLATFORM_PATH" in runs["image"], "the image needs the platform checkout"
+    assert "uv lock --check" in runs["lint"]
 
 
 def test_github_signing_is_keyless_and_default_branch_only(workflow: dict[str, Any]) -> None:
