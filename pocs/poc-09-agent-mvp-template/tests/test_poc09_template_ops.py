@@ -50,6 +50,20 @@ OWNED = (
 )
 """The template files this piece owns; the rest of the template is agentctl's."""
 
+GITLAB_GLOBAL_KEYWORDS = {
+    "after_script",
+    "before_script",
+    "cache",
+    "default",
+    "image",
+    "include",
+    "pages",
+    "services",
+    "spec",
+    "stages",
+    "variables",
+    "workflow",
+}
 ANSWERS: dict[str, str] = {
     "agent_name": "acme-glossary",
     "package_name": "acme_glossary",
@@ -430,9 +444,17 @@ def test_github_signing_is_keyless_and_default_branch_only(workflow: dict[str, A
                 assert step["with"]["persist-credentials"] is False
 
 
+def test_no_gitlab_job_is_named_after_a_global_keyword(gitlab: dict[str, Any]) -> None:
+    """GitLab refused the first hosted pipeline: a job called `image` is the global keyword."""
+    jobs = {k for k, v in gitlab.items() if isinstance(v, dict) and "script" in v}
+    assert not jobs & GITLAB_GLOBAL_KEYWORDS
+    assert set(gitlab["build-image"]["needs"]) == {"lint", "test", "suites"}
+
+
 def test_gitlab_ci_has_the_same_stages_and_pins(gitlab: dict[str, Any]) -> None:
     assert gitlab["stages"] == ["lint", "test", "suites", "image", "sign"]
-    script = {name: "\n".join(gitlab[name]["script"]) for name in gitlab["stages"]}
+    jobs = {stage: "build-image" if stage == "image" else stage for stage in gitlab["stages"]}
+    script = {name: "\n".join(gitlab[jobs[name]]["script"]) for name in gitlab["stages"]}
     assert "make lint" in script["lint"]
     assert "make test" in script["test"]
     assert gitlab["suites"]["parallel"]["matrix"] == [{"TARGET": list(CI_TARGETS)}]
