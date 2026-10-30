@@ -69,7 +69,7 @@ cached and not published; the call that took the key over gives the kept one.
 
 **Wiring for `serve` (P11).** Build one `Idempotency(state.ports.state,
 config.spec.idempotency, telemetry)` per pipeline; it does no I/O when built. After a config
-reload, set `idempotency.spec` to the new spec (only `ttl_s` reloads).
+reload, call `idempotency.reload(spec)` with the new spec (only `ttl_s` reloads).
 
 After `to_request` and `enforce_limits`, and before `open_run`:
 
@@ -96,14 +96,17 @@ After `to_request` and `enforce_limits`, and before `open_run`:
 **Telemetry** (suggested: the names): `chassis.idempotency.claimed`,
 `.refused{code}`, `.waited`, `.taken_over`, `.lease_lost`, `.renew_failed`,
 `.fenced`, `.unknown_version`, `.not_cached{reason}` (`no_end`, `too_large`), `.finish_failed`.
-Logs carry the store key,
-which holds only the hash of the client's key.
+Logs carry the store key, which holds only the hash of the client's key. The store itself is
+not hash-only: a `done` entry holds the original `request` as is, so the client's raw
+`idempotency_key` sits in the store for `ttl_s` (the replay binds its `ReplyMeta` to it). A
+`running` or `too_large` entry holds no key.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import enum
 import hashlib
 import json
 import socket
@@ -173,7 +176,9 @@ def _nothing() -> None:
 def store_key(agent: str, idempotency_key: str) -> str:
     """`chassis:idem:v1:<agent>:<sha256(idempotency_key) hex>`: scoped by agent, and hashed, so a
     long or odd key cannot shape the store key."""
-    digest = hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()
+    # `surrogatepass`: a lone surrogate is valid in a JSON string but not in UTF-8. Every other
+    # key encodes to the same bytes as with strict UTF-8, so existing store keys do not move.
+    digest = hashlib.sha256(idempotency_key.encode("utf-8", errors="surrogatepass")).hexdigest()
     return f"{KEY_PREFIX}{agent}:{digest}"
 
 
@@ -346,12 +351,24 @@ class Claim:
         await self._stop_renewing()
         if self._check_fence():
             return False
-        idem = self._idem
+        telemetry = self._idem.telemetry
         if not events or not isinstance(events[-1], End):
-            idem.telemetry.counter("chassis.idempotency.not_cached", reason="no_end")
+            telemetry.counter("chassis.idempotency.not_cached", reason="no_end")
             await self._free()
             return False
-        done = _canonical(
+        done = self._done_entry(events, response)
+        if len(done) > self._idem.spec.max_entry_bytes:
+            telemetry.counter("chassis.idempotency.not_cached", reason="too_large")
+            marker = {"v": ENTRY_VERSION, "state": "too_large", "fingerprint": self._fingerprint}
+            await self._write(_canonical(marker))
+            return False
+        stored = await self._write(done)
+        if stored is False:
+            self._lose()
+        return stored is True
+
+    def _done_entry(self, events: Sequence[Event], response: Response) -> bytes:
+        return _canonical(
             {
                 "v": ENTRY_VERSION,
                 "state": "done",
@@ -361,30 +378,19 @@ class Claim:
                 "response": response.model_dump(mode="json"),
             }
         )
-        if len(done) > idem.spec.max_entry_bytes:
-            idem.telemetry.counter("chassis.idempotency.not_cached", reason="too_large")
-            marker = _canonical(
-                {"v": ENTRY_VERSION, "state": "too_large", "fingerprint": self._fingerprint}
-            )
-            try:
-                await idem.state.compare_and_set(
-                    self.key, self._entry, marker, ttl_s=idem.spec.ttl_s
-                )
-            except StateUnavailable as exc:
-                idem.telemetry.counter("chassis.idempotency.finish_failed")
-                idem.log("idempotency finish failed", self.key, exc)
-            return False
+
+    async def _write(self, entry: bytes) -> bool | None:
+        """Swap this claim's `running` entry for `entry`, kept `ttl_s`. True when stored, False
+        when the store holds something else, None when the store failed (counted, logged)."""
+        idem = self._idem
         try:
-            stored = await idem.state.compare_and_set(
-                self.key, self._entry, done, ttl_s=idem.spec.ttl_s
+            return await idem.state.compare_and_set(
+                self.key, self._entry, entry, ttl_s=idem.spec.ttl_s
             )
         except StateUnavailable as exc:
             idem.telemetry.counter("chassis.idempotency.finish_failed")
             idem.log("idempotency finish failed", self.key, exc)
-            return False
-        if not stored:
-            self._lose()
-        return stored
+            return None
 
     async def release(self) -> None:
         """Free the key, so the next call with it runs."""
@@ -426,6 +432,11 @@ class Idempotency:
         self.sleep = sleep
         self.renew_sleep = renew_sleep or sleep
 
+    def reload(self, spec: IdempotencySpec) -> None:
+        """Take a reloaded `spec.idempotency`. Only `ttl_s` reloads (`RELOADABLE`); a claim
+        already open reads the new spec from here on."""
+        self.spec = spec
+
     def applies(self, key_from: str) -> bool:
         """True when idempotency is on and the client sent the key (`header` or `body`)."""
         return self.spec.enabled and key_from in ("header", "body")
@@ -455,54 +466,83 @@ class Idempotency:
                 sent = self.clock()
                 if waited and sent >= deadline:
                     return self._refuse("idempotency_in_progress")
-                if await self.state.set_if_absent(key, running, ttl_s=self.spec.lease_s):
-                    self.telemetry.counter("chassis.idempotency.claimed")
-                    claim = Claim(self, request, key, running, since=sent)
-                    if waited:
-                        self.telemetry.counter("chassis.idempotency.taken_over")
-                        left_ms = int((deadline - self.clock()) * 1000)
-                        claim.timeout_ms = max(left_ms, MIN_RUN_MS)
-                    claim._start_renewing()
+                claim = await self._try_claim(request, key, running, sent, deadline, waited)
+                if claim is not None:
                     return claim
-                raw = await self.state.get(key)
-                entry = None if raw is None else _read(raw)
-                if raw is None or entry is _OTHER_VERSION:
-                    if entry is _OTHER_VERSION:
-                        self.telemetry.counter("chassis.idempotency.unknown_version")
-                        self.telemetry.log(
-                            "warning", "idempotency entry of another version", key=key
-                        )
-                        return self._refuse("idempotency_in_progress", detail=OTHER_VERSION_MESSAGE)
-                    # gone between the claim and the read: try again, within the deadline
-                    remaining = deadline - self.clock()
-                    if remaining <= 0:
-                        return self._refuse("idempotency_in_progress")
-                    waited = True
-                    await self.sleep(min(poll_s, remaining))
-                    continue
-                if entry is None:
-                    self.telemetry.log("warning", "idempotency entry unreadable", key=key)
-                    return self._refuse("state_unavailable")
-                if entry.get("fingerprint") != mine:
-                    return self._refuse("idempotency_conflict")
-                if entry.get("state") == "too_large":
-                    return self._refuse("idempotency_in_progress", detail=TOO_LARGE_MESSAGE)
-                if entry.get("state") == "done":
-                    replay = _replay(entry)
-                    if replay is None:
-                        self.telemetry.log("warning", "idempotency entry unreadable", key=key)
-                        return self._refuse("state_unavailable")
-                    return replay
-                remaining = deadline - self.clock()
-                if remaining <= 0:
-                    return self._refuse("idempotency_in_progress")
-                if not waited:
-                    waited = True
-                    self.telemetry.counter("chassis.idempotency.waited")
-                await self.sleep(min(poll_s, remaining))
+                found = self._classify(await self.state.get(key), key, mine)
+                if not isinstance(found, _Pending):
+                    return found
+                count = found is _Pending.RUNNING and not waited
+                refusal = await self._wait_or_refuse(deadline, poll_s, count=count)
+                if refusal is not None:
+                    return refusal
+                waited = True
         except StateUnavailable as exc:
             self.log("idempotency store failed", key, exc)
             return self._refuse("state_unavailable")
+
+    async def _try_claim(
+        self, request: Request, key: str, running: bytes, sent: float, deadline: float, waited: bool
+    ) -> Claim | None:
+        """Claim the key when it is absent; a claim after a wait is a takeover with what is left
+        of the deadline as its budget. None when the key is held."""
+        if not await self.state.set_if_absent(key, running, ttl_s=self.spec.lease_s):
+            return None
+        self.telemetry.counter("chassis.idempotency.claimed")
+        claim = Claim(self, request, key, running, since=sent)
+        if waited:
+            self.telemetry.counter("chassis.idempotency.taken_over")
+            left_ms = int((deadline - self.clock()) * 1000)
+            claim.timeout_ms = max(left_ms, MIN_RUN_MS)
+        claim._start_renewing()
+        return claim
+
+    def _classify(self, raw: bytes | None, key: str, mine: str) -> Replay | Refusal | _Pending:
+        """What the entry another call holds means for this call: a replay, a refusal, or a
+        wait (`GONE` between the claim attempt and the read, or `RUNNING` with our fingerprint)."""
+        if raw is None:
+            return _Pending.GONE
+        entry = _read(raw)
+        if entry is _OTHER_VERSION:
+            self.telemetry.counter("chassis.idempotency.unknown_version")
+            self.telemetry.log("warning", "idempotency entry of another version", key=key)
+            return self._refuse("idempotency_in_progress", detail=OTHER_VERSION_MESSAGE)
+        if entry is None:
+            return self._unreadable(key)
+        if entry.get("fingerprint") != mine:
+            return self._refuse("idempotency_conflict")
+        if entry.get("state") == "too_large":
+            return self._refuse("idempotency_in_progress", detail=TOO_LARGE_MESSAGE)
+        if entry.get("state") != "done":
+            return _Pending.RUNNING
+        replay = _replay(entry)
+        return self._unreadable(key) if replay is None else replay
+
+    def _unreadable(self, key: str) -> Refusal:
+        self.telemetry.log("warning", "idempotency entry unreadable", key=key)
+        return self._refuse("state_unavailable")
+
+    async def _wait_or_refuse(
+        self, deadline: float, poll_s: float, *, count: bool
+    ) -> Refusal | None:
+        """Refuse when the deadline has passed, else sleep `poll_s` (never past the deadline).
+        `count` marks the first wait on a run in flight (`chassis.idempotency.waited`)."""
+        remaining = deadline - self.clock()
+        if remaining <= 0:
+            return self._refuse("idempotency_in_progress")
+        if count:
+            self.telemetry.counter("chassis.idempotency.waited")
+        await self.sleep(min(poll_s, remaining))
+        return None
+
+
+class _Pending(enum.Enum):
+    """`_classify`'s answer when this call should wait and try the claim again."""
+
+    GONE = "gone"
+    """The entry was gone between the claim attempt and the read."""
+    RUNNING = "running"
+    """A run with the same fingerprint holds the key."""
 
 
 _OTHER_VERSION: dict[str, Any] = {}

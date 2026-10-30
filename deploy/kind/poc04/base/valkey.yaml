@@ -2,8 +2,9 @@
 # persistence (`--save ""`, no AOF), a memory ceiling, and a password from the `poc04-secrets`
 # Secret that run.sh generates. Known PoC gap: `--requirepass $(VALKEY_PASSWORD)` puts the value
 # in the Valkey process's argv inside this pod; a mounted config file is the fix for CH-3.
-# Image: valkey/valkey:8-alpine, digest resolved 2026-10-01 with `docker buildx imagetools
-# inspect`. The alpine image's `valkey` user is uid 999, gid 1000.
+# Image: valkey/valkey:8.1.4-alpine, the exact pin of the Compose scale stack and PoC-5, digest
+# resolved 2026-10-01 with `docker buildx imagetools inspect`. The alpine image's `valkey` user is
+# uid 999, gid 1000.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -28,7 +29,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: valkey
-          image: valkey/valkey:8-alpine@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507
+          image: valkey/valkey:8.1.4-alpine@sha256:e706d1213aaba6896c162bb6a3a9e1894e1a435f28f8f856d14fab2e10aa098b
           command: [valkey-server]
           args:
             - --save

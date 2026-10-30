@@ -1,7 +1,7 @@
 """MinIO in a testcontainer, for the `S3Config` binding (PoC-4). `network` tests only.
 
 The official `minio/minio` image is gone from Docker Hub, so the helper runs `pgsty/minio`, a
-community build of the same server with the same entrypoint. suggested: pin that tag. The
+community build of the same server with the same entrypoint, pinned as Compose pins it. The
 credentials are random per container and never leave the test process.
 """
 
@@ -16,8 +16,11 @@ from minio.commonconfig import ENABLED
 from minio.versioningconfig import VersioningConfig
 from testcontainers.community.minio import MinioContainer
 
-# suggested: the newest tag on the day (2026-10-01).
-MINIO_IMAGE = "pgsty/minio:RELEASE.2026-08-04T00-00-00Z"
+MINIO_IMAGE = (
+    "pgsty/minio:RELEASE.2026-08-04T00-00-00Z"
+    "@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372"
+)
+"""The exact image `deploy/compose/docker-compose.scale.yaml` pins (SECURITY.md, section 7)."""
 
 
 @contextmanager
