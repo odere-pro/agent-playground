@@ -7,7 +7,7 @@ the same suite as the fake tools". H07 (a call with no valid key gets no tool) a
 not on the key's allow-list is not listed and is refused). Each refusal has its allowed control:
 `glossary_lookup` with the chassis's key.
 
-Marked `network` and skipped unless `POC05_KIND=1` (`poc05_conftest.py`). The cluster task sets:
+Marked `network` and skipped unless `POC05_KIND=1` (`poc_harness.drills`). The cluster task sets:
 
 - `POC05_GATEWAY_MCP_URL`: the gateway's MCP URL as the test process reaches it (for example a
   port-forward to `litellm:4000`, path `/mcp/`).
@@ -34,6 +34,9 @@ import pytest
 from chassis.adapters.mcp.gateway import McpGatewayTools
 from chassis.ports.tool import ToolError
 from chassis_contracts.tool import DENIED_CODES, KnownCall, ToolPortContract
+from poc_harness.drills import POC05_KIND, required_env
+
+pytestmark = POC05_KIND
 
 URL_VAR = "POC05_GATEWAY_MCP_URL"
 KEY_VAR = "POC05_CHASSIS_VIRTUAL_KEY"
@@ -46,9 +49,7 @@ NOT_A_KEY = "sk-poc05-not-a-real-key-0000"
 
 
 def _settings() -> tuple[str, str, str]:
-    url, key = os.environ.get(URL_VAR), os.environ.get(KEY_VAR)
-    if not url or not key:
-        pytest.skip(f"set {URL_VAR} and {KEY_VAR} (the cluster task exports them)")
+    url, key = required_env(URL_VAR, KEY_VAR)  # the cluster task exports them
     return url, key, os.environ.get(HEADER_VAR) or "Authorization"
 
 

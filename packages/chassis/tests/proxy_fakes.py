@@ -32,6 +32,7 @@ from chassis.ports.model import (
 from chassis.server import ChassisConfig, create_app
 from chassis.server.correlation import RunRecord
 from chassis.server.proxy_app import create_proxy_app
+from chassis_contracts.inbound import sse
 from pydantic import TypeAdapter
 
 TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"  # pragma: allowlist secret (a trace id in a test)
@@ -116,12 +117,13 @@ def run_request(max_tokens: int) -> tuple[Request, Context]:
 
 
 def sse_frames(text: str) -> list[Frame]:
-    """Parse a named-event SSE body; every block must be one `event:` and one `data:` line."""
+    """Parse a named-event SSE body; every frame must name its event and carry `data:`. A thin
+    wrapper over the one SSE parser, `chassis_contracts.inbound.sse`.
+    """
     out: list[Frame] = []
-    for block in text.strip().split("\n\n"):
-        lines = block.splitlines()
-        assert lines[0].startswith("event: ") and lines[1].startswith("data: "), block
-        out.append((lines[0][7:], json.loads(lines[1][6:])))
+    for event in sse([text]):
+        assert event.event is not None and event.data, event
+        out.append((event.event, json.loads(event.data)))
     return out
 
 

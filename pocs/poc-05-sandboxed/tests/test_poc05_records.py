@@ -134,21 +134,30 @@ def checked_lines() -> list[str]:
 
 
 def test_the_gvisor_overhead_note_exists() -> None:
-    """Criterion 9: the overhead is recorded in its own dated note."""
+    """Criterion 9: "gVisor works for every engine that runs in the `remote` lane (or the exceptions
+    are listed), and its latency and memory overhead are measured."
+
+    Criterion 9: the overhead is recorded in its own dated note."""
     assert OVERHEAD.is_file(), OVERHEAD
 
 
 @pytest.mark.parametrize("runtime", RUNTIMES)
 @pytest.mark.parametrize("engine", REMOTE_ENGINES)
 def test_the_overhead_note_measures_each_remote_engine(engine: str, runtime: str) -> None:
-    """Criterion 9: each remote engine has a row per runtime with a latency (ms) and a memory
+    """Criterion 9: "gVisor works for every engine that runs in the `remote` lane (or the exceptions
+    are listed), and its latency and memory overhead are measured."
+
+    Criterion 9: each remote engine has a row per runtime with a latency (ms) and a memory
     (MiB) number, so the gVisor overhead can be read against runc."""
     rows = measured_rows(OVERHEAD.read_text(), engine, runtime)
     assert rows, f"no {engine} / {runtime} row with ms and MiB numbers in {OVERHEAD.name}"
 
 
 def test_the_overhead_note_lists_typescript_as_an_exception() -> None:
-    """Criterion 9, "or the exceptions are listed": echo-typescript cannot be a remote yet."""
+    """Criterion 9: "gVisor works for every engine that runs in the `remote` lane (or the exceptions
+    are listed), and its latency and memory overhead are measured."
+
+    Criterion 9, "or the exceptions are listed": echo-typescript cannot be a remote yet."""
     assert names_exception(OVERHEAD.read_text(), "typescript")
 
 
@@ -156,13 +165,17 @@ def test_the_overhead_note_lists_typescript_as_an_exception() -> None:
 
 
 def test_the_blind_spots_note_exists() -> None:
-    """Criterion 10: the list of what the chassis cannot see in the remote lane exists."""
+    """Criterion 10: "What the chassis cannot see or control in the `remote` lane is listed."
+
+    Criterion 10: the list of what the chassis cannot see in the remote lane exists."""
     assert BLIND_SPOTS.is_file(), BLIND_SPOTS
 
 
 @pytest.mark.parametrize("topic", BLIND_SPOT_TOPICS)
 def test_the_blind_spots_note_covers(topic: str) -> None:
-    """Criterion 10: the note covers each topic the cluster work raised."""
+    """Criterion 10: "What the chassis cannot see or control in the `remote` lane is listed."
+
+    Criterion 10: the note covers each topic the cluster work raised."""
     text = BLIND_SPOTS.read_text()
     assert re.search(BLIND_SPOT_TOPICS[topic], text, re.I), f"{topic!r} not in {BLIND_SPOTS.name}"
 

@@ -28,6 +28,7 @@ from chassis.ports.bundle import PortBundle
 from chassis.profiles import REGISTRY, resolve
 from chassis.server.config import EngineSpec, load_config
 from chassis_contracts.helpers import make_context, make_request
+from chassis_contracts.serving import free_port
 from fake_model_server import Script, create_app
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -416,9 +417,7 @@ async def test_over_tcp_on_loopback() -> None:
         pytest.skip("TCP is disabled (the offline gate); run with `uv run pytest -m network`")
     import uvicorn
 
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
+    port = free_port()
     url = f"http://127.0.0.1:{port}"
     server = uvicorn.Server(
         uvicorn.Config(_app(echo_wire, url=url), host="127.0.0.1", port=port, log_level="warning")

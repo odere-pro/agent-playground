@@ -1,7 +1,7 @@
 """The `remote` connector in plain-A2A mode (`spec.engine.protocol: a2a`, contract v5 draft B.4 to
 B.7): a third-party agent that sends no `chassis.event`. The server is an a2a-sdk server over a Unix
-socket (`plain_a2a_stub`) that streams the shape the kagent-adk probe recorded. Chassis mode is
-unchanged: `test_remote_connector.py` and `test_lane_contract.py` pass without edits.
+socket (`poc_harness.plain_a2a`) that streams the shape the kagent-adk probe recorded. Chassis mode
+is unchanged: `test_remote_connector.py` and `test_lane_contract.py` pass without edits.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from chassis.core.events import Delta, End, Error, Event, Metrics, Start
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.ports.bundle import PortBundle
 from chassis_contracts.helpers import make_context, make_request
-from plain_a2a_stub import (
+from poc_harness.plain_a2a import (
     ANSWER,
     CHUNKS,
     KAGENT_USAGE,

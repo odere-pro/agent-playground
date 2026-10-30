@@ -17,7 +17,7 @@ The real SLM half (Qwen3-1.7B behind llama.cpp and LiteLLM) does not run here. I
 from __future__ import annotations
 
 import copy
-from collections.abc import AsyncIterator, Iterator, Mapping
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -31,39 +31,12 @@ from chassis.ports.bundle import PortBundle
 from chassis.ports.engine import EngineConnector, Lane
 from chassis.server import ChassisConfig, create_app
 from chassis.server.config_loader import changed_paths, restart_required
-from poc06_harness import CHECKS, ENGINES, TASKS, Task
-from poc06a_harness import (
-    Backends,
-    SidecarAddress,
-    connected,
-    serve_backends,
-    sidecar_engines,
-    typescript_agent,
-    wire_python_engine,
-)
+from poc_harness.bakeoff_tasks import CHECKS, ENGINES, TASKS, Task
+from poc_harness.sidecar_lane import Backends, SidecarAddress, connected, sidecar_engines
 
 BIG = "big-default"
 SMALL = "local-small"
 AGENT = "echo"
-
-
-@pytest.fixture(scope="module")
-def _backends_for_module() -> Iterator[Backends]:
-    with serve_backends() as backends:
-        yield backends
-
-
-@pytest.fixture
-def backends(_backends_for_module: Backends) -> Backends:
-    _backends_for_module.reset()
-    return _backends_for_module
-
-
-@pytest.fixture(scope="module")
-def typescript(_backends_for_module: Backends) -> Iterator[SidecarAddress]:
-    """The TypeScript agent on a Unix socket. Skips when its `node_modules` is absent."""
-    with typescript_agent(_backends_for_module) as address:
-        yield address
 
 
 @dataclass
@@ -168,46 +141,54 @@ def _seen_models(backends: Backends) -> list[str]:
     return [str(body.get("model")) for body in backends.model_app.state.calls]
 
 
-@pytest.fixture
-def address(request: pytest.FixtureRequest) -> SidecarAddress | None:
-    if ENGINES[request.getfixturevalue("engine_name")].language != "typescript":
-        return None
-    found: SidecarAddress = request.getfixturevalue("typescript")
-    return found
+async def _run_every_task(live: Running, wired: Backends, route: str) -> dict[str, Context]:
+    """Every task on `route`: each passes, and the model and the tools saw what they should. The
+    context the engine got, by task."""
+    contexts: dict[str, Context] = {}
+    for task in TASKS:
+        wired.reset()
+        verdict, ctx = await _run_task(live, wired, task)
+        assert verdict.passed, (route, task.name, verdict.problems)
+        assert ctx.model_route == route
+        models = _seen_models(wired)
+        assert models, f"{task.name}: the model server was never called"
+        assert set(models) == {route}, (task.name, models)
+        assert wired.tool_calls == [(s.name, dict(s.arguments)) for s in task.tool_calls]
+        contexts[task.name] = ctx
+    return contexts
 
 
-@pytest.fixture
-def wired(engine_name: str, backends: Backends, monkeypatch: pytest.MonkeyPatch) -> Backends:
-    if ENGINES[engine_name].language == "python":
-        wire_python_engine(monkeypatch, ENGINES[engine_name], backends)
-    return backends
+async def _switch_to_small(live: Running) -> None:
+    """The switch: the store change only. No restart, no new app, no new engine."""
+    changed = copy.deepcopy(live.document)
+    changed["spec"]["model"]["route"] = SMALL
+    await live.store.put(AGENT, changed)
 
 
 @pytest.mark.parametrize("engine_name", sorted(sidecar_engines()))
 async def test_only_the_route_changes_and_every_task_passes_both_times(
     engine_name: str, wired: Backends, address: SidecarAddress | None
 ) -> None:
+    """Every task passes on `big-default`, then on `local-small` after the store change, and the
+    model server sees only the active route."""
     async with running(engine_name, address) as live:
         assert live.app.state.config.spec.model.route == BIG
+        await _run_every_task(live, wired, BIG)
+        await _switch_to_small(live)
+        await _run_every_task(live, wired, SMALL)
+
+
+@pytest.mark.parametrize("engine_name", sorted(sidecar_engines()))
+async def test_the_store_change_moves_only_the_route_in_the_config(
+    engine_name: str, wired: Backends, address: SidecarAddress | None
+) -> None:
+    """Given a live app on `big-default`, when its store entry is set to `local-small`, then
+    `changed_paths` is `['spec.model.route', 'version']`, the reload needs no restart, and the app
+    keeps its engine."""
+    async with running(engine_name, address) as live:
         old = live.app.state.config
         engine_before = live.app.state.ports.engine
-
-        first_ctx: dict[str, Context] = {}
-        for task in TASKS:
-            wired.reset()
-            verdict, ctx = await _run_task(live, wired, task)
-            assert verdict.passed, (BIG, task.name, verdict.problems)
-            assert ctx.model_route == BIG
-            models = _seen_models(wired)
-            assert models, f"{task.name}: the model server was never called"
-            assert set(models) == {BIG}, (task.name, models)
-            assert wired.tool_calls == [(s.name, dict(s.arguments)) for s in task.tool_calls]
-            first_ctx[task.name] = ctx
-
-        # The switch: the store change only. No restart, no new app, no new engine.
-        changed = copy.deepcopy(live.document)
-        changed["spec"]["model"]["route"] = SMALL
-        await live.store.put(AGENT, changed)
+        await _switch_to_small(live)
         new = live.app.state.config
         assert new is not old, "the reload did not take effect"
         assert new.spec.model.route == SMALL
@@ -221,16 +202,19 @@ async def test_only_the_route_changes_and_every_task_passes_both_times(
         assert new.profile == old.profile and new.agent == old.agent
         assert new.spec.prompt == old.spec.prompt and new.spec.limits == old.spec.limits
 
-        for task in TASKS:
-            wired.reset()
-            verdict, ctx = await _run_task(live, wired, task)
-            assert verdict.passed, (SMALL, task.name, verdict.problems)
-            assert ctx.model_route == SMALL
-            models = _seen_models(wired)
-            assert models, f"{task.name}: the model server was never called"
-            assert set(models) == {SMALL}, (task.name, models)
-            assert wired.tool_calls == [(s.name, dict(s.arguments)) for s in task.tool_calls]
-            _only_route_differs(first_ctx[task.name], ctx)
+
+@pytest.mark.parametrize("engine_name", sorted(sidecar_engines()))
+async def test_the_context_a_workload_gets_differs_only_by_the_route(
+    engine_name: str, wired: Backends, address: SidecarAddress | None
+) -> None:
+    """For each task, the context after the switch differs from the one before only in the route,
+    the config version it names, and the per-run ids."""
+    async with running(engine_name, address) as live:
+        before = await _run_every_task(live, wired, BIG)
+        await _switch_to_small(live)
+        after = await _run_every_task(live, wired, SMALL)
+    for task in TASKS:
+        _only_route_differs(before[task.name], after[task.name])
 
 
 def _only_route_differs(before: Context, after: Context) -> None:

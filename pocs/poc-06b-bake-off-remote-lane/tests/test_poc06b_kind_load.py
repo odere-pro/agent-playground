@@ -25,7 +25,8 @@ Each engine prints one line, for the note (copy it from the CI log):
 Grep: `grep -E '^LOAD engine=' <log>`. Percentiles are nearest-rank over all `n` runs.
 The line is printed past pytest's capture, so a passing run shows it in the log.
 
-A kind test: marked `kind` (and `network`), skipped unless `POC06_KIND=1`. Run:
+A kind test: marked `POC06_KIND` (`poc_harness.drills`), so also `network`, and skipped unless
+`POC06_KIND=1`. Run:
 `deploy/kind/poc06/run.sh test`. `test_nearest_rank_percentile` is offline.
 """
 
@@ -38,8 +39,9 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import pytest
-from poc06_harness import SMOKE
-from poc06b_kind import REMOTES, KindEngine, run_stream
+from poc_harness.bakeoff_kind import REMOTES, KindEngine, run_stream
+from poc_harness.bakeoff_tasks import SMOKE
+from poc_harness.drills import POC06_KIND
 
 ROUNDS = 2
 DEFAULT_N = 8
@@ -82,7 +84,7 @@ def one_run(engine: KindEngine) -> Sample:
     return Sample(ok, ms, "" if ok else f"status {result.status}, last {dict(end)}, {result.head}")
 
 
-@pytest.mark.kind
+@POC06_KIND
 @pytest.mark.parametrize("engine", REMOTES, ids=lambda e: e.id)
 def test_the_remote_engine_takes_concurrent_runs(
     engine: KindEngine, capsys: pytest.CaptureFixture[str]

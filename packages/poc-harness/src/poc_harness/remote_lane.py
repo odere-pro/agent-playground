@@ -1,4 +1,4 @@
-"""Shared harness for the PoC-5 offline remote-lane tests. Not a test module; the tests import it.
+"""The `remote` lane in one process, for offline tests.
 
 The whole `remote` lane in one process, with no TCP socket (`make test` allows Unix sockets):
 
@@ -16,26 +16,20 @@ The whole `remote` lane in one process, with no TCP socket (`make test` allows U
 Every server runs on the test's own event loop, so the chassis's run registry, the model fake,
 and the telemetry fake are touched from one loop only.
 
-Tokens are random per test (`new_token`); no file holds a value. The variable names are fixed
-(`TOKEN_ENV` and the rest); a test sets them with `monkeypatch`.
+Who holds which token is in `poc_harness.lane_tokens`.
 """
 
 from __future__ import annotations
 
 import asyncio
 import importlib
-import secrets
-import shutil
-import tempfile
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
-import uvicorn
 from chassis.adapters.a2a import InProcessConnector
 from chassis.adapters.a2a.remote import RemoteConnector
 from chassis.adapters.a2a.sidecar import SidecarConnector
@@ -47,143 +41,29 @@ from chassis.ports.model import ToolCallRequest
 from chassis.ports.tool import ToolDefinition, ToolResult
 from chassis.server import ChassisConfig, create_app
 from chassis.server.remote_auth import create_remote_proxy_app, remote_tokens
-from poc02_harness import ROUTE, point_tools_at, running, uds_transport
 
-__all__ = [
-    "HOLD",
-    "PREVIOUS_TOKEN_ENV",
-    "REMOTE_PROXY_URL",
-    "REMOTE_URL",
-    "REPLY",
-    "ROUTE",
-    "SENDS_ENV",
-    "TOKEN_ENV",
-    "WORKLOAD_PREVIOUS_ENV",
-    "WORKLOAD_TOKEN_ENV",
-    "GatedTools",
-    "HeldRun",
-    "RemoteLane",
-    "Tokens",
-    "inprocess_lane",
-    "new_token",
-    "new_trace_id",
-    "remote_config",
-    "remote_lane",
-    "remote_lane_connector",
-    "scripted_model",
-    "sidecar_lane",
-    "traceparent",
-    "workload_server",
-]
+from poc_harness.apps import bundle_for, running
+from poc_harness.lane_tokens import (
+    PREVIOUS_TOKEN_ENV,
+    REMOTE_PROXY_URL,
+    REMOTE_URL,
+    TOKEN_ENV,
+    WORKLOAD_PREVIOUS_ENV,
+    WORKLOAD_TOKEN_ENV,
+    Tokens,
+    new_trace_id,
+    traceparent,
+)
+from poc_harness.outbound import point_tools_at
+from poc_harness.scenario import ROUTE
+from poc_harness.sockets import (
+    on_unix_socket_on_this_loop,
+    serve_on_this_loop,
+    socket_path,
+    uds_transport,
+)
 
-TOKEN_ENV = "POC05_REMOTE_TOKEN"
-"""`spec.engine.auth.token_env`: the connector sends it; the remote listener accepts it."""
-PREVIOUS_TOKEN_ENV = "POC05_REMOTE_TOKEN_PREVIOUS"
-"""`spec.engine.auth.previous_token_env`: the remote listener also accepts it during a rotation."""
-WORKLOAD_TOKEN_ENV = "POC05_WORKLOAD_TOKEN"
-"""The workload server's `--require-token-env`."""
-WORKLOAD_PREVIOUS_ENV = "POC05_WORKLOAD_TOKEN_PREVIOUS"
-"""The workload server's `--previous-token-env`."""
-SENDS_ENV = "CHASSIS_API_TOKEN"
-"""What `echo_python` sends as its bearer on every model and MCP call."""
-
-REMOTE_URL = "http://echo-remote:9000"
-"""`spec.engine.url`. Over `uds` it only fills the `Host` header and the path."""
-REMOTE_PROXY_URL = "http://chassis-remote:8091"
-"""Where the workload's model and MCP calls go. Over a Unix socket it only fills `Host`."""
 START_TIMEOUT_S = 10.0
-
-
-def new_token() -> str:
-    """A random per-test token. The prefix marks it as a test value, not a key."""
-    return f"poc05-test-{secrets.token_hex(16)}"
-
-
-def new_trace_id() -> str:
-    """A W3C trace id (32 hex) for one run, so a test can name the run in a `traceparent`."""
-    return secrets.token_hex(16)
-
-
-def traceparent(trace_id: str) -> str:
-    return f"00-{trace_id}-{secrets.token_hex(8)}-01"
-
-
-@dataclass(frozen=True)
-class Tokens:
-    """Who holds which token. In steady state all five are one value (`Tokens.one()`); during a
-    rotation the current and previous slots differ (plan section 2.2).
-    """
-
-    chassis: str
-    """`TOKEN_ENV`: the connector sends it to the workload; the remote listener accepts it."""
-    workload: str
-    """`WORKLOAD_TOKEN_ENV`: the workload server requires it."""
-    sends: str
-    """`SENDS_ENV`: the workload sends it to the remote listener."""
-    chassis_previous: str | None = None
-    workload_previous: str | None = None
-
-    @classmethod
-    def one(cls) -> Tokens:
-        token = new_token()
-        return cls(chassis=token, workload=token, sends=token)
-
-    def values(self) -> set[str]:
-        return {
-            t
-            for t in (
-                self.chassis,
-                self.workload,
-                self.sends,
-                self.chassis_previous,
-                self.workload_previous,
-            )
-            if t
-        }
-
-    def apply(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Set the variables; an unused previous slot is removed, not left from a former test."""
-        monkeypatch.setenv(TOKEN_ENV, self.chassis)
-        monkeypatch.setenv(WORKLOAD_TOKEN_ENV, self.workload)
-        monkeypatch.setenv(SENDS_ENV, self.sends)
-        for name, value in (
-            (PREVIOUS_TOKEN_ENV, self.chassis_previous),
-            (WORKLOAD_PREVIOUS_ENV, self.workload_previous),
-        ):
-            if value:
-                monkeypatch.setenv(name, value)
-            else:
-                monkeypatch.delenv(name, raising=False)
-
-
-# --- Servers on Unix sockets, on the test's event loop ---
-
-
-@asynccontextmanager
-async def _serving(server: uvicorn.Server) -> AsyncIterator[None]:
-    task = asyncio.create_task(server.serve())
-    try:
-        async with asyncio.timeout(START_TIMEOUT_S):
-            while not server.started:
-                if task.done():
-                    task.result()
-                    raise RuntimeError("uvicorn exited before it started")
-                await asyncio.sleep(0.01)
-        yield
-    finally:
-        server.should_exit = True
-        server.force_exit = True
-        await task
-
-
-@asynccontextmanager
-async def _socket_folder() -> AsyncIterator[Path]:
-    """A short folder: macOS caps a Unix socket path at 104 bytes."""
-    folder = Path(tempfile.mkdtemp(prefix="p5-"))
-    try:
-        yield folder
-    finally:
-        shutil.rmtree(folder, ignore_errors=True)
 
 
 @asynccontextmanager
@@ -196,25 +76,14 @@ async def workload_server(
     """
     from workload_a2a.cli import build
 
-    async with _socket_folder() as folder:
-        uds = str(folder / "w.sock")
+    with socket_path("w.sock") as uds:
         argv = ["serve", "--handle", handle, "--uds", uds, "--log-level", "warning"]
         argv += ["--drain-timeout-s", "0", "--name", handle, "--version", "0.0.1"]
         if token:
             argv += ["--require-token-env", WORKLOAD_TOKEN_ENV]
         if previous:
             argv += ["--previous-token-env", WORKLOAD_PREVIOUS_ENV]
-        async with _serving(build(argv)):
-            yield uds
-
-
-@asynccontextmanager
-async def app_on_socket(app: Any, name: str) -> AsyncIterator[str]:
-    """`app` on uvicorn on a fresh Unix socket, lifespan off; yields the path."""
-    async with _socket_folder() as folder:
-        uds = str(folder / name)
-        config = uvicorn.Config(app, uds=uds, lifespan="off", log_level="warning")
-        async with _serving(uvicorn.Server(config)):
+        async with serve_on_this_loop(build(argv)):
             yield uds
 
 
@@ -385,6 +254,30 @@ class HeldRun:
 
 
 @asynccontextmanager
+async def _remote_listener(
+    app: Any, config: ChassisConfig, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[tuple[Any, str]]:
+    """The chassis's remote proxy listener on a Unix socket, with the workload's model and MCP
+    calls pointed at it. Yields the listener app and its socket path.
+    """
+    auth = config.spec.engine.auth
+    assert auth is not None
+    # The tokens come from the variables, the way `chassis serve` reads them.
+    remote = create_remote_proxy_app(app, remote_tokens(auth.model_dump()))
+    async with on_unix_socket_on_this_loop(remote, "r.sock") as remote_uds:
+        inner = httpx.AsyncHTTPTransport(uds=remote_uds)
+        echo: Any = importlib.import_module("echo_python.handle")
+        monkeypatch.setattr(echo, "transport", _KeepOpen(inner))
+        point_tools_at(monkeypatch, uds_transport(remote_uds))
+        monkeypatch.setenv("CHASSIS_MODEL_URL", f"{REMOTE_PROXY_URL}/v1")
+        monkeypatch.setenv("CHASSIS_TOOL_URL", f"{REMOTE_PROXY_URL}/mcp")
+        try:
+            yield remote, remote_uds
+        finally:
+            await inner.aclose()
+
+
+@asynccontextmanager
 async def remote_lane(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -397,33 +290,16 @@ async def remote_lane(
     """
     tokens = tokens or Tokens.one()
     tokens.apply(monkeypatch)
-    model = scripted_model()
-    tools = GatedTools()
-    telemetry = InMemoryTelemetry()
+    model, tools, telemetry = scripted_model(), GatedTools(), InMemoryTelemetry()
     connector = RemoteConnector()
-    async with (
-        workload_server(handle, previous=tokens.workload_previous is not None) as workload_uds,
-    ):
+    ports = PortBundle(
+        model=model, engine=connector, config=InMemoryConfig(), telemetry=telemetry, tools=tools
+    )
+    previous = tokens.workload_previous is not None
+    async with workload_server(handle, previous=previous) as workload_uds:
         config = remote_config(workload_uds, previous=tokens.chassis_previous is not None)
-        ports = PortBundle(
-            model=model,
-            engine=connector,
-            config=InMemoryConfig(),
-            telemetry=telemetry,
-            tools=tools,
-        )
         app = create_app(config, ports)
-        auth = config.spec.engine.auth
-        assert auth is not None
-        # The tokens come from the variables, the way `chassis serve` reads them.
-        remote = create_remote_proxy_app(app, remote_tokens(auth.model_dump()))
-        async with app_on_socket(remote, "r.sock") as remote_uds:
-            inner = httpx.AsyncHTTPTransport(uds=remote_uds)
-            echo: Any = importlib.import_module("echo_python.handle")
-            monkeypatch.setattr(echo, "transport", _KeepOpen(inner))
-            point_tools_at(monkeypatch, uds_transport(remote_uds))
-            monkeypatch.setenv("CHASSIS_MODEL_URL", f"{REMOTE_PROXY_URL}/v1")
-            monkeypatch.setenv("CHASSIS_TOOL_URL", f"{REMOTE_PROXY_URL}/mcp")
+        async with _remote_listener(app, config, monkeypatch) as (remote, remote_uds):
             lane = RemoteLane(
                 app=app,
                 remote_proxy=remote,
@@ -435,26 +311,18 @@ async def remote_lane(
                 workload_uds=workload_uds,
                 remote_proxy_uds=remote_uds,
             )
-            try:
-                async with running(app):
-                    yield lane
-            finally:
-                await inner.aclose()
+            async with running(app):
+                yield lane
 
 
 # --- Lane factories for `LaneContract` ---
 
 
-def _bundle(engine: EngineConnector) -> PortBundle:
-    return PortBundle(
-        model=ScriptedModel(), engine=engine, config=InMemoryConfig(), telemetry=InMemoryTelemetry()
-    )
-
-
 @asynccontextmanager
 async def inprocess_lane(path: str) -> AsyncIterator[EngineConnector]:
     connector = InProcessConnector()
-    await connector.setup({"connector": "inprocess", "handle": path}, _bundle(connector))
+    spec = {"connector": "inprocess", "handle": path}
+    await connector.setup(spec, bundle_for(connector, model=ScriptedModel()))
     try:
         yield connector
     finally:
@@ -467,7 +335,7 @@ async def sidecar_lane(path: str) -> AsyncIterator[EngineConnector]:
     async with workload_server(path, token=False) as uds:
         connector = SidecarConnector()
         spec = {"connector": "sidecar", "url": "http://127.0.0.1:9100", "uds": uds}
-        await connector.setup(spec, _bundle(connector))
+        await connector.setup(spec, bundle_for(connector, model=ScriptedModel()))
         try:
             yield connector
         finally:
@@ -482,7 +350,7 @@ async def remote_lane_connector(path: str) -> AsyncIterator[EngineConnector]:
     async with workload_server(path) as uds:
         connector = RemoteConnector()
         spec = remote_config(uds).spec.engine.as_mapping()
-        await connector.setup(spec, _bundle(connector))
+        await connector.setup(spec, bundle_for(connector, model=ScriptedModel()))
         try:
             yield connector
         finally:

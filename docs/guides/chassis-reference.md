@@ -164,7 +164,7 @@ Each is built by `from_env()` and loaded lazily.
   - A failure before the first stream item (a connect error, a timeout) is a lone `error` with no `start`, the same as the rule for a failure before `handle`. The translator emits `start` only when the first item arrives.
   - The span attribute `a2a.task_id` keeps at most 128 characters (suggested) of the remote's task id. At most 64 artifact snapshots are kept (suggested), and none once a delta went out.
   - Not visible: `tool_call`, and the `retry` and `fallback` statuses.
-  - Tests: `tests/test_a2a_plain.py` (the translator), `tests/test_remote_connector_plain.py` (the connector against the stub in `tests/plain_a2a_stub.py`), and `pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_plain_a2a_contract.py` (`EngineConnectorContract`).
+  - Tests: `tests/test_a2a_plain.py` (the translator), `tests/test_remote_connector_plain.py` (the connector against the stub in `poc_harness.plain_a2a`, `packages/poc-harness`), and `pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_plain_a2a_contract.py` (`EngineConnectorContract`).
 - `packages/workload-a2a` holds the workload-side copies. Its `mapping.py` is byte for byte. Its `server.py` is mirrored.
 
 ### mcp

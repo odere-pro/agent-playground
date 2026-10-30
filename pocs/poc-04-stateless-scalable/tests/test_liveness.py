@@ -25,7 +25,8 @@ from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.readiness import ProbeSettings
-from poc02_harness import SIDECAR_URL, on_unix_socket
+from poc_harness.scenario import SIDECAR_URL
+from poc_harness.sockets import on_unix_socket
 
 HANDLE = "chassis.core.handle:echo_wire"
 FAST = ProbeSettings(interval_s=0.02, timeout_s=0.1, failures=3)

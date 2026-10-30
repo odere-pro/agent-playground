@@ -45,8 +45,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from poc03_harness import ENGINES, OutboundRouter, patch_outbound
-from poc04_harness import SIMPLIFIED, TYPESCRIPT, HarnessModel, call, replicas_on_unix_sockets
+from poc_harness.interfaces import ENGINES, TYPESCRIPT, OutboundRouter
+from poc_harness.outbound import patch_outbound
+from poc_harness.replica_calls import call
+from poc_harness.replica_doubles import HarnessModel
+from poc_harness.replicas import replicas_on_unix_sockets
+from poc_harness.scenario import SIMPLIFIED
+from poc_harness.waits import wait_until_async
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKLOADS = ROOT / "packages/workloads"
@@ -95,12 +100,10 @@ PYTHON_ENGINES = [engine for engine, handle in ENGINES.items() if handle is not 
 
 
 async def _until_pruned(live: set[str], label: str) -> None:
-    """Wait up to `PRUNE_WAIT_S` for `live` to empty; fail with `label` if it does not."""
-    for _ in range(int(PRUNE_WAIT_S / 0.02)):
-        if not live:
-            return
-        await asyncio.sleep(0.02)
-    pytest.fail(f"{label}: the A2A server kept a finished task after {PRUNE_WAIT_S} s: {live}")
+    """Fail with `label` if the A2A server still holds a task after `PRUNE_WAIT_S`."""
+    await wait_until_async(
+        lambda: not live, f"{label}: the A2A server to drop its finished tasks", PRUNE_WAIT_S
+    )
 
 
 class Runs:

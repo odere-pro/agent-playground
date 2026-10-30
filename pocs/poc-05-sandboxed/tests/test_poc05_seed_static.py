@@ -20,6 +20,7 @@ from typing import Any
 
 import pytest
 import yaml
+from poc_harness.manifests import load_manifests
 
 ROOT = Path(__file__).resolve().parents[3]
 KIND = ROOT / "deploy/kind/poc05"
@@ -49,17 +50,11 @@ CHASSIS = {"agents.platform/role": "chassis"}
 SECRET_SOURCES = re.compile(r"\b(new_secret|new_id|read_secret|openssl|curl)\b")
 
 
-def _docs(path: Path) -> Iterator[dict[str, Any]]:
-    for doc in yaml.safe_load_all(path.read_text()):
-        if isinstance(doc, dict):
-            yield doc
-
-
 def _manifests(root: Path = KIND) -> Iterator[tuple[Path, dict[str, Any]]]:
     for path in sorted(root.rglob("*.yaml")):
         if path.parent.name == "litellm" or path.name == "kustomization.yaml":
             continue
-        for doc in _docs(path):
+        for doc in load_manifests(path):
             if "kind" in doc and "apiVersion" in doc:
                 yield path, doc
 

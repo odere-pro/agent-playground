@@ -31,6 +31,7 @@ from chassis.server import ChassisConfig, create_app
 from chassis.server.interfaces.anthropic import _with_raw_only
 from chassis.server.interfaces.errors import INTERFACE_KEY
 from fastapi import FastAPI
+from poc_harness.sse import sse_frames
 
 CONFIG: dict[str, Any] = {
     "version": "cfg-1",
@@ -114,16 +115,6 @@ def _body(text: str = "hi", **extra: Any) -> dict[str, Any]:
         "messages": [{"role": "user", "content": text}],
         **extra,
     }
-
-
-def _sse(text: str) -> list[tuple[str, dict[str, Any]]]:
-    out = []
-    for frame in text.split("\n\n"):
-        if not frame.strip():
-            continue
-        lines = frame.split("\n")
-        out.append((lines[0].removeprefix("event: "), json.loads(lines[1].removeprefix("data: "))))
-    return out
 
 
 # --- through the official SDK ------------------------------------------------------------------
@@ -618,7 +609,7 @@ async def test_stream_over_http_is_sse_with_ids_in_the_headers() -> None:
     assert res.status_code == 200 and res.headers["content-type"].startswith("text/event-stream")
     assert res.headers["x-trace-id"] == TRACE and res.headers["x-request-id"]
     assert "x-chassis-status" not in res.headers, "the status is not known when headers go out"
-    frames = _sse(res.text)
+    frames = sse_frames(res.text)
     assert frames[0][0] == "message_start" and frames[-1][0] == "message_stop"
 
 
@@ -627,7 +618,7 @@ async def test_mid_stream_error_over_http_has_no_message_stop() -> None:
     app = _app()
     async with _http(app) as client, app.router.lifespan_context(app):
         res = await client.post("/v1/messages", json=_body("fail-late", stream=True))
-    names = [name for name, _ in _sse(res.text)]
+    names = [name for name, _ in sse_frames(res.text)]
     assert names == ["message_start", "content_block_start", "content_block_delta", "error"]
 
 

@@ -1,8 +1,8 @@
 """PoC-6a, the benchmark kit (exit criterion 3) on every sidecar-lane engine and lane: smoke,
 simplifier, and lookup run through the chassis connector, in memory (`inprocess`) and over A2A on a
 Unix socket (`sidecar`), against the fake model server on `scripts/bakeoff.yaml` and the two-tool
-fake MCP server. Each run is judged by the pass check of `poc06_harness`. The engines come from the
-registry (`poc06_harness.ENGINES`), so a new one is one registry line.
+fake MCP server. Each run is judged by the pass check of `bakeoff_tasks`. The engines come from the
+registry (`bakeoff_tasks.ENGINES`), so a new one is one registry line.
 
 The TypeScript agent is a Node process, so its in-memory cell is skipped on purpose. Its cells skip
 as a whole only when its `node_modules` is absent (`npm ci`).
@@ -15,32 +15,8 @@ from __future__ import annotations
 
 import pytest
 from chassis.core.trace import trace_id_hex
-from poc06_harness import ENGINES, LOOKUP, TASKS, Task
-from poc06a_harness import (
-    Backends,
-    Seen,
-    SidecarAddress,
-    cell_params,
-    run_task,
-    wire_python_engine,
-)
-
-
-@pytest.fixture
-def address(request: pytest.FixtureRequest) -> SidecarAddress | None:
-    """The TypeScript agent for a TypeScript cell, else None."""
-    if ENGINES[request.getfixturevalue("engine_name")].language != "typescript":
-        return None
-    found: SidecarAddress = request.getfixturevalue("typescript")
-    return found
-
-
-@pytest.fixture
-def wired(engine_name: str, backends: Backends, monkeypatch: pytest.MonkeyPatch) -> Backends:
-    """The backends, with a Python engine's hooks pointed at them."""
-    if ENGINES[engine_name].language == "python":
-        wire_python_engine(monkeypatch, ENGINES[engine_name], backends)
-    return backends
+from poc_harness.bakeoff_tasks import ENGINES, LOOKUP, TASKS, Task
+from poc_harness.sidecar_lane import Backends, Seen, SidecarAddress, cell_params, run_task
 
 
 @pytest.mark.parametrize("task", TASKS, ids=[t.name for t in TASKS])

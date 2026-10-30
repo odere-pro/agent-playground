@@ -15,6 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 from code_runner.isolation import NPROC_ALLOWANCE
 
@@ -30,21 +31,12 @@ PIDS_HEADROOM = 16
 """suggested: pause, sidecars, and exec probes that count against the same pod cap."""
 
 
-def _kubelet_patches() -> list[dict[str, Any]]:
-    cluster = yaml.safe_load(CLUSTER.read_text())
-    patches: list[dict[str, Any]] = []
-    for node in cluster["nodes"]:
-        for raw in node.get("kubeadmConfigPatches", []):
-            doc = yaml.safe_load(raw)
-            if doc.get("kind") == "KubeletConfiguration":
-                patches.append(doc)
-    return patches
+NODES: list[dict[str, Any]] = yaml.safe_load(CLUSTER.read_text())["nodes"]
 
 
-def test_poc05_every_node_has_a_kubelet_patch() -> None:
-    cluster = yaml.safe_load(CLUSTER.read_text())
-    assert cluster["nodes"], "the cluster has no node"
-    assert len(_kubelet_patches()) == len(cluster["nodes"])
+def _kubelet_patches(node: dict[str, Any]) -> list[dict[str, Any]]:
+    docs = [yaml.safe_load(raw) for raw in node.get("kubeadmConfigPatches", [])]
+    return [doc for doc in docs if doc.get("kind") == "KubeletConfiguration"]
 
 
 def pids_floor() -> int:
@@ -52,21 +44,32 @@ def pids_floor() -> int:
     return PIDS_FACTOR * (NPROC_ALLOWANCE + PIDS_BASELINE) + PIDS_HEADROOM
 
 
-def check_pod_pids_limit(limit: object) -> None:
-    assert isinstance(limit, int), "podPidsLimit is not set"
-    assert pids_floor() < limit <= PIDS_CEILING, (
-        f"podPidsLimit {limit} not in ({pids_floor()}, {PIDS_CEILING}]"
-    )
+def test_poc05_every_node_has_a_kubelet_patch() -> None:
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8, H23, the control: each node has one KubeletConfiguration patch, so a missing
+    patch fails here instead of passing as "no limit found"."""
+    assert NODES, "the cluster has no node"
+    assert all(len(_kubelet_patches(node)) == 1 for node in NODES)
 
 
-def test_poc05_kubelet_sets_a_small_pod_pids_limit() -> None:
-    patches = _kubelet_patches()
-    assert patches
-    for patch in patches:
-        check_pod_pids_limit(patch.get("podPidsLimit"))
+@pytest.mark.parametrize("node", NODES, ids=[f"{n['role']}-{i}" for i, n in enumerate(NODES)])
+def test_poc05_kubelet_sets_a_small_pod_pids_limit(node: dict[str, Any]) -> None:
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8, H23: this node's `podPidsLimit` is above the floor and at most the ceiling."""
+    limits = [patch.get("podPidsLimit") for patch in _kubelet_patches(node)]
+    assert limits, "the node has no KubeletConfiguration patch"
+    for limit in limits:
+        assert isinstance(limit, int), "podPidsLimit is not set"
+        assert pids_floor() < limit <= PIDS_CEILING, (
+            f"podPidsLimit {limit} not in ({pids_floor()}, {PIDS_CEILING}]"
+        )
 
 
 def test_poc05_pids_floor_is_below_the_ceiling() -> None:
-    """Control: the band is not empty, so some limit passes."""
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Criterion 8, H23, the control: the band is not empty, so some limit passes."""
     assert NPROC_ALLOWANCE > 0
     assert pids_floor() < PIDS_CEILING

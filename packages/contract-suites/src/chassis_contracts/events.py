@@ -9,10 +9,11 @@ lowercase letters and digits, and `time` is RFC 3339 with an offset.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import re
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from functools import cache
 from pathlib import Path
@@ -89,12 +90,22 @@ class Inbox:
         return [event.id for event in self.received]
 
 
-async def wait_until(check: Callable[[], bool], timeout_s: float, what: str) -> None:
+async def wait_until(
+    check: Callable[[], bool | Awaitable[bool]],
+    timeout_s: float,
+    what: str,
+    *,
+    interval_s: float = 0.02,
+) -> None:
+    """Poll `check`, sync or async, until it is true. On timeout, fail the test."""
     deadline = asyncio.get_running_loop().time() + timeout_s
-    while not check():
+    while True:
+        result = check()
+        if await result if inspect.isawaitable(result) else result:
+            return
         if asyncio.get_running_loop().time() > deadline:
             pytest.fail(f"timed out after {timeout_s} s waiting for {what}")
-        await asyncio.sleep(0.02)
+        await asyncio.sleep(interval_s)
 
 
 @pytest.mark.contract

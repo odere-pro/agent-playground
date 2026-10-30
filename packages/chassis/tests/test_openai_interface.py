@@ -29,6 +29,7 @@ from chassis.server import ChassisConfig, create_app
 from chassis.server.interfaces.errors import INTERFACE_KEY
 from fastapi import FastAPI
 from openai import AsyncOpenAI
+from poc_harness.sse import sse_data
 
 CONFIG: dict[str, Any] = {
     "version": "cfg-1",
@@ -78,16 +79,6 @@ def _sdk(app: FastAPI, *, max_retries: int = 2) -> AsyncOpenAI:
 
 def _body(text: str = "hi there", **extra: Any) -> dict[str, Any]:
     return {"model": "echo", "messages": [{"role": "user", "content": text}], **extra}
-
-
-def _data(text: str) -> list[Any]:
-    out: list[Any] = []
-    for block in text.split("\n\n"):
-        if block.strip():
-            assert block.startswith("data: "), block
-            raw = block[6:]
-            out.append(raw if raw == "[DONE]" else json.loads(raw))
-    return out
 
 
 async def _say(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
@@ -148,7 +139,7 @@ async def test_stream_through_the_app() -> None:
     assert res.headers["content-type"].startswith("text/event-stream")
     assert res.headers["x-trace-id"] and res.headers["x-request-id"]
     assert "x-chassis-status" not in res.headers, "the status is not known when headers go out"
-    data = _data(res.text)
+    data = sse_data(res.text, named=False)
     assert data[-1] == "[DONE]"
     assert data[0]["choices"][0]["delta"] == {"role": "assistant", "content": ""}
     assert [d["choices"][0]["delta"].get("content") for d in data[1:3]] == ["one ", "two"]
@@ -212,7 +203,7 @@ async def test_an_error_after_text_is_an_error_frame_when_streamed() -> None:
         streamed = await client.post(PATH, json=_body("fail-late", stream=True))
         complete = await client.post(PATH, json=_body("fail-late"))
     assert streamed.status_code == 200
-    data = _data(streamed.text)
+    data = sse_data(streamed.text, named=False)
     assert data[-1] == "[DONE]" and data[-2]["error"]["code"] == "a2a.timeout"
     assert all(d["choices"][0]["finish_reason"] is None for d in data[:-2])
     assert complete.status_code == 504 and complete.json()["error"]["code"] == "a2a.timeout"

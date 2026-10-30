@@ -64,11 +64,10 @@ The registered list is in [pyproject.toml](../../pyproject.toml) (`[tool.pytest.
 
 - `slow`: a subprocess or import-lint test. It still runs in `make test`.
 - `network`: needs a real socket. Never in `make test`; `make test-integration` runs it.
-- `stack`: a Compose drill. Also `network`.
-- `kind`: a kind drill. Also `network`.
+- `requires_env(variable, *, context=None, hint="")`: a drill. Also `network`. The `poc_harness.plugin` pytest plugin reads it; the named marks are in `poc_harness.drills`.
 - `contract`: every case of a contract suite.
 
-A drill runs only when its gate variable is `1`.
+A drill runs only when its gate variable is `1`. With `requires_env`, the variable on and a `context` kubectl lacks is an error, not a skip, so a kind run cannot pass having checked nothing.
 
 | Variable | Gates |
 | -------- | ----- |

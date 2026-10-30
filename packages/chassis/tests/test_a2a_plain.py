@@ -23,7 +23,7 @@ from chassis.adapters.a2a.plain import (
     redact,
 )
 from chassis.core.events import Delta, End, Error, Event, Metrics, Start, parse_event
-from plain_a2a_stub import (
+from poc_harness.plain_a2a import (
     ANSWER,
     CHUNKS,
     KAGENT_USAGE,

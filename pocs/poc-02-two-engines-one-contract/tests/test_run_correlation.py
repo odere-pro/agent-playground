@@ -2,7 +2,7 @@
 
 Each test names the exit criterion in docs/planning/poc/002-PoC-2-two-engines-one-contract.md it
 covers. No network: the workload's outbound calls are routed into the chassis app over ASGI and
-recorded with their headers (`poc02_harness.route_outbound`).
+recorded with their headers (`poc_harness.outbound.route_outbound`).
 
 An engine whose client drops the `traceparent` header is listed here as a strict xfail
 (`engine_params({handle: reason})`), with the fix; none does today. The list moves to `notes/`
@@ -19,19 +19,10 @@ from typing import Any
 import httpx
 import pytest
 from chassis.fakes import ScriptedModel
-from poc02_harness import (
-    SIMPLIFY,
-    TIMEOUT_S,
-    TOOL_PROMPT,
-    ToolLoopModel,
-    chassis_app,
-    client_for,
-    engine_params,
-    proxy_for,
-    route_outbound,
-    running,
-    tool_list_failures,
-)
+from poc_harness.apps import chassis_app, client_for, proxy_for, running
+from poc_harness.outbound import route_outbound, tool_list_failures
+from poc_harness.scenario import SIMPLIFY, TIMEOUT_S, TOOL_PROMPT, engine_params
+from poc_harness.scripted_model import ToolLoopModel
 
 TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 

@@ -18,8 +18,8 @@ import pytest
 from chassis.adapters.evaluators import EncoderEvaluator, JudgeEvaluator
 from chassis.adapters.litellm import LiteLLMModel
 from chassis_contracts import EvaluatorPortContract
-from poc06a_harness import Backends
 from poc07_evals_harness import JUDGE_ROUTE, serve_gate_backends, tei_stub
+from poc_harness.sidecar_lane import Backends
 
 
 class Outage(httpx.AsyncBaseTransport):

@@ -3,7 +3,7 @@ each of the three Python engines.
 
 Each test names the exit criterion in docs/planning/poc/002-PoC-2-two-engines-one-contract.md it
 covers. No network: MCP is spoken as plain JSON-RPC over ASGI, and each engine's outbound calls
-(model and MCP) are routed into the chassis app (`poc02_harness.route_outbound`).
+(model and MCP) are routed into the chassis app (`poc_harness.outbound.route_outbound`).
 """
 
 from __future__ import annotations
@@ -16,22 +16,13 @@ from pathlib import Path
 
 import pytest
 from chassis.ports.bundle import PortBundle
-from poc02_harness import (
-    AFTER_TOOL,
-    ROOT,
-    TIMEOUT_S,
-    TOOL_PROMPT,
-    ToolLoopModel,
-    chassis_app,
-    client_for,
-    engine_params,
-    glossary_over_mcp,
-    proxy_for,
-    route_outbound,
-    running,
-    sse_frames,
-    tool_list_failures,
-)
+from poc_harness.apps import chassis_app, client_for, proxy_for, running
+from poc_harness.mcp_client import glossary_over_mcp
+from poc_harness.outbound import route_outbound, tool_list_failures
+from poc_harness.paths import ROOT
+from poc_harness.scenario import AFTER_TOOL, TIMEOUT_S, TOOL_PROMPT, engine_params
+from poc_harness.scripted_model import ToolLoopModel
+from poc_harness.sse import sse_frames
 
 CHASSIS_SRC = ROOT / "packages/chassis/src/chassis"
 WORKLOADS = ROOT / "packages/workloads"

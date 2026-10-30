@@ -1,6 +1,7 @@
 """A plain-A2A stub agent: an a2a-sdk server that sends NO `chassis.event` metadata, the way a
-third-party agent (kagent-adk) does. Not a test module; the connector tests and the PoC-6b contract
-binding import it. It serves over a Unix socket (`a2a_uds.serve_uds`), which the gate allows.
+third-party agent (kagent-adk) does. The chassis connector tests and the PoC-6b contract binding
+import it. A test serves it over a Unix socket (the chassis tests' `a2a_uds.serve_uds`), which the
+gate allows.
 
 `kagent_stream` is the shape the 2026-10-09 probe recorded from kagent-adk 0.4.0 (a2a-sdk 1.1.5):
 `pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-kagent-probe.md`, item 3. The builders make

@@ -3,7 +3,7 @@ offline in `make test` on every commit.
 
 There is no probe workload (decision 2026-10-02: T10, `packages/workloads/hostile`, is dropped).
 Each check is framed as "the control refuses X", next to its paired allowed control in the same
-test, and is driven through the existing harness (`poc05_harness.remote_lane`): the chassis app,
+test, and is driven through the existing harness (`poc_harness.remote_lane`): the chassis app,
 `RemoteConnector` with the token over a Unix socket, the `echo_python` workload served by its
 own CLI, and the chassis's remote listener, with the scripted model and the fake tools behind
 the ports. No TCP, no key.
@@ -35,7 +35,7 @@ from typing import Any
 
 import httpx
 import httpx2
-import poc05_harness
+import poc_harness.remote_lane as remote_lane_module
 import pytest
 import yaml
 from chassis.core.inbound import public_message
@@ -47,18 +47,9 @@ from chassis.server.cli import build_all, parse_args
 from chassis.server.proxy_app import create_proxy_app
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
-from poc05_harness import (
-    HOLD,
-    REMOTE_PROXY_URL,
-    REPLY,
-    ROUTE,
-    HeldRun,
-    RemoteLane,
-    new_token,
-    new_trace_id,
-    remote_lane,
-    scripted_model,
-)
+from poc_harness.lane_tokens import REMOTE_PROXY_URL, new_token, new_trace_id
+from poc_harness.remote_lane import HOLD, REPLY, HeldRun, RemoteLane, remote_lane, scripted_model
+from poc_harness.scenario import ROUTE
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
@@ -115,7 +106,10 @@ def _mcp_client(lane: RemoteLane, trace: str) -> Client[Any]:
 async def test_h08_a_tool_off_the_allow_list_is_refused_through_the_chassis(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Exit criterion 1 (offline), H08: the tool port is the write-mode set (`glossary_lookup`
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    Exit criterion 1 (offline), H08: the tool port is the write-mode set (`glossary_lookup`
     and `note_write` allowed, `unlisted_probe` behind the port but off the allow-list). Inside a
     run, through the chassis's `/mcp` on the remote listener with the remote's own token:
     `unlisted_probe` is not listed, and a call to it is refused with the public error code
@@ -126,7 +120,7 @@ async def test_h08_a_tool_off_the_allow_list_is_refused_through_the_chassis(
     Here the refusal comes from the fake tool port (`write_mode_tools`), which stands in for that
     allow-list; the chassis path around it is real. The gateway's own list is checked on kind.
     """
-    monkeypatch.setattr(poc05_harness, "default_tools", write_mode_tools)
+    monkeypatch.setattr(remote_lane_module, "default_tools", write_mode_tools)
     async with remote_lane(monkeypatch) as lane:
         tools = lane.tools.inner
         async with lane.held_run() as run, _mcp_client(lane, run.traceparent) as mcp:
@@ -200,7 +194,10 @@ def _with_config(args: Sequence[str], config: Path) -> list[str]:
 def test_h13_the_public_port_binds_the_pod_ip_and_the_proxy_loopback(
     pod: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Exit criterion 1 (offline), H13: the chassis container's args from the PoC-5 manifest,
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    Exit criterion 1 (offline), H13: the chassis container's args from the PoC-5 manifest,
     with `$(POD_IP)` filled, go through the real `chassis serve` argument checks and
     `build_all`. The public listener's bind address is the pod IP, neither loopback nor a
     wildcard, so a workload's `connect 127.0.0.1:8080` finds nothing. The allowed control: the
@@ -246,7 +243,10 @@ def _with_cap(config: ChassisConfig, cap: int) -> ChassisConfig:
 async def test_h15_h16_uncorrelated_calls_are_served_up_to_the_cap_then_429(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Exit criterion 1 (offline), H15 and H16: the loopback proxy (the sidecar's, no
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    Exit criterion 1 (offline), H15 and H16: the loopback proxy (the sidecar's, no
     credential, by design) serves model calls with no `traceparent` and counts them
     uncorrelated, up to `spec.limits.uncorrelated_tokens_per_minute`; past it, 429
     `budget_exhausted` before the model is called. The allowed control, with the cap spent: a
@@ -361,7 +361,10 @@ async def _held_run_with_budget(lane: RemoteLane, max_tokens: int) -> AsyncItera
 async def test_h29_a_route_outside_the_key_is_refused_and_an_in_scope_call_is_200(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Exit criterion 1 (offline), H29, route scope: inside a run, with its own token, the
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    Exit criterion 1 (offline), H29, route scope: inside a run, with its own token, the
     remote calls the chassis's model proxy with a route the key does not list. The chassis
     forwards the route as is (no rewrite, no fallback), and the key's refusal reaches the remote
     as a non-retryable error with no completion. The control: the in-scope route in the same
@@ -377,7 +380,7 @@ async def test_h29_a_route_outside_the_key_is_refused_and_an_in_scope_call_is_20
         scoped.append(KeyScopedModel(scripted_model(), IN_SCOPE))
         return scoped[-1]
 
-    monkeypatch.setattr(poc05_harness, "scripted_model", model)
+    monkeypatch.setattr(remote_lane_module, "scripted_model", model)
     async with remote_lane(monkeypatch) as lane, lane.held_run() as run:
         out_of_scope = await _remote_chat(lane, run.traceparent, OUT_OF_SCOPE)
         in_scope = await _remote_chat(lane, run.traceparent)
@@ -400,7 +403,10 @@ RUN_BUDGET = 15
 async def test_h29_past_the_run_budget_is_429_and_a_run_with_budget_left_is_200(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Exit criterion 1 (offline), H29, budget: a run with `budget.max_tokens` 15 spends it on
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    Exit criterion 1 (offline), H29, budget: a run with `budget.max_tokens` 15 spends it on
     its first model call; then a call from the remote, with its own token and the run's
     `traceparent`, is refused 429 `budget_exhausted`, not retryable, before the model is
     called. The control: in a run with the default budget, the same call is 200.
@@ -463,7 +469,10 @@ def _test_names(path: Path) -> set[str]:
 
 @pytest.mark.parametrize("hid", list(EXISTING))
 def test_existing_coverage_is_still_there(hid: str) -> None:
-    """A name guard, not criterion 1 evidence: every H id this file leaves to another test still
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    A name guard, not criterion 1 evidence: every H id this file leaves to another test still
     has a test of that name, so the map in `EXISTING` cannot go stale silently. It runs no
     behavior; the `test_h*` tests above and in `EXISTING` are the evidence.
     """

@@ -1,7 +1,7 @@
-"""Shared harness for the PoC-6a lane bindings. Not a test module; the test files import it.
+"""One engine behind the chassis connector of a lane, against fake backends on Unix sockets.
 
-It builds on `poc06_harness` (the task spec, the pass checks, the engine registry) and the PoC-2
-harness (the chassis app, the template A2A server on a Unix socket, the TypeScript runner). What it
+It builds on `poc_harness.bakeoff_tasks` (the task spec, the pass checks, the engine table) and on
+the chassis app, the template A2A server on a Unix socket, and the TypeScript runner. What it
 adds:
 
 - **Two fake backends on Unix sockets.** The fake model server on `scripts/bakeoff.yaml` and the
@@ -11,7 +11,7 @@ adds:
 - **Engine wiring from the registry.** Each Python engine's test-only model and tool hooks (named
   in `ENGINES`) are pointed at those sockets. A new engine in the registry is wired with no change
   here. The TypeScript agent reaches the model through `CHASSIS_MODEL_UDS` and its tools through a
-  `--import` preload (`poc06a_tool_uds.mjs`), because its MCP client has no socket option.
+  `--import` preload (`tool_uds_preload.mjs`), because its MCP client has no socket option.
 - **A connected lane.** `connected(engine, lane)` yields an `EngineConnector` for the engine in
   memory (`inprocess`) or over A2A on a Unix socket (`sidecar`), and `run_task` runs one benchmark
   task through it and returns the events as dicts for the pass checks.
@@ -42,14 +42,9 @@ from fake_mcp_server.server import FakeMcpState
 from fake_mcp_server.server import create_app as create_tool_app
 from fake_model_server import Script
 from fake_model_server import create_app as create_model_app
-from poc02_harness import (
-    TYPESCRIPT_ECHO,
-    a2a_on_unix_socket,
-    bundle_for,
-    on_unix_socket,
-    typescript_echo,
-)
-from poc06_harness import (
+
+from poc_harness.apps import bundle_for
+from poc_harness.bakeoff_tasks import (
     BAKEOFF_SCRIPT,
     CHECKS,
     ENGINES,
@@ -60,11 +55,15 @@ from poc06_harness import (
     Task,
     Verdict,
 )
+from poc_harness.paths import TYPESCRIPT_ECHO
+from poc_harness.servers import a2a_on_unix_socket
+from poc_harness.sockets import on_unix_socket
+from poc_harness.typescript import typescript_echo
 
 LANES = ("inprocess", "sidecar")
 TOOL_HOST = "tools.invalid"
 """The host in `TOOL_URL`; the TypeScript preload sends requests to it over the tool socket."""
-PRELOAD = Path(__file__).resolve().parent / "poc06a_tool_uds.mjs"
+PRELOAD = Path(__file__).resolve().parent / "tool_uds_preload.mjs"
 
 # --- Recording ASGI wrapper ---------------------------------------------------------------------
 

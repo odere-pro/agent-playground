@@ -20,7 +20,7 @@ kagent-adk):
   peerless egress, and no DNS for a remote;
 - each admission rule (0 to 8; the template and claim rules T1 to T5 and C1 to C5 do not apply,
   and the folder has no template or claim) admits each object, by PoC-5's own Python model of the
-  rules (`test_poc05_admission_static.broken_rules`), and refuses a mutated copy;
+  rules (`poc_harness.admission_model.broken_rules`), and refuses a mutated copy;
 - the trust params differ from PoC-5's by the one repository the sidecar lane adds;
 - the seed script, `run.sh`, the fake-model script, and the workflow.
 
@@ -43,9 +43,16 @@ import pytest
 import yaml
 from chassis.server.config import ChassisConfig, load_config
 from fake_model_server import Script
-from poc06_harness import LOOKUP, SIMPLIFIER, SMOKE
-from test_poc05_admission_static import _Params, broken_rules
-from test_poc05_ci_wiring import PINNED, SHA256, _runs, _steps, _triggers, _workflow
+from poc_harness.admission_model import AdmissionParams, broken_rules
+from poc_harness.bakeoff_tasks import LOOKUP, SIMPLIFIER, SMOKE
+from poc_harness.workflows import (
+    PINNED,
+    SHA256,
+    load_workflow,
+    workflow_runs,
+    workflow_steps,
+    workflow_triggers,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 POC05 = ROOT / "deploy/kind/poc05"
@@ -795,8 +802,8 @@ def test_kagent_launcher_turns_the_exporter_off(name: str) -> None:
 # --- admission --------------------------------------------------------------------------------
 
 
-def _params(path: Path) -> _Params:
-    return _Params.of(_load_all(path)[0])
+def _params(path: Path) -> AdmissionParams:
+    return AdmissionParams.of(_load_all(path)[0])
 
 
 PARAMS5 = POC05 / "admission/params.yaml"
@@ -1242,7 +1249,7 @@ def test_the_run_sh_text_selects_the_kind_files_by_path_and_names_missing_ones()
         "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_sidecar_controls.py",
     ]
     assert not missing, missing
-    assert "POC06_KIND=1" in text and '"${KIND_TESTS[@]}"' in text and "-m kind" in text
+    assert "POC06_KIND=1" in text and '"${KIND_TESTS[@]}"' in text and "-m network" in text
     assert " -k " not in run_tests, "select by file path, not by -k"
 
 
@@ -1350,7 +1357,7 @@ def test_the_fake_model_patch_points_the_deployment_at_the_script() -> None:
 @pytest.fixture(scope="module")
 def workflow() -> dict[str, Any]:
     assert WORKFLOW.is_file(), "missing .github/workflows/poc06-kind.yml"
-    return _workflow(WORKFLOW)
+    return load_workflow(WORKFLOW)
 
 
 def test_the_workflow_runs_on_push_and_never_on_pull_request_target(
@@ -1359,7 +1366,7 @@ def test_the_workflow_runs_on_push_and_never_on_pull_request_target(
     """Triggers are push, pull_request, and dispatch; no line names pull_request_target."""
     code = _code_lines(WORKFLOW.read_text())
 
-    triggers = _triggers(workflow)
+    triggers = workflow_triggers(workflow)
 
     assert triggers == {"push", "pull_request", "workflow_dispatch"}
     assert not any("pull_request_target" in ln for ln in code)
@@ -1379,10 +1386,12 @@ def test_the_workflow_job_shape(workflow: dict[str, Any]) -> None:
 
 def test_the_workflow_pins_every_action_by_sha_the_same_as_ci(workflow: dict[str, Any]) -> None:
     """Every action is pinned by a 40-hex SHA, the same one ci.yml pins, with a version comment."""
-    ci_pins = {s["uses"].split("@")[0]: s["uses"] for s in _steps(_workflow(CI)) if "uses" in s}
+    ci_pins = {
+        s["uses"].split("@")[0]: s["uses"] for s in workflow_steps(load_workflow(CI)) if "uses" in s
+    }
     lines = WORKFLOW.read_text().splitlines()
 
-    uses = [s["uses"] for s in _steps(workflow) if "uses" in s]
+    uses = [s["uses"] for s in workflow_steps(workflow) if "uses" in s]
     unpinned = [ref for ref in uses if not PINNED.match(ref)]
     drifted = [ref for ref in uses if ref != ci_pins.get(ref.split("@")[0])]
     uncommented = [
@@ -1406,7 +1415,7 @@ def test_the_workflow_pins_kind_and_kubectl_like_remote_lane(
     """Version and sha256 in the job env, the same values as remote-lane.yml."""
     env = next(iter(workflow["jobs"].values()))["env"]
 
-    other = next(iter(_workflow(REMOTE_LANE)["jobs"].values()))["env"]
+    other = next(iter(load_workflow(REMOTE_LANE)["jobs"].values()))["env"]
 
     assert env[key] == other[key], key
 
@@ -1417,7 +1426,7 @@ def test_the_workflow_checks_the_sum_before_the_download_and_fails_closed(
 ) -> None:
     """The sum is 64 hex, guarded fail-closed, checked with `sha256sum -c`, before the curl."""
     env = next(iter(workflow["jobs"].values()))["env"]
-    runs = _runs(workflow)
+    runs = workflow_runs(workflow)
 
     guard = runs.find(f"[[ ${{{key}}} =~ ^[0-9a-f]{{64}}$ ]] ||")
     check = runs.find(f'"${{{key}}}  ', guard)
@@ -1430,14 +1439,14 @@ def test_the_workflow_checks_the_sum_before_the_download_and_fails_closed(
 
 def test_the_workflow_fetches_no_sum_from_the_release(workflow: dict[str, Any]) -> None:
     """No sum file is fetched from the same release as the binary."""
-    runs = _runs(workflow)
+    runs = workflow_runs(workflow)
 
     assert ".sha256sum" not in runs and "kubectl.sha256" not in runs
 
 
 def test_the_workflow_downloads_nothing_unpinned(workflow: dict[str, Any]) -> None:
     """Only kind and kubectl are fetched, each verified; no `pip install`, no `curl | sh`."""
-    runs = _runs(workflow)
+    runs = workflow_runs(workflow)
 
     downloads = re.findall(r"curl [^\n]*", runs)
 
@@ -1449,7 +1458,7 @@ def test_the_workflow_downloads_nothing_unpinned(workflow: dict[str, Any]) -> No
 
 def test_the_workflow_steps_are_up_test_logs_delete(workflow: dict[str, Any]) -> None:
     """Up before test, logs on failure, delete always and last, and no bare kubectl logs."""
-    steps = _steps(workflow)
+    steps = workflow_steps(workflow)
     runs = [str(s.get("run", "")) for s in steps]
 
     up = next(i for i, r in enumerate(runs) if "deploy/kind/poc06/run.sh up" in r)

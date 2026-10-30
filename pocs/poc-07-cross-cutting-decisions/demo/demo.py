@@ -26,7 +26,6 @@ for _tests in (
     "poc-03-one-interface-every-client",
     "poc-04-stateless-scalable",
     "poc-05-sandboxed",
-    "poc-06a-bake-off-sidecar-lane",
     "poc-07-cross-cutting-decisions",
 ):
     sys.path.insert(0, str(POCS / _tests / "tests"))
@@ -88,17 +87,11 @@ async def _trace_and_feedback(engine: str, mp: pytest.MonkeyPatch) -> int:
     from chassis.server.feedback import FEEDBACK_RECEIVED, FeedbackEvents
     from chassis_contracts.events import assert_valid_cloudevent
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-    from poc02_harness import (
-        AFTER_TOOL,
-        ROUTE,
-        TIMEOUT_S,
-        TOOL_PROMPT,
-        ToolLoopModel,
-        client_for,
-        route_outbound,
-        running,
-    )
     from poc07_fb_harness import fake_langfuse, langfuse_port
+    from poc_harness.apps import client_for, running
+    from poc_harness.outbound import route_outbound
+    from poc_harness.scenario import AFTER_TOOL, ROUTE, TIMEOUT_S, TOOL_PROMPT
+    from poc_harness.scripted_model import ToolLoopModel
     from test_poc07_obs_trace_join import workload_on_uds
     from workload_a2a import telemetry as workload_telemetry
 
@@ -262,8 +255,8 @@ def evals(folder: Path, tool: str, engines: list[str]) -> int:
 
 
 async def _gate(engine: str, mp: pytest.MonkeyPatch) -> int:
-    from poc06_harness import ROUTE
     from poc07_evals_harness import BAD, FALLBACK_ROUTE, GATE_INPUT, GOOD, serve_gate_backends
+    from poc_harness.bakeoff_tasks import ROUTE
     from test_poc07_evals_gate import gated_run, routes
 
     with serve_gate_backends() as backends:

@@ -17,7 +17,7 @@ import pytest
 from fake_model_server import Script, create_app
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
-from poc06_harness import (
+from poc_harness.bakeoff_tasks import (
     BAKEOFF_SCRIPT,
     CHECKS,
     ENGINES,

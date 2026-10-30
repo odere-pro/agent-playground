@@ -30,13 +30,10 @@ from typing import Any
 import httpx
 import pytest
 from a2a.client import ClientConfig, ClientFactory
-from poc02_harness import (
-    CHASSIS_PROXY_URL,
-    TYPESCRIPT_ECHO,
-    TYPESCRIPT_URL,
-    on_unix_socket,
-    typescript_node,
-)
+from poc_harness.paths import TYPESCRIPT_ECHO
+from poc_harness.scenario import CHASSIS_PROXY_URL, TYPESCRIPT_URL
+from poc_harness.sockets import on_unix_socket
+from poc_harness.typescript import typescript_node
 from workload_a2a.mapping import request_to_message, update_to_event
 
 CARD_URL = "http://127.0.0.1:9000"
