@@ -9,7 +9,7 @@ import pytest
 from chassis.adapters.valkey.state import PASSWORD_VAR, URL_VAR, USERNAME_VAR, ValkeyState, ttl_ms
 from chassis.fakes.state import InMemoryState, StateUnavailable
 from chassis.ports.state import StatePort
-from chassis_contracts.state import PassTime, StatePortContract
+from chassis_contracts.state import Elapse, StatePortContract
 
 
 class AlwaysFailingState(InMemoryState):
@@ -43,7 +43,7 @@ class TestInMemoryState(StatePortContract):
         return InMemoryState(clock=clock)
 
     @pytest.fixture
-    def pass_time(self, clock: HandClock) -> PassTime:
+    def pass_time(self, clock: HandClock) -> Elapse:
         return clock.pass_time
 
     @pytest.fixture
