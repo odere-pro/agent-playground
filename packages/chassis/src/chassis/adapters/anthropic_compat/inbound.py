@@ -141,6 +141,9 @@ ErrorKind = Literal[
 ]
 
 
+TOO_DEEP_MESSAGE = "the body is nested too deeply to read"
+
+
 class InvalidBody(ValueError):
     """A lazy iterator raised `ValidationError` while it was read. `str()` names where and why,
     never the input.
@@ -287,6 +290,8 @@ class AnthropicInbound:
             raw = materialize(body)
         except InvalidBody as exc:
             raise self._refused("invalid_body", str(exc), ids, served) from None
+        except RecursionError:  # nested past Python's stack: a 400, never a plain 500
+            raise self._refused("invalid_body", TOO_DEEP_MESSAGE, ids, served) from None
         if not isinstance(raw, dict):
             raise self._refused("invalid_body", "the body must be an object", ids, served)
         model = raw.get("model")

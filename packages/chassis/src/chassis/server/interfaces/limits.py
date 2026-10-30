@@ -138,19 +138,22 @@ class BodyLimit:
             return
         # Counted whatever `Content-Length` says: a small length can sit beside
         # `Transfer-Encoding: chunked`, so the header is only an early refusal, never a pass.
-        buffered: list[Message] = []
-        total = 0
+        # One joined body, not one dict per chunk: a body sent in tiny chunks costs its own size.
+        body = bytearray()
+        tail: Message | None = None  # an `http.disconnect` before the body ended
         while True:
             message = await receive()
-            buffered.append(message)
             if message["type"] != "http.request":
+                tail = message
                 break
-            total += len(message.get("body", b""))
-            if total > limit:
+            body += message.get("body", b"")
+            if len(body) > limit:
                 await self._refuse(scope, receive, send, limit)
                 return
             if not message.get("more_body", False):
                 break
+        joined: Message = {"type": "http.request", "body": bytes(body), "more_body": bool(tail)}
+        buffered = [joined] if tail is None else [joined, tail]
 
         async def replay() -> Message:
             return buffered.pop(0) if buffered else await receive()

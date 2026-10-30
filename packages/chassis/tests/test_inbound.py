@@ -58,6 +58,7 @@ IDS = Ids(request_id="r1", trace_id="t1", idempotency_key="i1")
     ],
 )
 def test_status_for_follows_the_table(code: str, retryable: bool, status: int) -> None:
+    """Each error code and retry flag maps to the HTTP status in the contract table."""
     assert status_for(code, retryable) == status
 
 
@@ -65,11 +66,13 @@ def test_status_for_follows_the_table(code: str, retryable: bool, status: int) -
     "code", ["idempotency_conflict", "idempotency_in_progress", "state_unavailable"]
 )
 def test_the_idempotency_codes_have_a_fixed_public_message(code: str) -> None:
+    """Each idempotency code has its own public message, not the generic run-failed text."""
     assert code in PUBLIC_MESSAGES
     assert public_message(code) == PUBLIC_MESSAGES[code] != RUN_FAILED
 
 
 def test_refused_carries_its_reply() -> None:
+    """A Refused exception carries its status, headers, and body, and gives them back as a Reply."""
     refused = Refused(400, {"x-should-retry": "false"}, {"detail": "no"})
     assert isinstance(refused, Exception)
     assert (refused.status, refused.headers, refused.body) == (
@@ -92,6 +95,7 @@ def _request(request_id: str = "r2", trace_id: str = "t2") -> Request:
 
 
 def test_ids_of_a_request_and_meta_for_a_request() -> None:
+    """Ids are read from a request, and binding meta to a request returns a new copy."""
     request = _request()
     assert Ids.of(request) == Ids(request_id="r2", trace_id="t2", idempotency_key="i2")
     meta = ReplyMeta(ids=IDS, served=SERVED, created=7)
@@ -108,6 +112,7 @@ async def _aiter(events: Sequence[Event]) -> AsyncIterator[Event]:
 
 
 async def test_meta_collect_gives_what_core_collect_gives() -> None:
+    """Collecting through reply meta gives the same response as the core collector."""
     events: list[Event] = [
         Start(request_id="r2"),
         Delta(text="a "),
@@ -124,11 +129,13 @@ async def test_meta_collect_gives_what_core_collect_gives() -> None:
 
 
 async def test_meta_collect_needs_the_request() -> None:
+    """Collecting through reply meta with no bound request raises a ValueError."""
     with pytest.raises(ValueError, match="request"):
         await ReplyMeta(ids=IDS, served=SERVED, created=0).collect([])
 
 
 def test_native_inbound_is_an_inbound_adapter() -> None:
+    """The native mapping meets the inbound adapter protocol and can serve as `mcp` too."""
     adapter = NativeInbound()
     assert isinstance(adapter, InboundAdapter)
     assert adapter.interface == "native"
@@ -136,6 +143,8 @@ def test_native_inbound_is_an_inbound_adapter() -> None:
 
 
 async def test_stream_reply_defaults_to_sse_with_no_headers() -> None:
+    """A stream reply is server-sent events with no headers unless told otherwise."""
+
     async def frames() -> AsyncIterator[str]:
         yield "data: x\n\n"
 
@@ -161,6 +170,7 @@ async def test_stream_reply_defaults_to_sse_with_no_headers() -> None:
 def test_answer_text_is_text_else_compact_sorted_json(
     output: dict[str, Any] | None, text: str
 ) -> None:
+    """The answer is the output's text string, else compact sorted JSON, else empty."""
     assert answer_text(output) == text
 
 
