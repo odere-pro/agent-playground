@@ -22,6 +22,11 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 SIDECAR_FRAMEWORKS = ("python", "pydanticai", "langgraph", "openai-agents")
 REMOTE_FRAMEWORKS = ("smolagents", "claude-agent")
+FULL_RUN = pytest.mark.skipif(
+    os.environ.get("POC09_SCAFFOLD") != "1",
+    reason="about a minute per agent, past the `check` job's limit; set POC09_SCAFFOLD=1 "
+    "(.github/workflows/poc09-scaffold.yml runs them)",
+)
 TREE = (
     ".copier-answers.yml",
     "uv.lock",
@@ -83,11 +88,9 @@ def _git(agent: Path, *args: str) -> str:
     ).stdout
 
 
-@pytest.mark.parametrize("framework", SIDECAR_FRAMEWORKS)
-def test_c1_c4_scaffold_has_a_first_commit_and_a_complete_tree(
-    tmp_path: Path, framework: str
-) -> None:
-    agent = _scaffold(tmp_path, framework)
+def test_c1_c4_scaffold_has_a_first_commit_and_a_complete_tree(tmp_path: Path) -> None:
+    """One framework: `uv lock` takes half a minute, and the full runs cover the other five."""
+    agent = _scaffold(tmp_path, "pydanticai")
     assert len(_git(agent, "log", "--format=%H").split()) == 1
     assert _git(agent, "status", "--porcelain") == ""
     committed = set(_git(agent, "ls-files").split())
@@ -96,6 +99,7 @@ def test_c1_c4_scaffold_has_a_first_commit_and_a_complete_tree(
         assert path in committed, path
 
 
+@FULL_RUN
 @pytest.mark.slow
 @pytest.mark.parametrize("framework", SIDECAR_FRAMEWORKS)
 def test_c1_scaffolded_make_test_passes_offline(tmp_path: Path, framework: str) -> None:
@@ -115,6 +119,7 @@ CI_STEPS = ("lint", "test", "load-smoke", "hostile", "redteam", "eval")
 """The template CI's steps that need no registry. `image` and `sign` need Docker and a push."""
 
 
+@FULL_RUN
 @pytest.mark.slow
 @pytest.mark.parametrize("framework", (*SIDECAR_FRAMEWORKS, *REMOTE_FRAMEWORKS))
 def test_c4_ci_steps_pass_from_a_fresh_clone(tmp_path: Path, framework: str) -> None:
@@ -134,3 +139,11 @@ def test_c4_ci_steps_pass_from_a_fresh_clone(tmp_path: Path, framework: str) -> 
         assert done.returncode == 0, (step, done.stdout[-3000:], done.stderr[-2000:])
     assert subprocess.run(["uv", "lock", "--check"], cwd=agent, env=env).returncode == 0
     assert _git(agent, "status", "--porcelain") == ""
+
+
+def test_the_full_runs_have_their_own_workflow() -> None:
+    """They are skipped in `make check`, so a workflow must run them, and must not skip them."""
+    workflow = (ROOT / ".github/workflows/poc09-scaffold.yml").read_text()
+    assert 'POC09_SCAFFOLD: "1"' in workflow
+    count = len(SIDECAR_FRAMEWORKS) + len(SIDECAR_FRAMEWORKS) + len(REMOTE_FRAMEWORKS)
+    assert f"{count} passed" in workflow
