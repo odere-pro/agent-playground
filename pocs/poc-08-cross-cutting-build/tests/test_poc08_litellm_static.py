@@ -40,12 +40,7 @@ DIGEST = re.compile(r"^[^\s@]+:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$")
 EXACT_TAG = re.compile(r":v?\d+\.\d+\.\d+$")
 FULL_SHA = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
 KEY_SHAPE = re.compile(r"sk-[A-Za-z0-9_-]{8,}|Bearer [A-Za-z0-9._-]{8,}")
-PENDING = {
-    "docker.io/jaegertracing/jaeger:2.21.0",
-    "docker.io/otel/opentelemetry-collector-contrib:0.163.2",
-    "mcr.microsoft.com/presidio-analyzer:2.2.358",
-    "mcr.microsoft.com/presidio-anonymizer:2.2.358",
-}
+PENDING: set[str] = set()
 """Images on an exact version tag until `stack.sh digests` in the first CI run gives their
 digests. Pin each in docker-compose.yaml, then remove it here."""
 OURS = "agent-platform/"

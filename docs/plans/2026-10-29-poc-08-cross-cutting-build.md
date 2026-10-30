@@ -1,41 +1,33 @@
 # PoC-8: what is left
 
-Status: in progress
+Status: done
 Date: 2026-10-29
 Source: [008-PoC-8-build-cross-cutting.md](../planning/poc/008-PoC-8-build-cross-cutting.md). Tracking: [PoC-8 README](../../pocs/poc-08-cross-cutting-build/README.md).
 
-The code, the scenario tests, the notes, and the offline demo are done. Every exit criterion has offline evidence. This list is only what is still open.
+The code, the scenario tests, the notes, the offline demo, and the two stack drills are done. PR 39 added the workload-side JSON logs, the Prometheus and Grafana drill, and the real-LiteLLM drill. `notes/backlog-changes.md` is applied to the issues (2026-10-30). This list is only what is still open.
 
-## 1. The first GitHub run of `poc08-evals.yml` (exit criteria 1, 2, 5)
+## 1. The CI runs
 
-Push the branch and let `poc08-evals` run: the `evals`, `regression`, and `redteam` jobs, one per engine. Then put the run id and the commit in the README next to criteria 1, 2, and 5. Until then, those boxes stand on local runs of the same commands.
+Done. `check`, `poc08-evals`, `poc08-stack`, and `poc08-litellm` passed on `db13d6a`; the run ids are in the README. `poc08-evals` as a required check on `main` is still a repository setting, the user's call.
 
-## 2. The user's review
+## 2. The user's decisions
 
-Answer the open questions in [`notes/backlog-changes.md`](../../pocs/poc-08-cross-cutting-build/notes/backlog-changes.md). The three that change the contract or the defaults:
+The open questions in [`notes/backlog-changes.md`](../../pocs/poc-08-cross-cutting-build/notes/backlog-changes.md), carried as "open, user decision" in the issues:
 
-- Does `/metrics` stay open by default?
-- Does the output URL allow-list stay default deny?
-- Does `CloudEvent` accept unknown extensions, so a new one such as `aigenerated` does not break an older consumer?
+- Does `/metrics` stay open by default? (014 H-7)
+- Does the output URL allow-list stay default deny? (022 H-6)
+- Does `CloudEvent` accept unknown extensions, so a new one such as `aigenerated` does not break an older consumer? (023 C-5)
+- Keep the `User feedback by label` panel, or leave feedback to Langfuse only? (014 H-7)
+- Presidio in the Collector log pipeline for named entities, or accept the regex-only gap for workload logs? (014 H-7)
+- Rate limits with caller auth off: local and test profiles only, or an anonymous bucket? (022 H-6)
 
 ## 3. Run on the Mac
 
-These need Hugging Face, Docker with more memory, or a hosted key. The cloud container has none of them.
+These need a Hugging Face token or a hosted model key. CI has neither.
 
-- The red-team set on Llama Prompt Guard 2 and LiteLLM's real Presidio hook, not the stand-ins. Today: 14 of 18 on the stand-in.
-- A real LiteLLM in the trace: its span next to `chassis.model.route`.
-- A real Langfuse: feedback on the trace in the UI.
-- p50 and p95 added by the rate limit on Valkey and by the guard stages.
+- The red-team set on Llama Prompt Guard 2 in place of the pattern stand-in. Today: 14 of 18 on the stand-in.
+- Numbers on a hosted model, and a real judge's agreement with the golden set's labels.
 
-## 4. Gaps to build or accept
+## 4. Close
 
-- Prometheus and Grafana loading `deploy/dashboards/` with data from a load run, including the `User feedback by label` panel.
-- JSON logs with `trace_id` from the workload side (the template A2A server).
-- Named-entity masking in the Collector log pipeline.
-
-## 5. Close
-
-- Tick the remaining boxes with evidence and set the README status to done.
-- Apply `notes/backlog-changes.md` with the `planning-sync` skill.
-- Move `pocs/CURRENT` to `poc-09-agent-mvp-template`.
-- Set this plan to done.
+Done on 2026-10-30. The README is set to done, with the Offline evals scope item flagged.

@@ -23,6 +23,7 @@ This is P0 because of the epic principle: nothing ships without an eval. The gat
 - The golden set location as config, so the Phase 4 golden set replaces the S-4 test set with no code change.
 - Eval results for both models attached to the CI run and to the MLflow model version.
 - Proposed in PoC-7 ([ADR-010](../adr/010-evals-offline-tool-online-gate.md); the user accepts it at the PoC-7 pull request): one offline eval tool for CI, promptfoo or DeepEval, picked by a trial on the same 20 golden cases on two engines; it calls the agent through the chassis, so the report format is the same for every engine; Langfuse datasets hold the cases and experiments the results. The pick is added when PoC-7 closes.
+- Status after PoC-8 ([eval-gate note](../../../pocs/poc-08-cross-cutting-build/notes/2026-10-29-eval-gate.md)): the golden set is 50 cases for the `simplifier` agent (`packages/bakeoff/src/bakeoff/golden/cases-gate.yaml` plus the 20 PoC-7 cases), with the baseline `evals/gate/baseline.json` (`eval-baseline.v0`) and `python -m bakeoff.evalgate`. `poc08-evals.yml` runs DeepEval, the gate, and the drop-facts regression per engine; run 40919685333 on `0457ae1` passed, and the drop-facts logic failed the gate at 0/50 against 0.780. Still open: `poc08-evals` as a required check on `main` (a repository setting); a real judge's agreement with the labels; the label of g08. suggested: no tolerance on the pass rate while the model is scripted. The other agents' sets are 064 D-1.
 
 ## Out of scope
 
