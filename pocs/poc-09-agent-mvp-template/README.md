@@ -38,7 +38,10 @@ Each one has a scenario test in `tests/` or a recorded reason it cannot have one
 
 ```bash
 make test-poc POC=09
+POC09_SCAFFOLD=1 make test-poc POC=09   # the full scaffold runs, about a minute per agent
 ```
+
+`make check` skips the full scaffold runs: they add about ten minutes to it. `.github/workflows/poc09-scaffold.yml` runs them.
 
 ## Demo
 
