@@ -31,7 +31,7 @@ from poc_harness.sidecar_lane import (
 
 ROOT = Path(__file__).resolve().parents[3]
 TESTS = Path(__file__).resolve().parent
-MATRIX = ROOT / "pocs/poc-04-stateless-scalable/load/run_matrix.py"
+MATRIX = "load_tools.run_matrix"  # the PoC-4 load matrix, from packages/load-tools
 SCALE_SH = ROOT / "deploy/compose/scale.sh"
 CORE = ROOT / "packages/chassis/src/chassis/core"
 LOAD_CI = TESTS.parent / "notes/load/2026-10-28-poc06-load.json"
@@ -131,7 +131,7 @@ def test_criterion_3_every_engine_is_scored_on_every_criterion() -> None:
 
 def _matrix(*args: str) -> str:
     result = subprocess.run(
-        [sys.executable, str(MATRIX), "--dry-run", *args],
+        [sys.executable, "-m", MATRIX, "--dry-run", *args],
         capture_output=True,
         text=True,
         check=False,

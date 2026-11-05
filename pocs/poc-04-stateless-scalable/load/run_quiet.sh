@@ -7,7 +7,7 @@ set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 LOAD="$ROOT/pocs/poc-04-stateless-scalable/notes/load"
 OUT="$LOAD/passes/quiet/results.json"
-M() { uv run python "$ROOT/pocs/poc-04-stateless-scalable/load/run_matrix.py" --duration-s 60 \
+M() { uv run python -m load_tools.run_matrix --duration-s 60 \
   --results "$OUT" "$@" 2>&1 | grep -E "^echo-|^hop|run_matrix"; }
 for engine in echo-python echo-pydanticai echo-langgraph echo-typescript; do
   echo "== $engine $(date -u +%T) $(uptime | sed 's/.*load/load/')"

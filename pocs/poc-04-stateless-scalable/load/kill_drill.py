@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from steady_client import (
+from load_tools.steady_client import (
     DEFAULT_URL,
     REPLAYED_HEADER,
     REQUEST_TIMEOUT_S,
