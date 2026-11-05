@@ -1,7 +1,8 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
-# The platform checkout. CI checks it out elsewhere and sets PLATFORM_PATH. `pyproject.toml` and
-# `uv.lock` name it as `.platform/`, a link made here, so they hold no path of this machine.
+# The platform checkout. The default is the one you scaffolded from; CI checks it out elsewhere
+# and sets PLATFORM_PATH. `pyproject.toml` and `uv.lock` name it only as `.platform/`, a link made
+# here, so a clone works on any machine with PLATFORM_PATH set.
 PLATFORM_PATH ?= {{ platform_path }}
 PLATFORM := $(PLATFORM_PATH)
 IMAGE ?= {{ agent_name }}

@@ -115,8 +115,9 @@ class RedTeamInputs:
     run_statuses: ClassVar[tuple[str, ...]] = RUN_STATUSES
 
     @pytest.fixture(scope="class")
+    @classmethod
     def guarded(
-        self, workload: Workload, agent_testkit_chassis_source: ChassisSource
+        cls, workload: Workload, agent_testkit_chassis_source: ChassisSource
     ) -> Iterator[Chassis]:
         with start_chassis(
             workload, agent_testkit_chassis_source, adapters={"guardrails": "fake"}
@@ -173,12 +174,14 @@ class RemoteLane:
     run_statuses: ClassVar[tuple[str, ...]] = RUN_STATUSES
 
     @pytest.fixture(scope="class")
-    def remote_token(self) -> str:
+    @classmethod
+    def remote_token(cls) -> str:
         return secrets.token_hex(16)
 
     @pytest.fixture(scope="class")
+    @classmethod
     def remote_workload(
-        self, agent_handle_ref: AgentRef | str, remote_token: str
+        cls, agent_handle_ref: AgentRef | str, remote_token: str
     ) -> Iterator[Workload]:
         with start_workload(agent_handle_ref, remote_token=remote_token) as started:
             yield started

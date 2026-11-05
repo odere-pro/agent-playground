@@ -15,5 +15,6 @@ class TestRemoteLane(RemoteLane):
     remote_input: ClassVar[dict[str, Any]] = {"data": {CASE_KEY: "deltas"}}
 
     @pytest.fixture(scope="class")
-    def agent_handle_ref(self) -> AgentRef:
+    @classmethod
+    def agent_handle_ref(cls) -> AgentRef:
         return AgentRef(handle=LANE_HANDLE, name="agent-testkit-remote")

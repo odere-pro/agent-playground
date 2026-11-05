@@ -407,3 +407,13 @@ def test_the_render_fails_on_values_that_break_the_boundary(
     proc = chart.helm("template", RELEASE, str(chart.example), "-f", str(path), check=False)
     assert proc.returncode != 0, f"{case}: rendered, want a refusal:\n{proc.stdout}"
     assert "agent-lib:" in proc.stderr and needle in proc.stderr, proc.stderr
+
+
+def test_the_kind_values_pull_nothing_and_hold_no_secret(chart: Charts) -> None:
+    """`values-kind.yaml`, the kind drill's values: PoC-5 admission rule 8, and no key at all."""
+    docs = chart.template(HELM_DIR / "example-agent/values-kind.yaml")
+    pod = _one(docs, "Deployment", RELEASE)["spec"]["template"]["spec"]
+    containers = [*pod.get("initContainers", []), *pod["containers"]]
+    assert {c["imagePullPolicy"] for c in containers} == {"Never"}
+    assert "secretKeyRef" not in yaml.safe_dump(docs)
+    assert _one(docs, "HorizontalPodAutoscaler", RELEASE)["spec"]["minReplicas"] == 2
