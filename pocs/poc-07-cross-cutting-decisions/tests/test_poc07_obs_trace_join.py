@@ -105,8 +105,53 @@ async def traced(request: pytest.FixtureRequest) -> AsyncIterator[TracedRun]:
 
 
 def test_one_trace_joins_chassis_workload_framework_model_and_tool(traced: TracedRun) -> None:
+    """Criterion 4: "One trace joins the chassis and workload containers", on two engines (5).
+
+    One trace id, the caller's, on every span of the run, with parent links: the caller's span ->
+    `chassis.run` -> `chassis.engine.run` (the A2A connector) -> `workload.handle` (the workload,
+    from the A2A `traceparent` header) -> the engine's OpenInference spans; each
+    `chassis.model.call` (the model proxy) and `chassis.tool.call` (`/mcp`) is a child of a
+    workload span, from the `traceparent` the workload sent. The session id reaches the workload's
+    spans through W3C baggage. The single-behavior tests below repeat each link on its own.
+    """
+    assert traced.out["status"] == "ok", traced.out
+    assert traced.out["output"]["text"] == AFTER_TOOL
+
+    assert {trace_and_span_id(s)[0] for s in traced.spans} == {CALLER_TRACE}
+
+    run = traced.named("chassis.run")
+    handle = traced.named("workload.handle")
+    assert parent_span_id(run) == CALLER_SPAN, "the caller's traceparent is continued"
+    assert parent_span_id(traced.named("chassis.engine.run")) == traced.span_id("chassis.run")
+    assert parent_span_id(handle) == traced.span_id("chassis.engine.run"), (
+        "the A2A traceparent names the connector span"
+    )
+
+    assert traced.framework, f"{traced.engine}: no OpenInference span"
+    handle_id = traced.span_id("workload.handle")
+    stray = [
+        s.name
+        for s in traced.framework
+        if not is_under_through(s, handle_id, traced.workload_ids, traced.spans)
+    ]
+    assert stray == [], "every framework span is under workload.handle"
+
+    model_calls = [s for s in traced.calls if s.name == "chassis.model.call"]
+    tool_calls = [s for s in traced.calls if s.name == "chassis.tool.call"]
+    assert len(model_calls) >= 2, "the tool scenario makes two model calls"
+    assert tool_calls, "the tool call reached the chassis /mcp"
+    for call in traced.calls:
+        assert parent_span_id(call) in traced.workload_ids, f"{call.name} is not under the workload"
+        assert (call.attributes or {}).get("correlated", True) is not False
+
+    assert (run.attributes or {}).get("session.id") == SESSION
+    assert (handle.attributes or {}).get("session.id") == SESSION, "baggage reached the workload"
+    assert all((s.attributes or {}).get("session.id") == SESSION for s in traced.framework)
+
+
+def test_every_span_is_in_the_callers_trace(traced: TracedRun) -> None:
     """Criterion 4: "One trace joins the chassis and workload containers through `traceparent`
-    over A2A", on two engines (5): every span of the run is in the caller's trace."""
+    over A2A": every span of the run is in the caller's trace."""
     trace_ids = {trace_and_span_id(s)[0] for s in traced.spans}
 
     assert trace_ids == {CALLER_TRACE}

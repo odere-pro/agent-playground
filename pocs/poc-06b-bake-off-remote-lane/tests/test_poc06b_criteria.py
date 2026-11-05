@@ -85,6 +85,16 @@ def is_kind_drill(path: Path) -> bool:
     return imported and uses >= 1
 
 
+def table_rows(text: str, first_cell: str) -> list[list[str]]:
+    """The cells of each Markdown table row in `text` whose first cell is `first_cell`."""
+    rows = (
+        [cell.strip() for cell in line.strip().strip("|").split("|")]
+        for line in text.splitlines()
+        if line.lstrip().startswith("|")
+    )
+    return [row for row in rows if row[0] == first_cell]
+
+
 def _flat(text: str | None) -> str:
     return " ".join((text or "").split())
 
@@ -111,15 +121,18 @@ def test_criterion_2_the_plain_a2a_remote_binds_the_engine_suite() -> None:
     assert binds_suite(path, "TestPlainA2ARemoteLane")
 
 
-def test_criterion_3_the_scorecard_marks_the_unfilled_kagent_cells() -> None:
+def test_criterion_3_the_scorecard_has_no_blank_kagent_cell() -> None:
     """Every shortlisted engine is scored on every criterion, with numbers where the criterion is
     measurable.
 
-    Here: the scorecard exists and marks the `kagent-adk` cells "not measured: kind, from CI",
-    not blank. 6a's `test_poc06a_scorecard_records.py` checks the numbers."""
-    text = SCORECARD.read_text(encoding="utf-8")
+    Here: the scorecard has `kagent-adk` rows, and every cell in them holds a value or a recorded
+    "not measured: <reason>" note, never a blank. It keeps passing once kind numbers fill the
+    cells. 6a's `test_poc06a_scorecard_records.py` checks the numbers."""
+    rows = table_rows(SCORECARD.read_text(encoding="utf-8"), "kagent-adk")
 
-    assert "kagent-adk" in text and "not measured: kind, from CI" in text
+    blank = [row for row in rows if any(not cell for cell in row)]
+
+    assert (bool(rows), blank) == (True, [])
 
 
 def test_criterion_4_the_kind_suites_are_kind_drills() -> None:
