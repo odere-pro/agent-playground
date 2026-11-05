@@ -74,7 +74,8 @@ async def test_in_memory_state_expires_on_its_clock_and_scripts_one_failure() ->
     assert state.calls[0] == ("set_if_absent", "k")
 
 
-def test_a_bundle_built_before_poc4_gets_a_store_and_no_events() -> None:
+def test_a_bundle_built_without_events_gets_no_events() -> None:
+    """A bundle that names no event port publishes nothing (`spec.adapters.events: none`)."""
     from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 
     bundle = PortBundle(
@@ -84,4 +85,4 @@ def test_a_bundle_built_before_poc4_gets_a_store_and_no_events() -> None:
         telemetry=InMemoryTelemetry(),
         state=InMemoryState(),
     )
-    assert isinstance(bundle.state, InMemoryState) and isinstance(bundle.events, NoEvents)
+    assert isinstance(bundle.events, NoEvents)

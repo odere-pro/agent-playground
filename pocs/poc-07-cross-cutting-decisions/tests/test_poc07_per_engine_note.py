@@ -66,6 +66,12 @@ def test_the_note_table_has_eight_engines_by_four_concerns() -> None:
     assert (len(TABLE), concerns_per_row) == (NOTE_ENGINES, {CONCERNS})
 
 
+def test_the_note_marks_as_many_cells_run_as_the_scenario_tests_run() -> None:
+    """Criterion 6: "Anything that must live in the workload's event mapping is listed per
+    engine": no Run cell is missing, so the per-cell tests below cannot all vanish."""
+    assert len(RUN_CELLS) == len(TESTED_CELLS) > 0
+
+
 @pytest.mark.parametrize(("concern", "engine"), RUN_CELLS)
 def test_each_cell_marked_run_is_an_engine_a_scenario_test_runs(concern: str, engine: str) -> None:
     """Criterion 6: "Anything that must live in the workload's event mapping is listed per

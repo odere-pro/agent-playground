@@ -150,6 +150,7 @@ def test_compose_ports_bind_localhost_only(port: str) -> None:
 def test_compose_publishes_the_langfuse_otlp_jaeger_and_health_ports() -> None:
     """Criterion 1: "by exporter config only": the stack publishes Langfuse (3000), OTLP
     (4318), Jaeger (16686), and health (13133)."""
+    assert _PUBLISHED
     by_host = {p.split(":")[1] for p in _PUBLISHED}
 
     assert {"3000", "4318", "16686", "13133"} <= by_host

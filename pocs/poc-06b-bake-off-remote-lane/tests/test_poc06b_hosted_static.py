@@ -466,6 +466,9 @@ def test_the_kind_step_tears_down_on_any_exit_and_refuses_an_existing_cluster() 
     cleanup = text[text.index("cleanup() {") : text.index("trap cleanup EXIT")]
     assert "stop_kind" in cleanup
     assert "trap cleanup EXIT" in text and "trap 'exit 143' TERM HUP" in text
+    entry = (ROOT / "scripts/poc06_mac.sh").read_text().splitlines()
+    assert entry.index("install_traps") == entry.index("check_settings") + 1, "traps run first"
+    assert entry.index("install_traps") < entry.index('cd "$ROOT"')
     step = text[text.index("step_kind() {") : text.index("# ---- push")]
     assert step.index("KIND_UP=1") < step.index('"$KIND_RUN" up'), "a partial up is deleted too"
     assert "kind get clusters" in text and 'grep -qx "$KIND_CLUSTER"' in text
