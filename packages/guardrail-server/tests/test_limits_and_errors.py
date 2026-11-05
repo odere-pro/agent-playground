@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 import pytest
+import yaml
 from guardrail_server import GENERIC_PATH, PatternClassifier, create_app
 from guardrail_server import app as app_module
 
@@ -155,8 +156,14 @@ async def test_routes_answer_422_without_the_rejected_value_when_checks_is_bad(
 
 def test_the_litellm_config_states_fail_closed_on_both_generic_guardrails() -> None:
     """A guardrail-server fault blocks the call: LiteLLM's fallback is stated, not assumed."""
-    config = (Path(__file__).parents[1] / "litellm" / "config.yaml").read_text()
+    config = yaml.safe_load((Path(__file__).parents[1] / "litellm" / "config.yaml").read_text())
+    generic = [
+        g["litellm_params"]
+        for g in config["guardrails"]
+        if g["litellm_params"]["guardrail"] == "generic_guardrail_api"
+    ]
 
-    assert config.count("guardrail: generic_guardrail_api") == 2
-    assert config.count("unreachable_fallback: fail_closed") == 2
-    assert config.count("fail_on_error: true") == 2
+    assert [(p["unreachable_fallback"], p["fail_on_error"]) for p in generic] == [
+        ("fail_closed", True),
+        ("fail_closed", True),
+    ]
