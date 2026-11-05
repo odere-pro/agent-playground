@@ -15,15 +15,12 @@ Can a developer take any business logic, pick a framework and a lane, and have a
 
 ## Status
 
-In progress. 7 of 8 exit criteria have evidence; criterion 3 is flagged by the user's decision (2026-10-30). The optional kind run is done. CI is green on `main` at `6888e2c`: `check`, `poc09-scaffold`, `poc09-helm`.
+Done on 2026-11-05. Two exit criteria were closed with a flag, by the user's decision. CI is green on `main` at `6888e2c`: `check`, `poc09-scaffold`, `poc09-helm`.
 
 ## What is left
 
-- **The trial by someone new to the code (exit criterion 6).** A person who did not build the chassis goes from `agentctl new` to a working demo in under a day. Steps: [the trial](../../../pocs/poc-09-agent-mvp-template/notes/2026-10-30-new-user-trial.md). A stand-in trial by a fresh AI agent found ten gaps, now fixed; it does not count.
-- **The live demo, on the user's machine.** `pocs/poc-09-agent-mvp-template/demo/demo.sh --live` calls the Compose stack from the host: native, OpenAI, and MCP. Not run: `curl` is not allowed in the PoC-9 sessions.
-- **A debugger attached to each container,** in the Compose `fake` profile.
-- **The `local` Compose profile,** which needs a running LiteLLM.
-- **Close.** Record the trial, tick criterion 6, set the README status to `done`.
+- **The trial by someone new to the code (exit criterion 6, flagged).** The user closed it on 2026-11-05 with no trial by a person. A stand-in trial by a fresh AI agent found ten gaps, now fixed. A real trial is still worth running: [the steps](../../../pocs/poc-09-agent-mvp-template/notes/2026-10-30-new-user-trial.md).
+- **Three checks on the user's machine.** `demo.sh --live` (native, OpenAI, and MCP from the host), a debugger attach in the `fake` profile, and the `local` profile with a running LiteLLM. None is an exit criterion.
 
 ## Moved to the backlog
 
