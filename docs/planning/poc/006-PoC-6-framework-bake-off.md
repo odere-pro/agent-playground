@@ -19,8 +19,10 @@ Part A ([6a README](../../../pocs/poc-06a-bake-off-sidecar-lane/README.md)) and 
 
 ## What is left
 
+ADR-006 was accepted by the user on 2026-10-30 (6a and 6b exit criterion 7). The hosted numbers can still reopen the default.
+
+
 - **Run every engine on a hosted big model (6a and 6b exit criterion 5).** This gives the real token overhead against plain Python per engine. The provider key stays on the user's Mac, so only the user can run it: `make poc06-mac ARGS="--only hosted --only kind"`. Then record the numbers in the scorecard and check the default in ADR-006.
-- **Accept ADR-006 (6a and 6b exit criterion 7).** The ADR is written and its status is Proposed. The user accepts it, or asks for changes. The hosted numbers can still reopen the default.
 - **Follow-ups found on the way, in [the 6a backlog changes](../../../pocs/poc-06a-bake-off-sidecar-lane/notes/backlog-changes.md):** find the cause of the rare 502 under load at 4 pairs, and add a test that every workload image accepts the scale stack's command.
 
 ## Where the rest is
