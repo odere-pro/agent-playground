@@ -50,6 +50,7 @@ Test support used by more than one PoC, by a demo, or by a plain script that a d
 | `claude_cli` | `ClaudeCliStandIn`, a stand-in for the `claude` CLI that reaches the chassis proxy. |
 | `metrics_stack` | The Compose metrics stack's ports, inputs, and helpers, for its drill, static test, and latency script. |
 | `promtext` | A small reader of the Prometheus text format (`samples`, `families`, `value`). |
+| `mac_script` | The PoC-6 Mac command, the entry and its sourced pieces, as one text (`mac_script_text`). |
 | `waits` | `wait_until` and `wait_until_async`: poll, and fail on timeout. |
 
 ## Use

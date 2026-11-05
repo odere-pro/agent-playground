@@ -20,6 +20,7 @@ import yaml
 from bakeoff import cli
 from bakeoff.registry import ENGINES
 from chassis.server.config import load_config
+from poc_harness.mac_script import PIECES, PIECES_DIR, mac_script_text
 
 ROOT = Path(__file__).resolve().parents[3]
 COMPOSE = ROOT / "deploy" / "compose"
@@ -397,7 +398,7 @@ def test_the_script_refuses_an_engine_it_does_not_know(tmp_path: Path) -> None:
 
 def test_the_script_text_lists_the_registrys_trusted_engines() -> None:
     """The script's TRUSTED_ENGINES and UNTRUSTED_ENGINES lines are the registry's split."""
-    text = SCRIPT.read_text()
+    text = mac_script_text()
 
     trusted = re.search(r'^TRUSTED_ENGINES="([^"]*)"', text, re.M)
     untrusted = re.search(r'^UNTRUSTED_ENGINES="([^"]*)"', text, re.M)
@@ -416,7 +417,7 @@ SAYS = re.compile(r"\b(echo|printf|say|warn|die|tee)\b")
 def test_the_script_text_keeps_the_key_rules() -> None:
     """The script's text: strict, no xtrace, no forced push, the key never exported or printed
     (one stdin pipe to hosted.sh), one prefix hand-off, and `--push` stages exact paths off main."""
-    code = [line for line in SCRIPT.read_text().splitlines() if not line.lstrip().startswith("#")]
+    code = [line for line in mac_script_text().splitlines() if not line.lstrip().startswith("#")]
     text = "\n".join(code)
 
     stdin_lines = [line for line in code if STDIN_USE.match(line)]
@@ -448,18 +449,112 @@ def test_the_script_text_keeps_the_key_rules() -> None:
 @pytest.mark.parametrize("stem", ["hosted-run", "slm-run", "scale-run", "load-run", "kind-run"])
 def test_the_script_text_writes_the_note_the_task_lists(stem: str) -> None:
     """The script's text writes each note the task names."""
-    text = SCRIPT.read_text()
+    text = mac_script_text()
 
     assert f"write_note {stem}" in text
 
 
 def test_the_script_text_names_the_three_notes_folders() -> None:
     """The script's text puts the notes in the 6a, 6b, and 6c notes folders."""
-    text = SCRIPT.read_text()
+    text = mac_script_text()
 
     assert 'NOTES_A="pocs/poc-06a-bake-off-sidecar-lane/notes"' in text
     assert 'NOTES_C="pocs/poc-06c-pretrained-slm/notes"' in text
     assert 'NOTES_B="pocs/poc-06b-bake-off-remote-lane/notes"' in text
+
+
+# ---- the split: an entry script and its sourced pieces ----------------------------------------
+
+
+MAX_PIECE_LINES = 400
+SOURCED = re.compile(r'^\. "\$PIECES_DIR/([a-z]+\.sh)"$', re.M)
+
+
+def test_the_entry_sources_every_piece_and_no_piece_is_over_the_limit() -> None:
+    """The entry sources each piece in the harness's order, and no piece passes 400 lines."""
+    sourced = SOURCED.findall(SCRIPT.read_text())
+    on_disk = sorted(path.name for path in PIECES_DIR.iterdir())
+    lines = {piece: len((PIECES_DIR / piece).read_text().splitlines()) for piece in PIECES}
+
+    assert tuple(sourced) == PIECES
+    assert on_disk == sorted(PIECES)
+    assert max(lines.values()) <= MAX_PIECE_LINES, lines
+
+
+def test_the_entry_finds_its_pieces_from_any_working_directory(tmp_path: Path) -> None:
+    """The pieces are found by the script's own path, not the working directory."""
+    done = subprocess.run(
+        ["bash", str(SCRIPT), "--dry-run", "--only", "load"],
+        env=clean_env(tmp_path),
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert "== step load" in done.stdout
+
+
+# Runs one step with the commands stubbed: `run_logged` prints what would run, `write_note` prints
+# the command it was given to record. No Docker, no model, no key.
+STEP_STUBS = """
+set -euo pipefail
+ROOT={root}
+. "$ROOT/scripts/poc06_mac/lib.sh"
+. "$ROOT/scripts/poc06_mac/notes.sh"
+. "$ROOT/scripts/poc06_mac/steps.sh"
+WORK={work}
+run_logged() {{ shift; printf 'ran: %s\\n' "$*"; }}
+write_note() {{ printf 'note: %s\\n' "$5"; }}
+start_litellm() {{ :; }}
+stop_litellm() {{ :; }}
+start_llama() {{ :; }}
+stop_llama() {{ :; }}
+stop_scale() {{ :; }}
+build_scale_images() {{ :; }}
+step_{step}
+"""
+
+
+@pytest.mark.parametrize(
+    ("step", "prefix"),
+    [
+        ("hosted", ""),
+        ("slm", ""),
+        ("scale", "POC06_SCALE_MODEL=slm "),
+        ("load", "POC06_SCALE_MODEL=fake "),
+    ],
+)
+def test_the_note_records_the_command_the_step_ran(tmp_path: Path, step: str, prefix: str) -> None:
+    """Each step's note holds the argument list it ran: only the temp paths differ."""
+    script = STEP_STUBS.format(root=ROOT, work=tmp_path, step=step)
+
+    done = subprocess.run(
+        ["bash", "-c", script],
+        env=clean_env(tmp_path),
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    lines = done.stdout.splitlines()
+    ran = [line.removeprefix("ran: ") for line in lines if line.startswith("ran: ")]
+    noted = [line.removeprefix("note: ") for line in lines if line.startswith("note: ")]
+    driven = ran[-1].replace(f"{tmp_path}/{step}-out", "<dir>").replace(f"{ROOT}/", "")
+
+    assert noted == [prefix + driven]
+
+
+def test_the_bakeoff_command_has_one_builder() -> None:
+    """Only `bakeoff_cmd` spells the bake-off command; the run and the notes read its variable."""
+    code = _code()
+    builder = code[code.index("bakeoff_cmd() {") : code.index("bakeoff_run() {")]
+
+    assert code.count("python -m bakeoff run\n") == 1 and "python -m bakeoff run\n" in builder
+    assert code.count('run_logged "$1" "${BAKEOFF_CMD[@]}" --out "$2"') == 1
+    assert code.count('"${BAKEOFF_CMD[*]} --out <dir>"') == 2
 
 
 # ---- scale-slm.sh and the driver --------------------------------------------------------------
@@ -562,7 +657,7 @@ def test_bakeoff_refuses_an_untrusted_engine_with_a_non_fake_model_url(
 
 def test_the_script_text_redacts_what_it_writes_to_the_notes(tmp_path: Path) -> None:
     """The writer redacts; the check here is that the script's redaction pattern is in place."""
-    text = SCRIPT.read_text()
+    text = mac_script_text()
 
     assert "redact <" in text
     assert "[redacted]" in text
@@ -572,7 +667,7 @@ def test_the_script_text_redacts_what_it_writes_to_the_notes(tmp_path: Path) -> 
 
 
 def _code() -> str:
-    lines = SCRIPT.read_text().splitlines()
+    lines = mac_script_text().splitlines()
     return "\n".join(line for line in lines if not line.lstrip().startswith("#"))
 
 
@@ -622,7 +717,7 @@ def test_the_slm_dry_run_never_looks_at_the_env_file(tmp_path: Path) -> None:
 
 
 def _redact(text: str, tmp_path: Path) -> str:
-    source = SCRIPT.read_text()
+    source = mac_script_text()
     func = source[source.index("redact() {") : source.index("# Run a command, show it")]
     done = subprocess.run(
         ["bash", "-c", f"{func}\nHOSTED_KEY=provider-secret-9\nLITELLM_KEY=sk-poc06-abc\nredact"],
