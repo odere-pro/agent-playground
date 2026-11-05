@@ -270,9 +270,9 @@ As of 2026-11-05. The PoC-1 to PoC-7 and PoC-9 docs above hold only their open i
 - **PoC-6c:** the SLM numbers next to the big-model numbers, from the same Mac run. Optional: Mac latency (`--only slm`).
 - **PoC-7:** the Mac run (Prompt Guard 2, LiteLLM's `presidio` hook, the encoder and judge numbers); a `SNYK_TOKEN` repo secret for a real agent scan; a look at `user.id` and `session.id` in the Langfuse UI.
 - **PoC-8:** done on 2026-10-30, with one flag: the offline evals, until `poc08-evals` is a required check on `main` (its README).
-- **PoC-9:** the trial by someone new to the code (criterion 6); on the user's machine, `demo.sh --live`, a debugger attach, and the `local` profile.
+- **PoC-9:** done on 2026-11-05, criteria 3 and 6 flagged. Still worth doing: a trial by someone new to the code; on the user's machine, `demo.sh --live`, a debugger attach, and the `local` profile.
 
-Only the user can do the Mac runs, because the provider key never leaves the Mac. Only the user can find the person for the PoC-9 trial.
+Only the user can do the Mac runs, because the provider key never leaves the Mac.
 
 ## Framework shortlist
 

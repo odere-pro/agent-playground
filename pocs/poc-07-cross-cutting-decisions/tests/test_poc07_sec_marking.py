@@ -154,8 +154,16 @@ CALL_IDS = [(path, stream) for path, _ in CALLS for stream in (False, True)]
 def test_marking_and_redaction_hold_on_every_engine(
     marked: MarkedRun, path: str, stream: bool
 ) -> None:
-    """Criterion 5: "Each concern works on at least two engines": each answer is marked."""
+    """Criterion 5: "Each concern works on at least two engines": marking and redaction.
+
+    Each answer is marked, and the one result event of the run with an email in its input holds
+    the placeholder, never the email. The tests below repeat the redaction half on its own.
+    """
     assert marked.answers[path, stream] == (200, "true", "true")
+    assert marked.email_run_status == 200
+    (wire,) = marked.event_wire
+    assert EMAIL not in wire
+    assert "<EMAIL_ADDRESS>" in wire
 
 
 def test_the_run_with_an_email_answers_ok(marked: MarkedRun) -> None:
@@ -175,4 +183,5 @@ def test_the_result_event_never_holds_the_email(marked: MarkedRun) -> None:
 
 def test_the_result_event_holds_the_email_placeholder(marked: MarkedRun) -> None:
     """Criterion 5: "Each concern works on at least two engines": the event has the placeholder."""
+    assert len(marked.event_wire) == 1
     assert all("<EMAIL_ADDRESS>" in wire for wire in marked.event_wire)

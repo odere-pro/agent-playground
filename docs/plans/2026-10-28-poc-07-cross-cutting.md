@@ -31,7 +31,20 @@ These need Hugging Face and a hosted model key. The cloud container has neither.
 
 Add a `SNYK_TOKEN` secret to the repo. Then the `poc07-agent-scan` job runs a real scan, not only the inspect step.
 
-## 4. Close
+## 4. Pending checks (from review finding R7-09)
+
+One concrete check for each "waits on" item in the README. The README checkboxes are not changed here.
+
+- ADR-007 to ADR-010: each ADR's status line reads "Accepted, 2026-10-30, by the user". The README criterion 3 line and status still need to match them; that is the owner's edit.
+- Observability, a LiteLLM span in the same trace: PoC-8 holds it, on Jaeger in the `inprocess` lane: `pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_litellm.py::test_one_run_is_one_trace_with_a_litellm_span_under_the_model_proxy`, `poc08-litellm` [run 41011333394](https://github.com/odere-pro/agent-playground/actions/runs/41011333394) ([note](../../pocs/poc-08-cross-cutting-build/notes/2026-10-30-stack-drills.md)).
+- Observability, how Langfuse shows `user.id` and `session.id`: a new stack test in `pocs/poc-07-cross-cutting-decisions/tests/test_poc07_stack.py` that reads both from the run's trace. Not written yet; `poc07-stack` run 40735435727 has none.
+- Security and redaction, LiteLLM's real `presidio` hook: PoC-8 holds it: `pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_litellm.py::test_pii_reaches_the_model_masked_by_litellms_presidio_hook`, `poc08-litellm` [run 41011333394](https://github.com/odere-pro/agent-playground/actions/runs/41011333394).
+- Security, Llama Prompt Guard 2: the Mac run (section 2). A `SNYK_TOKEN` repo secret: section 3.
+- Evals, Langfuse datasets and experiments on a real Langfuse: a new stack test in `pocs/poc-07-cross-cutting-decisions/tests/test_poc07_stack.py`. Not written yet; `poc07-stack` run 40735435727 has none.
+- Redaction, named-entity redaction in the Collector log pipeline: regex only today (`tests/test_poc07_stack_static.py::test_collector_logs_pipeline_masks_emails_and_phones`; ADR-007 item 7). It waits on PoC-8 [open question 6](../../pocs/poc-08-cross-cutting-build/notes/backlog-changes.md), the user's decision.
+- Criterion 4, the same join across two containers on a real Collector: a new stack test in `pocs/poc-07-cross-cutting-decisions/tests/test_poc07_stack.py`. Not written yet; `poc07-stack` run 40735435727 and the PoC-8 `poc08-litellm` drill both use the `inprocess` lane.
+
+## 5. Close
 
 - Move `pocs/CURRENT` to the next PoC.
 - Apply `pocs/poc-07-cross-cutting-decisions/notes/backlog-changes.md` with the `planning-sync` skill.
