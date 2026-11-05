@@ -1,6 +1,6 @@
 # How to add business logic
 
-Status: written 2026-10-29 for PoC-9. The code and the contract win where this guide and they differ. Names from the PoC-9 template that were still being built when this was written carry the comment `verify after merge`.
+Status: written 2026-10-29 for PoC-9, checked against the built template on 2026-11-05 by a trial run. The code and the contract win where this guide and they differ.
 This is the template copy of `docs/guides/how-to-add-business-logic.md` in the platform monorepo. The ADRs, the contract, and the schemas are not in this repo, so every link goes to the monorepo on `main`. The decisions in one list: [decisions.md](decisions.md).
 Contract: [contract v7](https://github.com/odere-pro/agent-playground/blob/main/docs/contracts/contract-v7.md), whose frozen surface is [contract v5, part C](https://github.com/odere-pro/agent-playground/blob/main/docs/contracts/contract-v5.md). Decisions: [ADR-001](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/001-chassis-delivery-model.md), [ADR-002](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/002-template-a2a-server-placement.md), [ADR-005](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/005-remote-lane-auth-and-trust-admission.md), [ADR-006](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/006-agent-engines-default-supported-lanes.md), [ADR-007](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/007-observability-otel-collector-langfuse.md), [ADR-008](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/008-security-identity-guardrails-defense-in-depth.md), [ADR-009](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/009-feedback-langfuse-scores-event.md), [ADR-010](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/010-evals-offline-tool-online-gate.md). Plan: [PoC-9](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/poc/009-PoC-9-agent-mvp-template.md).
 
@@ -8,14 +8,19 @@ This guide is for someone who has business logic and wants it to run as an agent
 
 ## 1. Scaffold an agent
 
+First, once, in the platform checkout: `make setup`. It installs `agentctl` into the platform's environment; until then `uv run agentctl` fails with `Failed to spawn: agentctl`.
+
 ```bash
-agentctl new my-agent --kind transformer --framework pydanticai --connector sidecar
+cd <the platform checkout>
+uv run agentctl new my-agent --kind transformer --dest ~/work   # pydanticai, sidecar
+cd ~/work/my-agent && make setup test
 ```
 
 - `--kind` is `transformer` (text in, text out), `evaluator` (scores or labels an input), or `tool` (answers by calling tools). These are the stateless kinds of the epic.
 - `--framework` is `python`, `pydanticai`, `langgraph`, `openai-agents`, `smolagents`, or `claude-agent`. The default is `pydanticai` ([ADR-006](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/006-agent-engines-default-supported-lanes.md), item 1).
 - `--connector` is `sidecar` (the default) or `remote`. `smolagents` and `claude-agent` are allowed only with `remote` (section 5).
-- `--dest DIR` and `--platform-path PATH` set where the repo goes and where this monorepo is. <!-- verify after merge -->
+- `--dest DIR` is the parent folder of the new repo (default: the current folder). `--platform-path PATH` is the platform checkout (default: the one `agentctl` runs from).
+- `--no-lock` skips pinning the agent to the platform's tested versions. Without it, `agentctl` writes a `uv.lock` into the first commit.
 
 The command renders a Copier template into a new git repo. `copier update` pulls later template changes into it. suggested: Copier, from the PoC-9 plan.
 
@@ -25,14 +30,15 @@ What you get, and what you edit:
 | -------------------- | ---- | ----------- |
 | `src/<package>/handle.py` | The business logic | Yes |
 | `src/<package>/mapping.py` | Framework events to chassis events | Only if you change frameworks |
-| `src/<package>/telemetry.py` | OpenTelemetry setup for the workload | Rarely |
+| `src/<package>/telemetry.py` | OpenTelemetry setup; `langgraph` and `openai-agents` only | Rarely |
+| `evals/cases.yaml` | Your golden cases for `make eval` (section 9) | Yes |
 | `config/agent.yaml` | The chassis config: lane, trust, adapters | Yes |
 | `config/fake.yaml` | The chassis config for offline tests | Rarely |
 | `tests/` | Tests on the `agent_testkit` kit | Yes |
-| `deploy/compose/docker-compose.yaml` | Profiles `fake` and `local`, a debugger per container | Rarely |
+| `deploy/compose/docker-compose.yaml` | Profiles `fake` and `local`, a debugger per container; `sidecar` lane only | Rarely |
 | `Dockerfile`, `Makefile`, `.github/workflows/ci.yml`, `.gitlab-ci.yml` | Image and CI | No |
 
-<!-- verify after merge: the paths above come from the agentctl spec, not from the merged template. -->
+`.platform` is a link to the platform checkout. `make` makes it from `PLATFORM_PATH`, whose default in the `Makefile` is the checkout you scaffolded from. `pyproject.toml` and `uv.lock` name only `.platform`, so a clone works on any machine with `PLATFORM_PATH` set.
 
 ## 2. The `handle` contract
 
@@ -188,17 +194,20 @@ Guardrails, rate limits, marking, and the evaluator gate are `spec.guardrails`, 
 
 `make test` in the agent repo runs with no network and no keys. It passes on the first commit (PoC-9 exit criterion 1).
 
-- The kit is `agent_testkit`. <!-- verify after merge -->
-- It starts the chassis in the `fake` profile as a separate process (suggested: `uvx chassis serve --profile fake`) and drives the workload over A2A.
-- The fixture `workload` starts your `handle` behind the template server. The fixture `chassis` gives `.run(input)`, which sends one run and returns the result. <!-- verify after merge -->
-- The class `agent_testkit.contract.WorkloadContract` is the lane contract suite. Subclass it in `tests/` and it runs every case against your workload. <!-- verify after merge -->
-- The fake model server scripts the model's answers, so a test is repeatable.
+- The kit is `agent_testkit`. It starts the chassis in the `fake` profile as its own process, from the platform's `uv.lock`, and drives the workload over A2A. Your environment never installs the chassis.
+- The fixture `workload` starts your `handle` behind the template server. The fixture `chassis` gives `.run(input)`: a plain call that sends one run and returns the envelope, a dict with `status` and `output`.
+- The class `agent_testkit.contract.WorkloadContract` is the lane contract suite. Subclass it in `tests/` and it runs every case against your workload.
+- **The fake model answers `ok` to every call.** It cannot be scripted per test yet. So a test or an eval case that only checks the model's text checks the fake, not your logic. Put the logic you want to test in plain Python that `handle` calls, and test that.
+- Offline: set `UV_OFFLINE=1` once the uv cache is filled. `make test` fills the chassis's part first (`make chassis-env`), which needs the network on a new machine.
 
 ```python
-async def test_keeps_the_numbers(chassis):  # verify after merge: fixture name
-    result = await chassis.run({"text": "simplify: Costs fell 30 percent in 2026."})
-    assert "30" in result.text and "2026" in result.text
+def test_expands_the_glossary(chassis):
+    envelope = chassis.run({"text": "SLM"})
+    assert envelope["status"] == "ok"
+    assert "small language model" in envelope["output"]["text"]
 ```
+
+To replace the model call with plain logic: `handle` must still yield `start` first and one `end` last, with `delta` events for the text in between. A `metrics` event is optional. If you drop the framework, remove its pin from `pyproject.toml` too, or it stays in the image.
 
 The test layers and what each checks: [testing](https://github.com/odere-pro/agent-playground/blob/main/docs/guides/testing.md).
 
@@ -210,7 +219,7 @@ docker compose -f deploy/compose/docker-compose.yaml --profile local up   # Lite
 ```
 
 - Both profiles run two containers: the chassis and the workload. Only the chassis gets credentials.
-- Each container runs a debugger. suggested: debugpy, the chassis on port 5678 and the workload on 5679. Attach your editor's Python remote debugger to the port. <!-- verify after merge -->
+- In the `fake` profile each container runs a debugger: debugpy, the chassis on 5678 and the workload on 5679, on `127.0.0.1`. `.vscode/launch.json` attaches to both. In `local` both are off, because the workload shares the chassis's network and debugpy has no login; `deploy/compose/README.md` says how to turn them on.
 - Call the agent on the chassis port (suggested: 8080): `POST /v1/run`, the OpenAI SDK with `base_url` set to the chassis, or an MCP client on `/v1/mcp`.
 - `GET /metrics` on the same port shows the agent's counters ([contract v7, part A](https://github.com/odere-pro/agent-playground/blob/main/docs/contracts/contract-v7.md)).
 
@@ -218,7 +227,9 @@ docker compose -f deploy/compose/docker-compose.yaml --profile local up   # Lite
 
 **Offline evals** use DeepEval on the golden set ([ADR-010](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/010-evals-offline-tool-online-gate.md), item 1).
 
-- In the agent repo: `make eval` runs your golden cases in `evals/cases.yaml` through the chassis and writes `reports/eval.json`. Break the logic and it fails.
+- In the agent repo: `make eval` runs your golden cases in `evals/cases.yaml` through the chassis and writes `reports/eval.json`.
+- Each case has `id`, `input` (the run's input), and `expect`. `expect.status` is one status the run must end with (default: `ok` or `fallback`). `expect.contains` is text the JSON of the output must hold.
+- The template's one case checks the plumbing only: the fake model answers `ok`. Add cases on what your logic adds, so a change that breaks it fails `make eval`.
 - In the platform monorepo: `make evals` runs every engine and lane and checks the baseline. `make evals-regression` shows a logic change that drops facts and fails the gate.
 - A change to the business logic, the prompt, or the model needs a passing eval.
 
@@ -226,7 +237,7 @@ docker compose -f deploy/compose/docker-compose.yaml --profile local up   # Lite
 
 **The red-team set** covers injection in the input, injection in a tool output, exfiltration through a tool, and a secret read ([ADR-008](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/008-security-identity-guardrails-defense-in-depth.md), item 9).
 
-- In the agent repo: `make redteam` sends attacks through the chassis guard stage. `make hostile` checks your source, image, and Compose file against ADR-001. `make load-smoke` runs concurrent calls.
+- In the agent repo: `make redteam` sends attacks on the input through the chassis guard stage. `make hostile` reads your source, `Dockerfile`, and Compose file for ADR-001 mistakes: a chassis import, a key, a wrong uid, a published workload port. It does not run the image. `make load-smoke` runs concurrent calls.
 - In the platform monorepo: `make redteam` runs it on every engine, lane, and guardrail config against the recorded baseline.
 
 **Feedback** from users goes to `POST /v1/feedback` and onto the run's trace in Langfuse. The workload exposes nothing for it ([ADR-009](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/009-feedback-langfuse-scores-event.md)).

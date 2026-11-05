@@ -1,0 +1,43 @@
+# example-agent on a local kind cluster, offline: `helm install example-agent
+# deploy/helm/example-agent -f deploy/helm/example-agent/values-kind.yaml`. Only what differs
+# from values.yaml. No secret: the chassis runs the `fake` profile, so there is no key to hold.
+
+# PoC-5 admission rule 8: outside the remote lane every image comes from the cluster image store
+# (`kind load docker-image`), never a registry.
+workload:
+  image: kind.local/agent-platform/echo-python:poc09
+  pullPolicy: Never
+
+chassis:
+  image:
+    pullPolicy: Never
+  env: []
+  secretEnv: []
+  config:
+    profile: fake
+    agent:
+      name: example-agent
+      version: 0.0.1
+    spec:
+      trust: trusted
+      adapters:
+        model: fake
+        config: memory
+        state: memory
+        telemetry: memory
+        tools: fake
+        events: none
+      engine:
+        connector: sidecar
+      model:
+        route: fake-route
+
+# The fake profile reaches nothing outside the pod.
+networkPolicy:
+  chassisEgress: []
+
+# Scale on CPU, from two replicas (needs metrics-server).
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
