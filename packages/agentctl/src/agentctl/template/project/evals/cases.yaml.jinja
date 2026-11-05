@@ -1,5 +1,7 @@
-# The golden cases `make eval` runs through the chassis. Add your own: `contains` is text the JSON
-# of the output must hold, so a change that breaks the logic fails here.
+# The golden cases `make eval` runs through the chassis. Each case: `id`, `input`, and `expect`.
+# `expect.status`: the status the run must end with (default: ok or fallback). `expect.contains`:
+# text the JSON of the output must hold. The fake model answers `ok` to every call, so the case
+# below checks the plumbing only. Add cases on what your logic adds.
 cases:
   - id: greeting
     input: {text: hello big world}

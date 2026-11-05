@@ -15,11 +15,10 @@ Does the chosen stack give security, observability, feedback, and evals to every
 
 ## Status
 
-In progress. The code, the tests, and the CI runs are done. Seven of eight exit criteria have evidence. ADR-007 to ADR-010 are written and Proposed.
+In progress. The code, the tests, and the CI runs are done. Eight of eight exit criteria have evidence. The user accepted ADR-007 to ADR-010 on 2026-10-30 (criterion 3).
 
 ## What is left
 
-- **Accept the four ADRs (exit criterion 3).** The user reads and accepts [ADR-007](../adr/007-observability-otel-collector-langfuse.md) (observability), [ADR-008](../adr/008-security-identity-guardrails-defense-in-depth.md) (security), [ADR-009](../adr/009-feedback-langfuse-scores-event.md) (feedback), and [ADR-010](../adr/010-evals-offline-tool-online-gate.md) (evals). Each ADR ends with its open questions. The most urgent one: should feedback be tied to the caller who made the call?
 - **The Mac run.** It needs Hugging Face and a hosted model key, which only the user's Mac has. Run the red-team set with Llama Prompt Guard 2, not the pattern stand-in (today it blocks 12 of 18 cases). Run LiteLLM's real `presidio` hook. Measure the encoder and the hosted judge: agreement, cost, and latency per gated call. Put the numbers in the PoC notes and in ADR-008 and ADR-010.
 - **A real Snyk Agent Scan.** Add a `SNYK_TOKEN` repo secret, so the `poc07-agent-scan` job runs a real scan, not only the inspect step.
 - **Look at the Langfuse UI.** Check how it shows `user.id` and `session.id` on a trace.

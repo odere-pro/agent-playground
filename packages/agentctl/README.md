@@ -3,6 +3,7 @@
 The PoC-9 agent factory. It scaffolds a new agent from the service template.
 
 ```bash
+# Once, in the platform checkout: make setup (installs agentctl).
 uv run agentctl new invoice-reader --kind transformer                       # pydanticai, sidecar
 uv run agentctl new coder --kind tool --framework smolagents --connector remote
 cd invoice-reader && make setup test run

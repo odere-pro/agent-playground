@@ -234,10 +234,10 @@ def test_criterion_6_what_the_chassis_cannot_control_for_the_remote_solution() -
 
 
 def test_criterion_7_the_adr_names_default_supported_and_rejected_engines() -> None:
-    """Criterion 7: the bake-off ADR. Skipped: a document, and its box is the owner's to tick."""
+    """Criterion 7: the bake-off ADR. Skipped: a document; 6b checks its status."""
     pytest.skip(
         "evidence: docs/planning/adr/006-agent-engines-default-supported-lanes.md, Accepted on "
-        "2026-10-30; the README keeps this box open until the owner ticks it"
+        "2026-10-30; 6b test_poc06b_criteria.py checks the status line"
     )
 
 

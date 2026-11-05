@@ -26,6 +26,7 @@ LANES_NOTE = POC / "notes/2026-10-09-lanes-b-kind.md"
 LOAD_NOTE = POC / "notes/2026-10-10-remote-load-on-kind.md"
 CONTRACT_V5 = ROOT / "docs/contracts/contract-v5.md"
 FREEZE_TESTS = ROOT / "packages/chassis/tests/test_contract_freeze.py"
+ADR_006 = ROOT / "docs/planning/adr/006-agent-engines-default-supported-lanes.md"
 SUITE = "EngineConnectorContract"
 KIND_SUITES = (
     "test_poc06b_kind_remote_controls.py",
@@ -154,10 +155,9 @@ def test_criterion_6_the_uncontrolled_list_is_written_for_the_remote_solution() 
 def test_criterion_7_the_adr_names_default_supported_and_rejected_engines() -> None:
     """An ADR names the default engine, the supported engines with their lane, and the rejected
     engines with reasons."""
-    pytest.skip(
-        "ADR-006 (docs/planning/adr/006-agent-engines-default-supported-lanes.md) is Accepted on "
-        "2026-10-30, but the README box stays open until the owner ticks it"
-    )
+    status = ADR_006.read_text().split("## Status", 1)[1].strip().splitlines()[0]
+
+    assert status.startswith("Accepted, 2026-10-30"), status
 
 
 def test_criterion_8_the_freeze_is_pinned_by_its_own_test_file() -> None:

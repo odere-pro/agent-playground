@@ -13,7 +13,7 @@ from collections.abc import Awaitable, Callable
 import pytest
 from chassis.ports.state import StatePort, StateUnavailable
 
-PassTime = Callable[[float], Awaitable[None]]
+Elapse = Callable[[float], Awaitable[None]]
 """Let this many seconds pass for the store under test."""
 
 TTL_SHORT_S = 1.0
@@ -42,7 +42,7 @@ class StatePortContract:
         return uuid.uuid4().hex
 
     @pytest.fixture
-    def pass_time(self) -> PassTime:
+    def pass_time(self) -> Elapse:
         return asyncio.sleep
 
     @pytest.fixture
@@ -95,7 +95,7 @@ class StatePortContract:
         assert await state_port.get(key) == f"c{winner}".encode()
 
     async def test_a_value_expires_after_its_ttl(
-        self, state_port: StatePort, key_prefix: str, pass_time: PassTime
+        self, state_port: StatePort, key_prefix: str, pass_time: Elapse
     ) -> None:
         key = f"{key_prefix}:ttl"
         await state_port.set(key, b"soon gone", ttl_s=TTL_SHORT_S)
@@ -104,7 +104,7 @@ class StatePortContract:
         assert await state_port.get(key) is None
 
     async def test_an_expired_claim_can_be_claimed_again(
-        self, state_port: StatePort, key_prefix: str, pass_time: PassTime
+        self, state_port: StatePort, key_prefix: str, pass_time: Elapse
     ) -> None:
         key = f"{key_prefix}:lease"
         assert await state_port.set_if_absent(key, b"a", ttl_s=TTL_SHORT_S) is True
@@ -143,7 +143,7 @@ class StatePortContract:
         assert await state_port.set_if_absent(key, b"again", ttl_s=TTL_LONG_S) is True
 
     async def test_compare_and_set_renews_the_ttl(
-        self, state_port: StatePort, key_prefix: str, pass_time: PassTime
+        self, state_port: StatePort, key_prefix: str, pass_time: Elapse
     ) -> None:
         renewed = f"{key_prefix}:renewed"
         await state_port.set(renewed, b"lease", ttl_s=TTL_SHORT_S)

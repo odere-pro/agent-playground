@@ -259,18 +259,20 @@ About 13–15 weeks for one engineer. An earlier draft said 8.5–10.5. The revi
 
 Order: 1 → 2 → 3. Then 4, 5, and 6a can run in parallel, because 6a needs only 3. 6b needs 5, because its frameworks run in the `remote` lane. 6c needs 6a, and can run next to 6b, because it uses Docker Compose and a model server, not the cluster. 7 needs 6a and 6b; 6c closes before 9. Then 8, then 9. With one engineer, 6a fits between 4 and 5, or while the cluster work in 5 waits on something.
 
-## What is left in PoC-1 to PoC-7
+## What is left in PoC-1 to PoC-9
 
-As of 2026-10-29. Each PoC doc above now holds only its open items.
+As of 2026-11-05. The PoC-1 to PoC-7 and PoC-9 docs above hold only their open items.
 
 - **PoC-1, PoC-2, PoC-3:** nothing.
 - **PoC-4:** rerun the load matrix on a Linux host or with pinned CPUs, so 4 pairs fit (moved to 122 X-5).
 - **PoC-5:** add a CI job for the sidecar hostile suite; show MinIO through the chassis once a chassis holds a MinIO key; build the T10 probe workload (owned by the user).
-- **PoC-6a and 6b:** the hosted big-model run on the user's Mac (`make poc06-mac ARGS="--only hosted --only kind"`), then the user accepts ADR-006.
+- **PoC-6a and 6b:** the hosted big-model run on the user's Mac (`make poc06-mac ARGS="--only hosted --only kind"`). ADR-006 was accepted on 2026-10-30.
 - **PoC-6c:** the SLM numbers next to the big-model numbers, from the same Mac run. Optional: Mac latency (`--only slm`).
-- **PoC-7:** the user accepts ADR-007 to ADR-010; the Mac run (Prompt Guard 2, LiteLLM's `presidio` hook, the encoder and judge numbers); a `SNYK_TOKEN` repo secret for a real agent scan; a look at `user.id` and `session.id` in the Langfuse UI.
+- **PoC-7:** the Mac run (Prompt Guard 2, LiteLLM's `presidio` hook, the encoder and judge numbers); a `SNYK_TOKEN` repo secret for a real agent scan; a look at `user.id` and `session.id` in the Langfuse UI.
+- **PoC-8:** done on 2026-10-30, with one flag: the offline evals, until `poc08-evals` is a required check on `main` (its README).
+- **PoC-9:** the trial by someone new to the code (criterion 6); on the user's machine, `demo.sh --live`, a debugger attach, and the `local` profile.
 
-Only the user can do the Mac runs and accept the ADRs: the provider key never leaves the Mac.
+Only the user can do the Mac runs, because the provider key never leaves the Mac. Only the user can find the person for the PoC-9 trial.
 
 ## Framework shortlist
 
