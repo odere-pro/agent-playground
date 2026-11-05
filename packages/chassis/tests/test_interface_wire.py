@@ -21,6 +21,7 @@ from chassis.core.envelope import Budget, Versions
 from chassis.core.handle import echo
 from chassis.core.inbound import Ids, Refused, Served
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.interfaces.native import RunRequest
@@ -49,6 +50,7 @@ def _app() -> tuple[FastAPI, FakeEngine]:
         engine=engine,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     return create_app(ChassisConfig.model_validate(CONFIG), ports), engine
 

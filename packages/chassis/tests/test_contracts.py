@@ -19,6 +19,7 @@ from chassis.core.envelope import Request
 from chassis.core.events import Delta, End, Start
 from chassis.core.handle import echo, echo_wire
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel, ScriptRule
+from chassis.fakes.state import InMemoryState
 from chassis.fakes.tool import InMemoryTools, default_tools
 from chassis.ports.bundle import PortBundle
 from chassis.ports.model import ModelMessage, ToolCallRequest, ToolSpec
@@ -50,6 +51,7 @@ async def _inprocess(handle: str) -> InProcessConnector:
         engine=connector,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     await connector.setup({"connector": "inprocess", "handle": handle}, bundle)
     return connector
@@ -239,6 +241,7 @@ async def _sidecar_over(app: Any) -> AsyncIterator[SidecarConnector]:
             engine=connector,
             config=InMemoryConfig(),
             telemetry=InMemoryTelemetry(),
+            state=InMemoryState(),
         )
         await connector.setup({"connector": "sidecar", "url": SIDECAR_URL, "uds": path}, bundle)
         try:

@@ -19,6 +19,7 @@ import pytest
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.events import InMemoryBus
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from fastapi import FastAPI
@@ -49,6 +50,7 @@ def _app(risk: str = "limited", *, events: InMemoryBus | None = None) -> FastAPI
         engine=FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
         **extra,
     )
     return create_app(config, ports)

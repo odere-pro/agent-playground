@@ -14,9 +14,10 @@ from chassis.adapters.langfuse import LangfuseFeedback
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.events import InMemoryBus
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.ports.engine import EngineConnector
-from chassis.ports.state import InMemoryState, StatePort
+from chassis.ports.state import StatePort
 from chassis.server import ChassisConfig, create_app
 from fake_langfuse import FakeLangfuse
 from fake_langfuse import create_app as create_langfuse_app

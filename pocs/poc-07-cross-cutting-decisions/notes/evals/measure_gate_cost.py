@@ -28,6 +28,7 @@ from chassis.adapters.litellm import LiteLLMModel
 from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Delta, End, Event, Metrics, Start
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.evaluator_gate import GatedEngine
@@ -104,6 +105,7 @@ async def measure(label: str, cfg: ChassisConfig, answer: str, n: int) -> dict[s
         engine=engine(answer),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
         evaluator=judge,
     )
     app = create_app(cfg, bundle)

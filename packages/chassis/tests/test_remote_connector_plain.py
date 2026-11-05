@@ -25,6 +25,7 @@ from chassis.core.collector import collect
 from chassis.core.envelope import Budget, Request, Response, TaskInput, Versions
 from chassis.core.events import Delta, End, Error, Event, Metrics, Start
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis_contracts.helpers import make_context, make_request
 from poc_harness.plain_a2a import (
@@ -78,6 +79,7 @@ def _bundle(engine: Any) -> PortBundle:
         engine=engine,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
 
 

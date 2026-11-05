@@ -32,10 +32,11 @@ from chassis.adapters.a2a.inprocess import load_handle
 from chassis.adapters.a2a.sidecar import SidecarConnector
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, default_tools
 from chassis.fakes.events import InMemoryBus
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.ports.engine import EngineConnector
 from chassis.ports.events import EventPort
-from chassis.ports.state import InMemoryState, StatePort
+from chassis.ports.state import StatePort
 from chassis.server import ChassisConfig, create_app
 from chassis.server.proxy_app import create_proxy_app
 from chassis_contracts.interface import Chassis, UnixApp, serve_on_unix_sockets

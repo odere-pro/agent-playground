@@ -11,9 +11,9 @@ from typing import Any
 import httpx
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.ports.events import NoEvents
-from chassis.ports.state import InMemoryState
 from chassis.server import ChassisConfig, create_app
 from chassis.server.readiness import ProbeSettings, ReadinessMonitor
 
@@ -86,12 +86,13 @@ class ClosingEvents(NoEvents):
         self.closed = True
 
 
-def _ports(engine: FakeEngine, **extra: Any) -> PortBundle:
+def _ports(engine: FakeEngine, *, state: InMemoryState | None = None, **extra: Any) -> PortBundle:
     return PortBundle(
         model=ScriptedModel(),
         engine=engine,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState() if state is None else state,
         **extra,
     )
 

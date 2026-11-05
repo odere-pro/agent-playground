@@ -23,6 +23,7 @@ from chassis.fakes import (
     ScriptedModel,
     ScriptRule,
 )
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.profiles import REGISTRY, LaneNotAllowed
 from chassis.server import ChassisConfig, cli, create_app
@@ -102,6 +103,7 @@ async def test_lifespan_closes_the_model_adapter() -> None:
         engine=FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
     async with app.router.lifespan_context(app):
@@ -366,6 +368,7 @@ async def test_two_concurrent_runs_each_get_their_own_budget() -> None:
         engine=FakeEngine(handle=spend),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
     holder["app"], holder["proxy"] = app, create_proxy_app(app)

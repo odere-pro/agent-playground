@@ -23,6 +23,7 @@ import yaml
 from chassis.adapters.s3.config import S3Config
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.config_loader import ConfigRejected
@@ -79,7 +80,11 @@ def with_changes(**paths: Any) -> dict[str, Any]:
 
 def ports(store: S3Config, telemetry: InMemoryTelemetry) -> PortBundle:
     return PortBundle(
-        model=ScriptedModel(), engine=FakeEngine(handle=echo), config=store, telemetry=telemetry
+        model=ScriptedModel(),
+        engine=FakeEngine(handle=echo),
+        config=store,
+        telemetry=telemetry,
+        state=InMemoryState(),
     )
 
 

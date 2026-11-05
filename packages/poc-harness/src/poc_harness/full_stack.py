@@ -43,6 +43,7 @@ from chassis.fakes import InMemoryConfig, InMemoryTelemetry
 from chassis.fakes.auth import StaticTokens
 from chassis.fakes.evaluator import ScoreRule, ScriptedEvaluator
 from chassis.fakes.feedback import InMemoryFeedback
+from chassis.fakes.state import InMemoryState
 from chassis.ports.auth import Principal
 from chassis.ports.bundle import PortBundle
 from chassis.ports.engine import EngineConnector
@@ -217,6 +218,7 @@ class _Stages:
             engine=connector,
             config=InMemoryConfig(),
             telemetry=self.telemetry,
+            state=InMemoryState(),
             tools=self.toolbox.tools,
             auth=self.auth,
             guardrails=self.guardrails,

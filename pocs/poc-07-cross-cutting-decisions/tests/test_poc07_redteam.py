@@ -63,7 +63,8 @@ def test_every_miss_has_an_owner_and_a_reason_in_the_note(recorded: dict[str, ob
 
 
 def test_the_note_says_prompt_guard_numbers_wait() -> None:
-    """Checks that the red-team note says the Prompt Guard 2 numbers wait."""
+    """Criterion 7: "The red-team set has a pass rate recorded": the note says the Prompt
+    Guard 2 numbers wait."""
     note = NOTE.read_text()
     assert "Prompt Guard 2" in note
     assert "Hugging Face" in note

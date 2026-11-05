@@ -19,6 +19,7 @@ from chassis.adapters.otel import OtelTelemetry
 from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Delta, End, Event, Start
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.logs import JsonFormatter, configure_logging, run_context
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, cli, create_app
@@ -142,6 +143,7 @@ async def test_a_run_through_the_app_logs_with_its_ids(
         engine=FakeEngine(handle=_logs_then_answers),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
     transport = httpx.ASGITransport(app=app)

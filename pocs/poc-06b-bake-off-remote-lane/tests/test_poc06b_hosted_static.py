@@ -31,6 +31,7 @@ from typing import Any
 import pytest
 import yaml
 from bakeoff.registry import ENGINES
+from poc_harness.mac_script import mac_script_text
 
 ROOT = Path(__file__).resolve().parents[3]
 POC05 = ROOT / "deploy/kind/poc05"
@@ -449,7 +450,7 @@ def test_untrusted_engines_are_still_refused_outside_the_kind_step(
 
 
 def test_the_kind_step_is_the_only_one_that_names_the_untrusted_engines() -> None:
-    text = MAC_SH.read_text()
+    text = mac_script_text()
     step = text[text.index("step_kind() {") : text.index("# ---- push")]
     assert "$UNTRUSTED_ENGINES" in step
     others = text.replace(step, "")
@@ -459,12 +460,15 @@ def test_the_kind_step_is_the_only_one_that_names_the_untrusted_engines() -> Non
 
 
 def test_the_kind_step_tears_down_on_any_exit_and_refuses_an_existing_cluster() -> None:
-    text = MAC_SH.read_text()
+    text = mac_script_text()
     stop = text[text.index("stop_kind() {") : text.index("cleanup() {")]
     assert stop.index('"$KIND_HOSTED" down') < stop.index('"$KIND_RUN" delete')
     cleanup = text[text.index("cleanup() {") : text.index("trap cleanup EXIT")]
     assert "stop_kind" in cleanup
     assert "trap cleanup EXIT" in text and "trap 'exit 143' TERM HUP" in text
+    entry = (ROOT / "scripts/poc06_mac.sh").read_text().splitlines()
+    assert entry.index("install_traps") == entry.index("check_settings") + 1, "traps run first"
+    assert entry.index("install_traps") < entry.index('cd "$ROOT"')
     step = text[text.index("step_kind() {") : text.index("# ---- push")]
     assert step.index("KIND_UP=1") < step.index('"$KIND_RUN" up'), "a partial up is deleted too"
     assert "kind get clusters" in text and 'grep -qx "$KIND_CLUSTER"' in text

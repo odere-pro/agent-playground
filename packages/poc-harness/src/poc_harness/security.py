@@ -23,6 +23,7 @@ from chassis.adapters.a2a import InProcessConnector
 from chassis.adapters.a2a.sidecar import SidecarConnector
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry
 from chassis.fakes.auth import StaticTokens
+from chassis.fakes.state import InMemoryState
 from chassis.fakes.tool import GLOSSARY_LOOKUP, InMemoryTools
 from chassis.ports.auth import Principal
 from chassis.ports.bundle import PortBundle
@@ -164,6 +165,7 @@ def secured_chassis(
             engine=connector,
             config=InMemoryConfig(),
             telemetry=telemetry,
+            state=InMemoryState(),
             tools=tools or glossary_answering("A small language model."),
             auth=auth,
             guardrails=guardrails,

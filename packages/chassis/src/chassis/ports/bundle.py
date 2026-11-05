@@ -1,4 +1,9 @@
-"""The set of ports the chassis runs with. Built by `chassis.profiles.build_ports`."""
+"""The set of ports the chassis runs with. Built by `chassis.profiles.build_ports`.
+
+`state` is required: it holds what must outlive a call (idempotency, rate limits), so a bundle
+always names its store. A test passes `chassis.fakes.InMemoryState()`; there is no hidden
+per-bundle default (R1-12). The other ports default to a no-op.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +17,7 @@ from chassis.ports.events import EventPort, NoEvents
 from chassis.ports.feedback import FeedbackPort, NoFeedback
 from chassis.ports.guardrail import GuardrailPort, NoGuardrails
 from chassis.ports.model import ModelPort
-from chassis.ports.state import InMemoryState, StatePort
+from chassis.ports.state import StatePort
 from chassis.ports.telemetry import TelemetryPort
 from chassis.ports.tool import NoTools, ToolPort
 
@@ -23,10 +28,10 @@ class PortBundle:
     engine: EngineConnector
     config: ConfigPort
     telemetry: TelemetryPort
+    state: StatePort
+    """Required, no default (R1-12). The store every replica shares; `InMemoryState` in tests."""
     tools: ToolPort = field(default_factory=NoTools)
     """Defaults to no tools, so bundles built before `ToolPort` existed still build."""
-    state: StatePort = field(default_factory=InMemoryState)
-    """Defaults to one in-memory store per bundle, so bundles built before PoC-4 still build."""
     events: EventPort = field(default_factory=NoEvents)
     """Defaults to no events (`spec.adapters.events: none`)."""
     auth: AuthPort = field(default_factory=NoAuth)

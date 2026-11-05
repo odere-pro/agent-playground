@@ -17,9 +17,10 @@ import pytest
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.auth import StaticTokens
+from chassis.fakes.state import InMemoryState
 from chassis.ports.auth import Principal
 from chassis.ports.bundle import PortBundle
-from chassis.ports.state import InMemoryState, StateUnavailable
+from chassis.ports.state import StateUnavailable
 from chassis.server import ChassisConfig, create_app
 from chassis.server.config import LimitsSpec
 from chassis.server.rate_limit import RATE_LIMITED, Allowed, RateLimiter, Refused
@@ -279,6 +280,7 @@ async def test_a_refused_call_never_reaches_the_engine() -> None:
         engine=engine,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
         auth=StaticTokens(TOKENS),
     )
     app = create_app(_config({"request_burst": 1}), ports)

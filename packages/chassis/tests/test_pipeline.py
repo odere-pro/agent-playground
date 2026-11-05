@@ -12,6 +12,7 @@ from chassis.core.envelope import Context, Request, TaskInput
 from chassis.core.events import Delta, End, Error, Event, Start
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.correlation import TraceIdInUse
@@ -37,6 +38,7 @@ def _app(engine: FakeEngine | None = None) -> FastAPI:
         engine=engine or FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     return create_app(ChassisConfig.model_validate(CONFIG), ports)
 

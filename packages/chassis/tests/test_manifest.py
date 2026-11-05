@@ -17,6 +17,7 @@ from chassis import CHASSIS_VERSION
 from chassis.core.handle import echo
 from chassis.core.manifest import MANIFEST_VERSION, Manifest
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.schemas import SCHEMA_DIR, generate, render
 from chassis.server import ChassisConfig, create_app
@@ -51,6 +52,7 @@ def _ports() -> PortBundle:
         engine=FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
 
 

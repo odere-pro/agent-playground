@@ -37,6 +37,7 @@ from chassis.core.events import (
     parse_event,
 )
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.schemas import SCHEMA_DIR
 from chassis_contracts.helpers import make_context, make_request
@@ -248,6 +249,7 @@ async def _via_inprocess(handle: str, *, timeout_ms: int | None = None) -> list[
         engine=connector,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     await connector.setup({"connector": "inprocess", "handle": f"{__name__}:{handle}"}, bundle)
     request: Request = make_request()
@@ -428,6 +430,7 @@ async def _transport_failure() -> list[Any]:
         engine=connector,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     await connector.setup({"connector": "inprocess", "handle": f"{__name__}:_echo"}, bundle)
     real: Any = connector._client

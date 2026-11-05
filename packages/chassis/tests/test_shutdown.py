@@ -22,6 +22,7 @@ import uvicorn
 from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Delta, End, Event, Start
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, cli, create_app
 from chassis.server.lifecycle import Drain, DrainSettings, QuietServer
@@ -95,6 +96,7 @@ def _pair(
         engine=FakeEngine(handle=handle),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
     proxy_app = create_proxy_app(app)

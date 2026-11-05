@@ -23,6 +23,7 @@ from chassis.adapters.a2a.sidecar import SidecarConnector
 from chassis.adapters.evaluators import JudgeEvaluator
 from chassis.adapters.litellm import LiteLLMModel
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.evaluator_gate import GatedEngine
@@ -114,7 +115,9 @@ async def gated_run(
     **harness: Any,
 ) -> tuple[dict[str, Any], InMemoryTelemetry, list[dict[str, Any]]]:
     """One `/v1/run` of the gate input through the chassis, the engine as a sidecar. Returns the
-    response, the telemetry, and the model request bodies the fake server received."""
+    response, the telemetry, and the model request bodies the fake server received. It fails when
+    the engine port is not a `GatedEngine` with the gate on (or is one with it off), so a run with
+    no gate in place cannot pass."""
     backends.reset()
     wire_python_engine(monkeypatch, ENGINES[engine], backends)
     judge = JudgeEvaluator(
@@ -130,6 +133,7 @@ async def gated_run(
             engine=SidecarConnector(),
             config=InMemoryConfig(),
             telemetry=telemetry,
+            state=InMemoryState(),
             evaluator=judge,
         )
         app = create_app(gate_config(url, uds, **harness), bundle)
@@ -140,8 +144,12 @@ async def gated_run(
         ):
             res = await client.post("/v1/run", json={"input": {"text": GATE_INPUT}})
             gate = app.state.ports.engine
-            if isinstance(gate, GatedEngine):
-                assert await gate.wait(10) == 0
+            gate_on = bool(harness.get("evaluator_gate", True))
+            assert isinstance(gate, GatedEngine) is gate_on, (
+                f"evaluator_gate={gate_on} but the engine port is {type(gate).__name__}"
+            )
+            pending = await gate.wait(10) if isinstance(gate, GatedEngine) else 0
+            assert pending == 0, f"{pending} background scores still pending"
     assert res.status_code == 200, res.text
     return res.json(), telemetry, list(backends.model_app.state.calls)
 

@@ -20,6 +20,7 @@ from chassis.adapters.a2a.mapping import EVENT_KEY, request_to_message, update_t
 from chassis.core.envelope import Response
 from chassis.core.events import parse_event
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel, ScriptRule
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from google.protobuf import json_format
@@ -59,6 +60,7 @@ def _ports() -> PortBundle:
         engine=InProcessConnector(),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
 
 

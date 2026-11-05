@@ -4,7 +4,6 @@ note, section 3), and `ReplyMeta.collect`, which gives every format the same tot
 
 from __future__ import annotations
 
-import json
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
@@ -30,6 +29,7 @@ from chassis.core.inbound import (
     status_for,
 )
 from chassis.server.interfaces.native import NativeInbound
+from poc_harness.sse import DONE, sse_data, sse_frames
 
 VERSIONS = Versions(chassis="c", config="cfg", prompt="p", model_route="route")
 SERVED = Served(agent="echo", agent_version="0.0.1", versions=VERSIONS)
@@ -195,26 +195,14 @@ def test_rest_of_answer_is_what_the_deltas_left_out_else_nothing(
 
 
 def _openai_texts(frames: list[str]) -> list[str]:
-    texts: list[str] = []
-    for frame in frames:
-        data = frame.removeprefix("data: ").strip()
-        if data == "[DONE]":
-            continue
-        texts.extend(
-            choice["delta"]["content"]
-            for choice in json.loads(data)["choices"]
-            if choice["delta"].get("content")
-        )
-    return texts
+    chunks = [data for data in sse_data("".join(frames), named=False) if data != DONE]
+    deltas = [choice["delta"] for chunk in chunks for choice in chunk["choices"]]
+    return [delta["content"] for delta in deltas if delta.get("content")]
 
 
 def _anthropic_texts(frames: list[str]) -> list[str]:
-    texts = []
-    for frame in frames:
-        name, data = frame.strip().split("\n")
-        if name == "event: content_block_delta":
-            texts.append(json.loads(data.removeprefix("data: "))["delta"]["text"])
-    return texts
+    named = sse_frames("".join(frames))
+    return [data["delta"]["text"] for name, data in named if name == "content_block_delta"]
 
 
 @pytest.mark.parametrize(

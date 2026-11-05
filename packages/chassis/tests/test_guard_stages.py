@@ -20,6 +20,7 @@ from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Delta, End, Event
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.guardrail import KeywordGuardrails
+from chassis.fakes.state import InMemoryState
 from chassis.fakes.tool import InMemoryTools
 from chassis.ports.bundle import PortBundle
 from chassis.ports.tool import ToolDefinition
@@ -65,6 +66,7 @@ def _ports(handle: Any, guardrails: Any = None, tools: Any = None) -> tuple[Port
         engine=engine,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
         guardrails=guardrails or KeywordGuardrails(),
         **extra,
     )
@@ -268,7 +270,11 @@ async def test_guardrail_outage_passes_the_text_when_fail_open(stage: str, text:
 async def test_no_guardrails_port_is_never_called() -> None:
     engine = FakeEngine(handle=_answering("fine"))
     ports = PortBundle(
-        model=ScriptedModel(), engine=engine, config=InMemoryConfig(), telemetry=InMemoryTelemetry()
+        model=ScriptedModel(),
+        engine=engine,
+        config=InMemoryConfig(),
+        telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     async with _client(create_app(_config(), ports)) as client:
         response = await client.post("/v1/run", json={"input": {"text": INJECTION}})

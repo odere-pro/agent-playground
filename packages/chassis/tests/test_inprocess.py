@@ -23,6 +23,7 @@ from chassis.adapters.a2a.server import BASE_URL
 from chassis.core.envelope import Request
 from chassis.core.events import Error, Event
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis_contracts.helpers import make_context, make_request
 
@@ -41,7 +42,11 @@ async def _echo(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[Any
 
 def _bundle(connector: InProcessConnector, telemetry: InMemoryTelemetry) -> PortBundle:
     return PortBundle(
-        model=ScriptedModel(), engine=connector, config=InMemoryConfig(), telemetry=telemetry
+        model=ScriptedModel(),
+        engine=connector,
+        config=InMemoryConfig(),
+        telemetry=telemetry,
+        state=InMemoryState(),
     )
 
 

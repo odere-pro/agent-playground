@@ -25,6 +25,7 @@ from chassis.fakes import (
     ScriptedModel,
     ScriptRule,
 )
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.ports.evaluator import EvalCase, EvaluatorError, EvaluatorPort, NoEvaluator, Score
 from chassis.ports.model import ModelChunk, ModelMessage, ModelResult, ToolSpec
@@ -97,6 +98,7 @@ def ports(engine: FakeEngine, ev: EvaluatorPort, model: Any = None) -> PortBundl
         engine=engine,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
         evaluator=ev,
     )
 

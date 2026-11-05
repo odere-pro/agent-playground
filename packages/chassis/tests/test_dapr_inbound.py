@@ -17,6 +17,7 @@ import pytest
 from chassis.adapters.dapr import DaprEvents
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryBus, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.ports.events import CONTENT_TYPE, CloudEvent, EventPort, PublishFailed
 from chassis.profiles import AdapterSpec, build_ports
@@ -41,6 +42,7 @@ def public_app(events: EventPort) -> FastAPI:
         engine=FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
         events=events,
     )
     return create_app(ChassisConfig.model_validate(CONFIG), ports)

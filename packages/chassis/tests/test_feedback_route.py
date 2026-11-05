@@ -20,10 +20,11 @@ from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, Scripte
 from chassis.fakes.auth import StaticTokens
 from chassis.fakes.events import InMemoryBus
 from chassis.fakes.feedback import InMemoryFeedback
+from chassis.fakes.state import InMemoryState
 from chassis.ports.auth import NoAuth, Principal
 from chassis.ports.bundle import PortBundle
 from chassis.ports.feedback import Feedback, FeedbackError, FeedbackPort, NoFeedback
-from chassis.ports.state import InMemoryState, StatePort
+from chassis.ports.state import StatePort
 from chassis.schemas import SCHEMA_DIR
 from chassis.server import ChassisConfig, create_app
 from chassis.server.feedback import (

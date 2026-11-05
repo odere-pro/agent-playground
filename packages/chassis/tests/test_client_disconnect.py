@@ -19,8 +19,8 @@ from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Event, Start
 from chassis.core.trace import trace_id_hex
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
-from chassis.ports.state import InMemoryState
 from chassis.server import ChassisConfig, create_app
 from chassis.server.idempotency import store_key
 from chassis.server.interfaces import serve as serve_module

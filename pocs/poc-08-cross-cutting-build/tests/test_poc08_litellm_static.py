@@ -133,6 +133,14 @@ def test_every_name_the_chassis_calls_is_a_guardrail_on_every_call() -> None:
         assert guardrails[name]["api_base"] == "http://guardrail-server:8095"
 
 
+@pytest.mark.parametrize("name", ["prompt-guard", "secret-guard"])
+def test_a_guardrail_server_fault_blocks_the_call(name: str) -> None:
+    """The generic guardrails state fail closed: a check error never lets a call through."""
+    params = _guardrails()[name]
+    assert params["unreachable_fallback"] == "fail_closed"
+    assert params["fail_on_error"] is True
+
+
 def test_litellm_exports_its_spans_to_the_collector() -> None:
     assert "otel" in _litellm_config()["litellm_settings"]["callbacks"]
     env = _env("litellm")

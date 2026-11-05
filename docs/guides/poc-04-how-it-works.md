@@ -13,7 +13,7 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`.
 
 | Piece | File | Port, flag, or config |
 | ----- | ---- | --------------------- |
-| Key-value state | `chassis/ports/state.py` (`StatePort`, `InMemoryState`, `StateUnavailable`) | `spec.adapters.state`: `memory`, `valkey` |
+| Key-value state | `chassis/ports/state.py` (`StatePort`, `StateUnavailable`); fake `chassis/fakes/state.py` (`InMemoryState`) | `spec.adapters.state`: `memory`, `valkey` |
 | Valkey adapter | `chassis/adapters/valkey/state.py` (`ValkeyState`) | `VALKEY_URL`, `VALKEY_USERNAME`, `VALKEY_PASSWORD` |
 | Events | `chassis/ports/events.py` (`EventPort`, `CloudEvent`, `NoEvents`, `PublishFailed`), `chassis/fakes/events.py` (`InMemoryBus`), `chassis/adapters/publish_retry.py` (the publish retry Kafka and Dapr share) | `spec.adapters.events`: `none`, `memory`, `kafka`, `dapr` |
 | Kafka adapter | `chassis/adapters/kafka/events.py` (`KafkaEvents`, aiokafka) | `KAFKA_BOOTSTRAP_SERVERS` |

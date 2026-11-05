@@ -12,7 +12,7 @@ import json
 import jsonschema
 from chassis.core.trace import trace_id_hex
 from chassis.fakes.events import InMemoryBus
-from chassis.ports.state import InMemoryState
+from chassis.fakes.state import InMemoryState
 from chassis.schemas import SCHEMA_DIR
 from chassis.server.feedback import DATASCHEMA, FEEDBACK_RECEIVED, FeedbackEvents
 from chassis_contracts.events import assert_valid_cloudevent

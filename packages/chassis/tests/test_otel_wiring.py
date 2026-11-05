@@ -21,6 +21,7 @@ from chassis.adapters.a2a.server import build_agent_card, build_app
 from chassis.adapters.otel import OtelTelemetry
 from chassis.core.trace import trace_id_hex
 from chassis.fakes import InMemoryConfig, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.proxy_app import create_proxy_app
@@ -58,6 +59,7 @@ def _app(exporter: InMemorySpanExporter) -> Any:
         engine=InProcessConnector(),
         config=InMemoryConfig(),
         telemetry=OtelTelemetry(span_exporters=[exporter]),
+        state=InMemoryState(),
     )
     return create_app(ChassisConfig.model_validate(CONFIG), ports)
 
@@ -116,7 +118,11 @@ async def test_the_connector_sends_baggage_next_to_the_traceparent() -> None:
     async with serve_uds(recorder) as path:
         connector = SidecarConnector()
         bundle = PortBundle(
-            model=ScriptedModel(), engine=connector, config=InMemoryConfig(), telemetry=telemetry
+            model=ScriptedModel(),
+            engine=connector,
+            config=InMemoryConfig(),
+            telemetry=telemetry,
+            state=InMemoryState(),
         )
         await connector.setup({"connector": "sidecar", "url": SIDECAR_URL, "uds": path}, bundle)
         try:

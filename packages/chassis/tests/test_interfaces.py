@@ -31,6 +31,7 @@ from chassis.core.inbound import (
     status_for,
 )
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.correlation import TraceIdInUse
@@ -65,6 +66,7 @@ def _app(engine: FakeEngine | None = None, config: dict[str, Any] | None = None)
         engine=engine or FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     return create_app(ChassisConfig.model_validate(config or CONFIG), ports)
 
