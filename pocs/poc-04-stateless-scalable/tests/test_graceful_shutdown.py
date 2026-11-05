@@ -38,6 +38,7 @@ from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Delta, End, Event, Start
 from chassis.core.handle import wire
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.lifecycle import Drain, DrainSettings, QuietServer
@@ -129,6 +130,7 @@ def pair_and_workload(
                     engine=SidecarConnector(),
                     config=InMemoryConfig(),
                     telemetry=InMemoryTelemetry(),
+                    state=InMemoryState(),
                 )
                 app = create_app(config, ports)
                 proxy_app = create_proxy_app(app)

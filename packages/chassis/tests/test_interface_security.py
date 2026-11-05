@@ -19,9 +19,9 @@ from chassis.core.events import Event, Start
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.auth import StaticTokens
+from chassis.fakes.state import InMemoryState
 from chassis.ports.auth import Principal
 from chassis.ports.bundle import PortBundle
-from chassis.ports.state import InMemoryState
 from chassis.server import ChassisConfig, create_app
 from chassis.server.interfaces.limits import BodyLimit
 from fastapi import FastAPI
@@ -110,12 +110,15 @@ async def _ignore(message: Message) -> None:
     """A `send` that drops every message."""
 
 
-def _app(engine: FakeEngine | None = None, **ports: Any) -> FastAPI:
+def _app(
+    engine: FakeEngine | None = None, *, state: InMemoryState | None = None, **ports: Any
+) -> FastAPI:
     bundle = PortBundle(
         model=ScriptedModel(),
         engine=engine or FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState() if state is None else state,
         **ports,
     )
     return create_app(ChassisConfig.model_validate(CONFIG), bundle)

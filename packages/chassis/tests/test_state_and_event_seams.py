@@ -82,5 +82,6 @@ def test_a_bundle_built_before_poc4_gets_a_store_and_no_events() -> None:
         engine=FakeEngine(events=[]),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     assert isinstance(bundle.state, InMemoryState) and isinstance(bundle.events, NoEvents)

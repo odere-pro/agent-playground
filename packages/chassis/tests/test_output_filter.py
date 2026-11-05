@@ -18,6 +18,7 @@ import pytest
 from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Delta, End, Error, Event
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.output_filter import find_secret, host_allowed, mask_urls
@@ -57,6 +58,7 @@ def _app(
         engine=FakeEngine(handle=_scripted(deltas, end_text)),
         config=InMemoryConfig(),
         telemetry=telemetry or InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     return create_app(config, ports)
 

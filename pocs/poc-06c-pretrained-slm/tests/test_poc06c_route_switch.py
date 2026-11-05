@@ -27,6 +27,7 @@ import pytest
 from chassis.core.envelope import Context, Request
 from chassis.core.events import Event
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.ports.engine import EngineConnector, Lane
 from chassis.server import ChassisConfig, create_app
@@ -117,6 +118,7 @@ async def running(engine_name: str, address: SidecarAddress | None) -> AsyncIter
             engine=RecordingEngine(connector, recording),
             config=store,
             telemetry=InMemoryTelemetry(),
+            state=InMemoryState(),
         )
         app = create_app(ChassisConfig.model_validate(document), ports)
         transport = httpx.ASGITransport(app=app)

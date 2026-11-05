@@ -19,6 +19,7 @@ import pytest
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.auth import StaticTokens
+from chassis.fakes.state import InMemoryState
 from chassis.ports.auth import Principal
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
@@ -58,6 +59,7 @@ def _app(auth: StaticTokens | None = None) -> FastAPI:
         engine=FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
         auth=auth or StaticTokens(TOKENS),
     )
     return create_app(ChassisConfig.model_validate(CONFIG), ports)
@@ -259,6 +261,7 @@ async def test_no_auth_changes_nothing() -> None:
         engine=FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
     async with _client(app) as client:
@@ -307,6 +310,7 @@ async def test_auth_off_puts_no_user_id_on_the_run_span() -> None:
         engine=FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
     async with _client(app) as client:

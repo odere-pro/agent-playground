@@ -60,14 +60,14 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
 - `StatePort` in `state.py` stores bytes by key.
   - Methods: `get`, `set`, `set_if_absent` (with a required TTL), `compare_and_set` (`value=None` deletes), `delete`.
   - Every failure is `StateUnavailable`.
-  - `InMemoryState` lives here because the bundle defaults to it.
+  - Its fake, `InMemoryState`, lives in `fakes/state.py`.
 - `EventPort` in `events.py`.
   - Methods: `publish` and `subscribe(topic, handler, *, group, max_attempts)`.
   - `CloudEvent` is CloudEvents 1.0 structured JSON. Its extensions are `traceparent`, `idempotencykey`, `configversion`, `modelroute`, and `partitionkey`.
   - `PublishFailed`, `DLQ_SUFFIX` (`.dlq`), and `NoEvents`.
 - `PortBundle` bundles them.
   - `tools` defaults to `NoTools`.
-  - `state` defaults to `InMemoryState`.
+  - `state` is required, with no default (R1-12): a bundle always names its store. Tests pass `InMemoryState()`.
   - `events` defaults to `NoEvents`.
 - New ports arrive with their first adapter. See `profiles.REGISTRY` for which PoC.
 
@@ -75,7 +75,7 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
 
 `chassis/fakes/` holds the in-memory doubles.
 
-- `ScriptedModel`, `FakeEngine`, `InMemoryConfig`, `InMemoryTelemetry`, `InMemoryTools`, and `InMemoryState` (re-exported).
+- `ScriptedModel`, `FakeEngine`, `InMemoryConfig`, `InMemoryTelemetry`, `InMemoryTools`, and `InMemoryState` (in `state.py`).
 - `FakeEngine` is a test double, not a lane.
 - `InMemoryBus` in `events.py` delivers at least once.
   - It retries in place, then sends to `<topic>.dlq`.

@@ -22,6 +22,7 @@ from chassis.core import trace
 from chassis.core.envelope import Context
 from chassis.core.trace import trace_id_hex, traceparent_for
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis_contracts.helpers import make_context, make_request
 
@@ -108,7 +109,11 @@ def _catching(seen: list[dict[str, Any]]) -> Any:
 
 def _bundle(engine: Any) -> PortBundle:
     return PortBundle(
-        model=ScriptedModel(), engine=engine, config=InMemoryConfig(), telemetry=InMemoryTelemetry()
+        model=ScriptedModel(),
+        engine=engine,
+        config=InMemoryConfig(),
+        telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
 
 

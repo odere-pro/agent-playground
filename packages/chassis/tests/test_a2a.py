@@ -51,6 +51,7 @@ from chassis.adapters.a2a.mapping import (
 from chassis.adapters.a2a.server import HandleExecutor, build_agent_card, build_app
 from chassis.core.events import Delta, End, Error, Event, Metrics, Start, ToolCall, parse_event
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis_contracts.helpers import make_context, make_request
 from fastapi import FastAPI
@@ -649,6 +650,7 @@ async def test_connector_refuses_a_start_for_another_request() -> None:
         engine=connector,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     await connector.setup(
         {"connector": "inprocess", "handle": f"{__name__}:_foreign_start"}, bundle
@@ -704,6 +706,7 @@ async def _run_raw(values: list[Any]) -> list[Event]:
         engine=connector,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     await connector.setup({"connector": "inprocess", "handle": f"{__name__}:_dict_handle"}, bundle)
     transport: Any = connector.transport
@@ -796,7 +799,11 @@ async def _run_stub(stream: _StubStream) -> tuple[list[Event], _StubClient, InMe
     connector = InProcessConnector()
     telemetry = InMemoryTelemetry()
     bundle = PortBundle(
-        model=ScriptedModel(), engine=connector, config=InMemoryConfig(), telemetry=telemetry
+        model=ScriptedModel(),
+        engine=connector,
+        config=InMemoryConfig(),
+        telemetry=telemetry,
+        state=InMemoryState(),
     )
     await connector.setup({"connector": "inprocess", "handle": f"{__name__}:_dict_handle"}, bundle)
     stub = _StubClient(stream)

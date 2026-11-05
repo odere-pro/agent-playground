@@ -28,6 +28,7 @@ from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Delta, End, Event, Metrics, Start, ToolCall
 from chassis.core.handle import echo, wire
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app, load_config
 from chassis.server.interfaces.mcp import MCP_PATH
@@ -73,6 +74,7 @@ def fake_engine_app() -> FastAPI:
         engine=FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     return create_app(load_config(FAKE_CONFIG), ports)
 

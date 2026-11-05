@@ -45,6 +45,7 @@ from chassis.fakes.evaluator import ScriptedEvaluator
 from chassis.fakes.feedback import InMemoryFeedback
 from chassis.fakes.guardrail import KeywordGuardrails
 from chassis.fakes.model import ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.fakes.telemetry import InMemoryTelemetry
 from chassis.fakes.tool import default_tools
 from chassis.ports.auth import NoAuth
@@ -54,7 +55,6 @@ from chassis.ports.evaluator import NoEvaluator
 from chassis.ports.events import NoEvents
 from chassis.ports.feedback import NoFeedback
 from chassis.ports.guardrail import NoGuardrails
-from chassis.ports.state import InMemoryState
 
 Profile = Literal["fake", "local", "cloud"]
 PROFILES: tuple[Profile, ...] = ("fake", "local", "cloud")

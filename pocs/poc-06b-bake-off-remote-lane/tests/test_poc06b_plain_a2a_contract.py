@@ -25,6 +25,7 @@ from chassis.core.collector import collect
 from chassis.core.envelope import Request, Versions
 from chassis.core.events import Delta, End, Metrics, Start
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server.config import EngineSpec
 from chassis_contracts import EngineConnectorContract
@@ -61,6 +62,7 @@ async def _plain_remote(
             engine=connector,
             config=InMemoryConfig(),
             telemetry=InMemoryTelemetry(),
+            state=InMemoryState(),
         )
         await connector.setup(_plain_spec(uds), ports)
         try:

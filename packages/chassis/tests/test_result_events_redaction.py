@@ -17,8 +17,8 @@ from chassis.core.events import Delta, End, Error, Event, Start
 from chassis.core.results import TASK_COMPLETED, TASK_FAILED, TaskResult
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.events import InMemoryBus
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
-from chassis.ports.state import InMemoryState
 from chassis.server import ChassisConfig, create_app
 from chassis.server.results import ResultPublisher
 from chassis_contracts.events import assert_valid_cloudevent

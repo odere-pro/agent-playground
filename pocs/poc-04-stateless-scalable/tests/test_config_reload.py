@@ -26,6 +26,7 @@ import pytest
 import yaml
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.schemas import SCHEMA_DIR
 from chassis.server import ChassisConfig, create_app
@@ -58,6 +59,7 @@ async def running() -> AsyncIterator[tuple[FastAPI, httpx.AsyncClient, InMemoryC
         engine=FakeEngine(handle=echo),
         config=store,
         telemetry=telemetry,
+        state=InMemoryState(),
     )
     app = create_app(ChassisConfig.model_validate(GOOD), ports)
     transport = httpx.ASGITransport(app=app)

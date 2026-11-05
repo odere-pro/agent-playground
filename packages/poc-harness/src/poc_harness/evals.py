@@ -23,6 +23,7 @@ from chassis.adapters.a2a.sidecar import SidecarConnector
 from chassis.adapters.evaluators import JudgeEvaluator
 from chassis.adapters.litellm import LiteLLMModel
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.evaluator_gate import GatedEngine
@@ -132,6 +133,7 @@ async def gated_run(
             engine=SidecarConnector(),
             config=InMemoryConfig(),
             telemetry=telemetry,
+            state=InMemoryState(),
             evaluator=judge,
         )
         app = create_app(gate_config(url, uds, **harness), bundle)

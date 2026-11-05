@@ -12,6 +12,7 @@ import httpx
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.events import InMemoryBus
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.proxy_app import create_proxy_app
@@ -47,6 +48,7 @@ def _public(events: InMemoryBus) -> FastAPI:
         engine=FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
         events=events,
     )
     return create_app(ChassisConfig.model_validate(CONFIG), ports)

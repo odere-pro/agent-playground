@@ -49,6 +49,7 @@ from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Delta, End, Event
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.guardrail import KeywordGuardrails
+from chassis.fakes.state import InMemoryState
 from chassis.fakes.tool import InMemoryTools
 from chassis.ports.bundle import PortBundle
 from chassis.ports.guardrail import GuardrailPort
@@ -177,6 +178,7 @@ def _app(
         engine=FakeEngine(handle=_answering(answer)),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
         guardrails=guardrails,
         **extra,
     )

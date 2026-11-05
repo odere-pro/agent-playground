@@ -22,6 +22,7 @@ import pytest
 from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Delta, End, Error, Event, Start
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.interfaces.mcp import MCP_PATH
@@ -80,6 +81,7 @@ def _app(probe: Probe | None) -> tuple[FastAPI, InMemoryTelemetry]:
         engine=FakeEngine(handle=probe),
         config=InMemoryConfig(),
         telemetry=telemetry,
+        state=InMemoryState(),
     )
     return create_app(ChassisConfig.model_validate(CONFIG), ports), telemetry
 

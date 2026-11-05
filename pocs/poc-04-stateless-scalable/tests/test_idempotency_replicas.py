@@ -24,8 +24,8 @@ from collections.abc import Iterator, Sequence
 from typing import Any
 
 import pytest
+from chassis.fakes.state import InMemoryState
 from chassis.ports.model import ModelMessage
-from chassis.ports.state import InMemoryState
 from poc_harness.interfaces import OutboundRouter
 from poc_harness.outbound import patch_outbound
 from poc_harness.replica_calls import call, without_created

@@ -24,8 +24,8 @@ import pytest_asyncio
 from chassis.adapters.a2a.sidecar import SidecarConnector
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.events import InMemoryBus
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
-from chassis.ports.state import InMemoryState
 from chassis.server import ChassisConfig, create_app
 from chassis.server.marking import AI_GENERATED_HEADER, DISCLOSURE_HEADER
 from chassis.server.results import ResultPublisher

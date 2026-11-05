@@ -20,6 +20,7 @@ from chassis import CHASSIS_VERSION
 from chassis.core.envelope import Budget, Context, Request, TaskInput, Versions
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.fakes.tool import GLOSSARY, InMemoryTools, default_tools
 from chassis.ports.bundle import PortBundle
 from chassis.profiles import (
@@ -50,6 +51,7 @@ def _ports() -> PortBundle:
         engine=FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
         tools=default_tools(),
     )
 

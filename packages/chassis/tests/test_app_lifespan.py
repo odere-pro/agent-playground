@@ -86,7 +86,13 @@ class _CountingConfig(InMemoryConfig):
 
 
 def _ports(engine: _CountingEngine, model: _CountingModel, config: _CountingConfig) -> PortBundle:
-    return PortBundle(model=model, engine=engine, config=config, telemetry=InMemoryTelemetry())
+    return PortBundle(
+        model=model,
+        engine=engine,
+        config=config,
+        telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
+    )
 
 
 FAILURES = {

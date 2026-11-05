@@ -32,6 +32,7 @@ from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Delta, End, Error, Event
 from chassis.core.inbound import Reply, public_message, status_for
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.interfaces.native import NativeInbound
@@ -85,6 +86,7 @@ def _app(engine: _Engine) -> FastAPI:
         engine=FakeEngine(handle=engine.handle),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     return create_app(ChassisConfig.model_validate(CONFIG), ports)
 
@@ -194,6 +196,7 @@ async def test_a_telemetry_error_in_the_run_is_a_500_internal_error_once(stream:
         engine=FakeEngine(handle=engine.handle),
         config=InMemoryConfig(),
         telemetry=_BrokenTelemetry(),
+        state=InMemoryState(),
     )
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
     async with app.router.lifespan_context(app), _openai(app) as client:

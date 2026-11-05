@@ -20,6 +20,7 @@ from chassis.adapters.a2a import SidecarConnector
 from chassis.adapters.a2a.inprocess import load_handle
 from chassis.adapters.otel import OtelTelemetry
 from chassis.fakes import InMemoryConfig
+from chassis.fakes.state import InMemoryState
 from chassis.fakes.tool import default_tools
 from chassis.ports.bundle import PortBundle
 from chassis.server import create_app
@@ -78,6 +79,7 @@ def traced_ports(exporter: InMemorySpanExporter, **extra: Any) -> PortBundle:
         engine=SidecarConnector(),
         config=InMemoryConfig(),
         telemetry=OtelTelemetry(span_exporters=[exporter], service_name="chassis"),
+        state=InMemoryState(),
         tools=default_tools(),
         **extra,
     )

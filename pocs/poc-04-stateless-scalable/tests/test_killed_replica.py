@@ -34,7 +34,7 @@ from typing import NamedTuple
 
 import pytest
 from chassis.fakes.events import InMemoryBus
-from chassis.ports.state import InMemoryState
+from chassis.fakes.state import InMemoryState
 from chassis.server.idempotency import FENCE_FRACTION
 from poc_harness.interfaces import OutboundRouter
 from poc_harness.outbound import patch_outbound

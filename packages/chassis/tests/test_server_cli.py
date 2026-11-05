@@ -29,6 +29,7 @@ import uvicorn
 from chassis.adapters.a2a.loopback import is_loopback_host
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, cli, create_app
 from chassis.server.lifecycle import DeferredStartup, Drain, DrainSettings, QuietServer, StartupWait
@@ -239,6 +240,7 @@ def _drain(
         engine=engine,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
     proxy_app = create_proxy_app(app)

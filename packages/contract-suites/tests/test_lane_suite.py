@@ -12,6 +12,7 @@ from typing import Any, ClassVar
 import pytest
 from chassis.adapters.a2a import InProcessConnector
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.ports.engine import EngineConnector
 from chassis_contracts import CASES, LaneContract, LaneFactory
@@ -34,6 +35,7 @@ async def _inprocess(path: str) -> AsyncIterator[EngineConnector]:
         engine=connector,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     await connector.setup({"connector": "inprocess", "handle": path}, bundle)
     try:

@@ -24,6 +24,7 @@ from chassis.core.events import Delta, End, Error, Event, Metrics, Start
 from chassis.core.handle import echo
 from chassis.core.inbound import public_message
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.interfaces.errors import INTERFACE_KEY
@@ -52,6 +53,7 @@ def _app(engine: FakeEngine | None = None, config: dict[str, Any] | None = None)
         engine=engine or FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     return create_app(ChassisConfig.model_validate(config or CONFIG), ports)
 

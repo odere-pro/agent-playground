@@ -19,6 +19,7 @@ from chassis.adapters.anthropic_compat.types import RawMessageStreamEvent
 from chassis.core.envelope import Budget, Context, Request, TaskInput, Versions
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel, ScriptRule
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.ports.model import (
     ModelChunk,
@@ -89,6 +90,7 @@ def proxy_ports(model: Any, engine: FakeEngine | None = None) -> PortBundle:
         engine=engine or FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
 
 
