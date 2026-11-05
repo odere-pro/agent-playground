@@ -195,7 +195,8 @@ def _mounts(tokens: list[str]) -> list[str]:
 
 @pytest.mark.parametrize("run", range(len(RUN_IDS)), ids=RUN_IDS)
 def test_scan_sh_mounts_no_repo_root_when_a_docker_run_starts(run: int) -> None:
-    """A run never mounts the whole checkout, so git-ignored files stay out."""
+    """Security: "Snyk Agent Scan in CI, run in a sandbox": no run mounts
+    the whole checkout, so git-ignored files stay out."""
     tokens = _docker_runs()[run]
 
     sources = {m.split(":")[0].rstrip("/") for m in _mounts(tokens)}
@@ -205,7 +206,8 @@ def test_scan_sh_mounts_no_repo_root_when_a_docker_run_starts(run: int) -> None:
 
 @pytest.mark.parametrize("run", range(len(RUN_IDS)), ids=RUN_IDS)
 def test_scan_sh_mounts_only_the_scan_inputs_read_only_when_a_docker_run_starts(run: int) -> None:
-    """A run mounts exactly the scan inputs, each `:ro`, at its path under /repo."""
+    """Security: "Snyk Agent Scan in CI, run in a sandbox": a run mounts
+    exactly the scan inputs, each `:ro`, at its path under /repo."""
     tokens = _docker_runs()[run]
 
     mounts = set(_mounts(tokens))
@@ -225,7 +227,8 @@ def test_the_inspect_phase_has_no_network_and_no_token() -> None:
 
 
 def test_every_mcp_server_package_is_in_the_scan_config() -> None:
-    """Every MCP server package in the repo is in the scan config."""
+    """Security: "Snyk Agent Scan in CI, run in a sandbox": every MCP
+    server package in the repo is in the scan config."""
     servers = json.loads(CONFIG.read_text())["mcpServers"]
     packages = _mcp_server_packages()
     assert {"fake-mcp-server", "code-runner"} <= packages
@@ -247,7 +250,8 @@ def test_every_mcp_server_package_is_in_the_scan_config() -> None:
     ],
 )
 def test_the_launcher_serves_each_servers_real_tools(name: str, tools: set[str]) -> None:
-    """The launcher serves each server's real tools, each with a description."""
+    """Security: "Snyk Agent Scan in CI, run in a sandbox": the launcher
+    serves each server's real tools, each with a description."""
     from fastmcp import Client
 
     async def listed() -> dict[str, str]:
@@ -260,6 +264,7 @@ def test_the_launcher_serves_each_servers_real_tools(name: str, tools: set[str])
 
 
 def test_the_launcher_refuses_an_unknown_server() -> None:
-    """The launcher refuses a server it does not know."""
+    """Security: "Snyk Agent Scan in CI, run in a sandbox": the launcher
+    refuses a server it does not know."""
     with pytest.raises(SystemExit):
         _launcher().build("not-a-server")

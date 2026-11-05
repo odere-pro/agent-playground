@@ -63,7 +63,8 @@ def test_collector_traces_go_to_langfuse_and_jaeger() -> None:
 
 
 def test_collector_receives_otlp_http_and_reports_health() -> None:
-    """The Collector takes OTLP/HTTP on 4318 and serves a health check on 13133."""
+    """Criterion 1: "by exporter config only": the Collector takes OTLP/HTTP on 4318 and
+    serves a health check on 13133."""
     config = _yaml(COLLECTOR)
     assert config["receivers"]["otlp"]["protocols"]["http"]["endpoint"] == "0.0.0.0:4318"
     assert config["extensions"]["health_check"]["endpoint"] == "0.0.0.0:13133"
@@ -71,73 +72,116 @@ def test_collector_receives_otlp_http_and_reports_health() -> None:
     assert config["service"]["pipelines"]["traces"]["receivers"] == ["otlp"]
 
 
+MASK_TOKENS = ("<EMAIL_ADDRESS>", "<PHONE_NUMBER>", "<CREDIT_CARD>", "<IBAN_CODE>", "<US_SSN>")
+"""PoC-8: the chassis's entity set and tokens (`chassis.redaction`, ADR-008)."""
+
+
+def _log_redaction_statements() -> str:
+    """Every statement of the logs pipeline's first redaction transform, joined by spaces."""
+    config = _yaml(COLLECTOR)
+    processors = config["service"]["pipelines"]["logs"]["processors"]
+    redactor = next(p for p in processors if p.startswith("transform/"))
+    blocks = config["processors"][redactor]["log_statements"]
+    return " ".join(s for block in blocks for s in block["statements"])
+
+
+def test_collector_logs_pipeline_has_a_redaction_transform() -> None:
+    """Redaction scope: "the OpenTelemetry Collector log pipeline" runs a transform."""
+    processors = _yaml(COLLECTOR)["service"]["pipelines"]["logs"]["processors"]
+
+    redactors = [p for p in processors if p.startswith("transform/")]
+
+    assert redactors, "the logs pipeline has a redaction transform"
+
+
 def test_collector_logs_pipeline_masks_emails_and_phones() -> None:
     """Redaction scope: "the OpenTelemetry Collector log pipeline" masks each entity."""
-    config = _yaml(COLLECTOR)
-    logs = config["service"]["pipelines"]["logs"]
-    redactors = [p for p in logs["processors"] if p.startswith("transform/")]
-    assert redactors, "the logs pipeline has a redaction transform"
-    statements = " ".join(
-        s
-        for block in config["processors"][redactors[0]]["log_statements"]
-        for s in block["statements"]
-    )
-    # PoC-8: the chassis's entity set and tokens (`chassis.redaction`, ADR-008).
-    for token in ("<EMAIL_ADDRESS>", "<PHONE_NUMBER>", "<CREDIT_CARD>", "<IBAN_CODE>", "<US_SSN>"):
-        assert token in statements, token
-    # The Collector expands `$`; a literal regex `$` would need `$$`. Keep the patterns `$`-free.
+    statements = _log_redaction_statements()
+
+    missing = [token for token in MASK_TOKENS if token not in statements]
+
+    assert missing == []
+
+
+def test_collector_log_rules_have_no_bare_dollar() -> None:
+    """Redaction: "the OpenTelemetry Collector log pipeline": the Collector expands `$`, so a
+    literal regex `$` would need `$$`; the rules have none."""
+    statements = _log_redaction_statements()
+
     assert "$" not in statements.replace("$$", "")
 
 
 def test_collector_has_no_literal_credential() -> None:
-    """The Collector config holds no Langfuse key, only `${env:LANGFUSE_AUTH}`."""
+    """Criterion 1: "by exporter config only": the Collector config holds no Langfuse
+    key, only `${env:LANGFUSE_AUTH}`."""
     text = _code(COLLECTOR)
     assert "Basic " not in text.replace("Basic ${env:LANGFUSE_AUTH}", "")
     assert not re.search(r"(pk|sk)-lf-", text)
 
 
+_COMPOSE_VARS = _VAR.findall(COMPOSE.read_text())
+_PUBLISHED = [
+    str(p)
+    for svc in yaml.safe_load(COMPOSE.read_text())["services"].values()
+    for p in svc.get("ports", [])
+]
+
+
+def test_compose_reads_its_secrets_from_the_env_file() -> None:
+    """Criterion 1: "by exporter config only": the Compose file reads variables, so its
+    secrets come from the env file."""
+    assert _COMPOSE_VARS
+
+
 def test_compose_has_no_default_secret() -> None:
-    """Every variable in the Compose file is `${NAME:?}`, so none has a default."""
-    text = COMPOSE.read_text()
-    found = _VAR.findall(text)
-    assert found, "the compose file reads its secrets from the env file"
-    for inner in found:
-        assert re.fullmatch(r"[A-Z0-9_]+:\?", inner), f"${{{inner}}} must be ${{NAME:?}}"
+    """Criterion 1: "by exporter config only": every variable in the Compose file is
+    `${NAME:?}`, so none has a default."""
+    defaulted = [v for v in _COMPOSE_VARS if not re.fullmatch(r"[A-Z0-9_]+:\?", v)]
+
+    assert defaulted == []
 
 
-def test_compose_ports_bind_localhost_only() -> None:
-    """Every published port binds 127.0.0.1 only."""
-    services = _yaml(COMPOSE)["services"]
-    published = [p for svc in services.values() for p in svc.get("ports", [])]
-    assert published
-    for port in published:
-        assert str(port).startswith("127.0.0.1:"), port
-    by_host = {str(p).split(":")[1] for p in published}
+@pytest.mark.parametrize("port", _PUBLISHED)
+def test_compose_ports_bind_localhost_only(port: str) -> None:
+    """Criterion 1: "by exporter config only": every published port binds 127.0.0.1 only."""
+    assert port.startswith("127.0.0.1:")
+
+
+def test_compose_publishes_the_langfuse_otlp_jaeger_and_health_ports() -> None:
+    """Criterion 1: "by exporter config only": the stack publishes Langfuse (3000), OTLP
+    (4318), Jaeger (16686), and health (13133)."""
+    by_host = {p.split(":")[1] for p in _PUBLISHED}
+
     assert {"3000", "4318", "16686", "13133"} <= by_host
 
 
 def test_compose_collector_starts_after_its_backends() -> None:
-    """The Collector starts after Langfuse and Jaeger; `stack.sh wait` does the health polls."""
+    """Criterion 1: "by exporter config only": the Collector starts after Langfuse and
+    Jaeger; `stack.sh wait` does the health polls."""
     collector = _yaml(COMPOSE)["services"]["otel-collector"]
-    depends = collector["depends_on"]
-    assert {"langfuse-web", "jaeger"} <= set(depends)
-    # None of these images is known to hold a shell or wget (the first CI run's wget check on
-    # langfuse-web never passed): no in-container healthcheck; `stack.sh wait` polls the host.
-    services = _yaml(COMPOSE)["services"]
-    for name in ("otel-collector", "jaeger", "langfuse-web"):
-        assert "healthcheck" not in services[name], name
+
+    assert {"langfuse-web", "jaeger"} <= set(collector["depends_on"])
 
 
-def test_stack_sh_has_a_host_side_wait() -> None:
-    """`stack.sh wait` polls Langfuse, Jaeger, and the Collector from the host."""
-    text = STACK_SH.read_text()
-    assert re.search(r"^\s*wait\)", text, re.MULTILINE)
-    for url in (
-        "/api/public/health",
-        "127.0.0.1:16686",
-        "127.0.0.1:13133",
-    ):
-        assert url in text
+@pytest.mark.parametrize("service", ["otel-collector", "jaeger", "langfuse-web"])
+def test_compose_service_has_no_in_container_healthcheck(service: str) -> None:
+    """Criterion 1: "by exporter config only": no in-container healthcheck, because none
+    of these images is known to hold a shell or wget; `stack.sh wait` polls the host.
+
+    The first CI run's wget check on langfuse-web never passed."""
+    assert "healthcheck" not in _yaml(COMPOSE)["services"][service]
+
+
+def test_stack_sh_has_a_wait_verb() -> None:
+    """Criterion 1: "by exporter config only": `stack.sh` has a `wait)` case."""
+    assert re.search(r"^\s*wait\)", STACK_SH.read_text(), re.MULTILINE)
+
+
+@pytest.mark.parametrize("url", ["/api/public/health", "127.0.0.1:16686", "127.0.0.1:13133"])
+def test_stack_sh_has_a_host_side_wait(url: str) -> None:
+    """Criterion 1: "by exporter config only": `stack.sh wait` polls Langfuse, Jaeger,
+    and the Collector from the host."""
+    assert url in STACK_SH.read_text()
 
 
 @pytest.fixture
@@ -146,7 +190,8 @@ def workflow() -> dict[str, Any]:
 
 
 def test_workflow_triggers_and_permissions(workflow: dict[Any, Any]) -> None:
-    """The stack workflow never uses `pull_request_target` and reads only."""
+    """Criterion 1: "by exporter config only": the stack workflow never uses
+    `pull_request_target` and reads only."""
     text = _code(WORKFLOW)
     assert "pull_request_target" not in text
     assert "secrets." not in text
@@ -157,23 +202,27 @@ def test_workflow_triggers_and_permissions(workflow: dict[Any, Any]) -> None:
 
 
 def test_workflow_pins_every_action_by_sha(workflow: dict[str, Any]) -> None:
-    """The stack workflow pins every action by a full commit SHA."""
+    """Criterion 1: "by exporter config only": the stack workflow pins every action by a
+    full commit SHA."""
     uses = [
         step["uses"] for job in workflow["jobs"].values() for step in job["steps"] if "uses" in step
     ]
+    unpinned = [ref for ref in uses if not _SHA.match(ref)]
+
     assert uses
-    for ref in uses:
-        assert _SHA.match(ref), ref
+    assert unpinned == []
 
 
 def test_workflow_runs_the_stack_and_always_tears_it_down(workflow: dict[str, Any]) -> None:
-    """The workflow runs the stack tests and always tears the stack down."""
+    """Criterion 1: "by exporter config only": the workflow runs the stack tests and
+    always tears the stack down."""
     (job,) = workflow["jobs"].values()
     assert job["timeout-minutes"] <= 30
     runs = [(step.get("if"), step.get("run", "")) for step in job["steps"]]
     joined = "\n".join(r for _, r in runs)
-    for verb in ("up", "wait", "digests"):
-        assert f"deploy/compose/poc07/stack.sh {verb}" in joined
+    verbs = ("up", "wait", "digests")
+    missing = [v for v in verbs if f"deploy/compose/poc07/stack.sh {v}" not in joined]
+    assert missing == []
     assert "POC07_STACK=1" in joined or job.get("env", {}).get("POC07_STACK") == "1"
     assert "test_poc07_stack.py" in joined
     assert any(cond == "always()" and "stack.sh down" in run for cond, run in runs), (
@@ -191,7 +240,8 @@ _SERVICES: dict[str, Any] = _yaml(COMPOSE)["services"]
 
 @pytest.mark.parametrize("service", sorted(_SERVICES))
 def test_compose_image_is_pinned_by_digest_when_the_service_names_an_image(service: str) -> None:
-    """Every image is `name:tag@sha256:<digest>` (SECURITY.md, section 2)."""
+    """Criterion 1: "by exporter config only": every image is `name:tag@sha256:<digest>`
+    (SECURITY.md, section 2)."""
     image = _SERVICES[service]["image"]
 
     pinned = _DIGEST.match(image)
@@ -211,7 +261,8 @@ def _readme_deviations() -> set[str]:
 
 @pytest.mark.parametrize("service", sorted(_SERVICES))
 def test_compose_service_drops_all_capabilities_when_not_a_listed_deviation(service: str) -> None:
-    """A service has `cap_drop: [ALL]`, or the compose README names it as a deviation."""
+    """Criterion 1: "by exporter config only": a service has `cap_drop: [ALL]`, or the
+    compose README names it as a deviation."""
     cap_drop = _SERVICES[service].get("cap_drop")
 
     hardened_or_listed = cap_drop == ["ALL"] or service in _readme_deviations()
@@ -225,7 +276,8 @@ def _statements(block: list[dict[str, Any]], context: str) -> list[str]:
 
 
 def test_collector_traces_pipeline_redacts_before_the_batch() -> None:
-    """Spans pass a redaction transform before `batch`, as logs do (review R7-10)."""
+    """Redaction: "the OpenTelemetry Collector log pipeline": spans pass a redaction transform
+    before `batch`, as logs do (review R7-10)."""
     processors = _yaml(COLLECTOR)["service"]["pipelines"]["traces"]["processors"]
 
     redactors = [p for p in processors if p.startswith("transform/")]
@@ -236,7 +288,8 @@ def test_collector_traces_pipeline_redacts_before_the_batch() -> None:
 
 @pytest.mark.parametrize("context", ["span", "spanevent"])
 def test_collector_span_rules_match_the_log_attribute_rules(context: str) -> None:
-    """Span and span-event attributes get the same masking rules as log attributes."""
+    """Redaction: "the OpenTelemetry Collector log pipeline": span and span-event attributes get
+    the same masking rules as log attributes."""
     processors = _yaml(COLLECTOR)["processors"]
     logs = _statements(processors["transform/redact"]["log_statements"], "log")
     log_attributes = [s for s in logs if s.startswith("replace_all_patterns(attributes")]
@@ -272,13 +325,15 @@ def _run_span_rules(attributes: dict[str, str]) -> dict[str, str]:
             out.update({k: cache[k] for k in [restore.group(1)] if k in cache})
         else:
             match = _REPLACE.match(statement)
-            assert match, statement
+            if match is None:
+                raise ValueError(f"not a save, restore, or replace statement: {statement}")
             out = {k: re.sub(match.group(1), match.group(2), v) for k, v in out.items()}
     return out
 
 
 def test_collector_span_rules_save_every_chassis_id_key_around_the_masking() -> None:
-    """Each `ID_KEYS` entry is saved before the first mask and put back after the last."""
+    """Redaction: "the OpenTelemetry Collector log pipeline": each `ID_KEYS` entry is saved before
+    the first mask and put back after the last."""
     from chassis.adapters.otel import ID_KEYS
 
     statements = _span_statements()
@@ -292,7 +347,8 @@ def test_collector_span_rules_save_every_chassis_id_key_around_the_masking() -> 
 
 
 def test_collector_span_rules_keep_an_id_when_it_looks_like_a_card_number() -> None:
-    """A trace id with 13 digits in a row survives; the same digits in a plain attribute do not."""
+    """Redaction: "the OpenTelemetry Collector log pipeline": a trace id with 13 digits in a row
+    survives; the same digits in a plain attribute do not."""
     digits = "4111111111111"
     attributes = {"trace_id": f"ab{digits}cdef0123456789ab", "note": f"card {digits}"}
 

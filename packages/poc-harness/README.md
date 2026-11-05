@@ -42,7 +42,7 @@ Test support used by more than one PoC, by a demo, or by a plain script that a d
 | `evals` | The evaluator gate on a sidecar engine: `gate_script`, `serve_gate_backends`, `gated_run`, `routes`. |
 | `feedback` | A chassis app with `LangfuseFeedback` on the fake Langfuse API (`chassis`, `client`, `run`, `fake_langfuse`, `langfuse_port`). |
 | `security` | A chassis on Unix sockets with auth and guardrails on (`secured_chassis`, `AnswerModel`, `glossary_answering`, `bearer`). |
-| `trace_join` | One traced run across the chassis and a workload (`workload_on_uds`, `traced_ports`, `run_once`, `caller_headers`). |
+| `trace_join` | One traced run across the chassis and a workload (`workload_on_uds`, `traced_ports`, `run_once`, `caller_headers`), and the span-ancestry walk (`trace_and_span_id`, `parent_span_id`, `ancestor_ids`, `is_under_through`). |
 | `stage_model` | `StageModel`, the scripted model for every engine, and the prompts that drive it. |
 | `stage_ports` | `ToolBox`, `RecordingGuardrails`, `litellm_guardrails`. |
 | `engine_wiring` | `wire_engine`: an engine's test-only hooks, pointed at the chassis proxy socket. |

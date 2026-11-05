@@ -139,7 +139,10 @@ def run(text: str) -> dict[str, Any]:
 
 @pytest.mark.parametrize("case", CASES, ids=[c["id"] for c in CASES])
 def test_golden(case: dict[str, Any]) -> None:
-    """One golden case via `/v1/run`. Offline, the fake model server scripts the rubric score."""
+    """PoC-7 criterion 8: "One eval tool is picked for CI": one golden case via `/v1/run`.
+
+    The rubric score is not a real judgment offline: the fake model server at `JUDGE_URL` scripts
+    it. Only the deterministic metrics (contains, banned, tool calls) judge the engine there."""
     data = run(case["input"])
     output = data.get("output") or {}
     calls = [

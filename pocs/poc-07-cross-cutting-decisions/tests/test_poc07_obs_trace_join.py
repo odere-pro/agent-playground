@@ -19,14 +19,26 @@ from __future__ import annotations
 
 import ast
 import re
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
+import pytest_asyncio
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from poc_harness.scenario import AFTER_TOOL
-from poc_harness.trace_join import CALLER_SPAN, CALLER_TRACE, ENGINES, SESSION, run_once
+from poc_harness.trace_join import (
+    CALLER_SPAN,
+    CALLER_TRACE,
+    ENGINES,
+    SESSION,
+    is_under_through,
+    parent_span_id,
+    run_once,
+    trace_and_span_id,
+)
 from workload_a2a import telemetry as workload_telemetry
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -38,85 +50,165 @@ ENGINE_NAMES = re.compile(
 )
 
 
-@pytest.fixture
-def exporter() -> Iterator[InMemorySpanExporter]:
-    """One exporter for both halves; the workload's tracing is configured for the test only."""
-    exporter = InMemorySpanExporter()
-    workload_telemetry.configure(span_exporters=[exporter], service_name="workload")
-    try:
-        yield exporter
-    finally:
-        workload_telemetry.shutdown()
+@dataclass(frozen=True)
+class TracedRun:
+    """One tool-using `/v1/run` and the spans both halves exported."""
 
+    engine: str
+    out: dict[str, Any]
+    spans: list[ReadableSpan]
 
-def _hex(span: ReadableSpan) -> tuple[str, str]:
-    assert span.context is not None
-    return f"{span.context.trace_id:032x}", f"{span.context.span_id:016x}"
+    def named(self, name: str) -> ReadableSpan:
+        """The run's one span called `name`."""
+        (span,) = [s for s in self.spans if s.name == name]
+        return span
 
+    def span_id(self, name: str) -> str:
+        """The span id of the run's one span called `name`."""
+        return trace_and_span_id(self.named(name))[1]
 
-def _parent(span: ReadableSpan) -> str | None:
-    return f"{span.parent.span_id:016x}" if span.parent is not None else None
+    @property
+    def workload_ids(self) -> set[str]:
+        """The span ids the workload half exported."""
+        return {
+            trace_and_span_id(s)[1]
+            for s in self.spans
+            if s.resource.attributes["service.name"] == "workload"
+        }
 
+    @property
+    def framework(self) -> list[ReadableSpan]:
+        """The engine's OpenInference spans."""
+        return [s for s in self.spans if _scope(s).startswith("openinference")]
 
-def _named(spans: list[ReadableSpan], name: str) -> list[ReadableSpan]:
-    return [s for s in spans if s.name == name]
+    @property
+    def calls(self) -> list[ReadableSpan]:
+        """The chassis spans the workload's outbound calls open: model proxy and `/mcp`."""
+        return [s for s in self.spans if s.name in {"chassis.model.call", "chassis.tool.call"}]
 
 
 def _scope(span: ReadableSpan) -> str:
     return span.instrumentation_scope.name if span.instrumentation_scope else ""
 
 
-@pytest.mark.parametrize("engine", list(ENGINES))
-async def test_one_trace_joins_chassis_workload_framework_model_and_tool(
-    engine: str, monkeypatch: pytest.MonkeyPatch, exporter: InMemorySpanExporter
-) -> None:
-    """Criterion 4: "One trace joins the chassis and workload containers", on two engines (5).
+@pytest_asyncio.fixture(scope="module", loop_scope="module", params=list(ENGINES))
+async def traced(request: pytest.FixtureRequest) -> AsyncIterator[TracedRun]:
+    """One run per engine, shared by the tests below; the workload's tracing is set for it only."""
+    exporter = InMemorySpanExporter()
+    workload_telemetry.configure(span_exporters=[exporter], service_name="workload")
+    try:
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            out, spans = await run_once(request.param, monkeypatch, exporter)
+        yield TracedRun(request.param, out, spans)
+    finally:
+        workload_telemetry.shutdown()
 
-    One trace id, the caller's, on every span of the run, with parent links: the caller's span ->
-    `chassis.run` -> `chassis.engine.run` (the A2A connector) -> `workload.handle` (the workload,
-    from the A2A `traceparent` header) -> the engine's OpenInference spans; each
-    `chassis.model.call` (the model proxy) and `chassis.tool.call` (`/mcp`) is a child of a
-    workload span, from the `traceparent` the workload sent. The session id reaches the workload's
-    spans through W3C baggage.
-    """
-    out, spans = await run_once(engine, monkeypatch, exporter)
-    assert out["status"] == "ok", out
-    assert out["output"]["text"] == AFTER_TOOL
 
-    assert {_hex(s)[0] for s in spans} == {CALLER_TRACE}, "every span is in the caller's trace"
-    by_id = {_hex(s)[1]: s for s in spans}
+def test_one_trace_joins_chassis_workload_framework_model_and_tool(traced: TracedRun) -> None:
+    """Criterion 4: "One trace joins the chassis and workload containers through `traceparent`
+    over A2A", on two engines (5): every span of the run is in the caller's trace."""
+    trace_ids = {trace_and_span_id(s)[0] for s in traced.spans}
 
-    (run,) = _named(spans, "chassis.run")
-    (connector,) = _named(spans, "chassis.engine.run")
-    (handle,) = _named(spans, "workload.handle")
-    assert _parent(run) == CALLER_SPAN, "the caller's traceparent is continued"
-    assert _parent(connector) == _hex(run)[1]
-    assert _parent(handle) == _hex(connector)[1], "the A2A traceparent names the connector span"
+    assert trace_ids == {CALLER_TRACE}
 
-    workload_ids = {
-        _hex(s)[1] for s in spans if s.resource.attributes["service.name"] == "workload"
-    }
-    framework = [s for s in spans if _scope(s).startswith("openinference")]
-    assert framework, f"{engine}: no OpenInference span"
-    for span in framework:
-        hops, cursor = 0, span
-        while _parent(cursor) != _hex(handle)[1]:
-            parent_id = _parent(cursor)
-            assert parent_id in workload_ids, f"{span.name} is not under workload.handle"
-            cursor, hops = by_id[parent_id], hops + 1
-            assert hops < 50
 
-    model_calls = _named(spans, "chassis.model.call")
-    tool_calls = _named(spans, "chassis.tool.call")
-    assert len(model_calls) >= 2, "the tool scenario makes two model calls"
-    assert tool_calls, "the tool call reached the chassis /mcp"
-    for call in model_calls + tool_calls:
-        assert _parent(call) in workload_ids, f"{call.name} is not a child of a workload span"
-        assert (call.attributes or {}).get("correlated", True) is not False
+def test_the_traced_run_answers_after_the_tool_call(traced: TracedRun) -> None:
+    """Criterion 4: "One trace joins the chassis and workload containers"; the run is ok."""
+    assert traced.out["status"] == "ok", traced.out
+    assert traced.out["output"]["text"] == AFTER_TOOL
 
-    assert (run.attributes or {}).get("session.id") == SESSION
-    assert (handle.attributes or {}).get("session.id") == SESSION, "baggage reached the workload"
-    assert all((s.attributes or {}).get("session.id") == SESSION for s in framework)
+
+def test_the_run_span_continues_the_callers_traceparent(traced: TracedRun) -> None:
+    """Criterion 4: "One trace joins the chassis and workload containers"; the caller's span is
+    the parent of `chassis.run`."""
+    assert parent_span_id(traced.named("chassis.run")) == CALLER_SPAN
+
+
+def test_the_connector_span_is_a_child_of_the_run_span(traced: TracedRun) -> None:
+    """Criterion 4: "One trace joins the chassis and workload containers"; `chassis.engine.run`
+    is a child of `chassis.run`."""
+    connector = traced.named("chassis.engine.run")
+
+    assert parent_span_id(connector) == traced.span_id("chassis.run")
+
+
+def test_the_workload_handle_span_is_a_child_of_the_connector_span(traced: TracedRun) -> None:
+    """Criterion 4: "through `traceparent` over A2A"; the A2A `traceparent` names the connector
+    span as the parent of `workload.handle`."""
+    handle = traced.named("workload.handle")
+
+    assert parent_span_id(handle) == traced.span_id("chassis.engine.run")
+
+
+def test_the_engine_emits_openinference_spans(traced: TracedRun) -> None:
+    """Criterion 4: "One trace joins the chassis and workload containers"; the engine's own
+    instrumentor emits spans."""
+    assert traced.framework, f"{traced.engine}: no OpenInference span"
+
+
+def test_every_framework_span_is_under_workload_handle(traced: TracedRun) -> None:
+    """Criterion 4: "One trace joins the chassis and workload containers"; every OpenInference
+    span hangs under `workload.handle` through workload spans only."""
+    handle = traced.span_id("workload.handle")
+
+    stray = [
+        s.name
+        for s in traced.framework
+        if not is_under_through(s, handle, traced.workload_ids, traced.spans)
+    ]
+
+    assert stray == []
+
+
+def test_the_tool_scenario_makes_two_model_calls(traced: TracedRun) -> None:
+    """Criterion 4: "One trace joins the chassis and workload containers"; the tool scenario's
+    two model calls go through the chassis model proxy."""
+    model_calls = [s for s in traced.calls if s.name == "chassis.model.call"]
+
+    assert len(model_calls) >= 2
+
+
+def test_the_tool_call_reaches_the_chassis_mcp(traced: TracedRun) -> None:
+    """Criterion 4: "One trace joins the chassis and workload containers"; the tool call goes
+    through the chassis `/mcp`."""
+    tool_calls = [s for s in traced.calls if s.name == "chassis.tool.call"]
+
+    assert tool_calls
+
+
+def test_every_model_and_tool_call_is_a_child_of_a_workload_span(traced: TracedRun) -> None:
+    """Criterion 4: "One trace joins the chassis and workload containers"; each model and tool
+    call continues the `traceparent` the workload sent."""
+    orphans = [s.name for s in traced.calls if parent_span_id(s) not in traced.workload_ids]
+
+    assert orphans == []
+
+
+def test_no_model_or_tool_call_is_marked_uncorrelated(traced: TracedRun) -> None:
+    """Criterion 4: "One trace joins the chassis and workload containers"; no call span says
+    `correlated=False`."""
+    uncorrelated = [s.name for s in traced.calls if (s.attributes or {}).get("correlated") is False]
+
+    assert uncorrelated == []
+
+
+@pytest.mark.parametrize("name", ["chassis.run", "workload.handle"])
+def test_the_session_id_is_on_the_run_and_handle_spans(traced: TracedRun, name: str) -> None:
+    """Criterion 4: "One trace joins the chassis and workload containers"; the session id reaches
+    the workload through W3C baggage."""
+    attributes = traced.named(name).attributes or {}
+
+    assert attributes.get("session.id") == SESSION
+
+
+def test_the_session_id_is_on_every_framework_span(traced: TracedRun) -> None:
+    """Criterion 4: "One trace joins the chassis and workload containers"; baggage puts the
+    session id on every OpenInference span."""
+    without = [
+        s.name for s in traced.framework if (s.attributes or {}).get("session.id") != SESSION
+    ]
+
+    assert without == []
 
 
 def _code_tokens(path: Path) -> list[str]:

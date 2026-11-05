@@ -212,7 +212,8 @@ def test_switching_the_backend_is_exporter_config_only(
 def test_the_langfuse_stand_in_refuses_a_call_without_its_auth(
     backends: dict[str, Receiver], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The stand-in checks what Langfuse checks, so the swap test proves the header is sent."""
+    """Criterion 1: "the same spans reach Langfuse": the stand-in checks what Langfuse
+    checks, so the swap test proves the header is sent."""
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", f"http://{LANGFUSE_HOST}/api/public/otel")
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_HEADERS", raising=False)
     chassis = OtelTelemetry.from_env()
