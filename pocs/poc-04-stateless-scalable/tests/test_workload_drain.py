@@ -37,6 +37,7 @@ from poc_harness.paths import TYPESCRIPT_ECHO
 from poc_harness.scenario import CHASSIS_PROXY_URL, TYPESCRIPT_URL
 from poc_harness.sockets import on_unix_socket
 from poc_harness.typescript import typescript_node
+from poc_harness.waits import wait_until, wait_until_serving
 from workload_a2a.mapping import request_to_message, update_to_event
 
 CARD_URL = "http://127.0.0.1:9000"
@@ -52,6 +53,12 @@ CTX: dict[str, Any] = {
 }
 HANG_GUARD_S = 30
 """Only a hang reaches this: the test ends each stall."""
+CARD_PATH = "/.well-known/agent-card.json"
+START_WAIT_S = 30
+START_POLL_S = 0.05
+DRAIN_WAIT_S = 10
+"""How long the call may take to reach the workload, and SIGTERM to close its listener."""
+DRAIN_POLL_S = 0.02
 
 SLOW_WORKLOAD = """
 import asyncio, os, pathlib
@@ -90,19 +97,17 @@ def _start(cmd: list[str], uds: Path, env: Mapping[str, str], cwd: Path | None =
     )
     probe = httpx.Client(transport=httpx.HTTPTransport(uds=str(uds)), base_url=CARD_URL)
     try:
-        deadline = time.monotonic() + 30
-        while True:
-            try:
-                if probe.get("/.well-known/agent-card.json", timeout=1.0).status_code == 200:
-                    return proc
-            except httpx.HTTPError:
-                pass
-            if time.monotonic() > deadline or proc.poll() is not None:
-                proc.kill()
-                raise RuntimeError(f"the workload did not start:\n{proc.communicate(timeout=5)[0]}")
-            time.sleep(0.05)
+        wait_until_serving(
+            proc,
+            probe,
+            CARD_PATH,
+            START_WAIT_S,
+            failure="the workload did not start",
+            interval=START_POLL_S,
+        )
     finally:
         probe.close()
+    return proc
 
 
 def _stop(proc: Any) -> None:
@@ -124,16 +129,6 @@ async def _call(uds: Path) -> list[dict[str, Any]]:
             await client.close()
 
 
-def _until(in_flight: Callable[[], bool], timeout_s: float = 10) -> bool:
-    """Poll `in_flight` (in a worker thread) until it is true or `timeout_s` passes."""
-    deadline = time.monotonic() + timeout_s
-    while not in_flight():
-        if time.monotonic() > deadline:
-            return False
-        time.sleep(0.02)
-    return True
-
-
 def _listener_closed(uds: Path) -> bool:
     """True when a connect is refused. A slow answer is not a closed listener."""
     try:
@@ -153,10 +148,17 @@ async def _sigterm_mid_call(
     drain is under way. Returns the call's events and the process's exit code.
     """
     call = asyncio.create_task(_call(uds))
-    assert await asyncio.to_thread(_until, in_flight), "the call never reached the workload"
+    await asyncio.to_thread(
+        wait_until, in_flight, "the call to reach the workload", DRAIN_WAIT_S, interval=DRAIN_POLL_S
+    )
     proc.send_signal(signal.SIGTERM)
-    closed = await asyncio.to_thread(_until, lambda: _listener_closed(uds))
-    assert closed, "SIGTERM did not start a drain: the listener stayed open"
+    await asyncio.to_thread(
+        wait_until,
+        lambda: _listener_closed(uds),
+        "SIGTERM to start a drain: the listener to close",
+        DRAIN_WAIT_S,
+        interval=DRAIN_POLL_S,
+    )
     assert proc.poll() is None and not call.done(), "the call ended before the drain began"
     release()
     async with asyncio.timeout(15):

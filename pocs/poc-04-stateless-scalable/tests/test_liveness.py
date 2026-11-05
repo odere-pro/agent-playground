@@ -30,13 +30,15 @@ from chassis.server import ChassisConfig, create_app
 from chassis.server.readiness import ProbeSettings
 from poc_harness.scenario import SIDECAR_URL
 from poc_harness.sockets import on_unix_socket
+from poc_harness.waits import wait_ready_async
 
 HANDLE = "chassis.core.handle:echo_wire"
 FAST = ProbeSettings(interval_s=0.02, timeout_s=0.1, failures=3)
 PATIENT = replace(FAST, timeout_s=10.0)
 """suggested: for the probe that must succeed. Only a hang reaches the timeout."""
-READY_POLLS = 3000
-"""Up to 30 s: a hang guard."""
+READY_WAIT_S = 30.0
+"""A hang guard."""
+READY_POLL_S = 0.01
 
 
 class Gate:
@@ -90,13 +92,9 @@ def _app(uds: str) -> Any:
     return create_app(config, ports, probe=FAST)
 
 
-async def _wait_for_ready(client: httpx.AsyncClient, status: int) -> httpx.Response:
-    for _ in range(READY_POLLS):
-        response = await client.get("/ready")
-        if response.status_code == status:
-            return response
-        await asyncio.sleep(0.01)
-    raise AssertionError(f"/ready never answered {status}: {response.json()}")
+async def _ready_answers(client: httpx.AsyncClient, status: int) -> httpx.Response:
+    """`/ready` once it answers `status`."""
+    return await wait_ready_async(client, READY_WAIT_S, status=status, interval=READY_POLL_S)
 
 
 def _client(app: Any) -> httpx.AsyncClient:
@@ -109,7 +107,7 @@ async def test_ready_goes_false_when_the_workload_hangs_and_health_stays_ok() ->
         async with _client(app) as client, app.router.lifespan_context(app):
             assert (await client.get("/ready")).status_code == 200
             gate.open.clear()
-            down = await _wait_for_ready(client, 503)
+            down = await _ready_answers(client, 503)
             assert down.json() == {"status": "not ready", "reason": "workload_unreachable"}
             health = await client.get("/health")
             assert (health.status_code, health.json()) == (200, {"status": "ok"})
@@ -121,10 +119,10 @@ async def test_ready_comes_back_when_the_workload_answers() -> None:
         app = _app(uds)
         async with _client(app) as client, app.router.lifespan_context(app):
             gate.open.clear()
-            await _wait_for_ready(client, 503)
+            await _ready_answers(client, 503)
             app.state.readiness.settings = PATIENT
             gate.open.set()
-            back = await _wait_for_ready(client, 200)
+            back = await _ready_answers(client, 200)
             assert back.json() == {"status": "ready"}
             run = await client.post(
                 "/v1/run",

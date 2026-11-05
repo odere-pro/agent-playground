@@ -49,6 +49,8 @@ from poc_harness.waits import wait_until_async
 ROUTE = "fake-route"
 HANG_GUARD_S = 30.0
 """Only a hang reaches this; every wait below ends on an event or a condition."""
+START_WAIT_S = 10.0
+START_POLL_S = 0.01
 
 
 class DelayGate:
@@ -158,11 +160,13 @@ def _client(uds: str) -> httpx.AsyncClient:
 
 
 async def _started(drain: Drain) -> None:
-    for _ in range(1000):
-        if drain.public.started and drain.proxy.started:
-            return
-        await asyncio.sleep(0.01)
-    raise AssertionError("the chassis never started")
+    """Return once both listeners have started."""
+    await wait_until_async(
+        lambda: drain.public.started and drain.proxy.started,
+        "the chassis to start",
+        START_WAIT_S,
+        interval=START_POLL_S,
+    )
 
 
 async def _past_the_delay(drain: Drain, gate: DelayGate) -> None:
