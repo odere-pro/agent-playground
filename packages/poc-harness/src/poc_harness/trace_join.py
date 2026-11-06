@@ -20,6 +20,7 @@ from chassis.adapters.a2a import SidecarConnector
 from chassis.adapters.a2a.inprocess import load_handle
 from chassis.adapters.otel import OtelTelemetry
 from chassis.fakes import InMemoryConfig
+from chassis.fakes.state import InMemoryState
 from chassis.fakes.tool import default_tools
 from chassis.ports.bundle import PortBundle
 from chassis.server import create_app
@@ -78,6 +79,7 @@ def traced_ports(exporter: InMemorySpanExporter, **extra: Any) -> PortBundle:
         engine=SidecarConnector(),
         config=InMemoryConfig(),
         telemetry=OtelTelemetry(span_exporters=[exporter], service_name="chassis"),
+        state=InMemoryState(),
         tools=default_tools(),
         **extra,
     )
@@ -98,3 +100,48 @@ async def run_once(
             response = await client.post("/v1/run", json=body, headers=caller_headers())
     assert response.status_code == 200, response.text
     return response.json(), list(exporter.get_finished_spans())
+
+
+MAX_DEPTH = 50
+"""suggested: a span chain deeper than this is a cycle, not a real trace."""
+
+
+def trace_and_span_id(span: ReadableSpan) -> tuple[str, str]:
+    """The span's trace id and span id, as W3C hex."""
+    if span.context is None:
+        raise ValueError(f"{span.name} has no span context")
+    return f"{span.context.trace_id:032x}", f"{span.context.span_id:016x}"
+
+
+def parent_span_id(span: ReadableSpan) -> str | None:
+    """The parent's span id, as W3C hex, or `None` for a root span."""
+    return f"{span.parent.span_id:016x}" if span.parent is not None else None
+
+
+def ancestor_ids(span: ReadableSpan, spans: list[ReadableSpan]) -> list[str]:
+    """The span ids from `span`'s parent up to the root, nearest first.
+
+    A parent outside `spans` (the caller's span) ends the chain. A chain longer than `MAX_DEPTH`
+    raises, because it can only be a cycle.
+    """
+    by_id = {trace_and_span_id(s)[1]: s for s in spans}
+    chain: list[str] = []
+    parent = parent_span_id(span)
+    while parent is not None:
+        chain.append(parent)
+        if len(chain) > MAX_DEPTH:
+            raise ValueError(f"{span.name}: span chain deeper than {MAX_DEPTH}")
+        if parent not in by_id:
+            break
+        parent = parent_span_id(by_id[parent])
+    return chain
+
+
+def is_under_through(
+    span: ReadableSpan, ancestor: str, via: set[str], spans: list[ReadableSpan]
+) -> bool:
+    """True when `ancestor` is in `span`'s chain and every span between them is in `via`."""
+    chain = ancestor_ids(span, spans)
+    if ancestor not in chain:
+        return False
+    return set(chain[: chain.index(ancestor)]) <= via

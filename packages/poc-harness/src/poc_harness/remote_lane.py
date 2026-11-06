@@ -35,6 +35,7 @@ from chassis.adapters.a2a.remote import RemoteConnector
 from chassis.adapters.a2a.sidecar import SidecarConnector
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel, default_tools
 from chassis.fakes.model import ScriptRule
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.ports.engine import EngineConnector
 from chassis.ports.model import ToolCallRequest
@@ -293,7 +294,12 @@ async def remote_lane(
     model, tools, telemetry = scripted_model(), GatedTools(), InMemoryTelemetry()
     connector = RemoteConnector()
     ports = PortBundle(
-        model=model, engine=connector, config=InMemoryConfig(), telemetry=telemetry, tools=tools
+        model=model,
+        engine=connector,
+        config=InMemoryConfig(),
+        telemetry=telemetry,
+        state=InMemoryState(),
+        tools=tools,
     )
     previous = tokens.workload_previous is not None
     async with workload_server(handle, previous=previous) as workload_uds:

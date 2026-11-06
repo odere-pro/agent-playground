@@ -26,6 +26,7 @@ from chassis.core.envelope import Budget
 from chassis.core.events import End, Event, Start
 from chassis.core.handle import echo_wire
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.profiles import resolve
 from chassis_contracts.helpers import make_context, make_request
@@ -63,7 +64,11 @@ class RequireBearer:
 
 def _bundle(engine: Any) -> PortBundle:
     return PortBundle(
-        model=ScriptedModel(), engine=engine, config=InMemoryConfig(), telemetry=InMemoryTelemetry()
+        model=ScriptedModel(),
+        engine=engine,
+        config=InMemoryConfig(),
+        telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
 
 

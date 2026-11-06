@@ -19,6 +19,7 @@ from chassis.adapters.a2a.remote import RemoteConnector
 from chassis.adapters.a2a.server import build_agent_card, build_app
 from chassis.core.events import Delta, End, Error, Event, ToolCall
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis_contracts.helpers import make_context, make_request
 from poc_harness.plain_a2a import PlainStub, S, artifact, status, stub_app, task
@@ -52,6 +53,7 @@ async def _run(path: str, **extra: Any) -> tuple[list[Event], InMemoryTelemetry,
         engine=connector,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     await connector.setup(_config(path, **extra), ports)
     request = make_request()

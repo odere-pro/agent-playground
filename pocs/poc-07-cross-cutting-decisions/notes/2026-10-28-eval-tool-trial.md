@@ -86,3 +86,5 @@ One line per run, as `bakeoff.evaltrial` printed it. Wall time is the tool's chi
 - The DeepEval first run was not cold: its wheels were already in the uv cache from a scratch install. A truly cold install time was not measured.
 - JUnit output was not produced by either tool.
 - Langfuse datasets: `bakeoff.langfuse_datasets` was tested against an ASGI stub only, not a live Langfuse v4 (`deploy/compose/poc07` has not been run).
+
+Update 2026-10-30: `deploy/compose/poc07` has run since: `poc07-stack` run 40735435727 on `dd1d594`. That run has no dataset test, so live datasets wait on a new stack test in `tests/test_poc07_stack.py`.

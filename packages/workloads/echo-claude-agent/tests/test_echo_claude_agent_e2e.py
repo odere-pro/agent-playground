@@ -156,6 +156,7 @@ def _chassis_proxy() -> tuple[Any, Any]:
         engine=fakes.FakeEngine(handle=handle_mod.echo),
         config=fakes.InMemoryConfig(),
         telemetry=fakes.InMemoryTelemetry(),
+        state=fakes.InMemoryState(),
     )
     config = server.ChassisConfig.model_validate(
         {

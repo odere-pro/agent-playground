@@ -26,6 +26,7 @@ from chassis.core.events import Delta, End, Error, Event
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.auth import StaticTokens
+from chassis.fakes.state import InMemoryState
 from chassis.ports.auth import NoAuth, Principal
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
@@ -62,6 +63,7 @@ def _app(
         engine=engine or FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
         auth=auth or NoAuth(),
     )
     return create_app(config or _config(), ports)

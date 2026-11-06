@@ -19,6 +19,7 @@ from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel, ScriptRule
 from chassis.fakes.auth import StaticTokens
 from chassis.fakes.evaluator import ScoreRule, ScriptedEvaluator
+from chassis.fakes.state import InMemoryState
 from chassis.metrics import CONTENT_TYPE, MetricsRegistry
 from chassis.ports.auth import Principal
 from chassis.ports.bundle import PortBundle
@@ -48,6 +49,7 @@ def _ports(engine: FakeEngine | None = None, **extra: Any) -> PortBundle:
         engine=engine or FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=extra.pop("telemetry", None) or InMemoryTelemetry(),
+        state=InMemoryState(),
         **extra,
     )
 

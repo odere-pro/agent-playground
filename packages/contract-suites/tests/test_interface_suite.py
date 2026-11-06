@@ -23,6 +23,7 @@ from chassis.adapters.openai_compat.inbound import OpenAIInbound
 from chassis.core.envelope import Response
 from chassis.core.inbound import Reply, ReplyMeta
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.interfaces.openai import openai_router
@@ -79,6 +80,7 @@ def _echo_chassis(*, broken: bool) -> Iterator[Chassis]:
         engine=InProcessConnector(),
         config=InMemoryConfig(),
         telemetry=telemetry,
+        state=InMemoryState(),
     )
     app = create_app(config, ports)
     if broken:

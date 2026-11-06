@@ -27,7 +27,7 @@ Test support used by more than one PoC, by a demo, or by a plain script that a d
 | `remote_lane` | The `remote` lane in one process (`remote_lane`, `RemoteLane`, `GatedTools`, `workload_server`), and the `LaneContract` factories. |
 | `kind` | kubectl helpers pinned to `kind-poc05`, `exec_probe` (`ExecFailed`), `probe`, `node_sh`, `unpoliced_caller`, `tcp_check`. |
 | `pod_probe` | `PROBE`, the stdlib script that checks controls from inside a pod. |
-| `kind_controls` | What the sidecar and remote suites share: `secret_refs`, `secret_sources`, `metadata_stand_in`, `node_reaches_its_api`, `traceparent_headers` (a header map). |
+| `kind_controls` | What the sidecar and remote suites share: `secret_refs`, `secret_sources`, `metadata_stand_in` and its fixture `metadata_listener` (a conftest imports it), `node_reaches_its_api`, `traceparent_headers` (a header map). |
 | `manifests` | `load_manifests`, `containers_of`, `container_secret_names`, `secret_names_of`. |
 | `admission_manifests` | The admission objects and fixtures as files, the RBAC model (`can_i`, `CAN_I`). |
 | `admission_model` | A Python model of the admission rules (`AdmissionParams`, `broken_rules`, `all_broken_rules`). |
@@ -42,7 +42,7 @@ Test support used by more than one PoC, by a demo, or by a plain script that a d
 | `evals` | The evaluator gate on a sidecar engine: `gate_script`, `serve_gate_backends`, `gated_run`, `routes`. |
 | `feedback` | A chassis app with `LangfuseFeedback` on the fake Langfuse API (`chassis`, `client`, `run`, `fake_langfuse`, `langfuse_port`). |
 | `security` | A chassis on Unix sockets with auth and guardrails on (`secured_chassis`, `AnswerModel`, `glossary_answering`, `bearer`). |
-| `trace_join` | One traced run across the chassis and a workload (`workload_on_uds`, `traced_ports`, `run_once`, `caller_headers`). |
+| `trace_join` | One traced run across the chassis and a workload (`workload_on_uds`, `traced_ports`, `run_once`, `caller_headers`), and the span-ancestry walk (`trace_and_span_id`, `parent_span_id`, `ancestor_ids`, `is_under_through`). |
 | `stage_model` | `StageModel`, the scripted model for every engine, and the prompts that drive it. |
 | `stage_ports` | `ToolBox`, `RecordingGuardrails`, `litellm_guardrails`. |
 | `engine_wiring` | `wire_engine`: an engine's test-only hooks, pointed at the chassis proxy socket. |
@@ -50,6 +50,7 @@ Test support used by more than one PoC, by a demo, or by a plain script that a d
 | `claude_cli` | `ClaudeCliStandIn`, a stand-in for the `claude` CLI that reaches the chassis proxy. |
 | `metrics_stack` | The Compose metrics stack's ports, inputs, and helpers, for its drill, static test, and latency script. |
 | `promtext` | A small reader of the Prometheus text format (`samples`, `families`, `value`). |
+| `mac_script` | The PoC-6 Mac command, the entry and its sourced pieces, as one text (`mac_script_text`). |
 | `waits` | `wait_until` and `wait_until_async`: poll, and fail on timeout. |
 
 ## Use

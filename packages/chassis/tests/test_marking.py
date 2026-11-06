@@ -22,6 +22,7 @@ from chassis.adapters.a2a.sidecar import SidecarConnector
 from chassis.core.events import Delta, End
 from chassis.core.handle import echo, echo_wire
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.ports.engine import EngineConnector
 from chassis.server import ChassisConfig, create_app
@@ -67,6 +68,7 @@ def _app(
         engine=engine or FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     return create_app(config or _config(governance), ports)
 

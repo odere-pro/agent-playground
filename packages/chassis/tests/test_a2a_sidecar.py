@@ -24,6 +24,7 @@ from chassis.core.events import Delta, End, Error, Event, Start
 from chassis.core.handle import echo_wire
 from chassis.core.trace import trace_id_hex
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.profiles import REGISTRY, resolve
 from chassis.server.config import EngineSpec, load_config
@@ -39,7 +40,11 @@ TRACEPARENT = re.compile(r"00-([0-9a-f]{32})-([0-9a-f]{16})-01")
 
 def _bundle(engine: Any) -> PortBundle:
     return PortBundle(
-        model=ScriptedModel(), engine=engine, config=InMemoryConfig(), telemetry=InMemoryTelemetry()
+        model=ScriptedModel(),
+        engine=engine,
+        config=InMemoryConfig(),
+        telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
 
 

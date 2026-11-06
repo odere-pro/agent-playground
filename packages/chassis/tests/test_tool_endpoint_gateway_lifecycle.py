@@ -19,6 +19,7 @@ from chassis.adapters.mcp.gateway import McpGatewayTools
 from chassis.core.envelope import TaskInput
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.fakes.tool import default_tools
 from chassis.ports.bundle import PortBundle
 from chassis.ports.tool import ManagedToolPort, NoTools, ToolDefinition, ToolPort, ToolResult
@@ -85,6 +86,7 @@ def _ports(tools: StubGateway, telemetry: InMemoryTelemetry) -> PortBundle:
         engine=FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=telemetry,
+        state=InMemoryState(),
         tools=tools,
     )
 
@@ -173,6 +175,7 @@ async def test_a_port_without_a_lifecycle_is_left_alone() -> None:
         engine=ports.engine,
         config=ports.config,
         telemetry=ports.telemetry,
+        state=InMemoryState(),
         tools=default_tools(),
     )
     async with _serving(ports) as app, _mcp_client(app) as client:

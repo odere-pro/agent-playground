@@ -36,6 +36,7 @@ from chassis.adapters.a2a import InProcessConnector
 from chassis.adapters.a2a.sidecar import SidecarConnector
 from chassis.core.trace import parse_traceparent
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, default_tools
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.ports.engine import EngineConnector
 from chassis.ports.model import ModelPort
@@ -187,6 +188,7 @@ def chassis_on_unix_sockets(
             engine=connector,
             config=InMemoryConfig(),
             telemetry=telemetry,
+            state=InMemoryState(),
             tools=default_tools(),
         )
         public = create_app(config, ports)

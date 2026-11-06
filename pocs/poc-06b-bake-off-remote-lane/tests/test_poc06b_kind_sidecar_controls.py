@@ -22,7 +22,6 @@ Run: `deploy/kind/poc06/run.sh test`.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -49,7 +48,6 @@ from poc_harness.kind_controls import (
     SA_DIR,
     allowed_edge,
     container,
-    metadata_stand_in,
     node_reaches_its_api,
     policy_peers_covering,
     secret_refs,
@@ -58,12 +56,6 @@ from poc_harness.kind_controls import (
 pytestmark = POC06_KIND
 
 ENGINE_IDS = [e.id for e in SIDECARS]
-
-
-@pytest.fixture
-def metadata_listener() -> Iterator[str]:
-    with metadata_stand_in() as mark:
-        yield mark
 
 
 def sidecar_pod(engine: KindEngine) -> dict[str, Any]:

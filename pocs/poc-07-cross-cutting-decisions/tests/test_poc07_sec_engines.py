@@ -78,14 +78,30 @@ async def _run(secured: Secured, text: str, token: str | None = RUNNER) -> httpx
 
 
 @pytest.mark.parametrize(("engine", "lane"), CELLS)
-async def test_auth_and_scopes(start: Start, engine: str, lane: str) -> None:
-    """Criterion 5: "Each concern works on at least two engines": 401 and 403."""
+async def test_a_run_without_a_token_is_401(start: Start, engine: str, lane: str) -> None:
+    """Criterion 5: "Each concern works on at least two engines": no token is 401."""
     with start(engine, lane) as secured:
-        assert (await _run(secured, "simplify: hi", token=None)).status_code == 401
-        assert (await _run(secured, "simplify: hi", token=READER)).status_code == 403
-        ok = await _run(secured, "simplify: hi")
-    assert ok.status_code == 200, ok.text
-    assert ok.json()["status"] == "ok", ok.text
+        response = await _run(secured, "simplify: hi", token=None)
+
+    assert response.status_code == 401, response.text
+
+
+@pytest.mark.parametrize(("engine", "lane"), CELLS)
+async def test_a_run_without_the_run_scope_is_403(start: Start, engine: str, lane: str) -> None:
+    """Criterion 5: "Each concern works on at least two engines": no run scope is 403."""
+    with start(engine, lane) as secured:
+        response = await _run(secured, "simplify: hi", token=READER)
+
+    assert response.status_code == 403, response.text
+
+
+@pytest.mark.parametrize(("engine", "lane"), CELLS)
+async def test_a_run_with_the_run_scope_is_ok(start: Start, engine: str, lane: str) -> None:
+    """Criterion 5: "Each concern works on at least two engines": the run scope gets 200 ok."""
+    with start(engine, lane) as secured:
+        response = await _run(secured, "simplify: hi")
+
+    assert (response.status_code, response.json()["status"]) == (200, "ok"), response.text
 
 
 @pytest.mark.parametrize(("engine", "lane"), CELLS)

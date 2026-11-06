@@ -21,6 +21,7 @@ from chassis.adapters.a2a import InProcessConnector
 from chassis.adapters.litellm import LiteLLMModel
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.profiles import AdapterNotAllowed, AdapterNotAvailable, LaneNotAllowed, build_ports
 from chassis.schemas import SCHEMA_DIR, drift
@@ -193,6 +194,7 @@ async def test_the_review_probe_no_longer_runs_in_process_in_cloud(
         engine=FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     app = create_chassis_app(config, bundle)
     with pytest.raises(LaneNotAllowed, match="'inprocess'"):

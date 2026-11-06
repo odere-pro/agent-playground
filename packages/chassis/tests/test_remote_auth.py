@@ -18,6 +18,7 @@ from chassis import CHASSIS_VERSION
 from chassis.core.envelope import Budget, Context, Request, TaskInput, Versions
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel, ScriptRule
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.remote_auth import (
@@ -60,6 +61,7 @@ def _app() -> tuple[FastAPI, FastAPI, PortBundle]:
         engine=FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     public = create_app(ChassisConfig.model_validate(CONFIG), ports)
     remote = create_remote_proxy_app(public, (CURRENT, PREVIOUS))

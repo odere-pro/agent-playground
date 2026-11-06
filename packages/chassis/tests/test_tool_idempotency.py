@@ -23,6 +23,7 @@ from chassis.core.envelope import Budget, Context, Request, TaskInput, Versions
 from chassis.core.handle import echo
 from chassis.core.inbound import public_message
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.fakes.tool import (
     NOTE_WRITE,
     UNLISTED_MARKER,
@@ -269,6 +270,7 @@ def _ports(tools: InMemoryTools | None = None) -> PortBundle:
         engine=FakeEngine(handle=echo),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
         tools=tools if tools is not None else write_mode_tools(),
     )
 

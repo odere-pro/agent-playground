@@ -20,6 +20,7 @@ from chassis.adapters.a2a import InProcessConnector, SidecarConnector
 from chassis.adapters.a2a.inprocess import load_handle
 from chassis.adapters.a2a.server import WireHandle, build_agent_card, build_app
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.ports.engine import EngineConnector
 from chassis_contracts import LaneContract, LaneFactory
@@ -27,7 +28,11 @@ from chassis_contracts import LaneContract, LaneFactory
 
 def _bundle(engine: EngineConnector) -> PortBundle:
     return PortBundle(
-        model=ScriptedModel(), engine=engine, config=InMemoryConfig(), telemetry=InMemoryTelemetry()
+        model=ScriptedModel(),
+        engine=engine,
+        config=InMemoryConfig(),
+        telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
 
 

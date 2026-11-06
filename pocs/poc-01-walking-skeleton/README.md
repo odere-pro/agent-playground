@@ -46,8 +46,8 @@ Three parts and one rule:
 
 Today it does one small thing: it simplifies a sentence. The point is the shape, not the task. Once this shape holds:
 
-- **A standard way to ship an agent.** A team writes `handle()`, picks a config, and gets auth, limits, budgets, tracing, and evals for free. Those go into the chassis once, not into every agent. PoC-9 turns this into `agentctl new`.
-- **Framework freedom.** PydanticAI, LangGraph, an OpenAI Agents SDK loop, or a TypeScript agent all plug in behind the same contract. PoC-2 and PoC-6 use exactly this to compare them on equal terms and pick the ones to support.
+- **A standard way to ship an agent.** A team writes `handle()` and picks a config. It gets auth, limits, budgets, tracing, and evals for free. Those go into the chassis once, not into every agent. PoC-9 turns this into `agentctl new`.
+- **Framework freedom.** PydanticAI, LangGraph, an OpenAI Agents SDK loop, or a TypeScript agent plug in behind the same contract. PoC-2 and PoC-6 use exactly this to compare them on equal terms and pick the ones to support.
 - **Cheap models without a rewrite.** Every model call goes through the router. Moving a task from a big API model to a small local one is then a route name change. That is the epic's SLM goal.
 - **Untrusted code, contained.** The same chassis can front code you do not trust. It runs in a sandboxed pod, with no key and no network. It does not need to be different software. PoC-5 proves that.
 
@@ -135,7 +135,7 @@ Output: [demo/2026-09-29-demo-fake-variant.md](demo/2026-09-29-demo-fake-variant
 
 ## Notes and decisions
 
-- [notes/2026-09-29-compose-key-debt.md](notes/2026-09-29-compose-key-debt.md): the master key doubles as the chassis key in the `local` variant (deadline PoC-5). The `fake` variant runs with no master key. Token counts come from a custom callback, because there is no Postgres. A caller can fake the agent tag until virtual keys arrive.
+- [notes/2026-09-29-compose-key-debt.md](notes/2026-09-29-compose-key-debt.md): recorded; still open in the Compose `local` variant, where the master key doubles as the chassis key. PoC-5 paid it on kind with one scoped key per service. The `fake` variant runs with no master key. Token counts come from a custom callback, because there is no Postgres. A caller can fake the agent tag until virtual keys arrive.
 - [notes/2026-09-29-inprocess-debt.md](notes/2026-09-29-inprocess-debt.md): four PoC-1 debts, recorded; paid in PoC-2. The model proxy sat on the public port; it now has a localhost-only listener. The `inprocess` connector set no `traceparent`; every lane sets it now. The a2a-sdk task store was never pruned; the Python servers prune it now. Events in the `inprocess` lane arrived after `handle` returned. The `sidecar` lane streams; `inprocess` still batches.
 - [ADR-002](../../docs/planning/adr/002-template-a2a-server-placement.md): the template A2A server lives under `chassis.adapters.a2a`. The workload sees `handle` as dicts in and dicts out and never depends on `chassis`.
 - [notes/backlog-changes.md](notes/backlog-changes.md): what the backlog issues should change when this iteration closes.

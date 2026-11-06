@@ -23,8 +23,9 @@ from chassis.core.events import End, Error, Event, Start
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.events import InMemoryBus
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
-from chassis.ports.state import InMemoryState, StateUnavailable
+from chassis.ports.state import StateUnavailable
 from chassis.server import ChassisConfig, create_app
 from chassis.server.idempotency import Idempotency, store_key
 from chassis.server.interfaces.ids import resolve_ids

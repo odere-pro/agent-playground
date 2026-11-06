@@ -25,7 +25,7 @@ from chassis.ports.model import (
     ToolSpec,
     Usage,
 )
-from chassis.ports.state import InMemoryState, StatePort, StateUnavailable
+from chassis.ports.state import StatePort, StateUnavailable
 from chassis.ports.telemetry import Span, TelemetryPort
 from chassis.ports.tool import NoTools, ToolDefinition, ToolError, ToolPort, ToolResult
 
@@ -48,7 +48,6 @@ __all__ = [
     "FeedbackPort",
     "GuardrailError",
     "GuardrailPort",
-    "InMemoryState",
     "Lane",
     "LoadedConfig",
     "ModelChunk",

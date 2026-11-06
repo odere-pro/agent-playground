@@ -25,6 +25,7 @@ import httpx
 from chassis.adapters.a2a import SidecarConnector, build_agent_card
 from chassis.adapters.a2a.inprocess import load_handle
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.readiness import ProbeSettings
@@ -86,6 +87,7 @@ def _app(uds: str) -> Any:
         engine=SidecarConnector(),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
     return create_app(config, ports, probe=FAST)
 

@@ -12,7 +12,7 @@ Accepted, 2026-10-30, by the user. Proposed 2026-10-09. Its open questions stay 
 Two parts of the evidence are not in yet:
 
 - **The hosted-model numbers.** The numbers in Context are offline: the fake model server, processes on localhost, no key. Real hosted tokens, latency, and time to first token come from the Mac run (`make poc06-mac`). The SLM numbers are in, from CI on CPU (PoC-6c, see [SLM (PoC-6c)](#slm-poc-6c)). They do not reopen the default. The side by side with the hosted model and the Mac latency are still open.
-- **The kind numbers for `kagent-adk`.** They come from the `poc06-kind.yml` CI run.
+- **The `kagent-adk` scorecard cells.** `poc06-kind.yml` run 38010290978 passed its contract and hostile checks on kind. Its image, RSS, latency, and token cells in the scorecard are still unfilled. They are listed in [What is left](../poc/006-PoC-6-framework-bake-off.md#what-is-left).
 
 Both can reopen the default (see Revisit). PoC-6c lists this reopening as an exit criterion.
 
@@ -70,7 +70,7 @@ Options for the default engine:
    | TypeScript agent | `sidecar` | Proves the contract is language-neutral. It serves A2A itself and has no `inprocess` lane |
    | smolagents | `remote` | Untrusted: the model's Python runs in the workload process. Needs a model that follows the `<code>` format |
    | Claude Agent SDK | `remote` | Untrusted: the model can run `Bash` and write files. Reaches the chassis through `POST /v1/messages` on the model proxy |
-   | kagent-adk (the remote solution) | `remote`, plain-A2A mode | The Python runtime of kagent, not kagent on Kubernetes. Supported once its kind run passes in CI |
+   | kagent-adk (the remote solution) | `remote`, plain-A2A mode | The Python runtime of kagent, not kagent on Kubernetes. Supported: its kind run passed in CI (run 38010290978). Its memory on kind is not measured yet (see Revisit) |
 
    The trust rule picks the lane (ADR-001 item 5). `bakeoff` and `spec.trust` refuse an untrusted engine in any other lane.
 3. **Not supported, with reasons:**
@@ -193,7 +193,7 @@ Reopen the default, or an engine's place in the set, on any of these:
 
 - **The Mac run (`make poc06-mac`).** If the real prompt tokens per call for PydanticAI exceed the OpenAI Agents SDK's by more than 10% (suggested), or if either fails a task on the hosted model that plain Python passes.
 - **PoC-6c, the SLM.** If PydanticAI fails the lookup task on Qwen3-1.7B where another engine passes, because `tool_choice` is dropped by the llama.cpp path or the model needs a forced tool call, the default is reopened. The same run shows whether smolagents' `<code>` format and the Claude Agent SDK's 15k-token tool list work on a small context. Checked 2026-10-28 in CI: not triggered (see [SLM (PoC-6c)](#slm-poc-6c)). The untrusted engines' part is still open.
-- **The `poc06-kind.yml` run.** If `kagent-adk` fails the lane contract's observable subset on kind, or does not fit the memory budget, drop it from the supported set. The remote solution slot is then open again, and the owner is asked before another is picked.
+- **The `kagent-adk` result on kind.** Run 38010290978 of `poc06-kind.yml` passed; memory is not measured yet. If `kagent-adk` fails the lane contract's observable subset on kind, or does not fit the memory budget, drop it from the supported set. The remote solution slot is then open again, and the owner is asked before another is picked.
 - **A second plain agent.** When one passes, freeze the plain-A2A mode.
 - **A breaking change in a pinned framework**, or a licence change (the Claude CLI's own terms are not verified).
 - **A cloud is chosen** in 001 DEC-1. A managed runtime then joins the `remote` list.

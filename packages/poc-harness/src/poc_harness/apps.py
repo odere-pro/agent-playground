@@ -16,6 +16,7 @@ from chassis.adapters.a2a.inprocess import load_handle
 from chassis.adapters.litellm import LiteLLMModel
 from chassis.core.envelope import Context, Request
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry
+from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.ports.engine import EngineConnector
 from chassis.ports.model import ModelPort
@@ -69,6 +70,7 @@ def chassis_app(
         engine=connector or InProcessConnector(),
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
         **extra,
     )
     return create_app(chassis_config(spec), ports)
@@ -89,6 +91,7 @@ def bundle_for(connector: EngineConnector, *, model: ModelPort | None = None) ->
         engine=connector,
         config=InMemoryConfig(),
         telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
     )
 
 

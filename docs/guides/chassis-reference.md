@@ -60,14 +60,14 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
 - `StatePort` in `state.py` stores bytes by key.
   - Methods: `get`, `set`, `set_if_absent` (with a required TTL), `compare_and_set` (`value=None` deletes), `delete`.
   - Every failure is `StateUnavailable`.
-  - `InMemoryState` lives here because the bundle defaults to it.
+  - Its fake, `InMemoryState`, lives in `fakes/state.py`.
 - `EventPort` in `events.py`.
   - Methods: `publish` and `subscribe(topic, handler, *, group, max_attempts)`.
   - `CloudEvent` is CloudEvents 1.0 structured JSON. Its extensions are `traceparent`, `idempotencykey`, `configversion`, `modelroute`, and `partitionkey`.
   - `PublishFailed`, `DLQ_SUFFIX` (`.dlq`), and `NoEvents`.
 - `PortBundle` bundles them.
   - `tools` defaults to `NoTools`.
-  - `state` defaults to `InMemoryState`.
+  - `state` is required, with no default (R1-12): a bundle always names its store. Tests pass `InMemoryState()`.
   - `events` defaults to `NoEvents`.
 - New ports arrive with their first adapter. See `profiles.REGISTRY` for which PoC.
 
@@ -75,7 +75,7 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
 
 `chassis/fakes/` holds the in-memory doubles.
 
-- `ScriptedModel`, `FakeEngine`, `InMemoryConfig`, `InMemoryTelemetry`, `InMemoryTools`, and `InMemoryState` (re-exported).
+- `ScriptedModel`, `FakeEngine`, `InMemoryConfig`, `InMemoryTelemetry`, `InMemoryTools`, and `InMemoryState` (in `state.py`).
 - `FakeEngine` is a test double, not a lane.
 - `InMemoryBus` in `events.py` delivers at least once.
   - It retries in place, then sends to `<topic>.dlq`.
@@ -484,7 +484,7 @@ Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 
 | `chassis/core/trace.py` (`continued`, `parent_span_id`) | A checked inbound `traceparent` for the model proxy and the tool endpoint to continue | A.5 |
 
 - The model proxy also sends every call of the gate's fallback attempt to the fallback route (`chassis.model_route_forced`).
-- Tests: the fake bindings are in `tests/test_contracts_poc07.py`; each real adapter binds the same suite in its own file (`test_oidc_adapter.py`, `test_litellm_guardrails.py`, `test_evaluators.py`, `test_langfuse_feedback.py`, `test_otel_telemetry.py`), offline against a stub. The scenarios are in `pocs/poc-07-cross-cutting-decisions/tests/`.
+- Tests: the fake bindings are in `tests/test_contracts_cross_cutting_ports.py`; each real adapter binds the same suite in its own file (`test_oidc_adapter.py`, `test_litellm_guardrails.py`, `test_evaluators.py`, `test_langfuse_feedback.py`, `test_otel_telemetry.py`), offline against a stub. The scenarios are in `pocs/poc-07-cross-cutting-decisions/tests/`.
 
 ## PoC-8 modules
 

@@ -13,9 +13,9 @@ standard-library code. Each refusal sits next to its allowed control in the same
 - runsc: the template and every pool pod have `runtimeClassName: gvisor`; the code ran in one of
   them (its hostname) and sees gVisor's kernel.
 - No egress (`egress: []`): a policy drop is a timeout. The code's TCP to a literal outside
-  address, to LiteLLM, to the dispatcher, and to the API server times out; its own server on
-  127.0.0.1:8000 connects. Each target is up from an allowed peer in the same test (an unpoliced
-  pod in `default` for the outside address).
+  address, to the metadata stand-in, to LiteLLM, to the dispatcher, and to the API server times
+  out; its own server on 127.0.0.1:8000 connects. Each target is up from an allowed peer in the
+  same test (an unpoliced pod in `default` for the outside address and the stand-in).
 - Only the dispatcher reaches a sandbox: LiteLLM (the old caller) and the unpoliced pod are
   dropped; the dispatcher connects.
 - The process limit (`RLIMIT_NPROC`, the uid's tasks at the call's start plus 32): forking
@@ -50,6 +50,7 @@ from poc_harness.drills import POC05_KIND, required_env
 from poc_harness.kind import (
     AGENTS_NS,
     CONTEXT,
+    METADATA_IP,
     PLATFORM_NS,
     POLICY_DROPPED,
     SIDECAR_POD,
@@ -139,7 +140,8 @@ print(json.dumps({{"started": len(children), "refused": refused}}))
 # gets 3 s, under the call's 10 s. A connect still open at the end is a TimeoutError.
 NETWORK = """
 import json, os, select, socket, time
-targets = {{"outside": ("{outside}", 443), "litellm": ("{litellm}", 4000),
+targets = {{"outside": ("{outside}", 443), "metadata": ("{metadata}", 80),
+           "litellm": ("{litellm}", 4000),
            "dispatch": ("{dispatch}", 8000), "api_node": ("{node}", {api_port}),
            "api_vip": ("{vip}", 443), "own_server": ("127.0.0.1", 8000)}}
 socks, seen = {{}}, {{}}
@@ -303,24 +305,29 @@ def dispatcher_state() -> tuple[str, int]:
 # --- runsc, egress, ingress --------------------------------------------------------------------
 
 
-async def test_code_runs_on_gvisor_with_no_egress(caller: str, tools: McpGatewayTools) -> None:
+async def test_code_runs_on_gvisor_with_no_egress(
+    caller: str, tools: McpGatewayTools, metadata_listener: str
+) -> None:
     """Criterion 8: "The hostile suites pass in both lanes."
 
     Criterion 8 (partly shown), H28 and H19 for the tool lane: the `SandboxTemplate` and every
     pool pod have `runtimeClassName: gvisor`; the code ran in a pool pod (its hostname) and sees
     gVisor's kernel. The control drops (a timeout) the code's TCP to a literal outside address,
-    to LiteLLM, to the dispatcher, and to the API server (node IP:6443 and the Service VIP). The
-    allowed controls: in the same call the code connects to its own server on 127.0.0.1:8000;
-    and each target is up from an allowed peer: the unpoliced caller reaches the outside address,
-    `agent-echo`'s workload reaches LiteLLM, LiteLLM reaches the dispatcher, and the dispatcher
-    reaches the API by both addresses."""
+    to the metadata stand-in at 169.254.169.254:80, to LiteLLM, to the dispatcher, and to the API
+    server (node IP:6443 and the Service VIP). The allowed controls: in the same call the code
+    connects to its own server on 127.0.0.1:8000; and each target is up from an allowed peer: the
+    unpoliced caller reaches the outside address and gets the stand-in's reply, `agent-echo`'s
+    workload reaches LiteLLM, LiteLLM reaches the dispatcher, and the dispatcher reaches the API
+    by both addresses."""
     template = get_json("sandboxtemplate", APP, "-n", TOOLS_NS)
     assert template["spec"]["podTemplate"]["spec"]["runtimeClassName"] == "gvisor"
     pool = warm_pool_ready()
     assert pool and all(p["spec"]["runtimeClassName"] == "gvisor" for p in pool), pool
 
+    metadata = str(METADATA_IP)
     targets = {
         "outside": tcp_check(OUTSIDE_IP, 443),
+        "metadata": tcp_check(metadata, 80),
         "litellm": tcp_check(service_ip(PLATFORM_NS, "litellm"), 4000),
         "dispatch": tcp_check(pod(PLATFORM_NS, DISPATCH)["status"]["podIP"], 8000),
         "api_node": tcp_check(node_ip(), API_PORT),
@@ -330,6 +337,7 @@ async def test_code_runs_on_gvisor_with_no_egress(caller: str, tools: McpGateway
         tools,
         NETWORK.format(
             outside=OUTSIDE_IP,
+            metadata=metadata,
             litellm=targets["litellm"]["host"],
             dispatch=targets["dispatch"]["host"],
             node=targets["api_node"]["host"],
@@ -345,13 +353,16 @@ async def test_code_runs_on_gvisor_with_no_egress(caller: str, tools: McpGateway
 
     sidecar = pod(AGENTS_NS, SIDECAR_POD)["metadata"]["name"]
     up = [
-        *in_caller(caller, [targets["outside"]]),
+        *in_caller(caller, [targets["outside"], targets["metadata"]]),
         *probe(AGENTS_NS, sidecar, WORKLOAD, [targets["litellm"]]),
         *in_platform("litellm", [targets["dispatch"]]),
         *in_platform(DISPATCH, [targets["api_node"], targets["api_vip"]]),
     ]
     for name, result in zip(targets, up, strict=True):
         assert result.get("connected") is True, (name, result)
+
+    (answered,) = in_caller(caller, [{"kind": "http", "url": f"http://{metadata}/"}])
+    assert answered.get("status") == 200 and metadata_listener in answered["head"], answered
 
 
 def test_only_the_dispatcher_reaches_a_sandbox(caller: str) -> None:

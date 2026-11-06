@@ -31,11 +31,13 @@ on:
     paths:
       - .github/workflows/poc06-slm.yml
       - scripts/poc06_mac.sh
+      - scripts/poc06_mac/**
       - deploy/compose/poc06/**
   pull_request:
     paths:
       - .github/workflows/poc06-slm.yml
       - scripts/poc06_mac.sh
+      - scripts/poc06_mac/**
       - deploy/compose/poc06/**
   workflow_dispatch:
 

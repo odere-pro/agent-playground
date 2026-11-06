@@ -9,6 +9,7 @@ from chassis.adapters.litellm import LiteLLMModel
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.state import InMemoryState
 from chassis.fakes.tool import InMemoryTools
+from chassis.ports.bundle import PortBundle
 from chassis.ports.events import NoEvents
 from chassis.profiles import (
     PROFILE_DEFAULTS,
@@ -181,6 +182,29 @@ def test_fake_profile_builds_in_memory_state_and_no_events() -> None:
     ports = build_ports("fake", connector="inprocess")
     assert isinstance(ports.state, InMemoryState)
     assert isinstance(ports.events, NoEvents)
+
+
+def test_a_bundle_built_without_state_fails_and_build_ports_still_gives_one() -> None:
+    """R1-12: `state` has no default, so a hand-built bundle cannot get a hidden per-replica
+    store; `build_ports("fake")` still passes an `InMemoryState`."""
+    with pytest.raises(TypeError, match="state"):
+        PortBundle(  # type: ignore[call-arg]
+            model=ScriptedModel(),
+            engine=SidecarConnector(),
+            config=InMemoryConfig(),
+            telemetry=InMemoryTelemetry(),
+        )
+    assert isinstance(build_ports("fake", connector="inprocess").state, InMemoryState)
+
+
+def test_in_memory_state_lives_in_fakes_not_ports() -> None:
+    """R1-12: the fake is defined in `chassis.fakes.state`; `chassis.ports` does not export it."""
+    import chassis.ports
+    import chassis.ports.state
+
+    assert InMemoryState.__module__ == "chassis.fakes.state"
+    assert not hasattr(chassis.ports.state, "InMemoryState")
+    assert "InMemoryState" not in chassis.ports.__all__
 
 
 def test_poc04_defaults_state_valkey_off_fake_and_events_none_everywhere() -> None:
