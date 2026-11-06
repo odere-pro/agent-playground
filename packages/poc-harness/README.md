@@ -51,7 +51,7 @@ Test support used by more than one PoC, by a demo, or by a plain script that a d
 | `metrics_stack` | The Compose metrics stack's ports, inputs, and helpers, for its drill, static test, and latency script. |
 | `promtext` | A small reader of the Prometheus text format (`samples`, `families`, `value`). |
 | `mac_script` | The PoC-6 Mac command, the entry and its sourced pieces, as one text (`mac_script_text`). |
-| `waits` | `wait_until` and `wait_until_async`: poll, and fail on timeout. |
+| `waits` | `wait_until`, the one poll loop: poll, and fail on timeout. Thin wrappers over it: `wait_until_async`, `wait_ready` and `wait_ready_async` (an HTTP status), `wait_until_serving` (a child process's path). |
 
 ## Use
 
