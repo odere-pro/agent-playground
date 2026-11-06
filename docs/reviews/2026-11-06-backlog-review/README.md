@@ -15,7 +15,7 @@ The working folder of the backlog review. It checks every issue in [docs/plannin
 
 ## Sessions
 
-Review sessions start after the product plan's PR is merged. They are read-only. Each writes only its own findings file. A batch runs in parallel.
+Review sessions read the product plan pinned at `70244ad` (the user chose on 2026-11-06 to start before its PR merges). They are read-only. Each writes only its own findings file. A batch runs in parallel.
 
 | Session | Issues | Findings file | Batch |
 | ------- | ------ | ------------- | ----- |
