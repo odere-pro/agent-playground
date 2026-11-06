@@ -5,6 +5,7 @@ match. Each value is built by concatenation, so no secret literal sits in the fi
 
 from __future__ import annotations
 
+import re
 import time
 
 import pytest
@@ -19,7 +20,14 @@ JWT = JWT_HEAD + "." + JWT_BODY + "." + "SflKxwRJSMeKKF2QT4fw"  # pragma: allowl
 GOOGLE_KEY = "AIza" + "SyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q"  # pragma: allowlist secret
 DB_URL = "postgres://app:" + "s3cretpass@db.internal:5432/x"  # pragma: allowlist secret
 FAST_S = 0.5
-"""suggested: far over a linear scan of the hostile text, far under a quadratic one."""
+"""suggested: the budget on a quiet machine."""
+SLOWDOWN = 200
+"""suggested: how many times one plain linear scan of 1 MB the whole check may take. The check
+runs about 20 linear patterns (15 to 35 times the scan, measured under load); a backtracking one
+takes hours on 1 MB, far past this. The budget is loose on purpose: it catches backtracking, not a
+linear slowdown of 10 times or less."""
+BASELINE_TEXT = "a." * 500_000
+"""1 MB that the plain scan reads to the end: it measures how fast this machine is right now."""
 
 
 @pytest.mark.parametrize(
@@ -119,6 +127,8 @@ def test_find_secret_returns_none_when_a_text_only_looks_like_a_secret(text: str
     "text",
     [
         "a_" * 500_000,
+        "a_" * 500_000 + "token",  # past the `key_assignment` prefilter
+        "key " + "a_" * 500_000,
         "a." * 500_000,
         "x://u:" + ":" * 1_000_000,
         "token" + " " * 1_000_000,
@@ -127,8 +137,13 @@ def test_find_secret_returns_none_when_a_text_only_looks_like_a_secret(text: str
 )
 def test_find_secret_runs_in_linear_time_when_the_text_is_hostile(text: str) -> None:
     """A 1 MB run built to make a pattern backtrack is scanned quickly."""
+    plain = re.compile(r"[A-Za-z0-9]{20,}")
+    start = time.perf_counter()
+    plain.search(BASELINE_TEXT)  # never matches, so it scans all of it
+    baseline = time.perf_counter() - start
     start = time.perf_counter()
     find_secret(text)
     elapsed = time.perf_counter() - start
 
-    assert elapsed < FAST_S
+    # Against a scan timed in the same run, so a busy machine does not fail it.
+    assert elapsed < max(FAST_S, SLOWDOWN * baseline)

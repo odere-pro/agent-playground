@@ -29,6 +29,10 @@
 # `token` takes no suffix (so `tokens: 5` and `token_count` pass); and a whole match (key and
 # value, or `scheme://user:pass@`) becomes `<SECRET>`. OTTL strings take Go escapes, so a regex
 # backslash is written `\\` (the OTTL docs' `\\d`).
+# Cards and phones (R1-04): the phone rule needs a leading `+` or separators, so a bare digit run
+# stays, as in the chassis. RE2 cannot run the chassis's Luhn check, so a card-shaped run is
+# masked even when its checksum fails. The chassis's kept shapes (ISO dates, IPv4, versions) need
+# no exception here: the phone rule's `3-3-4` and `+` forms never match them.
 # Named-entity redaction (names, places) is not done here: it needs a Presidio call or a custom
 # processor. The patterns hold no `$`, since the Collector expands `$` in its config.
 # Offline check: packages/chassis/tests/test_collector_log_redaction.py.

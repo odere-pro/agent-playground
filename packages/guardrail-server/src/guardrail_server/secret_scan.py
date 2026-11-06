@@ -71,10 +71,17 @@ def normalize(text: str) -> str:
     return _FORMAT_CHARS.sub("", unicodedata.normalize("NFKC", text))
 
 
+_KEY_WORD = re.compile(r"pass|pwd|secret|token|key", re.I)
+"""Every `_KEY_NAME` word holds one of these. `key_assignment` is tried only when one is present:
+it is linear, but on a long run it is the costliest pattern (as `_SECRET_START` in the chassis)."""
+
+
 def find_secret(text: str) -> str | None:
     """The kind of the first secret-shaped value in `text`, or None."""
     normalized = normalize(text)
     for kind, pattern in SECRET_PATTERNS:
+        if kind == "key_assignment" and not _KEY_WORD.search(normalized):
+            continue
         if pattern.search(normalized):
             return kind
     return None

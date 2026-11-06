@@ -55,10 +55,46 @@ _PII: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 
+# Hand copy of chassis/redaction.py's card and phone rules (R1-04); the import rules forbid
+# sharing them. A card needs the Luhn check; a phone needs a leading `+` or a separator, and an
+# ISO date, an IPv4 address, or an x.y.z version is kept.
+_ISO_DATE = r"\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])"
+_IPV4_GROUP = r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
+_NOT_A_PHONE = re.compile(
+    rf"{_ISO_DATE}|{_IPV4_GROUP}(?:\.{_IPV4_GROUP}){{3}}|\d{{1,2}}(?:\.\d{{1,2}}){{2}}"
+)
+
+
+def _passes_luhn(digits: str) -> bool:
+    """The Luhn checksum every card number carries: double every second digit from the right."""
+    total = 0
+    for index, char in enumerate(reversed(digits)):
+        value = int(char) * (2 if index % 2 else 1)
+        total += value - 9 if value > 9 else value
+    return total % 10 == 0
+
+
+def _card_or_kept(match: re.Match[str]) -> str:
+    text = match.group(0)
+    return "<CREDIT_CARD>" if _passes_luhn(re.sub(r"[ -]", "", text)) else text
+
+
+def _phone_or_kept(match: re.Match[str]) -> str:
+    text = match.group(0)
+    if text.isdigit() or _NOT_A_PHONE.fullmatch(text):
+        return text
+    return "<PHONE_NUMBER>"
+
+
 def mask_pii(text: str) -> str:
-    """The Presidio stand-in: each match as `<ENTITY>`."""
+    """The Presidio stand-in: each match as `<ENTITY>`, with the chassis's card and phone rules."""
     for entity, pattern in _PII:
-        text = pattern.sub(f"<{entity}>", text)
+        if entity == "CREDIT_CARD":
+            text = pattern.sub(_card_or_kept, text)
+        elif entity == "PHONE_NUMBER":
+            text = pattern.sub(_phone_or_kept, text)
+        else:
+            text = pattern.sub(f"<{entity}>", text)
     return text
 
 
