@@ -1,5 +1,7 @@
 # Contracts
 
+History. The contract in force is stated once in [docs/specs/contract.md](../specs/contract.md). The files below are the versions as each PoC wrote them.
+
 This folder holds the written chassis contract, one file per version. It exists because each PoC's exit criteria ask for the contract in writing, checked against the code. To find a rule, start at the current version and walk back: each version names only what changed, and an earlier file still holds for what later files do not name.
 
 A version here is a version of the document, not of the wire. The event schema stays `schema_version: "0"`. Where a file and the code differ, the code wins.
