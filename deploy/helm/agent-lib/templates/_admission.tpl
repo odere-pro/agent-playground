@@ -13,10 +13,15 @@ ADR-001 hard requirement 1 and item 9; ADR-005 decisions 4 and 5).
   service cannot switch the rules off: it has no value for them (agent-lib.validateServiceValues
   refuses `admission`), no file, and no RBAC on cluster-scoped admission objects.
 - agent-lib.admissionParams: the params ConfigMap, in the platform release's namespace, which
-  the binding reads (parameterNotFoundAction: Deny). registryPrefix, imageSource, and
-  trustedRepositories come from the platform's values; supportedChassisTags comes from the
-  library's own defaults (chassis.image.supportedTags), so the minimum chassis version is set
-  once, with the chassis tag (ADR-001 item 9).
+  the binding reads (parameterNotFoundAction: Deny). registryPrefix, imageSource,
+  trustedRepositories, and supportedChassisDigests (digest mode, rule 9: the digests a cloud's
+  registry holds for the supported chassis) come from the platform's values; supportedChassisTags
+  comes from the library's own defaults (chassis.image.supportedTags), so the minimum chassis
+  version on a tag-loaded cluster is set once, with the chassis tag (ADR-001 item 9).
+
+The platform's and PoC-5's objects share the names agent-trust-rule and agent-trust-params: a
+cluster carries one or the other, so install this chart on a cluster without the kustomize set,
+or delete that set first (helm refuses to adopt an object it does not own).
 
 Not here: the agent-sandbox extension rules (T1 to T5, C1 to C5) and the RBAC, which are the
 PoC-5 code runner's (deploy/kind/poc05/admission/).
@@ -29,6 +34,10 @@ params:
   imageSource: pull-never
   # The repositories CI builds, without a tag. Empty denies every pod (rule 0), so it is required.
   trustedRepositories: []
+  # Digest mode only (rule 9): the chassis digests at or above the minimum version. Empty with
+  # imageSource digest is refused here; empty with pull-never is right (the store is loaded by
+  # tag, and the rule refuses a digest beside the tag there).
+  supportedChassisDigests: []
 {{- end -}}
 
 {{- define "agent-lib.admissionValues" -}}
@@ -48,7 +57,7 @@ params:
 {{- fail (printf "agent-lib: admission.%s is not a value; the admission rules bind to every namespace labeled agents.platform/admission: enforce and cannot be switched off. Allowed: params" $k) -}}
 {{- end -}}
 {{- end -}}
-{{- $keys := list "registryPrefix" "imageSource" "trustedRepositories" -}}
+{{- $keys := list "registryPrefix" "imageSource" "trustedRepositories" "supportedChassisDigests" -}}
 {{- range $k, $_ := $a.params -}}
 {{- if not (has $k $keys) -}}
 {{- fail (printf "agent-lib: admission.params.%s is not a param. Allowed: %s" $k (join ", " $keys)) -}}
@@ -75,6 +84,17 @@ params:
 {{- fail (printf "agent-lib: admission.params.trustedRepositories %s carries a tag or a digest; list repositories only (rule 4 reads the repository, rule 9 the chassis tag)" (toString $r)) -}}
 {{- end -}}
 {{- end -}}
+{{- if not (kindIs "slice" $p.supportedChassisDigests) -}}
+{{- fail "agent-lib: admission.params.supportedChassisDigests must be a list of sha256:<64 hex> digests" -}}
+{{- end -}}
+{{- range $d := $p.supportedChassisDigests -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" (toString $d)) -}}
+{{- fail (printf "agent-lib: admission.params.supportedChassisDigests %s is not sha256:<64 hex>" (toString $d)) -}}
+{{- end -}}
+{{- end -}}
+{{- if and (eq (toString $p.imageSource) "digest") (not $p.supportedChassisDigests) -}}
+{{- fail "agent-lib: admission.params.imageSource digest needs supportedChassisDigests, the chassis digests at or above the minimum version; rule 9 reads the digest there, since the runtime ignores a tag beside it" -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "agent-lib.admissionParams" -}}
@@ -91,6 +111,7 @@ data:
   imageSource: {{ $a.params.imageSource | quote }}
   trustedRepositories: {{ join "," $a.params.trustedRepositories | quote }}
   supportedChassisTags: {{ join "," $a.supportedChassisTags | quote }}
+  supportedChassisDigests: {{ join "," $a.params.supportedChassisDigests | quote }}
 {{- end -}}
 
 {{- define "agent-lib.admissionBinding" -}}
@@ -274,18 +295,26 @@ spec:
       expression: >-
         variables.data[?'supportedChassisTags'].orValue('').split(',')
         .map(t, t.trim()).filter(t, t != '')
+    - name: supportedChassisDigests
+      expression: >-
+        variables.data[?'supportedChassisDigests'].orValue('').split(',')
+        .map(d, d.trim()).filter(d, d != '')
     # The tag of each chassis image: after the last ':' of the reference without its digest, when
     # that ':' comes after the last '/' (a registry port is before it). No tag gives ''.
     - name: chassisTags
       expression: >-
         variables.chassisImages.map(i, i.contains('@') ? i.substring(0, i.indexOf('@')) : i)
         .map(r, r.lastIndexOf(':') > r.lastIndexOf('/') ? r.substring(r.lastIndexOf(':') + 1) : '')
+    # The digest of each chassis image, after its '@'; no digest gives ''.
+    - name: chassisDigests
+      expression: >-
+        variables.chassisImages.map(i, i.contains('@') ? i.substring(i.indexOf('@') + 1) : '')
   validations:
     - expression: >-
         variables.prefix != '' && size(variables.trustedRepositories) > 0 &&
         variables.imageSource in ['pull-never', 'digest']
       message: >-
-        trust rule 0: the params agent-platform-system/agent-trust-params must set registryPrefix,
+        trust rule 0: the params ConfigMap agent-trust-params must set registryPrefix,
         trustedRepositories, and imageSource
       reason: Forbidden
     - expression: "variables.trust in ['trusted', 'untrusted']"
@@ -382,15 +411,21 @@ spec:
         trust rule 8: outside the remote lane every image must come from the cluster image store:
         imagePullPolicy Never, or an @sha256 digest when imageSource is digest
       reason: Forbidden
-    - expression: "variables.chassisTags.all(t, t in variables.supportedChassisTags)"
+    - expression: >-
+        variables.imageSource == 'digest'
+        ? variables.chassisDigests.all(d, d in variables.supportedChassisDigests)
+        : (variables.chassisTags.all(t, t in variables.supportedChassisTags) &&
+           variables.chassisDigests.all(d, d == ''))
       message: >-
-        trust rule 9: every chassis image must carry a tag from supportedChassisTags in
-        agent-trust-params, the chassis tags at or above the minimum version; a chassis below it,
-        or pinned by digest alone, is refused
+        trust rule 9: every chassis image must be at or above the minimum chassis version in
+        agent-trust-params: a tag in supportedChassisTags and no digest when imageSource is
+        pull-never (the store is loaded by tag), or a digest in supportedChassisDigests when
+        imageSource is digest (the runtime ignores a tag beside a digest)
       messageExpression: >-
-        'trust rule 9: every chassis image must carry a tag from supportedChassisTags in
-        agent-trust-params, the chassis tags at or above the minimum version; a chassis below it,
-        or pinned by digest alone, is refused: ' +
-        variables.chassisTags.filter(t, !(t in variables.supportedChassisTags)).join(', ')
+        'trust rule 9: every chassis image must be at or above the minimum chassis version in
+        agent-trust-params: a tag in supportedChassisTags and no digest when imageSource is
+        pull-never (the store is loaded by tag), or a digest in supportedChassisDigests when
+        imageSource is digest (the runtime ignores a tag beside a digest): ' +
+        variables.chassisImages.join(', ')
       reason: Forbidden
 {{- end -}}

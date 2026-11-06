@@ -221,6 +221,38 @@ def test_a_chassis_below_the_minimum_version_is_refused_at_render_and_by_rule_9(
     assert broken_rules(deployment, _params(chart), shapes=SHAPES) == {"9"}
 
 
+DIGEST = "sha256:" + "a" * 64
+
+
+@pytest.mark.parametrize(
+    ("listed", "broken"),
+    [(DIGEST, set()), ("sha256:" + "0" * 64, {"9"})],
+    ids=["the digest the platform lists", "another digest"],
+)
+def test_in_digest_mode_rule_9_reads_the_chassis_digest_not_the_tag(
+    chart: Charts, tmp_path: Path, listed: str, broken: set[str]
+) -> None:
+    """ADR-001 item 9 on a cloud (`imageSource: digest`): the runtime pulls the digest and ignores
+    the tag beside it (security review, 2026-11-06), so the chart's chassis, pinned
+    `repo:tag@sha256:...`, passes rule 9 only with the digest the platform lists."""
+    service = values_file(
+        tmp_path / "svc",
+        {
+            "chassis": {"image": {"digest": DIGEST}},
+            "workload": {"image": "kind.local/agent-platform/echo-python@" + DIGEST},
+        },
+    )
+    platform = values_file(
+        tmp_path / "platform",
+        {"admission": {"params": {"imageSource": "digest", "supportedChassisDigests": [listed]}}},
+    )
+    deployment = one(chart.template(service), "Deployment", RELEASE)
+    params = AdmissionParams.of(one(chart.template_admission(platform), "ConfigMap", PARAMS))
+
+    assert params.image_source == "digest" and params.chassis_digests == (listed,)
+    assert broken_rules(deployment, params, shapes=SHAPES) == broken
+
+
 # (chart, values, a word the agent-lib: message must carry)
 REFUSED: dict[str, tuple[str, dict[str, Any], str]] = {
     "a service chart with an admission key": (
@@ -237,6 +269,21 @@ REFUSED: dict[str, tuple[str, dict[str, Any], str]] = {
         "example",
         {"chassis": {"image": {"tag": "poc07", "supportedTags": ["poc07"]}}},
         "supportedTags",
+    ),
+    "a service emptying the supported chassis tags": (
+        "example",
+        {"chassis": {"image": {"supportedTags": []}}},
+        "supportedTags",
+    ),
+    "digest mode without the chassis digests": (
+        "admission",
+        {"admission": {"params": {"imageSource": "digest"}}},
+        "supportedChassisDigests",
+    ),
+    "a chassis digest that is not sha256": (
+        "admission",
+        {"admission": {"params": {"supportedChassisDigests": ["md5:abc"]}}},
+        "supportedChassisDigests",
     ),
     "a chassis pinned by digest alone": (
         "example",

@@ -29,7 +29,11 @@ class AdmissionParams:
     trusted: tuple[str, ...]
     image_source: str = "pull-never"
     chassis_tags: tuple[str, ...] = ()
-    """`supportedChassisTags`: the chassis tags at or above the minimum version (rule 9)."""
+    """`supportedChassisTags`: the chassis tags at or above the minimum version (rule 9, with
+    `imageSource: pull-never`)."""
+    chassis_digests: tuple[str, ...] = ()
+    """`supportedChassisDigests`: the chassis digests at or above the minimum version (rule 9,
+    with `imageSource: digest`)."""
 
     @classmethod
     def of(cls, doc: Doc) -> AdmissionParams:
@@ -39,6 +43,7 @@ class AdmissionParams:
             trusted=_csv(data.get("trustedRepositories", "")),
             image_source=data.get("imageSource", ""),
             chassis_tags=_csv(data.get("supportedChassisTags", "")),
+            chassis_digests=_csv(data.get("supportedChassisDigests", "")),
         )
 
 
@@ -57,6 +62,11 @@ def tag_of(image: str) -> str:
     ref = image.split("@", 1)[0]
     colon = ref.rfind(":")
     return ref[colon + 1 :] if colon > ref.rfind("/") else ""
+
+
+def digest_of(image: str) -> str:
+    """The digest of an image reference, after its `@`, or '' (the CEL `chassisDigests`)."""
+    return image.split("@", 1)[1] if "@" in image else ""
 
 
 # A remote pod's one Secret is its own token, `<app.kubernetes.io/name>-token` (rules 5 and 7c).
@@ -191,7 +201,11 @@ def _rule_checks(pod: _Pod, p: AdmissionParams) -> dict[str, Callable[[], bool]]
         ),
         "7d": lambda: pod.shape != "tool" or _gvisor_no_token(pod.spec),
         "8": lambda: pod.remote or pod.own_store,
-        "9": lambda: all(tag_of(i) in p.chassis_tags for i in pod.chassis),
+        "9": lambda: (
+            all(digest_of(i) in p.chassis_digests for i in pod.chassis)
+            if p.image_source == "digest"
+            else all(tag_of(i) in p.chassis_tags and not digest_of(i) for i in pod.chassis)
+        ),
     }
 
 

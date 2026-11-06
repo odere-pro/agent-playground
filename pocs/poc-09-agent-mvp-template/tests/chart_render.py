@@ -108,6 +108,7 @@ def make_charts(base: Path) -> Charts:
 
 
 def values_file(tmp_path: Path, values: dict[str, Any]) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     path = tmp_path / "values.yaml"
     path.write_text(yaml.safe_dump(values), encoding="utf-8")
     return path

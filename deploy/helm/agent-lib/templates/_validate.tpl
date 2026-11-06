@@ -30,7 +30,7 @@ the merged values; prints nothing; fails the render with an "agent-lib:" message
 {{- fail (printf "agent-lib: %s is not a value the chart reads. Allowed: %s" $k (join ", " $keys)) -}}
 {{- end -}}
 {{- end -}}
-{{- if dig "chassis" "image" "supportedTags" "" . -}}
+{{- if hasKey (dig "chassis" "image" (dict) .) "supportedTags" -}}
 {{- fail "agent-lib: chassis.image.supportedTags is set once, in the library chart (ADR-001 item 9), never by a service; pin chassis.image.tag to one of them" -}}
 {{- end -}}
 {{- if dig "remote" "tokenSecret" "name" "" . -}}

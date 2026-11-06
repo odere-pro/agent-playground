@@ -1,7 +1,7 @@
-# Rule 9, the minimum chassis version: a chassis pinned by digest alone carries no tag to check.
+# Rule 9, the minimum chassis version: a chassis pinned by digest alone, with imageSource pull-never (no tag to check).
 # expect: rejected
 # rule: 9
-# message: trust rule 9: every chassis image must carry a tag from supportedChassisTags in agent-trust-params, the chassis tags at or above the minimum version; a chassis below it, or pinned by digest alone, is refused
+# message: trust rule 9: every chassis image must be at or above the minimum chassis version in agent-trust-params: a tag in supportedChassisTags and no digest when imageSource is pull-never (the store is loaded by tag), or a digest in supportedChassisDigests when imageSource is digest (the runtime ignores a tag beside a digest)
 # differs: .spec.initContainers[0].image
 apiVersion: v1
 kind: Pod

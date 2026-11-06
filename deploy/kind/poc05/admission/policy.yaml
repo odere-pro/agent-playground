@@ -47,10 +47,13 @@
 #       also exists on a public registry is never pulled. On a cloud cluster set
 #       imageSource: digest: every image is pinned by @sha256, and the trusted list is read with
 #       the digest (H-10 signatures later).
-#   9.  the minimum chassis version (ADR-001 item 9, 056 CH-7): every chassis image carries a tag
-#       in supportedChassisTags, the current tag and the previous one a service may pin. The tag
-#       is read with or without a digest next to it (repo:tag@sha256:...); a chassis pinned by
-#       digest alone, or untagged, is refused, so a chassis below the minimum never runs.
+#   9.  the minimum chassis version (ADR-001 item 9, 056 CH-7), read the way the node resolves
+#       the image. With imageSource pull-never the store is loaded by tag: every chassis image
+#       carries a tag in supportedChassisTags (the current tag and the previous one a service may
+#       pin) and no digest. With imageSource digest the runtime pulls the digest and ignores a tag
+#       beside it: every chassis image carries a digest in supportedChassisDigests. An untagged
+#       or digest-only reference on kind, and a digest off the list on a cloud, are refused, so a
+#       chassis below the minimum never runs. Signatures (025 H-10) later tie the list to a build.
 #
 # The library chart renders this same policy (deploy/helm/agent-lib/templates/_admission.tpl);
 # the chart test holds the two equal, so this file and the chart cannot drift.
@@ -220,18 +223,26 @@ spec:
       expression: >-
         variables.data[?'supportedChassisTags'].orValue('').split(',')
         .map(t, t.trim()).filter(t, t != '')
+    - name: supportedChassisDigests
+      expression: >-
+        variables.data[?'supportedChassisDigests'].orValue('').split(',')
+        .map(d, d.trim()).filter(d, d != '')
     # The tag of each chassis image: after the last ':' of the reference without its digest, when
     # that ':' comes after the last '/' (a registry port is before it). No tag gives ''.
     - name: chassisTags
       expression: >-
         variables.chassisImages.map(i, i.contains('@') ? i.substring(0, i.indexOf('@')) : i)
         .map(r, r.lastIndexOf(':') > r.lastIndexOf('/') ? r.substring(r.lastIndexOf(':') + 1) : '')
+    # The digest of each chassis image, after its '@'; no digest gives ''.
+    - name: chassisDigests
+      expression: >-
+        variables.chassisImages.map(i, i.contains('@') ? i.substring(i.indexOf('@') + 1) : '')
   validations:
     - expression: >-
         variables.prefix != '' && size(variables.trustedRepositories) > 0 &&
         variables.imageSource in ['pull-never', 'digest']
       message: >-
-        trust rule 0: the params agent-platform-system/agent-trust-params must set registryPrefix,
+        trust rule 0: the params ConfigMap agent-trust-params must set registryPrefix,
         trustedRepositories, and imageSource
       reason: Forbidden
     - expression: "variables.trust in ['trusted', 'untrusted']"
@@ -328,14 +339,20 @@ spec:
         trust rule 8: outside the remote lane every image must come from the cluster image store:
         imagePullPolicy Never, or an @sha256 digest when imageSource is digest
       reason: Forbidden
-    - expression: "variables.chassisTags.all(t, t in variables.supportedChassisTags)"
+    - expression: >-
+        variables.imageSource == 'digest'
+        ? variables.chassisDigests.all(d, d in variables.supportedChassisDigests)
+        : (variables.chassisTags.all(t, t in variables.supportedChassisTags) &&
+           variables.chassisDigests.all(d, d == ''))
       message: >-
-        trust rule 9: every chassis image must carry a tag from supportedChassisTags in
-        agent-trust-params, the chassis tags at or above the minimum version; a chassis below it,
-        or pinned by digest alone, is refused
+        trust rule 9: every chassis image must be at or above the minimum chassis version in
+        agent-trust-params: a tag in supportedChassisTags and no digest when imageSource is
+        pull-never (the store is loaded by tag), or a digest in supportedChassisDigests when
+        imageSource is digest (the runtime ignores a tag beside a digest)
       messageExpression: >-
-        'trust rule 9: every chassis image must carry a tag from supportedChassisTags in
-        agent-trust-params, the chassis tags at or above the minimum version; a chassis below it,
-        or pinned by digest alone, is refused: ' +
-        variables.chassisTags.filter(t, !(t in variables.supportedChassisTags)).join(', ')
+        'trust rule 9: every chassis image must be at or above the minimum chassis version in
+        agent-trust-params: a tag in supportedChassisTags and no digest when imageSource is
+        pull-never (the store is loaded by tag), or a digest in supportedChassisDigests when
+        imageSource is digest (the runtime ignores a tag beside a digest): ' +
+        variables.chassisImages.join(', ')
       reason: Forbidden

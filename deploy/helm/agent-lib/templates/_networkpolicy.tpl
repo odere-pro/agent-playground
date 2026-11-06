@@ -2,7 +2,9 @@
 agent-lib.networkpolicy: what each pod may send and receive. Each policy names both directions,
 so everything it does not allow is refused (default-deny egress, 026 CH-4). Each namespace the
 chart renders pods into also gets a default deny of its own, <name>-default-deny, so a pod there
-with no policy of its own has no egress either (PoC-5 kept it in kind/poc05/base/).
+with no policy of its own has no egress either. It leaves with the release, so the platform's
+own namespace deny (kind/poc05/base/default-deny.yaml) stays required; this one is belt and
+braces, never a replacement (security review, 2026-11-06).
 
 The chassis pod: in, the chassis port only (from networkPolicy.ingressFrom, or any pod when it is
 empty, as PoC-5); out, DNS plus networkPolicy.chassisEgress (peers by label: no ipBlock, no rule

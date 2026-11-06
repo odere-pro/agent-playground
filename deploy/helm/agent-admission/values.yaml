@@ -14,3 +14,6 @@ admission:
     trustedRepositories:
       - kind.local/agent-platform/echo-python
       - kind.local/agent-platform/echo-typescript
+    # Digest mode only (rule 9): the chassis digests at or above the minimum version, as the
+    # registry holds them (sha256:<64 hex>). Empty on kind, where the store is loaded by tag.
+    supportedChassisDigests: []

@@ -15,8 +15,13 @@
 #   sidecar pod may run only these. kind.local/agent-platform/hostile (the probe workload) is not
 #   on it on purpose. Hand-kept in PoC-5; from registry metadata or signatures later (H-10).
 # - supportedChassisTags: the chassis tags at or above the minimum version (rule 9, ADR-001 item
-#   9: the current tag and the previous one a service may pin to roll back). On kind only poc05
-#   exists. The library chart renders this list from its own defaults (deploy/helm/agent-lib).
+#   9: the current tag and the previous one a service may pin to roll back), read with
+#   imageSource pull-never. On kind only poc05 exists. The library chart renders this list from
+#   its own defaults (deploy/helm/agent-lib).
+# - supportedChassisDigests: the chassis digests at or above the minimum version, read with
+#   imageSource digest (the runtime ignores a tag beside a digest). Empty on kind; a cloud lists
+#   the digests its registry holds. Rule 9 refuses every chassis pod while the list for the mode
+#   in force is empty.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -29,3 +34,4 @@ data:
   imageSource: pull-never
   trustedRepositories: kind.local/agent-platform/echo-python,kind.local/agent-platform/echo-typescript
   supportedChassisTags: poc05
+  supportedChassisDigests: ""
