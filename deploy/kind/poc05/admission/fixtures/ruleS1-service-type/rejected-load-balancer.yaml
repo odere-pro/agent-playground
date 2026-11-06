@@ -1,0 +1,20 @@
+# Rule S1, service type: a LoadBalancer Service is a NodePort plus an outside address.
+# expect: rejected
+# rule: S1
+# message: service rule S1: a Service must be type ClusterIP and set no externalIPs, loadBalancerIP, or externalName
+# differs: .spec.type
+apiVersion: v1
+kind: Service
+metadata:
+  name: admission-rules1-lb
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/name: admission-rules1-lb
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: agent-echo
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

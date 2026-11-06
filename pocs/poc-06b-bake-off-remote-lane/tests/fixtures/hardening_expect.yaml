@@ -41,25 +41,25 @@ pods:
     containers: {chassis: *chassis}
   remote-smolagents:
     namespace: poc05-remote
-    kind: Sandbox
+    kind: SandboxTemplate
     runtime: gvisor
     containers:
       workload: {uid: 10002, cpu: 500m, memory: 512Mi, tmp: 32Mi}
   remote-claude-agent:
     namespace: poc05-remote
-    kind: Sandbox
+    kind: SandboxTemplate
     runtime: gvisor
     containers:
       workload: {uid: 10002, cpu: 1000m, memory: 1Gi, tmp: 128Mi}
   remote-typescript:
     namespace: poc05-remote
-    kind: Sandbox
+    kind: SandboxTemplate
     runtime: gvisor
     containers:
       workload: {uid: 10002, cpu: 500m, memory: 256Mi, tmp: 32Mi}
   remote-kagent-adk:
     namespace: poc05-remote
-    kind: Sandbox
+    kind: SandboxTemplate
     runtime: gvisor
     containers:
       workload: {uid: 65532, cpu: 1000m, memory: 768Mi, tmp: 64Mi}

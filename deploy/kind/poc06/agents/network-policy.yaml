@@ -180,10 +180,10 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: poc05-remote
+              kubernetes.io/metadata.name: poc05-platform
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: remote-smolagents
+              app.kubernetes.io/name: remote-run-dispatch
       ports:
         - port: 9000
           protocol: TCP
@@ -255,10 +255,10 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: poc05-remote
+              kubernetes.io/metadata.name: poc05-platform
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: remote-claude-agent
+              app.kubernetes.io/name: remote-run-dispatch
       ports:
         - port: 9000
           protocol: TCP
@@ -330,10 +330,10 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: poc05-remote
+              kubernetes.io/metadata.name: poc05-platform
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: remote-typescript
+              app.kubernetes.io/name: remote-run-dispatch
       ports:
         - port: 9000
           protocol: TCP

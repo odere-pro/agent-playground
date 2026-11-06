@@ -15,13 +15,21 @@ metadata:
     app.kubernetes.io/name: remote-smolagents
 automountServiceAccountToken: false
 ---
-apiVersion: agents.x-k8s.io/v1beta1
-kind: Sandbox
+# One fresh pod per run (core review R6-11): the warm pool below keeps pods of this template
+# started; the front door (deploy/kind/poc06/platform/remote-run-dispatch.yaml) claims one
+# per A2A run and deletes the claim after, which deletes the pod. Template rules T1 to T5
+# (deploy/kind/poc05/admission/extension-policy.yaml): Unmanaged network policy (ours is
+# network-policy.yaml), no env injection, no volume claims, no Service (the door dials pod IPs).
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
 metadata:
   name: remote-smolagents
   labels:
     app.kubernetes.io/name: remote-smolagents
 spec:
+  networkPolicyManagement: Unmanaged
+  envVarsInjectionPolicy: Disallowed
+  volumeClaimTemplatesPolicy: Disallowed
   service: false
   podTemplate:
     metadata:
@@ -112,17 +120,15 @@ spec:
             medium: Memory
             sizeLimit: 32Mi
 ---
-# The chassis reaches the remote by name (it has DNS): remote-smolagents.poc05-remote.svc.cluster.local.
-apiVersion: v1
-kind: Service
+# suggested: 1 warm pod per engine. A run that finds the pool empty waits for a cold start
+# (the door's claim timeout); it does not fail.
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxWarmPool
 metadata:
   name: remote-smolagents
   labels:
     app.kubernetes.io/name: remote-smolagents
 spec:
-  selector:
-    app.kubernetes.io/name: remote-smolagents
-  ports:
-    - name: a2a
-      port: 9000
-      targetPort: 9000
+  replicas: 1
+  sandboxTemplateRef:
+    name: remote-smolagents

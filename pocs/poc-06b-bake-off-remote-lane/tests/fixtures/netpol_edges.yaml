@@ -26,4 +26,9 @@ chassis_ingress:
 # For every pair (the remote and its chassis, and nobody else):
 pair_edges:
   - {from: remote, to: chassis, ports: [TCP/8091]}
-  - {from: chassis, to: remote, ports: [TCP/9000]}
+
+# The A2A call goes through the remote-run front door, one fresh pod per run (core review R6-11):
+# each remote chassis's egress to the door on 9000, and each remote's ingress from it on 9000.
+# The door's own policy is in deploy/kind/poc06/platform/ (test_poc06b_run_isolation_static.py).
+front_door: {ns: poc05-platform, labels: {app.kubernetes.io/name: remote-run-dispatch}}
+front_door_ports: [TCP/9000]

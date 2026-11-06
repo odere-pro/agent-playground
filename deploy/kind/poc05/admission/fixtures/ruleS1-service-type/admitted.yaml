@@ -1,0 +1,18 @@
+# Rule S1, service type: the admitted twin, type ClusterIP with no outside address.
+# expect: admitted
+# rule: S1
+apiVersion: v1
+kind: Service
+metadata:
+  name: admission-rules1-cluster-ip
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/name: admission-rules1-cluster-ip
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: agent-echo
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

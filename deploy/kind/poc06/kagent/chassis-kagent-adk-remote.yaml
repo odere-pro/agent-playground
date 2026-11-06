@@ -252,10 +252,10 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: poc05-remote
+              kubernetes.io/metadata.name: poc05-platform
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: remote-kagent-adk
+              app.kubernetes.io/name: remote-run-dispatch
       ports:
         - port: 9000
           protocol: TCP

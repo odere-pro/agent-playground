@@ -9,15 +9,15 @@ spec:
     matchLabels:
       app.kubernetes.io/name: remote-smolagents
   policyTypes: [Ingress, Egress]
-  # 9000 only from its own chassis pod.
+  # 9000 only from the front door, which claimed this pod for one run (core review R6-11).
   ingress:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: poc05-agents
+              kubernetes.io/metadata.name: poc05-platform
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: chassis-smolagents-remote
+              app.kubernetes.io/name: remote-run-dispatch
       ports:
         - port: 9000
           protocol: TCP
@@ -44,15 +44,15 @@ spec:
     matchLabels:
       app.kubernetes.io/name: remote-claude-agent
   policyTypes: [Ingress, Egress]
-  # 9000 only from its own chassis pod.
+  # 9000 only from the front door, which claimed this pod for one run (core review R6-11).
   ingress:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: poc05-agents
+              kubernetes.io/metadata.name: poc05-platform
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: chassis-claude-agent-remote
+              app.kubernetes.io/name: remote-run-dispatch
       ports:
         - port: 9000
           protocol: TCP
@@ -79,15 +79,15 @@ spec:
     matchLabels:
       app.kubernetes.io/name: remote-typescript
   policyTypes: [Ingress, Egress]
-  # 9000 only from its own chassis pod.
+  # 9000 only from the front door, which claimed this pod for one run (core review R6-11).
   ingress:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: poc05-agents
+              kubernetes.io/metadata.name: poc05-platform
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: chassis-typescript-remote
+              app.kubernetes.io/name: remote-run-dispatch
       ports:
         - port: 9000
           protocol: TCP

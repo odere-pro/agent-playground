@@ -118,6 +118,22 @@ def test_an_unknown_type_name_and_unknown_keywords_are_not_checked() -> None:
     check_arguments(tool, {"x": 1, "y": 2})
 
 
-def test_a_long_unexpected_key_is_cut() -> None:
+def test_a_long_unexpected_key_is_never_shown() -> None:
     error = _refusal({"term": "a", "k" * 500: 1})
     assert len(error.message) < 200
+    assert "kkk" not in error.message
+
+
+def test_unexpected_fields_are_counted_never_named() -> None:
+    """Security review MEDIUM: the model chooses an unexpected key's name, so the message gives a
+    count only. The paired control: a schema field name still shows in a type refusal."""
+    error = _refusal({"term": "a", SECRET: 1, "other": 2})
+    nested = _refusal({"term": "a", "filter": {"limit": 1, SECRET: 1}})
+    one = _refusal({"term": "a", "x": 1})
+
+    assert "arguments: 2 unexpected fields" in error.message
+    assert SECRET not in error.message and "other" not in error.message
+    assert "arguments.filter: 1 unexpected field" in nested.message
+    assert SECRET not in nested.message
+    assert "arguments: 1 unexpected field" in one.message and "'x'" not in one.message
+    assert "arguments.count: expected integer" in _refusal({"term": "a", "count": "1"}).message

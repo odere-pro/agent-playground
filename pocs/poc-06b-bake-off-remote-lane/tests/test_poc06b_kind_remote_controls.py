@@ -54,6 +54,7 @@ from poc_harness.kind import (
     CHASSIS,
     GATEWAY_NS,
     NOT_A_KEY,
+    PLATFORM_NS,
     POLICY_DROPPED,
     REMOTE_NS,
     WORKLOAD,
@@ -64,6 +65,7 @@ from poc_harness.kind import (
     kubectl,
     node_sh,
     pod,
+    pods,
     probe,
     service_ip,
     tcp_check,
@@ -78,11 +80,30 @@ CLUSTER_YAML = REPO / "deploy" / "kind" / "poc05" / "cluster.yaml"
 TOKEN_ENV = "CHASSIS_API_TOKEN"
 OUTSIDE_IP = "1.1.1.1"  # a literal public address: no DNS involved
 POC05_PROXY_IP = "10.96.85.91"  # the PoC-5 remote's chassis proxy
+NAME_LABEL = "app.kubernetes.io/name"
 CHASSIS_CREDENTIALS = {"LITELLM_API_KEY", "VALKEY_PASSWORD", "REMOTE_TOKEN"}
 
 
+FRONT_DOOR = "remote-run-dispatch"
+CLAIM_LABEL = "agents.x-k8s.io/claim-uid"
+
+
 def remote_pod(engine: KindEngine) -> dict[str, Any]:
-    return pod(engine.namespace, engine.pod)
+    """One warm pod of the engine's pool: Running, not being deleted, not claimed by a run (one
+    fresh pod per run, core review R6-11). Its spec is the template's."""
+    warm = [
+        p
+        for p in pods(engine.namespace, engine.pod)
+        if "deletionTimestamp" not in p["metadata"]
+        and CLAIM_LABEL not in p["metadata"].get("labels", {})
+    ]
+    assert warm, f"{engine.namespace}/{engine.pod}: no warm pod"
+    return warm[0]
+
+
+def in_front_door(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    door = pod(PLATFORM_NS, FRONT_DOOR)
+    return probe(PLATFORM_NS, door["metadata"]["name"], FRONT_DOOR, checks)
 
 
 def chassis_pod(engine: KindEngine) -> dict[str, Any]:
@@ -216,35 +237,33 @@ def test_public_port_takes_only_the_gateway(engine: KindEngine, caller: str) -> 
 
 
 @pytest.mark.parametrize("engine", REMOTES, ids=ENGINE_IDS)
-def test_remote_port_refuses_every_caller_but_its_chassis(engine: KindEngine, caller: str) -> None:
-    """H18: the control refuses a TCP connection to the remote's A2A port (9000, by the pod IP and
-    the Service) from a pod in `default` and from another remote's chassis. The allowed control:
-    its own chassis connects to the same port by both addresses, and the caller reaches kube-dns
-    on 53, so its own egress works (since core review R5a-07 a chassis's 8080 takes only the
-    gateway peer, so it is no longer an open port for this caller)."""
+def test_remote_port_refuses_every_caller_but_the_front_door(
+    engine: KindEngine, caller: str
+) -> None:
+    """H18: the control refuses a TCP connection to the remote pod's A2A port (9000, by the pod
+    IP; there is no Service since core review R6-11) from a pod in `default`, from another
+    remote's chassis, and from its own chassis, which now reaches the remote only through the
+    front door. The allowed controls: the front door connects to the same port, the chassis
+    reaches the front door on 9000, and the caller reaches kube-dns on 53, so its own egress
+    works."""
     remote = remote_pod(engine)
     chassis = chassis_pod(engine)
-    remote_ip, svc = remote["status"]["podIP"], service_ip(REMOTE_NS, engine.pod)
-    by_pod, by_svc, own_egress = in_caller(
-        caller,
-        [
-            tcp_check(remote_ip, 9000),
-            tcp_check(svc, 9000),
-            dns_check(),
-        ],
-    )
+    remote_ip = remote["status"]["podIP"]
+    door = service_ip(PLATFORM_NS, FRONT_DOOR)
+    by_pod, own_egress = in_caller(caller, [tcp_check(remote_ip, 9000), dns_check()])
     assert by_pod.get("error") == POLICY_DROPPED, by_pod
-    assert by_svc.get("error") == POLICY_DROPPED, by_svc
     assert own_egress.get("connected") is True, own_egress
 
     other = next(e for e in REMOTES if e is not engine and e.name != "kagent-adk")
-    other_chassis = chassis_pod(other)
-    (lateral,) = in_chassis(other_chassis, [tcp_check(remote_ip, 9000)])
+    (lateral,) = in_chassis(chassis_pod(other), [tcp_check(remote_ip, 9000)])
     assert lateral.get("error") == POLICY_DROPPED, lateral
 
-    own_pod, own_svc = in_chassis(chassis, [tcp_check(remote_ip, 9000), tcp_check(svc, 9000)])
-    assert own_pod.get("connected") is True, own_pod
-    assert own_svc.get("connected") is True, own_svc
+    direct, to_door = in_chassis(chassis, [tcp_check(remote_ip, 9000), tcp_check(door, 9000)])
+    assert direct.get("error") == POLICY_DROPPED, direct
+    assert to_door.get("connected") is True, to_door
+
+    (from_door,) = in_front_door([tcp_check(remote_ip, 9000)])
+    assert from_door.get("connected") is True, from_door
 
 
 # --- no way out -------------------------------------------------------------------------------
@@ -543,9 +562,8 @@ def test_a_pod_with_a_missing_profile_never_runs(
 
 
 def test_the_remote_pods_are_the_ones_the_manifests_name() -> None:
-    """A guard for the tests above: one pod per remote, each with its own name label."""
+    """A guard for the tests above: a warm pool per remote, each pod with its own name label."""
     for engine in REMOTES:
-        items = get_json("pods", "-n", REMOTE_NS, "-l", f"app.kubernetes.io/name={engine.pod}")
-        assert len(items["items"]) == 1, engine.pod
-    got = kubectl("get", "sandbox", "-n", REMOTE_NS, "-o", "name")
+        assert remote_pod(engine)["metadata"]["labels"][NAME_LABEL] == engine.pod
+    got = kubectl("get", "sandboxwarmpool", "-n", REMOTE_NS, "-o", "name")
     assert got.returncode == 0, got.stderr

@@ -18,6 +18,9 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: agent-echo
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/part-of: poc05
 spec:
   podSelector:
     matchLabels:
@@ -73,6 +76,9 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: chassis-echo-remote
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/part-of: poc05
 spec:
   podSelector:
     matchLabels:

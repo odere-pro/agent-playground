@@ -247,6 +247,106 @@ def _answer(content_type: str, data: bytes) -> RunResult:
         raise _lost("the sandbox gave no usable answer") from None
 
 
+class Claims:
+    """The claim lifecycle both front doors share: create on a pool, wait for Ready, delete.
+
+    The caller picks the name, so a create whose answer was lost is still deleted. The claim
+    carries the name, the pool, and the lifecycle only: nothing from the caller."""
+
+    def __init__(
+        self,
+        api: httpx.AsyncClient,
+        namespace: str,
+        *,
+        claim_timeout_s: float,
+        poll_s: float,
+        now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
+        self._api = api
+        self._claims = f"{API_GROUP_PATH}/namespaces/{namespace}/sandboxclaims"
+        self._claim_timeout_s = claim_timeout_s
+        self._poll_s = poll_s
+        self._now = now
+        self.delete_failures = 0
+        self._deleting: set[asyncio.Future[None]] = set()
+
+    def body(self, name: str, pool: str, shutdown_after_s: float) -> dict[str, Any]:
+        shutdown = self._now() + timedelta(seconds=shutdown_after_s)
+        return {
+            "apiVersion": "extensions.agents.x-k8s.io/v1beta1",
+            "kind": "SandboxClaim",
+            "metadata": {"name": name},
+            "spec": {
+                "warmPoolRef": {"name": pool},
+                "lifecycle": {
+                    "shutdownTime": shutdown.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "shutdownPolicy": "Delete",
+                },
+            },
+        }
+
+    async def create(self, name: str, pool: str, shutdown_after_s: float) -> bool | None:
+        """True when the claim was made. False when it may exist: the answer was lost, or a 5xx.
+        None when nothing was applied: no connection, an unreadable token, a 3xx or 4xx."""
+        try:
+            response = await self._api.post(
+                self._claims, json=self.body(name, pool, shutdown_after_s)
+            )
+        except (httpx.ConnectError, httpx.ConnectTimeout, ValueError):
+            return None
+        except (httpx.HTTPError, OSError):
+            return False
+        if response.status_code in (200, 201):
+            return True
+        return False if response.status_code >= 500 else None
+
+    async def wait_ready(self, name: str) -> str:
+        """The claimed pod's address as a URL host, or `sandbox_unavailable` after the timeout."""
+        try:
+            async with asyncio.timeout(self._claim_timeout_s):
+                while True:
+                    ip = await self._ready_ip(name)
+                    if ip is not None:
+                        return _pod_host(ip)
+                    await asyncio.sleep(self._poll_s)
+        except TimeoutError:
+            raise _unavailable("the sandbox was not ready in time") from None
+
+    async def _ready_ip(self, name: str) -> object | None:
+        try:
+            response = await self._api.get(f"{self._claims}/{name}")
+            return _ready_ip(response.json()) if response.status_code == 200 else None
+        except (httpx.HTTPError, OSError, ValueError):
+            return None
+
+    async def delete_shielded(self, name: str) -> None:
+        """Shielded: a cancelled call still deletes its claim. shutdownTime is the backstop. The
+        set holds the task, so a cancelled caller does not leave it unreferenced."""
+        deleting = asyncio.ensure_future(self._delete(name))
+        self._deleting.add(deleting)
+        deleting.add_done_callback(self._deleting.discard)
+        await asyncio.shield(deleting)
+
+    async def _delete(self, name: str) -> None:
+        """Sent after every create attempt; 404 is fine (the create never applied)."""
+        for attempt in range(DELETE_TRIES):
+            if attempt:
+                await asyncio.sleep(self._poll_s)
+            if await self._delete_once(name):
+                return
+        self.delete_failures += 1
+        log.warning("dispatch claim_delete_failed total=%d", self.delete_failures)
+
+    async def _delete_once(self, name: str) -> bool:
+        try:
+            response = await self._api.delete(
+                f"{self._claims}/{name}", params={"propagationPolicy": "Background"}
+            )
+        except (httpx.HTTPError, OSError, ValueError):
+            return False
+        return response.status_code in (200, 202, 404)
+
+
 class Dispatcher:
     """Claims a sandbox per call. `cache` keeps results by idempotency key, in memory."""
 
@@ -264,10 +364,17 @@ class Dispatcher:
         self.config = config
         self.cache = ResultCache(cache_size)
         self._slots = asyncio.Semaphore(config.max_claims)
-        self._now = now
-        self._claims = f"{API_GROUP_PATH}/namespaces/{config.namespace}/sandboxclaims"
-        self.delete_failures = 0
-        self._deleting: set[asyncio.Future[None]] = set()
+        self.claims = Claims(
+            api,
+            config.namespace,
+            claim_timeout_s=config.claim_timeout_s,
+            poll_s=config.poll_s,
+            now=now,
+        )
+
+    @property
+    def delete_failures(self) -> int:
+        return self.claims.delete_failures
 
     async def call(self, code: str, timeout_s: int, key: str) -> RunResult:
         """A repeated key returns the first result without a claim; a failure frees the key."""
@@ -304,91 +411,19 @@ class Dispatcher:
         may_exist = True  # until the create proves it applied nothing; a cancel keeps it True
         try:
             try:
-                created = await self._create(name)
+                created = await self.claims.create(
+                    name, self.config.pool, self.config.shutdown_after_s
+                )
                 may_exist = created is not None
                 if not created:
                     raise _unavailable("no sandbox could be claimed")
-                host = await self._wait_ready(name)
+                host = await self.claims.wait_ready(name)
                 return await self._call_sandbox(host, code, timeout_s, key)
             finally:
                 if may_exist:
-                    await self._delete_shielded(name)
+                    await self.claims.delete_shielded(name)
         finally:
             self._slots.release()
-
-    def _claim_body(self, name: str) -> dict[str, Any]:
-        """Our name, the pool name, and the lifecycle only: nothing from the caller."""
-        shutdown = self._now() + timedelta(seconds=self.config.shutdown_after_s)
-        return {
-            "apiVersion": "extensions.agents.x-k8s.io/v1beta1",
-            "kind": "SandboxClaim",
-            "metadata": {"name": name},
-            "spec": {
-                "warmPoolRef": {"name": self.config.pool},
-                "lifecycle": {
-                    "shutdownTime": shutdown.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "shutdownPolicy": "Delete",
-                },
-            },
-        }
-
-    async def _delete_shielded(self, name: str) -> None:
-        """Shielded: a cancelled call still deletes its claim. shutdownTime is the backstop. The
-        set holds the task, so a cancelled caller does not leave it unreferenced."""
-        deleting = asyncio.ensure_future(self._delete(name))
-        self._deleting.add(deleting)
-        deleting.add_done_callback(self._deleting.discard)
-        await asyncio.shield(deleting)
-
-    async def _create(self, name: str) -> bool | None:
-        """True when the claim was made. False when it may exist: the answer was lost, or a 5xx.
-        None when nothing was applied: no connection, an unreadable token, a 3xx or 4xx."""
-        try:
-            response = await self._api.post(self._claims, json=self._claim_body(name))
-        except (httpx.ConnectError, httpx.ConnectTimeout, ValueError):
-            return None
-        except (httpx.HTTPError, OSError):
-            return False
-        if response.status_code in (200, 201):
-            return True
-        return False if response.status_code >= 500 else None
-
-    async def _wait_ready(self, name: str) -> str:
-        try:
-            async with asyncio.timeout(self.config.claim_timeout_s):
-                while True:
-                    ip = await self._ready_ip(name)
-                    if ip is not None:
-                        return _pod_host(ip)
-                    await asyncio.sleep(self.config.poll_s)
-        except TimeoutError:
-            raise _unavailable("the sandbox was not ready in time") from None
-
-    async def _ready_ip(self, name: str) -> object | None:
-        try:
-            response = await self._api.get(f"{self._claims}/{name}")
-            return _ready_ip(response.json()) if response.status_code == 200 else None
-        except (httpx.HTTPError, OSError, ValueError):
-            return None
-
-    async def _delete(self, name: str) -> None:
-        """Sent after every create attempt; 404 is fine (the create never applied)."""
-        for attempt in range(DELETE_TRIES):
-            if attempt:
-                await asyncio.sleep(self.config.poll_s)
-            if await self._delete_once(name):
-                return
-        self.delete_failures += 1
-        log.warning("dispatch claim_delete_failed total=%d", self.delete_failures)
-
-    async def _delete_once(self, name: str) -> bool:
-        try:
-            response = await self._api.delete(
-                f"{self._claims}/{name}", params={"propagationPolicy": "Background"}
-            )
-        except (httpx.HTTPError, OSError, ValueError):
-            return False
-        return response.status_code in (200, 202, 404)
 
     async def _call_sandbox(self, host: str, code: str, timeout_s: int, key: str) -> RunResult:
         url = f"http://{host}:{SANDBOX_PORT}{SANDBOX_PATH}"

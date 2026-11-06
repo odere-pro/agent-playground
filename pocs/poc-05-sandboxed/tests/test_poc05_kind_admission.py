@@ -20,6 +20,10 @@ The core review adds rules 7e and 7f (fixtures, R5a-01 and R5a-05), a projected-
 at create, so `test_ephemeral_container_is_refused_next_to_its_twin` patches
 `pods/ephemeralcontainers` on the live `agent-echo` pod as the cluster admin, with --dry-run=server.
 
+The platform-security review of the core-review fixes adds the Service rule S1
+(`agent-service-rule`, fixtures `ruleS1-service-type/`): the deployer's NodePort, LoadBalancer, or
+externalIPs Service is refused, its ClusterIP twin admitted.
+
 The per-call plan's `can-i` lists (`CAN_I`, in `poc_harness.admission_manifests`, so the static and
 kind tests never drift) and the check that no agent-sandbox object owns a NetworkPolicy close the
 security review's required changes 1, 2, and 4 on the cluster.
@@ -70,6 +74,7 @@ POLICY_OF_PREFIX = {
     "trust rule": "agent-trust-rule",
     "template rule": "sandbox-template-rule",
     "claim rule": "sandbox-claim-rule",
+    "service rule": "agent-service-rule",
 }
 RBAC_REFUSAL = re.compile(r"cannot \w+ resource")
 KIND = re.compile(r"(?m)^kind: (\S+)$")
@@ -142,9 +147,10 @@ def _one_line(text: str) -> str:
     return " ".join(text.split())
 
 
-def test_policy_and_binding_are_installed() -> None:
+@pytest.mark.parametrize("name", ["agent-trust-rule", "agent-service-rule"])
+def test_policy_and_binding_are_installed(name: str) -> None:
     for kind in ("validatingadmissionpolicy", "validatingadmissionpolicybinding"):
-        got = kubectl("get", kind, "agent-trust-rule", "-o", "name")
+        got = kubectl("get", kind, name, "-o", "name")
         assert got.returncode == 0, got.stderr
     params = kubectl("get", "configmap", PARAMS[1], "-n", PARAMS[0], "-o", "name")
     assert params.returncode == 0, params.stderr
@@ -259,11 +265,54 @@ def test_submitter_cannot_open_network_edges(resource: str) -> None:
     denied = can_i(SUBMITTER, "create", resource, "-n", "poc05-remote")
     if resource == "networkpolicies":
         allowed = admin_can_i("create", resource, "-n", "poc05-remote")
+        deployer = can_i(DEPLOYER, "create", resource, "-n", "poc05-remote")
+        assert deployer == "no", "core review R5a-02: the deployer writes no NetworkPolicy"
     else:
         allowed = can_i(DEPLOYER, "create", resource, "-n", "poc05-remote")
 
     assert denied == "no", resource
     assert allowed == "yes", resource
+
+
+SERVICE_FIXTURES = FIXTURES / "ruleS1-service-type"
+
+
+@pytest.mark.parametrize("ns", ["poc05-agents", "poc05-tools"])
+def test_deployer_nodeport_service_is_refused_by_rule_s1(ns: str) -> None:
+    """Criterion 5: "an agent pod has no route to the internal services except through the
+    chassis" (platform-security review of the core-review fixes, HIGH).
+
+    Exit criterion 5: the deployer may write Services, so a NodePort on a chassis's 8080 would
+    reach it from the node, past the gateway-only ingress (R5a-07). As the deployer, with
+    --dry-run=server, the NodePort fixture is refused by agent-service-rule and not by RBAC. The
+    paired control: the ClusterIP twin, sent the same way, is admitted."""
+    rejected = SERVICE_FIXTURES / "rejected.yaml"
+    twin = SERVICE_FIXTURES / "admitted.yaml"
+
+    got = _dry_run_text(_in_namespace(rejected, ns))
+    allowed = _dry_run_text(_in_namespace(twin, ns))
+
+    err = _one_line(got.stderr)
+    assert got.returncode != 0, got.stdout
+    assert not RBAC_REFUSAL.search(err), err
+    assert "'agent-service-rule'" in err and "service rule S1" in err, err
+    assert allowed.returncode == 0, allowed.stderr
+
+
+def _in_namespace(path: Path, ns: str) -> str:
+    doc = yaml.safe_load(path.read_text())
+    doc["metadata"]["namespace"] = ns
+    return yaml.safe_dump(doc)
+
+
+def _dry_run_text(manifest: str) -> subprocess.CompletedProcess[str]:
+    exe = shutil.which("kubectl")
+    assert exe is not None, "kubectl is not on PATH"
+    command = [exe, "--context", CONTEXT, "apply", "--dry-run=server", "-f", "-"]
+    command.append(f"--as={DEPLOYER}")
+    return subprocess.run(
+        command, input=manifest, capture_output=True, text=True, timeout=TIMEOUT_S, check=False
+    )
 
 
 def test_missing_params_deny_everything() -> None:

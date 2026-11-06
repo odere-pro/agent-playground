@@ -18,7 +18,8 @@
 #   has no DNS (H20). The DNS-name rule in the probe note comes from Substrate's credential proxy,
 #   which is not used here.
 # - Inbound auth: the runtime checks no bearer (probe note, item 5). The control is the
-#   NetworkPolicy: 9000 only from its own chassis. What the chassis cannot control is listed in
+#   NetworkPolicy: 9000 only from the front door remote-run-dispatch, which any PoC-6 remote
+#   chassis may call (core review R6-11). What the chassis cannot control is listed in
 #   notes/2026-10-09-lanes-b-kind.md.
 # - OTEL exporters are off: with defaults the last event waited 16 s on an unreachable collector.
 apiVersion: v1
@@ -130,7 +131,7 @@ data:
       "version": "v1",
       "supportedInterfaces": [
         {
-          "url": "http://remote-kagent-adk.poc05-remote.svc.cluster.local:9000",
+          "url": "http://remote-run-dispatch.poc05-platform.svc.cluster.local:9000/kagent-adk",
           "protocolBinding": "JSONRPC",
           "protocolVersion": "1.0"
         }
@@ -141,14 +142,22 @@ data:
       "defaultOutputModes": ["text"]
     }
 ---
-apiVersion: agents.x-k8s.io/v1beta1
-kind: Sandbox
+# One fresh pod per run (core review R6-11): the warm pool below keeps pods of this template
+# started; the front door (deploy/kind/poc06/platform/remote-run-dispatch.yaml) claims one
+# per A2A run and deletes the claim after, which deletes the pod. Template rules T1 to T5
+# (deploy/kind/poc05/admission/extension-policy.yaml): Unmanaged network policy (ours is
+# network-policy.yaml), no env injection, no volume claims, no Service (the door dials pod IPs).
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxTemplate
 metadata:
   name: remote-kagent-adk
   namespace: poc05-remote
   labels:
     app.kubernetes.io/name: remote-kagent-adk
 spec:
+  networkPolicyManagement: Unmanaged
+  envVarsInjectionPolicy: Disallowed
+  volumeClaimTemplatesPolicy: Disallowed
   service: false
   podTemplate:
     metadata:
@@ -247,20 +256,19 @@ spec:
           configMap:
             name: remote-kagent-adk-config
 ---
-apiVersion: v1
-kind: Service
+# suggested: 1 warm pod per engine. A run that finds the pool empty waits for a cold start
+# (the door's claim timeout); it does not fail.
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxWarmPool
 metadata:
   name: remote-kagent-adk
   namespace: poc05-remote
   labels:
     app.kubernetes.io/name: remote-kagent-adk
 spec:
-  selector:
-    app.kubernetes.io/name: remote-kagent-adk
-  ports:
-    - name: a2a
-      port: 9000
-      targetPort: 9000
+  replicas: 1
+  sandboxTemplateRef:
+    name: remote-kagent-adk
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -272,15 +280,16 @@ spec:
     matchLabels:
       app.kubernetes.io/name: remote-kagent-adk
   policyTypes: [Ingress, Egress]
-  # 9000 only from its own chassis pod. The runtime checks no bearer, so this is the control.
+  # 9000 only from the front door, which claimed this pod for one run (core review R6-11). The
+  # runtime checks no bearer, so this policy and the front door's ingress are the control.
   ingress:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: poc05-agents
+              kubernetes.io/metadata.name: poc05-platform
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: chassis-kagent-adk-remote
+              app.kubernetes.io/name: remote-run-dispatch
       ports:
         - port: 9000
           protocol: TCP

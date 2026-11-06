@@ -613,9 +613,11 @@ def test_no_network_policy_uses_an_ip_block_but_the_dispatchers() -> None:
 
 
 def _policy(folder: str, name: str) -> Doc:
+    """A NetworkPolicy from the folder's network-policy.yaml, which `run.sh` applies by path as
+    the cluster admin (not listed in the kustomization; security review MEDIUM)."""
     found = [
         d
-        for _, d in _objects(folder)
+        for d in load_manifests(POC05 / folder / "network-policy.yaml")
         if d["kind"] == "NetworkPolicy" and d["metadata"]["name"] == name
     ]
     assert len(found) == 1, f"{folder}/: NetworkPolicy {name}"

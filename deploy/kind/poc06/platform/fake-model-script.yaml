@@ -83,4 +83,30 @@ rules:
     tool_call:
       name: fake_tools-acronym_expand
       arguments: {acronym: "RAG"}
+  # --- run isolation (core review R6-11, test_poc06b_kind_run_isolation.py): the Claude engine's
+  # Bash tool. `[plant]` writes /tmp/marker, starts `sleep 600` in the background, then probes in
+  # the same run (the control); `[probe]` only probes. The probe prints the pod's hostname, whether
+  # the marker exists, and how many `sleep 600` processes it sees (read from /proc: no ps needed).
+  - after_tool: true
+    match: "PROBE host="
+    reply: "isolation probe done"
+  - after_tool: true
+    match: "PLANTED"
+    reply: ""
+    tool_call:
+      name: Bash
+      arguments:
+        command: "echo PROBE host=$(cat /etc/hostname) marker=$(test -e /tmp/marker && echo yes || echo no) sleepers=$(for f in /proc/[0-9]*/cmdline; do tr '\\0' ' ' < $f 2>/dev/null; echo; done | grep -c '^sleep 600' || true)"
+  - match: "isolation [plant]"
+    reply: ""
+    tool_call:
+      name: Bash
+      arguments:
+        command: "echo planted > /tmp/marker && (nohup sleep 600 >/dev/null 2>&1 &) && echo PLANTED"
+  - match: "isolation [probe]"
+    reply: ""
+    tool_call:
+      name: Bash
+      arguments:
+        command: "echo PROBE host=$(cat /etc/hostname) marker=$(test -e /tmp/marker && echo yes || echo no) sleepers=$(for f in /proc/[0-9]*/cmdline; do tr '\\0' ' ' < $f 2>/dev/null; echo; done | grep -c '^sleep 600' || true)"
 default_reply: "ok"

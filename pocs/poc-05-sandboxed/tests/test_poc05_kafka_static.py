@@ -34,6 +34,8 @@ ROOT = Path(__file__).resolve().parents[3]
 POC05 = ROOT / "deploy/kind/poc05"
 KAFKA = POC05 / "platform/kafka.yaml"
 AGENT = POC05 / "agents/agent-echo-events.yaml"
+# The cluster admin applies it by path; the deployer applies AGENT (core review R5a-02).
+AGENT_POLICY = POC05 / "agents/agent-echo-events-network-policy.yaml"
 CONFIG = POC05 / "agents/chassis/echo-events.yaml"
 SEED = POC05 / "platform/seed.sh"
 DEFAULT_DENY = POC05 / "base/default-deny.yaml"
@@ -263,8 +265,17 @@ def test_the_platform_namespace_denies_by_default() -> None:
     assert _one(KAFKA, "Deployment", "kafka")["metadata"]["namespace"] == "poc05-platform"
 
 
+def test_the_events_agent_policy_is_its_own_file() -> None:
+    """Security review MEDIUM: the deployer's file holds no NetworkPolicy, and the admin's file
+    holds only the one policy, in poc05-agents."""
+    assert {d["kind"] for d in load_manifests(AGENT)} == {"ServiceAccount", "Deployment", "Service"}
+    (policy,) = load_manifests(AGENT_POLICY)
+    assert policy["kind"] == "NetworkPolicy"
+    assert policy["metadata"]["namespace"] == "poc05-agents"
+
+
 def test_the_events_agent_egress_is_dns_and_kafka_only() -> None:
-    spec = _one(AGENT, "NetworkPolicy", "agent-echo-events")["spec"]
+    spec = _one(AGENT_POLICY, "NetworkPolicy", "agent-echo-events")["spec"]
     peers = [
         (peer["podSelector"]["matchLabels"], [p["port"] for p in rule["ports"]])
         for rule in spec["egress"]

@@ -6,7 +6,8 @@
 #   secretKeyRef, the way agent-echo's chassis gets VALKEY_PASSWORD. Not a Secret volume: a pod
 #   volume can be mounted into any container, so PoC-5 workload pods have none
 #   (test_poc05_hardening_static.py). The adapter also reads KAFKA_SASL_PASSWORD_FILE.
-# - Its NetworkPolicy (below): ingress 8080, egress DNS and Kafka 9092 only.
+# - Its NetworkPolicy (agent-echo-events-network-policy.yaml): ingress 8080, egress DNS and
+#   Kafka 9092 only.
 # - No `agents.platform/role: chassis` label: LiteLLM and Valkey admit that label, and this pod
 #   calls neither, so it would be an edge with one side. Kafka admits this pod by name instead.
 #
@@ -14,7 +15,8 @@
 # reaches Kafka on 9092 like the chassis does, and the broker must refuse it by credential.
 #
 # Not in kustomization.yaml (a new pod there needs a row in the hardening table): `run.sh kafka`
-# applies it with the ConfigMap made from chassis/echo-events.yaml.
+# applies it as the platform deployer, with the ConfigMap made from chassis/echo-events.yaml, and
+# the NetworkPolicy file by path as the cluster admin (core review R5a-02).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -226,50 +228,3 @@ spec:
     - name: http
       port: 8080
       targetPort: 8080
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: agent-echo-events
-  namespace: poc05-agents
-  labels:
-    app.kubernetes.io/part-of: poc05
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: agent-echo-events
-  policyTypes: [Ingress, Egress]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: agent-platform-system
-          podSelector:
-            matchLabels:
-              agents.platform/role: gateway
-      ports:
-        - port: 8080
-          protocol: TCP
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
-          protocol: TCP
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: poc05-platform
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: kafka
-      ports:
-        - port: 9092
-          protocol: TCP

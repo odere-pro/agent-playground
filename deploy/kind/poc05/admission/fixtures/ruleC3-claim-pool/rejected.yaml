@@ -1,7 +1,7 @@
 # Claim rule C3, only the code-runner pool: the claim names another pool.
 # expect: rejected
 # rule: C3
-# message: claim rule C3: a SandboxClaim may claim only from the warm pool code-runner
+# message: claim rule C3: a SandboxClaim may claim only from its namespace's pools: code-runner in poc05-tools, a remote-<engine> pool in poc05-remote
 # differs: .spec.warmPoolRef.name
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxClaim

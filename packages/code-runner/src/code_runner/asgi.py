@@ -7,7 +7,10 @@
   byte of the body is read. The token comes from a file (a mounted Secret), never argv or env.
 - `BodyCap`: a declared `Content-Length` over the cap is 413 before the body is read; a body
   with no length is counted as it streams and refused at the cap. So at most the cap is held,
-  whatever the client sends. The tool's own byte check stays behind it.
+  whatever the client sends. A client that leaves mid-body (`http.disconnect`) gets nothing: the
+  partial body never reaches the app. The tool's own byte check stays behind it.
+- Scopes: `BearerAuth` passes `lifespan` through (no request in it) and closes a `websocket`
+  with 1008 before the app sees it; the servers speak HTTP only.
 
 Both answer with a fixed JSON error: never the request body, never the token.
 """
@@ -29,6 +32,7 @@ MIN_TOKEN_BYTES = 32  # suggested: seed.sh makes 64 hex characters
 OPEN_PATHS = frozenset({"/health"})  # probes carry no bearer
 BODY_TOO_LARGE = "body_too_large"
 UNAUTHORIZED = "unauthorized"
+WS_POLICY_VIOLATION = 1008  # RFC 6455; before accept, the server answers the handshake 403
 _TOKEN_SHAPE = re.compile(rb"[\x21-\x7e]+")  # one visible-ASCII word
 
 
@@ -68,20 +72,24 @@ class BodyCap:
         if declared is not None and declared > self.max_bytes:
             await _refuse(scope, receive, send, 413, BODY_TOO_LARGE)
             return
-        body = await self._read(receive)
+        try:
+            body = await self._read(receive)
+        except _ClientLeft:
+            return  # nobody to answer, and a partial body must not run as if whole
         if body is None:
             await _refuse(scope, receive, send, 413, BODY_TOO_LARGE)
             return
         await self.app(scope, _replay(body, receive), send)
 
     async def _read(self, receive: Receive) -> bytes | None:
-        """The whole body, or None once it passes the cap. A disconnect ends it early."""
+        """The whole body, or None once it passes the cap. Raises `_ClientLeft` on a disconnect
+        (or any other message) before the last chunk."""
         chunks: list[bytes] = []
         size = 0
         while True:
             message = await receive()
             if message["type"] != "http.request":
-                break
+                raise _ClientLeft
             chunk = message.get("body", b"")
             size += len(chunk)
             if size > self.max_bytes:
@@ -90,6 +98,10 @@ class BodyCap:
             if not message.get("more_body", False):
                 break
         return b"".join(chunks)
+
+
+class _ClientLeft(Exception):
+    """The client sent `http.disconnect` before the body ended."""
 
 
 def _content_length(scope: Scope) -> int | None:
@@ -126,7 +138,16 @@ class BearerAuth:
         self._token = token
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope["path"] in OPEN_PATHS or self._allowed(scope):
+        kind = scope["type"]
+        if kind == "lifespan":
+            await self.app(scope, receive, send)
+            return
+        if kind != "http":
+            # A websocket (or any scope but http) never reaches the app, bearer or not.
+            if kind == "websocket":
+                await send({"type": "websocket.close", "code": WS_POLICY_VIOLATION})
+            return
+        if scope["path"] in OPEN_PATHS or self._allowed(scope):
             await self.app(scope, receive, send)
             return
         await _refuse(scope, receive, send, 401, UNAUTHORIZED)

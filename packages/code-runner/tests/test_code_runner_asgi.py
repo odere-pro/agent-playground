@@ -348,3 +348,98 @@ def test_code_runner_inbound_token_flag_is_not_the_api_token_flag() -> None:
     assert args.inbound_token_file == "/run/t"
     assert args.token_file == dispatch.TOKEN_FILE
     assert cli.dispatch_parser().parse_args(_dispatch_args()).inbound_token_file is None
+
+
+# --- security review LOW: scopes other than http, and a disconnect mid-body ---------------------
+
+
+class _Recorder:
+    """An inner ASGI app that records each scope type it is called with and answers 200."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        self.calls.append(scope["type"])
+        if scope["type"] == "http":
+            await receive()
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"ok"})
+
+
+def _messages(*messages: dict[str, Any]) -> tuple[Any, list[dict[str, Any]]]:
+    """A receive that yields `messages` in order, and the list `send` appends to."""
+    queue = list(messages)
+    sent: list[dict[str, Any]] = []
+
+    async def receive() -> dict[str, Any]:
+        return queue.pop(0)
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    return receive, sent
+
+
+async def test_code_runner_bearer_passes_lifespan_through() -> None:
+    """The app's startup and shutdown still run behind the bearer: lifespan carries no request."""
+    inner = _Recorder()
+    receive, sent = _messages()
+
+    await asgi.BearerAuth(inner, TOKEN.encode())({"type": "lifespan"}, receive, sent.append)
+
+    assert inner.calls == ["lifespan"]
+
+
+@pytest.mark.parametrize("authorized", [False, True], ids=["no-bearer", "right-bearer"])
+async def test_code_runner_bearer_refuses_a_websocket_before_the_app(authorized: bool) -> None:
+    """Security review LOW: a websocket scope skipped the bearer check. It is closed (1008) and
+    never reaches the app, with or without the bearer: the servers speak HTTP only. The paired
+    control: the same bearer on an http scope reaches the app."""
+    inner = _Recorder()
+    headers = [(b"authorization", b"Bearer " + TOKEN.encode())] if authorized else []
+    ws = {"type": "websocket", "path": "/mcp", "headers": headers}
+    receive, sent = _messages({"type": "websocket.connect"})
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    await asgi.BearerAuth(inner, TOKEN.encode())(ws, receive, send)
+    http = {"type": "http", "path": "/mcp", "headers": headers, "method": "POST"}
+    http_receive, http_sent = _messages({"type": "http.request", "body": b"", "more_body": False})
+
+    async def http_send(message: dict[str, Any]) -> None:
+        http_sent.append(message)
+
+    await asgi.BearerAuth(inner, TOKEN.encode())(http, http_receive, http_send)
+
+    assert sent == [{"type": "websocket.close", "code": 1008}]
+    assert inner.calls == (["http"] if authorized else [])
+    assert http_sent[0]["status"] == (200 if authorized else 401)
+
+
+async def test_code_runner_body_cap_drops_a_request_whose_client_left_mid_body() -> None:
+    """Security review LOW: on `http.disconnect` the partial body went on as if complete. The
+    request is dropped: the app never runs and nothing is sent. The paired control: the same
+    first chunk followed by the last one reaches the app."""
+    inner = _Recorder()
+    chunk = {"type": "http.request", "body": b'{"jsonrpc": "2.0", ', "more_body": True}
+    scope = {"type": "http", "path": "/mcp", "headers": [], "method": "POST"}
+    receive, sent = _messages(chunk, {"type": "http.disconnect"})
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    await asgi.BodyCap(inner, CAP)(scope, receive, send)
+    whole_receive, whole_sent = _messages(
+        chunk, {"type": "http.request", "body": b'"id": 1}', "more_body": False}
+    )
+
+    async def whole_send(message: dict[str, Any]) -> None:
+        whole_sent.append(message)
+
+    await asgi.BodyCap(inner, CAP)(scope, whole_receive, whole_send)
+
+    assert sent == []
+    assert inner.calls == ["http"]
+    assert whole_sent[0]["status"] == 200

@@ -39,6 +39,7 @@ import yaml
 from poc_harness.admission_manifests import (
     ADMISSION,
     ADMISSION_OBJECTS,
+    CLAIM_POOLS,
     CLAIM_RULES,
     ENFORCE_LABEL,
     ENFORCED_NAMESPACES,
@@ -345,6 +346,35 @@ def test_the_claim_rule_names_the_one_pool(extension_policies: dict[str, Doc]) -
     text = " ".join(e for _, e in _expressions(extension_policies["sandbox-claim-rule"]))
     assert f"== '{POOL}'" in text
     assert "== 'Delete'" in text
+    for pool in CLAIM_POOLS["poc05-remote"]:
+        assert f"'{pool}'" in text
+
+
+@pytest.mark.parametrize(
+    ("namespace", "pool", "broken"),
+    [
+        ("poc05-tools", POOL, set()),
+        ("poc05-tools", "remote-claude-agent", {"C3"}),
+        ("poc05-remote", "remote-kagent-adk", set()),
+        ("poc05-remote", POOL, {"C3"}),
+        ("poc05-agents", POOL, {"C3"}),
+        ("poc05-agents", "remote-claude-agent", {"C3"}),
+    ],
+)
+def test_c3_admits_a_pool_only_in_its_own_namespace(
+    namespace: str, pool: str, broken: set[str]
+) -> None:
+    """Core review R6-11: poc05-tools claims only code-runner, poc05-remote only a remote-<engine>
+    pool, and no other namespace claims at all."""
+    claim = {
+        "kind": "SandboxClaim",
+        "metadata": {"namespace": namespace},
+        "spec": {
+            "warmPoolRef": {"name": pool},
+            "lifecycle": {"shutdownPolicy": "Delete", "shutdownTime": "2030-01-01T00:00:00Z"},
+        },
+    }
+    assert extension_broken_rules(claim) == broken
 
 
 def test_the_template_rule_refuses_an_absent_network_policy_management(
@@ -379,8 +409,12 @@ def test_the_kustomization_lists_the_cluster_objects_and_no_fixture() -> None:
     are sent by the kind test with --dry-run=server only."""
     doc = yaml.safe_load((ADMISSION / "kustomization.yaml").read_text())
     assert doc["kind"] == "Kustomization"
-    assert set(doc["resources"]) == ADMISSION_OBJECTS
+    assert set(doc["resources"]) == ADMISSION_OBJECTS | SERVICE_RULE_OBJECTS
     assert "namespace" not in doc, "the objects name their own namespaces"
+
+
+# The Service rule (service-policy.yaml), checked in test_poc05_service_rule_static.py.
+SERVICE_RULE_OBJECTS = {"service-policy.yaml", "service-binding.yaml"}
 
 
 # --- binding, params, namespaces --------------------------------------------------------------
@@ -433,7 +467,8 @@ def test_params_live_in_the_platform_namespace_and_list_our_repositories(params:
 # --- fixtures ---------------------------------------------------------------------------------
 
 
-ALL = all_fixtures() if FIXTURES.is_dir() else []
+# The Service rule S1 fixtures describe no pod; test_poc05_service_rule_static.py checks them.
+ALL = [f for f in all_fixtures() if f.doc["kind"] != "Service"] if FIXTURES.is_dir() else []
 REJECTED = [f for f in ALL if f.expect == "rejected"]
 # A SandboxClaim describes no pod; the trust rule does not match it.
 PODS = [f for f in ALL if f.doc["kind"] != "SandboxClaim"]
@@ -496,7 +531,11 @@ def test_c2_admits_the_empty_metadata_the_controller_writes() -> None:
     }
 
     def claim(meta: Doc) -> Doc:
-        return {"kind": "SandboxClaim", "spec": {**base, "additionalPodMetadata": meta}}
+        return {
+            "kind": "SandboxClaim",
+            "metadata": {"namespace": "poc05-tools"},
+            "spec": {**base, "additionalPodMetadata": meta},
+        }
 
     assert extension_broken_rules(claim({})) == set()
     assert extension_broken_rules(claim({"labels": {}, "annotations": {}})) == set()
@@ -662,7 +701,7 @@ def test_fixtures_meet_the_restricted_pod_security_standard(fixture: Fixture) ->
         ("T5", "3e94decf932b3cf9"),  # pragma: allowlist secret
         ("C1", "52fb84bdc2365936"),  # pragma: allowlist secret
         ("C2", "4355e9e17f8aec66"),  # pragma: allowlist secret
-        ("C3", "9ec23d4010e3a8a6"),  # pragma: allowlist secret
+        ("C3", "12b97207b9b9bc15"),  # pragma: allowlist secret
         ("C4", "7bf9639215cf6163"),  # pragma: allowlist secret
         ("C5", "8c86a51e84f6d3f6"),  # pragma: allowlist secret
     ],

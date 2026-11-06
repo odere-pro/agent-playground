@@ -72,7 +72,8 @@ LIB_SH = ROOT / "deploy/kind/lib.sh"
 FOLDERS = ("remote", "agents", "kagent")
 
 CHASSIS_REPO = "kind.local/agent-platform/chassis"
-POD_KINDS = {"Deployment", "Sandbox"}
+POD_KINDS = {"Deployment", "SandboxTemplate"}
+REMOTE_KIND = "SandboxTemplate"  # one fresh pod per run from a warm pool (core review R6-11)
 TRUST = "agents.platform/trust"
 LANE = "agents.platform/lane"
 NAME = "app.kubernetes.io/name"
@@ -148,7 +149,7 @@ class Pod:
 
     @property
     def template(self) -> Doc:
-        if self.obj.kind == "Sandbox":
+        if self.obj.kind == REMOTE_KIND:
             return dict(self.doc["spec"]["podTemplate"])
         return dict(self.doc["spec"]["template"])
 
@@ -249,7 +250,15 @@ def test_pod_containers_are_the_tables_when_the_pod_has_a_row(pod: Pod) -> None:
 def test_nothing_but_pods_services_policies_accounts_and_configs() -> None:
     """No role or binding, no SandboxTemplate or SandboxClaim (so the extension rules T1 to T5
     and C1 to C5 have nothing to read)."""
-    allowed = {"Deployment", "Sandbox", "Service", "ServiceAccount", "NetworkPolicy", "ConfigMap"}
+    allowed = {
+        "Deployment",
+        "SandboxTemplate",
+        "SandboxWarmPool",
+        "Service",
+        "ServiceAccount",
+        "NetworkPolicy",
+        "ConfigMap",
+    }
 
     assert {o.kind for o in ALL_OBJECTS} <= allowed
 
@@ -447,7 +456,7 @@ def test_a_remote_workload_gets_only_its_own_token_secret(pod: Pod, c: Doc) -> N
     assert refs == ({want} if want else set()), f"{pod.id}/{c['name']}: {sorted(refs)}"
 
 
-REMOTE_PODS = [p for p in PODS if p.obj.kind == "Sandbox"]
+REMOTE_PODS = [p for p in PODS if p.obj.kind == REMOTE_KIND]
 REMOTE_PIDS = [p.id for p in REMOTE_PODS]
 REMOTE_REFS = [
     (p, r)
@@ -595,7 +604,8 @@ def test_chassis_calls_its_remote_with_its_token_when_the_lane_is_remote(
     ref = env[auth.token_env]["valueFrom"]["secretKeyRef"]
     assert TOKEN_SECRET.fullmatch(ref["name"]), pod.id
     assert ref["name"] == f"remote-{remote}-token", pod.id
-    assert config.spec.engine.url == f"http://remote-{remote}.poc05-remote.svc.cluster.local:9000"
+    front_door = "http://remote-run-dispatch.poc05-platform.svc.cluster.local:9000"
+    assert config.spec.engine.url == f"{front_door}/{remote}"
     assert (config.spec.engine.protocol == "a2a") is (remote == "kagent-adk"), pod.id
 
 
@@ -650,12 +660,13 @@ TOKEN_REMOTES = [n for n in REMOTES if n != "remote-kagent-adk"]
 
 @pytest.mark.parametrize("name", REMOTES)
 def test_every_remote_is_a_sandbox_on_gvisor_with_tcp_probes(name: str) -> None:
-    """A remote is a Sandbox on gVisor, untrusted, in poc05-remote, with one workload container."""
+    """A remote is a SandboxTemplate (one fresh pod per run, core review R6-11) on gVisor,
+    untrusted, in poc05-remote, with one workload container."""
     pod = _pod(name)
 
     containers = [c["name"] for c in pod.containers()]
 
-    assert pod.doc["apiVersion"] == "agents.x-k8s.io/v1beta1"
+    assert pod.doc["apiVersion"] == "extensions.agents.x-k8s.io/v1beta1"
     assert pod.spec.get("runtimeClassName") == "gvisor"
     assert pod.doc["spec"]["service"] is False
     assert pod.labels[LANE] == "remote" and pod.labels[TRUST] == "untrusted"
@@ -866,11 +877,11 @@ def _mutations(pod: Pod) -> list[tuple[str, str, Doc]]:
 
     def template(doc: Doc) -> Doc:
         return dict(
-            doc["spec"]["podTemplate"] if doc["kind"] == "Sandbox" else doc["spec"]["template"]
+            doc["spec"]["podTemplate"] if doc["kind"] == REMOTE_KIND else doc["spec"]["template"]
         )
 
     base = pod.doc
-    if base["kind"] == "Sandbox":
+    if base["kind"] == REMOTE_KIND:
         d = copy.deepcopy(base)
         del template(d)["spec"]["runtimeClassName"]
         out.append(("5", "no gVisor", d))
@@ -927,7 +938,7 @@ def _namespace_labels() -> dict[str, dict[str, str]]:
 @pytest.mark.parametrize("pod", PODS, ids=PIDS)
 def test_namespaces_are_poc05s_with_the_right_shapes(pod: Pod) -> None:
     """The pod's namespace is PoC-5's, enforcing, with the pod shape its kind needs."""
-    want = "remote" if pod.obj.kind == "Sandbox" else "chassis"
+    want = "remote" if pod.obj.kind == REMOTE_KIND else "chassis"
 
     labels = _namespace_labels()[pod.namespace]
 
@@ -999,6 +1010,10 @@ def fixture_edges() -> tuple[set[Edge], set[Edge]]:
             for port in e["ports"]:
                 egress.add((side[e["from"]], side[e["to"]], port))
                 ingress.add((side[e["from"]], side[e["to"]], port))
+        door = _sel(EDGES["front_door"]["ns"], EDGES["front_door"]["labels"])
+        for port in EDGES["front_door_ports"]:
+            egress.add((side["chassis"], door, port))
+            ingress.add((door, side["remote"], port))
     return egress, ingress
 
 
@@ -1107,15 +1122,17 @@ def test_every_pod_has_a_policy_and_poc05_denies_the_rest() -> None:
 
 @pytest.mark.parametrize("pol", REMOTE_POLICIES, ids=_pol_id)
 def test_a_remote_has_no_dns_and_only_its_chassis_in_and_out(pol: Obj) -> None:
-    """A remote's egress is port 8091 only (no DNS), and its only peer is its chassis."""
+    """A remote's egress is port 8091 only (no DNS) to its chassis; its only ingress is the
+    front door on 9000 (core review R6-11)."""
     spec = pol.doc["spec"]
 
     ports = [p["port"] for rule in spec["egress"] for p in rule["ports"]]
-    peers = {
-        peer["podSelector"]["matchLabels"][NAME]
-        for rule in [*spec["egress"], *spec["ingress"]]
-        for peer in rule.get("to", rule.get("from", []))
+    sources = {
+        peer["podSelector"]["matchLabels"][NAME] for r in spec["ingress"] for peer in r["from"]
     }
+    peers = {peer["podSelector"]["matchLabels"][NAME] for r in spec["egress"] for peer in r["to"]}
+
+    assert sources == {"remote-run-dispatch"}, pol.name
 
     assert ports == [8091], pol.name
     assert len(peers) == 1 and next(iter(peers)).startswith("chassis-"), pol.name
@@ -1369,6 +1386,7 @@ def test_the_run_sh_text_selects_the_kind_files_by_path_and_names_missing_ones()
         "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_engines.py",
         "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_load.py",
         "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_remote_controls.py",
+        "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_run_isolation.py",
         "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_sidecar_controls.py",
     ]
     assert not missing, missing
@@ -1663,7 +1681,7 @@ def test_only_the_four_gvisor_pods_reference_the_profile(path: Path, doc: Doc) -
     assert "deploy/kind/poc06/" in path.as_posix(), where
     assert doc.get("kind") in POD_KINDS, where
     assert str(doc["metadata"]["name"]) in PROFILE_PODS, where
-    template = doc["spec"]["podTemplate"] if doc["kind"] == "Sandbox" else doc["spec"]["template"]
+    template = doc["spec"]["podTemplate"] if doc["kind"] == REMOTE_KIND else doc["spec"]["template"]
     assert template["spec"].get("runtimeClassName") == "gvisor", where
 
 

@@ -15,8 +15,9 @@ Checked keywords:
   `additionalProperties: false`.
 
 Other keywords (`items`, `$ref`, `format`, bounds) are not checked. A refusal is
-`ToolError("bad_arguments")` whose message names the tool, field names, and paths only, never an
-argument value, so a value never reaches an error, a log, or a span.
+`ToolError("bad_arguments")` whose message names the tool, the schema's field names, and paths
+only, never an argument value. An unexpected key is counted, never named: the model chooses it.
+So a value never reaches an error, a log, or a span.
 """
 
 from __future__ import annotations
@@ -64,11 +65,15 @@ def _object_problems(value: Mapping[str, Any], schema: Mapping[str, Any], path: 
         for key in schema.get("required") or ()
         if key not in value
     ]
+    unexpected = 0
     for key, item in value.items():
         if key in properties:
             problems.extend(_problems(item, properties[key], f"{path}.{_label(key)}"))
         elif schema.get("additionalProperties") is False:
-            problems.append(f"{path}: unexpected {_label(key)!r}")
+            unexpected += 1
+    if unexpected:
+        # A count, never the name: the model chooses an unexpected key, so it may carry a value.
+        problems.append(f"{path}: {unexpected} unexpected field{'s' if unexpected > 1 else ''}")
     return problems
 
 

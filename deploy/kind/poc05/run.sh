@@ -171,12 +171,14 @@ canary() {
   die "admission: canary $rejected was admitted; $policy is not enforcing"
 }
 
-# The trust rule (admission/policy.yaml header) and the extension rules for SandboxTemplate and
-# SandboxClaim (admission/extension-policy.yaml; they need the extension CRDs from `create`).
+# The trust rule (admission/policy.yaml header), the extension rules for SandboxTemplate and
+# SandboxClaim (admission/extension-policy.yaml; they need the extension CRDs from `create`), and
+# the Service rule S1 (admission/service-policy.yaml: ClusterIP only, no outside address).
 # Order matters: params first (the binding denies everything without them), each policy before
 # its binding (a policy that does not compile enforces nothing), and canaries last: the rule-1
 # fixture must be refused by agent-trust-rule and the rule-T1 fixture (no networkPolicyManagement)
-# by sandbox-template-rule, each next to its admitted twin, so a silent no-op policy fails here.
+# by sandbox-template-rule, and the rule-S1 NodePort fixture by agent-service-rule, each next to
+# its admitted twin, so a silent no-op policy fails here.
 # The fixtures are in poc05-agents and poc05-tools, where only the deployer may create (review F2).
 admission() {
   local dir=$HERE/admission fx=$HERE/admission/fixtures name
@@ -187,15 +189,20 @@ admission() {
   kctl -n poc05-tools delete rolebinding agent-submitter --ignore-not-found
   kctl apply -f "$dir/policy.yaml"
   kctl apply -f "$dir/extension-policy.yaml"
+  kctl apply -f "$dir/service-policy.yaml"
   for name in agent-trust-rule sandbox-template-rule sandbox-claim-rule; do
     type_checked "$name"
   done
+  type_checked agent-service-rule
   kctl apply -f "$dir/binding.yaml"
   kctl apply -f "$dir/extension-binding.yaml"
+  kctl apply -f "$dir/service-binding.yaml"
   canary agent-trust-rule "$fx/rule1-trust-label/rejected.yaml" \
     "$fx/rule1-trust-label/admitted.yaml"
   canary sandbox-template-rule "$fx/ruleT1-network-policy-unmanaged/rejected-absent.yaml" \
     "$fx/ruleT1-network-policy-unmanaged/admitted.yaml" "template rule T1"
+  canary agent-service-rule "$fx/ruleS1-service-type/rejected.yaml" \
+    "$fx/ruleS1-service-type/admitted.yaml" "service rule S1"
 }
 
 # The workload folders, applied as the platform deployer (admission/rbac.yaml), never as a tenant:
@@ -206,6 +213,7 @@ workloads() {
   apply_folder tools
   apply_folder remote
   apply_folder agents
+  apply_policies agent-platform-system "$HERE/agents/gateway-network-policy.yaml"
 }
 
 # --- bring-up: platform, seed, workloads, requests (plan section 8) ----------------------------
@@ -214,35 +222,50 @@ PLATFORM_NS=poc05-platform
 NAMESPACES=(poc05-platform poc05-tools poc05-remote poc05-agents agent-sandbox-system)
 SEED=$HERE/platform/seed.sh
 
-# docs_of KIND WANT: the `---`-separated YAML documents on stdin whose top-level kind is KIND
-# (WANT=1) or is not (WANT=0). It reads `kubectl kustomize` output or a plain manifest, where the
-# top-level `kind:` is at column 0. Core review R5a-02: NetworkPolicies go in as cluster admin.
-docs_of() {
-  awk -v kind="$1" -v want="$2" '
-    function flush() {
-      if (doc != "" && is == want + 0) { printf "%s%s", sep, doc; sep = "---\n" }
-      doc = ""; is = 0
-    }
-    /^---$/ { flush(); next }
-    { doc = doc $0 "\n"; if ($0 == "kind: " kind) is = 1 }
-    END { flush() }'
+# NetworkPolicies go in as cluster admin, everything else as the platform deployer (core review
+# R5a-02; review F2). Neither side splits rendered text: the admin applies a policy file by path,
+# and the deployer a kustomization that lists no policy file. Both are checked first with
+# `apply --dry-run=client -o name`, which lists every object kubectl would send.
+NETPOL_NAME='^networkpolicy\.networking\.k8s\.io/[a-z0-9.-]+$'
+
+# apply_policies NS FILE: FILE as cluster admin, after checking it holds only NetworkPolicies.
+# `-n NS` makes kubectl refuse an object that names another namespace, so a policy file can open
+# an edge in NS only.
+apply_policies() {
+  local ns=$1 file=$2 names
+  names=$(kctl apply --dry-run=client -o name -n "$ns" -f "$file") ||
+    die "policies: $file does not apply in $ns"
+  [[ -n $names ]] || die "policies: $file holds no object"
+  if grep -qvE "$NETPOL_NAME" <<<"$names"; then
+    die "policies: $file holds more than NetworkPolicies: $(grep -vE "$NETPOL_NAME" <<<"$names" |
+      tr '\n' ' ')"
+  fi
+  kctl apply -n "$ns" -f "$file"
 }
 
-# apply_split: the manifest on stdin, its NetworkPolicies as cluster admin (like
-# base/default-deny.yaml) and everything else as the platform deployer only (review F2). The
-# deployer has no NetworkPolicy rights (admission/rbac.yaml, core review R5a-02).
-apply_split() {
-  local all policies rest
-  all=$(cat)
-  policies=$(docs_of NetworkPolicy 1 <<<"$all")
-  rest=$(docs_of NetworkPolicy 0 <<<"$all")
-  [[ -z $policies ]] || kctl apply -f - <<<"$policies"
-  [[ -z $rest ]] || kctl apply -f - --as="$DEPLOYER" <<<"$rest"
+# apply_deployer: the manifest on stdin as the platform deployer, after checking it holds no
+# NetworkPolicy (the deployer has no NetworkPolicy rights anyway, admission/rbac.yaml).
+apply_deployer() {
+  local manifest names
+  manifest=$(cat)
+  names=$(kctl apply --dry-run=client -o name -f - <<<"$manifest") ||
+    die "deployer: the manifest does not render"
+  if grep -qE '^networkpolicy\.' <<<"$names"; then
+    die "deployer: the manifest holds a NetworkPolicy; it goes in by path, as cluster admin"
+  fi
+  kctl apply -f - --as="$DEPLOYER" <<<"$manifest"
 }
 
-# apply_folder FOLDER: remote/, tools/, agents/ rendered, then split by apply_split: the
-# deployer applies the workloads, the cluster admin the folder's network-policy.yaml.
-apply_folder() { kctl kustomize "$HERE/$1" | apply_split; }
+# apply_folder FOLDER: remote/, tools/, agents/. The cluster admin applies the folder's
+# network-policy.yaml in the kustomization's namespace, then the deployer the rendered folder,
+# whose kustomization does not list that file.
+apply_folder() {
+  local ns
+  ns=$(sed -nE 's/^namespace: *([a-z0-9-]+)$/\1/p' "$HERE/$1/kustomization.yaml")
+  [[ -n $ns ]] || die "apply: $1/kustomization.yaml names no namespace"
+  apply_policies "$ns" "$HERE/$1/network-policy.yaml"
+  kctl kustomize "$HERE/$1" | apply_deployer
+}
 
 # On a failed wait: the object's events and the last log lines, never a Secret.
 explain() {
@@ -425,7 +448,7 @@ apply_agents() {
   apply_folder agents
   # The gateway peer's egress to the chassis public port (in agent-platform-system; not in the
   # kustomization, which would move it into poc05-agents). Cluster admin, like every policy.
-  kctl apply -f "$HERE/agents/gateway-network-policy.yaml"
+  apply_policies agent-platform-system "$HERE/agents/gateway-network-policy.yaml"
   wait_rollout poc05-agents agent-echo
   wait_rollout poc05-agents chassis-echo-remote
 }
@@ -451,7 +474,8 @@ kafka() {
   kctl -n poc05-agents create configmap chassis-echo-events-config \
     --from-file=config.yaml="$HERE/agents/chassis/echo-events.yaml" --dry-run=client -o yaml |
     kctl apply -f - --as="$DEPLOYER"
-  apply_split <"$HERE/agents/agent-echo-events.yaml"
+  apply_policies poc05-agents "$HERE/agents/agent-echo-events-network-policy.yaml"
+  apply_deployer <"$HERE/agents/agent-echo-events.yaml"
   wait_rollout poc05-agents agent-echo-events
   # The verbs after this one (test, with-gateway) then fail, not skip, on a missing broker.
   export POC05_KAFKA=1

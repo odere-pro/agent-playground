@@ -9,9 +9,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from poc_harness.admission_manifests import (
+    CLAIM_POOLS,
     LANE,
     NAME,
-    POOL,
     ROLE,
     SHAPE_LABEL,
     TRUST,
@@ -261,7 +261,8 @@ def extension_broken_rules(doc: Doc) -> set[str]:
             "C2": not any(
                 (spec.get("additionalPodMetadata") or {}).get(k) for k in ("labels", "annotations")
             ),
-            "C3": spec.get("warmPoolRef", {}).get("name") == POOL,
+            "C3": spec.get("warmPoolRef", {}).get("name")
+            in CLAIM_POOLS.get(doc.get("metadata", {}).get("namespace", ""), frozenset()),
             "C4": lifecycle.get("shutdownPolicy") == "Delete" and "shutdownTime" in lifecycle,
             "C5": not spec.get("volumeClaimTemplates"),
         }

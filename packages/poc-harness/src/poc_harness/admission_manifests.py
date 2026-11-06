@@ -69,6 +69,13 @@ EXTENSION_FIELDS = {
     },
 }
 POOL = "code-runner"
+# Claim rule C3, per namespace (core review R6-11): the pools a claim may name in each namespace.
+CLAIM_POOLS = {
+    "poc05-tools": frozenset({POOL}),
+    "poc05-remote": frozenset(
+        {"remote-smolagents", "remote-claude-agent", "remote-typescript", "remote-kagent-adk"}
+    ),
+}
 ADMISSION_OBJECTS = {
     "params.yaml",
     "rbac.yaml",

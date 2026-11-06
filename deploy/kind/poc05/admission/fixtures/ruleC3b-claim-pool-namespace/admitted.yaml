@@ -1,0 +1,14 @@
+# Claim rule C3, per namespace: the admitted twin, a remote-<engine> pool in poc05-remote.
+# expect: admitted
+# rule: C3
+apiVersion: extensions.agents.x-k8s.io/v1beta1
+kind: SandboxClaim
+metadata:
+  name: admission-claim-c3b
+  namespace: poc05-remote
+spec:
+  warmPoolRef:
+    name: remote-claude-agent
+  lifecycle:
+    shutdownTime: '2030-01-01T00:00:00Z'
+    shutdownPolicy: Delete
