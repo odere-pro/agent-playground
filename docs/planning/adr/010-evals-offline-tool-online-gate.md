@@ -9,6 +9,8 @@
 
 Accepted, 2026-10-30, by the user. Proposed 2026-10-28. Its open questions stay open; a change to one of them needs a new ADR or an edit here.
 
+**Note, 2026-11-06.** [ADR-007](007-observability-otel-collector-langfuse.md) item 10 adds LangSmith as a trace backend. LangSmith datasets and experiments are then a candidate store for the golden cases and results next to Langfuse (item 2). They become a supported store under the same rule the trial used for the offline tool: the same verdicts on the 20 golden cases on two engines. DeepEval stays the CI pick. Nothing else in this ADR changes.
+
 The trial is done for the offline tool. Part of the gate's numbers waits:
 
 - **The offline tool is DeepEval 4.3.2.** Both tools ran on the same 20 golden cases on `echo-python` and `echo-langgraph` and gave the same verdict on every case ([eval tool trial](../../../pocs/poc-07-cross-cutting-decisions/notes/2026-10-28-eval-tool-trial.md)). CI: `poc07-evals` passed on commit `9d942ee`, [run 40730858164](https://github.com/odere-pro/agent-playground/actions/runs/40730858164) (DeepEval on the 20 golden cases, two engines).

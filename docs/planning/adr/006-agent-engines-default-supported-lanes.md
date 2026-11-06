@@ -9,6 +9,8 @@
 
 Accepted, 2026-10-30, by the user. Proposed 2026-10-09. Its open questions stay open; a change to one of them needs a new ADR or an edit here.
 
+**Amended on 2026-11-06, by the user: the default engine for new agents is LangGraph.** PydanticAI stays supported, in the same lanes. The reason is a product priority, not a new number: the [product definition](../../plans/2026-11-06-agent-container-product.md) puts LangChain, LangGraph, and LangSmith first. Decision 1 holds the amended text and what it changes in the code. The Revisit triggers now apply to LangGraph.
+
 Two parts of the evidence are not in yet:
 
 - **The hosted-model numbers.** The numbers in Context are offline: the fake model server, processes on localhost, no key. Real hosted tokens, latency, and time to first token come from the Mac run (`make poc06-mac`). The SLM numbers are in, from CI on CPU (PoC-6c, see [SLM (PoC-6c)](#slm-poc-6c)). They do not reopen the default. The side by side with the hosted model and the Mac latency are still open.
@@ -58,14 +60,21 @@ Options for the default engine:
 
 ## Decision
 
-1. **The default engine for new agents is PydanticAI** (suggested: `echo-pydanticai` is the template's engine). Reasons from the data: the smallest mapping to maintain (181 lines, 26% under plain Python); the lowest latency of the Python engines (lookup p50 109 ms); native OpenTelemetry and an OpenInference instrumentor; a Temporal extra that resolves; no vendor default to switch off. The margin over the OpenAI Agents SDK is small and offline. The default stands only if the hosted and SLM numbers agree (see Revisit).
+1. **The default engine for new agents is LangGraph** (amended 2026-11-06; `echo-langgraph` is the template's engine). From 2026-10-30 to 2026-11-06 the default was PydanticAI, for these reasons from the data: the smallest mapping to maintain (181 lines, 26% under plain Python); the lowest latency of the Python engines (lookup p50 109 ms); native OpenTelemetry and an OpenInference instrumentor; a Temporal extra that resolves; no vendor default to switch off. The margin over the OpenAI Agents SDK was small and offline.
+
+   The user moved the default to LangGraph on 2026-11-06 because the product puts the LangChain stack first. The data allows it: LangGraph is close on every number (D3). Mapping 224 lines, 8% under plain Python; lookup p50 138 ms in the sidecar lane, 29 ms behind PydanticAI; image 252 MB and 133 MB idle, within 3 MB of PydanticAI; the same prompt bytes as plain Python; only `stream_options` dropped by the proxy; 30 of 30 offline in every lane it is allowed in; 5 of 5 on every task on the SLM, with the lowest latency of the five engines there; 37 releases in a year, the fewest of the Python frameworks. Its two weaknesses are known and have a close:
+
+   - **The MCP client is a stand-in** until `langchain-mcp-adapters` imports against `mcp` 2. The stand-in stays, with a test that fails the day the adapter is ready, so the swap is not forgotten.
+   - **The instrumentor is under the LangChain name** (`openinference-instrumentation-langchain`). That it covers LangGraph spans is a doc claim. A test in the trace-join suite must show LangGraph's graph steps under the run span before the default ships in the template.
+
+   What changes in the code, owned by the product's phase C (not done at the time of this amendment): `packages/agentctl/src/agentctl/rules.py` `DEFAULT_FRAMEWORK`, `copier.yml` (`default` and `help`), the template's `docs/decisions.md` and `docs/how-to-add-business-logic.md`, `docs/guides/how-to-add-business-logic.md` (the default and the worked example), and the agentctl tests that pin the default. A `langchain` variant (`create_agent` on LangChain 1.x, which runs on LangGraph) joins the `StateGraph` variant in the template. The default stands only if the hosted numbers agree (see Revisit).
 2. **The supported engines, each with its lane:**
 
    | Engine | Lane | Note |
    | ------ | ---- | ---- |
    | Plain Python (baseline) | `sidecar` (also `inprocess`) | The reference. Every other engine is scored against it |
-   | PydanticAI | `sidecar` (also `inprocess`) | The default |
-   | LangGraph | `sidecar` (also `inprocess`) | Supported. Its MCP client is a stand-in until `langchain-mcp-adapters` imports against `mcp` 2 |
+   | PydanticAI | `sidecar` (also `inprocess`) | Supported. The default until 2026-11-06 |
+   | LangGraph | `sidecar` (also `inprocess`) | The default since 2026-11-06. Its MCP client is a stand-in until `langchain-mcp-adapters` imports against `mcp` 2 |
    | OpenAI Agents SDK | `sidecar` (also `inprocess`) | Supported. The workload uses the chat-completions model and turns the SDK's own tracing off |
    | TypeScript agent | `sidecar` | Proves the contract is language-neutral. It serves A2A itself and has no `inprocess` lane |
    | smolagents | `remote` | Untrusted: the model's Python runs in the workload process. Needs a model that follows the `<code>` format |
@@ -97,6 +106,7 @@ Options for the default engine:
 
 - Three of the four Python frameworks release often (192, 109, and 87 releases in a year for PydanticAI, the Claude Agent SDK, and the OpenAI Agents SDK). The guards are a pinned lock file and the offline suites.
 - The default is chosen on offline numbers. If the hosted numbers disagree, the choice moves.
+- Since 2026-11-06 the default is also a product choice. The numbers between LangGraph and PydanticAI are close (43 mapping lines, 29 ms on the lookup p50), so the data does not settle it; the LangChain priority does. The trade is recorded in Decision 1.
 - `kagent-adk` hides its tool calls, keeps its own state, and checks no inbound token. The control is NetworkPolicy by label. The chassis count of model tokens at the proxy is the reliable number for it.
 - The `remote` engines cost real tokens and time. smolagents and the Claude Agent SDK stay `remote`, so they pay the gVisor and network cost on top.
 
@@ -129,7 +139,7 @@ Sidecar lane. Pass is runs passed of runs made. Latency is per run, on CPU. Toke
 | Engine | Simplifier pass | Lookup pass | Tool-call success | Simplifier p50 / p95 ms | Lookup p50 / p95 ms | Lookup tokens in / out |
 | ------ | --------------- | ----------- | ----------------- | ----------------------- | ------------------- | ---------------------- |
 | Plain Python (baseline) | 5/5 | 5/5 | 5/5 | 1955.6 / 2527.5 | 9544.7 / 9854.5 | 675 / 89 |
-| PydanticAI (default) | 5/5 | 5/5 | 5/5 | 1916.7 / 2484.1 | 9514.2 / 9813.1 | 669 / 89 |
+| PydanticAI (the default at the time of the run) | 5/5 | 5/5 | 5/5 | 1916.7 / 2484.1 | 9514.2 / 9813.1 | 669 / 89 |
 | LangGraph | 5/5 | 5/5 | 5/5 | 1869.2 / 2366.9 | 9393.2 / 9594.8 | 675 / 89 |
 | OpenAI Agents SDK | 5/5 | 5/5 | 5/5 | 1899.2 / 2402.0 | 9444.8 / 9760.2 | 675 / 89 |
 | TypeScript | 5/5 | 5/5 | 5/5 | 1909.6 / 2506.1 | 9325.0 / 9608.8 | 669 / 89 |
@@ -191,7 +201,8 @@ On a 4-core runner, llama-server and the agent pods share the same CPUs. So the 
 
 Reopen the default, or an engine's place in the set, on any of these:
 
-- **The Mac run (`make poc06-mac`).** If the real prompt tokens per call for PydanticAI exceed the OpenAI Agents SDK's by more than 10% (suggested), or if either fails a task on the hosted model that plain Python passes.
+- **The Mac run (`make poc06-mac`).** If the real prompt tokens per call for the default engine exceed the OpenAI Agents SDK's by more than 10% (suggested), or if either fails a task on the hosted model that plain Python passes. Before 2026-11-06 this read PydanticAI; it now reads LangGraph.
+- **The LangGraph default (amended 2026-11-06).** If `langchain-mcp-adapters` still does not import against `mcp` 2 when the product's phase C closes (suggested: the trigger date), or if the trace-join test cannot show LangGraph's graph steps under the run span through the LangChain instrumentor, reopen the default. PydanticAI is the fallback, with no new evaluation.
 - **PoC-6c, the SLM.** If PydanticAI fails the lookup task on Qwen3-1.7B where another engine passes, because `tool_choice` is dropped by the llama.cpp path or the model needs a forced tool call, the default is reopened. The same run shows whether smolagents' `<code>` format and the Claude Agent SDK's 15k-token tool list work on a small context. Checked 2026-10-28 in CI: not triggered (see [SLM (PoC-6c)](#slm-poc-6c)). The untrusted engines' part is still open.
 - **The `kagent-adk` result on kind.** Run 38010290978 of `poc06-kind.yml` passed; memory is not measured yet. If `kagent-adk` fails the lane contract's observable subset on kind, or does not fit the memory budget, drop it from the supported set. The remote solution slot is then open again, and the owner is asked before another is picked.
 - **A second plain agent.** When one passes, freeze the plain-A2A mode.
