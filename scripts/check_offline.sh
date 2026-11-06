@@ -13,6 +13,9 @@ done
 for v in $(env | cut -d= -f1 | grep -E '^GIT_' || true); do
   unset "$v"
 done
+# Some libraries call python-dotenv's `load_dotenv()` on import (smolagents does), which walks up
+# from the package to any `.env` above the repo and loads real keys after the strip above.
+export PYTHON_DOTENV_DISABLED=1
 # --record-mode=none: model cassettes replay only, whatever `addopts` says. A later
 # `--record-mode` in "$@" wins, which is how `make record-cassettes` re-records (offline too).
 # No --block-network: it also blocks the Unix sockets the sidecar lane uses.

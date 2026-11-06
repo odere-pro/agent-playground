@@ -40,7 +40,7 @@ Problem: the test asserts on wall-clock timing and failed once under load.
 Why it matters: a flaky test in `make check` teaches people to rerun until green.
 Fix: drive the lease with a fake clock, or widen the margin. Keeps behavior: yes.
 Spec: "given a dead owner's claim, when a retry arrives, then it runs once, after the lease ends, on any machine load".
-Status: open
+Status: fixed (#57)
 Evidence: it passed alone afterwards (`3 passed in 9.62s`).
 Same pattern: `test_timeout_budget_per_engine.py::test_past_timeout_ms_the_run_ends_with_a2a_timeout_and_the_task_is_cancelled[echo_langgraph]` failed in the pre-commit `make quick` run under load (`1 failed, 4113 passed`) and passed alone (`7 passed, 1 xfailed in 9.63s`).
 
@@ -49,11 +49,11 @@ Problem: the `hadolint-py` wheel for macOS failed to unpack twice ("deflate deco
 Why it matters: `make setup` fails on this Mac, so every `uv run` fails until the user skips the package.
 Fix: find out whether the cause is the wheel or the local network, then pin a working version or install hadolint another way. Keeps behavior: yes.
 Spec: "given a clean clone on macOS, when `make setup` runs, then it exits 0".
-Status: open
+Status: fixed (#33)
 
 ### B-3 [MEDIUM] [shared] Makefile:45
 Problem: `make test-poc POC=06` uses the glob `pocs/poc-$(POC)-*/tests`, which matches none of `poc-06a`, `poc-06b`, `poc-06c`.
 Why it matters: the documented PoC gate collects nothing for PoC-6 and exits 4.
 Fix: change the glob to `pocs/poc-$(POC)*/tests`. Keeps behavior: yes.
 Spec: "given POC=06, when `make test-poc` runs, then it runs the 6a, 6b, and 6c tests".
-Status: open
+Status: fixed (#33)

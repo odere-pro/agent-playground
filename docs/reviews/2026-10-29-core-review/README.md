@@ -7,5 +7,6 @@ The working folder of the core review. Plan: [2026-10-29-core-review.md](../../p
 - [story.md](story.md): one paragraph per PoC, so the story reads in order.
 - [baseline.md](baseline.md): the gates before the review starts.
 - `findings-RN-<area>.md`: one file per review session, R0 to R7.
-- `fix-plan.md`: the fix sessions, written by R8.
+- [fix-plan.md](fix-plan.md): the fix sessions, written by R8.
 - [proposals.md](proposals.md): findings that need a behavior change. The user decides.
+- [improvements.md](improvements.md): what is left, in priority order, after the fixes.
