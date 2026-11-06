@@ -8,6 +8,9 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: agent-openai-agents
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/part-of: poc06
 spec:
   podSelector:
     matchLabels:
@@ -63,6 +66,9 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: agent-typescript
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/part-of: poc06
 spec:
   podSelector:
     matchLabels:
@@ -118,6 +124,9 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: chassis-smolagents-remote
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/part-of: poc06
 spec:
   podSelector:
     matchLabels:
@@ -185,7 +194,7 @@ spec:
             matchLabels:
               app.kubernetes.io/name: remote-run-dispatch
       ports:
-        - port: 9000
+        - port: 9002
           protocol: TCP
 ---
 # 8091 only from its own remote's pod label.
@@ -193,6 +202,9 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: chassis-claude-agent-remote
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/part-of: poc06
 spec:
   podSelector:
     matchLabels:
@@ -260,7 +272,7 @@ spec:
             matchLabels:
               app.kubernetes.io/name: remote-run-dispatch
       ports:
-        - port: 9000
+        - port: 9001
           protocol: TCP
 ---
 # 8091 only from its own remote's pod label.
@@ -268,6 +280,9 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: chassis-typescript-remote
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/part-of: poc06
 spec:
   podSelector:
     matchLabels:
@@ -335,5 +350,5 @@ spec:
             matchLabels:
               app.kubernetes.io/name: remote-run-dispatch
       ports:
-        - port: 9000
+        - port: 9003
           protocol: TCP

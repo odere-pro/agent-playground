@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import zlib
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -25,6 +26,7 @@ from chassis.adapters.mcp.gateway import (
     URL_VAR,
     McpGatewayTools,
     _failure,
+    serialized_size,
 )
 from chassis.fakes import tool as chassis_fake_tools
 from chassis.ports.tool import ToolError
@@ -403,6 +405,8 @@ async def test_a_tool_error_the_tool_reports_is_a_result_not_an_exception() -> N
 
 
 FIFTY_MB = 50 * 1024 * 1024
+MAX_DECODE_CHUNK = 64 * 1024
+"""The gateway's own decoder hands data on in pieces of at most 64 KiB (`_DECODE_PIECE`)."""
 
 
 async def test_a_50_mb_result_is_tool_unavailable_and_never_read_whole() -> None:
@@ -443,18 +447,186 @@ async def test_a_result_over_the_cap_inside_the_wire_limit_is_tool_unavailable()
     assert "yyyy" not in info.value.message
 
 
-async def test_a_result_at_the_cap_is_relayed() -> None:
-    mcp = FastMCP("fits")
+def _text_server(name: str, size: int) -> FastMCP:
+    """A server with one read-only tool `name` that returns `size` bytes of text, as text only."""
+    mcp = FastMCP(name)
 
-    @mcp.tool(annotations={"readOnlyHint": True}, output_schema=None)
-    def fits() -> str:
-        """Returns a text well under the cap."""
-        return "z" * (MAX_RESULT_BYTES // 2)
+    @mcp.tool(name=name, annotations={"readOnlyHint": True}, output_schema=None)
+    def text() -> str:
+        """Returns `size` bytes of text."""
+        return "z" * size
 
-    gate = Gateway(mcp.http_app(path="/mcp/"))
+    return mcp
+
+
+async def test_a_result_of_exactly_the_cap_is_relayed() -> None:
+    gate = Gateway(_text_server("fits", MAX_RESULT_BYTES).http_app(path="/mcp/"))
     async for port in _open(gate):
         result = await port.call("fits", {})
-    assert result.content == "z" * (MAX_RESULT_BYTES // 2)
+    assert serialized_size(result.content) == MAX_RESULT_BYTES
+    assert result.content == "z" * MAX_RESULT_BYTES
+
+
+async def test_a_result_one_byte_over_the_cap_is_refused() -> None:
+    gate = Gateway(_text_server("over", MAX_RESULT_BYTES + 1).http_app(path="/mcp/"))
+    async for port in _open(gate):
+        with pytest.raises(ToolError) as info:
+            await port.call("over", {})
+    assert info.value.code == "tool_unavailable"
+    assert info.value.retryable is False
+    assert "zzzz" not in info.value.message
+
+
+class _Gzipped(httpx2.AsyncByteStream):
+    """Gzips the body piece by piece and counts the plain bytes the client made it compress,
+    which bounds the decoded bytes the client can have read."""
+
+    def __init__(self, inner: Any, gate: Gateway) -> None:
+        self.inner = inner
+        self.gate = gate
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        packer = zlib.compressobj(wbits=zlib.MAX_WBITS | 16)
+        plain = 0
+        async for chunk in self.inner:
+            plain += len(chunk)
+            self.gate.most_read = max(self.gate.most_read, plain)
+            yield packer.compress(chunk) + packer.flush(zlib.Z_SYNC_FLUSH)
+        yield packer.flush()
+
+    async def aclose(self) -> None:
+        await self.inner.aclose()
+
+
+class _GzipTransport(_Transport):
+    """A gateway that gzips every answer, whatever `Accept-Encoding` the client sent."""
+
+    encoding = "gzip"
+
+    def __init__(self, gate: Gateway) -> None:
+        super().__init__(gate)
+        self.accept_encodings: list[str | None] = []
+
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+        self.accept_encodings.append(request.headers.get("accept-encoding"))
+        response = await super().handle_async_request(request)
+        headers = [(k, v) for k, v in response.headers.items() if k.lower() != "content-length"]
+        return httpx2.Response(
+            response.status_code,
+            headers=[*headers, ("content-encoding", self.encoding)],
+            stream=_Gzipped(response.stream, self.gate),
+            request=request,
+        )
+
+
+async def test_a_gzip_answer_over_the_cap_is_refused_on_its_decoded_size() -> None:
+    """R5a-24: the cap counts decoded bytes, so a 50 MB answer that gzips to a few KiB is still
+    cut off near `MAX_RESPONSE_BYTES`; and the client asks for no encoding at all."""
+    mcp = FastMCP("zipped")
+
+    @mcp.tool(annotations={"readOnlyHint": True})
+    def huge() -> str:
+        """Returns 50 MB."""
+        return "x" * FIFTY_MB
+
+    gate = Gateway(mcp.http_app(path="/mcp/"))
+    transport = _GzipTransport(gate)
+
+    def factory(**kwargs: Any) -> httpx2.AsyncClient:
+        gate.client_kwargs.append(kwargs)
+        return httpx2.AsyncClient(transport=transport, **kwargs)
+
+    gate.factory = factory  # type: ignore[method-assign]
+    async for port in _open(gate):
+        with pytest.raises(ToolError) as info:
+            await port.call("huge", {})
+    assert info.value.code == "tool_unavailable"
+    assert info.value.retryable is False
+    assert "xxxx" not in info.value.message
+    assert transport.accept_encodings
+    assert set(transport.accept_encodings) == {"identity"}
+    assert gate.most_read <= MAX_RESPONSE_BYTES + _Counted.PIECE + MAX_DECODE_CHUNK
+
+
+class _Trailing(_Gzipped):
+    """A gzip body followed by 2 MiB of bytes after the end of the compressed stream."""
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        async for piece in super().__aiter__():
+            yield piece
+        for _ in range(32):
+            yield b"\0" * (64 * 1024)
+
+
+class _TrailingTransport(_GzipTransport):
+    """A gateway that sends a tiny gzip answer and then raw bytes zlib would keep, uncounted."""
+
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+        response = await super().handle_async_request(request)
+        inner = response.stream
+        assert isinstance(inner, _Gzipped)
+        return httpx2.Response(
+            response.status_code,
+            headers=response.headers,
+            stream=_Trailing(inner.inner, self.gate),
+            request=request,
+        )
+
+
+async def test_bytes_after_the_end_of_a_gzip_body_are_refused() -> None:
+    """R5a-24 (security review): bytes after the end of the gzip stream would sit in zlib's
+    `unused_data`, never decoded and never counted; the adapter refuses them instead."""
+    mcp = FastMCP("trailing")
+
+    @mcp.tool(annotations={"readOnlyHint": True})
+    def small() -> str:
+        """Returns two bytes."""
+        return "ok"
+
+    gate = Gateway(mcp.http_app(path="/mcp/"))
+    transport = _TrailingTransport(gate)
+
+    def factory(**kwargs: Any) -> httpx2.AsyncClient:
+        gate.client_kwargs.append(kwargs)
+        return httpx2.AsyncClient(transport=transport, **kwargs)
+
+    gate.factory = factory  # type: ignore[method-assign]
+    async for port in _open(gate):
+        with pytest.raises(ToolError) as info:
+            await port.call("small", {})
+    assert info.value.code == "tool_unavailable"
+    assert info.value.retryable is False
+
+
+class _BrotliLabelTransport(_GzipTransport):
+    """A gateway that labels its answers `br`, an encoding the adapter does not decode."""
+
+    encoding = "br"
+
+
+async def test_an_answer_in_an_encoding_the_adapter_cannot_bound_is_refused() -> None:
+    """R5a-24: the decoded size of a `br` body cannot be bounded with the stdlib, so the adapter
+    fails closed with the over-cap error instead of letting httpx decode it whole."""
+    mcp = FastMCP("brotli")
+
+    @mcp.tool(annotations={"readOnlyHint": True})
+    def small() -> str:
+        """Returns two bytes."""
+        return "ok"
+
+    gate = Gateway(mcp.http_app(path="/mcp/"))
+    transport = _BrotliLabelTransport(gate)
+
+    def factory(**kwargs: Any) -> httpx2.AsyncClient:
+        gate.client_kwargs.append(kwargs)
+        return httpx2.AsyncClient(transport=transport, **kwargs)
+
+    gate.factory = factory  # type: ignore[method-assign]
+    async for port in _open(gate):
+        with pytest.raises(ToolError) as info:
+            await port.call("small", {})
+    assert info.value.code == "tool_unavailable"
+    assert info.value.retryable is False
 
 
 async def test_enum_and_nested_arguments_are_refused_before_any_request() -> None:

@@ -153,7 +153,10 @@ flowchart TD
     r7a{"Rule 7a: shape matches the namespace label agents.platform/pod-shape?"}
     r7b{"Rule 7b: role chassis only with the chassis image?"}
     r7c{"Rule 7c: a remote takes only its own token, app name plus -token?"}
-    r7d{"Rule 7d: tool pod on gvisor with no SA token?"}
+    r7d{"Rule 7d: tool pod on gvisor with no SA token, automounted or projected?"}
+    r7e{"Rule 7e: chassis pod sets automount false, and only the chassis mounts a projected token?"}
+    r7f{"Rule 7f: sidecar pod shares no process namespace, and the workload uid is not the chassis uid?"}
+    r7g{"Rule 7g: no ephemeral container targets the chassis?"}
     r8{"Rule 8: outside remote, imagePullPolicy Never, or a sha256 digest?"}
     ok["Admitted"]
     m0["Rejected, rule 0: the params must set registryPrefix, trustedRepositories, and imageSource"]
@@ -168,7 +171,10 @@ flowchart TD
     m7a["Rejected, rule 7a: the pod shape must match its namespace, with shape and label named"]
     m7b["Rejected, rule 7b: only a chassis pod may carry agents.platform/role chassis"]
     m7c["Rejected, rule 7c: a remote pod may take only its own token"]
-    m7d["Rejected, rule 7d: a tool pod must set gvisor and automountServiceAccountToken false"]
+    m7d["Rejected, rule 7d: a tool pod must set gvisor and mount no service account token"]
+    m7e["Rejected, rule 7e: a chassis pod must set automountServiceAccountToken false; only the chassis mounts a projected token"]
+    m7f["Rejected, rule 7f: a sidecar pod may not share its process namespace, and every other container sets a uid that is not the chassis uid"]
+    m7g["Rejected, rule 7g: an ephemeral container may not target the chassis container"]
     m8["Rejected, rule 8: every image must come from the cluster image store"]
 
     cfg --> cloud
@@ -202,7 +208,13 @@ flowchart TD
     r7c -- no --> m7c
     r7c -- yes --> r7d
     r7d -- no --> m7d
-    r7d -- yes --> r8
+    r7d -- yes --> r7e
+    r7e -- no --> m7e
+    r7e -- yes --> r7f
+    r7f -- no --> m7f
+    r7f -- yes --> r7g
+    r7g -- no --> m7g
+    r7g -- yes --> r8
     r8 -- no --> m8
     r8 -- yes --> ok
 ```
@@ -210,23 +222,27 @@ flowchart TD
 - **The two checks are independent.** A config that passes the chassis still needs an admitted pod, and the reverse. The chassis's check stops a wrong config; admission stops a wrong pod, whoever wrote it.
 - **The trust label is one-way.** `untrusted` is always believed. `trusted` counts only when `trustedRepositories` agrees (rule 4). The probe image `kind.local/agent-platform/hostile` is left off that list on purpose.
 - **Rules 3 and 5 are stricter than the plan** (contract v4, "Rules 3 and 5 are stricter than the plan"). Rule 3 applies outside the remote lane, not only in `sidecar`, and covers ephemeral containers. Rule 5 refuses a projected service account token, and every Secret reference but `remote-<name>-token`.
-- **Who may change it.** The submitter and the deployer cannot edit the params; only `agents.platform:platform-admins` may (`admission/rbac.yaml`).
-- **Templates and claims.** `agent-trust-rule` also checks a `SandboxTemplate`'s pod. A second set of rules is in `admission/extension-policy.yaml`. Rules T1 to T5 hold templates to `Unmanaged` network policy, no env injection, no volume claims, and no `networkPolicy` of their own. Rules C1 to C5 hold claims to the `code-runner` pool, `shutdownPolicy: Delete` with a `shutdownTime`, and no env, pod metadata, or volume claims.
+- **Rules 7e to 7g keep the credentials in the chassis** (hard requirement 1). 7e: no pod-wide token; only the chassis container may mount a projected one. 7f: the workload cannot read the chassis's `/proc/<pid>/environ`, because the pod shares no process namespace and the uids differ. 7g: `kubectl debug --target chassis` is refused. 7g has no fixture file, because a pod may not carry ephemeral containers at create; the kind test patches `pods/ephemeralcontainers` on `agent-echo`.
+- **Services.** A second policy, `agent-service-rule` (`admission/service-policy.yaml`), holds rule S1: every Service is type ClusterIP and sets no `externalIPs`, `loadBalancerIP`, or `externalName`. The deployer may write Services, and a NodePort or LoadBalancer Service would let the node reach 8080 past the gateway-only ingress.
+- **Who may change it.** The submitter and the deployer cannot edit the params; only `agents.platform:platform-admins` may (`admission/rbac.yaml`). The deployer has no NetworkPolicy rights either. The cluster admin applies each policy file by path, through `deploy/kind/policies.sh`, and the deployer applies the rest.
+- **Templates and claims.** `agent-trust-rule` also checks a `SandboxTemplate`'s pod. A second set of rules is in `admission/extension-policy.yaml`. Rules T1 to T5 hold templates to `Unmanaged` network policy, no env injection, no volume claims, and no `networkPolicy` of their own. Rules C1 to C5 hold claims to their own namespace's pools (C3: `code-runner` in `poc05-tools`, and only the PoC-6 `remote-<engine>` pools in `poc05-remote`), `shutdownPolicy: Delete` with a `shutdownTime`, and no env, pod metadata, or volume claims.
 - **Evidence.** `test_poc05_trust_config.py` covers the config rule. `test_poc05_admission_static.py` checks a Python model of the CEL, with a rejected fixture and an admitted twin per rule (`admission/fixtures/`). On kind, `test_poc05_kind_admission.py` runs the CEL on the API server: 51 passed, each rejected fixture refused with its rule's message and its twin admitted ([sidecar suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md)). The header of `policy.yaml` lists what only the cluster can prove.
 
 ## 4. The NetworkPolicy map
 
-The edges below are `pocs/poc-05-sandboxed/tests/fixtures/netpol_edges.yaml`. `test_poc05_netpol_static.py` computes the edges from the policies under `deploy/kind/poc05/` and requires them to equal that file, both ways. The fixture lists 19 egress and 15 ingress edges, and one `ipBlock`. The edges of the Kafka pass (`agent-echo-events` and `kafka`) are in the fixture but not drawn. Inside the PoC-5 namespaces, every egress edge has its matching ingress edge, so each line below is one allowed connection:
+The edges below are `pocs/poc-05-sandboxed/tests/fixtures/netpol_edges.yaml`. `test_poc05_netpol_static.py` computes the edges from the policies under `deploy/kind/poc05/` and requires them to equal that file, both ways. The fixture lists 20 egress and 15 ingress edges, and one `ipBlock`. The edges of the Kafka pass (`agent-echo-events` and `kafka`) are in the fixture but not drawn. Every egress edge into a PoC-5 namespace has its matching ingress edge, so each line below is one allowed connection:
 
 - **Solid line:** allowed, with its ports.
 - **Egress only:** kube-dns is in `kube-system`, which has no PoC-5 default deny.
-- **Ingress only:** 8080 on the two chassis pods, from any source (the one rule with ports and no `from`).
+- **The gateway peer:** 8080 on every chassis pod takes only pods in `agent-platform-system` labeled `agents.platform/role: gateway` (`suggested:`; `agents/gateway-network-policy.yaml` holds the peer's egress). No rule is peerless. No manifest defines the gateway pod; on kind the tests' gateway caller is one.
 - **LiteLLM and Valkey ingress** select `agents.platform/role: chassis` in `poc05-agents`. Both agent pods carry that label, and admission rule 7b keeps it on chassis pods only.
-- **Dashed line:** a named destination with no allow rule. One rule under `deploy/kind/poc05/` uses an `ipBlock`: the dispatcher's egress to the API server endpoint, a `/32` on 6443 (a recorded B4 exception). No other pod can reach the metadata service, the API, or a node. The cluster-wide `AdminNetworkPolicy` that would name them in one object is not installed: the API is absent on this kind. The static no-`ipBlock` test is the control (`base/default-deny.yaml`).
+- **Dashed line:** a named destination with no allow rule. One rule under `deploy/kind/poc05/` uses an `ipBlock`: the dispatcher's egress to the API server endpoint, a `/32` on 6443 (a recorded B4 exception). PoC-6 adds a second on the same cluster, for its front door `remote-run-dispatch` ([PoC-6 guide](poc-06-how-it-works.md), section 6). Both are filled by `run.sh` from one sentinel. No other pod can reach the metadata service, the API, or a node. The cluster-wide `AdminNetworkPolicy` that would name them in one object is not installed: the API is absent on this kind. The static no-`ipBlock` test is the control (`base/default-deny.yaml`).
 
 ```mermaid
 flowchart LR
-    anySrc["Any source: in-cluster client"]
+    subgraph sys["agent-platform-system"]
+        gateway["gateway peer, role gateway"]
+    end
     dns["kube-dns, kube-system"]
     subgraph agents["poc05-agents"]
         agentEcho["agent-echo: chassis and echo-python"]
@@ -255,8 +271,8 @@ flowchart LR
     end
     deny["DENY: no allow rule, and the one ipBlock is the dispatcher's"]
 
-    anySrc -->|"TCP 8080"| agentEcho
-    anySrc -->|"TCP 8080"| chassisRemote
+    gateway -->|"TCP 8080"| agentEcho
+    gateway -->|"TCP 8080"| chassisRemote
     agentEcho -->|"UDP and TCP 53"| dns
     agentEcho -->|"TCP 4000"| litellm
     agentEcho -->|"TCP 6379"| valkey
@@ -391,7 +407,7 @@ Every Secret is made at run time by `deploy/kind/poc05/platform/seed.sh`, run as
 
 The probe workload's keys are not in the map: T10 is a recorded exception, work in progress, owner the user ([the T10 note](../../pocs/poc-05-sandboxed/notes/2026-10-09-t10-probe-exception.md)).
 
-The `agent-echo` workload container, the code-runner pods, the dispatcher, the fake model server, and the fake MCP server hold no Secret. One pod mounts a service account token: `code-runner-dispatch`, a projected token whose rights are `create`, `get`, and `delete` on `sandboxclaims` in `poc05-tools`. Every other pod sets `automountServiceAccountToken: false`; rules 5 and 7d enforce it for remote and tool pods.
+The `agent-echo` workload container, the code-runner pods, the dispatcher, the fake model server, and the fake MCP server hold no Secret. One pod mounts a service account token: `code-runner-dispatch`, a projected token whose rights are `create`, `get`, and `delete` on `sandboxclaims` in `poc05-tools`. Every other pod sets `automountServiceAccountToken: false`; rules 5, 7d, and 7e enforce it for remote, tool, and chassis pods.
 
 **Who can read a Secret.**
 
@@ -475,7 +491,7 @@ The checks per threat id, each with its paired allowed control, are in [the plan
 | ------- | ------ | -------------- | -------- |
 | `spec.trust` at config load | An `untrusted` config outside the `remote` lane, or a `cloud` config without `spec.trust`, never starts | That the pod is shaped the way the config says | Offline: `test_poc05_trust_config.py` |
 | Admission, rules 0 to 8 | A pod or template that breaks a rule is refused at apply time, with the rule's message | That an image is what its name says (no signatures until H-10); that `trustedRepositories` is right (it is hand-kept) | Offline: the Python model of the CEL, `test_poc05_admission_static.py`. Kind: `test_poc05_kind_admission.py`, 51 passed ([sidecar suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md)) |
-| NetworkPolicy, default deny, one `ipBlock` | The manifests allow exactly the edges in `netpol_edges.yaml`. No rule can allow the metadata service or a node, and only the dispatcher reaches the API endpoint | That kindnet drops the packets; it does not log a drop. In the sidecar lane the workload rides the chassis's edges | Offline: `test_poc05_netpol_static.py`. Kind: H03, H04 ([sidecar suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md)); H18, H19, H20, H30 ([remote suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-remote-suite.md)); H01 against a listener at 169.254.169.254 on the node (a real cloud metadata service needs a cloud rerun); the dispatcher reaches node:6443, not node:10250 |
+| NetworkPolicy, default deny, one `ipBlock` in PoC-5 | The manifests allow exactly the edges in `netpol_edges.yaml`. No rule can allow the metadata service or a node, and only the dispatcher reaches the API endpoint | That kindnet drops the packets; it does not log a drop. In the sidecar lane the workload rides the chassis's edges | Offline: `test_poc05_netpol_static.py`. Kind: H03, H04 ([sidecar suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md)); H18, H19, H20, H30 ([remote suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-remote-suite.md)); H01 against a listener at 169.254.169.254 on the node (a real cloud metadata service needs a cloud rerun); the dispatcher reaches node:6443, not node:10250 |
 | Service auth (LiteLLM keys, the gateway allow-list, Valkey ACL, MinIO) | Without the chassis's credential each service refuses; through the chassis the same call works | That a call made with the chassis's credential was the workload's to make: the chassis cannot tell use from abuse inside an allowed call | Offline: `test_poc05_seed_static.py`, the tool gateway contract. Kind: hard requirement 1 for LiteLLM (H05), the MCP gateway (H07), Valkey (H10), and MinIO (H12), from the sidecar workload container ([sidecar suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md)); H08 in `test_poc05_kind_tool_gateway.py` ([bring-up](../../pocs/poc-05-sandboxed/notes/2026-10-02-bring-up.md), "Kind tier"); H09 not run on kind; H11, Kafka with SASL, in `test_poc05_kind_hardreq1.py` ([close runs](../../pocs/poc-05-sandboxed/notes/2026-10-09-close-runs.md), section 3) |
 | The remote token and `BearerAuth` | Only a caller with the token reaches the 8091 routes | Who holds the token: a compromised remote that still has it looks healthy. The token crosses the pod network in plain HTTP (F14) | Offline: `test_remote_auth.py`, `test_poc05_hostile_offline.py`. Kind: H17 ([remote suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-remote-suite.md)) |
 | `RequireRun` and the run budget | A remote spends tokens and calls tools only inside a run the chassis opened, capped at what the run has left | Input tokens: `max_tokens` bounds output only, so a call can overshoot by its prompt. LiteLLM's key budget is the hard cap (B11) | Offline: `test_remote_auth.py`, the model proxy tests. Kind: H17 shows the run check (outside a run 403, inside 200; [remote suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-remote-suite.md)). H29 not run on kind |

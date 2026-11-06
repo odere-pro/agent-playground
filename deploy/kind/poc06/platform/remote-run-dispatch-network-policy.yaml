@@ -1,0 +1,106 @@
+# The NetworkPolicy of the remote-run front door (remote-run-dispatch.yaml; core review R6-11).
+# Its own file: run.sh fills the API server sentinel (PoC-5's api-ip-fill), then applies it by path
+# as the cluster admin, with -n poc05-platform, after checking it holds only NetworkPolicies.
+# - In: each remote chassis on its own engine's port only (one port per engine, so no chassis can
+#   start a run on another engine; kagent-adk checks no bearer).
+# - Out: the remote pods on 9000, and the API server on 6443 (the one ipBlock, from the sentinel).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: remote-run-dispatch
+  namespace: poc05-platform
+  labels:
+    app.kubernetes.io/part-of: poc06
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: remote-run-dispatch
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chassis-claude-agent-remote
+      ports:
+        - port: 9001
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chassis-smolagents-remote
+      ports:
+        - port: 9002
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chassis-typescript-remote
+      ports:
+        - port: 9003
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chassis-kagent-adk-remote
+      ports:
+        - port: 9004
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-remote
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: remote-claude-agent
+      ports:
+        - port: 9000
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-remote
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: remote-smolagents
+      ports:
+        - port: 9000
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-remote
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: remote-typescript
+      ports:
+        - port: 9000
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-remote
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: remote-kagent-adk
+      ports:
+        - port: 9000
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: __API_SERVER_IP__/32
+      ports:
+        - port: 6443
+          protocol: TCP

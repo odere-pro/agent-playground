@@ -409,12 +409,8 @@ def test_the_kustomization_lists_the_cluster_objects_and_no_fixture() -> None:
     are sent by the kind test with --dry-run=server only."""
     doc = yaml.safe_load((ADMISSION / "kustomization.yaml").read_text())
     assert doc["kind"] == "Kustomization"
-    assert set(doc["resources"]) == ADMISSION_OBJECTS | SERVICE_RULE_OBJECTS
+    assert set(doc["resources"]) == ADMISSION_OBJECTS
     assert "namespace" not in doc, "the objects name their own namespaces"
-
-
-# The Service rule (service-policy.yaml), checked in test_poc05_service_rule_static.py.
-SERVICE_RULE_OBJECTS = {"service-policy.yaml", "service-binding.yaml"}
 
 
 # --- binding, params, namespaces --------------------------------------------------------------

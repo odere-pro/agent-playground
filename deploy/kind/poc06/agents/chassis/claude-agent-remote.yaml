@@ -17,7 +17,7 @@ spec:
     events: none
   engine:
     connector: remote
-    url: http://remote-run-dispatch.poc05-platform.svc.cluster.local:9000/claude-agent
+    url: http://remote-run-dispatch.poc05-platform.svc.cluster.local:9001/claude-agent
     auth:
       scheme: bearer
       token_env: REMOTE_TOKEN

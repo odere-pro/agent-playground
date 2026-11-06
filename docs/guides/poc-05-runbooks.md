@@ -247,7 +247,9 @@ trust rule 2: an untrusted workload may not run in the sidecar lane; use the rem
 trust rule 3: outside the remote lane every image must come from the platform registry prefix: <image>
 ```
 
-The rules are listed at the top of `deploy/kind/poc05/admission/policy.yaml`. Apply as the deployer, as `up` does (`--as=system:serviceaccount:agent-platform-system:deployer`).
+The rules are listed at the top of `deploy/kind/poc05/admission/policy.yaml`. Apply as the deployer, as `up` does (`--as=system:serviceaccount:agent-platform-system:deployer`). A NetworkPolicy is the exception: the deployer has no rights on it. Apply a policy file by path as the cluster admin, as `up` does through `deploy/kind/policies.sh`.
+
+A Service is checked by `agent-service-rule` (`admission/service-policy.yaml`), with messages that start `service rule S1:`. A Service must be type ClusterIP and set no `externalIPs`, `loadBalancerIP`, or `externalName`.
 
 **Cause, by rule:**
 
@@ -258,6 +260,8 @@ The rules are listed at the top of `deploy/kind/poc05/admission/policy.yaml`. Ap
 - 4: a trusted sidecar image whose repository is not in `trustedRepositories`.
 - 5: a remote pod without `gvisor`, with a service account token, or with a Secret other than its own token.
 - 6a to 6c, 7a to 7c, 8: chassis shape, namespace shape, and pull policy. Read the message.
+- 7d: a tool pod without `gvisor`, or with a service account token, automounted or projected.
+- 7e to 7g: a chassis pod with a pod-wide token, or a projected token outside the chassis container (7e); a sidecar pod that shares its process namespace, or a workload uid that is missing or equal to the chassis uid (7f); an ephemeral container that targets the chassis (7g).
 
 **Fix.** Change the pod, not the policy. A pod that is untrusted goes to the remote lane. Only `agents.platform:platform-admins` may change `agent-trust-params` (`admission/rbac.yaml`); the submitter and the deployer cannot. The admission kind suite shows every rule refusing its fixture with its own message, next to an admitted twin (`test_poc05_kind_admission.py`, 51 passed).
 

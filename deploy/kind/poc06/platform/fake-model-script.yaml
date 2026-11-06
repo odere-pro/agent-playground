@@ -87,9 +87,26 @@ rules:
   # Bash tool. `[plant]` writes /tmp/marker, starts `sleep 600` in the background, then probes in
   # the same run (the control); `[probe]` only probes. The probe prints the pod's hostname, whether
   # the marker exists, and how many `sleep 600` processes it sees (read from /proc: no ps needed).
+  # `[hold]` (run B) starts `sleep 601` in the background, then after about 25 s (suggested; it
+  # keeps run B open) runs the same scan in its own pod: the control, which must see its own
+  # `sleep 601`. `[scan]` (run A, while B is open) reads every
+  # /proc/<pid>/cmdline and /proc/<pid>/environ it can see and prints only counts: the `sleep 601`
+  # processes, and the distinct x-chassis-run-secret values (never a value). gVisor serves /proc
+  # for the processes of its own sandbox only, so a pod sees nothing of another pod. The pattern is
+  # written `secre[t]` so the scan's own command line never matches it.
   - after_tool: true
     match: "PROBE host="
     reply: "isolation probe done"
+  - after_tool: true
+    match: "SCAN host="
+    reply: "isolation scan done"
+  - after_tool: true
+    match: "HELD"
+    reply: ""
+    tool_call:
+      name: Bash
+      arguments:
+        command: "sleep 25 && echo SCAN host=$(cat /etc/hostname) holders=$(for f in /proc/[0-9]*/cmdline; do tr '\\0' ' ' < $f 2>/dev/null; echo; done | grep -c '^sleep 601' || true) secrets=$(cat /proc/[0-9]*/environ /proc/[0-9]*/cmdline 2>/dev/null | tr '\\0' '\\n' | grep -oi 'x-chassis-run-secre[t]: *[^ ,;]*' | sort -u | wc -l | tr -d ' ')"
   - after_tool: true
     match: "PLANTED"
     reply: ""
@@ -103,6 +120,18 @@ rules:
       name: Bash
       arguments:
         command: "echo planted > /tmp/marker && (nohup sleep 600 >/dev/null 2>&1 &) && echo PLANTED"
+  - match: "isolation [hold]"
+    reply: ""
+    tool_call:
+      name: Bash
+      arguments:
+        command: "(nohup sleep 601 >/dev/null 2>&1 &) && echo HELD"
+  - match: "isolation [scan]"
+    reply: ""
+    tool_call:
+      name: Bash
+      arguments:
+        command: "echo SCAN host=$(cat /etc/hostname) holders=$(for f in /proc/[0-9]*/cmdline; do tr '\\0' ' ' < $f 2>/dev/null; echo; done | grep -c '^sleep 601' || true) secrets=$(cat /proc/[0-9]*/environ /proc/[0-9]*/cmdline 2>/dev/null | tr '\\0' '\\n' | grep -oi 'x-chassis-run-secre[t]: *[^ ,;]*' | sort -u | wc -l | tr -d ' ')"
   - match: "isolation [probe]"
     reply: ""
     tool_call:

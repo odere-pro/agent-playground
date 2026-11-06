@@ -17,7 +17,7 @@ spec:
     events: none
   engine:
     connector: remote
-    url: http://remote-run-dispatch.poc05-platform.svc.cluster.local:9000/smolagents
+    url: http://remote-run-dispatch.poc05-platform.svc.cluster.local:9002/smolagents
     auth:
       scheme: bearer
       token_env: REMOTE_TOKEN

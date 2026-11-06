@@ -70,6 +70,18 @@ RUN_SH = POC06 / "run.sh"
 SEED_SH = POC06 / "seed.sh"
 LIB_SH = ROOT / "deploy/kind/lib.sh"
 FOLDERS = ("remote", "agents", "kagent")
+# The NetworkPolicy files of each folder, with the namespace run.sh applies each in. No
+# kustomization lists them: run.sh applies each by path as the cluster admin (core review R5a-02).
+POLICY_FILES = {
+    "remote": {"network-policy.yaml": "poc05-remote"},
+    "agents": {"network-policy.yaml": "poc05-agents"},
+    "kagent": {
+        "network-policy-remote.yaml": "poc05-remote",
+        "network-policy-chassis.yaml": "poc05-agents",
+    },
+}
+# The front door's port per engine (deploy/kind/poc06/platform/remote-run-dispatch.yaml).
+DOOR_PORTS = {"claude-agent": 9001, "smolagents": 9002, "typescript": 9003, "kagent-adk": 9004}
 
 CHASSIS_REPO = "kind.local/agent-platform/chassis"
 POD_KINDS = {"Deployment", "SandboxTemplate"}
@@ -110,10 +122,10 @@ class Obj:
 
 def _objects(folder: str) -> list[Obj]:
     """The folder's resources as written (not rendered), each with the kustomization's namespace
-    or, in `kagent/`, its own."""
+    or, in `kagent/`, its own; plus the folder's policy files, which run.sh applies by path."""
     kust = yaml.safe_load((POC06 / folder / "kustomization.yaml").read_text())
     out: list[Obj] = []
-    for resource in kust["resources"]:
+    for resource in [*kust["resources"], *POLICY_FILES[folder]]:
         for doc in _load_all(POC06 / folder / resource):
             ns = doc.get("metadata", {}).get("namespace", kust.get("namespace"))
             assert ns, (
@@ -604,8 +616,8 @@ def test_chassis_calls_its_remote_with_its_token_when_the_lane_is_remote(
     ref = env[auth.token_env]["valueFrom"]["secretKeyRef"]
     assert TOKEN_SECRET.fullmatch(ref["name"]), pod.id
     assert ref["name"] == f"remote-{remote}-token", pod.id
-    front_door = "http://remote-run-dispatch.poc05-platform.svc.cluster.local:9000"
-    assert config.spec.engine.url == f"{front_door}/{remote}"
+    front_door = "http://remote-run-dispatch.poc05-platform.svc.cluster.local"
+    assert config.spec.engine.url == f"{front_door}:{DOOR_PORTS[remote]}/{remote}"
     assert (config.spec.engine.protocol == "a2a") is (remote == "kagent-adk"), pod.id
 
 
@@ -1011,8 +1023,8 @@ def fixture_edges() -> tuple[set[Edge], set[Edge]]:
                 egress.add((side[e["from"]], side[e["to"]], port))
                 ingress.add((side[e["from"]], side[e["to"]], port))
         door = _sel(EDGES["front_door"]["ns"], EDGES["front_door"]["labels"])
-        for port in EDGES["front_door_ports"]:
-            egress.add((side["chassis"], door, port))
+        egress.add((side["chassis"], door, pair["door_port"]))
+        for port in EDGES["remote_ports"]:
             ingress.add((door, side["remote"], port))
     return egress, ingress
 
@@ -1367,10 +1379,10 @@ def test_the_run_sh_text_reuses_poc05_and_pins_the_context() -> None:
     assert text.index("CONTEXT=kind-$CLUSTER") < text.index('source "$HERE/../lib.sh"')
     assert KCTL in _code_lines(LIB_SH.read_text())
     assert logs and all(re.search(r'\|\s*"\$P5" redact', ln) for ln in logs), logs
-    assert (
-        '--as="$DEPLOYER"' in text
-        and "DEPLOYER=system:serviceaccount:agent-platform-system:deployer" in text
-    )
+    assert "DEPLOYER=system:serviceaccount:agent-platform-system:deployer" in text
+    assert text.index("DEPLOYER=") < text.index('source "$HERE/../policies.sh"')
+    assert '--as="$DEPLOYER"' in (POC06.parent / "policies.sh").read_text()
+    assert "| apply_deployer" in text
 
 
 def test_the_run_sh_text_selects_the_kind_files_by_path_and_names_missing_ones() -> None:
@@ -1812,3 +1824,54 @@ def test_a_poc06_image_ends_in_the_kind_or_poc05_tag(pod: Pod, c: Doc) -> None:
     image = c["image"]
 
     assert image.endswith((":kind", ":poc05")), image
+
+
+# --- who applies the policies (core review R5a-02, ported from PoC-5) -------------------------
+
+
+@pytest.mark.parametrize("folder", FOLDERS)
+def test_no_kustomization_lists_a_policy_file_or_a_network_policy(folder: str) -> None:
+    """Exit criterion 4 (offline): the deployer renders no NetworkPolicy, so nothing is cut out of
+    rendered text. The paired control: each policy file holds only NetworkPolicies, each naming
+    the namespace run.sh passes as `-n`, with the poc06 label kustomize no longer adds."""
+    kust = yaml.safe_load((POC06 / folder / "kustomization.yaml").read_text())
+    listed = [d for r in kust["resources"] for d in _load_all(POC06 / folder / r)]
+    assert not set(POLICY_FILES[folder]) & set(kust["resources"])
+    assert listed and not [d for d in listed if d["kind"].endswith("NetworkPolicy")]
+    for name, ns in POLICY_FILES[folder].items():
+        docs = _load_all(POC06 / folder / name)
+        assert docs and {d["kind"] for d in docs} == {"NetworkPolicy"}, name
+        assert {d["metadata"]["namespace"] for d in docs} == {ns}, name
+        assert all(d["metadata"]["labels"]["app.kubernetes.io/part-of"] == "poc06" for d in docs), (
+            name
+        )
+
+
+def test_every_policy_file_in_the_folders_is_one_run_sh_applies() -> None:
+    """A NetworkPolicy file added to a folder but not to POLICY_FILES would never be applied."""
+    for folder in FOLDERS:
+        on_disk = {
+            p.name
+            for p in (POC06 / folder).glob("*.yaml")
+            if any(d.get("kind") == "NetworkPolicy" for d in _load_all(p))
+        }
+        assert on_disk == set(POLICY_FILES[folder]), folder
+
+
+def test_run_sh_applies_each_policy_file_by_path_in_its_namespace() -> None:
+    """No awk split: apply_folder applies each policy file through PoC-5's apply_policies (by
+    path, `--dry-run=client -o name -n NS` first), then the folder through apply_deployer."""
+    text = RUN_SH.read_text()
+    ns_var = {"poc05-remote": "$REMOTE_NS", "poc05-agents": "$AGENTS_NS"}
+    assert "docs_of" not in text and "apply_split" not in text
+    assert 'apply_policies "${pair%%=*}" "$HERE/$folder/${pair#*=}"' in text
+    assert 'kctl kustomize "$HERE/$folder" | apply_deployer' in text
+    for folder, files in POLICY_FILES.items():
+        joined = text.replace("\\\n", " ")  # one logical line per call
+        call = joined.split(f"apply_folder {folder} ", 1)[1].split("\n", 1)[0]
+        for name, ns in files.items():
+            assert f'"{ns_var[ns]}={name}"' in call, (folder, name)
+    gateway = (
+        'apply_policies agent-platform-system "$HERE/../poc05/agents/gateway-network-policy.yaml"'
+    )
+    assert gateway in text

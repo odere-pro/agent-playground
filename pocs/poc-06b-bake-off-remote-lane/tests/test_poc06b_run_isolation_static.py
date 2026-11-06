@@ -22,9 +22,12 @@ from fake_model_server import Script
 ROOT = Path(__file__).resolve().parents[3]
 POC06 = ROOT / "deploy/kind/poc06"
 FRONT_DOOR_FILE = POC06 / "platform/remote-run-dispatch.yaml"
+FRONT_DOOR_POLICY = POC06 / "platform/remote-run-dispatch-network-policy.yaml"
 RBAC_FILE = POC06 / "admission/remote-run-rbac.yaml"
 DOOR = "remote-run-dispatch"
-DOOR_URL = "http://remote-run-dispatch.poc05-platform.svc.cluster.local:9000"
+DOOR_URL = "http://remote-run-dispatch.poc05-platform.svc.cluster.local"
+# suggested: one front door port per engine, so a chassis reaches only its own engine.
+DOOR_PORTS = {"claude-agent": 9001, "smolagents": 9002, "typescript": 9003, "kagent-adk": 9004}
 NAME = "app.kubernetes.io/name"
 NS_LABEL = "kubernetes.io/metadata.name"
 ENGINES = {
@@ -48,7 +51,7 @@ def _one(path: Path, kind: str, name: str) -> Doc:
 def _remote_policies() -> list[Doc]:
     docs = [
         *_docs(POC06 / "remote/network-policy.yaml"),
-        *_docs(POC06 / "kagent/remote-kagent-adk.yaml"),
+        *_docs(POC06 / "kagent/network-policy-remote.yaml"),
     ]
     return [d for d in docs if d["kind"] == "NetworkPolicy"]
 
@@ -101,7 +104,7 @@ def test_each_engine_is_a_template_and_a_warm_pool_set_like_code_runner(engine: 
 @pytest.mark.parametrize("engine", sorted(ENGINES))
 def test_the_chassis_url_is_the_front_door(engine: str) -> None:
     config = ChassisConfig.model_validate(yaml.safe_load((POC06 / ENGINES[engine][1]).read_text()))
-    assert config.spec.engine.url == f"{DOOR_URL}/{engine}"
+    assert config.spec.engine.url == f"{DOOR_URL}:{DOOR_PORTS[engine]}/{engine}"
 
 
 def test_the_front_door_has_a_card_for_each_engine() -> None:
@@ -120,11 +123,26 @@ def test_a_remote_takes_9000_only_from_the_front_door(policy: Doc) -> None:
     assert [p["port"] for r in spec["ingress"] for p in r["ports"]] == [9000]
 
 
+def _door_policy() -> Doc:
+    (policy,) = _docs(FRONT_DOOR_POLICY)
+    assert policy["kind"] == "NetworkPolicy" and policy["metadata"]["name"] == DOOR
+    return policy
+
+
 def test_the_front_door_policy_edges() -> None:
-    """In from the four remote chassis on 9000; out to the four remote pools on 9000 and to the
-    API server sentinel on 6443, nothing else (no DNS)."""
-    spec = _one(FRONT_DOOR_FILE, "NetworkPolicy", DOOR)["spec"]
+    """In: each remote chassis on its own engine's port, one rule each. Out: the four remote pools
+    on 9000 and the API server sentinel on 6443, nothing else (no DNS)."""
+    spec = _door_policy()["spec"]
     assert spec["podSelector"]["matchLabels"] == {NAME: DOOR}
+    ingress = {
+        (peer["podSelector"]["matchLabels"][NAME], port["port"])
+        for rule in spec["ingress"]
+        for peer in rule["from"]
+        for port in rule["ports"]
+    }
+    assert ingress == {(f"chassis-{e}-remote", p) for e, p in DOOR_PORTS.items()}
+    assert len(spec["ingress"]) == len(DOOR_PORTS)
+    assert all(len(r["from"]) == 1 and len(r["ports"]) == 1 for r in spec["ingress"])
     assert _peer_names(spec["ingress"], "from") == {
         ("poc05-agents", f"chassis-{e}-remote") for e in ENGINES
     }
@@ -133,6 +151,59 @@ def test_the_front_door_policy_edges() -> None:
     assert blocks == [{"cidr": "__API_SERVER_IP__/32"}]
     ports = sorted({p["port"] for r in spec["egress"] for p in r["ports"]})
     assert ports == [6443, 9000]
+
+
+def test_the_front_door_file_holds_no_policy_and_the_policy_file_only_the_policy() -> None:
+    """run.sh applies the policy by path (after api-ip-fill) and the rest of the door as admin."""
+    assert "NetworkPolicy" not in {d["kind"] for d in _docs(FRONT_DOOR_FILE)}
+    assert [d["kind"] for d in _docs(FRONT_DOOR_POLICY)] == ["NetworkPolicy"]
+    assert _door_policy()["metadata"]["namespace"] == "poc05-platform"
+
+
+def test_the_front_door_serves_each_engine_on_its_own_port() -> None:
+    """The door's args map each engine to its port; the container and the Service expose exactly
+    those ports; the probes use one of them; the public URL has no port."""
+    deploy = _one(FRONT_DOOR_FILE, "Deployment", DOOR)["spec"]["template"]["spec"]
+    (container,) = deploy["containers"]
+    args = [str(a) for a in container["args"]]
+    pairs = [args[i + 1] for i, a in enumerate(args) if a == "--engine-port"]
+    assert pairs == [f"{e}={p}" for e, p in sorted(DOOR_PORTS.items(), key=lambda kv: kv[1])]
+    assert "--port" not in args
+    assert args[args.index("--public-url") + 1] == DOOR_URL
+    assert sorted(p["containerPort"] for p in container["ports"]) == sorted(DOOR_PORTS.values())
+    service = _one(FRONT_DOOR_FILE, "Service", DOOR)["spec"]
+    assert sorted((p["port"], p["targetPort"]) for p in service["ports"]) == [
+        (p, p) for p in sorted(DOOR_PORTS.values())
+    ]
+    for probe in ("startupProbe", "readinessProbe", "livenessProbe"):
+        assert container[probe]["httpGet"]["port"] in DOOR_PORTS.values()
+
+
+@pytest.mark.parametrize("engine", sorted(ENGINES))
+def test_each_chassis_egress_reaches_only_its_own_door_port(engine: str) -> None:
+    """The chassis side of the same edge: its egress to the door names its engine's port only."""
+    folder = (
+        "kagent/network-policy-chassis.yaml"
+        if engine == "kagent-adk"
+        else "agents/network-policy.yaml"
+    )
+    policy = _one(POC06 / folder, "NetworkPolicy", f"chassis-{engine}-remote")["spec"]
+    ports = [
+        p["port"]
+        for rule in policy["egress"]
+        if any(
+            peer.get("podSelector", {}).get("matchLabels", {}).get(NAME) == DOOR
+            for peer in rule["to"]
+        )
+        for p in rule["ports"]
+    ]
+    assert ports == [DOOR_PORTS[engine]]
+
+
+def test_the_kagent_card_url_is_its_own_door_port() -> None:
+    text = (POC06 / "kagent/remote-kagent-adk.yaml").read_text()
+    assert f"{DOOR_URL}:{DOOR_PORTS['kagent-adk']}/kagent-adk" in text
+    assert ":9000/kagent-adk" not in text
 
 
 def test_the_front_door_pod_holds_no_key_and_one_projected_token() -> None:
@@ -180,7 +251,8 @@ def test_a_quota_caps_claims_and_pods_in_poc05_remote() -> None:
 def test_run_sh_applies_the_rbac_and_the_front_door_and_waits_for_pools() -> None:
     text = (POC06 / "run.sh").read_text()
     assert 'kctl apply -f "$HERE/admission/remote-run-rbac.yaml"' in text
-    assert '"$P5" api-ip-fill "$ip" <"$FRONT_DOOR"' in text
+    assert '"$P5" api-ip-fill "$ip" <"$FRONT_DOOR_POLICY"' in text
+    assert 'apply_policies "$PLATFORM_NS" "$dir/policy.yaml"' in text
     assert "wait_pool" in text and "wait_sandbox" not in text
 
 

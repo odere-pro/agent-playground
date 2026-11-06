@@ -111,10 +111,11 @@ def test_scripts_keep_their_context_and_prefix_when_read_from_their_lines() -> N
 
 
 def test_script_list_names_every_script_under_deploy_kind() -> None:
-    """R5b-12: every `.sh` under deploy/kind but lib.sh itself is covered here."""
+    """R5b-12: every `.sh` under deploy/kind but the sourced libraries is covered here. The
+    libraries: lib.sh, and policies.sh (the NetworkPolicy apply split; it needs lib.sh first)."""
     found = {str(p.relative_to(KIND)) for p in KIND.rglob("*.sh")}
 
-    assert found == {*SCRIPTS, "lib.sh"}
+    assert found == {*SCRIPTS, "lib.sh", "policies.sh"}
 
 
 @pytest.mark.parametrize(("script", "context", "prefix"), CASES)

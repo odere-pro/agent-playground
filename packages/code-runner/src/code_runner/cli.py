@@ -8,9 +8,10 @@ Run it only inside the sandbox pod (gVisor, no egress, PID and memory limits, me
 the same tool and runs each call in a fresh sandbox claimed from the pool. It runs no code.
 With `--inbound-token-file`, every path but `/health` needs that bearer (LiteLLM sends it).
 
-`code-runner a2a-dispatch --namespace poc05-remote --cards-dir DIR --public-url URL`: the
-remote-run front door (`code_runner.a2a_dispatch`). Each A2A streaming run gets a fresh pod
-claimed from the pool `<pool-prefix><engine>`; it runs no code and holds no remote token.
+`code-runner a2a-dispatch --namespace poc05-remote --cards-dir DIR --public-url URL
+--engine-port NAME=PORT ...`: the remote-run front door (`code_runner.a2a_dispatch`). Each A2A
+streaming run gets a fresh pod claimed from the pool `<pool-prefix><engine>`; it runs no code and
+holds no remote token. One process serves each engine on its own port (`run_servers`).
 
 Both put the body cap (`code_runner.asgi`) in front of `/mcp`.
 """
@@ -18,16 +19,57 @@ Both put the body cap (`code_runner.asgi`) in front of `/mcp`.
 from __future__ import annotations
 
 import argparse
+import asyncio
+import contextlib
 import logging
 import os
+import signal
 import sys
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping, Sequence
+from typing import Protocol
 
 import uvicorn
 from starlette.types import ASGIApp
 
 DEFAULT_PORT = 8000  # suggested
-A2A_DISPATCH_PORT = 9000  # the remote lane's A2A port
+STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
+
+
+class PortServer(Protocol):
+    """What `run_servers` needs of a server: uvicorn.Server has both."""
+
+    should_exit: bool
+
+    async def serve(self) -> None: ...
+
+
+class _SharedSignalServer(uvicorn.Server):
+    """A uvicorn.Server that leaves signals to `run_servers`: uvicorn's own handler would be
+    replaced by the next server's, so SIGTERM would stop only one of the ports."""
+
+    @contextlib.contextmanager
+    def capture_signals(self) -> Iterator[None]:
+        yield
+
+
+async def run_servers(servers: Sequence[PortServer], *, install_signals: bool = True) -> None:
+    """Serve every server in this loop until a stop signal or until any one of them ends; then
+    tell all to exit and wait for them."""
+
+    def stop() -> None:
+        for server in servers:
+            server.should_exit = True
+
+    if install_signals:
+        loop = asyncio.get_running_loop()
+        for sig in STOP_SIGNALS:
+            loop.add_signal_handler(sig, stop)
+    tasks = [asyncio.ensure_future(server.serve()) for server in servers]
+    try:
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        stop()
+        await asyncio.gather(*tasks)
 
 
 def serve_parser() -> argparse.ArgumentParser:
@@ -73,25 +115,37 @@ def a2a_dispatch_parser() -> argparse.ArgumentParser:
         prog="code-runner a2a-dispatch", description="Run each A2A run in a fresh remote pod"
     )
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=A2A_DISPATCH_PORT)
     parser.add_argument("--namespace", required=True, help="where the pools and claims live")
     parser.add_argument("--cards-dir", required=True, help="one <engine>.json agent card each")
-    parser.add_argument("--public-url", required=True, help="this server's URL, for the cards")
+    parser.add_argument(
+        "--public-url", required=True, help="this server's URL with no port, for the cards"
+    )
+    parser.add_argument(
+        "--engine-port",
+        action="append",
+        required=True,
+        metavar="NAME=PORT",
+        help="the port that serves one engine; once per engine card",
+    )
     parser.add_argument("--pool-prefix", default="remote-", help="pool name = prefix + engine")
     parser.add_argument("--token-file", default=TOKEN_FILE, help="the projected API token")
     parser.add_argument("--ca-file", default=CA_FILE, help="the cluster CA")
     return parser
 
 
-def a2a_dispatch_app(args: argparse.Namespace, env: Mapping[str, str]) -> ASGIApp:
+def a2a_dispatch_apps(args: argparse.Namespace, env: Mapping[str, str]) -> dict[int, ASGIApp]:
+    """One app per engine port, all on one `RunDispatcher` (one claim cap for the process)."""
     from code_runner import a2a_dispatch, dispatch
 
-    # Read first: a bad card stops the start before any client exists.
+    # Read first: a bad card or port stops the start before any client exists.
     engines = a2a_dispatch.load_engines(args.cards_dir, pool_prefix=args.pool_prefix)
+    ports = a2a_dispatch.parse_engine_ports(args.engine_port, engines)
     api = dispatch.api_client_from_env(env, token_file=args.token_file, ca_file=args.ca_file)
-    config = a2a_dispatch.FrontDoorConfig(namespace=args.namespace, public_url=args.public_url)
+    config = a2a_dispatch.FrontDoorConfig(
+        namespace=args.namespace, public_url=args.public_url, engine_ports=ports
+    )
     door = a2a_dispatch.RunDispatcher(api, dispatch.sandbox_client(), config, engines)
-    return a2a_dispatch.create_front_door(door)
+    return a2a_dispatch.create_front_doors(door)
 
 
 def serve_app(args: argparse.Namespace) -> ASGIApp:
@@ -137,7 +191,12 @@ def _dispatch(argv: list[str]) -> None:
 
 def _a2a_dispatch(argv: list[str]) -> None:
     args = a2a_dispatch_parser().parse_args(argv)
-    uvicorn.run(a2a_dispatch_app(args, os.environ), host=args.host, port=args.port)
+    apps = a2a_dispatch_apps(args, os.environ)
+    servers = [
+        _SharedSignalServer(uvicorn.Config(app, host=args.host, port=port))
+        for port, app in sorted(apps.items())
+    ]
+    asyncio.run(run_servers(servers))
 
 
 def main(argv: list[str] | None = None) -> None:

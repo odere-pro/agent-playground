@@ -99,6 +99,16 @@ Two `httpx` clients, never shared, and no Kubernetes SDK:
 
 `GET /health` never calls the API, so a slow API server cannot get the dispatcher restarted.
 
+## A2A front door mode: a remote pod per run
+
+`code-runner a2a-dispatch --namespace poc05-remote --cards-dir DIR --public-url URL --engine-port NAME=PORT ...` runs the PoC-6 remote-run front door (`code_runner/a2a_dispatch.py`; core review R6-11). It runs no code and holds no remote token. Manifest: `deploy/kind/poc06/platform/remote-run-dispatch.yaml`.
+
+- One `<engine>.json` agent card per engine in `--cards-dir`; the pool is `<pool-prefix><engine>`. A card fetch never claims.
+- One port per engine, one process (`cli.run_servers`, one uvicorn server per port; a stop signal or the end of one stops all). A port serves only its engine: any other engine path there is 404 `unknown_engine`, with no claim. The NetworkPolicy lets each chassis reach its own port only.
+- Per streaming run: claim a pod, forward the body and the caller's headers to the pod on 9000, stream the answer back unchanged, delete the claim on every exit path. A cancel goes to the run's pod.
+- Timeouts (suggested): the pod's response headers 30 s, a cancel 10 s, the whole run 600 s (applied per read). A lost or late run ends with one last SSE event, a JSON-RPC error `-32000` `sandbox_lost`, which the chassis reports as a retryable `a2a.transport`.
+- Codes: `-32000` `sandbox_unavailable` (retryable: no slot, no claim, no answer, a pod 5xx); `-32600` `sandbox_refused` for a pod 401 or 403 (the caller's credential; not retryable); `-32001` for a cancel of an unknown task.
+
 ## Limits recorded
 
 - A restart forgets every idempotency key.

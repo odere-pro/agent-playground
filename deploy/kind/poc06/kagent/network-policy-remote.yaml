@@ -1,0 +1,40 @@
+# poc05-remote: the NetworkPolicy of the remote-kagent-adk pods (remote-kagent-adk.yaml). Its own
+# file: run.sh applies it by path as the cluster admin, with -n poc05-remote; the kustomization
+# does not list it, so the deployer never sends a NetworkPolicy (R5a-02).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: remote-kagent-adk
+  namespace: poc05-remote
+  labels:
+    app.kubernetes.io/part-of: poc06
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: remote-kagent-adk
+  policyTypes: [Ingress, Egress]
+  # 9000 only from the front door, which claimed this pod for one run (core review R6-11). The
+  # runtime checks no bearer, so this policy and the front door's ingress are the control.
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-platform
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: remote-run-dispatch
+      ports:
+        - port: 9000
+          protocol: TCP
+  # Its chassis's remote proxy port, and nothing else: no DNS, no ipBlock.
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chassis-kagent-adk-remote
+      ports:
+        - port: 8091
+          protocol: TCP

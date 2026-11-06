@@ -545,8 +545,10 @@ def _add_debug(
 def test_ephemeral_container_is_refused_next_to_its_twin(
     refused: tuple[str, str], admitted: tuple[str, str], message: str
 ) -> None:
-    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
-    in the `sidecar` lane."
+    """The image case, criterion 7: "The admission check rejects an `untrusted` workload, and a
+    third-party image, in the `sidecar` lane." The target case, ADR-001 hard requirement 1: "Every
+    internal service requires a credential that only the chassis holds." A debug container joined
+    to the chassis's process namespace could read its credentials.
 
     Exit criterion 7 and hard requirement 1 (review R5a-16): given the live `agent-echo` pod, an
     ephemeral container with an image outside the platform prefix is refused by

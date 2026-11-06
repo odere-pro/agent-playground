@@ -56,8 +56,11 @@
 # not a long-lived Sandbox. The front door platform/remote-run-dispatch.yaml (the code-runner image,
 # `code-runner a2a-dispatch`, built and loaded by PoC-5's `up`) claims a pod per A2A run and deletes
 # the claim after. Its Role and quota (admission/remote-run-rbac.yaml) and the whole platform file
-# go in as the cluster admin; its NetworkPolicy's API server ipBlock is filled in from the sentinel
-# by PoC-5's `api-ip-fill`, the same check as the code-runner dispatcher's.
+# go in as the cluster admin; its NetworkPolicy (platform/remote-run-dispatch-network-policy.yaml)
+# goes in by path after PoC-5's `api-ip-fill` fills its API server ipBlock from the sentinel, the
+# same check as the code-runner dispatcher's. Each engine has its own port on the door, and each
+# chassis may reach only its own (9001 claude-agent, 9002 smolagents, 9003 typescript, 9004
+# kagent-adk).
 set -euo pipefail
 
 CLUSTER=poc05
@@ -79,6 +82,7 @@ KAGENT_REPO=https://github.com/kagent-dev/kagent
 KAGENT_UV_VERSION=0.12.3@sha256:2d890623d310b57771ce840f0da5eed5fc6d657da05ffaa45d82797b53fa3abc
 KAGENT_DEBIAN=debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
 FRONT_DOOR=$HERE/platform/remote-run-dispatch.yaml
+FRONT_DOOR_POLICY=$HERE/platform/remote-run-dispatch-network-policy.yaml
 SECCOMP_DERIVE=$HERE/seccomp/derive_profile.py
 SECCOMP_DIR=/var/lib/kubelet/seccomp/profiles
 SECCOMP_FILE=poc06-runsc-clone3.json
@@ -117,6 +121,9 @@ KIND_TESTS=(
 
 # shellcheck source=deploy/kind/lib.sh
 source "$HERE/../lib.sh"
+# apply_policies NS FILE and apply_deployer, shared with PoC-5 (core review R5a-02).
+# shellcheck source=deploy/kind/policies.sh
+source "$HERE/../policies.sh"
 
 # kagent_commit: the pinned commit, the first 40-hex line of kagent/source.commit.
 kagent_commit() {
@@ -227,13 +234,19 @@ api_server_ip() {
   printf '%s\n' "$ip"
 }
 
-# The front door, as the cluster admin (poc05-platform is not the deployer's): the sentinel is
-# filled in and checked by PoC-5's api-ip-fill, which refuses a bad address.
+# The front door, as the cluster admin (poc05-platform is not the deployer's). Its policy file
+# goes in by path through apply_policies, after PoC-5's api-ip-fill fills and checks the sentinel
+# (it refuses a bad address) into a private temp file; the rest of the file holds no policy.
 apply_front_door() {
-  local ip rendered
+  local ip dir
   ip=$(api_server_ip)
-  rendered=$("$P5" api-ip-fill "$ip" <"$FRONT_DOOR") || die "front door: api-ip-fill refused"
-  kctl apply -f - <<<"$rendered"
+  dir=$(mktemp -d)
+  # shellcheck disable=SC2064 # expand now: the trap runs after the locals are gone
+  trap "rm -rf '$dir'" RETURN
+  "$P5" api-ip-fill "$ip" <"$FRONT_DOOR_POLICY" >"$dir/policy.yaml" ||
+    die "front door: api-ip-fill refused"
+  apply_policies "$PLATFORM_NS" "$dir/policy.yaml"
+  kctl apply -n "$PLATFORM_NS" -f "$FRONT_DOOR"
   wait_rollout "$PLATFORM_NS" remote-run-dispatch
 }
 
@@ -252,39 +265,22 @@ apply_fake_model() {
   wait_rollout "$PLATFORM_NS" fake-model-server
 }
 
-# docs_of KIND WANT (the same as in ../poc05/run.sh): the `---`-separated YAML documents on stdin whose top-level kind is KIND
-# (WANT=1) or is not (WANT=0). It reads `kubectl kustomize` output or a plain manifest, where the
-# top-level `kind:` is at column 0. Core review R5a-02: NetworkPolicies go in as cluster admin.
-docs_of() {
-  awk -v kind="$1" -v want="$2" '
-    function flush() {
-      if (doc != "" && is == want + 0) { printf "%s%s", sep, doc; sep = "---\n" }
-      doc = ""; is = 0
-    }
-    /^---$/ { flush(); next }
-    { doc = doc $0 "\n"; if ($0 == "kind: " kind) is = 1 }
-    END { flush() }'
+# apply_folder FOLDER NS=FILE...: each FILE (a NetworkPolicy file in FOLDER) by path as the
+# cluster admin in NS, after apply_policies' `--dry-run=client -o name -n NS` check; then the
+# rendered folder as the platform deployer, which refuses any NetworkPolicy. No kustomization
+# here lists a policy file (core review R5a-02).
+apply_folder() {
+  local folder=$1 pair
+  shift
+  for pair in "$@"; do
+    apply_policies "${pair%%=*}" "$HERE/$folder/${pair#*=}"
+  done
+  kctl kustomize "$HERE/$folder" | apply_deployer
 }
-
-# apply_split: the manifest on stdin, its NetworkPolicies as cluster admin (like
-# base/default-deny.yaml) and everything else as the platform deployer only (review F2). The
-# deployer has no NetworkPolicy rights (admission/rbac.yaml, core review R5a-02).
-apply_split() {
-  local all policies rest
-  all=$(cat)
-  policies=$(docs_of NetworkPolicy 1 <<<"$all")
-  rest=$(docs_of NetworkPolicy 0 <<<"$all")
-  [[ -z $policies ]] || kctl apply -f - <<<"$policies"
-  [[ -z $rest ]] || kctl apply -f - --as="$DEPLOYER" <<<"$rest"
-}
-
-# apply_folder FOLDER: remote/, agents/, kagent/ rendered, then split by apply_split: the
-# deployer applies the workloads, the cluster admin the NetworkPolicies.
-apply_folder() { kctl kustomize "$HERE/$1" | apply_split; }
 
 apply_remote() {
   local name
-  apply_folder remote
+  apply_folder remote "$REMOTE_NS=network-policy.yaml"
   for name in "${POOLS[@]}"; do
     wait_pool "$REMOTE_NS" "$name"
   done
@@ -292,17 +288,18 @@ apply_remote() {
 
 apply_agents() {
   local name
-  apply_folder agents
+  apply_folder agents "$AGENTS_NS=network-policy.yaml"
   # The gateway peer's egress to every chassis's 8080 (PoC-5's file; PoC-6 chassis carry
-  # agents.platform/role: chassis too). Cluster admin.
-  kctl apply -f "$HERE/../poc05/agents/gateway-network-policy.yaml"
+  # agents.platform/role: chassis too). By path, as the cluster admin.
+  apply_policies agent-platform-system "$HERE/../poc05/agents/gateway-network-policy.yaml"
   for name in "${DEPLOYMENTS[@]}"; do
     wait_rollout "$AGENTS_NS" "$name"
   done
 }
 
 apply_kagent() {
-  apply_folder kagent
+  apply_folder kagent "$REMOTE_NS=network-policy-remote.yaml" \
+    "$AGENTS_NS=network-policy-chassis.yaml"
   wait_pool "$REMOTE_NS" remote-kagent-adk
   wait_rollout "$AGENTS_NS" chassis-kagent-adk-remote
 }

@@ -85,6 +85,14 @@ CHASSIS_CREDENTIALS = {"LITELLM_API_KEY", "VALKEY_PASSWORD", "REMOTE_TOKEN"}
 
 
 FRONT_DOOR = "remote-run-dispatch"
+# The front door's port per engine (deploy/kind/poc06/platform/remote-run-dispatch.yaml): each
+# chassis may reach its own engine's port only.
+DOOR_PORTS = {
+    "remote-claude-agent": 9001,
+    "remote-smolagents": 9002,
+    "remote-typescript": 9003,
+    "remote-kagent-adk": 9004,
+}
 CLAIM_LABEL = "agents.x-k8s.io/claim-uid"
 
 
@@ -244,8 +252,8 @@ def test_remote_port_refuses_every_caller_but_the_front_door(
     IP; there is no Service since core review R6-11) from a pod in `default`, from another
     remote's chassis, and from its own chassis, which now reaches the remote only through the
     front door. The allowed controls: the front door connects to the same port, the chassis
-    reaches the front door on 9000, and the caller reaches kube-dns on 53, so its own egress
-    works."""
+    reaches the front door on its own engine's port, and the caller reaches kube-dns on 53, so
+    its own egress works."""
     remote = remote_pod(engine)
     chassis = chassis_pod(engine)
     remote_ip = remote["status"]["podIP"]
@@ -258,12 +266,32 @@ def test_remote_port_refuses_every_caller_but_the_front_door(
     (lateral,) = in_chassis(chassis_pod(other), [tcp_check(remote_ip, 9000)])
     assert lateral.get("error") == POLICY_DROPPED, lateral
 
-    direct, to_door = in_chassis(chassis, [tcp_check(remote_ip, 9000), tcp_check(door, 9000)])
+    direct, to_door = in_chassis(
+        chassis, [tcp_check(remote_ip, 9000), tcp_check(door, DOOR_PORTS[engine.pod])]
+    )
     assert direct.get("error") == POLICY_DROPPED, direct
     assert to_door.get("connected") is True, to_door
 
     (from_door,) = in_front_door([tcp_check(remote_ip, 9000)])
     assert from_door.get("connected") is True, from_door
+
+
+@pytest.mark.parametrize("engine", REMOTES, ids=ENGINE_IDS)
+def test_a_chassis_reaches_only_its_own_engine_port_on_the_front_door(engine: KindEngine) -> None:
+    """The front door routes by port, one per engine, and its policy lets each chassis reach its
+    own port only. So `chassis-claude-agent-remote` times out on the kagent-adk port (kagent-adk
+    checks no bearer, so this is its only inbound control). The paired control: the same chassis
+    connects to its own port in the same probe."""
+    chassis = chassis_pod(engine)
+    door = service_ip(PLATFORM_NS, FRONT_DOOR)
+    own = DOOR_PORTS[engine.pod]
+    others = sorted(p for name, p in DOOR_PORTS.items() if name != engine.pod)
+    own_check, *other_checks = in_chassis(
+        chassis, [tcp_check(door, own), *(tcp_check(door, p) for p in others)]
+    )
+    assert own_check.get("connected") is True, own_check
+    for port, got in zip(others, other_checks, strict=True):
+        assert got.get("error") == POLICY_DROPPED, (port, got)
 
 
 # --- no way out -------------------------------------------------------------------------------

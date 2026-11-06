@@ -40,8 +40,11 @@ is `tool_unavailable` (not retryable) with a fixed message that names the cap, n
 The MCP client library reads a whole response, then parses it, before the adapter sees the
 result; so the adapter also wraps each response body as it streams in and stops reading past
 `MAX_RESPONSE_BYTES` (twice the cap plus framing: FastMCP sends a result as text and again as
-structured content). The chassis therefore holds at most about `MAX_RESPONSE_BYTES` of one
-response, and relays at most `MAX_RESULT_BYTES`.
+structured content). The count is of decoded bytes: the client asks for `Accept-Encoding:
+identity`, and a body the gateway encodes anyway (gzip, deflate) is decoded in the wrapper, in
+pieces of at most 1 MiB, so a small compressed body cannot grow past the cap. The chassis
+therefore holds at most about `MAX_RESPONSE_BYTES` plus one decoded piece of one response, and
+relays at most `MAX_RESULT_BYTES`.
 
 Known limit: the refusal texts are matched on any tool's error text, not only the gateway's, so an
 upstream tool whose error starts with one picks its own code (`unknown_tool`, `tool_denied`,
@@ -58,6 +61,7 @@ import logging
 import os
 import re
 import time
+import zlib
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from typing import Any
 
@@ -155,23 +159,78 @@ class _ResponseTooLarge(Exception):
     """A gateway response body passed `MAX_RESPONSE_BYTES`; reading stopped there."""
 
 
-class _CappedStream(httpx2.AsyncByteStream):
-    """A response body that raises once more than `MAX_RESPONSE_BYTES` came in, so the rest is
-    never read into the chassis. It records the overrun on `statuses`, because the MCP client
-    may wrap or swallow the exception."""
+_DECODE_PIECE = 64 * 1024
+"""The most decoded data `_Inflate` hands on at once, so the cap is checked before more comes."""
 
-    def __init__(self, inner: Any, statuses: _Statuses) -> None:
+
+class _UnknownEncoding(Exception):
+    """A `Content-Encoding` the capped stream cannot decode in bounded pieces; refused."""
+
+
+class _Inflate:
+    """A gzip or deflate body, decoded with the stdlib in pieces of at most `_DECODE_PIECE`."""
+
+    def __init__(self, encoding: str) -> None:
+        gzip = encoding in ("gzip", "x-gzip")
+        self._z = zlib.decompressobj(16 + zlib.MAX_WBITS if gzip else zlib.MAX_WBITS)
+
+    def decode(self, data: bytes) -> Iterator[bytes]:
+        if self._z.eof and data:
+            # zlib would keep bytes after the end of the stream in `unused_data`, uncounted.
+            raise _ResponseTooLarge("bytes after the end of the compressed body")
+        while True:
+            piece = self._z.decompress(data, _DECODE_PIECE)
+            if self._z.unused_data:
+                raise _ResponseTooLarge("bytes after the end of the compressed body")
+            data = self._z.unconsumed_tail
+            if piece:
+                yield piece
+            if not data and len(piece) < _DECODE_PIECE:
+                return
+
+    def flush(self) -> Iterator[bytes]:
+        yield from self.decode(b"")
+        rest = self._z.flush()
+        if rest:
+            yield rest
+
+
+class _CappedStream(httpx2.AsyncByteStream):
+    """A response body that raises once more than `MAX_RESPONSE_BYTES` of decoded data came in,
+    so the rest is never read into the chassis. With a `decoder`, it decodes the body itself, in
+    bounded pieces, and counts what comes out; the hook drops `Content-Encoding` so httpx does
+    not decode it again. It records the overrun on `statuses`, because the MCP client may wrap
+    or swallow the exception."""
+
+    def __init__(self, inner: Any, statuses: _Statuses, decoder: _Inflate | None = None) -> None:
         self._inner = inner
         self._statuses = statuses
+        self._decoder = decoder
+        self._read = 0
+
+    def _count(self, piece: bytes) -> bytes:
+        self._read += len(piece)
+        if self._read > MAX_RESPONSE_BYTES:
+            self._statuses.over_cap = True
+            raise _ResponseTooLarge(f"over {MAX_RESPONSE_BYTES} bytes")
+        return piece
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
-        read = 0
-        async for chunk in self._inner:
-            read += len(chunk)
-            if read > MAX_RESPONSE_BYTES:
-                self._statuses.over_cap = True
-                raise _ResponseTooLarge(f"over {MAX_RESPONSE_BYTES} bytes")
-            yield chunk
+        decoder = self._decoder
+        raw = 0
+        try:
+            async for chunk in self._inner:
+                raw += len(chunk)
+                if raw > MAX_RESPONSE_BYTES:
+                    raise _ResponseTooLarge(f"over {MAX_RESPONSE_BYTES} raw bytes")
+                for piece in decoder.decode(chunk) if decoder is not None else (chunk,):
+                    yield self._count(piece)
+            if decoder is not None:
+                for piece in decoder.flush():
+                    yield self._count(piece)
+        except _ResponseTooLarge:
+            self._statuses.over_cap = True
+            raise
 
     async def aclose(self) -> None:
         await self._inner.aclose()
@@ -205,7 +264,30 @@ class _Statuses:
     async def hook(self, response: httpx2.Response) -> None:
         if response.status_code >= 400 and response.request.method != "DELETE":
             self.seen.append(response.status_code)
-        response.stream = _CappedStream(response.stream, self)
+        try:
+            decoder = _take_decoder(response)
+        except _UnknownEncoding:
+            # Fail closed: a body whose decoded size cannot be bounded is treated as over the cap.
+            self.over_cap = True
+            raise _ResponseTooLarge("an encoding the gateway adapter cannot bound") from None
+        response.stream = _CappedStream(response.stream, self, decoder)
+
+
+def _take_decoder(response: httpx2.Response) -> _Inflate | None:
+    """The decoder for the body's `Content-Encoding`, or None for a plain body. The header is
+    dropped, so the capped stream decodes and counts the body, and httpx passes it on as is.
+    Only one gzip or deflate layer is decoded; anything else raises `_UnknownEncoding`."""
+    encodings = [
+        value.strip().lower()
+        for value in response.headers.get_list("content-encoding", split_commas=True)
+    ]
+    encodings = [value for value in encodings if value and value != "identity"]
+    if not encodings:
+        return None
+    if len(encodings) > 1 or encodings[0] not in ("gzip", "x-gzip", "deflate"):
+        raise _UnknownEncoding(", ".join(encodings))
+    del response.headers["content-encoding"]
+    return _Inflate(encodings[0])
 
 
 def _rpc_error(exc: BaseException | None, name: str) -> ToolError | None:
@@ -318,7 +400,9 @@ class McpGatewayTools:
 
         transport = StreamableHttpTransport(
             self.url,
-            headers={self._auth_header: f"Bearer {self._api_key}"},
+            # identity: the cap counts decoded bytes; a gateway that encodes anyway is decoded
+            # by `_CappedStream`.
+            headers={self._auth_header: f"Bearer {self._api_key}", "Accept-Encoding": "identity"},
             httpx_client_factory=factory,  # type: ignore[arg-type]
         )
         return Client(transport, timeout=self.timeout)

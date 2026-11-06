@@ -1,7 +1,11 @@
 # remote-run-dispatch: the PoC-6 remote-run front door (core review R6-11). A remote pod used to
 # be one long-lived Sandbox per engine, so runs shared its uid, /tmp, and process tree. Now each
 # engine is a SandboxTemplate and SandboxWarmPool in poc05-remote (../remote/, ../kagent/), and
-# every chassis remote URL is http://remote-run-dispatch.poc05-platform.svc.cluster.local:9000/<engine>.
+# every chassis remote URL is http://remote-run-dispatch.poc05-platform.svc.cluster.local:<port>/<engine>.
+# One port per engine (suggested: 9001 claude-agent, 9002 smolagents, 9003 typescript, 9004
+# kagent-adk), one process: a port serves only its own engine, and any other path there is 404 with
+# no claim. The NetworkPolicy lets each chassis reach its own engine's port only, so no chassis can
+# start a run on another engine (kagent-adk checks no bearer, so this is its only inbound control).
 # Per streaming A2A run the door creates a SandboxClaim on the pool remote-<engine>, waits for it,
 # streams the run to and from the claimed pod's IP on 9000, and deletes the claim after (the pod
 # goes with it). A card fetch never claims. Code: packages/code-runner/src/code_runner/a2a_dispatch.py.
@@ -16,10 +20,11 @@
 #   (`--require-token-env`; kagent-adk checks none, see ../kagent/remote-kagent-adk.yaml).
 # - The cards below are pinned here, not read from a pod: a fetch must not claim a pod. The door sets
 #   each interface URL to its own /<engine> URL; the chassis pins it to its configured URL anyway.
-# - NetworkPolicy (below): in on 9000 from the four remote chassis only; out to the remote pods on
-#   9000 and to the API server on 6443. The API rule is an ipBlock filled in by run.sh from the
-#   sentinel, the same way as PoC-5's code-runner dispatcher (../../poc05/platform/network-policy.yaml).
-#   Never apply this file without run.sh: the API refuses the sentinel.
+# - NetworkPolicy (remote-run-dispatch-network-policy.yaml, applied by path as the cluster admin):
+#   in from each remote chassis on its own engine's port only; out to the remote pods on 9000 and
+#   to the API server on 6443. The API rule is an ipBlock filled in by run.sh from the sentinel,
+#   the same way as PoC-5's code-runner dispatcher (../../poc05/platform/network-policy.yaml).
+#   Never apply that file without run.sh: the API refuses the sentinel.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -178,29 +183,41 @@ spec:
             - --cards-dir
             - /etc/remote-run-dispatch/cards
             - --public-url
-            - http://remote-run-dispatch.poc05-platform.svc.cluster.local:9000
+            - http://remote-run-dispatch.poc05-platform.svc.cluster.local
             - --host
             - 0.0.0.0
-            - --port
-            - "9000"
+            - --engine-port
+            - claude-agent=9001
+            - --engine-port
+            - smolagents=9002
+            - --engine-port
+            - typescript=9003
+            - --engine-port
+            - kagent-adk=9004
           ports:
-            - name: a2a
-              containerPort: 9000
+            - name: claude-agent
+              containerPort: 9001
+            - name: smolagents
+              containerPort: 9002
+            - name: typescript
+              containerPort: 9003
+            - name: kagent-adk
+              containerPort: 9004
           startupProbe:
             httpGet:
               path: /health
-              port: 9000
+              port: 9001
             periodSeconds: 2
             failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /health
-              port: 9000
+              port: 9001
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /health
-              port: 9000
+              port: 9001
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 6
@@ -261,107 +278,15 @@ spec:
   selector:
     app.kubernetes.io/name: remote-run-dispatch
   ports:
-    - name: a2a
-      port: 9000
-      targetPort: 9000
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: remote-run-dispatch
-  namespace: poc05-platform
-  labels:
-    app.kubernetes.io/part-of: poc06
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: remote-run-dispatch
-  policyTypes: [Ingress, Egress]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: poc05-agents
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: chassis-smolagents-remote
-      ports:
-        - port: 9000
-          protocol: TCP
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: poc05-agents
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: chassis-claude-agent-remote
-      ports:
-        - port: 9000
-          protocol: TCP
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: poc05-agents
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: chassis-typescript-remote
-      ports:
-        - port: 9000
-          protocol: TCP
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: poc05-agents
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: chassis-kagent-adk-remote
-      ports:
-        - port: 9000
-          protocol: TCP
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: poc05-remote
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: remote-smolagents
-      ports:
-        - port: 9000
-          protocol: TCP
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: poc05-remote
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: remote-claude-agent
-      ports:
-        - port: 9000
-          protocol: TCP
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: poc05-remote
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: remote-typescript
-      ports:
-        - port: 9000
-          protocol: TCP
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: poc05-remote
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: remote-kagent-adk
-      ports:
-        - port: 9000
-          protocol: TCP
-    - to:
-        - ipBlock:
-            cidr: __API_SERVER_IP__/32
-      ports:
-        - port: 6443
-          protocol: TCP
+    - name: claude-agent
+      port: 9001
+      targetPort: 9001
+    - name: smolagents
+      port: 9002
+      targetPort: 9002
+    - name: typescript
+      port: 9003
+      targetPort: 9003
+    - name: kagent-adk
+      port: 9004
+      targetPort: 9004

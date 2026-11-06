@@ -3,6 +3,10 @@
 A PoC-6 remote pod used to be long-lived, so runs shared its uid, its `/tmp`, and its process
 tree. The front door gives each run a fresh pod from the engine's warm pool and deletes it after.
 
+One port per engine (`engine_ports`, `create_front_doors`): a port serves only its own engine,
+so the network policy can let each chassis reach its own engine's port and no other. A request on
+a port for another engine's path is 404 and claims nothing.
+
 Per engine path `/<engine>`:
 
 - `GET /<engine>/.well-known/agent-card.json`: the engine's pinned card (a mounted file), with
@@ -33,11 +37,12 @@ import logging
 import re
 import time
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from starlette.applications import Starlette
@@ -53,6 +58,10 @@ from code_runner.runner import DEFAULT_LIMITS, RunnerError
 STREAM_METHODS = frozenset({"SendStreamingMessage", "message/stream"})
 CANCEL_METHODS = frozenset({"CancelTask", "tasks/cancel"})
 UNAVAILABLE_CODE = -32000  # not an A2A code: the client raises A2AClientError (retryable)
+# The pod refused the caller's credential (401, 403) before the stream: the door answers with the
+# same HTTP status and a fixed body, as the pod did before the door existed. The a2a-sdk raises an
+# HTTP error status as A2AClientHTTPError, which the chassis connector reports as `a2a.transport`.
+REFUSED_STATUSES = frozenset({401, 403})
 TASK_NOT_FOUND = -32001
 METHOD_NOT_FOUND = -32601
 INVALID_REQUEST = -32600
@@ -62,6 +71,7 @@ REMOTE_PORT = 9000
 REMOTE_PATH = "/"
 SCAN_LINE_CAP = 64 * 1024  # suggested: a stream line longer than this is not read for a task id
 CANCEL_ANSWER_CAP = 64 * 1024  # suggested: a cancel answer is one small JSON-RPC object
+MAX_TCP_PORT = 65535
 _ENGINE_NAME = re.compile(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?")
 # Hop-by-hop headers and the ones httpx sets itself are not forwarded either way.
 _SKIP_HEADERS = frozenset(
@@ -103,7 +113,11 @@ class FrontDoorConfig:
     run_deadline_s: float = 600
     shutdown_grace_s: float = 60
     connect_retry_s: float = 5
+    headers_timeout_s: float = 30  # a pod that accepts and never answers frees its claim
+    cancel_timeout_s: float = 10
     remote_port: int = REMOTE_PORT
+    # engine name -> the port that serves it; empty: one app serves every engine (tests, PoC-5)
+    engine_ports: Mapping[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -144,6 +158,30 @@ def load_engines(cards_dir: str | Path, *, pool_prefix: str) -> dict[str, Engine
     return engines
 
 
+def parse_engine_ports(specs: Sequence[str], engines: Mapping[str, Engine]) -> dict[str, int]:
+    """`NAME=PORT` per engine: every engine exactly one port, every port one engine. A bad
+    value stops the start."""
+    ports: dict[str, int] = {}
+    for spec in specs:
+        name, sep, value = spec.partition("=")
+        if not sep or not value.isdigit():
+            raise ValueError(f"engine port {spec!r} is not NAME=PORT")
+        port = int(value)
+        if not 0 < port <= MAX_TCP_PORT:
+            raise ValueError(f"engine port {spec!r}: {port} is not a TCP port")
+        if name not in engines:
+            raise ValueError(f"engine port {spec!r}: no card for engine {name!r}")
+        if name in ports:
+            raise ValueError(f"engine port {spec!r}: engine {name!r} has two ports")
+        if port in ports.values():
+            raise ValueError(f"engine port {spec!r}: port {port} serves two engines")
+        ports[name] = port
+    missing = sorted(set(engines) - set(ports))
+    if missing:
+        raise ValueError(f"engine port: no port for {', '.join(missing)}")
+    return ports
+
+
 def _rpc_error(rpc_id: object, code: int, message: str) -> JSONResponse:
     return JSONResponse(
         {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": code, "message": message}}
@@ -154,12 +192,29 @@ def _unavailable(rpc_id: object, message: str) -> JSONResponse:
     return _rpc_error(rpc_id, UNAVAILABLE_CODE, f"sandbox_unavailable: {message}")
 
 
+def _connection_named(values: list[str]) -> frozenset[str]:
+    """The header names the `Connection` headers list: hop-by-hop too, so never forwarded."""
+    return frozenset(n.strip().lower() for v in values for n in v.split(",") if n.strip())
+
+
 def _forward_headers(request: Request) -> dict[str, str]:
-    return {k: v for k, v in request.headers.items() if k.lower() not in _SKIP_HEADERS}
+    """The run's headers for the pod. It asks for no encoding, so the stream reaches the chassis
+    plain: the door scans it for the task id, and the chassis caps no decoded bytes."""
+    skip = _SKIP_HEADERS | _connection_named(request.headers.getlist("connection"))
+    skip = skip | {"accept-encoding"}
+    kept = {k: v for k, v in request.headers.items() if k.lower() not in skip}
+    return {**kept, "accept-encoding": "identity"}
 
 
 def _response_headers(response: httpx.Response) -> dict[str, str]:
-    return {k: v for k, v in response.headers.items() if k.lower() not in _SKIP_HEADERS}
+    skip = _SKIP_HEADERS | _connection_named(response.headers.get_list("connection"))
+    return {k: v for k, v in response.headers.items() if k.lower() not in skip}
+
+
+def _encoded(response: httpx.Response) -> bool:
+    """True when the pod sent an encoded body despite `accept-encoding: identity`."""
+    values = response.headers.get_list("content-encoding", split_commas=True)
+    return any(v.strip().lower() not in ("", "identity") for v in values)
 
 
 def _task_id_of(message: object) -> str | None:
@@ -244,9 +299,18 @@ class RunDispatcher:
     def task_count(self) -> int:
         return sum(1 for r in self._runs.values() if r.task_id is not None)
 
+    def url_for(self, engine: Engine) -> str:
+        """The door's URL for the engine: on the engine's own port when it has one."""
+        base = self.config.public_url.rstrip("/")
+        port = self.config.engine_ports.get(engine.name)
+        if port is not None:
+            parts = urlsplit(base)
+            base = parts._replace(netloc=f"{parts.hostname}:{port}").geturl()
+        return f"{base}/{engine.name}"
+
     def card(self, engine: Engine) -> dict[str, Any]:
         """The pinned card with every URL the client could post to set to the door."""
-        url = f"{self.config.public_url.rstrip('/')}/{engine.name}"
+        url = self.url_for(engine)
         card: dict[str, Any] = json.loads(json.dumps(engine.card))
         interfaces = card.get("supportedInterfaces")
         if isinstance(interfaces, list):
@@ -273,6 +337,16 @@ class RunDispatcher:
         if run is None:
             return _rpc_error(rpc_id, TASK_NOT_FOUND, "task not found")
         url = f"http://{run.host}:{self.config.remote_port}{REMOTE_PATH}"
+        try:
+            async with asyncio.timeout(self.config.cancel_timeout_s):
+                return await self._send_cancel(engine, rpc_id, url, body, request)
+        except TimeoutError:
+            log.warning("a2a-dispatch cancel_timeout engine=%s", engine.name)
+            return _unavailable(rpc_id, "the cancel did not reach the sandbox")
+
+    async def _send_cancel(
+        self, engine: Engine, rpc_id: object, url: str, body: bytes, request: Request
+    ) -> Response:
         try:
             async with self._upstream.stream(
                 "POST", url, content=body, headers=_forward_headers(request)
@@ -314,9 +388,20 @@ class RunDispatcher:
         if upstream.status_code != 200:
             status = upstream.status_code
             claim.outcome = f"status_{status}"
-            await upstream.aclose()
-            await self._release(claim)
+            try:
+                await upstream.aclose()
+            finally:
+                await self._release(claim)
+            if status in REFUSED_STATUSES:
+                return JSONResponse({"error": "sandbox_refused"}, status_code=status)
             return _unavailable(rpc_id, f"the sandbox refused the run (HTTP {status})")
+        if _encoded(upstream):
+            claim.outcome = "encoded"
+            try:
+                await upstream.aclose()
+            finally:
+                await self._release(claim)
+            return _unavailable(rpc_id, "the sandbox sent an encoded stream")
         run = _Run(engine.name, host)
         self._runs[claim.name] = run
 
@@ -327,7 +412,7 @@ class RunDispatcher:
                 await self._release(claim)
 
         return _ClaimedStream(
-            self._relay(upstream, run, claim),
+            self._relay(upstream, run, claim, rpc_id),
             close_and_release,
             status_code=200,
             headers=_response_headers(upstream),
@@ -343,19 +428,41 @@ class RunDispatcher:
         return await self.claims.wait_ready(claim.name)
 
     async def _relay(
-        self, upstream: httpx.Response, run: _Run, claim: _Claim
+        self, upstream: httpx.Response, run: _Run, claim: _Claim, rpc_id: object
     ) -> AsyncIterator[bytes]:
-        """The pod's bytes, unchanged, until the stream ends or the run deadline passes."""
-        try:
-            async with asyncio.timeout(self.config.run_deadline_s):
-                async for chunk in upstream.aiter_raw():
-                    _scan(run, chunk)
-                    claim.response_bytes += len(chunk)
-                    yield chunk
-        except TimeoutError:
-            claim.outcome = "run_deadline"
-        except httpx.HTTPError as exc:
-            claim.outcome = f"lost_{type(exc).__name__}"
+        """The pod's bytes, unchanged, until the stream ends. On the run deadline or a lost pod,
+        one last SSE event: the door's own retryable JSON-RPC error. The deadline is one for the
+        whole run, applied to each read, never across a `yield`."""
+        deadline = asyncio.get_running_loop().time() + self.config.run_deadline_s
+        chunks = upstream.aiter_raw()
+        tail = b"\n\n"
+        while True:
+            try:
+                async with asyncio.timeout_at(deadline):
+                    chunk = await anext(chunks)
+            except StopAsyncIteration:
+                return
+            except TimeoutError:
+                claim.outcome = "run_deadline"
+                message = "sandbox_lost: the run passed its deadline"
+                break
+            except httpx.HTTPError as exc:
+                claim.outcome = f"lost_{type(exc).__name__}"
+                message = "sandbox_lost: the sandbox stream broke"
+                break
+            _scan(run, chunk)
+            claim.response_bytes += len(chunk)
+            tail = (tail + chunk)[-2:]
+            yield chunk
+        error = {
+            "jsonrpc": "2.0",
+            "id": rpc_id,
+            "error": {"code": UNAVAILABLE_CODE, "message": message},
+        }
+        # A blank line first ends any event the pod left half sent.
+        yield (
+            (b"" if tail == b"\n\n" else b"\n\n") + b"data: " + json.dumps(error).encode() + b"\n\n"
+        )
 
     async def _release(self, claim: _Claim) -> None:
         """Once per claim, on every path: forget the task, delete the claim, free the slot."""
@@ -385,7 +492,11 @@ class RunDispatcher:
         while True:
             request = self._upstream.build_request("POST", url, content=body, headers=headers)
             try:
-                return await self._upstream.send(request, stream=True)
+                async with asyncio.timeout(self.config.headers_timeout_s):
+                    return await self._upstream.send(request, stream=True)
+            except TimeoutError:
+                log.warning("a2a-dispatch sandbox_silent")
+                raise RunnerError("sandbox_unavailable", "the sandbox did not answer") from None
             except CONNECT_FAILED as exc:
                 if time.monotonic() >= deadline:
                     log.warning("a2a-dispatch sandbox_unreachable error=%s", type(exc).__name__)
@@ -410,11 +521,25 @@ def _parse(body: bytes) -> tuple[object, str | None, JSONResponse | None]:
     return rpc_id, str(message["method"]), None
 
 
-def create_front_door(door: RunDispatcher) -> ASGIApp:
-    """The ASGI app: the routes behind the shared body cap (`code_runner.asgi.guard`)."""
+def create_front_doors(door: RunDispatcher) -> dict[int, ASGIApp]:
+    """One app per engine port, each serving only its engine. Needs a port for every engine."""
+    ports = dict(door.config.engine_ports)
+    if set(ports) != set(door.engines):
+        raise ValueError("engine port: want exactly one port for every engine")
+    return {port: create_front_door(door, only=name) for name, port in ports.items()}
+
+
+def create_front_door(door: RunDispatcher, *, only: str | None = None) -> ASGIApp:
+    """The ASGI app: the routes behind the shared body cap (`code_runner.asgi.guard`). With
+    `only`, every engine path but that one is 404 (`unknown_engine`), before any claim."""
+    if only is not None and only not in door.engines:
+        raise ValueError(f"engine port: no card for engine {only!r}")
 
     def _engine(request: Request) -> Engine | None:
-        return door.engines.get(str(request.path_params["engine"]))
+        name = str(request.path_params["engine"])
+        if only is not None and name != only:
+            return None
+        return door.engines.get(name)
 
     async def card(request: Request) -> Response:
         engine = _engine(request)

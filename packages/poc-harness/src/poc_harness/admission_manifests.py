@@ -83,6 +83,8 @@ ADMISSION_OBJECTS = {
     "binding.yaml",
     "extension-policy.yaml",
     "extension-binding.yaml",
+    "service-policy.yaml",
+    "service-binding.yaml",
 }
 
 

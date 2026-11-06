@@ -423,10 +423,17 @@ def test_poc05_run_sh_applies_platform_only_through_the_fill() -> None:
 DEPLOYER_FOLDERS = ("agents", "remote", "tools")
 
 
+POLICIES_SH = KIND_POC05.parent / "policies.sh"
+
+
 def _run_sh_function(name: str) -> str:
-    match = re.search(rf"(?ms)^{name}\(\) \{{\n(.*?)^\}}", RUN_SH.read_text())
-    assert match, f"run.sh has no {name}()"
-    return match.group(1)
+    """The body of `name()` in run.sh or in policies.sh, which run.sh sources (shared with
+    PoC-6's run.sh)."""
+    for path in (RUN_SH, POLICIES_SH):
+        match = re.search(rf"(?ms)^{name}\(\) \{{\n(.*?)^\}}", path.read_text())
+        if match:
+            return match.group(1)
+    raise AssertionError(f"run.sh and policies.sh have no {name}()")
 
 
 @pytest.mark.parametrize("folder", DEPLOYER_FOLDERS)
@@ -452,7 +459,7 @@ def test_poc05_run_sh_applies_policies_by_path_after_a_client_dry_run() -> None:
     """Criterion 5: the admin applies each policy file by path, after `--dry-run=client -o name`
     lists only `networkpolicy.networking.k8s.io/*`, with `-n` so kubectl refuses another
     namespace. The deployer's manifest is refused if it holds a NetworkPolicy. No awk split."""
-    text = RUN_SH.read_text()
+    text = RUN_SH.read_text() + POLICIES_SH.read_text()
     policies = _run_sh_function("apply_policies")
     deployer = _run_sh_function("apply_deployer")
     folder = _run_sh_function("apply_folder")
@@ -466,6 +473,7 @@ def test_poc05_run_sh_applies_policies_by_path_after_a_client_dry_run() -> None:
     assert '--as="$DEPLOYER"' in deployer and '--as="$DEPLOYER"' not in policies
     assert 'apply_policies "$ns" "$HERE/$1/network-policy.yaml"' in folder
     assert "| apply_deployer" in folder
+    assert 'source "$HERE/../policies.sh"' in RUN_SH.read_text()
 
 
 @pytest.mark.parametrize("function", ["workloads", "apply_agents"])

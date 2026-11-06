@@ -131,7 +131,7 @@ data:
       "version": "v1",
       "supportedInterfaces": [
         {
-          "url": "http://remote-run-dispatch.poc05-platform.svc.cluster.local:9000/kagent-adk",
+          "url": "http://remote-run-dispatch.poc05-platform.svc.cluster.local:9004/kagent-adk",
           "protocolBinding": "JSONRPC",
           "protocolVersion": "1.0"
         }
@@ -269,39 +269,3 @@ spec:
   replicas: 1
   sandboxTemplateRef:
     name: remote-kagent-adk
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: remote-kagent-adk
-  namespace: poc05-remote
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: remote-kagent-adk
-  policyTypes: [Ingress, Egress]
-  # 9000 only from the front door, which claimed this pod for one run (core review R6-11). The
-  # runtime checks no bearer, so this policy and the front door's ingress are the control.
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: poc05-platform
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: remote-run-dispatch
-      ports:
-        - port: 9000
-          protocol: TCP
-  # Its chassis's remote proxy port, and nothing else: no DNS, no ipBlock.
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: poc05-agents
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: chassis-kagent-adk-remote
-      ports:
-        - port: 8091
-          protocol: TCP

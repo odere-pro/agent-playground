@@ -8,11 +8,12 @@ external_pods:
   - {ns: kube-system, labels: {k8s-app: kube-dns}}
 
 sidecar_pods: [agent-openai-agents, agent-typescript]
+# door_port: the front door's port for the pair's engine; only that chassis may reach it.
 remote_pairs:
-  - {remote: remote-smolagents, chassis: chassis-smolagents-remote}
-  - {remote: remote-claude-agent, chassis: chassis-claude-agent-remote}
-  - {remote: remote-typescript, chassis: chassis-typescript-remote}
-  - {remote: remote-kagent-adk, chassis: chassis-kagent-adk-remote}
+  - {remote: remote-smolagents, chassis: chassis-smolagents-remote, door_port: TCP/9002}
+  - {remote: remote-claude-agent, chassis: chassis-claude-agent-remote, door_port: TCP/9001}
+  - {remote: remote-typescript, chassis: chassis-typescript-remote, door_port: TCP/9003}
+  - {remote: remote-kagent-adk, chassis: chassis-kagent-adk-remote, door_port: TCP/9004}
 
 # For every chassis pod (the two sidecar pods and the four remote chassis):
 chassis_egress:
@@ -28,7 +29,8 @@ pair_edges:
   - {from: remote, to: chassis, ports: [TCP/8091]}
 
 # The A2A call goes through the remote-run front door, one fresh pod per run (core review R6-11):
-# each remote chassis's egress to the door on 9000, and each remote's ingress from it on 9000.
-# The door's own policy is in deploy/kind/poc06/platform/ (test_poc06b_run_isolation_static.py).
+# each remote chassis's egress to the door on its own engine's port (door_port above), and each
+# remote's ingress from the door on 9000. The door's own policy is in deploy/kind/poc06/platform/
+# (test_poc06b_run_isolation_static.py pins its per-port ingress).
 front_door: {ns: poc05-platform, labels: {app.kubernetes.io/name: remote-run-dispatch}}
-front_door_ports: [TCP/9000]
+remote_ports: [TCP/9000]
