@@ -15,6 +15,7 @@ The service chassis for the SLM agent platform, and the nine PoC iterations that
 - `packages/workloads` what runs behind the chassis, one folder per workload (PoC-6 adds `echo-openai-agents`, `echo-smolagents`, `echo-claude-agent`).
 - `packages/bakeoff` the PoC-6 bake-off kit: `python -m bakeoff smoke|run`, one `/v1/run` per engine, lane, and task.
 - `packages/eval-kit` the PoC-7 eval trial and the PoC-8 eval gate and red team, on the bake-off stack: `python -m eval_kit.evaltrial|evalrun|evalgate|redteam`, the golden set in `golden/`.
+- `packages/load-tools` the PoC-4 load tools, reused by PoC-6: `python -m load_tools.run_matrix`, `steady_client`, and the Locust file.
 - `packages/workload-a2a` the template A2A server a Python workload ships with; never imports `chassis` (ADR-002).
 - `packages/agentctl` the PoC-9 agent factory: `agentctl new` renders the service template (Copier) into a new repo pinned to the platform.
 - `packages/agent-testkit` the PoC-9 fixture kit: runs the chassis in the `fake` profile as its own process and the lane contract over A2A; never imports `chassis`.
