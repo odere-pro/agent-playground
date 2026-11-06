@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from run_matrix import LOCUST, LOCUSTFILE, URL, read_locust, sample_stats
+from load_tools.run_matrix import LOCUST, LOCUSTFILE, URL, read_locust, sample_stats
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE.parent / "notes" / "load" / "idem-cost.json"

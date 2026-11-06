@@ -62,7 +62,7 @@ test-integration: ## Network tests: real adapters in testcontainers, sockets on,
 	scripts/check_integration.sh $(ARGS)
 
 load-test: ## PoC-4 load matrix (Locust via uv run --with, Compose): make load-test ARGS="--engine echo-python"
-	$(PY) pocs/poc-04-stateless-scalable/load/run_matrix.py $(ARGS)
+	$(PY) -m load_tools.run_matrix $(ARGS)
 
 kind-poc04: ## PoC-4 kind cluster and drills: make kind-poc04 ARGS="up native-sidecar"
 	deploy/kind/run.sh $(ARGS)

@@ -11,11 +11,11 @@ DURATION=${2:-30}
 for n in $(seq 1 "$PASSES"); do
   for engine in echo-python echo-pydanticai echo-langgraph echo-typescript; do
     echo "== pass $n $engine $(date -u +%T)"
-    uv run python "$ROOT/pocs/poc-04-stateless-scalable/load/run_matrix.py" \
+    uv run python -m load_tools.run_matrix \
       --engine "$engine" --only main --duration-s "$DURATION" 2>&1 | grep -E "^echo-|run_matrix"
   done
   echo "== pass $n hop+idem $(date -u +%T)"
-  uv run python "$ROOT/pocs/poc-04-stateless-scalable/load/run_matrix.py" \
+  uv run python -m load_tools.run_matrix \
     --only hop --only idem --duration-s "$DURATION" 2>&1 | grep -E "^echo-|^hop|run_matrix"
   mkdir -p "$LOAD/passes/$n"
   mv "$LOAD/results.json" "$LOAD/passes/$n/results.json"

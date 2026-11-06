@@ -2,6 +2,8 @@
 
 Load and drill scripts for the Compose scale stack (`deploy/compose/scale.sh`, project `poc04`, Traefik on `127.0.0.1:18080`). Design: `docs/plans/2026-10-01-poc-04-stateless-scalable.md`, sections 6, 9, and 10. They feed exit criteria 3 (killed replica), 4 (throughput grows), 6 (stopping a pair fails nothing), and 11 (sidecar cost).
 
+The code of `locustfile.py`, `run_matrix.py`, and `steady_client.py` now lives in `packages/load-tools` (`load_tools`), because CI and PoC-6 run it too. The files here are thin entry scripts with the same flags, defaults, and outputs, so the dated commands in `notes/` still run. The drills import the package.
+
 Build the images first: `deploy/compose/scale.sh build`. The scripts only touch containers of project `poc04`. The Docker VM is shared and small, so the matrix runs one engine and one pair count at a time.
 
 | File | What it does |

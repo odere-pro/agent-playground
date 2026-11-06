@@ -30,6 +30,7 @@ COPY packages/guardrail-server/pyproject.toml packages/guardrail-server/
 COPY packages/agentctl/pyproject.toml packages/agentctl/
 COPY packages/agent-testkit/pyproject.toml packages/agent-testkit/
 COPY packages/poc-harness/pyproject.toml packages/poc-harness/
+COPY packages/load-tools/pyproject.toml packages/load-tools/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package chassis --package echo-python --no-install-workspace
 # The echo-python workload rides in this image for the `inprocess` lane (PoC-1 only; PoC-2 moves

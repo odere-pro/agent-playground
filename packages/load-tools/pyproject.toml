@@ -1,0 +1,13 @@
+[project]
+name = "load-tools"
+version = "0.1.0"
+description = "Load tools for the Compose scale stack: the Locust load matrix, the Locust user, and the steady no-retry client the drills use; never imported by the chassis"
+requires-python = ">=3.12,<3.13"
+dependencies = ["httpx>=0.28"]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "load_tools"
