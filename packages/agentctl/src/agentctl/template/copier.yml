@@ -37,9 +37,9 @@ kind:
 
 framework:
   type: str
-  help: The engine of the business logic (ADR-006); pydanticai is the default
+  help: The engine of the business logic (ADR-006); langgraph is the default
   choices: [python, pydanticai, langgraph, openai-agents, smolagents, claude-agent]
-  default: pydanticai
+  default: langgraph
 
 trust:
   type: str
