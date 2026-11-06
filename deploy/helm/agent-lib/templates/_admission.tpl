@@ -4,8 +4,9 @@ agent-lib.admission: the admission rules, rendered by the platform's chart
 ADR-001 hard requirement 1 and item 9; ADR-005 decisions 4 and 5).
 
 - agent-lib.admissionPolicy: the trust rule, a ValidatingAdmissionPolicy (no controller). Its
-  spec is deploy/kind/poc05/admission/policy.yaml's, byte for byte; the chart test holds the two
-  equal, so the kind admission suite in CI proves the CEL the chart ships. Rules 1 to 8 are the
+  spec is deploy/kind/poc05/admission/policy.yaml's (the same parsed spec, held equal by the chart
+  test test_the_admission_chart_renders_the_poc05_trust_rule_unchanged; comments and metadata
+  may differ), so the kind admission suite in CI proves the CEL the chart ships. Rules 1 to 8 are the
   lane and trust rules PoC-5 built (the header of that file explains each); rule 9 is the minimum
   chassis version.
 - agent-lib.admissionBinding: Deny (and Audit) in every namespace labeled
