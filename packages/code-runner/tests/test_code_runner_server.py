@@ -108,6 +108,25 @@ async def test_code_runner_oversized_code_is_bad_arguments(tmp_path: Path) -> No
         await _call(small, {"code": "print('long enough')"}, "k-big")
 
 
+async def test_code_runner_schema_caps_the_code_length(tmp_path: Path) -> None:
+    """R5a-11: the schema says the cap, so a client can see it before it sends."""
+    async with Client(create_server(limits=Limits(max_code_bytes=8), tmp_root=tmp_path)) as client:
+        (tool,) = await client.list_tools()
+    assert tool.input_schema["properties"]["code"]["maxLength"] == 8
+
+
+async def test_code_runner_schema_refusal_is_bad_arguments_and_never_echoes_the_code(
+    tmp_path: Path,
+) -> None:
+    """A schema refusal keeps the stable code and a fixed text: no pydantic `input_value`."""
+    small = create_server(limits=Limits(max_code_bytes=8), tmp_root=tmp_path)
+    for args in ({"code": "print('SECRET-CODE')"}, {"code": "SECRET", "timeout_s": 60}):
+        result = await _call(small, args, "k-schema", raise_on_error=False)
+        (text,) = [c.text for c in result.content]
+        assert result.is_error is True
+        assert text == "bad_arguments: the arguments do not match the tool schema", text
+
+
 async def test_code_runner_timeout_out_of_bounds_is_refused(server: Any) -> None:
     with pytest.raises(ToolError):
         await _call(server, {"code": "print(1)", "timeout_s": 60}, "k-bounds")

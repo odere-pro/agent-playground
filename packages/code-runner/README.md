@@ -14,7 +14,7 @@ Never run `code-runner` outside such a pod in a deployed lane. Running it on a h
 
 | Input | Type | Rule |
 | ----- | ---- | ---- |
-| `code` | string | Python source, run as `__main__`; at most 64 KiB (suggested) |
+| `code` | string | Python source, run as `__main__`; at most 64 KiB (suggested), UTF-8 bytes; the schema shows it as `maxLength` |
 | `timeout_s` | int | wall-clock limit, 1 to 10, default 5 (suggested) |
 | `idempotency_key` | string, optional | fallback only, when the client cannot send `_meta.idempotency_key` |
 
@@ -29,7 +29,7 @@ A run is shared by every caller of its key. If the first caller is cancelled (a 
 Tool errors (MCP `isError`) start with a stable code:
 
 - `idempotency_key_required`: no key in `_meta` or the argument.
-- `bad_arguments`: code over the size cap, `timeout_s` out of range, a key over 256 characters, `_meta` and argument keys that differ, or a key reused with other arguments.
+- `bad_arguments`: arguments the schema refuses (the text is fixed: it never quotes the input), code over the size cap, `timeout_s` out of range, a key over 256 characters, `_meta` and argument keys that differ, or a key reused with other arguments.
 - `run_failed`: the interpreter could not start, the call stopped before a result, a process from the call could not be stopped, or isolation was lost earlier (see below).
 
 The dispatcher (below) adds two:
@@ -38,6 +38,15 @@ The dispatcher (below) adds two:
 - `sandbox_lost`: the sandbox ended, did not answer within `timeout_s + 5` s (suggested), answered over 256 KiB (suggested), or gave no usable answer. The key is forgotten, so a retry runs in a fresh sandbox.
 
 The text after each code is a fixed string. No upstream body and no token goes into a message or a log line. A tool error from the sandbox's own server keeps only its code.
+
+## The HTTP front
+
+Both modes serve the app through `code_runner/asgi.py` (`guard`), in front of FastMCP:
+
+- **Body cap.** A request body over 8 x `max_code_bytes` (512 KiB; the factor is suggested: JSON can write one byte of code as six) is HTTP 413 `{"error": "body_too_large"}`. A declared `Content-Length` over the cap is refused before a byte is read; a body without one is counted as it streams and refused at the cap. So the server holds at most the cap, and the dispatcher's 128Mi pod cannot be filled by one call. The tool's own byte check stays.
+- **Bearer (dispatcher only).** With `--inbound-token-file PATH` (a mounted Secret), every path but `/health` needs `Authorization: Bearer <token>`, compared with `hmac.compare_digest`. Anything else, two `Authorization` headers included, is HTTP 401 `{"error": "unauthorized"}` before the body is read, so no claim is made. The file is read once at start: empty, short (under 32 characters, suggested), or more than one word stops the start, and the message never quotes it. Rotate the Secret, then restart the dispatcher and LiteLLM. Without the flag, `/mcp` is open (local runs and tests). The token is never in argv, env, a log line, or an answer.
+
+On kind, `seed.sh base` makes the Secret `code-runner-dispatch-token`; the dispatcher mounts it as a file, and LiteLLM reads it as `CODE_RUNNER_DISPATCH_TOKEN` and sends it to `code_runner` only (`auth_type: bearer_token`, `auth_value: os.environ/CODE_RUNNER_DISPATCH_TOKEN`). That LiteLLM sends it on the pinned v1.103.0 is not yet shown on kind. <!-- pragma: allowlist secret (an env var name) -->
 
 ## Each call
 
@@ -104,7 +113,8 @@ Two `httpx` clients, never shared, and no Kubernetes SDK:
 
 ```bash
 uv run code-runner --port 8000              # local only, for manual checks
-uv run code-runner dispatch --pool code-runner --namespace poc05-tools   # in the dispatcher pod only
+uv run code-runner dispatch --pool code-runner --namespace poc05-tools \
+  --inbound-token-file /var/run/secrets/code-runner-dispatch/token   # in the dispatcher pod only
 docker build -f packages/code-runner/Dockerfile -t agent-platform/code-runner:poc05 .
 uv run pytest packages/code-runner -q        # offline, in-process MCP client
 ```

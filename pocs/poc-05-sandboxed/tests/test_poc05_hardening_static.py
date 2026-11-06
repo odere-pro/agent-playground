@@ -720,6 +720,26 @@ def test_the_dispatcher_token_is_projected_into_its_one_container_only() -> None
     assert mounts[0][1]["mountPath"] == "/var/run/secrets/kubernetes.io/serviceaccount"
 
 
+DISPATCH_TOKEN = "code-runner-dispatch-token"
+DISPATCH_TOKEN_DIR = "/var/run/secrets/code-runner-dispatch"
+
+
+def test_the_dispatcher_reads_its_inbound_bearer_from_a_mounted_secret_file() -> None:
+    """R5a-23: `--inbound-token-file` names a file in a read-only Secret volume holding only the
+    one key; the value is never in argv or env, and the API token flag stays the default."""
+    pod = _dispatcher()
+    (c,) = pod.containers()
+    args = [str(a) for a in c["args"]]
+    assert args[args.index("--inbound-token-file") + 1] == f"{DISPATCH_TOKEN_DIR}/token"
+    assert "--token-file" not in args
+    secrets = {n: v for n, v in _volumes(pod).items() if "secret" in v}
+    (name,) = secrets
+    assert secrets[name]["secret"]["secretName"] == DISPATCH_TOKEN
+    assert secrets[name]["secret"]["items"] == [{"key": "token", "path": "token"}]
+    mounts = [m for m in c.get("volumeMounts", []) if m["name"] == name]
+    assert mounts == [{"name": name, "mountPath": DISPATCH_TOKEN_DIR, "readOnly": True}]
+
+
 def test_the_dispatcher_is_reached_only_by_litellm() -> None:
     spec = _policy("platform", DISPATCHER)["spec"]
     assert spec["podSelector"] == {"matchLabels": {"app.kubernetes.io/name": DISPATCHER}}

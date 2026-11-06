@@ -6,6 +6,9 @@ Run it only inside the sandbox pod (gVisor, no egress, PID and memory limits, me
 
 `code-runner dispatch --pool code-runner --namespace poc05-tools`: the dispatcher. It serves
 the same tool and runs each call in a fresh sandbox claimed from the pool. It runs no code.
+With `--inbound-token-file`, every path but `/health` needs that bearer (LiteLLM sends it).
+
+Both put the body cap (`code_runner.asgi`) in front of `/mcp`.
 """
 
 from __future__ import annotations
@@ -14,8 +17,10 @@ import argparse
 import logging
 import os
 import sys
+from collections.abc import Mapping
 
 import uvicorn
+from starlette.types import ASGIApp
 
 DEFAULT_PORT = 8000  # suggested
 
@@ -45,39 +50,56 @@ def dispatch_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--pool", required=True, help="the SandboxWarmPool to claim from")
     parser.add_argument("--namespace", required=True, help="where the pool and claims live")
-    parser.add_argument("--token-file", default=TOKEN_FILE, help="the projected token")
+    parser.add_argument("--token-file", default=TOKEN_FILE, help="the projected API token")
+    parser.add_argument(
+        "--inbound-token-file",
+        default=None,
+        help="a file holding the bearer every /mcp caller must send (a mounted Secret)",
+    )
     parser.add_argument("--ca-file", default=CA_FILE, help="the cluster CA")
     parser.add_argument("--cache-size", type=int, default=CACHE_SIZE)
     return parser
 
 
-def _serve(argv: list[str]) -> None:
+def serve_app(args: argparse.Namespace) -> ASGIApp:
+    from code_runner.asgi import guard
     from code_runner.isolation import harden_server
+    from code_runner.runner import DEFAULT_LIMITS
     from code_runner.server import create_server
 
-    args = serve_parser().parse_args(argv)
     # Linux: subreaper and not dumpable before any call; it fails here, not on the first call.
     harden_server()
-    server = create_server(tmp_root=args.tmp_root, cache_size=args.cache_size)
+    server = create_server(
+        limits=DEFAULT_LIMITS, tmp_root=args.tmp_root, cache_size=args.cache_size
+    )
+    return guard(server.http_app(path="/mcp", stateless_http=True), limits=DEFAULT_LIMITS)
+
+
+def dispatch_app(args: argparse.Namespace, env: Mapping[str, str]) -> ASGIApp:
+    from code_runner import dispatch
+    from code_runner.asgi import guard, read_token_file
+    from code_runner.runner import DEFAULT_LIMITS
+
+    # Read first: a bad token file stops the start before any client exists.
+    token = None if args.inbound_token_file is None else read_token_file(args.inbound_token_file)
+    api = dispatch.api_client_from_env(env, token_file=args.token_file, ca_file=args.ca_file)
+    config = dispatch.DispatchConfig(namespace=args.namespace, pool=args.pool)
+    dispatcher = dispatch.Dispatcher(
+        api, dispatch.sandbox_client(), config, cache_size=args.cache_size
+    )
+    server = dispatch.create_dispatch_server(dispatcher, limits=DEFAULT_LIMITS)
     app = server.http_app(path="/mcp", stateless_http=True)
-    uvicorn.run(app, host=args.host, port=args.port)
+    return guard(app, limits=DEFAULT_LIMITS, token=token)
+
+
+def _serve(argv: list[str]) -> None:
+    args = serve_parser().parse_args(argv)
+    uvicorn.run(serve_app(args), host=args.host, port=args.port)
 
 
 def _dispatch(argv: list[str]) -> None:
-    from code_runner.dispatch import (
-        DispatchConfig,
-        Dispatcher,
-        api_client_from_env,
-        create_dispatch_server,
-        sandbox_client,
-    )
-
     args = dispatch_parser().parse_args(argv)
-    api = api_client_from_env(os.environ, token_file=args.token_file, ca_file=args.ca_file)
-    config = DispatchConfig(namespace=args.namespace, pool=args.pool)
-    dispatcher = Dispatcher(api, sandbox_client(), config, cache_size=args.cache_size)
-    app = create_dispatch_server(dispatcher).http_app(path="/mcp", stateless_http=True)
-    uvicorn.run(app, host=args.host, port=args.port)
+    uvicorn.run(dispatch_app(args, os.environ), host=args.host, port=args.port)
 
 
 def main(argv: list[str] | None = None) -> None:
