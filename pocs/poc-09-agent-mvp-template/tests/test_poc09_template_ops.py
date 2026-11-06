@@ -332,6 +332,15 @@ def test_vscode_attaches_to_the_published_debug_ports(agent: Path) -> None:
     chassis_map = by_port[CHASSIS_DEBUG]["pathMappings"][0]
     assert chassis_map["remoteRoot"] == "/app/packages/chassis/src"
     assert chassis_map["localRoot"] == "${workspaceFolder}/../agent-platform/packages/chassis/src"
+    # The image installs the agent non-editable and copies only the venv, so `/app/src` does not
+    # exist there: a breakpoint mapped to it never binds (live attach, 2026-11-05).
+    dockerfile = (TEMPLATE / "Dockerfile.jinja").read_text()
+    assert "--no-editable" in dockerfile and "COPY --from=build /app/.venv /app/.venv" in dockerfile
+    assert "python:3.12-slim@" in dockerfile
+    workload_map = by_port[WORKLOAD_DEBUG]["pathMappings"][0]
+    package = ANSWERS["package_name"]
+    assert workload_map["localRoot"] == f"${{workspaceFolder}}/src/{package}"
+    assert workload_map["remoteRoot"] == f"/app/.venv/lib/python3.12/site-packages/{package}"
     names = {c["name"] for c in launch["configurations"]}
     assert set(launch["compounds"][0]["configurations"]) == names
 

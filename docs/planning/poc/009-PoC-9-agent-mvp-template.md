@@ -20,7 +20,8 @@ Done on 2026-11-05. Two exit criteria were closed with a flag, by the user's dec
 ## What is left
 
 - **The trial by someone new to the code (exit criterion 6, flagged).** The user closed it on 2026-11-05 with no trial by a person. A stand-in trial by a fresh AI agent found ten gaps, now fixed. A real trial is still worth running: [the steps](../../../pocs/poc-09-agent-mvp-template/notes/2026-10-30-new-user-trial.md).
-- **Three checks on the user's machine.** `demo.sh --live` (native, OpenAI, and MCP from the host), a debugger attach in the `fake` profile, and the `local` profile with a running LiteLLM. None is an exit criterion.
+
+The three checks on the user's machine ran on 2026-11-05: `demo.sh --live`, a debugger attach in the `fake` profile, and the `local` profile with a running LiteLLM ([machine checks](../../../pocs/poc-09-agent-mvp-template/notes/2026-11-05-machine-checks.md)). The attach found a wrong workload path mapping in the template, now fixed.
 
 ## Moved to the backlog
 
