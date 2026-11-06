@@ -25,7 +25,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from load_tools.run_matrix import LOCUST, LOCUSTFILE, URL, read_locust, sample_stats
+from load_tools.run_matrix import (
+    LOCUSTFILE,
+    URL,
+    install_locust,
+    locust_bin,
+    locust_venv,
+    read_locust,
+    sample_stats,
+)
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE.parent / "notes" / "load" / "idem-cost.json"
@@ -55,7 +63,7 @@ def valkey_commands() -> int:
 
 
 def one_run(
-    name: str, users: int, rate: str, keyed: bool, seconds: int, procs: int
+    name: str, users: int, rate: str, keyed: bool, seconds: int, procs: int, venv: Path
 ) -> dict[str, Any]:
     env = {**os.environ}
     if rate:
@@ -64,12 +72,7 @@ def one_run(
         env["LOAD_NO_KEY"] = "1"
     prefix = RAW / name
     cmd = [
-        "uv",
-        "run",
-        "--no-project",
-        "--with",
-        LOCUST,
-        "locust",
+        str(locust_bin(venv)),
         "-f",
         str(LOCUSTFILE),
         "--host",
@@ -145,6 +148,17 @@ def main() -> int:
     parser.add_argument("--only", action="append", choices=list(POINTS))
     args = parser.parse_args()
     RAW.mkdir(parents=True, exist_ok=True)
+    with locust_venv() as venv:
+        try:
+            install_locust(venv)  # from the hashed lock, as `load_tools.run_matrix` does
+        except (subprocess.SubprocessError, OSError) as exc:
+            print(f"idem_cost: Locust install failed: {exc}", file=sys.stderr)
+            return 1
+        return measure(args, venv)
+
+
+def measure(args: argparse.Namespace, venv: Path) -> int:
+    """Each point's keyed and unkeyed runs, with the Locust in `venv`; merged into `OUT`."""
     report: dict[str, Any] = json.loads(OUT.read_text()) if OUT.exists() else {"points": {}}
     for point in args.only or list(POINTS):
         users, rate, alternations, procs = POINTS[point]
@@ -152,7 +166,7 @@ def main() -> int:
         for i in range(1, alternations + 1):
             for keyed in (True, False):
                 name = f"{point}-{i}-{'key' if keyed else 'nokey'}"
-                r = one_run(name, users, rate, keyed, args.duration_s, procs)
+                r = one_run(name, users, rate, keyed, args.duration_s, procs, venv)
                 print(
                     f"{name}: {r['ok_rps']} rps, p50 {r['p50_ms']} ms, p95 {r['p95_ms']} ms, "
                     f"chassis {r['chassis_vcpu_mean']} vCPU = {r['chassis_cpu_ms_per_call']} "

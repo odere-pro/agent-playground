@@ -1,7 +1,8 @@
 """The PoC-4 Locust user: an entry file kept so the dated `locust -f` commands still run.
 
-The code is `packages/load-tools/src/load_tools/locustfile.py`. Locust runs with
-`uv run --no-project`, so the workspace is not installed and `load_tools` cannot be imported.
+The code is `packages/load-tools/src/load_tools/locustfile.py`. Locust runs in its
+own venv (`load_tools.run_matrix.install_locust`), so the workspace is not installed and
+`load_tools` cannot be imported.
 This file loads the packaged file by path instead, and re-exports its user class, which is what
 Locust looks for.
 """

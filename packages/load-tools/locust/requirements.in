@@ -1,0 +1,2 @@
+# Locust for the load matrix (load_tools.run_matrix), pinned. Lock: requirements.txt.
+locust==2.46.6
