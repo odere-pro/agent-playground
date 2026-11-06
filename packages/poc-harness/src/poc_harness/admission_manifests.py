@@ -31,7 +31,12 @@ LANE = "agents.platform/lane"
 ROLE = "agents.platform/role"
 NAME = "app.kubernetes.io/name"
 PREFIX = "kind.local/agent-platform/"
-RULES = ("1", "2", "3", "4", "5", "6a", "6b", "6c", "7a", "7b", "7c", "7d", "8")
+RULES = (
+    "1", "2", "3", "4", "5", "6a", "6b", "6c", "7a", "7b", "7c", "7d", "7e", "7f", "7g", "8",
+)  # fmt: skip
+# Rules with no fixture file: a Pod may not carry ephemeralContainers at create, so the API server
+# refuses such a file before admission. The kind test patches `pods/ephemeralcontainers` instead.
+EPHEMERAL_RULES = ("7g",)
 EXT_GROUP = "extensions.agents.x-k8s.io"
 TEMPLATE_RULES = ("T1", "T2", "T3", "T4", "T5")
 CLAIM_RULES = ("C1", "C2", "C3", "C4", "C5")
@@ -152,6 +157,13 @@ CAN_I: list[tuple[tuple[str, str], str, str, str, str, bool]] = [
     (DISPATCHER, "create", "pods", "", TOOLS, False),
     (DISPATCHER, "get", "secrets", "", TOOLS, False),
     (DISPATCHER, "get", "secrets", "", "poc05-platform", False),
+    # Core review R5a-02: the deployer writes no NetworkPolicy; run.sh applies them as admin.
+    (DEPLOYER, "create", "pods", "", TOOLS, True),
+    *[
+        (DEPLOYER, v, "networkpolicies", "networking.k8s.io", ns, False)
+        for v in ("create", "delete", "patch")
+        for ns in (TOOLS, "poc05-agents", "poc05-remote")
+    ],
     (SUBMITTER, "create", "pods", "", "poc05-remote", True),
     (SUBMITTER, "create", "pods", "", TOOLS, False),
     *[

@@ -196,7 +196,14 @@ spec:
       app.kubernetes.io/name: chassis-kagent-adk-remote
   policyTypes: [Ingress, Egress]
   ingress:
-    - ports:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agent-platform-system
+          podSelector:
+            matchLabels:
+              agents.platform/role: gateway
+      ports:
         - port: 8080
           protocol: TCP
     - from:

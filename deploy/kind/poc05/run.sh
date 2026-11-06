@@ -214,8 +214,35 @@ PLATFORM_NS=poc05-platform
 NAMESPACES=(poc05-platform poc05-tools poc05-remote poc05-agents agent-sandbox-system)
 SEED=$HERE/platform/seed.sh
 
-# apply_folder FOLDER: remote/, tools/, agents/ go in as the platform deployer only (review F2).
-apply_folder() { kctl apply -k "$HERE/$1" --as="$DEPLOYER"; }
+# docs_of KIND WANT: the `---`-separated YAML documents on stdin whose top-level kind is KIND
+# (WANT=1) or is not (WANT=0). It reads `kubectl kustomize` output or a plain manifest, where the
+# top-level `kind:` is at column 0. Core review R5a-02: NetworkPolicies go in as cluster admin.
+docs_of() {
+  awk -v kind="$1" -v want="$2" '
+    function flush() {
+      if (doc != "" && is == want + 0) { printf "%s%s", sep, doc; sep = "---\n" }
+      doc = ""; is = 0
+    }
+    /^---$/ { flush(); next }
+    { doc = doc $0 "\n"; if ($0 == "kind: " kind) is = 1 }
+    END { flush() }'
+}
+
+# apply_split: the manifest on stdin, its NetworkPolicies as cluster admin (like
+# base/default-deny.yaml) and everything else as the platform deployer only (review F2). The
+# deployer has no NetworkPolicy rights (admission/rbac.yaml, core review R5a-02).
+apply_split() {
+  local all policies rest
+  all=$(cat)
+  policies=$(docs_of NetworkPolicy 1 <<<"$all")
+  rest=$(docs_of NetworkPolicy 0 <<<"$all")
+  [[ -z $policies ]] || kctl apply -f - <<<"$policies"
+  [[ -z $rest ]] || kctl apply -f - --as="$DEPLOYER" <<<"$rest"
+}
+
+# apply_folder FOLDER: remote/, tools/, agents/ rendered, then split by apply_split: the
+# deployer applies the workloads, the cluster admin the folder's network-policy.yaml.
+apply_folder() { kctl kustomize "$HERE/$1" | apply_split; }
 
 # On a failed wait: the object's events and the last log lines, never a Secret.
 explain() {
@@ -396,6 +423,9 @@ apply_remote() {
 
 apply_agents() {
   apply_folder agents
+  # The gateway peer's egress to the chassis public port (in agent-platform-system; not in the
+  # kustomization, which would move it into poc05-agents). Cluster admin, like every policy.
+  kctl apply -f "$HERE/agents/gateway-network-policy.yaml"
   wait_rollout poc05-agents agent-echo
   wait_rollout poc05-agents chassis-echo-remote
 }
@@ -421,7 +451,7 @@ kafka() {
   kctl -n poc05-agents create configmap chassis-echo-events-config \
     --from-file=config.yaml="$HERE/agents/chassis/echo-events.yaml" --dry-run=client -o yaml |
     kctl apply -f - --as="$DEPLOYER"
-  kctl apply -f "$HERE/agents/agent-echo-events.yaml" --as="$DEPLOYER"
+  apply_split <"$HERE/agents/agent-echo-events.yaml"
   wait_rollout poc05-agents agent-echo-events
   # The verbs after this one (test, with-gateway) then fail, not skip, on a missing broker.
   export POC05_KAFKA=1

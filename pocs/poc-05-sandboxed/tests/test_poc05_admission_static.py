@@ -14,9 +14,14 @@ checks as much as it can without a cluster:
 - `test_poc05_admission_rbac_static.py` checks the RBAC;
 - every CEL expression uses only the optional lookup form `[?'key']` (the spike found that
   `.?'key'` does not compile), has balanced delimiters, and names only variables defined above it;
-- each rule (1 to 5, 6a to 6c, 7a to 7d, 8, T1 to T3, C1 to C5) has a rejected fixture and an
+- each rule (1 to 5, 6a to 6c, 7a to 7f, 8, T1 to T5, C1 to C5) has a rejected fixture and an
   admitted twin that differ only in the fields the rule reads, and each header names the rule's
-  message;
+  message. Rule 7g (no ephemeral container on the chassis, review R5a-16) has no fixture file: a
+  Pod may not carry ephemeral containers at create, so the model is checked on an in-memory pod
+  and `test_poc05_kind_admission.py` patches `pods/ephemeralcontainers` on `agent-echo`;
+- the core review R5a rules: 7d refuses a projected token in a tool pod (R5a-06), 7e keeps the
+  service account token out of every chassis-shape pod but the chassis container (R5a-01), and 7f
+  refuses a shared PID namespace or a workload uid equal to the chassis's (R5a-05);
 - a Python model of the rules agrees with every fixture's header: a rejected fixture breaks
   exactly its rule, an admitted twin breaks none. The model mirrors the CEL; it does not run it.
   `test_poc05_kind_admission.py` runs the real policy on the `kind-poc05` cluster.
@@ -37,6 +42,7 @@ from poc_harness.admission_manifests import (
     CLAIM_RULES,
     ENFORCE_LABEL,
     ENFORCED_NAMESPACES,
+    EPHEMERAL_RULES,
     EXT_GROUP,
     EXTENSION_FIELDS,
     EXTENSION_POLICIES,
@@ -436,7 +442,8 @@ ALL_RULES = (*RULES, *TEMPLATE_RULES, *CLAIM_RULES)
 
 def test_every_rule_has_a_rejected_fixture_and_an_admitted_twin() -> None:
     assert ALL, f"no fixtures under {FIXTURES}"
-    for rule in ALL_RULES:
+    assert not [f for f in ALL if f.rule in EPHEMERAL_RULES], "rule 7g cannot have a fixture file"
+    for rule in (r for r in ALL_RULES if r not in EPHEMERAL_RULES):
         rejected = [f for f in REJECTED if f.rule == rule]
         assert rejected, f"rule {rule}: no rejected fixture"
         for f in rejected:
@@ -557,6 +564,9 @@ SECRET_REF = (
     r"|\.spec\.volumes\[\d+\]\.(secret\.secretName|projected\.sources\[\d+\]\.secret\.name)"
 )
 GVISOR = r"\.spec\.(runtimeClassName|automountServiceAccountToken)"
+TOKEN_VOLUME = r"\.spec\.volumes(\[\d+\](\..*)?)?"
+TOKEN_MOUNT = rf"{CONTAINER}\.volumeMounts(\[\d+\](\..*)?)?"
+RUN_AS_USER = rf"({CONTAINER}|\.spec)\.securityContext\.runAsUser"
 READS: dict[str, str] = {
     "1": rf"\.metadata\.labels\[{re.escape(TRUST)}\]",
     "2": rf"\.metadata\.labels\[{re.escape(TRUST)}\]",
@@ -569,7 +579,9 @@ READS: dict[str, str] = {
     "7a": r"\.metadata\.namespace",
     "7b": rf"\.metadata\.labels\[{re.escape(ROLE)}\]",
     "7c": SECRET_REF,
-    "7d": GVISOR,
+    "7d": rf"{GVISOR}|{TOKEN_VOLUME}",
+    "7e": rf"\.spec\.automountServiceAccountToken|{TOKEN_VOLUME}|{TOKEN_MOUNT}",
+    "7f": rf"\.spec\.shareProcessNamespace|{RUN_AS_USER}",
     "8": rf"{CONTAINER}\.imagePullPolicy",
     "T1": r"\.spec\.networkPolicyManagement",
     "T2": r"\.spec\.envVarsInjectionPolicy",
@@ -638,7 +650,10 @@ def test_fixtures_meet_the_restricted_pod_security_standard(fixture: Fixture) ->
         ("7a", "0583f09d78803e05"),
         ("7b", "ac07d2f204ef0003"),  # pragma: allowlist secret
         ("7c", "79e11318ba44d4e2"),  # pragma: allowlist secret
-        ("7d", "9efa9e4543df63f6"),  # pragma: allowlist secret
+        ("7d", "e4cf43111da1b9da"),  # pragma: allowlist secret
+        ("7e", "eaf94260212b8654"),  # pragma: allowlist secret
+        ("7f", "0cfab182efbb2dc4"),  # pragma: allowlist secret
+        ("7g", "6c75f42057868396"),  # pragma: allowlist secret
         ("8", "7f98972336329322"),
         ("T1", "ca53815103a2c2af"),  # pragma: allowlist secret
         ("T2", "11f516c4a675f8e4"),  # pragma: allowlist secret
@@ -677,7 +692,7 @@ def test_rule_expression_matches_its_pin_when_the_policy_loads(
 @pytest.mark.parametrize(
     ("name", "pinned"),
     [
-        ("agent-trust-rule", "ce4ee3a01d617e67"),  # pragma: allowlist secret
+        ("agent-trust-rule", "7423687c4c37f0d8"),  # pragma: allowlist secret
         ("sandbox-template-rule", "e3b0c44298fc1c14"),  # pragma: allowlist secret
         ("sandbox-claim-rule", "e3b0c44298fc1c14"),  # pragma: allowlist secret
     ],
@@ -735,3 +750,59 @@ def test_the_digest_mode_needs_a_digest_on_every_image() -> None:
     assert broken_rules(pod, p) == {"8"}
     pod["spec"]["containers"][0]["image"] = PREFIX + "code-runner@sha256:" + "0" * 64
     assert broken_rules(pod, p) == set()
+
+
+SIDECAR_TWIN = FIXTURES / "rule6c-secret-in-workload" / "admitted.yaml"
+
+
+def _with_debug(target: str) -> Doc:
+    """The rule-6c admitted sidecar pod with one ephemeral container aimed at `target`, as the
+    API server sees a `pods/ephemeralcontainers` update."""
+    doc = read_fixture(SIDECAR_TWIN).doc
+    debug = {
+        "name": "debug",
+        "image": PREFIX + "echo-python:poc05",
+        "imagePullPolicy": "Never",
+        "targetContainerName": target,
+        "securityContext": {"runAsUser": 10003},
+    }
+    return {**doc, "spec": {**doc["spec"], "ephemeralContainers": [debug]}}
+
+
+@pytest.mark.parametrize(("target", "broken"), [("chassis", {"7g"}), ("workload", set())])
+def test_the_rule_model_refuses_a_debug_container_on_the_chassis(
+    params: Doc, target: str, broken: set[str]
+) -> None:
+    """Criterion 4: "No provider key or internal credential is visible in any workload container or
+    remote pod, and neither holds a service account token."
+
+    Criterion 4, rule 7g (review R5a-16): an ephemeral container whose `targetContainerName` is
+    the chassis container shares its process namespace and could read its environ, so it is
+    refused; the paired control, the same container aimed at the workload, breaks no rule."""
+    got = broken_rules(_with_debug(target), AdmissionParams.of(params))
+
+    assert got == broken, target
+
+
+def test_the_rule_model_needs_an_explicit_uid_for_every_sidecar_container(params: Doc) -> None:
+    """Criterion 4: "No provider key or internal credential is visible in any workload container or
+    remote pod, and neither holds a service account token."
+
+    Criterion 4, rule 7f (review R5a-05): a workload container with no `runAsUser` anywhere breaks
+    7f, and a pod-level `runAsUser` the chassis does not share counts as explicit."""
+    doc = read_fixture(SIDECAR_TWIN).doc
+    spec = doc["spec"]
+    (workload,) = spec["containers"]
+    sc = {k: v for k, v in workload["securityContext"].items() if k != "runAsUser"}
+    bare = {**doc, "spec": {**spec, "containers": [{**workload, "securityContext": sc}]}}
+    pod_uid = {
+        **bare,
+        "spec": {
+            **bare["spec"],
+            "securityContext": {**spec["securityContext"], "runAsUser": 10002},
+        },
+    }
+    p = AdmissionParams.of(params)
+
+    assert broken_rules(bare, p) == {"7f"}
+    assert broken_rules(pod_uid, p) == set()

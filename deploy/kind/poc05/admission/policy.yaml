@@ -40,7 +40,19 @@
 #   7a. the pod's shape matches its namespace's agents.platform/pod-shape label (F3).
 #   7b. agents.platform/role: chassis only on a pod that runs the chassis image (F3).
 #   7c. a remote pod's remote-*-token is its own: <app.kubernetes.io/name>-token (F3).
-#   7d. a tool pod runs on gVisor with no service account token (F3, F15).
+#   7d. a tool pod runs on gVisor with no service account token, automounted or projected (F3,
+#       F15, core review R5a-06).
+#   7e. a chassis-shape pod sets automountServiceAccountToken false, and only the chassis
+#       container mounts a projected service account token volume (core review R5a-01;
+#       deploy/CLAUDE.md: "the token projected into the chassis container only").
+#   7f. a sidecar-lane pod does not set shareProcessNamespace true, and every container but the
+#       chassis has an explicit effective runAsUser (its own, else the pod's) that no chassis
+#       container's explicit effective runAsUser equals (core review R5a-05; H26: the workload
+#       cannot read the chassis's /proc/<pid>/environ).
+#   7g. no ephemeral container names a chassis container in targetContainerName, so
+#       `kubectl debug --target chassis` cannot join the chassis's process namespace (core review
+#       R5a-16). It has no fixture file: a Pod may not carry ephemeral containers at create; the
+#       kind test patches pods/ephemeralcontainers on agent-echo.
 #   8.  outside the remote lane, every image comes from the cluster's own store (F1). On kind
 #       (imageSource: pull-never) every container sets imagePullPolicy: Never, so a name that
 #       also exists on a public registry is never pulled. On a cloud cluster set
@@ -64,7 +76,10 @@
 #     podTemplate is not defaulted, so it must set the field);
 #   - that each rejected fixture fails with its own message, its twin is admitted, and removing the
 #     params denies everything (test_poc05_kind_admission.py, review verification item 3);
-#   - an ephemeral container added with `kubectl debug` (as admin) is refused by rule 3 or 8.
+#   - that an ephemeral container added through pods/ephemeralcontainers (as admin) is refused by
+#     rule 3 for an image outside the prefix and by rule 7g when it targets the chassis, each
+#     next to an admitted twin (test_poc05_kind_admission.py,
+#     test_ephemeral_container_is_refused_next_to_its_twin).
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -188,6 +203,13 @@ spec:
         has(variables.spec.volumes) && variables.spec.volumes.exists(v,
           has(v.projected) && has(v.projected.sources) &&
           v.projected.sources.exists(s, has(s.serviceAccountToken)))
+    # The names of the projected volumes that carry a service account token (rule 7e).
+    - name: tokenVolumes
+      expression: >-
+        has(variables.spec.volumes)
+        ? variables.spec.volumes.filter(v, has(v.projected) && has(v.projected.sources) &&
+            v.projected.sources.exists(s, has(s.serviceAccountToken))).map(v, v.name)
+        : []
     - name: secretVolumes
       expression: >-
         has(variables.spec.volumes)
@@ -195,6 +217,27 @@ spec:
             (has(v.projected) && has(v.projected.sources) &&
              v.projected.sources.exists(s, has(s.secret)))).map(v, v.name)
         : []
+    # Rule 7f: the pod-level runAsUser, -1 when unset; then each container's effective explicit
+    # runAsUser, chassis containers and the others apart (-1: none set at either level).
+    - name: podUser
+      expression: >-
+        has(variables.spec.securityContext) && has(variables.spec.securityContext.runAsUser)
+        ? variables.spec.securityContext.runAsUser : -1
+    - name: chassisUsers
+      expression: >-
+        variables.containers.filter(c, has(c.image) && c.image in variables.chassisImages)
+        .map(c, has(c.securityContext) && has(c.securityContext.runAsUser)
+          ? c.securityContext.runAsUser : variables.podUser)
+    - name: otherUsers
+      expression: >-
+        variables.containers.filter(c, !has(c.image) || !(c.image in variables.chassisImages))
+        .map(c, has(c.securityContext) && has(c.securityContext.runAsUser)
+          ? c.securityContext.runAsUser : variables.podUser)
+    # Rule 7g: the names of the containers that run the chassis image.
+    - name: chassisNames
+      expression: >-
+        variables.containers.filter(c, has(c.image) && c.image in variables.chassisImages)
+        .map(c, c.name)
     # The image of every container that references a Secret.
     - name: secretUsers
       expression: >-
@@ -300,10 +343,38 @@ spec:
         variables.shape != 'tool' ||
         (has(variables.spec.runtimeClassName) && variables.spec.runtimeClassName == 'gvisor' &&
          has(variables.spec.automountServiceAccountToken) &&
-         variables.spec.automountServiceAccountToken == false)
+         variables.spec.automountServiceAccountToken == false &&
+         !variables.projectedToken)
       message: >-
         trust rule 7d: a tool pod must set runtimeClassName gvisor and
-        automountServiceAccountToken false
+        automountServiceAccountToken false, and mount no projected service account token
+      reason: Forbidden
+    - expression: >-
+        variables.shape != 'chassis' ||
+        (has(variables.spec.automountServiceAccountToken) &&
+         variables.spec.automountServiceAccountToken == false &&
+         variables.containers.all(c, (has(c.image) && c.image in variables.chassisImages) ||
+           !has(c.volumeMounts) ||
+           !c.volumeMounts.exists(m, m.name in variables.tokenVolumes)))
+      message: >-
+        trust rule 7e: a chassis pod must set automountServiceAccountToken false, and only the
+        chassis container may mount a projected service account token
+      reason: Forbidden
+    - expression: >-
+        !variables.isSidecar ||
+        (!(has(variables.spec.shareProcessNamespace) &&
+           variables.spec.shareProcessNamespace == true) &&
+         variables.chassisUsers.all(u, u >= 0) &&
+         variables.otherUsers.all(u, u >= 0 && !(u in variables.chassisUsers)))
+      message: >-
+        trust rule 7f: a sidecar-lane pod may not share its process namespace, and every other
+        container must set a runAsUser that differs from the chassis container's
+      reason: Forbidden
+    - expression: >-
+        !has(variables.spec.ephemeralContainers) ||
+        variables.spec.ephemeralContainers.all(e, !has(e.targetContainerName) ||
+          !(e.targetContainerName in variables.chassisNames))
+      message: "trust rule 7g: an ephemeral container may not target the chassis container"
       reason: Forbidden
     - expression: "variables.isRemote || variables.fromOwnStore"
       message: >-

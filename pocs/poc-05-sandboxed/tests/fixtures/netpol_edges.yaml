@@ -13,8 +13,10 @@
 #   - Kafka (T25, H11) admits only `agent-echo-events` by name, which has no
 #     `agents.platform/role: chassis` label: it calls neither LiteLLM nor Valkey.
 #   - fake-mcp-server is port 8082 and code-runner is port 8000 (the table says "its port").
-#   - 8080 ingress on the two chassis pods is a rule with a port and no `from`: any source, as the
-#     table says ("from any source"). It is the only peerless rule, and it is ingress.
+#   - 8080 ingress on the chassis pods takes only the gateway peer (core review R5a-07), not "any
+#     source" as the table says. suggested: a pod in agent-platform-system labeled
+#     agents.platform/role: gateway (agents/gateway-network-policy.yaml holds its egress); no
+#     manifest defines it, so it is an external pod. No rule is peerless.
 #   - The smoke pair (`poc05-smoke`, `run.sh smoke`) is not in the table.
 #   - The code runner is a sandbox per call (docs/plans/2026-10-09-poc-05-per-call-sandbox.md,
 #     section "NetworkPolicy"): LiteLLM reaches only the dispatcher (`code-runner-dispatch`, in
@@ -28,6 +30,7 @@
 # Pods the policies select that no manifest under deploy/kind/poc05 defines.
 external_pods:
   - {ns: kube-system, labels: {k8s-app: kube-dns}}
+  - {ns: agent-platform-system, labels: {agents.platform/role: gateway}}
 
 # The only ipBlock rules. Each is one egress rule whose `to` holds only this block, with no
 # `except`. The cidr is the sentinel in git; run.sh fills in the `kubernetes` EndpointSlice address.
@@ -47,6 +50,11 @@ dns_allowed:
   - minio-init
 
 egress:
+  # The gateway peer: every chassis's public port, nothing else.
+  - src: {ns: agent-platform-system, labels: {agents.platform/role: gateway}}
+    dst: {ns: poc05-agents, labels: {agents.platform/role: chassis}}
+    ports: [TCP/8080]
+
   - src: {ns: poc05-agents, labels: {app.kubernetes.io/name: agent-echo}}
     dst: {ns: kube-system, labels: {k8s-app: kube-dns}}
     ports: [UDP/53, TCP/53]
@@ -116,13 +124,13 @@ egress:
     ports: [TCP/8080]
 
 ingress:
-  - src: any
+  - src: {ns: agent-platform-system, labels: {agents.platform/role: gateway}}
     dst: {ns: poc05-agents, labels: {app.kubernetes.io/name: agent-echo}}
     ports: [TCP/8080]
-  - src: any
+  - src: {ns: agent-platform-system, labels: {agents.platform/role: gateway}}
     dst: {ns: poc05-agents, labels: {app.kubernetes.io/name: agent-echo-events}}
     ports: [TCP/8080]
-  - src: any
+  - src: {ns: agent-platform-system, labels: {agents.platform/role: gateway}}
     dst: {ns: poc05-agents, labels: {app.kubernetes.io/name: chassis-echo-remote}}
     ports: [TCP/8080]
   # 8091 only from its own remote's pod label.

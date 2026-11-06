@@ -988,8 +988,8 @@ def fixture_edges() -> tuple[set[Edge], set[Edge]]:
             dst = _sel(e["dst"]["ns"], e["dst"]["labels"])
             egress.update((own, dst, port) for port in e["ports"])
         for e in EDGES["chassis_ingress"]:
-            assert e["src"] == "any"
-            ingress.update(("any", own, port) for port in e["ports"])
+            src = _sel(e["src"]["ns"], e["src"]["labels"])
+            ingress.update((src, own, port) for port in e["ports"])
     for pair in EDGES["remote_pairs"]:
         side = {
             "remote": _sel("poc05-remote", {NAME: pair["remote"]}),
@@ -1033,6 +1033,11 @@ OPEN_INGRESS = [
     if "from" not in rule
 ]
 REMOTE_POLICIES = [pol for pol in POLICIES if pol.namespace == "poc05-remote"]
+# suggested: PoC-5's gateway peer (deploy/kind/poc05/agents/gateway-network-policy.yaml).
+GATEWAY_PEER = {
+    "namespaceSelector": {"matchLabels": {NS_LABEL: "agent-platform-system"}},
+    "podSelector": {"matchLabels": {"agents.platform/role": "gateway"}},
+}
 
 
 @pytest.mark.parametrize("pol", POLICIES, ids=_pol_id)
@@ -1069,16 +1074,20 @@ def test_an_egress_peer_selects_pods_by_label(pol: Obj, peer: Doc) -> None:
     assert labels, f"{pol.name}: all pods"
 
 
-@pytest.mark.parametrize(
-    ("pol", "rule"),
-    OPEN_INGRESS,
-    ids=[f"{_pol_id(p)}-{i}" for i, (p, _) in enumerate(OPEN_INGRESS)],
-)
-def test_an_ingress_rule_without_a_source_opens_only_8080(pol: Obj, rule: Doc) -> None:
-    """An ingress rule open to any source opens only the public port 8080."""
-    ports = [p["port"] for p in rule["ports"]]
+def test_no_ingress_rule_is_open_to_any_source() -> None:
+    """Core review R5a-07: the public port 8080 takes only the gateway peer, so no ingress rule
+    is peerless. The control: every chassis policy still has an 8080 rule, from that peer."""
+    gated = [
+        pol.name
+        for pol in POLICIES
+        for rule in pol.doc["spec"].get("ingress", [])
+        if [p["port"] for p in rule["ports"]] == [8080] and rule.get("from") == [GATEWAY_PEER]
+    ]
 
-    assert ports == [8080], pol.name
+    assert OPEN_INGRESS == [], [_pol_id(p) for p, _ in OPEN_INGRESS]
+    assert sorted(gated) == sorted(
+        [*EDGES["sidecar_pods"], *(p["chassis"] for p in EDGES["remote_pairs"])]
+    )
 
 
 def test_every_pod_has_a_policy_and_poc05_denies_the_rest() -> None:

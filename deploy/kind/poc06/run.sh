@@ -214,8 +214,35 @@ apply_fake_model() {
   wait_rollout "$PLATFORM_NS" fake-model-server
 }
 
-# apply_folder FOLDER: remote/ and agents/ go in as the platform deployer only (PoC-5 review F2).
-apply_folder() { kctl apply -k "$HERE/$1" --as="$DEPLOYER"; }
+# docs_of KIND WANT (the same as in ../poc05/run.sh): the `---`-separated YAML documents on stdin whose top-level kind is KIND
+# (WANT=1) or is not (WANT=0). It reads `kubectl kustomize` output or a plain manifest, where the
+# top-level `kind:` is at column 0. Core review R5a-02: NetworkPolicies go in as cluster admin.
+docs_of() {
+  awk -v kind="$1" -v want="$2" '
+    function flush() {
+      if (doc != "" && is == want + 0) { printf "%s%s", sep, doc; sep = "---\n" }
+      doc = ""; is = 0
+    }
+    /^---$/ { flush(); next }
+    { doc = doc $0 "\n"; if ($0 == "kind: " kind) is = 1 }
+    END { flush() }'
+}
+
+# apply_split: the manifest on stdin, its NetworkPolicies as cluster admin (like
+# base/default-deny.yaml) and everything else as the platform deployer only (review F2). The
+# deployer has no NetworkPolicy rights (admission/rbac.yaml, core review R5a-02).
+apply_split() {
+  local all policies rest
+  all=$(cat)
+  policies=$(docs_of NetworkPolicy 1 <<<"$all")
+  rest=$(docs_of NetworkPolicy 0 <<<"$all")
+  [[ -z $policies ]] || kctl apply -f - <<<"$policies"
+  [[ -z $rest ]] || kctl apply -f - --as="$DEPLOYER" <<<"$rest"
+}
+
+# apply_folder FOLDER: remote/, agents/, kagent/ rendered, then split by apply_split: the
+# deployer applies the workloads, the cluster admin the NetworkPolicies.
+apply_folder() { kctl kustomize "$HERE/$1" | apply_split; }
 
 apply_remote() {
   local name
@@ -228,6 +255,9 @@ apply_remote() {
 apply_agents() {
   local name
   apply_folder agents
+  # The gateway peer's egress to every chassis's 8080 (PoC-5's file; PoC-6 chassis carry
+  # agents.platform/role: chassis too). Cluster admin.
+  kctl apply -f "$HERE/../poc05/agents/gateway-network-policy.yaml"
   for name in "${DEPLOYMENTS[@]}"; do
     wait_rollout "$AGENTS_NS" "$name"
   done

@@ -240,7 +240,14 @@ spec:
       app.kubernetes.io/name: agent-echo-events
   policyTypes: [Ingress, Egress]
   ingress:
-    - ports:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agent-platform-system
+          podSelector:
+            matchLabels:
+              agents.platform/role: gateway
+      ports:
         - port: 8080
           protocol: TCP
   egress:

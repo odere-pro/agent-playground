@@ -52,10 +52,13 @@ from poc_harness.kind import (
     AGENTS_NS,
     CALLER_NS,
     CHASSIS,
+    GATEWAY_NS,
     NOT_A_KEY,
     POLICY_DROPPED,
     REMOTE_NS,
     WORKLOAD,
+    dns_check,
+    gateway_caller,
     get_json,
     in_caller,
     kubectl,
@@ -196,25 +199,43 @@ def test_remote_reaches_no_other_chassis_listener(engine: KindEngine) -> None:
 
 
 @pytest.mark.parametrize("engine", REMOTES, ids=ENGINE_IDS)
+def test_public_port_takes_only_the_gateway(engine: KindEngine, caller: str) -> None:
+    """H18 (core review R5a-07): given a pod in `default` with no egress policy, its TCP
+    connection to the remote chassis's public port 8080 times out, while it still reaches kube-dns.
+    The paired control: PoC-5's gateway peer (`agent-platform-system`,
+    `agents.platform/role: gateway`) connects to the same address."""
+    ip = chassis_pod(engine)["status"]["podIP"]
+
+    public, own_egress = in_caller(caller, [tcp_check(ip, 8080), dns_check()])
+    with gateway_caller() as gateway:
+        (allowed,) = in_caller(gateway, [tcp_check(ip, 8080)], GATEWAY_NS)
+
+    assert public == {"error": POLICY_DROPPED}, public
+    assert own_egress.get("connected") is True, own_egress
+    assert allowed.get("connected") is True, allowed
+
+
+@pytest.mark.parametrize("engine", REMOTES, ids=ENGINE_IDS)
 def test_remote_port_refuses_every_caller_but_its_chassis(engine: KindEngine, caller: str) -> None:
     """H18: the control refuses a TCP connection to the remote's A2A port (9000, by the pod IP and
     the Service) from a pod in `default` and from another remote's chassis. The allowed control:
-    its own chassis connects to the same port by both addresses, and the caller reaches another
-    pod's open port (its chassis's 8080)."""
+    its own chassis connects to the same port by both addresses, and the caller reaches kube-dns
+    on 53, so its own egress works (since core review R5a-07 a chassis's 8080 takes only the
+    gateway peer, so it is no longer an open port for this caller)."""
     remote = remote_pod(engine)
     chassis = chassis_pod(engine)
     remote_ip, svc = remote["status"]["podIP"], service_ip(REMOTE_NS, engine.pod)
-    by_pod, by_svc, public = in_caller(
+    by_pod, by_svc, own_egress = in_caller(
         caller,
         [
             tcp_check(remote_ip, 9000),
             tcp_check(svc, 9000),
-            tcp_check(chassis["status"]["podIP"], 8080),
+            dns_check(),
         ],
     )
     assert by_pod.get("error") == POLICY_DROPPED, by_pod
     assert by_svc.get("error") == POLICY_DROPPED, by_svc
-    assert public.get("connected") is True, public
+    assert own_egress.get("connected") is True, own_egress
 
     other = next(e for e in REMOTES if e is not engine and e.name != "kagent-adk")
     other_chassis = chassis_pod(other)

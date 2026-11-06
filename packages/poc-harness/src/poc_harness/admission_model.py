@@ -55,6 +55,24 @@ def _projected_token(spec: Doc) -> bool:
     )
 
 
+def _token_volumes(spec: Doc) -> set[str]:
+    """The names of the projected volumes that carry a service account token."""
+    return {
+        v["name"]
+        for v in spec.get("volumes", [])
+        if any("serviceAccountToken" in s for s in v.get("projected", {}).get("sources", []))
+    }
+
+
+def _run_as_user(c: Doc, spec: Doc) -> int | None:
+    """The container's effective explicit `runAsUser`: its own, else the pod's, else None."""
+    own = c.get("securityContext", {}).get("runAsUser")
+    if own is not None:
+        return int(own)
+    pod = spec.get("securityContext", {}).get("runAsUser")
+    return None if pod is None else int(pod)
+
+
 def _uses_secret(c: Doc, secret_volumes: set[str]) -> bool:
     return (
         any("secretKeyRef" in e.get("valueFrom", {}) for e in c.get("env", []))
@@ -96,6 +114,41 @@ class _Pod:
     names: list[str]
     secret_users: list[str]
     own_store: bool
+
+
+def _token_only_in_chassis(pod: _Pod) -> bool:
+    """Rule 7e: automount off, and a projected token volume is mounted by the chassis only."""
+    tokens = _token_volumes(pod.spec)
+    return pod.spec.get("automountServiceAccountToken") is False and all(
+        c.get("image", "") in pod.chassis
+        or not any(m["name"] in tokens for m in c.get("volumeMounts", []))
+        for c in pod.containers
+    )
+
+
+def _own_process_space(pod: _Pod) -> bool:
+    """Rule 7f: no shared PID namespace, and every other container runs as an explicit uid that
+    no chassis container uses."""
+    chassis = [
+        _run_as_user(c, pod.spec) for c in pod.containers if c.get("image", "") in pod.chassis
+    ]
+    others = [
+        _run_as_user(c, pod.spec) for c in pod.containers if c.get("image", "") not in pod.chassis
+    ]
+    return (
+        pod.spec.get("shareProcessNamespace") is not True
+        and all(u is not None for u in chassis)
+        and all(u is not None and u not in chassis for u in others)
+    )
+
+
+def _no_debug_on_chassis(pod: _Pod) -> bool:
+    """Rule 7g: no ephemeral container targets a container that runs the chassis image."""
+    chassis_names = {c.get("name") for c in pod.containers if c.get("image", "") in pod.chassis}
+    return not any(
+        e.get("targetContainerName") in chassis_names
+        for e in pod.spec.get("ephemeralContainers", [])
+    )
 
 
 def _pod_facts(doc: Doc, p: AdmissionParams, namespace: str | None) -> _Pod:
@@ -168,7 +221,12 @@ def _rule_checks(pod: _Pod, p: AdmissionParams) -> dict[str, Callable[[], bool]]
             not pod.remote
             or all(not TOKEN_SECRET.fullmatch(n) or n == own_token for n in pod.names)
         ),
-        "7d": lambda: pod.shape != "tool" or _gvisor_no_token(pod.spec),
+        "7d": lambda: (
+            pod.shape != "tool" or (_gvisor_no_token(pod.spec) and not _projected_token(pod.spec))
+        ),
+        "7e": lambda: pod.shape != "chassis" or _token_only_in_chassis(pod),
+        "7f": lambda: not pod.sidecar or _own_process_space(pod),
+        "7g": lambda: _no_debug_on_chassis(pod),
         "8": lambda: pod.remote or pod.own_store,
     }
 

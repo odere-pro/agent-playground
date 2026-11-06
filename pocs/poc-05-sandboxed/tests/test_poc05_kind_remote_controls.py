@@ -13,6 +13,9 @@ reads it inside the container, and nothing returns it. H18 needs a caller that n
 holds back: a short-lived pod in `default` (no NetworkPolicy there) with the echo-python image
 already loaded on the node, and the label `app.kubernetes.io/name: remote-echo` in the wrong
 namespace, so the test also shows that the label alone is not the key. It is deleted after.
+Since core review R5a-07 a chassis's public port 8080 takes only the gateway peer, so that caller
+is refused there too, and a second short-lived pod, the gateway caller in `agent-platform-system`
+(`poc_harness.kind.gateway_caller`), is the allowed control on 8080.
 
 H23 never exhausts the cap (under gVisor that would end the sandbox): it reads the pod's pids
 cgroup on the node and compares it with the kubelet's configured `podPidsLimit`. The per-call
@@ -37,6 +40,7 @@ from poc_harness.drills import POC05_KIND
 from poc_harness.kind import (
     AGENTS_NS,
     CHASSIS,
+    GATEWAY_NS,
     METADATA_IP,
     NOT_A_KEY,
     PLATFORM_NS,
@@ -45,6 +49,8 @@ from poc_harness.kind import (
     SIDECAR_POD,
     WORKLOAD,
     chat,
+    dns_check,
+    gateway_caller,
     get_json,
     in_caller,
     kubectl,
@@ -93,6 +99,13 @@ def in_chassis(chassis: dict[str, Any], checks: list[dict[str, Any]]) -> list[di
 def caller() -> Iterator[str]:
     """A pod outside every PoC-5 namespace, with no egress policy, labeled like the remote."""
     with unpoliced_caller() as name:
+        yield name
+
+
+@pytest.fixture(scope="module")
+def gateway() -> Iterator[str]:
+    """The gateway peer: the one in-cluster caller a chassis's 8080 takes (R5a-07)."""
+    with gateway_caller() as name:
         yield name
 
 
@@ -192,16 +205,15 @@ def test_h18_listener_refuses_every_caller_but_the_remote_pod(
     Criterion 6, H18/H30: the control refuses a TCP connection to the remote listener (8091,
     by its ClusterIP and by the chassis pod IP) from a pod outside poc05-remote that carries the
     remote's label (`default`, no egress policy) and from the sidecar workload in `agent-echo`.
-    The allowed controls: the same caller reaches the chassis's public port 8080 on the same pod
-    IP, so its own egress works; the remote pod connects to 8091 by both addresses."""
+    The allowed controls: the same caller reaches kube-dns on 53, so its own egress works; the
+    remote pod connects to 8091 by both addresses."""
     chassis_ip = remote_chassis["status"]["podIP"]
-    to_proxy, to_pod, public = in_caller(
-        caller,
-        [tcp_check(PROXY_IP, 8091), tcp_check(chassis_ip, 8091), tcp_check(chassis_ip, 8080)],
+    to_proxy, to_pod, own_egress = in_caller(
+        caller, [tcp_check(PROXY_IP, 8091), tcp_check(chassis_ip, 8091), dns_check()]
     )
     assert to_proxy.get("error") == POLICY_DROPPED, to_proxy
     assert to_pod.get("error") == POLICY_DROPPED, to_pod
-    assert public.get("connected") is True, public
+    assert own_egress.get("connected") is True, own_egress
 
     sidecar = pod(AGENTS_NS, SIDECAR_POD)["metadata"]["name"]
     (lateral,) = probe(AGENTS_NS, sidecar, WORKLOAD, [tcp_check(PROXY_IP, 8091)])
@@ -221,25 +233,39 @@ def test_h18_remote_port_refuses_every_caller_but_its_chassis(
     Criterion 6, H18: the control refuses a TCP connection to the remote's A2A port (9000, by
     the pod IP and the Service) from the labeled caller in `default`. The allowed control: the
     remote's own chassis connects to the same port by both addresses, and the caller reaches
-    another pod's open port (the chassis's 8080)."""
+    kube-dns on 53, so its own egress works."""
     remote_ip, svc = remote["status"]["podIP"], service_ip(REMOTE_NS, REMOTE)
-    by_pod, by_svc, public = in_caller(
-        caller,
-        [
-            tcp_check(remote_ip, 9000),
-            tcp_check(svc, 9000),
-            tcp_check(remote_chassis["status"]["podIP"], 8080),
-        ],
+    by_pod, by_svc, own_egress = in_caller(
+        caller, [tcp_check(remote_ip, 9000), tcp_check(svc, 9000), dns_check()]
     )
     assert by_pod.get("error") == POLICY_DROPPED, by_pod
     assert by_svc.get("error") == POLICY_DROPPED, by_svc
-    assert public.get("connected") is True, public
+    assert own_egress.get("connected") is True, own_egress
 
     own_pod, own_svc = in_chassis(
         remote_chassis, [tcp_check(remote_ip, 9000), tcp_check(svc, 9000)]
     )
     assert own_pod.get("connected") is True, own_pod
     assert own_svc.get("connected") is True, own_svc
+
+
+@pytest.mark.parametrize("app", [SIDECAR_POD, REMOTE_CHASSIS])
+def test_h18_public_port_takes_only_the_gateway(caller: str, gateway: str, app: str) -> None:
+    """Criterion 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential."
+
+    Criterion 6, H18 (core review R5a-07): given a pod in `default` with no egress policy, its
+    TCP connection to the chassis's public port 8080 (which takes no credential) times out, and
+    it still reaches kube-dns, so its egress works. The paired control: the gateway peer
+    (`agent-platform-system`, `agents.platform/role: gateway`) connects to the same address."""
+    ip = pod(AGENTS_NS, app)["status"]["podIP"]
+
+    public, own_egress = in_caller(caller, [tcp_check(ip, 8080), dns_check()])
+    (allowed,) = in_caller(gateway, [tcp_check(ip, 8080)], GATEWAY_NS)
+
+    assert public == {"error": POLICY_DROPPED}, (app, public)
+    assert own_egress.get("connected") is True, own_egress
+    assert allowed.get("connected") is True, (app, allowed)
 
 
 def in_platform(name: str, checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -278,13 +304,13 @@ def h30_from_remote(
 
 @pytest.fixture(scope="module")
 def h30_from_peers(
-    caller: str, h30_targets: dict[str, dict[str, Any]]
+    gateway: str, h30_targets: dict[str, dict[str, Any]]
 ) -> dict[str, dict[str, Any]]:
     """Each target probed from a peer allowed to reach it, probed once for the module."""
     t = h30_targets
     name = pod(AGENTS_NS, SIDECAR_POD)["metadata"]["name"]
     up = [
-        *in_caller(caller, [t["agent_echo_web"], t["own_chassis_web"]]),
+        *in_caller(gateway, [t["agent_echo_web"], t["own_chassis_web"]], GATEWAY_NS),
         *probe(AGENTS_NS, name, WORKLOAD, [t["litellm"]]),
         *probe(AGENTS_NS, name, CHASSIS, [t["valkey"]]),
         *in_platform("litellm", [t["dispatch"]]),
@@ -314,7 +340,7 @@ def test_h30_remote_reaches_no_other_pod(
     connection to the target: another agent (`agent-echo`'s public port), its own chassis's public
     port, LiteLLM, Valkey, the code-runner dispatcher's Service, or a warm code-runner sandbox by
     pod IP. The allowed controls: 8091 connects in the same call, and the target is up from an
-    allowed peer (the unpoliced caller reaches both 8080 ports, `agent-echo`'s workload reaches
+    allowed peer (the gateway caller reaches both 8080 ports, `agent-echo`'s workload reaches
     LiteLLM, its chassis reaches Valkey, LiteLLM reaches the dispatcher, and the dispatcher
     reaches the sandbox)."""
     refused = h30_from_remote[target]
