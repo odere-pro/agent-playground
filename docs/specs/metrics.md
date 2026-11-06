@@ -16,7 +16,7 @@ The levers. The first two are the primary pair.
 | Metric | Formula | Lever | Target on record |
 | ------ | ------- | ----- | ---------------- |
 | Agents live on the chassis | distinct `agent` labels with traffic in the week | adoption | none yet |
-| First-attempt pass rate | 1 − (`chassis_gate_retries_total` + `chassis_gate_fallbacks_total`) / `chassis_gate_runs_total` | prompt and model quality, the route map | none yet |
+| First-attempt pass rate | 1 − `evaluator_calls{outcome="fail"}` / `evaluator_calls{outcome in pass, fail}` (retries and fallbacks happen only in sync mode, so a ratio over gate runs would read 100% in async) | prompt and model quality, the route map | none yet |
 | Task success rate | `ok` runs / `chassis_requests_total`, per agent and interface | reliability | the X-3 error-rate SLO |
 | p95 run latency, and the chassis's share of it | `chassis_run_duration_seconds` p95; the stages' overhead | the pipeline's cost | suggested: a stage budget of 25 ms p50 and 50 ms p95 (022 H-6), recorded, not enforced |
 | Time to first demo | hours from `agentctl new` to a passing demo, by someone new | the template | under a day |
@@ -35,6 +35,10 @@ What must not get worse. The first is the vault's "metric to measure failure".
 | Gate fallback rate and fail-open rate | `chassis_gate_fallbacks_total` / sync gate runs; `gate_failed_open` / gate runs | the gate must not become the answer path | below 10% (117 X-3) |
 | Sidecar cost per replica | CPU and RSS per chassis container, from the load run | one image must stay thin | 0.05–0.1 vCPU, 128–256 MiB (ADR-001) |
 | Rollbacks per chassis release | releases pinned back by any service / releases | ring rollouts must stay safe | none yet |
+
+## The epic's metrics this set does not carry
+
+The epic's success metrics include three this set leaves out on purpose, because they belong to parked or later work: token spend against the big model (the SLM track, parked), the fallback rate to the big model (the router and the fine-tuned student, 063 S-8), and run recovery across agents (the orchestrator, after the MVP). They return with that work.
 
 ## How the container shows them
 
