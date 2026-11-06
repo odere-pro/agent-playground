@@ -11,7 +11,7 @@
 #   scale-slm.sh up <engine> <pairs>      # engine: scale.sh's four, or echo-openai-agents
 #   scale-slm.sh down | ps
 #
-# `pocs/poc-04-stateless-scalable/load/run_matrix.py` calls this in place of scale.sh through
+# `load_tools.run_matrix` (packages/load-tools) calls this in place of scale.sh through
 # load_driver.py. Nothing here names or stops a container of another project.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)

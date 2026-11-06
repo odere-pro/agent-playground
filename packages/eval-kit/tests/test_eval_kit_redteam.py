@@ -1,6 +1,6 @@
 """The PoC-8 red-team runner's offline parts: the guardrail stub in front of the fake model, the
 error code it reads, the configs, and the committed baseline's coverage. No process, no socket
-(`test_bakeoff_redteam_network.py` runs the real thing)."""
+(`test_eval_kit_redteam_network.py` runs the real thing)."""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ import json
 
 import httpx
 from bakeoff.config import DUMMY_MODEL_KEY
-from bakeoff.redteam import BASELINE, CONFIGS, _error_code, _with_guardrail_stub
 from chassis_contracts.redteam import load_cases
 from chassis_contracts.redteam.live import BASELINE_ID
+from eval_kit.redteam import BASELINE, CONFIGS, _error_code, _with_guardrail_stub
 from fake_model_server import Script, create_app
 
 
-async def test_bakeoff_redteam_stub_and_model_share_one_base_url() -> None:
+async def test_eval_kit_redteam_stub_and_model_share_one_base_url() -> None:
     model = create_app(Script.model_validate({"rules": [], "default_reply": "hi"}))
     app = _with_guardrail_stub(model)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://m") as c:
@@ -31,18 +31,18 @@ async def test_bakeoff_redteam_stub_and_model_share_one_base_url() -> None:
     assert guard.status_code >= 400, "the pattern stand-in blocks a plain injection"
 
 
-def test_bakeoff_redteam_reads_the_run_error_code() -> None:
+def test_eval_kit_redteam_reads_the_run_error_code() -> None:
     blocked = {"output": {"error": {"code": "guardrail_blocked"}}}
     assert _error_code(httpx.Response(200, json=blocked)) == "guardrail_blocked"
     assert _error_code(httpx.Response(200, json={"output": {"text": "ok"}})) is None
     assert _error_code(httpx.Response(200, text="data: {}\n\n")) is None
 
 
-def test_bakeoff_redteam_configs_are_the_poc07_stacks() -> None:
+def test_eval_kit_redteam_configs_are_the_poc07_stacks() -> None:
     assert CONFIGS == {"litellm": "litellm", "keyword": "fake"}
 
 
-def test_bakeoff_redteam_baseline_covers_every_engine_and_lane_on_both_configs() -> None:
+def test_eval_kit_redteam_baseline_covers_every_engine_and_lane_on_both_configs() -> None:
     baseline = json.loads(BASELINE.read_text())
     assert baseline["schema"] == BASELINE_ID
     cases = len(load_cases())

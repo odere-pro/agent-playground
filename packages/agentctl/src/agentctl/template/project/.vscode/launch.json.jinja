@@ -22,8 +22,8 @@
       "connect": { "host": "127.0.0.1", "port": 5679 },
       "pathMappings": [
         {
-          "localRoot": "${workspaceFolder}/src",
-          "remoteRoot": "/app/src"
+          "localRoot": "${workspaceFolder}/src/{{ package_name }}",
+          "remoteRoot": "/app/.venv/lib/python3.12/site-packages/{{ package_name }}"
         }
       ],
       "justMyCode": false

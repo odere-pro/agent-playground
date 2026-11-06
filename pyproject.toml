@@ -48,6 +48,7 @@ members = [
   "packages/workloads/echo-claude-agent",
   "packages/workloads/echo-smolagents",
   "packages/bakeoff",
+  "packages/eval-kit",
   "packages/fake-mcp-server",
   "packages/code-runner",
   "packages/fake-langfuse",
@@ -55,6 +56,7 @@ members = [
   "packages/agentctl",
   "packages/agent-testkit",
   "packages/poc-harness",
+  "packages/load-tools",
 ]
 
 [tool.uv.sources]
@@ -69,6 +71,7 @@ echo-openai-agents = { workspace = true }
 echo-claude-agent = { workspace = true }
 echo-smolagents = { workspace = true }
 bakeoff = { workspace = true }
+eval-kit = { workspace = true }
 fake-mcp-server = { workspace = true }
 code-runner = { workspace = true }
 fake-langfuse = { workspace = true }
@@ -76,6 +79,7 @@ guardrail-server = { workspace = true }
 agentctl = { workspace = true }
 agent-testkit = { workspace = true }
 poc-harness = { workspace = true }
+load-tools = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["packages", "pocs", "scripts/tests"]
@@ -126,6 +130,7 @@ root_packages = [
   "echo_claude_agent",
   "echo_smolagents",
   "bakeoff",
+  "eval_kit",
   "fake_mcp_server",
   "code_runner",
   "fake_langfuse",
@@ -134,6 +139,7 @@ root_packages = [
   "agent_testkit",
   "chassis_contracts",
   "poc_harness",
+  "load_tools",
 ]
 include_external_packages = true
 
@@ -170,6 +176,14 @@ source_modules = ["guardrail_server"]
 forbidden_modules = ["chassis", "chassis_contracts"]
 
 [[tool.importlinter.contracts]]
+name = "the bake-off kit never imports the eval kit (R6-14): eval_kit runs on bakeoff, not back"
+# The compatibility modules (`bakeoff.evaltrial` and the other moved CLIs) reach `eval_kit` only
+# through `importlib` under `__main__`; `test_bakeoff_no_eval.py` checks they load nothing.
+type = "forbidden"
+source_modules = ["bakeoff"]
+forbidden_modules = ["eval_kit"]
+
+[[tool.importlinter.contracts]]
 name = "agentctl never imports the chassis (PoC-9): it renders a template, it runs nothing"
 type = "forbidden"
 source_modules = ["agentctl"]
@@ -179,6 +193,12 @@ forbidden_modules = ["chassis", "chassis_contracts"]
 name = "the agent test kit never imports the chassis (PoC-9: it runs in the workload's env)"
 type = "forbidden"
 source_modules = ["agent_testkit"]
+forbidden_modules = ["chassis", "chassis_contracts"]
+
+[[tool.importlinter.contracts]]
+name = "the load tools never import the chassis (they drive the scale stack from outside)"
+type = "forbidden"
+source_modules = ["load_tools"]
 forbidden_modules = ["chassis", "chassis_contracts"]
 
 [[tool.importlinter.contracts]]
@@ -194,6 +214,7 @@ forbidden_modules = [
   "echo_claude_agent",
   "echo_smolagents",
   "bakeoff",
+  "eval_kit",
   "fake_mcp_server",
   "code_runner",
   "fake_langfuse",
@@ -258,6 +279,7 @@ source_modules = [
   "echo_claude_agent",
   "echo_smolagents",
   "bakeoff",
+  "eval_kit",
   "fake_mcp_server",
   "code_runner",
   "fake_langfuse",
@@ -265,6 +287,7 @@ source_modules = [
   "agentctl",
   "agent_testkit",
   "chassis_contracts",
+  "load_tools",
 ]
 forbidden_modules = ["poc_harness"]
 

@@ -28,7 +28,7 @@ Lane = Literal["inprocess", "sidecar", "remote"]
 LANES: tuple[Lane, ...] = ("inprocess", "sidecar", "remote")
 Runner = Literal["python", "node", "kind"]
 Dialect = Literal["openai", "claude", "smolagents"]
-"""How the engine reads a fake-model script (`bakeoff.dialects`): OpenAI tool calls as they are,
+"""How the engine reads a fake-model script (`eval_kit.dialects`): OpenAI tool calls as they are,
 tool names with the Claude CLI's `mcp__chassis__` prefix, or smolagents code blocks."""
 
 ROOT = Path(__file__).resolve().parents[4]

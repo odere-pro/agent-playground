@@ -21,5 +21,5 @@ Scope items: "Docker Compose profiles (`fake`, `local`) ... with a debugger atta
 ## Open
 
 - Not run live: no Docker daemon on this Mac today. `docker compose config` passes for both profiles.
-- The workload path mapping (`/app/src`) assumes agentctl's Dockerfile layout.
+- The workload path mapping (`/app/src`) assumes agentctl's Dockerfile layout. Closed 2026-11-05: the image has no `/app/src`, so the mapping is now the venv's `site-packages/<package>` ([machine checks](2026-11-05-machine-checks.md)).
 - A `remote` connector agent still gets the sidecar Compose file. The remote lane runs on kind.

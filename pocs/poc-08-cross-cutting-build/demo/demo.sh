@@ -4,7 +4,7 @@
 # low score triggers a retry and then a fallback. The trace shows each step, and a thumbs-down
 # feedback call appears on the same trace and on the dashboard."
 #   1. The eval gate passes the normal business logic: DeepEval on the 50 gate cases for
-#      echo-python in the sidecar lane, then `bakeoff.evalgate` against evals/gate/baseline.json.
+#      echo-python in the sidecar lane, then `eval_kit.evalgate` against evals/gate/baseline.json.
 #   2. The eval gate fails the drop-facts logic: `make evals-regression`, the CI step of
 #      poc08-evals.yml. The gate exits 1; the target turns that into the step's pass.
 #   3. A live call, echo-langgraph in the sidecar lane, every stage on: the main route's answer
@@ -88,7 +88,7 @@ run uv run python "$DEMO_PY" live --engine echo-langgraph --lane sidecar
 ELAPSED=$(($(date +%s) - STARTED))
 {
   printf '\n## What this shows\n\n'
-  echo "- Criterion 5: the drop-facts logic takes the pass rate from 0.780 to 0.000 and fails every must-pass case; \`bakeoff.evalgate\` exits 1, the step that blocks a merge in \`poc08-evals.yml\`. The normal logic passes at the baseline."
+  echo "- Criterion 5: the drop-facts logic takes the pass rate from 0.780 to 0.000 and fails every must-pass case; \`eval_kit.evalgate\` exits 1, the step that blocks a merge in \`poc08-evals.yml\`. The normal logic passes at the baseline."
   echo "- Criterion 6: the gate retries as many times as \`spec.harness.retries\` says (2), then the model proxy sends the next attempt to \`spec.model.fallback_route\`; the status is \`fallback\` and the low-scored answer never leaves."
   echo "- Criterion 3: every chassis span of the call (run, engine attempts, router, model proxy, evaluator score) carries the run's one trace id; \`/metrics\` counts the request, the model calls per route, the retries, and the fallback."
   echo "- Criterion 4: the thumbs-down with only the \`request_id\` lands on the run's trace and is counted in \`chassis_feedback_total{label=\"thumbs-down\"}\`."

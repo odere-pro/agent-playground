@@ -24,12 +24,14 @@ from pathlib import Path
 import httpx
 import pytest
 from poc_harness.drills import POC04_STACK
-from poc_harness.waits import wait_until
+from poc_harness.waits import wait_ready
 
 ROOT = Path(__file__).resolve().parents[3]
 SCALE = ROOT / "deploy" / "compose" / "scale.sh"
 DRILL = ROOT / "pocs" / "poc-04-stateless-scalable" / "load" / "kill_drill.py"
 URL = "http://127.0.0.1:18080"
+READY_WAIT_S = 60
+READY_POLL_S = 1
 NETWORK = "poc04"
 """The project network's real name (`networks.default.name` in `docker-compose.scale.yaml`)."""
 CHASSIS_1 = "poc04-chassis-1-1"
@@ -68,22 +70,12 @@ def one_pair() -> Iterator[None]:
         scale("down")
 
 
-def wait_ready(client: httpx.Client, timeout_s: float = 60) -> None:
-    def ready() -> bool:
-        try:
-            return client.get("/ready").status_code == 200
-        except httpx.HTTPError:
-            return False
-
-    wait_until(ready, f"{URL}/ready to answer 200", timeout_s, interval=1)
-
-
 @pytest.mark.usefixtures("one_pair")
 def test_smoke_one_run_through_traefik_and_its_replay() -> None:
     """Exit criterion 2, on one pair through Traefik (the smoke run): one `POST /v1/run` answers
     200, and the same key again is a replay of the same envelope."""
     with httpx.Client(base_url=URL, timeout=30) as client:
-        wait_ready(client)
+        wait_ready(client, READY_WAIT_S, interval=READY_POLL_S)
         key = str(uuid.uuid4())
         body = {"input": {"text": "simplify: hello world"}}
         first = client.post("/v1/run", json=body, headers={"Idempotency-Key": key})
@@ -156,7 +148,7 @@ def test_chassis_reaches_nothing_outside_when_poc04_is_internal() -> None:
     """`poc04` is internal: chassis-1 reaches no internet, DNS, or host; Traefik still answers."""
     # Arrange
     with httpx.Client(base_url=URL, timeout=30) as client:
-        wait_ready(client)
+        wait_ready(client, READY_WAIT_S, interval=READY_POLL_S)
 
         # Act
         internal = docker("network", "inspect", NETWORK, "-f", "{{.Internal}}")

@@ -1,0 +1,9 @@
+{
+  "name": "poc07-promptfoo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "promptfoo for the PoC-7 eval trial, pinned; eval_kit.evaltrial installs it with npm ci",
+  "dependencies": {
+    "promptfoo": "0.125.1"
+  }
+}

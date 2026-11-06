@@ -10,7 +10,7 @@
 # instead of `expect.tool_calls` (a wrong tool plan). `judge`, when present, is the scripted judge's
 # verdict when it differs from the label (a judge error, for the agreement number); otherwise the
 # judge agrees with the label. Regenerate the scripts and the promptfoo tests after an edit:
-#   uv run python -m bakeoff.golden.generate --write
+#   uv run python -m eval_kit.golden.generate --write
 #
 # Labels: hand-written by the PoC-7 author on 2026-10-28, one reviewer pass. suggested: a second
 # labeller before the set gates a release (backlog 064 D-1).

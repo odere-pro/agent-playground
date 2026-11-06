@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from run_matrix import ok_rps, per_role, read_locust
+from load_tools.run_matrix import ok_rps, per_role, read_locust
 
 LOAD = Path(__file__).resolve().parents[1] / "notes" / "load"
 

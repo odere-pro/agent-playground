@@ -9,7 +9,7 @@
 #      and the redacted agents.feedback.received.v1 event, both on the run's trace id.
 #   2. The same for echo-openai-agents.
 #   3. Evals: DeepEval (the pick) on the 20 golden cases for echo-python and echo-langgraph, via
-#      `python -m bakeoff.evaltrial --offline`; eval-report.v0 summaries side by side. If the tool
+#      `python -m eval_kit.evaltrial --offline`; eval-report.v0 summaries side by side. If the tool
 #      cannot run (no warm uv cache), the committed reports in notes/evals/ are shown and the
 #      record says so.
 #   4. Red team: `python -m chassis_contracts.redteam` (no --write), per-category table. It uses
@@ -92,7 +92,7 @@ run uv run python "$DEMO_PY" trace --engine echo-openai-agents
 
 step "3. Evals: DeepEval on the 20 golden cases, echo-python and echo-langgraph"
 EVALS="$TMP/evals"
-if run -s uv run python -m bakeoff.evaltrial --tool deepeval --offline \
+if run -s uv run python -m eval_kit.evaltrial --tool deepeval --offline \
   --engine echo-python,echo-langgraph --out "$EVALS"; then
   printf '\nThe reports that run wrote, in the shared format:\n\n' >>"$REC"
   run uv run python "$DEMO_PY" evals "$EVALS"

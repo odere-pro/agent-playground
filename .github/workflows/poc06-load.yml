@@ -2,9 +2,10 @@
 # sidecar engines, echo-openai-agents and echo-typescript (the full agent of PoC-6a). The other
 # sidecar engines have PoC-4's quiet pass (pocs/poc-04-stateless-scalable/notes/load/results.json).
 #
-# What it runs: `deploy/compose/scale.sh build`, then `run_matrix.py` (`make load-test`) with the
-# `main` scenarios (64 users at 1, 2, and 4 pairs) and the `rate` scenario (10 users at 1 call per
-# second, 1 pair) for each engine, on the fake model server. Then a check fails the job when a
+# What it runs: `deploy/compose/scale.sh build`, then `load_tools.run_matrix` (`make load-test`,
+# packages/load-tools) with the `main` scenarios (64 users at 1, 2, and 4 pairs) and the `rate`
+# scenario (10 users at 1 call per second, 1 pair) for each engine, on the fake model server.
+# Then a check fails the job when a
 # scenario is missing, sent no request, or failed more than 0.1% of its calls (suggested: about
 # three times the worst scenario of PoC-4's accepted quiet pass, 4 of 11,596; the same bar as
 # tests/test_poc06a_criteria.py). The results JSON is printed between markers, so it can be
@@ -26,7 +27,7 @@ on:
       - .github/workflows/poc06-load.yml
       - deploy/compose/scale.sh
       - deploy/compose/docker-compose.scale.yaml
-      - pocs/poc-04-stateless-scalable/load/**
+      - packages/load-tools/**
       - packages/workloads/echo-openai-agents/**
       - packages/workloads/echo-typescript/**
   pull_request:
@@ -34,7 +35,7 @@ on:
       - .github/workflows/poc06-load.yml
       - deploy/compose/scale.sh
       - deploy/compose/docker-compose.scale.yaml
-      - pocs/poc-04-stateless-scalable/load/**
+      - packages/load-tools/**
       - packages/workloads/echo-openai-agents/**
       - packages/workloads/echo-typescript/**
   workflow_dispatch:
@@ -69,7 +70,7 @@ jobs:
         run: deploy/compose/scale.sh build
       - name: Load matrix
         run: |
-          uv run python pocs/poc-04-stateless-scalable/load/run_matrix.py \
+          uv run python -m load_tools.run_matrix \
             --engine echo-openai-agents --engine echo-typescript \
             --only main --only rate --results "$RUNNER_TEMP/poc06-load.json"
       - name: Check every scenario ran, with at most 0.1% failed calls
