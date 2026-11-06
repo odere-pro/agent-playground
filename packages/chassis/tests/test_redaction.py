@@ -3,45 +3,47 @@
 
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
 
 import pytest
 from chassis.redaction import redact
-
-FAST_SECONDS = 0.1
-"""suggested: the bound for one `redact` call on a 200k-character string."""
+from redaction_timing import assert_linear
 
 
 @pytest.mark.parametrize(
-    "text",
+    ("build", "count"),
     [
-        "a-" * 100_000,
-        "1" * 200_000,
-        "x@" + "a" * 200_000,
-        "x@" + "a." * 100_000,
-        "a@" * 100_000,
+        (lambda n: "a-" * n, 100_000),
+        (lambda n: "1" * n, 200_000),
+        (lambda n: "x@" + "a" * n, 200_000),
+        (lambda n: "x@" + "a." * n, 100_000),
+        (lambda n: "a@" * n, 100_000),
     ],
     ids=["a-dash-run", "digit-run", "long-domain", "long-dotted-domain", "many-at-signs"],
 )
-def test_redact_returns_fast_and_unchanged_when_long_text_holds_no_email(text: str) -> None:
-    """A long run with no full email address comes back unchanged in under 100 ms."""
-    start = time.perf_counter()
+def test_redact_stays_linear_and_unchanged_when_long_text_holds_no_email(
+    build: Callable[[int], str], count: int
+) -> None:
+    """A long run with no full email address comes back unchanged, in linear time (target: under
+    100 ms, `redaction_timing.TARGET_SECONDS`)."""
+    text = build(count)
 
     out = redact(text)
 
-    assert time.perf_counter() - start < FAST_SECONDS
     assert out == text
+    assert_linear(redact, build, count)
 
 
-def test_redact_masks_an_email_fast_when_its_domain_is_long_and_dotted() -> None:
-    """An email with a 200k-character dotted domain is masked in under 100 ms."""
-    text = "x@" + "a." * 100_000 + "com"
-    start = time.perf_counter()
+def test_redact_masks_an_email_in_linear_time_when_its_domain_is_long_and_dotted() -> None:
+    """An email with a 200k-character dotted domain is masked, in linear time."""
 
-    out = redact(text)
+    def build(n: int) -> str:
+        return "x@" + "a." * n + "com"
 
-    assert time.perf_counter() - start < FAST_SECONDS
+    out = redact(build(100_000))
+
     assert out == "<EMAIL_ADDRESS>"
+    assert_linear(redact, build, 100_000)
 
 
 @pytest.mark.parametrize(

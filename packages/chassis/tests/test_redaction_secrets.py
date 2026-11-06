@@ -6,14 +6,12 @@ Every literal here is a made-up value shaped like a credential, never a real one
 from __future__ import annotations
 
 import re
-import time
+from collections.abc import Callable
 
 import pytest
 from chassis import redaction
 from chassis.redaction import PATTERNS, SECRET_ASSIGNMENT, SECRET_PREFIXES, redact
-
-FAST_SECONDS = 0.1
-"""suggested: the bound for one `redact` call on a 100k-character string."""
+from redaction_timing import assert_linear
 
 PEM = (
     "-----BEGIN RSA PRIVATE KEY-----\n"  # pragma: allowlist secret
@@ -202,19 +200,19 @@ def test_the_secret_shapes_are_one_list_of_named_patterns_that_compile() -> None
 
 
 @pytest.mark.parametrize(
-    "text",
+    ("build", "count"),
     [
-        "sk-" * 33_334,
-        "Bearer " * 14_286,
-        "bearer" + " " * 100_000,
-        'password="' * 10_000,
-        "token=" + " " * 100_000,
-        "-----BEGIN PRIVATE KEY-----" * 3_704,  # pragma: allowlist secret
-        "-----BEGIN PRIVATE KEY-----" + "-" * 100_000,  # pragma: allowlist secret
-        "eyJ" * 33_334,
-        "eyJa." * 20_000,
-        "AKIA" * 25_000,
-        "xoxb-" * 20_000,
+        (lambda n: "sk-" * n, 33_334),
+        (lambda n: "Bearer " * n, 14_286),
+        (lambda n: "bearer" + " " * n, 100_000),
+        (lambda n: 'password="' * n, 10_000),
+        (lambda n: "token=" + " " * n, 100_000),
+        (lambda n: "-----BEGIN PRIVATE KEY-----" * n, 3_704),  # pragma: allowlist secret
+        (lambda n: "-----BEGIN PRIVATE KEY-----" + "-" * n, 100_000),  # pragma: allowlist secret
+        (lambda n: "eyJ" * n, 33_334),
+        (lambda n: "eyJa." * n, 20_000),
+        (lambda n: "AKIA" * n, 25_000),
+        (lambda n: "xoxb-" * n, 20_000),
     ],
     ids=[
         "sk-run",
@@ -230,13 +228,12 @@ def test_the_secret_shapes_are_one_list_of_named_patterns_that_compile() -> None
         "slack-prefix-run",
     ],
 )
-def test_redact_returns_fast_when_a_long_text_is_full_of_secret_prefixes(text: str) -> None:
-    """A 100k-character run of secret prefixes is redacted in under 100 ms."""
-    start = time.perf_counter()
-
-    redact(text)
-
-    assert time.perf_counter() - start < FAST_SECONDS
+def test_redact_stays_linear_when_a_long_text_is_full_of_secret_prefixes(
+    build: Callable[[int], str], count: int
+) -> None:
+    """A 100k-character run of secret prefixes is redacted in linear time (target: under
+    100 ms, `redaction_timing.TARGET_SECONDS`)."""
+    assert_linear(redact, build, count)
 
 
 # --- review fixes on R1-07 ---
@@ -439,15 +436,15 @@ def test_redact_masks_only_the_password_in_a_url(text: str, expected: str) -> No
 
 
 @pytest.mark.parametrize(
-    "text",
+    ("build", "count"),
     [
-        "secret-" * 14_286,
-        "_password" * 11_112,
-        "a://:" * 20_000,
-        "postgres://" + "u" * 100_000,
-        "Basic " * 16_667,
-        "Bearer " + "a" * 100_000,
-        "-----BEGIN PRIVATE KEY-----\n" + "A\n" * 50_000,  # pragma: allowlist secret
+        (lambda n: "secret-" * n, 14_286),
+        (lambda n: "_password" * n, 11_112),
+        (lambda n: "a://:" * n, 20_000),
+        (lambda n: "postgres://" + "u" * n, 100_000),
+        (lambda n: "Basic " * n, 16_667),
+        (lambda n: "Bearer " + "a" * n, 100_000),
+        (lambda n: "-----BEGIN PRIVATE KEY-----\n" + "A\n" * n, 50_000),  # pragma: allowlist secret
     ],
     ids=[
         "dashed-secret-keys",
@@ -459,10 +456,9 @@ def test_redact_masks_only_the_password_in_a_url(text: str, expected: str) -> No
         "pem-many-short-lines",
     ],
 )
-def test_redact_returns_fast_when_a_long_text_repeats_a_key_or_url_shape(text: str) -> None:
-    """A 100k-character run of key names, schemes, or PEM lines is redacted in under 100 ms."""
-    start = time.perf_counter()
-
-    redact(text)
-
-    assert time.perf_counter() - start < FAST_SECONDS
+def test_redact_stays_linear_when_a_long_text_repeats_a_key_or_url_shape(
+    build: Callable[[int], str], count: int
+) -> None:
+    """A 100k-character run of key names, schemes, or PEM lines is redacted in linear time
+    (target: under 100 ms, `redaction_timing.TARGET_SECONDS`)."""
+    assert_linear(redact, build, count)
