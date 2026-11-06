@@ -16,8 +16,10 @@ REFRESHED = '{"results": {"a.py": [{"line_number": 2}]}}\n'
 
 
 def _env() -> dict[str, str]:
-    """The environment with no GIT_*: under a git hook they point git at the real repository."""
-    return {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    """No GIT_* (under a git hook they point git at the real repository) and no user git config,
+    so the scratch commit is never signed and never runs the user's hooks."""
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    return {**env, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
 
 
 def _git(repo: Path, *args: str) -> None:

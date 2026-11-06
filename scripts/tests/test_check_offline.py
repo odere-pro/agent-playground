@@ -38,3 +38,25 @@ def test_check_offline_strips_git_variables_when_a_git_hook_runs_it(tmp_path: Pa
     names = {line.split("=", 1)[0] for line in result.stdout.splitlines()}
     assert "GIT_DIR" not in names
     assert "GIT_INDEX_FILE" not in names
+
+
+def test_check_offline_disables_dotenv_loading_when_it_runs_pytest(tmp_path: Path) -> None:
+    """A library's `load_dotenv()` would read a `.env` above the repo and bring real keys back."""
+    (tmp_path / "scripts").mkdir()
+    shutil.copy(SCRIPT, tmp_path / "scripts" / SCRIPT.name)
+    bin_dir = tmp_path / "stub-bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "uv"
+    stub.write_text("#!/usr/bin/env bash\nenv\n")
+    stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+    env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+
+    result = subprocess.run(
+        ["bash", str(tmp_path / "scripts" / SCRIPT.name)],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert "PYTHON_DOTENV_DISABLED=1" in result.stdout.splitlines()
