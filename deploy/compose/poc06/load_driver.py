@@ -12,6 +12,7 @@ Nothing here reads or prints a key.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 from collections.abc import Sequence
@@ -25,8 +26,15 @@ EXTRA_ENGINES = ("echo-openai-agents",)
 
 
 def load_matrix() -> ModuleType:
-    """The load matrix module; `main` points its stack script, engines, and output at PoC-6."""
-    return run_matrix
+    """A private copy of the load matrix: `main`'s PoC-6 settings never reach the shared one."""
+    source = Path(run_matrix.__file__)
+    spec = importlib.util.spec_from_file_location("poc06_run_matrix", source)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {source}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # dataclasses look the module up here
+    spec.loader.exec_module(module)
+    return module
 
 
 def render_markdown(results: dict[str, object], out: Path) -> str:

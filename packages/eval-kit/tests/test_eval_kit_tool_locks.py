@@ -24,6 +24,13 @@ from eval_kit.evaltrial import (
 
 WORKFLOWS = ROOT / ".github/workflows"
 EVAL_JOBS = [("poc07-evals.yml", "evals"), ("poc08-evals.yml", "evals")]
+# Every job that installs tools on `pull_request`: no cache and no credential reach a PR run.
+PR_JOBS = [
+    *EVAL_JOBS,
+    ("poc08-evals.yml", "regression"),
+    ("poc08-evals.yml", "redteam"),
+    ("poc06-load.yml", "poc06-load"),
+]
 _PIN = re.compile(r"^([A-Za-z0-9_.\-\[\],]+)==(\S+)")
 
 
@@ -106,17 +113,17 @@ def test_eval_kit_promptfoo_installs_with_npm_ci_never_npx(tmp_path: Path) -> No
     assert run[0].endswith("node_modules/.bin/promptfoo")
 
 
-@pytest.mark.parametrize(("workflow", "job"), EVAL_JOBS)
+@pytest.mark.parametrize(("workflow", "job"), PR_JOBS)
 def test_eval_kit_evals_job_checkout_keeps_no_credentials(workflow: str, job: str) -> None:
-    """The evals job's checkout sets `persist-credentials: false`."""
+    """The job's checkout sets `persist-credentials: false`."""
     checkout = _uses(_job(workflow, job), "actions/checkout@")
 
     assert checkout["with"]["persist-credentials"] is False
 
 
-@pytest.mark.parametrize(("workflow", "job"), EVAL_JOBS)
+@pytest.mark.parametrize(("workflow", "job"), PR_JOBS)
 def test_eval_kit_evals_job_has_no_uv_cache_on_pull_request(workflow: str, job: str) -> None:
-    """The evals job's `setup-uv` turns its cache off on `pull_request`."""
+    """The job's `setup-uv` turns its cache off on `pull_request`."""
     setup = _uses(_job(workflow, job), "astral-sh/setup-uv@")
 
     assert setup["with"]["enable-cache"] == "${{ github.event_name != 'pull_request' }}"

@@ -75,3 +75,5 @@ Carried as "open, user decision": 1, 4, and 6 in 014 H-7; 2 and 7 in 022 H-6; 3 
 5. **Workload-side logs.** Answered by the build (PR 39): the template A2A server and `echo-typescript` write JSON logs with `request_id` and `trace_id`, and the Collector still masks them (014 H-7, above).
 6. **Named-entity masking in the Collector.** Run Presidio in the Collector log pipeline (cost and latency), or accept the regex-only gap for workload logs?
 7. **Rate limits with auth off.** Today no call is limited when caller auth is off. Is that fine for local and test profiles only, or should an anonymous bucket exist?
+
+Update 2026-11-06: the eval trial moved to `packages/eval-kit` (R6-14). The `bakeoff.<module>` names above are now `eval_kit.<module>`, and `packages/bakeoff/tests/test_bakeoff_*` is now `packages/eval-kit/tests/test_eval_kit_*`, with the same assertions. `python -m bakeoff.<module>` still runs, through a shim.

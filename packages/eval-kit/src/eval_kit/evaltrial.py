@@ -368,10 +368,10 @@ def run_one(
     (work / "home").mkdir()
     base = get_engine(engine_name)
     engine = replace(base, script=_engine_script(base, golden.model_script, work))
-    run = _run_tool(tool, engine, lane, work, offline=offline, cleanup=cleanup, golden=golden)
     meta: dict[str, object] = {"offline": offline, **dict(golden.meta)}
     stem = stem or f"{tool}-{engine_name}"
     try:
+        run = _run_tool(tool, engine, lane, work, offline=offline, cleanup=cleanup, golden=golden)
         report = _write_report(tool, engine_name, lane, out, work, stem=stem, run=run, meta=meta)
     finally:
         cleanup.remove_dir(work)

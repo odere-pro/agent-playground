@@ -75,3 +75,5 @@ Payload `feedback.v0.json` (contract v6, part C). The schema is registered by 08
 ## ROWS
 
 None proposed. Confirm at close that no size changes: 022 H-6 may shrink, since guardrails are LiteLLM config; 017 H-4 may grow by the async mode and the Langfuse score for async results.
+
+Update 2026-11-06: the eval trial moved to `packages/eval-kit` (R6-14). The `bakeoff.<module>` names above are now `eval_kit.<module>`, and `packages/bakeoff/tests/test_bakeoff_*` is now `packages/eval-kit/tests/test_eval_kit_*`, with the same assertions. `python -m bakeoff.<module>` still runs, through a shim.
