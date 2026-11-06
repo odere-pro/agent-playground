@@ -26,6 +26,8 @@ epic_refs: [G.4]
   1. Change the central limits first (key, allow-list, network policy). They take effect at once.
   2. Then build one chassis image and roll it out in fast rings.
 
+- Status after the product plan, phase A (2026-11-06): the minimum-version admission rule exists, as rule 9 of the trust policy (`agent-trust-rule`, in the library chart's `agent-lib.admission` and in `deploy/kind/poc05/admission/policy.yaml`): every chassis image must carry a tag in the params' `supportedChassisTags`, which the chart renders from its own `chassis.image.supportedTags` (the current tag and the previous one), so bumping the tag in `agent-lib` moves the minimum. A digest-only chassis reference is refused; pin `repo:tag@sha256:...`. The render refuses the same tags first (checked twice, as the trust rule). Not built: warn-first (the binding denies), the rings, and the promotion checks.
+
 ## Reuse
 
 - **Use:** Argo CD, as planned. suggested: Argo CD sync waves or Argo Rollouts for the rings. Kyverno or ValidatingAdmissionPolicy for the minimum-version rule, in the same policy set as 055 CH-6.

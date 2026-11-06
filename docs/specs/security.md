@@ -12,9 +12,9 @@ Assume the model will be tricked. The boundary is made of **fixed controls** in 
 | ------- | ---- | ----- |
 | One scoped LiteLLM virtual key per service: the routes it may use, a budget, a rate limit, a tag. Never shared | fixed | minted at deploy (`seed.sh`, `stack.sh`); only the chassis holds it |
 | MCP gateway allow-list per key; a write tool needs an `idempotency_key`; `tool_denied` for a tool the key may not call | fixed, tool guard | `chassis/adapters/mcp/gateway.py` |
-| NetworkPolicy, ingress and egress, per pod, default deny; no `ipBlock`; a remote workload reaches only the chassis's remote proxy, with no DNS | fixed | `deploy/helm/agent-lib/templates/_networkpolicy.tpl` |
+| NetworkPolicy, ingress and egress, per pod, default deny; peers by namespace and pod labels with ports, no `ipBlock`, no empty selector; a default deny per namespace; a remote workload reaches only the chassis's remote proxy, with no DNS | fixed | `deploy/helm/agent-lib/templates/_networkpolicy.tpl`, `_validate.tpl` |
 | gVisor for `remote`; uids 10001 and 10002; read-only root; no capabilities; seccomp `RuntimeDefault`; no service account token; memory-backed `/tmp` | fixed | the chart |
-| Admission: `untrusted` must use `remote`; a minimum chassis version | fixed | `deploy/kind/poc05/admission/` |
+| Admission: `untrusted` must use `remote`; the registry prefix and the trusted repositories; Secrets on the chassis only; a minimum chassis version (rule 9) | fixed | `deploy/helm/agent-lib/templates/_admission.tpl`, installed by `deploy/helm/agent-admission`; the same policy on the PoC-5 cluster, `deploy/kind/poc05/admission/` |
 | The code-execution tool runs generated code in one gVisor sandbox per call, with no secrets and no network | fixed | `packages/code-runner` |
 | Remote lane auth: a per-remote bearer token on the remote proxy listener (mTLS is not built) | fixed | `chassis/server/remote_auth.py` |
 | Caller identity: OIDC JWT checked against JWKS; scopes `agent:run`, `agent:feedback`, `agent:read`; `/health` and `/ready` need none; 401, 403 `forbidden`, 503 `auth_unavailable` | fixed | `chassis/server/security.py`, `adapters/oidc`; the `cloud` profile refuses the `static` fake |

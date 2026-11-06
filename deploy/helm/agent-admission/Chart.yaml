@@ -1,0 +1,16 @@
+# agent-admission: the platform's admission rules, from the library chart's agent-lib.admission
+# (the trust rule, its binding, its params). Installed once per cluster by the platform, in its
+# own namespace, never by a service. The chassis tags it allows come from agent-lib's defaults,
+# so a chassis release that bumps the tag there bumps the minimum version here (ADR-001 item 9).
+# Build the dependency first, from the repo root (file:// only, no network):
+#   helm dependency update --skip-refresh deploy/helm/agent-admission
+apiVersion: v2
+name: agent-admission
+description: The platform's admission rules for agent pods, the lane and trust rule and the minimum chassis version.
+type: application
+version: 0.1.0
+appVersion: "0.0.1"
+dependencies:
+  - name: agent-lib
+    version: 0.1.0
+    repository: file://../agent-lib

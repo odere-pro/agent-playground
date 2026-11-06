@@ -2,10 +2,13 @@
 # "The library chart renders a pod with both containers, secrets in the chassis container only,
 # and the Service on the chassis port."
 #
-# What it runs: `helm lint` and `helm template` on deploy/helm/example-agent (which
-# includes deploy/helm/agent-lib), through pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py
-# under the offline gate (scripts/check_offline.sh: no socket, no key). The test skips when helm
-# is not on PATH; here POC09_HELM_REQUIRED=1 turns that skip into a failure.
+# What it runs: `helm lint` and `helm template` on deploy/helm/example-agent and
+# deploy/helm/agent-admission (both include deploy/helm/agent-lib), through
+# pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py (criterion 5) and
+# test_poc09_chart_boundary.py (the admission and default-deny egress rules the chart carries:
+# PoC-5 criteria 5 and 7, the product plan phase A) under the offline gate
+# (scripts/check_offline.sh: no socket, no key). The tests skip when helm is not on PATH; here
+# POC09_HELM_REQUIRED=1 turns that skip into a failure.
 #
 # Trigger: push, pull_request, and workflow_dispatch. Never pull_request_target. No secret is used.
 # helm is pinned by version and by a sha256 in the job env, read once from the project's published
@@ -62,4 +65,6 @@ jobs:
         run: |
           set -euo pipefail
           command -v helm
-          scripts/check_offline.sh -v -rs pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py
+          scripts/check_offline.sh -v -rs \
+            pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py \
+            pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_boundary.py
