@@ -14,6 +14,9 @@
 # - trustedRepositories: the repositories CI builds from this repo, without a tag. A trusted
 #   sidecar pod may run only these. kind.local/agent-platform/hostile (the probe workload) is not
 #   on it on purpose. Hand-kept in PoC-5; from registry metadata or signatures later (H-10).
+# - supportedChassisTags: the chassis tags at or above the minimum version (rule 9, ADR-001 item
+#   9: the current tag and the previous one a service may pin to roll back). On kind only poc05
+#   exists. The library chart renders this list from its own defaults (deploy/helm/agent-lib).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -25,3 +28,4 @@ data:
   registryPrefix: kind.local/agent-platform/
   imageSource: pull-never
   trustedRepositories: kind.local/agent-platform/echo-python,kind.local/agent-platform/echo-typescript
+  supportedChassisTags: poc05

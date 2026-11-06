@@ -6,12 +6,15 @@ The shared Helm library chart that adds the chassis to every agent's pod (backlo
 | ------ | ---- |
 | `agent-lib/` | The library chart (`type: library`). Named templates, no objects of its own |
 | `example-agent/` | An application chart that depends on `agent-lib` (`file://../agent-lib`) and renders a sidecar-lane agent: the chassis and `echo-python`. The service template copies it |
+| `agent-admission/` | The platform's chart: the admission rules from `agent-lib.admission`, installed once per cluster in the platform's namespace, never by a service ([the admission rules](#the-admission-rules)) |
 
 ```bash
 helm dependency update --skip-refresh deploy/helm/example-agent   # file:// only, no network
-helm lint deploy/helm/agent-lib deploy/helm/example-agent
+helm dependency update --skip-refresh deploy/helm/agent-admission
+helm lint deploy/helm/agent-lib deploy/helm/example-agent deploy/helm/agent-admission
 helm template example-agent deploy/helm/example-agent --namespace agents
-make test-poc POC=09                                               # the chart test, if helm is on PATH
+helm template agent-admission deploy/helm/agent-admission --namespace agent-platform-system
+make test-poc POC=09                                               # the chart tests, if helm is on PATH
 ```
 
 Kubernetes 1.33 or later (native sidecars, stable). `charts/` and `Chart.lock` are built, not committed.
@@ -26,9 +29,10 @@ A service chart includes one per file in its `templates/`, as `example-agent` do
 | `agent-lib.configmap` | `<name>-chassis`: the chassis config at `/etc/chassis/config.yaml`, with `spec.engine.url` (and, remote, `spec.engine.auth`) filled when empty |
 | `agent-lib.deployment` | The agent's pod. Remote lane: also `<name>-workload` under gVisor |
 | `agent-lib.service` | `<name>`: the chassis port only. Remote lane: also `<name>-remote-proxy` (fixed ClusterIP) and `<name>-workload` |
-| `agent-lib.networkpolicy` | Ingress and egress for each pod |
+| `agent-lib.networkpolicy` | Ingress and egress for each pod, and `<name>-default-deny` for each namespace the pods are in |
 | `agent-lib.hpa` | An `autoscaling/v2` HPA on CPU, only when `hpa.enabled` |
 | `agent-lib.all` | All of the above |
+| `agent-lib.admission` | The platform's, not a service's: the trust-rule `ValidatingAdmissionPolicy`, its binding, and its params ConfigMap (`agent-lib.admissionPolicy`, `.admissionBinding`, `.admissionParams`) |
 
 ## The two lanes
 
@@ -41,10 +45,10 @@ The lane and the trust level are read from the chassis config, so the chart and 
 | Runtime | runc | The workload pod under `runtimeClassName: gvisor`; the chassis pod outside the sandbox |
 | Workload listens on | `127.0.0.1:9000` | The pod IP, `:9000`, token required on every path (`--require-token-env CHASSIS_API_TOKEN`, the Python template) |
 | Workload reaches the chassis | `127.0.0.1:8090` | `<remote.proxyClusterIP>:8091`, a fixed ClusterIP: the remote pod has no DNS |
-| Secrets in the workload | None | One: its own bearer token, `CHASSIS_API_TOKEN` from `remote.tokenSecret` (ADR-005 decision 1) |
+| Secrets in the workload | None | One: its own bearer token, `CHASSIS_API_TOKEN` from the Secret `<name>-workload-token` (ADR-005 decision 1; admission rule 7c names it after the pod) |
 | Replicas | `replicas`, or the HPA | One, and no HPA: the remote listener answers only for a run in its own process (`run_required`) |
 
-The remote lane renders a plain Deployment, not an agent-sandbox `Sandbox` as PoC-5 did; the pod spec is the same. PoC-5 kept the remote in its own namespace (`poc05-remote`), so a tenant who may create pods there cannot read the chassis's Secrets. Set `remote.namespace` to do the same; the token Secret must then exist in both namespaces.
+The remote lane renders a plain Deployment, not an agent-sandbox `Sandbox` as PoC-5 did; the pod spec is the same. PoC-5 kept the remote in its own namespace (`poc05-remote`), so a tenant who may create pods there cannot read the chassis's Secrets. Set `remote.namespace` to do the same; the token Secret `<name>-workload-token` must then exist in both namespaces.
 
 ## What the chart enforces
 
@@ -52,11 +56,22 @@ The remote lane renders a plain Deployment, not an agent-sandbox `Sandbox` as Po
 
 - The workload takes an allow-list of keys: `image`, `pullPolicy`, `port`, `args`, `env`, `probeCommand`, `resources`, `tmpSizeLimit`. There is no key for a Secret, `envFrom`, a volume, or a security context, and any other key fails. `workload.env` is plain `name`/`value` pairs: no `valueFrom`, no credential-looking name (`*_KEY`, `*_TOKEN`, `*PASSWORD*`, `*SECRET*`, `*CREDENTIAL*`), none of the names the chart sets (`HOST`, `PORT`, `POD_IP`, `CHASSIS_*`).
 - The chassis gets Secrets only through `chassis.secretEnv`, `chassis.envFromSecrets`, and `chassis.secretVolumes`. `chassis.env` is plain too. No `command`: the image's ENTRYPOINT runs (PoC-5 admission rule 6b).
-- Images are pinned: the chassis by tag or digest, never `latest`; the workload by tag or digest.
-- Egress peers are labels: no `ipBlock`, no rule without a `to`.
-- The remote lane needs `remote.tokenSecret.name`, `remote.proxyClusterIP`, and a RuntimeClass, and runs one replica with no HPA.
+- Images are pinned: the chassis by a tag from the library's supported list (`chassis.image.supportedTags`, the current tag and the previous one), with or without a digest next to it, never `latest` and never a digest alone (ADR-001 item 9; admission rule 9 reads the tag); the workload by tag or digest.
+- Default-deny egress (026 CH-4): every pod's policy names both directions; every egress rule names a peer by `namespaceSelector.matchLabels` and `podSelector.matchLabels` and its `ports`; no `ipBlock`, no rule without a `to`, no empty selector (an empty selector is every pod). The cloud metadata service and the API server are not pods, so no rule can reach them. Each namespace the chart renders pods into also gets `<name>-default-deny`. In the sidecar lane the workload shares the pod's network namespace, so the chassis's allow-list is its egress too; a remote workload pod reaches only its chassis's remote proxy.
+- The remote lane needs `remote.proxyClusterIP` and a RuntimeClass, and runs one replica with no HPA. Its token Secret is named by the chart, `<name>-workload-token`; `remote.tokenSecret.name` is refused.
+- A key the chart does not read is refused, so no value can look like it switches a rule off: `admission` (the platform's, below), `chassis.image.supportedTags` (the library's), `remote.tokenSecret.name`.
 
 Fixed by the chart, not values: the uids (chassis 10001, workload 10002, `deploy/README.md`), a read-only root, no privilege escalation, all capabilities dropped, seccomp `RuntimeDefault` on each pod and container, `automountServiceAccountToken: false`, `enableServiceLinks: false`, a memory-backed `/tmp` per container with a size cap, the chassis's public port on the pod IP, its probes (`/health` startup and liveness, `/ready` readiness), and the workload's exec probes on the agent card (liveness grace 10 s).
+
+## The admission rules
+
+The second check on the boundary (ADR-005 decision 4: the trust rule is checked twice, at render and at admission) is a `ValidatingAdmissionPolicy` on the API server, rendered by `agent-lib.admission` and installed by the platform through `agent-admission/`, once per cluster, in the platform's namespace. A service cannot switch it off: it has no value for it (the render refuses `admission`), no file, and no RBAC on cluster-scoped admission objects.
+
+- `agent-trust-rule`, the policy: rules 0 to 8 are PoC-5's (`deploy/kind/poc05/admission/policy.yaml`, whose header explains each: the trust label, no `untrusted` pod in the sidecar lane, the registry prefix, the trusted repositories, the remote pod's shape, one chassis with no `command` and the only Secrets, the namespace shape, the image store). Rule 9 is the minimum chassis version (ADR-001 item 9, 056 CH-7): every chassis image carries a tag in `supportedChassisTags`. The spec in the chart is that file's, byte for byte; `tests/test_poc09_chart_boundary.py` holds the two equal, so the kind admission suite in CI (`test_poc05_kind_admission.py`, every rule with a rejected fixture and an admitted twin) proves the CEL the chart ships.
+- `agent-trust-rule`, the binding: `Deny` and `Audit` in every namespace labeled `agents.platform/admission: enforce`, with `parameterNotFoundAction: Deny`. The platform labels namespaces, with `agents.platform/pod-shape: chassis` on a service's namespace and `remote` on a remote namespace (rule 7a); no tenant role may.
+- `agent-trust-params`, the ConfigMap in the platform release's namespace: `registryPrefix`, `imageSource` (`pull-never` on kind, `digest` on a cloud), and `trustedRepositories` from `agent-admission/values.yaml`; `supportedChassisTags` from the library's own `chassis.image.supportedTags`, so a chassis release that bumps the tag in `agent-lib` bumps the minimum version here. Warn-first for a new minimum (CH-7) is not built: the binding denies.
+
+Not in the chart: the agent-sandbox extension rules (T1 to T5, C1 to C5) and the RBAC, which are the PoC-5 code runner's (`deploy/kind/poc05/admission/`), and the trust list's source (hand-kept until signatures, 025 H-10).
 
 ## Values
 
@@ -64,7 +79,7 @@ Defaults are in `agent-lib.defaults` (`agent-lib/templates/_values.tpl`); a serv
 
 | Key | Default | What |
 | --- | ------- | ---- |
-| `chassis.image.repository`, `.tag`, `.digest` | `kind.local/agent-platform/chassis`, `poc09`, empty | The chassis image, set once here. A service holds the previous tag with `chassis.image.tag` |
+| `chassis.image.repository`, `.tag`, `.digest` | `kind.local/agent-platform/chassis`, `poc09`, empty | The chassis image, set once here. A service holds the previous tag with `chassis.image.tag`; the tag must be in `chassis.image.supportedTags` (`[poc09, poc08]`, the library's, not a value) |
 | `chassis.port`, `.proxyPort`, `.remoteProxyPort` | 8080, 8090, 8091 | Public port, loopback proxies, remote proxy listener |
 | `chassis.startupWaitSeconds`, `.drainDelaySeconds`, `.drainTimeoutSeconds` | 120, 10, 30 | 024 CH-3, PoC-4 status |
 | `chassis.env` | `[]` | Plain `name`/`value` pairs |
@@ -78,16 +93,17 @@ Defaults are in `agent-lib.defaults` (`agent-lib/templates/_values.tpl`); a serv
 | `chassis.tmpSizeLimit`, `workload.tmpSizeLimit` | 16Mi, 32Mi | PoC-5 (H22) |
 | `replicas`, `terminationGracePeriodSeconds` | 1, 50 | 50 = drain delay 10 + drain timeout 30 + 10 |
 | `service.port` | 8080 | The Service port; its `targetPort` is always `chassis.port` |
-| `remote.namespace`, `.runtimeClassName`, `.proxyClusterIP`, `.tokenSecret.name`, `.tokenSecret.key` | release namespace, `gvisor`, required, required, `token` | Remote lane only |
+| `remote.namespace`, `.runtimeClassName`, `.proxyClusterIP`, `.tokenSecret.key` | release namespace, `gvisor`, required, `token` | Remote lane only. The token Secret is `<name>-workload-token`, not a value |
 | `networkPolicy.ingressFrom` | `[]` (any pod, chassis port only) | Peers that may call the chassis port |
-| `networkPolicy.chassisEgress` | `[]` | Egress rules for the chassis pod besides DNS |
-| `networkPolicy.dns` | `kube-system`, `k8s-app: kube-dns` | The DNS peer |
+| `networkPolicy.chassisEgress` | `[]` | Egress rules for the chassis pod besides DNS: each with `to` (peers by `namespaceSelector.matchLabels` and `podSelector.matchLabels`) and `ports` |
+| `networkPolicy.dns` | `kube-system`, `k8s-app: kube-dns` | The DNS peer; `podLabels` may not be empty |
 | `hpa.enabled`, `.minReplicas`, `.maxReplicas`, `.targetCPUUtilizationPercentage` | false, 2, 5, 70 | |
+
+`agent-admission/values.yaml` holds `admission.params.registryPrefix`, `.imageSource`, and `.trustedRepositories`; any other key under `admission` is refused.
 
 ## Not here
 
-- The PoC-5 admission rules (`kind/poc05/admission/`) and the trust list: the chart is checked by them, it does not carry them.
-- The namespace's default deny and Pod Security labels (`kind/poc05/base/`).
-- Default-deny egress to the cloud metadata service and the Kubernetes API by name: a NetworkPolicy can only allow, so the chart allows named peers and nothing else (026 CH-4).
+- The namespace labels (`agents.platform/admission`, `agents.platform/pod-shape`) and the Pod Security labels: the platform's, on the namespace (`kind/poc05/base/namespaces.yaml`).
+- A deny of the cloud metadata service and the Kubernetes API by name: a NetworkPolicy can only allow, so the chart allows named pod peers and nothing else (026 CH-4).
 - Making Secrets: outside the chart, through a pipe, as `kind/poc05/platform/seed.sh`.
-- A kind run with this chart (PoC-9, optional).
+- A kind run with this chart beyond the HPA drill (PoC-9, optional; `../../pocs/poc-09-agent-mvp-template/notes/2026-11-05-kind-hpa-drill.md`).

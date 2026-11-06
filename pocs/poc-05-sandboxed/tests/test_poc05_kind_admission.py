@@ -282,11 +282,13 @@ RULE8_MESSAGE = "trust rule 8"
 
 
 def _pinned(image: str) -> str:
-    return image.split(":", 1)[0] + DIGEST
+    # The tag stays next to the digest (`repo:tag@sha256:...`), as the library chart renders it:
+    # rule 9 reads the chassis tag, and a digest alone has none.
+    return image + DIGEST
 
 
 def _with_digests(pod: dict[str, object]) -> dict[str, object]:
-    """A copy of `pod` with every image's tag replaced by `DIGEST`."""
+    """A copy of `pod` with every image pinned by `DIGEST` next to its tag."""
     spec = pod["spec"]
     assert isinstance(spec, dict)
     pinned = {

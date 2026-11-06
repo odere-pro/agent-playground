@@ -32,7 +32,8 @@
 #       trustedRepositories. Images outside the prefix are rule 3's, so each rejected fixture
 #       breaks one rule only.
 #   5.  a remote pod sets runtimeClassName gvisor and automountServiceAccountToken false, mounts
-#       no projected service account token, and takes no Secret but a remote-<name>-token.
+#       no projected service account token, and takes no Secret but its own <name>-token (the
+#       `-token` shape here; rule 7c holds the name).
 #   6a. at most one container per pod runs the chassis image (F2).
 #   6b. the chassis container sets no `command`: the image's entrypoint is `chassis serve` (F2).
 #   6c. outside the remote lane, only the chassis container references a Secret: env, envFrom,
@@ -46,6 +47,13 @@
 #       also exists on a public registry is never pulled. On a cloud cluster set
 #       imageSource: digest: every image is pinned by @sha256, and the trusted list is read with
 #       the digest (H-10 signatures later).
+#   9.  the minimum chassis version (ADR-001 item 9, 056 CH-7): every chassis image carries a tag
+#       in supportedChassisTags, the current tag and the previous one a service may pin. The tag
+#       is read with or without a digest next to it (repo:tag@sha256:...); a chassis pinned by
+#       digest alone, or untagged, is refused, so a chassis below the minimum never runs.
+#
+# The library chart renders this same policy (deploy/helm/agent-lib/templates/_admission.tpl);
+# the chart test holds the two equal, so this file and the chart cannot drift.
 #
 # CEL notes from the spike (question 5): a label key with a slash is read as
 # labels[?'key/with-slash'].orValue(''); the form labels.?'key' does not compile. Every optional
@@ -159,7 +167,7 @@ spec:
         has(namespaceObject.metadata) && has(namespaceObject.metadata.labels)
         ? namespaceObject.metadata.labels[?'agents.platform/pod-shape'].orValue('') : ''
     - name: tokenSecret
-      expression: "'^remote-[a-z0-9]([-a-z0-9]*[a-z0-9])?-token$'"
+      expression: "'^[a-z0-9]([-a-z0-9]*[a-z0-9])?-token$'"
     - name: ownToken
       expression: "variables.labels[?'app.kubernetes.io/name'].orValue('') + '-token'"
     # Every Secret name the pod references, as a list of lists (no flatten needed): env per
@@ -208,6 +216,16 @@ spec:
         variables.imageSource == 'pull-never'
         ? variables.containers.all(c, has(c.imagePullPolicy) && c.imagePullPolicy == 'Never')
         : variables.images.all(i, i.contains('@sha256:'))
+    - name: supportedChassisTags
+      expression: >-
+        variables.data[?'supportedChassisTags'].orValue('').split(',')
+        .map(t, t.trim()).filter(t, t != '')
+    # The tag of each chassis image: after the last ':' of the reference without its digest, when
+    # that ':' comes after the last '/' (a registry port is before it). No tag gives ''.
+    - name: chassisTags
+      expression: >-
+        variables.chassisImages.map(i, i.contains('@') ? i.substring(0, i.indexOf('@')) : i)
+        .map(r, r.lastIndexOf(':') > r.lastIndexOf('/') ? r.substring(r.lastIndexOf(':') + 1) : '')
   validations:
     - expression: >-
         variables.prefix != '' && size(variables.trustedRepositories) > 0 &&
@@ -257,7 +275,7 @@ spec:
          variables.secretNames.all(l, l.all(n, n.matches(variables.tokenSecret))))
       message: >-
         trust rule 5: a remote workload pod must set runtimeClassName gvisor and
-        automountServiceAccountToken false, and take no Secret but remote-<name>-token
+        automountServiceAccountToken false, and take no Secret but its own <name>-token
       reason: Forbidden
     - expression: "size(variables.chassisImages) <= 1"
       message: "trust rule 6a: a pod may run at most one chassis container"
@@ -309,4 +327,15 @@ spec:
       message: >-
         trust rule 8: outside the remote lane every image must come from the cluster image store:
         imagePullPolicy Never, or an @sha256 digest when imageSource is digest
+      reason: Forbidden
+    - expression: "variables.chassisTags.all(t, t in variables.supportedChassisTags)"
+      message: >-
+        trust rule 9: every chassis image must carry a tag from supportedChassisTags in
+        agent-trust-params, the chassis tags at or above the minimum version; a chassis below it,
+        or pinned by digest alone, is refused
+      messageExpression: >-
+        'trust rule 9: every chassis image must carry a tag from supportedChassisTags in
+        agent-trust-params, the chassis tags at or above the minimum version; a chassis below it,
+        or pinned by digest alone, is refused: ' +
+        variables.chassisTags.filter(t, !(t in variables.supportedChassisTags)).join(', ')
       reason: Forbidden

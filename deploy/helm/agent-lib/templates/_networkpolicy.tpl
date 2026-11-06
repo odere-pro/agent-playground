@@ -1,7 +1,8 @@
 {{/*
 agent-lib.networkpolicy: what each pod may send and receive. Each policy names both directions,
-so everything it does not allow is refused. The namespace should carry its own default deny too
-(deploy/kind/poc05/base/default-deny.yaml).
+so everything it does not allow is refused (default-deny egress, 026 CH-4). Each namespace the
+chart renders pods into also gets a default deny of its own, <name>-default-deny, so a pod there
+with no policy of its own has no egress either (PoC-5 kept it in kind/poc05/base/).
 
 The chassis pod: in, the chassis port only (from networkPolicy.ingressFrom, or any pod when it is
 empty, as PoC-5); out, DNS plus networkPolicy.chassisEgress (peers by label: no ipBlock, no rule
@@ -100,5 +101,29 @@ spec:
       ports:
         - port: {{ int $v.chassis.remoteProxyPort }}
           protocol: TCP
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-default-deny
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "agent-lib.labels" (dict "root" . "name" $name) | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+{{- if and (eq $lane "remote") (ne $rns .Release.Namespace) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $wname }}-default-deny
+  namespace: {{ $rns }}
+  labels:
+    {{- include "agent-lib.labels" (dict "root" . "name" $wname) | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
 {{- end }}
 {{- end -}}

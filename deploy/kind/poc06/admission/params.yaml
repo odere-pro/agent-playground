@@ -16,3 +16,4 @@ data:
   registryPrefix: kind.local/agent-platform/
   imageSource: pull-never
   trustedRepositories: kind.local/agent-platform/echo-python,kind.local/agent-platform/echo-typescript,kind.local/agent-platform/echo-openai-agents
+  supportedChassisTags: poc05

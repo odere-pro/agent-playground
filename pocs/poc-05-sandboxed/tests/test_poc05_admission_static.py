@@ -175,11 +175,12 @@ def test_the_template_variable_reads_a_sandbox_template_pod(policy: Doc) -> None
     assert "request.kind.kind in ['Sandbox', 'SandboxTemplate'] ? object.spec.podTemplate" in expr
 
 
-def test_policy_has_only_the_params_check_and_rules_1_to_8(policy: Doc) -> None:
+def test_policy_has_only_the_params_check_and_rules_1_to_9(policy: Doc) -> None:
     """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
     in the `sidecar` lane."
 
-    Criterion 7: the trust policy holds rule 0 and rules 1 to 8, and no other rule."""
+    Criterion 7: the trust policy holds rule 0 and rules 1 to 9, and no other rule. Rule 9 is
+    the minimum chassis version (ADR-001 item 9; the product plan, phase A)."""
     assert sorted(_messages(policy)) == sorted(["0", *RULES])
 
 
@@ -422,6 +423,35 @@ def test_params_live_in_the_platform_namespace_and_list_our_repositories(params:
     assert PREFIX + "hostile" not in p.trusted
     assert all(r.startswith(p.prefix) for r in p.trusted)
     assert all(":" not in r and "@" not in r for r in p.trusted), "repositories, not tags"
+    # Rule 9: the kind cluster runs the poc05 chassis image and nothing older.
+    assert p.chassis_tags == ("poc05",)
+
+
+@pytest.mark.parametrize(
+    ("chassis_image", "broken"),
+    [
+        (PREFIX + "chassis:poc05", set()),
+        (PREFIX + "chassis:poc05@sha256:" + "0" * 64, set()),
+        (PREFIX + "chassis:poc04", {"9"}),
+        (PREFIX + "chassis@sha256:" + "0" * 64, {"9"}),
+        (PREFIX + "chassis", {"9"}),
+    ],
+    ids=["tag", "tag and digest", "old tag", "digest only", "no tag"],
+)
+def test_rule_9_reads_the_chassis_tag_with_or_without_a_digest(
+    params: Doc, chassis_image: str, broken: set[str]
+) -> None:
+    """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
+    in the `sidecar` lane."
+
+    Rule 9 (the minimum chassis version, ADR-001 item 9): the chassis tag must be one of
+    `supportedChassisTags`. A digest next to the tag is fine; a digest alone, or no tag, is
+    refused, so an unpinned or an unversioned chassis never runs."""
+    twin = read_fixture(FIXTURES / "rule9-chassis-version" / "admitted.yaml").doc
+    (chassis,) = [c for c in containers_of(twin["spec"]) if c["name"] == "chassis"]
+    chassis["image"] = chassis_image
+
+    assert broken_rules(twin, AdmissionParams.of(params)) == broken
 
 
 # --- fixtures ---------------------------------------------------------------------------------
@@ -571,6 +601,7 @@ READS: dict[str, str] = {
     "7c": SECRET_REF,
     "7d": GVISOR,
     "8": rf"{CONTAINER}\.imagePullPolicy",
+    "9": IMAGE,
     "T1": r"\.spec\.networkPolicyManagement",
     "T2": r"\.spec\.envVarsInjectionPolicy",
     "T3": r"\.spec\.volumeClaimTemplatesPolicy",
@@ -640,6 +671,7 @@ def test_fixtures_meet_the_restricted_pod_security_standard(fixture: Fixture) ->
         ("7c", "79e11318ba44d4e2"),  # pragma: allowlist secret
         ("7d", "9efa9e4543df63f6"),  # pragma: allowlist secret
         ("8", "7f98972336329322"),
+        ("9", "86af00edf306661b"),  # pragma: allowlist secret
         ("T1", "ca53815103a2c2af"),  # pragma: allowlist secret
         ("T2", "11f516c4a675f8e4"),  # pragma: allowlist secret
         ("T3", "06d8e73ceaac1d74"),  # pragma: allowlist secret
@@ -677,7 +709,7 @@ def test_rule_expression_matches_its_pin_when_the_policy_loads(
 @pytest.mark.parametrize(
     ("name", "pinned"),
     [
-        ("agent-trust-rule", "ce4ee3a01d617e67"),  # pragma: allowlist secret
+        ("agent-trust-rule", "d5ddffc4021d140d"),  # pragma: allowlist secret
         ("sandbox-template-rule", "e3b0c44298fc1c14"),  # pragma: allowlist secret
         ("sandbox-claim-rule", "e3b0c44298fc1c14"),  # pragma: allowlist secret
     ],
