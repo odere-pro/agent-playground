@@ -13,6 +13,17 @@
 # Nothing here has a default secret, so `${VAR:?}` fails closed. Only LiteLLM gets the master
 # key; only the chassis gets the virtual key (ADR-001 hard requirement 1).
 #
+# The guardrail server's token: stack.sh makes GUARDRAIL_TOKEN into the same env file. LiteLLM
+# gets it as GUARDRAIL_API_KEY and sends it as `x-api-key` (litellm.yaml, `api_key`). The
+# guardrail server gets it as the Compose secret `guardrail_token`, from the environment, not
+# from a file: Compose copies an environment secret into the container with the `uid`, `gid`,
+# and `mode` set here (0400, the image's uid 10007). A `file:` secret is bind-mounted as it is
+# and ignores those, so a mode-600 file owned by the runner user would be unreadable by uid
+# 10007 on Linux. The chassis gets no new value. `docker compose config` warns that uid, gid,
+# and mode are "not supported outside Swarm mode": that is the loader's warning for a `file:`
+# secret. For an `environment:` secret, Compose copies the file in with them (`createTar` in
+# pkg/compose/secrets.go, v2.29.7 and v5.6.1).
+#
 # Networks: `edge` carries the published ports and the telemetry path; `platform` is internal
 # (no egress) and holds what only LiteLLM may reach. The chassis is on `edge` only, so it reaches
 # LiteLLM and the Collector, never Presidio, the guardrail server, or the fake model directly.
@@ -59,6 +70,12 @@ services:
       context: ../../..
       dockerfile: deploy/compose/poc08-litellm/guardrail-server.Dockerfile
     image: agent-platform/guardrail-server:poc08-litellm
+    # At /run/secrets/guardrail_token; the image's ENTRYPOINT passes it as `--token-file`.
+    secrets:
+      - source: guardrail_token
+        uid: "10007"
+        gid: "10007"
+        mode: 0400
     networks: [platform]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -95,6 +112,8 @@ services:
       DISABLE_ADMIN_UI: "True"
       PRESIDIO_ANALYZER_API_BASE: http://presidio-analyzer:3000
       PRESIDIO_ANONYMIZER_API_BASE: http://presidio-anonymizer:3000
+      # The guardrail server's token (litellm.yaml, `api_key` on prompt-guard and secret-guard).
+      GUARDRAIL_API_KEY: ${GUARDRAIL_TOKEN:?}
       # LiteLLM's `otel` callback (litellm.yaml): OTLP/HTTP to the Collector.
       OTEL_EXPORTER: otlp_http
       OTEL_ENDPOINT: http://otel-collector:4318/v1/traces
@@ -175,6 +194,10 @@ services:
     depends_on:
       jaeger:
         condition: service_started
+
+secrets:
+  guardrail_token:
+    environment: GUARDRAIL_TOKEN
 
 networks:
   edge:

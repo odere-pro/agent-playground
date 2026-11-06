@@ -20,6 +20,11 @@ What it shows:
     (`model_script.REDTEAM_CASES`) run through the chassis. The drill prints, per case, whether it
     was stopped (`chassis_contracts.redteam.live.stopped`) and whether `pii-mask` alone changes
     its text. It asserts that each case ran, not a rate: the numbers are recorded, not gated.
+(d) Fail closed: with the guardrail server stopped, and then with the Presidio analyzer stopped,
+    a model call through LiteLLM with the chassis's key is refused (no 2xx, no model answer), and
+    so is a run through the chassis. Each service is stopped and started through `stack.sh stop`
+    and `stack.sh start` (an allow-list, project poc08-litellm only), never a raw container command;
+    `start` waits for its health, in a `finally`, so the next test finds the stack whole.
 
 Artifacts go to `POC08_LITELLM_OUT` (CI uploads it): the Jaeger trace JSON and the results.
 The chassis's virtual key comes from the file `POC08_LITELLM_KEY_FILE` names (`stack.sh env`);
@@ -31,9 +36,11 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
 import time
 import uuid
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -64,6 +71,8 @@ CHASSIS_SPANS = ("chassis.run", "chassis.model.route", "chassis.model.call")
 PROXY_SPAN = "chassis.model.call"
 LITELLM_SERVICE = "litellm"
 GUARDRAIL = "pii-mask"
+STACK_SH_TIMEOUT_S = 300.0
+"""suggested: `stack.sh start` polls the service's health for up to 180 s on its own."""
 
 
 def _load_script_module() -> ModuleType:
@@ -321,3 +330,74 @@ def test_the_pii_and_secret_redteam_cases_report_their_numbers(
     assert len(rows) == len(SCRIPT.REDTEAM_CASES)
     # A 5xx is the stack failing, not a case stopped: the run proved nothing.
     assert not [r["case"] for r in rows if r["http"] >= 500], rows
+
+
+# --- (d) fail closed: a stopped guardrail service refuses the call ---
+
+
+def _stack(verb: str, service: str) -> None:
+    """`stack.sh <verb> <service>`: the stack's own allow-listed verbs, project poc08-litellm."""
+    done = subprocess.run(
+        [str(STACK / "stack.sh"), verb, service],
+        capture_output=True,
+        text=True,
+        timeout=STACK_SH_TIMEOUT_S,
+        check=False,
+    )
+    assert done.returncode == 0, f"stack.sh {verb} {service}: {done.stderr[-500:]}"
+
+
+@contextmanager
+def _stopped(service: str) -> Iterator[None]:
+    """`service` stopped for the block, then started and healthy again, whatever the block did."""
+    _stack("stop", service)
+    try:
+        yield
+    finally:
+        _stack("start", service)
+
+
+def _direct_chat(litellm: httpx.Client, text: str) -> httpx.Response:
+    return litellm.post(
+        "/v1/chat/completions",
+        json={"model": "big-default", "messages": [{"role": "user", "content": text}]},
+    )
+
+
+def _refused(response: httpx.Response, *answers: str) -> bool:
+    """Not a 2xx, and none of the model's scripted answers in the body."""
+    return not response.is_success and not [a for a in answers if a in response.text]
+
+
+def test_a_stopped_guardrail_server_refuses_the_call(
+    chassis: httpx.Client, litellm: httpx.Client, out_dir: Path
+) -> None:
+    """`prompt-guard` and `secret-guard` state `unreachable_fallback: fail_closed`: with the
+    guardrail server down, plain text never reaches the model."""
+    with _stopped("guardrail-server"):
+        direct = _direct_chat(litellm, SCRIPT.CONTROL_TEXT)
+        through_chassis = _run(chassis, {"input": {"text": SCRIPT.CONTROL_TEXT}})
+    record = {
+        "direct_http": direct.status_code,
+        "chassis_http": through_chassis.status_code,
+        "chassis_error_code": _error_code(through_chassis),
+    }
+    _write(out_dir, "fail-closed-guardrail-server.json", record)
+    print(f"\nguardrail-server stopped: {record}")
+
+    assert _refused(direct, SCRIPT.CONTROL_REPLY), f"LiteLLM: HTTP {direct.status_code}"
+    assert SCRIPT.CONTROL_REPLY not in through_chassis.text, "the chassis got a model answer"
+
+
+def test_a_stopped_presidio_analyzer_refuses_the_call(litellm: httpx.Client, out_dir: Path) -> None:
+    """`pii-mask` sets `pii_entities_config`, so LiteLLM's presidio hook fails closed on an
+    analyzer error: with the analyzer down, PII never reaches the model, raw or masked."""
+    with _stopped("presidio-analyzer"):
+        direct = _direct_chat(litellm, SCRIPT.PII_TEXT)
+    record = {"direct_http": direct.status_code}
+    _write(out_dir, "fail-closed-presidio-analyzer.json", record)
+    print(f"\npresidio-analyzer stopped: {record}")
+
+    assert _refused(direct, SCRIPT.RAW_REPLY, SCRIPT.MASKED_REPLY), (
+        f"LiteLLM: HTTP {direct.status_code}"
+    )

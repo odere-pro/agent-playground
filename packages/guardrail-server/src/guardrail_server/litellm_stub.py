@@ -17,6 +17,9 @@ The guardrails (`litellm/config.yaml` in this package is the matching LiteLLM co
 
 The stub calls the guardrail server over `guardrail_transport` (an ASGI transport offline).
 `StubSettings.fail_status` makes every guardrail-server call fail with that status (an outage).
+`StubSettings.guardrail_token`, when set, is sent to the guardrail server as `x-api-key`, as
+LiteLLM v1.103.0's `generic_guardrail_api` sends its `api_key` param. A refusal (401) fails the
+call closed, like any other non-200 answer.
 """
 
 from __future__ import annotations
@@ -64,6 +67,8 @@ class StubSettings:
     master_key: str
     guardrail_base_url: str = "http://guardrail-server"
     fail_status: int | None = None
+    guardrail_token: str | None = None
+    """Sent to the guardrail server as `x-api-key` (LiteLLM's `api_key` param)."""
     calls: list[dict[str, Any]] = field(default_factory=list)
     """Each apply call: the guardrail name, the input type, and the text."""
 
@@ -109,8 +114,9 @@ def create_stub(
             "request_data": {"metadata": body.metadata or {}},
             "additional_provider_specific_params": {"checks": guardrail["checks"]},
         }
+        headers = {"x-api-key": settings.guardrail_token} if settings.guardrail_token else {}
         async with httpx.AsyncClient(
-            transport=guardrail_transport, base_url=settings.guardrail_base_url
+            transport=guardrail_transport, base_url=settings.guardrail_base_url, headers=headers
         ) as client:
             try:
                 answer = await client.post(GENERIC_PATH, json=payload)

@@ -1,18 +1,39 @@
 # suggested: the LiteLLM guardrails the PoC-7 chassis names (LiteLLMGuardrails' stage defaults).
 # NOT run against a real LiteLLM here (no image registry in the PoC-7 container); the offline tests
 # use guardrail_server.litellm_stub, which has this shape. Check field names on the Compose run.
+# The run is deploy/compose/poc08-litellm/litellm.yaml, which holds the same three guardrails.
+#
+# ADR-008 item 4: every guardrail runs on every call (`default_on`), so no key can skip it.
+# No credential here: the guardrail server's token is GUARDRAIL_API_KEY in LiteLLM's environment.
 guardrails:
   - guardrail_name: pii-mask
     litellm_params:
       guardrail: presidio
       mode: pre_call
+      default_on: true
       presidio_analyzer_api_base: os.environ/PRESIDIO_ANALYZER_API_BASE
       presidio_anonymizer_api_base: os.environ/PRESIDIO_ANONYMIZER_API_BASE
+      # Fail closed on an analyzer error (LiteLLM v1.103.0, presidio.py,
+      # `_fail_on_invalid_response`): with `pii_entities_config` set, an analyzer HTTP error or an
+      # invalid answer blocks the call; with none, it logs a warning and the text passes
+      # unmasked. LiteLLM then sends the analyzer only these entities: ADR-008's set (items 4
+      # and 6), each masked as `<ENTITY_TYPE>`.
+      pii_entities_config:
+        EMAIL_ADDRESS: MASK
+        PHONE_NUMBER: MASK
+        CREDIT_CARD: MASK
+        IBAN_CODE: MASK
+        US_SSN: MASK
+        PERSON: MASK
+        LOCATION: MASK
   - guardrail_name: prompt-guard
     litellm_params:
       guardrail: generic_guardrail_api
       mode: pre_call
+      default_on: true
       api_base: http://guardrail-server:8095
+      # The guardrail server's token, sent as `x-api-key` (LiteLLM v1.103.0 generic_guardrail_api).
+      api_key: os.environ/GUARDRAIL_API_KEY  # pragma: allowlist secret (an env name)
       # Fail closed, stated, not left to the default: both are LiteLLM v1.103.0 params (checked in
       # its source; the stub mirrors them). An unreachable or failing check blocks the call.
       unreachable_fallback: fail_closed
@@ -23,7 +44,10 @@ guardrails:
     litellm_params:
       guardrail: generic_guardrail_api
       mode: post_call
+      default_on: true
       api_base: http://guardrail-server:8095
+      # The guardrail server's token, sent as `x-api-key` (LiteLLM v1.103.0 generic_guardrail_api).
+      api_key: os.environ/GUARDRAIL_API_KEY  # pragma: allowlist secret (an env name)
       # Fail closed, stated, not left to the default: both are LiteLLM v1.103.0 params (checked in
       # its source; the stub mirrors them). An unreachable or failing check blocks the call.
       unreachable_fallback: fail_closed

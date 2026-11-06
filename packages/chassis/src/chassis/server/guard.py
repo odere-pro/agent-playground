@@ -12,16 +12,19 @@ guardrails never calls one and behaves as before):
 - `tool_output` (`GuardedTools`, the tools port the tool endpoint serves on `/mcp`): each tool
   result's text before the workload reads it. Blocked: the call is an MCP tool error
   `guardrail_blocked`, so the workload never sees the text. Masked: the masked text is the result.
-- `output` (`check_output`, called by `Run` after the engine ends, complete calls only): the
-  answer's text. Blocked: the run's deltas, tool calls, and `end` are dropped and one `error`
-  event `guardrail_blocked` closes it, so nothing of the answer reaches the response, the
-  idempotency cache, or a result event. Masked: the deltas become one delta with the masked text,
-  and `end.output.text` is masked too. A stream is not held back; LiteLLM's guardrails on the
-  model call cover it (`spec.guardrails.output`'s docstring).
+- `output`: the answer's text. A complete call (`check_output`, called by `Run` after the engine
+  ends): blocked, the run's deltas, tool calls, and `end` are dropped and one `error` event
+  `guardrail_blocked` closes it, so nothing of the answer reaches the response, the idempotency
+  cache, or a result event; masked, the deltas become one delta with the masked text, and
+  `end.output.text` is masked too. A stream (`stream_guard.guard_stream`, through `check_text`,
+  R7-04): the port sees one sentence window at a time, before the window leaves. A masked window
+  leaves as one delta; a blocked window ends the stream with `guardrail_blocked`, and the windows
+  before it have already left. `end.output.text` is checked too.
 
 A port that cannot answer (`GuardrailError`) is `guardrail_unavailable` (retryable) when
 `spec.guardrails.on_unavailable` is `fail_closed` (the default), else the text passes and
-`chassis.guardrail_unavailable{stage}` is counted. A block is counted as
+`chassis.guardrail_unavailable{stage}` is counted; that pass carries the reason `UNCHECKED`, so a
+stream can skip the port for the rest of the run. A block is counted as
 `chassis.guardrail_blocked{stage, reason}` (suggested names) and logged with the ids and the
 reasons, never the text.
 """
@@ -45,9 +48,11 @@ __all__ = [
     "GUARDRAIL_BLOCKED",
     "GUARDRAIL_UNAVAILABLE",
     "UNAVAILABLE_CODE",
+    "UNCHECKED",
     "GuardedTools",
     "check_input",
     "check_output",
+    "check_text",
     "enabled",
     "input_text",
 ]
@@ -56,6 +61,8 @@ GUARDRAIL_BLOCKED = "chassis.guardrail_blocked"
 GUARDRAIL_UNAVAILABLE = "chassis.guardrail_unavailable"
 BLOCKED_CODE = "guardrail_blocked"
 UNAVAILABLE_CODE = "guardrail_unavailable"
+UNCHECKED = "unchecked"
+"""The reason on a `Verdict` that passed unchecked: the port was down and `fail_open` let it by."""
 
 
 def enabled(ports: PortBundle, spec: GuardrailsSpec, stage: Stage) -> bool:
@@ -93,7 +100,7 @@ async def _check(
             telemetry.log(
                 "warning", "guardrail unavailable; passed (fail_open)", stage=stage, **ids
             )
-            return Verdict(allowed=True, text=text)
+            return Verdict(allowed=True, text=text, reasons=(UNCHECKED,))
         telemetry.counter(GUARDRAIL_UNAVAILABLE, stage=stage)
         telemetry.log(
             "warning", "guardrail unavailable; refused", stage=stage, detail=exc.message, **ids
@@ -107,6 +114,15 @@ async def _check(
         telemetry.counter(GUARDRAIL_BLOCKED, stage=stage, reason=reason)
     telemetry.log("warning", "guardrail blocked", stage=stage, reasons=list(verdict.reasons), **ids)
     return Error(code=BLOCKED_CODE, message=public_message(BLOCKED_CODE), retryable=False)
+
+
+async def check_text(
+    ports: PortBundle, spec: GuardrailsSpec, text: str, stage: Stage, *, request_id: str
+) -> Verdict | Error:
+    """One text through the port at `stage`, with the same outage, count, and log rules as the
+    other stages: the verdict (reason `UNCHECKED` when a `fail_open` outage let it by), or the
+    `error` event a block or a closed outage becomes. The caller checks `enabled` first."""
+    return await _check(ports, spec, text, stage, request_id=request_id)
 
 
 async def check_input(

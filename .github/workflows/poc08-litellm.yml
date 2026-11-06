@@ -11,9 +11,11 @@
 #
 # Trigger: push, pull_request, and workflow_dispatch. Never pull_request_target.
 # No secret is used: no hosted model key, no Hugging Face token (Prompt Guard 2 is out of scope;
-# the pattern stand-in answers the injection check). stack.sh makes the LiteLLM master key and
-# the database password on the runner (mode 600) and mints the chassis's key; the drill reads the
-# key file's path from `stack.sh env` and never prints a value. On failure, log tails go through
+# the pattern stand-in answers the injection check). stack.sh makes the LiteLLM master key, the
+# database password, and the guardrail server's token on the runner (mode 600) and mints the
+# chassis's key. The drill reads the key file's path from `stack.sh env` and never prints a value.
+# It stops and starts guardrail-server and presidio-analyzer through `stack.sh stop|start` to
+# show that a call fails closed without them. On failure, log tails go through
 # `stack.sh logs`, which masks every key file value.
 # Artifacts: the Jaeger trace JSON, the drill's results and output, and the image digests.
 # Every action is pinned by a full commit SHA, the same as ci.yml.
