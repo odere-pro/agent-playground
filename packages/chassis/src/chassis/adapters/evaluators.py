@@ -3,7 +3,9 @@
 
 **`JudgeEvaluator`**: an LLM judge through `ModelPort`. In production that is the chassis's own
 LiteLLM adapter (`LITELLM_BASE_URL`, `LITELLM_API_KEY`), so the judge's key stays in the chassis
-like every other model key. The route is `CHASSIS_JUDGE_ROUTE` (suggested: `judge`). One call per
+like every other model key. The route is `spec.model.judge_route` when the chassis set one
+(`bind_route`, read on every call so a reload applies), else `CHASSIS_JUDGE_ROUTE` (suggested:
+`judge`). One call per
 case, temperature 0, `max_tokens` `JUDGE_MAX_TOKENS`. The rubric (`RUBRIC`, version
 `RUBRIC_VERSION`) is the system message; the case is the user message, each part in its own tag
 (`<input>`, `<reference>`, `<answer>`), with any closing tag inside the case text escaped, so an
@@ -35,6 +37,7 @@ import math
 import os
 import re
 import time
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -143,9 +146,21 @@ class JudgeEvaluator:
         price_out_per_mtok: float | None = None,
     ) -> None:
         self.model = model
-        self.route = route
+        self._route = route
+        self._bound_route: Callable[[], str | None] | None = None
         self.price_in_per_mtok = price_in_per_mtok
         self.price_out_per_mtok = price_out_per_mtok
+
+    @property
+    def route(self) -> str:
+        """The bound route when it answers one (`spec.model.judge_route`), else the judge's own."""
+        bound = self._bound_route() if self._bound_route is not None else None
+        return bound or self._route
+
+    def bind_route(self, source: Callable[[], str | None]) -> None:
+        """Take the route from `source()` on every call when it answers one. The chassis binds
+        `spec.model.judge_route` from the live config, so a reload changes the judge's route."""
+        self._bound_route = source
 
     @classmethod
     def from_env(cls) -> JudgeEvaluator:

@@ -13,15 +13,15 @@ A workload never names a provider model. It sends a **route**, and LiteLLM resol
 
 ## How a request gets its route
 
-- `spec.model.route` is the agent's route and `spec.model.fallback_route` its fallback (`chassis/server/config.py`, `ModelSpec`; schema `packages/chassis/schemas/chassis-config.v0.json`). Both reload without a restart.
-- The pipeline copies the route into `ctx.model_route` (`context.v0.json`). The workload sends it as the OpenAI `model` field to the chassis model proxy.
+- `spec.model.route` is the agent's route, `spec.model.fallback_route` its fallback, and `spec.model.routes` its route per task (`chassis/server/config.py`, `ModelSpec`; schema `packages/chassis/schemas/chassis-config.v0.json`). Every `spec.model` field reloads without a restart.
+- The pipeline resolves the run's route into `ctx.model_route` (`context.v0.json`): the task's route from the map, else `route` (the next section). The workload sends it as the OpenAI `model` field to the chassis model proxy. `versions.model_route` on the response stays `route`, the agent's configured route.
 - The proxy (`chassis/server/model_proxy.py`, `model_admission.py`) adds the service's key, forwards only the keys it allows, caps `max_tokens` at what the run has left, prices the call from `spec.observability.prices`, and keys the call to its request by `traceparent`. A call with no trace id counts against a per-replica cap and is logged.
-- The evaluator gate's last attempt forces every model call to `fallback_route` (counter `chassis.model_route_forced`).
+- The proxy sends every model call of a run to the run's route, whatever `model` the workload named (counter `chassis.model_route_forced{route}`): the resolved route, or `fallback_route` for the evaluator gate's last attempt, which replaces it.
 - On the public OpenAI and Anthropic interfaces, `model` names the agent, never a route.
 
 ## The route map per task
 
-suggested: the shape; it is the product's phase B and is not built yet.
+Built (the product's phase B, first step). The shape:
 
 ```yaml
 spec:
@@ -35,16 +35,21 @@ spec:
     judge_route: decision-small   # the judge model
 ```
 
-- A task is named by the caller in `input.data.task` (suggested) or by the agent's declared operation. The pipeline resolves `routes[task]`, else `route`, into `ctx.model_route`. The workload keeps sending `ctx.model_route`, so no workload code changes.
-- `model_admission.py` enforces the resolved route the way it enforces the forced route today, so a workload cannot pick a route the map does not give it.
-- Every route in the map must be in the service's key. The config schema and `agentctl` refuse a config that names a route the key does not have.
-- The map reloads without a restart, like `route`.
+- A task is named by the caller in `input.data.task` (suggested: the key), a string. The pipeline (`chassis/server/pipeline.py`, `context_for`) resolves `routes[task]`, else `route`, into `ctx.model_route`. No task, a task the map does not name, or a value that is not a string all mean `route`. The workload keeps sending `ctx.model_route`, so no workload code changes.
+- The run's route is on its `RunRecord` from the moment the run opens, so `model_admission.py` forces every model call of the run to it, the way it forces the gate's fallback route. A workload cannot pick a route the map does not give it. The run span `chassis.run` carries `route` and, when the map named it, `task`.
+- A task name is printable, has no space, and is at most 64 characters (`TASK_NAME` in `config.py`; suggested: the shape). An empty task or route name is refused at load.
+- The map and `judge_route` reload without a restart, like `route` (`RELOADABLE`). A run keeps the route it opened with.
+
+Still suggested, not built:
+
+- Every route in the map must be in the service's key. A check at load needs the key, which only the deployment holds, so today a route the key does not list fails at the first call with 403 `model_route_denied`. The config schema and `agentctl` do not check it.
+- The gate's defaults (the table below) wait on the judge's numbers from the Mac run.
 
 ## The judge model
 
-suggested: one cheap route, `decision-small`, serves every routine judgment. The judge-evaluator behind `EvaluatorPort` is its first and main use. Today no LiteLLM config names a judge route: `JudgeEvaluator` reads `CHASSIS_JUDGE_ROUTE`, default `judge`.
+suggested: one cheap route, `decision-small`, serves every routine judgment. The judge-evaluator behind `EvaluatorPort` is its first and main use. Today no LiteLLM config names a judge route.
 
-- `JudgeEvaluator` (`chassis/adapters/evaluators.py`) calls the judge route through `ModelPort` with rubric `judge-facts-v1`, temperature 0, at most 200 output tokens. The route becomes `spec.model.judge_route` once the map lands.
+- `JudgeEvaluator` (`chassis/adapters/evaluators.py`) calls the judge route through `ModelPort` with rubric `judge-facts-v1`, temperature 0, at most 200 output tokens. The route is `spec.model.judge_route` when set, read from the live config on every call (the gate binds it, `bind_route`), else `CHASSIS_JUDGE_ROUTE`, default `judge`.
 - The gate (`chassis/server/evaluator_gate.py`, `GatedEngine`) wraps the engine connector in every lane. In `sync` mode it scores the buffered answer, retries once on the same route below `threshold`, then makes one fallback attempt on `fallback_route`, which is not scored and ends with `end.status: fallback`; with no fallback route the run ends with `error evaluator_gate_failed`. In `async` mode, and for every stream, it scores after `end` and puts the score on a span; the answer never changes. The sample is deterministic by `sha256(request_id)`. An evaluator outage fails open. The judge's tokens are added as a `metrics` event.
 - `EncoderEvaluator` (an NLI cross-encoder behind the TEI `/predict` API) stays in the code and off, with the SLM track.
 

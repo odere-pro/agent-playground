@@ -235,3 +235,16 @@ def test_encoder_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CHASSIS_ENCODER_LABEL", "ENTAILMENT")
     encoder = EncoderEvaluator.from_env()
     assert encoder.label == "entailment"
+
+
+async def test_judge_takes_the_bound_route_when_it_answers_one_else_its_own() -> None:
+    """`bind_route` gives the judge the chassis's `spec.model.judge_route`, read on every call, so
+    a reload applies; unset, the judge keeps the route it was built with."""
+    judge, _, app = judge_over(judge_script(), route="judge")
+    configured: list[str | None] = [None]
+    judge.bind_route(lambda: configured[0])
+    await judge.score(GOOD)
+    assert judge.route == "judge" and app.state.calls[-1]["model"] == "judge"
+    configured[0] = "decision-small"  # a reload sets spec.model.judge_route
+    await judge.score(GOOD)
+    assert judge.route == "decision-small" and app.state.calls[-1]["model"] == "decision-small"
