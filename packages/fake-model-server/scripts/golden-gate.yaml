@@ -1,5 +1,5 @@
-# Generated from packages/bakeoff/src/bakeoff/golden/cases.yaml and cases-gate.yaml. Do not edit.
-# Regenerate: uv run python -m bakeoff.golden.generate --write
+# Generated from packages/eval-kit/src/eval_kit/golden/cases.yaml and cases-gate.yaml. Do not edit.
+# Regenerate: uv run python -m eval_kit.golden.generate --write
 # The engines' model for the PoC-8 gate set, logic `normal`.
 model: fake-model
 rules:

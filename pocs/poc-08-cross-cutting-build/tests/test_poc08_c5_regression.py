@@ -1,12 +1,12 @@
 """PoC-8 exit criterion 5: "A regression in business logic fails CI through the offline eval."
 (docs/planning/poc/008-PoC-8-build-cross-cutting.md)
 
-The regression is the planning doc's demo: business logic that drops facts (`bakeoff.golden.logic`,
-`drop-facts`: every answer loses its first expected fact). The gate is `bakeoff.evalgate` against
+The regression is the planning doc's demo: business logic that drops facts (`eval_kit.golden.logic`,
+`drop-facts`: every answer loses its first expected fact). The gate is `eval_kit.evalgate` against
 the committed baseline `evals/gate/baseline.json`, called through its CLI entry (`main`), the way
 CI and `make evals-regression` call it. Offline, no socket beyond the cells' Unix sockets.
 
-- **Every baseline target, offline.** The reference scorer (`bakeoff.evalcheck.offline_report`)
+- **Every baseline target, offline.** The reference scorer (`eval_kit.evalcheck.offline_report`)
   answers the 50 gate cases as each logic does. The gate exits 0 on `normal` and 1 on
   `drop-facts`, for every engine and lane the baseline lists.
 - **Through every PoC-8 cell.** The cell's real engine, behind the chassis with every stage on,
@@ -30,13 +30,13 @@ from typing import Any
 
 import pytest
 import yaml
-from bakeoff.evalcheck import offline_report, score_case
-from bakeoff.evalgate import BASELINE, load_baseline
-from bakeoff.evalgate import main as evalgate
-from bakeoff.evalrun import report_stem
-from bakeoff.golden import Case, load_gate_cases
-from bakeoff.golden.generate import judge_script, model_script, simulate
-from bakeoff.golden.logic import LOGICS, apply_logic
+from eval_kit.evalcheck import offline_report, score_case
+from eval_kit.evalgate import BASELINE, load_baseline
+from eval_kit.evalgate import main as evalgate
+from eval_kit.evalrun import report_stem
+from eval_kit.golden import Case, load_gate_cases
+from eval_kit.golden.generate import judge_script, model_script, simulate
+from eval_kit.golden.logic import LOGICS, apply_logic
 from fake_model_server import Script
 from poc_harness.full_stack import cell_params, full_stack
 from poc_harness.paths import ROOT
@@ -69,7 +69,7 @@ def _write(folder: Path, reports: Sequence[dict[str, Any]]) -> Path:
 def test_the_gate_fails_drop_facts_and_passes_normal_on_every_baseline_target(
     logic: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Criterion 5 (offline, every baseline target): `python -m bakeoff.evalgate` exits 0 on the
+    """Criterion 5 (offline, every baseline target): `python -m eval_kit.evalgate` exits 0 on the
     normal logic and 1 on the logic that drops facts."""
     targets = _targets()
     assert len(targets) >= 15, targets
@@ -161,12 +161,12 @@ def _recipe(makefile: str, target: str) -> list[str]:
 
 def test_the_ci_regression_job_runs_the_same_drop_facts_gate() -> None:
     """Criterion 5 (CI): the `regression` job runs `make evals-regression`, which runs the
-    drop-facts logic through `bakeoff.evalrun` and fails unless `bakeoff.evalgate` exits 1."""
+    drop-facts logic through `eval_kit.evalrun` and fails unless `eval_kit.evalgate` exits 1."""
     workflow = yaml.safe_load((ROOT / ".github/workflows/poc08-evals.yml").read_text())
     runs = [step.get("run", "") for step in workflow["jobs"]["regression"]["steps"]]
     assert any(run.startswith("make evals-regression") for run in runs), runs
     recipe = " ".join(_recipe((ROOT / "Makefile").read_text(), "evals-regression"))
-    assert f"-m bakeoff.evalrun --logic {DROP}" in recipe
-    assert "-m bakeoff.evalgate" in recipe
+    assert f"-m eval_kit.evalrun --logic {DROP}" in recipe
+    assert "-m eval_kit.evalgate" in recipe
     assert "rc -eq 1" in recipe and "exit 1" in recipe, "only exit 1 from the gate is a pass"
     assert DROP in LOGICS

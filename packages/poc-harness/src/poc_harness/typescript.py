@@ -9,7 +9,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-import time
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
@@ -21,10 +20,12 @@ import pytest
 from poc_harness.paths import ROOT, TYPESCRIPT_ECHO
 from poc_harness.scenario import CHASSIS_PROXY_URL, TYPESCRIPT_URL
 from poc_harness.sockets import SOCKET_DIR_PREFIX, on_unix_socket
+from poc_harness.waits import wait_until_serving
 
 CARD_PATH = "/.well-known/agent-card.json"
 START_TIMEOUT_S = 30.0
 STOP_TIMEOUT_S = 10.0
+CARD_POLL_S = 0.1
 
 
 def typescript_node() -> str:
@@ -57,22 +58,6 @@ def _listen_on(
     base_url = f"http://127.0.0.1:{port}"
     child_env.update(HOST="127.0.0.1", PORT=str(port))
     return base_url, child_env, httpx.Client(base_url=base_url, trust_env=False)
-
-
-def _wait_for_card(proc: subprocess.Popen[str], probe: httpx.Client) -> None:
-    """Poll the agent card until it answers 200; kill the child and raise if it never does."""
-    deadline = time.monotonic() + START_TIMEOUT_S
-    while True:
-        try:
-            if probe.get(CARD_PATH, timeout=1.0).status_code == 200:
-                return
-        except httpx.HTTPError:
-            pass
-        if time.monotonic() > deadline or proc.poll() is not None:
-            proc.kill()
-            out = proc.communicate(timeout=5)[0]
-            raise RuntimeError(f"echo-typescript did not serve its agent card:\n{out}")
-        time.sleep(0.1)
 
 
 def _stop(proc: subprocess.Popen[Any]) -> None:
@@ -110,7 +95,14 @@ def typescript_echo(
         text=True,
     )
     try:
-        _wait_for_card(proc, probe)
+        wait_until_serving(
+            proc,
+            probe,
+            CARD_PATH,
+            START_TIMEOUT_S,
+            failure="echo-typescript did not serve its agent card",
+            interval=CARD_POLL_S,
+        )
         yield base_url
     finally:
         probe.close()

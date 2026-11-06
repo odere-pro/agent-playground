@@ -1,5 +1,5 @@
-"""The PoC-8 offline eval gate (`bakeoff.evalgate`) and the offline reference scorer
-(`bakeoff.evalcheck`). Offline: no process, no socket, no eval tool install.
+"""The PoC-8 offline eval gate (`eval_kit.evalgate`) and the offline reference scorer
+(`eval_kit.evalcheck`). Offline: no process, no socket, no eval tool install.
 
 The headline cases are the planning doc's demo, "a change to the business logic that drops facts
 fails the eval step in CI": the committed baseline passes the `normal` logic on every engine and
@@ -14,8 +14,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from bakeoff.evalcheck import offline_report
-from bakeoff.evalgate import (
+from bakeoff.registry import ROOT
+from eval_kit.evalcheck import offline_report
+from eval_kit.evalgate import (
     BASELINE,
     GateError,
     check,
@@ -24,9 +25,8 @@ from bakeoff.evalgate import (
     main,
     record,
 )
-from bakeoff.evalreport import validate_report
-from bakeoff.golden import load_cases, load_gate_cases
-from bakeoff.registry import ROOT
+from eval_kit.evalreport import validate_report
+from eval_kit.golden import load_cases, load_gate_cases
 
 POC07_REPORTS = ROOT / "pocs/poc-07-cross-cutting-decisions/notes/evals"
 
@@ -45,7 +45,7 @@ def _reports(logic: str) -> list[dict[str, Any]]:
     return [offline_report(engine, lane, logic=logic) for engine, lane in _targets()]
 
 
-def test_bakeoff_evalgate_offline_report_is_eval_report_v0_with_one_row_per_gate_case() -> None:
+def test_eval_kit_evalgate_offline_report_is_eval_report_v0_with_one_row_per_gate_case() -> None:
     report = offline_report("echo-python", "sidecar")
     validate_report(report)
     assert [c["id"] for c in report["cases"]] == [c.id for c in load_gate_cases()]
@@ -54,7 +54,7 @@ def test_bakeoff_evalgate_offline_report_is_eval_report_v0_with_one_row_per_gate
 
 
 @pytest.mark.parametrize("engine", ["echo-python", "echo-langgraph"])
-def test_bakeoff_evalgate_offline_scorer_agrees_with_deepeval_on_the_poc07_cases(
+def test_eval_kit_evalgate_offline_scorer_agrees_with_deepeval_on_the_poc07_cases(
     engine: str,
 ) -> None:
     """The scorer's verdict on every case and every assertion equals the committed DeepEval run."""
@@ -73,7 +73,7 @@ def test_bakeoff_evalgate_offline_scorer_agrees_with_deepeval_on_the_poc07_cases
     assert verdicts(ours) == verdicts(deepeval)
 
 
-def test_bakeoff_evalgate_committed_baseline_covers_every_offline_engine_and_lane() -> None:
+def test_eval_kit_evalgate_committed_baseline_covers_every_offline_engine_and_lane() -> None:
     baseline = load_baseline(BASELINE)
     assert baseline["cases"] == 50
     targets = set(_targets())
@@ -84,12 +84,12 @@ def test_bakeoff_evalgate_committed_baseline_covers_every_offline_engine_and_lan
         assert all(e != engine for e, _ in targets), f"{engine} is both run and skipped"
 
 
-def test_bakeoff_evalgate_passes_the_normal_logic_on_every_baseline_target() -> None:
+def test_eval_kit_evalgate_passes_the_normal_logic_on_every_baseline_target() -> None:
     results = check(load_baseline(BASELINE), _reports("normal"))
     assert results and all(r.ok for r in results), [r.line() for r in results if not r.ok]
 
 
-def test_bakeoff_evalgate_fails_the_drop_facts_logic_on_every_baseline_target() -> None:
+def test_eval_kit_evalgate_fails_the_drop_facts_logic_on_every_baseline_target() -> None:
     results = check(load_baseline(BASELINE), _reports("drop-facts"))
     assert results and not any(r.ok for r in results)
     for result in results:
@@ -107,7 +107,7 @@ def _small_baseline() -> dict[str, Any]:
     return record([offline_report("echo-python", "sidecar")], agent="simplifier", skipped={})
 
 
-def test_bakeoff_evalgate_record_writes_what_the_reports_show() -> None:
+def test_eval_kit_evalgate_record_writes_what_the_reports_show() -> None:
     baseline = _small_baseline()
     agent = baseline["agents"]["simplifier"]
     assert agent["engines"] == {"echo-python": {"sidecar": 0.78}}
@@ -127,7 +127,7 @@ def test_bakeoff_evalgate_record_writes_what_the_reports_show() -> None:
     assert check(baseline, [offline_report("echo-python", "sidecar")])[0].ok
 
 
-def test_bakeoff_evalgate_record_refuses_a_known_bad_answer_that_passes() -> None:
+def test_eval_kit_evalgate_record_refuses_a_known_bad_answer_that_passes() -> None:
     report = _one_report()
     g09 = next(c for c in report["cases"] if c["id"] == "g09")
     g09["pass"] = True
@@ -135,7 +135,7 @@ def test_bakeoff_evalgate_record_refuses_a_known_bad_answer_that_passes() -> Non
         record([report], agent="simplifier", skipped={})
 
 
-def test_bakeoff_evalgate_fails_when_a_known_bad_answer_starts_to_pass() -> None:
+def test_eval_kit_evalgate_fails_when_a_known_bad_answer_starts_to_pass() -> None:
     """The six PoC-7 wrong answers and four more are canaries: if one passes, the eval lost its
     teeth (a check stopped checking), and the gate says so even though the pass rate went up."""
     report = _one_report()
@@ -147,7 +147,7 @@ def test_bakeoff_evalgate_fails_when_a_known_bad_answer_starts_to_pass() -> None
     assert any("must-fail" in p and "g10" in p for p in result.problems)
 
 
-def test_bakeoff_evalgate_fails_a_missing_report_an_unknown_engine_and_a_short_report() -> None:
+def test_eval_kit_evalgate_fails_a_missing_report_an_unknown_engine_and_a_short_report() -> None:
     baseline = _small_baseline()
     [missing] = check(baseline, [])
     assert not missing.ok and "no report" in missing.problems[0]
@@ -161,7 +161,7 @@ def test_bakeoff_evalgate_fails_a_missing_report_an_unknown_engine_and_a_short_r
     assert not result.ok and any("cases" in p for p in result.problems)
 
 
-def test_bakeoff_evalgate_engine_filter_checks_only_those_targets() -> None:
+def test_eval_kit_evalgate_engine_filter_checks_only_those_targets() -> None:
     baseline = load_baseline(BASELINE)
     reports = [offline_report("echo-python", lane) for lane in ("inprocess", "sidecar", "remote")]
     results = check(baseline, reports, engines={"echo-python"})
@@ -176,7 +176,7 @@ def _write(folder: Path, reports: list[dict[str, Any]]) -> None:
     (folder / "x.raw.json").write_text("{}")  # a tool's own report is not read
 
 
-def test_bakeoff_evalgate_cli_exit_codes(
+def test_eval_kit_evalgate_cli_exit_codes(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     good, bad = tmp_path / "good", tmp_path / "bad"
@@ -192,7 +192,7 @@ def test_bakeoff_evalgate_cli_exit_codes(
     assert main(["--baseline", str(tmp_path / "none.json"), "--report", str(good)]) == 2
 
 
-def test_bakeoff_evalgate_load_reports_reads_files_and_folders(tmp_path: Path) -> None:
+def test_eval_kit_evalgate_load_reports_reads_files_and_folders(tmp_path: Path) -> None:
     folder = tmp_path / "r"
     _write(folder, [offline_report("echo-python", "sidecar")])
     single = folder / "x-echo-python-sidecar.json"

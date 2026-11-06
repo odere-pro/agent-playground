@@ -36,8 +36,10 @@ Offline: Unix sockets only. The TypeScript cell skips when its `node_modules` is
 from __future__ import annotations
 
 import asyncio
+import functools
 import importlib
 import inspect
+import operator
 import sys
 import uuid
 from collections.abc import Iterator
@@ -99,13 +101,6 @@ PYTHON_ENGINES = [engine for engine, handle in ENGINES.items() if handle is not 
 """The engines whose workload runs the Python A2A template server, with its task store."""
 
 
-async def _until_pruned(live: set[str], label: str) -> None:
-    """Fail with `label` if the A2A server still holds a task after `PRUNE_WAIT_S`."""
-    await wait_until_async(
-        lambda: not live, f"{label}: the A2A server to drop its finished tasks", PRUNE_WAIT_S
-    )
-
-
 class Runs:
     """What runs A and B left behind on one engine, recorded once for every test."""
 
@@ -142,7 +137,14 @@ async def _run_a_then_b(replicas: Any, model: HarnessModel, runs: Runs) -> None:
     stores = [w.task_store for w in replicas.workloads if w is not None and w.task_store]
     runs.tasks_seen = [bool(store.ever) for store in stores]
     await asyncio.gather(
-        *(_until_pruned(store.live, f"replica {i}") for i, store in enumerate(stores))
+        *(
+            wait_until_async(
+                functools.partial(operator.not_, store.live),
+                f"replica {i}: the A2A server to drop its finished tasks",
+                PRUNE_WAIT_S,
+            )
+            for i, store in enumerate(stores)
+        )
     )
     runs.tasks_kept = [set(store.live) for store in stores]
 

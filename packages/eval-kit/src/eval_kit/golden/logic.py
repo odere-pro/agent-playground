@@ -3,7 +3,7 @@
 Every echo engine runs the same business logic: the simplifier prompt and the model behind it. In
 CI that model is the scripted fake model server, so the answers the engines give are the script's.
 A variant is a deterministic change to those answers, applied to the cases before the script is
-generated (`bakeoff.golden.generate`), so no engine, workload, or chassis code changes:
+generated (`eval_kit.golden.generate`), so no engine, workload, or chassis code changes:
 
 - `normal`: the reference answers, as labelled.
 - `drop-facts`: every answer loses its first expected fact (`expect.contains[0]`), the regression
@@ -11,7 +11,7 @@ generated (`bakeoff.golden.generate`), so no engine, workload, or chassis code c
   step in CI." An answer that does not hold the fact stays as it is.
 
 The generated scripts are `golden-gate.yaml` and `golden-gate-drop-facts.yaml`; the eval run picks
-one with `--logic` (`bakeoff.evalrun`).
+one with `--logic` (`eval_kit.evalrun`).
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from typing import Literal
 
-from bakeoff.golden import Case
+from eval_kit.golden import Case
 
 __all__ = ["LOGICS", "Logic", "apply_logic", "drop_first_fact"]
 

@@ -1,12 +1,12 @@
 # The PoC-8 gate cases: 30 more labelled cases. With the 20 PoC-7 cases in `cases.yaml` they are
-# the 50-case golden set the CI eval gate runs on every engine (`bakeoff.golden.load_gate_cases`).
+# the 50-case golden set the CI eval gate runs on every engine (`eval_kit.golden.load_gate_cases`).
 # `cases.yaml` stays as it is, so the PoC-7 trial and its committed reports keep their 20 cases.
 #
 # Same format and the same rules as `cases.yaml`. Four references are wrong on purpose, so the
 # gate has known-bad answers to fail: g39 drops a fact, g40 keeps a banned phrase, g41 changes a
 # month, g50 calls a tool with a typo. With PoC-7's six, ten of the 50 are labelled `fail`.
 # Regenerate the scripts after an edit:
-#   uv run python -m bakeoff.golden.generate --write
+#   uv run python -m eval_kit.golden.generate --write
 #
 # Labels: hand-written by the PoC-8 author on 2026-10-29, one reviewer pass. suggested: a second
 # labeller before the set gates a release (backlog 064 D-1).

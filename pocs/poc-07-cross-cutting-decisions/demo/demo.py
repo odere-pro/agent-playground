@@ -21,13 +21,13 @@ from typing import Any
 
 import httpx
 import pytest
-from bakeoff.evalreport import validate_report
 from chassis.core.trace import trace_id_hex
 from chassis.fakes.events import InMemoryBus
 from chassis.server import ChassisConfig, create_app
 from chassis.server.evaluator_gate import EVALUATOR_CALLS, GATE_FALLBACKS, GATE_RETRIES
 from chassis.server.feedback import FEEDBACK_RECEIVED, FeedbackEvents
 from chassis_contracts.events import assert_valid_cloudevent
+from eval_kit.evalreport import validate_report
 from fake_langfuse import FakeLangfuse
 from fastapi import FastAPI
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter

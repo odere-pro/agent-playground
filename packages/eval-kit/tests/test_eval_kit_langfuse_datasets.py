@@ -9,13 +9,13 @@ from typing import Any
 
 import httpx
 import pytest
-from bakeoff.golden import load_cases
-from bakeoff.langfuse_datasets import (
+from bakeoff.registry import ROOT
+from eval_kit.golden import load_cases
+from eval_kit.langfuse_datasets import (
     LangfuseDatasets,
     LangfuseError,
     Settings,
 )
-from bakeoff.registry import ROOT
 
 REPORT = ROOT / "pocs/poc-07-cross-cutting-decisions/notes/evals/deepeval-echo-python.json"
 SECRET = "sk-lf-test-secret"  # pragma: allowlist secret
@@ -56,7 +56,7 @@ class Stub:
         await send({"type": "http.response.body", "body": payload})
 
 
-async def test_bakeoff_langfuse_creates_the_dataset_and_one_run_per_report() -> None:
+async def test_eval_kit_langfuse_creates_the_dataset_and_one_run_per_report() -> None:
     stub = Stub()
     client = LangfuseDatasets(SETTINGS, transport=httpx.ASGITransport(app=stub))
     try:
@@ -83,7 +83,7 @@ async def test_bakeoff_langfuse_creates_the_dataset_and_one_run_per_report() -> 
     assert run_item["traceId"] == report["cases"][0]["trace_id"]
 
 
-async def test_bakeoff_langfuse_error_names_status_and_path_never_the_key() -> None:
+async def test_eval_kit_langfuse_error_names_status_and_path_never_the_key() -> None:
     client = LangfuseDatasets(SETTINGS, transport=httpx.ASGITransport(app=Stub(status=500)))
     try:
         with pytest.raises(LangfuseError) as caught:
@@ -94,7 +94,7 @@ async def test_bakeoff_langfuse_error_names_status_and_path_never_the_key() -> N
     assert SECRET not in repr(SETTINGS)
 
 
-def test_bakeoff_langfuse_settings_come_from_the_environment_only() -> None:
+def test_eval_kit_langfuse_settings_come_from_the_environment_only() -> None:
     with pytest.raises(ValueError, match="LANGFUSE_SECRET_KEY"):
         Settings.from_env({"LANGFUSE_HOST": "h", "LANGFUSE_PUBLIC_KEY": "p"})
     full = {"LANGFUSE_HOST": "h/", "LANGFUSE_PUBLIC_KEY": "p", "LANGFUSE_SECRET_KEY": "s"}

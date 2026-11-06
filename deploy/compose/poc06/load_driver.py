@@ -1,11 +1,12 @@
 """The PoC-4 load matrix on the scale stack, through scale-slm.sh (PoC-6, scripts/poc06_mac.sh).
 
-    python load_driver.py --out DIR [run_matrix.py arguments]
+    python load_driver.py --out DIR [run_matrix arguments]
 
-`run_matrix.py` is the PoC-4 file, unchanged. This driver loads it, points it at scale-slm.sh
-(so echo-openai-agents and, with POC06_SCALE_MODEL=slm, the llama-server behind LiteLLM work),
-adds echo-openai-agents to its engine list, and sends its raw files and `results.json` to DIR
-instead of the PoC-4 notes. It then writes DIR/results.md: one row per engine and pair count.
+`load_tools.run_matrix` (packages/load-tools) is the PoC-4 matrix, unchanged. This driver imports
+it, points it at scale-slm.sh (so echo-openai-agents and, with POC06_SCALE_MODEL=slm, the
+llama-server behind LiteLLM work), adds echo-openai-agents to its engine list, and sends its raw
+files and `results.json` to DIR instead of the PoC-4 notes. It then writes DIR/results.md: one
+row per engine and pair count.
 Nothing here reads or prints a key.
 """
 
@@ -18,16 +19,18 @@ from collections.abc import Sequence
 from pathlib import Path
 from types import ModuleType
 
+from load_tools import run_matrix
+
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
-MATRIX = ROOT / "pocs" / "poc-04-stateless-scalable" / "load" / "run_matrix.py"
 EXTRA_ENGINES = ("echo-openai-agents",)
 
 
 def load_matrix() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("poc04_run_matrix", MATRIX)
+    """A private copy of the load matrix: `main`'s PoC-6 settings never reach the shared one."""
+    source = Path(run_matrix.__file__)
+    spec = importlib.util.spec_from_file_location("poc06_run_matrix", source)
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load {MATRIX}")
+        raise RuntimeError(f"cannot load {source}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module  # dataclasses look the module up here
     spec.loader.exec_module(module)

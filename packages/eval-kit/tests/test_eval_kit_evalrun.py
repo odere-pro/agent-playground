@@ -1,18 +1,18 @@
 """The PoC-8 eval run's plan: which engine and lane get a DeepEval run, and with which files.
-No process is started here (`test_bakeoff_evalrun_network.py` starts one)."""
+No process is started here (`test_eval_kit_evalrun_network.py` starts one)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import yaml
-from bakeoff.evalrun import gate_golden, plan, report_stem
-from bakeoff.golden import GATE_SIZE
-from bakeoff.golden.generate import GATE_DROP_FACTS_SCRIPT, GATE_JUDGE_SCRIPT, GATE_MODEL_SCRIPT
 from bakeoff.registry import get_engine
+from eval_kit.evalrun import gate_golden, plan, report_stem
+from eval_kit.golden import GATE_SIZE
+from eval_kit.golden.generate import GATE_DROP_FACTS_SCRIPT, GATE_JUDGE_SCRIPT, GATE_MODEL_SCRIPT
 
 
-def test_bakeoff_evalrun_plans_every_lane_each_engine_may_use() -> None:
+def test_eval_kit_evalrun_plans_every_lane_each_engine_may_use() -> None:
     targets, skipped = plan(["all"], ["all"])
     assert ("echo-python", "inprocess") in targets
     assert ("echo-openai-agents", "remote") in targets
@@ -27,12 +27,12 @@ def test_bakeoff_evalrun_plans_every_lane_each_engine_may_use() -> None:
         assert ("echo-typescript", "sidecar") in targets
 
 
-def test_bakeoff_evalrun_lane_filter() -> None:
+def test_eval_kit_evalrun_lane_filter() -> None:
     targets, _ = plan(["echo-python", "echo-langgraph"], ["sidecar"])
     assert targets == [("echo-python", "sidecar"), ("echo-langgraph", "sidecar")]
 
 
-def test_bakeoff_evalrun_gate_golden_per_logic(tmp_path: Path) -> None:
+def test_eval_kit_evalrun_gate_golden_per_logic(tmp_path: Path) -> None:
     normal = gate_golden("normal", tmp_path)
     dropped = gate_golden("drop-facts", tmp_path)
     assert normal.model_script == GATE_MODEL_SCRIPT
@@ -43,7 +43,7 @@ def test_bakeoff_evalrun_gate_golden_per_logic(tmp_path: Path) -> None:
     assert len(data["cases"]) == GATE_SIZE
 
 
-def test_bakeoff_evalrun_report_stem_names_engine_lane_and_logic() -> None:
+def test_eval_kit_evalrun_report_stem_names_engine_lane_and_logic() -> None:
     assert report_stem("echo-python", "sidecar", "normal") == "deepeval-echo-python-sidecar"
     assert (
         report_stem("echo-python", "sidecar", "drop-facts")

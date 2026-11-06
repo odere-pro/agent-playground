@@ -104,15 +104,14 @@ pod_ready() {
 drill_rolling() {
   # Drill 1: `rollout restart` while 20 clients send complete calls with no retry.
   # Pass: the client reports 0 failed requests (its exit code).
-  local seconds=${1:-90} client="$ROOT/pocs/poc-04-stateless-scalable/load/steady_client.py"
-  [[ -f $client ]] || die "missing $client (a later package adds it)"
+  local seconds=${1:-90}
   # Every call stores an idempotency entry, and Valkey runs `--maxmemory 256mb` with
   # `noeviction`: about 186k calls fill it, then every call is a 503 (2026-10-01, notes
   # 2026-10-01-container-roles.md). Start each drill with an empty store. The password stays
   # inside the Valkey container's environment.
   kctl -n "$NS" exec deployment/valkey -- sh -c 'REDISCLI_AUTH="$VALKEY_PASSWORD" valkey-cli flushall' >/dev/null
-  (cd "$ROOT" && uv run python "$client" --url "$URL" --concurrency 20 --duration-s "$seconds" \
-    --no-retry) &
+  (cd "$ROOT" && uv run python -m load_tools.steady_client --url "$URL" --concurrency 20 \
+    --duration-s "$seconds" --no-retry) &
   local pid=$!
   sleep 10
   kctl -n "$NS" rollout restart deployment/agent

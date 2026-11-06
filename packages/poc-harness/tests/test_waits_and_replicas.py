@@ -13,21 +13,47 @@ from poc_harness.waits import wait_until, wait_until_async
 TIMEOUT_S = 0.05
 
 
+class FakeClock:
+    """A monotonic clock that moves only when `sleep` is called."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
 def test_wait_until_returns_once_the_condition_holds() -> None:
+    """`wait_until` returns on the poll where the condition first holds, sleeping between polls."""
+    clock = FakeClock()
     left = [2]
 
     def ready() -> bool:
         left[0] -= 1
         return left[0] <= 0
 
-    wait_until(ready, "ready", 5.0, interval=0.001)
+    wait_until(ready, "ready", 5.0, interval=0.5, clock=clock.monotonic, sleep=clock.sleep)
 
-    assert left == [0]
+    assert (left, clock.sleeps) == ([0], [0.5])
 
 
 def test_wait_until_fails_with_the_timeout_and_the_label() -> None:
-    with pytest.raises(pytest.fail.Exception, match=r"0\.05 s waiting for the label"):
-        wait_until(lambda: False, "the label", TIMEOUT_S, interval=0.001)
+    """At the deadline `wait_until` fails with the timeout and the label, never quietly."""
+    clock = FakeClock()
+
+    expected = r"^timed out after 2\.0 s waiting for the label$"
+
+    with pytest.raises(pytest.fail.Exception, match=expected):
+        wait_until(
+            lambda: False, "the label", 2.0, interval=0.5, clock=clock.monotonic, sleep=clock.sleep
+        )
+
+    assert clock.now == 2.5
 
 
 async def test_wait_until_async_takes_a_plain_condition() -> None:
