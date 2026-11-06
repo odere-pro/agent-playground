@@ -60,13 +60,13 @@ Row: `| NNN ID | boxes met/total | phase | verdicts | evidence or reason |`. Ver
 11. **Code conflicts** → `conflict`, filed in `proposals.md`; box stays open; no code change in this review.
 12. **Order rule**: no criterion depends on a higher-numbered issue.
 13. **Parked.** The issue is SLM-track work the product plan parks: training, serving, or routing to an SLM (W3 S-*, M-1, C-8, X-2's GPU half, M-5, S-8, 012 H-3's vLLM half, 127 L-3), or a step whose only purpose is SLM savings. Verdict `parked`. A live issue may not depend on a parked one: drop the dependency or split the issue.
-14. **Phase.** Every live issue names one product phase, A to F, from the product plan's section 11, or `later` when no phase needs it. A gap in the product plan's section 9 with no issue gets a finding: a new issue or a home in an existing one.
+14. **Phase.** Every live issue names one product phase, A to F, from the product plan's "The order of work", or `later` when no phase needs it. A gap under the product plan's "Gaps the PoC track did not cover" with no issue gets a finding: a new issue or a home in an existing one.
 
 Severity: HIGH = wrong size or dep on the critical path, criterion contradicted by code; MEDIUM = drift, stale bullet, size; LOW = citation, wording.
 
 ## Sessions
 
-Start condition: the product plan's PR is merged into `main`. Every session reads the product plan, `docs/plans/2026-11-06-agent-container-product.md`, sections 2, 9, and 11 first.
+Start condition, amended: the user chose on 2026-11-06 to start before the product plan's PR merges. Every session reads the product plan pinned at `70244ad` (`git show 70244ad:docs/plans/2026-11-06-agent-container-product.md`) and the specs it links, under `docs/specs/` at the same commit. A finding that depends on a phase is re-checked if the plan changes before it merges.
 
 | ID | Issues | Extra inputs | Tier | Batch |
 | -- | ------ | ------------ | ---- | ----- |
@@ -129,10 +129,10 @@ One section per open box of `001 DEC-1` that a product phase needs: Question / O
 
 ## Phase map (`phase-map.md`)
 
-One section per product phase, A to F, from the product plan's section 11. Each lists:
+One section per product phase, A to F, from the product plan's "The order of work". Each lists:
 
 - the issues it closes, with their open boxes after the review and their days;
-- the product plan's section 9 gaps it covers, with the issue that owns each one, or "new issue";
+- the product plan's gaps ("Gaps the PoC track did not cover") it covers, with the issue that owns each one, or "new issue";
 - what it reuses from the PoC track (paths);
 - the phase's "done when", copied from the product plan, and the evidence that will show it.
 
