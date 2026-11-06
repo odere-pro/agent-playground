@@ -10,7 +10,7 @@ The planning workspace for the SLM agent platform: the epic, the backlog, the Po
 | ---- | ---------- | ---------- |
 | `slm-agent-platform-epic-v3.md` | The epic: the source of truth for design | **Never edit.** `tools/check.py` fails if its checksum changes |
 | `issues/` | Full platform backlog: one GitHub-issue file per epic story, plus `000-plan.md` | Bodies by hand; the rest generated (see below) |
-| `poc/` | PoC track to the agent MVP, which runs first: `000-plan.md`, 9 iterations, `010-reuse-analysis.md` (mature tech picks) | By hand |
+| `poc/` | PoC track to the agent MVP, which runs first: `000-plan.md`, 9 iterations, `010-reuse-analysis.md` (mature tech picks), `011-what-is-left.md` (every open PoC item in one list) | By hand |
 | `adr/` | Architecture decision records | By hand |
 | `tools/` | Backlog generator and checks | Python |
 | `diagrams/` | PNGs of the epic's figures, redrawn for ADR-001, plus the chassis lanes figure | Edit the Mermaid source in `diagrams/src/`, then re-render (see `diagrams/README.md`) |

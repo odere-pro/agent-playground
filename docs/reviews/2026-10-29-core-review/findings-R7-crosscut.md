@@ -139,7 +139,7 @@ Problem: `poc07-evals.yml:46-49` installs DeepEval with `--with deepeval==4.3.2 
 Why it matters: A new upstream release runs in CI unreviewed, next to a persisted token. The two PoC-7 workflows follow different rules.
 Fix: Install from a hashed lock with `--require-hashes` (as `deploy/agent-scan/requirements.txt` does) and `npm ci` from a lockfile, and set `persist-credentials: false` with the cache off for `pull_request`. Keeps behavior: yes.
 Spec: "given the evals job, when its install steps and checkout are read, then every dependency carries a hash and `persist-credentials` is false."
-Status: partly fixed (#63: earlier (`persist-credentials: false`); deferred: the hashed locks for DeepEval and promptfoo need the R6-14 move first, and network access to lock)
+Status: fixed (#63, #66)
 
 ### R7-19 [MEDIUM] [maintainable] packages/chassis/src/chassis/fakes/guardrail.py:25
 Problem: The fake's `INJECTION_PATTERNS` (:25) and `SECRET_PATTERNS` (:37) are hand copies of the server's (`classifier.py:46`, `secret_scan.py:12`), and they have drifted: 5 injection patterns against 7, and 3 secret patterns against 5. `classifier.py:64` copies `split_for_classifier`, and `litellm_stub.py:46` copies three PII patterns from `chassis/redaction.py:18`.

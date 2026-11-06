@@ -2,7 +2,7 @@
 
 What is left after the core review of PoC-0 to PoC-7, ranked by risk. Written 2026-11-05.
 
-- The review filed 285 findings. Fix sessions fixed 238 without a behavior change.
+- The review filed 285 findings. Fix sessions fixed 242 without a behavior change.
 - 42 need a behavior change, so they wait for your decision in [proposals.md](proposals.md): the 41 filed proposals and F8-01. The fix sessions do not apply them.
 - Each finding's outcome is on its `Status:` line, with the PR that closed it.
 
@@ -46,7 +46,12 @@ Ranks:
 
 ## P3: maintainability and tests
 
-22. **Being finished now: R4-02, R6-14, R7-18, R4-18.** F10's second PR moves the PoC-4 load tools and the eval trial into packages, hash-locks DeepEval and promptfoo, and shares the last PoC-4 wait helpers.
+22. **Follow-ups from #66, all LOW.** #66 moved the load tools and the eval trial into packages and hash-locked DeepEval and promptfoo. It left these:
+    - Give the promptfoo install a minimal `.npmrc`, or use `npm ci --ignore-scripts`, so `NPM_CONFIG_USERCONFIG` does not reach the `esbuild` install script.
+    - Install Locust from a hashed lock, as DeepEval is.
+    - Add a `network` check that `evals/deepeval/requirements.txt` matches `requirements.in`.
+    - Put the `/ready` body back in the `wait_ready_async` timeout message.
+    - Bring `deploy/` under mypy. `deploy/compose/poc06/load_driver.py` has `attr-defined` errors the gate does not see.
 23. **Proposals that change tests or tool output** (R6-01, R6-07, R6-18, R6-19, R5b-08, R2-27, R3-14, R0-14, R1-28). Use one task source for the bake-off, and make criteria tests call real checks. Use one JSON Schema checker, and one error format for the chat adapters. Name env gates by what they enable, and give errors that say which adapter is missing.
 24. **Docs left stale on purpose.** No session may change checkbox text, so you have to fix these two:
     - The PoC-7 README still says ADR-007 to 010 are "all Proposed", but all four say Accepted on 2026-10-30.

@@ -22,7 +22,7 @@ In progress. The code, the tests, and the CI runs are done. Eight of eight exit 
 - **The Mac run.** It needs Hugging Face and a hosted model key, which only the user's Mac has. Run the red-team set with Llama Prompt Guard 2, not the pattern stand-in (today it blocks 12 of 18 cases). Run LiteLLM's real `presidio` hook. Measure the encoder and the hosted judge: agreement, cost, and latency per gated call. Put the numbers in the PoC notes and in ADR-008 and ADR-010.
 - **A real Snyk Agent Scan.** Add a `SNYK_TOKEN` repo secret, so the `poc07-agent-scan` job runs a real scan, not only the inspect step.
 - **Look at the Langfuse UI.** Check how it shows `user.id` and `session.id` on a trace.
-- **Close.** Move `pocs/CURRENT` to PoC-8. Apply the PoC's `notes/backlog-changes.md` with the `planning-sync` skill.
+- **Close.** Apply the PoC's `notes/backlog-changes.md` with the `planning-sync` skill. It is still a draft; no issue has a "Status after PoC-7" bullet. `pocs/CURRENT` needs no change (`pocs/CLAUDE.md`).
 
 ## Moved to PoC-8
 

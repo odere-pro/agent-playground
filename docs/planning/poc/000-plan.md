@@ -261,18 +261,7 @@ Order: 1 → 2 → 3. Then 4, 5, and 6a can run in parallel, because 6a needs on
 
 ## What is left in PoC-1 to PoC-9
 
-As of 2026-11-05. The PoC-1 to PoC-7 and PoC-9 docs above hold only their open items.
-
-- **PoC-1, PoC-2, PoC-3:** nothing.
-- **PoC-4:** rerun the load matrix on a Linux host or with pinned CPUs, so 4 pairs fit (moved to 122 X-5).
-- **PoC-5:** add a CI job for the sidecar hostile suite; show MinIO through the chassis once a chassis holds a MinIO key; build the T10 probe workload (owned by the user).
-- **PoC-6a and 6b:** the hosted big-model run on the user's Mac (`make poc06-mac ARGS="--only hosted --only kind"`). ADR-006 was accepted on 2026-10-30.
-- **PoC-6c:** the SLM numbers next to the big-model numbers, from the same Mac run. Optional: Mac latency (`--only slm`).
-- **PoC-7:** the Mac run (Prompt Guard 2, LiteLLM's `presidio` hook, the encoder and judge numbers); a `SNYK_TOKEN` repo secret for a real agent scan; a look at `user.id` and `session.id` in the Langfuse UI.
-- **PoC-8:** done on 2026-10-30, with one flag: the offline evals, until `poc08-evals` is a required check on `main` (its README).
-- **PoC-9:** done on 2026-11-05, criteria 3 and 6 flagged. Still worth doing: a trial by someone new to the code; on the user's machine, `demo.sh --live`, a debugger attach, and the `local` profile.
-
-Only the user can do the Mac runs, because the provider key never leaves the Mac.
+As of 2026-11-05, every open item is merged into one list: [011-what-is-left.md](011-what-is-left.md). No PoC is left to build. PoC-6a, 6b, 6c, and 7 stay `in progress` only on the user's Mac runs, a `SNYK_TOKEN` secret, and their backlog changes. The PoC-1 to PoC-9 docs above keep their own open items and evidence links.
 
 ## Framework shortlist
 
