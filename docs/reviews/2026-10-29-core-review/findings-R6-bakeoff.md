@@ -120,7 +120,7 @@ Problem: The PoC-7 eval trial (`evaltrial.py` 261 lines, `evalreport.py` 178, `l
 Why it matters: The bake-off kit and the eval gate share a package only because they started in nearby PoCs, and `packages/bakeoff/CLAUDE.md` describes only the bake-off.
 Fix: Move the four modules into their own package (for example `packages/evals`) that imports `bakeoff.stack` and `bakeoff.registry`. Keeps behavior: yes.
 Spec: "given the move, when the golden tests and `evals/deepeval/test_golden.py` run, then they pass and `bakeoff` imports no eval module."
-Status: deferred (#63: same reason as R4-02 (a new eval package); second PR)
+Status: fixed (#66)
 
 ### R6-15 [MEDIUM] [simple] packages/workloads/echo-openai-agents/src/echo_openai_agents/handle.py:92
 Problem: `timeout_s` is copied in four workloads (`echo_claude_agent/handle.py:96`, `echo_smolagents/handle.py:66`, `echo_pydanticai/handle.py:60`). `event(kind, **fields)` is copied in three `mapping.py` files (`echo_openai_agents:42`, `echo_smolagents:42`, `echo_claude_agent:41`), with the `_chain` and `_error` helpers.

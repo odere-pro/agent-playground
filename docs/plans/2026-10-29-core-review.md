@@ -1,6 +1,6 @@
 # Core review of PoC-0 to PoC-7
 
-Status: in progress
+Status: done
 Date: 2026-10-29
 
 ## Context

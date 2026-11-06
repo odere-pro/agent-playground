@@ -26,7 +26,7 @@ Problem: the load tools that outlive PoC-4 (`run_matrix.py` 473 lines, `steady_c
 Why it matters: CI (`.github/workflows/poc06-load.yml:70`), `scripts/poc06_mac.sh:328`, `deploy/kind/run.sh:107`, and `pocs/poc-06a-*/tests/test_poc06a_criteria.py:34` run files inside a closed PoC folder by path.
 Fix: move the shared load code into a `packages/` module and make the PoC scripts and CI import it. Keeps behavior: yes.
 Spec: "given CI and PoC-6 run the load matrix and the steady client, when they start, then they import a package and name no `pocs/poc-04-*` path."
-Status: deferred (#63: moving the load tools adds a workspace member (`uv.lock`, the Dockerfile COPY lines, CI paths); it goes in a second PR)
+Status: fixed (#66)
 
 ### R4-03 [HIGH] [simple] packages/chassis/src/chassis/server/idempotency.py:441
 Problem: `Idempotency.begin` is 65 lines, one `while True` inside a `try`, and repeats "compute what is left, refuse at zero, sleep `min(poll_s, remaining)`" at :476-482 and :496-502.
@@ -138,7 +138,7 @@ Problem: each file writes its own poll helper (`until` in `test_config_minio.py:
 Why it matters: each has its own deadline and failure style, the names say how they wait and not for what, and a quiet timeout hides a failure until a later assert.
 Fix: use one sync and async `wait_until(condition, label, timeout)` from `chassis_contracts` helpers, with domain-named wrappers in `poc04_harness.py`. Keeps behavior: yes.
 Spec: "given a condition that never becomes true, when any PoC-4 test waits on it, then it fails with the timeout and the label."
-Status: partly fixed (#55: `until`, `_until_pruned`, and `wait_ready`. F8 keeps the helpers in its test files)
+Status: fixed (#55, #66)
 
 ### R4-19 [MEDIUM] [simple] packages/chassis/src/chassis/adapters/dapr/events.py:172
 Problem: the publish retry loop (`attempts = len(backoff) + 1`, sleep `backoff[attempt - 1]`) is copied in `kafka/events.py:238-258`, and `PUBLISH_BACKOFF_S = (0.1, 0.5)` is defined twice (dapr :53, kafka :45).
