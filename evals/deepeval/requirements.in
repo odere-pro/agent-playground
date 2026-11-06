@@ -1,0 +1,5 @@
+# DeepEval for the eval trial and the eval gate (eval_kit.evaltrial), pinned. Lock: requirements.txt.
+# test_golden.py imports deepeval, httpx, pytest, and yaml; pytest comes with deepeval.
+deepeval==4.3.2
+httpx
+pyyaml

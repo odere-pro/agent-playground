@@ -6,8 +6,9 @@ import re
 
 import pytest
 import yaml
-from bakeoff.golden import GATE_SIZE, gate_data, load_cases, load_gate_cases
-from bakeoff.golden.generate import (
+from bakeoff.registry import ROOT
+from eval_kit.golden import GATE_SIZE, gate_data, load_cases, load_gate_cases
+from eval_kit.golden.generate import (
     GATE_DROP_FACTS_SCRIPT,
     GATE_JUDGE_SCRIPT,
     GATE_MODEL_SCRIPT,
@@ -18,12 +19,11 @@ from bakeoff.golden.generate import (
     rendered_gate,
     simulate,
 )
-from bakeoff.golden.logic import LOGICS, apply_logic, drop_first_fact
-from bakeoff.registry import ROOT
+from eval_kit.golden.logic import LOGICS, apply_logic, drop_first_fact
 from fake_model_server import Script
 
 
-def test_bakeoff_gate_golden_has_50_labelled_cases_holding_the_poc07_set() -> None:
+def test_eval_kit_gate_golden_has_50_labelled_cases_holding_the_poc07_set() -> None:
     cases = load_gate_cases()
     assert len(cases) == GATE_SIZE == 50
     assert [c.id for c in cases] == [f"g{n:02d}" for n in range(1, 51)]
@@ -33,13 +33,13 @@ def test_bakeoff_gate_golden_has_50_labelled_cases_holding_the_poc07_set() -> No
     assert {c.task for c in cases} == {"simplifier", "lookup"}
 
 
-def test_bakeoff_gate_golden_data_is_one_file_the_eval_tool_reads() -> None:
+def test_eval_kit_gate_golden_data_is_one_file_the_eval_tool_reads() -> None:
     data = gate_data()
     assert data["version"] == 1
     assert [row["id"] for row in data["cases"]] == [c.id for c in load_gate_cases()]
 
 
-def test_bakeoff_gate_golden_generated_files_are_in_sync() -> None:
+def test_eval_kit_gate_golden_generated_files_are_in_sync() -> None:
     files = rendered_gate(load_gate_cases())
     assert set(files) == {GATE_MODEL_SCRIPT, GATE_DROP_FACTS_SCRIPT, GATE_JUDGE_SCRIPT}
     for rel, text in files.items():
@@ -49,7 +49,7 @@ def test_bakeoff_gate_golden_generated_files_are_in_sync() -> None:
 
 @pytest.mark.parametrize("compact", [False, True])
 @pytest.mark.parametrize("logic", LOGICS)
-def test_bakeoff_gate_golden_script_answers_each_case_per_logic(compact: bool, logic: str) -> None:
+def test_eval_kit_gate_golden_script_answers_each_case_per_logic(compact: bool, logic: str) -> None:
     cases = apply_logic(load_gate_cases(), logic)
     script = Script.model_validate(model_script(cases))
     for case in cases:
@@ -58,7 +58,7 @@ def test_bakeoff_gate_golden_script_answers_each_case_per_logic(compact: bool, l
         assert reply == case.reference
 
 
-def test_bakeoff_gate_golden_drop_facts_removes_the_first_fact_of_every_answer_holding_it() -> None:
+def test_eval_kit_gate_golden_drop_facts_removes_the_first_fact_of_each_answer_holding_it() -> None:
     normal = load_gate_cases()
     dropped = apply_logic(normal, "drop-facts")
     changed = 0
@@ -74,13 +74,13 @@ def test_bakeoff_gate_golden_drop_facts_removes_the_first_fact_of_every_answer_h
     assert drop_first_fact("The library opens at 9 am.", "9 am") == "The library opens at."
 
 
-def test_bakeoff_gate_golden_normal_logic_is_the_identity() -> None:
+def test_eval_kit_gate_golden_normal_logic_is_the_identity() -> None:
     assert apply_logic(load_gate_cases(), "normal") == load_gate_cases()
     with pytest.raises(ValueError, match="unknown logic"):
         apply_logic(load_gate_cases(), "nope")
 
 
-def test_bakeoff_gate_golden_judge_agrees_with_labels_but_g08_and_fails_dropped_answers() -> None:
+def test_eval_kit_gate_golden_judge_agrees_with_labels_but_g08_and_fails_dropped_answers() -> None:
     cases = load_gate_cases()
     script = Script.model_validate(judge_script(cases))
 
@@ -100,6 +100,6 @@ def test_bakeoff_gate_golden_judge_agrees_with_labels_but_g08_and_fails_dropped_
             assert verdict(after.reference, after.rubric) == JUDGE_DEFAULT, before.id
 
 
-def test_bakeoff_gate_golden_references_hold_no_quote_or_backslash() -> None:
+def test_eval_kit_gate_golden_references_hold_no_quote_or_backslash() -> None:
     for case in apply_logic(load_gate_cases(), "drop-facts"):
         assert not re.search(r'["\\\n]', case.reference), case.id

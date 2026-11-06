@@ -86,18 +86,18 @@ EVAL_ARGS ?=
 REDTEAM_ARGS ?=
 
 evals: ## PoC-8 eval gate: DeepEval on the 50 gate cases, every engine and lane, then the baseline check
-	$(PY) -m bakeoff.golden.generate --check
-	$(PY) -m bakeoff.evalrun --out $(EVAL_OUT)/normal $(EVAL_ARGS)
-	$(PY) -m bakeoff.evalgate --report $(EVAL_OUT)/normal $(EVAL_ARGS)
+	$(PY) -m eval_kit.golden.generate --check
+	$(PY) -m eval_kit.evalrun --out $(EVAL_OUT)/normal $(EVAL_ARGS)
+	$(PY) -m eval_kit.evalgate --report $(EVAL_OUT)/normal $(EVAL_ARGS)
 
 evals-regression: ## PoC-8 demo: business logic that drops facts must fail the eval gate (exit 1)
-	$(PY) -m bakeoff.evalrun --logic drop-facts --engine echo-python --lane sidecar --out $(EVAL_OUT)/drop-facts
-	@$(PY) -m bakeoff.evalgate --report $(EVAL_OUT)/drop-facts --engine echo-python --lane sidecar; rc=$$?; \
+	$(PY) -m eval_kit.evalrun --logic drop-facts --engine echo-python --lane sidecar --out $(EVAL_OUT)/drop-facts
+	@$(PY) -m eval_kit.evalgate --report $(EVAL_OUT)/drop-facts --engine echo-python --lane sidecar; rc=$$?; \
 	if [ $$rc -eq 1 ]; then echo "ok: the gate failed the drop-facts logic"; \
 	else echo "expected the gate to fail with exit 1, got $$rc"; exit 1; fi
 
 redteam: ## PoC-8 red-team set on every engine, lane, and guardrail config, against the recorded baseline
-	$(PY) -m bakeoff.redteam --out $(EVAL_OUT)/redteam.json $(REDTEAM_ARGS)
+	$(PY) -m eval_kit.redteam --out $(EVAL_OUT)/redteam.json $(REDTEAM_ARGS)
 
 # The tests that own model cassettes. Add a file here when it records through `CassetteTransport`.
 CASSETTE_TESTS ?= packages/chassis/tests/test_recorded_model.py \

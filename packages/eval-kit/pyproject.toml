@@ -1,0 +1,24 @@
+[project]
+name = "eval-kit"
+version = "0.1.0"
+description = "The PoC-7 eval tool trial and the PoC-8 eval gate and red team: the golden set, eval-report.v0, and the runners on the bake-off stack; no eval tool in the lock"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "bakeoff",
+  "chassis",
+  "chassis-contracts",
+  "fake-mcp-server",
+  "fake-model-server",
+  "guardrail-server",
+  "httpx>=0.28",
+  "jsonschema>=4.26",
+  "pyyaml>=6",
+  "uvicorn>=0.54",
+]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "eval_kit"

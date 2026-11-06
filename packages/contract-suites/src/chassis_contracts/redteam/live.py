@@ -3,7 +3,7 @@
 `run_all` (the package) sends each case to an in-process chassis whose engine is a `FakeEngine`.
 This module is for a real stack: a chassis process, a real workload in `inprocess`, `sidecar`, or
 `remote`, the fake model server, and an MCP tool server. The runner that starts the processes is
-`bakeoff.redteam`; everything here is engine-agnostic:
+`eval_kit.redteam`; everything here is engine-agnostic:
 
 - `model_script(cases)`: the fake model's script (OpenAI dialect; the runner rewrites it per
   engine). A case that is not an `input` case is sent as its trigger text, `[redteam:<id>]`, and

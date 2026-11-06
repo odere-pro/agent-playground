@@ -1,4 +1,4 @@
-"""`python -m bakeoff.redteam` on real localhost processes. Needs sockets, so it is marked
+"""`python -m eval_kit.redteam` on real localhost processes. Needs sockets, so it is marked
 `network`; it runs the CLI as a child process, the same way as the smoke test."""
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ def test_redteam_on_echo_python_inprocess_meets_the_baseline(tmp_path: Path) -> 
         [
             sys.executable,
             "-m",
-            "bakeoff.redteam",
+            "eval_kit.redteam",
             "--engine",
             "echo-python",
             "--lane",

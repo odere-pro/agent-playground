@@ -1,5 +1,5 @@
-# Generated from packages/bakeoff/src/bakeoff/golden/cases.yaml. Do not edit.
-# Regenerate: uv run python -m bakeoff.golden.generate --write
+# Generated from packages/eval-kit/src/eval_kit/golden/cases.yaml. Do not edit.
+# Regenerate: uv run python -m eval_kit.golden.generate --write
 # The scripted judge for the PoC-7 golden set.
 model: fake-judge
 rules:

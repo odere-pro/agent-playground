@@ -8,29 +8,29 @@ import re
 from typing import Any
 
 import pytest
-from bakeoff.dialects import CLAUDE_TOOL_PREFIX, for_engine
-from bakeoff.golden import ToolCallSpec, load_gate_cases
-from bakeoff.golden.generate import model_script, tool_result
-from bakeoff.golden.logic import LOGICS, apply_logic
 from bakeoff.registry import ENGINES, get_engine
+from eval_kit.dialects import CLAUDE_TOOL_PREFIX, for_engine
+from eval_kit.golden import ToolCallSpec, load_gate_cases
+from eval_kit.golden.generate import model_script, tool_result
+from eval_kit.golden.logic import LOGICS, apply_logic
 from fake_model_server import Script
 
 CODE = re.compile(r"<code>\n(.*)\n</code>", re.S)
 
 
-def test_bakeoff_dialects_every_engine_names_a_known_dialect() -> None:
+def test_eval_kit_dialects_every_engine_names_a_known_dialect() -> None:
     assert {e.dialect for e in ENGINES} <= {"openai", "claude", "smolagents"}
     assert get_engine("echo-claude-agent").dialect == "claude"
     assert get_engine("echo-smolagents").dialect == "smolagents"
     assert get_engine("echo-python").dialect == "openai"
 
 
-def test_bakeoff_dialects_openai_is_unchanged() -> None:
+def test_eval_kit_dialects_openai_is_unchanged() -> None:
     script = model_script(load_gate_cases())
     assert for_engine(get_engine("echo-langgraph"), script) == script
 
 
-def test_bakeoff_dialects_claude_prefixes_every_tool_name() -> None:
+def test_eval_kit_dialects_claude_prefixes_every_tool_name() -> None:
     script = model_script(load_gate_cases())
     claude = for_engine(get_engine("echo-claude-agent"), script)
     calls = [r["tool_call"] for r in claude["rules"] if r.get("tool_call")]
@@ -70,7 +70,7 @@ def _run_code_agent(script: Script, task: str) -> tuple[list[dict[str, Any]], st
 
 
 @pytest.mark.parametrize("logic", LOGICS)
-def test_bakeoff_dialects_smolagents_answers_every_gate_case_in_code(logic: str) -> None:
+def test_eval_kit_dialects_smolagents_answers_every_gate_case_in_code(logic: str) -> None:
     cases = apply_logic(load_gate_cases(), logic)
     raw = for_engine(get_engine("echo-smolagents"), model_script(cases))
     script = Script.model_validate(raw)

@@ -21,6 +21,7 @@ COPY packages/workloads/echo-openai-agents/pyproject.toml packages/workloads/ech
 COPY packages/workloads/echo-claude-agent/pyproject.toml packages/workloads/echo-claude-agent/
 COPY packages/workloads/echo-smolagents/pyproject.toml packages/workloads/echo-smolagents/
 COPY packages/bakeoff/pyproject.toml packages/bakeoff/
+COPY packages/eval-kit/pyproject.toml packages/eval-kit/
 COPY packages/fake-mcp-server/pyproject.toml packages/fake-mcp-server/
 COPY packages/code-runner/pyproject.toml packages/code-runner/
 COPY packages/fake-langfuse/pyproject.toml packages/fake-langfuse/

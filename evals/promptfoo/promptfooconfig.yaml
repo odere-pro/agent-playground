@@ -3,7 +3,7 @@
 #   CHASSIS_URL  the chassis under test, for example http://127.0.0.1:8080
 #   JUDGE_URL    the OpenAI-compatible judge, ends in /v1 (the fake model server in the trial)
 #   EVAL_ENGINE  a label only
-# Run: uv run python -m bakeoff.evaltrial --tool promptfoo --engine echo-python --out DIR
+# Run: uv run python -m eval_kit.evaltrial --tool promptfoo --engine echo-python --out DIR
 description: "PoC-7 golden set via /v1/run ({{ env.EVAL_ENGINE }})"
 prompts:
   - "{{input}}"
