@@ -263,6 +263,27 @@ async def test_traceparent_is_on_every_model_and_mcp_request(fake_server: Any) -
         assert "authorization" not in headers
 
 
+async def test_run_secret_is_on_every_model_and_mcp_request_when_set(
+    fake_server: Any,
+) -> None:
+    run_cap = "run-cap-for-tests"
+    async with serving(glossary_stub()) as mcp_stub:
+        await _run("glossary: SLM", {**CTX, "traceparent": TRACEPARENT, "run_secret": run_cap})
+    model = handle_module.transport
+    assert model.headers and mcp_stub.headers
+    for headers in [*model.headers, *mcp_stub.headers]:
+        assert headers.get("x-chassis-run-secret") == run_cap
+
+
+async def test_no_run_secret_in_ctx_sends_no_run_secret_header(fake_server: Any) -> None:
+    async with serving(glossary_stub()) as mcp_stub:
+        await _run("glossary: SLM", {**CTX, "run_secret": None})
+    model = handle_module.transport
+    assert model.headers and mcp_stub.headers
+    for headers in [*model.headers, *mcp_stub.headers]:
+        assert "x-chassis-run-secret" not in headers
+
+
 async def test_no_traceparent_in_ctx_sends_no_header(fake_server: Any) -> None:
     async with serving(glossary_stub()) as mcp_stub:
         await _run("glossary: SLM")

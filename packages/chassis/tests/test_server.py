@@ -16,6 +16,7 @@ from chassis import CHASSIS_VERSION
 from chassis.core.envelope import Context, Request, Response, TaskInput
 from chassis.core.events import Delta, End, Event, Start
 from chassis.core.handle import echo
+from chassis.core.inbound import public_message
 from chassis.fakes import (
     FakeEngine,
     InMemoryConfig,
@@ -212,7 +213,8 @@ async def test_engine_error_becomes_status_error() -> None:
     out = complete.json()
     assert out["status"] == "error"
     assert out["output"]["error"]["code"] == "engine_error"
-    assert "engine fell over" in out["output"]["error"]["message"]
+    assert out["output"]["error"]["message"] == public_message("engine_error")
+    assert "engine fell over" not in complete.text + streamed.text
     assert streamed.status_code == 200
     frames = _frames(streamed.text)
     assert [f[0] for f in frames] == ["start", "delta", "error", "response"]

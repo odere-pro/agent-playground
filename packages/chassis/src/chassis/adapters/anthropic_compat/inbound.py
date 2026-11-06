@@ -5,7 +5,8 @@ open note, sections 2 and 3). Pure: no I/O, no clock, no ids. The router is
 
 **In** (`to_request`). The body is the validated `MessageCreateParams` with any top-level keys the
 SDK type drops merged back from the raw JSON (the router does it), or a plain dict. Lazy iterators
-are read here (`materialize`); a `ValidationError` raised while reading one is 400 `invalid_body`.
+are read here (`chat_common.materialize`, re-exported); a `ValidationError` raised while reading
+one, or a body nested too deep, is 400 `invalid_body`.
 
 - `model` must equal the agent's name, else 404 `not_found_error` (`model_not_found`).
 - The last message must be `role: user`; it is `input.text`, text blocks joined with `"\n"` (the
@@ -38,10 +39,10 @@ error body `{"type": "error", "error": {"type", "message": "<code>: <message>"},
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Iterable, Mapping
+from collections.abc import AsyncIterator, Mapping
 from typing import Any, Literal
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from chassis.adapters.ai_marking import with_marking
 from chassis.adapters.anthropic_compat.types import (
@@ -59,7 +60,14 @@ from chassis.adapters.anthropic_compat.types import (
     TextDelta,
     Usage,
 )
-from chassis.adapters.chat_common import UnsupportedMessage, is_empty, text_of
+from chassis.adapters.chat_common import (
+    TOO_DEEP_MESSAGE,
+    InvalidBody,
+    UnsupportedMessage,
+    is_empty,
+    materialize,
+    text_of,
+)
 from chassis.core.envelope import Budget, Request, Response
 from chassis.core.events import Delta, End, Error, Event
 from chassis.core.inbound import (
@@ -89,6 +97,7 @@ __all__ = [
     "IGNORED_PARAMS",
     "RAW_ONLY_PARAMS",
     "READ_PARAMS",
+    "TOO_DEEP_MESSAGE",
     "AnthropicInbound",
     "InvalidBody",
     "answer_text",
@@ -139,43 +148,6 @@ never walked by `materialize`."""
 ErrorKind = Literal[
     "invalid_request_error", "not_found_error", "overloaded_error", "timeout_error", "api_error"
 ]
-
-
-TOO_DEEP_MESSAGE = "the body is nested too deeply to read"
-
-
-class InvalidBody(ValueError):
-    """A lazy iterator raised `ValidationError` while it was read. `str()` names where and why,
-    never the input.
-    """
-
-    def __init__(self, path: str, exc: ValidationError) -> None:
-        parts = []
-        for error in exc.errors():
-            loc = path or "body"
-            for p in error.get("loc", ()):
-                loc += f"[{p}]" if isinstance(p, int) else f".{p}"
-            parts.append(f"{loc}: {error.get('msg', 'invalid')}")
-        super().__init__("; ".join(parts) or f"{path or 'body'}: invalid")
-
-
-def materialize(value: Any, path: str = "") -> Any:
-    """`value` with every mapping as a dict and every other non-string iterable as a list, read
-    once, all the way down. FastAPI hands over `messages`, `system`, and block `content` as lazy
-    `ValidatorIterator`s that validate each item when it is read; their `ValidationError` is
-    raised here as `InvalidBody`.
-    """
-    try:
-        if isinstance(value, Mapping):
-            return {
-                key: materialize(item, f"{path}.{key}" if path else str(key))
-                for key, item in value.items()
-            }
-        if isinstance(value, str | bytes | bytearray) or not isinstance(value, Iterable):
-            return value
-        return [materialize(item, f"{path}[{i}]") for i, item in enumerate(value)]
-    except ValidationError as exc:
-        raise InvalidBody(path, exc) from None
 
 
 def error_type_for(status: int) -> ErrorKind:
@@ -288,10 +260,8 @@ class AnthropicInbound:
         messages; else `Refused`."""
         try:
             raw = materialize(body)
-        except InvalidBody as exc:
+        except InvalidBody as exc:  # a lazy item that fails, or a body nested too deep
             raise self._refused("invalid_body", str(exc), ids, served) from None
-        except RecursionError:  # nested past Python's stack: a 400, never a plain 500
-            raise self._refused("invalid_body", TOO_DEEP_MESSAGE, ids, served) from None
         if not isinstance(raw, dict):
             raise self._refused("invalid_body", "the body must be an object", ids, served)
         model = raw.get("model")

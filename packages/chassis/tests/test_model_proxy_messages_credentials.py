@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 from chassis.server import ChassisConfig, create_app
-from chassis.server.remote_auth import create_remote_proxy_app
+from chassis.server.remote_auth import RUN_SECRET, create_remote_proxy_app
 from proxy_fakes import (
     ANTHROPIC_BODY,
     GLOSSARY_RULES,
@@ -27,6 +27,7 @@ from proxy_fakes import (
 )
 
 REMOTE_TOKEN = "remote-token-canary-0123456789abcdef"  # pragma: allowlist secret (canary)
+RUN_SECRET_VALUE = "run-secret-test-value"  # pragma: allowlist secret (a test value)
 API_KEY_CANARY = "xapikey-canary-fedcba9876543210"  # pragma: allowlist secret (canary)
 CANARIES = [REMOTE_TOKEN, API_KEY_CANARY]
 SURFACES = ["responses", "caplog", "telemetry_logs", "span_attributes", "counter_labels"]
@@ -71,10 +72,12 @@ async def canary_run(caplog: pytest.LogCaptureFixture) -> CanaryRun:
     public = create_app(ChassisConfig.model_validate(PROXY_CONFIG), ports)
     remote = create_remote_proxy_app(public, (REMOTE_TOKEN,))
     request, ctx = run_request(max_tokens=40000)
+    ctx = ctx.model_copy(update={"run_secret": RUN_SECRET_VALUE})
     headers = {
         "authorization": f"Bearer {REMOTE_TOKEN}",
         "x-api-key": API_KEY_CANARY,
         "traceparent": TRACEPARENT,
+        RUN_SECRET: RUN_SECRET_VALUE,
     }
     caplog.set_level(logging.DEBUG)
     async with (

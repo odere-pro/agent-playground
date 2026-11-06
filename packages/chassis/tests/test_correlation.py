@@ -211,3 +211,15 @@ async def test_reserved_tokens_count_against_the_remainder() -> None:
         record.settle(5, Usage(input_tokens=1, output_tokens=2))
         assert record.reserved_tokens == 0 and record.spent_tokens == 18
         assert record.remaining_tokens == 2
+
+
+def test_open_copies_the_run_secret_and_never_shows_it() -> None:
+    """Contract v8 (R2-02): the record keeps `ctx.run_secret`, out of its `repr`."""
+    request, ctx = _request("r-secret", TRACE)
+    secret = "s" * 43  # a test value, not a secret
+    registry = RunRegistry()
+    record = registry.open(request, ctx.model_copy(update={"run_secret": secret}))
+    assert record.run_secret == secret
+    assert secret not in repr(record)
+    registry.close(record)
+    assert registry.open(request, ctx).run_secret is None

@@ -192,6 +192,25 @@ async def test_every_model_and_mcp_request_carries_the_traceparent(
         assert request.headers.get("traceparent") == TRACEPARENT, request.url
 
 
+async def test_every_model_and_mcp_request_carries_the_run_secret_when_set(
+    model: Any, tools: Recording
+) -> None:
+    _, model_calls = model
+    run_cap = "run-cap-for-tests"
+    await _run("what does the glossary say?", {**CTX, "run_secret": run_cap})
+    assert model_calls.requests and tools.requests
+    for request in [*model_calls.requests, *tools.requests]:
+        assert request.headers.get("x-chassis-run-secret") == run_cap, request.url
+
+
+async def test_no_run_secret_header_when_ctx_has_none(model: Any, tools: Recording) -> None:
+    _, model_calls = model
+    await _run("what does the glossary say?", {**CTX, "run_secret": None})
+    assert model_calls.requests and tools.requests
+    for request in [*model_calls.requests, *tools.requests]:
+        assert "x-chassis-run-secret" not in request.headers
+
+
 async def test_no_traceparent_header_when_ctx_has_none(model: Any, tools: Recording) -> None:
     _, model_calls = model
     await _run("simplify: x", {**CTX, "traceparent": None})

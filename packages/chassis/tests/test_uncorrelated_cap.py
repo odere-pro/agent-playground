@@ -46,7 +46,8 @@ class Clock:
 
 def _config(cap: int | None) -> ChassisConfig:
     spec: dict[str, Any] = {
-        "engine": {"connector": "inprocess", "handle": "chassis.core.handle:echo_wire"}
+        "engine": {"connector": "inprocess", "handle": "chassis.core.handle:echo_wire"},
+        "model": {"route": "big-default"},  # the route the calls name; uncorrelated is pinned (R6)
     }
     if cap is not None:
         spec["limits"] = {"uncorrelated_tokens_per_minute": cap}

@@ -20,10 +20,14 @@ other non-`http` scope (a websocket is closed with 1008 before accept):
    path. `x-api-key` alone is not a credential. Counted as
    `chassis.remote.auth_failed` (`reason`: `missing` or `wrong`, suggested) and logged with the
    method and the path only, never the header. The header is removed before the route sees it.
-2. `RequireRun`: the `traceparent` must name a run in flight in `state.runs`. Else 403
-   `{"error": {"code": "run_required", ...}}` (the Anthropic body on `/v1/messages`). So a
-   remote spends tokens and calls tools only inside a run the chassis opened, under that run's
-   budget.
+2. `RequireRun`: the `traceparent` must name a run in flight in `state.runs`, and the
+   `x-chassis-run-secret` header must hold that run's secret (`ctx.run_secret`, contract v8;
+   exactly one header, at most `RUN_SECRET_MAX` bytes, `hmac.compare_digest`). Else 403
+   `{"error": {"code": "run_required", ...}}` (the Anthropic body on `/v1/messages`), the same
+   bytes for every reason, counted as `RUN_REQUIRED{reason}`. The header is removed before the
+   route sees it. So a remote spends tokens and calls tools only inside a run the chassis opened,
+   under that run's budget, and only the remote serving that run can. Plain mode
+   (`spec.engine.protocol: a2a`) has no secret: traceparent only, counted.
 
 `chassis serve --remote-proxy-host <pod IP>` runs this app on `--remote-proxy-port` (suggested
 8091), only in the `remote` lane (`chassis.server.cli`). The loopback proxy app is unchanged.
@@ -52,6 +56,15 @@ log = logging.getLogger("chassis.remote_auth")
 
 AUTH_FAILED = "chassis.remote.auth_failed"  # suggested
 DEFAULT_REMOTE_PROXY_PORT = 8091  # suggested
+RUN_REQUIRED = "chassis.remote.run_required"
+"""The 403 counter; `reason` is `no_run`, `secret_missing`, or `secret_wrong` (suggested)."""
+RUN_SECRET_SKIPPED = "chassis.remote.run_secret_skipped"  # pragma: allowlist secret (a name)
+"""suggested: a call let in on the traceparent alone, `reason="lane_without_secret"` (plain
+mode). A separate counter, so admitted calls never inflate the refusal count."""
+RUN_SECRET = "x-chassis-run-secret"  # pragma: allowlist secret (a header name, not a secret)
+"""The header that carries `ctx.run_secret` back on every model and MCP call (contract v8)."""
+RUN_SECRET_MAX = 128
+"""suggested: the longest secret header read, in bytes, checked before the compare."""
 
 _UNAUTHENTICATED = json.dumps(
     {
@@ -192,8 +205,14 @@ class BearerAuth:
 
 
 class RequireRun:
-    """Pure ASGI middleware: the `traceparent` names a run in `state.runs`, or 403
-    `run_required`.
+    """Pure ASGI middleware: the `traceparent` names a run in `state.runs`, and the
+    `x-chassis-run-secret` header holds that run's secret (contract v8, R2-02). Else 403
+    `run_required`, the same bytes for every reason, so a caller cannot tell "no such run" from
+    "not your run". The header is stripped before the app, so no route can forward it.
+
+    Plain mode (`spec.engine.protocol: a2a`) never sends `ctx` to the remote, so it can never
+    send the secret back: its calls are let in on the traceparent alone and counted as
+    `RUN_SECRET_SKIPPED`. That is decided by config, never by the caller.
     """
 
     def __init__(self, app: ASGIApp, *, state: Any) -> None:
@@ -207,17 +226,47 @@ class RequireRun:
         if scope["type"] != "http":
             await _refuse_non_http(scope, send)
             return
-        header = next((v for k, v in scope.get("headers", []) if k.lower() == b"traceparent"), None)
-        trace_id = parse_traceparent(header.decode("latin-1") if header is not None else None)
-        runs = getattr(self._state, "runs", None)
-        if trace_id is None or runs is None or runs.lookup(trace_id) is None:
-            ports = getattr(self._state, "ports", None)
-            if ports is not None:
-                ports.telemetry.counter("chassis.remote.run_required")
+        reason = self._refusal_reason(scope)
+        if reason is not None:
+            self._counter(RUN_REQUIRED, reason)
             body, headers = _refusal(scope, _RUN_REQUIRED, _RUN_REQUIRED_ANTHROPIC, [])
             await _send_json(send, 403, body, headers)
             return
-        await self.app(scope, receive, send)
+        name = RUN_SECRET.encode()
+        kept = [(k, v) for k, v in scope.get("headers", []) if k.lower() != name]
+        await self.app({**scope, "headers": kept}, receive, send)
+
+    def _refusal_reason(self, scope: Scope) -> str | None:
+        """None when the call may pass, else the counter's reason. Never logs a header."""
+        pairs = scope.get("headers", [])
+        header = next((v for k, v in pairs if k.lower() == b"traceparent"), None)
+        trace_id = parse_traceparent(header.decode("latin-1") if header is not None else None)
+        runs = getattr(self._state, "runs", None)
+        record = runs.lookup(trace_id) if trace_id is not None and runs is not None else None
+        if record is None:
+            return "no_run"
+        if self._plain_mode():
+            self._counter(RUN_SECRET_SKIPPED, "lane_without_secret")
+            return None
+        name = RUN_SECRET.encode()
+        presented = [v for k, v in pairs if k.lower() == name]
+        if not presented:
+            return "secret_missing"
+        expected = record.run_secret
+        if len(presented) != 1 or len(presented[0]) > RUN_SECRET_MAX or not expected:
+            return "secret_wrong"
+        if not hmac.compare_digest(presented[0], expected.encode()):
+            return "secret_wrong"
+        return None
+
+    def _plain_mode(self) -> bool:
+        config = getattr(self._state, "config", None)
+        return config is not None and config.spec.engine.protocol == "a2a"
+
+    def _counter(self, name: str, reason: str) -> None:
+        ports = getattr(self._state, "ports", None)
+        if ports is not None:
+            ports.telemetry.counter(name, reason=reason)
 
 
 def create_remote_proxy_app(public_app: FastAPI, tokens: Sequence[str]) -> FastAPI:

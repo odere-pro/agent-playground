@@ -13,8 +13,9 @@ One trace id, one in-flight run. The caller may set `trace_id`, so two concurren
 name the same one; the proxy could then not tell their calls apart, and an unpicked call would run
 with no budget. So a second registration of an in-flight trace id is refused (`TraceIdInUse`, a
 409 `trace_id_in_use` on `/v1/run`), before the engine runs. The trace id is free again when its
-run ends. This keying is a PoC-2 stopgap: the trace id is not a credential, and PoC-5 replaces it
-with a chassis-minted per-run credential that the workload presents on every proxy call.
+run ends. The trace id is not a credential. Contract v8 adds one: the record keeps
+`ctx.run_secret`, and the remote listener lets a call in only when it presents that run's
+secret (`chassis.server.remote_auth.RequireRun`).
 
 Budget reservations. A model call reserves the tokens it may spend (`reserve`, the `max_tokens`
 the proxy forwards) at its start and gives them back when its usage is known (`settle`), so two
@@ -72,6 +73,10 @@ class RunRecord:
     """PoC-7: set by the evaluator gate for its fallback attempt. The model proxy sends every
     model call of the run to this route, whatever route the workload names
     (`chassis.server.evaluator_gate`)."""
+    run_secret: str | None = field(default=None, repr=False)
+    """Contract v8 (R2-02): the run's secret, copied from `ctx.run_secret` by `open`. The remote
+    listener's `RequireRun` compares it with the `x-chassis-run-secret` header. None in plain
+    mode. Held on this replica for the life of the run only; never logged, never in `repr`."""
 
     @property
     def spent_tokens(self) -> int:
@@ -164,6 +169,7 @@ class RunRegistry:
             trace_id=trace_id,
             budget=request.budget.model_copy(),
             keyed_run_key=keyed_run_key(request),
+            run_secret=ctx.run_secret,
         )
         self._runs[trace_id] = record
         return record

@@ -48,6 +48,22 @@ async def test_traceparent_is_on_every_model_call_and_every_mcp_request(stubs: S
         assert _header(request, "traceparent") == TRACEPARENT, request.url
 
 
+async def test_run_secret_is_on_every_model_call_and_every_mcp_request_when_set(
+    stubs: Stubs,
+) -> None:
+    run_cap = "run-cap-for-tests"
+    await run(LOOKUP, {**CTX, "run_secret": run_cap})
+    assert stubs.model.requests and stubs.tools.requests
+    for request in stubs.all_requests():
+        assert _header(request, "x-chassis-run-secret") == run_cap, request.url
+
+
+async def test_no_run_secret_header_when_the_context_has_none(stubs: Stubs) -> None:
+    await run(SMOKE, {**CTX, "run_secret": None})
+    assert stubs.all_requests()
+    assert all(_header(r, "x-chassis-run-secret") is None for r in stubs.all_requests())
+
+
 async def test_no_traceparent_header_when_the_context_has_none(stubs: Stubs) -> None:
     ctx = {k: v for k, v in CTX.items() if k != "traceparent"}
     await run(SMOKE, ctx)

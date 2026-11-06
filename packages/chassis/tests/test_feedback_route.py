@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -30,6 +31,7 @@ from chassis.server import ChassisConfig, create_app
 from chassis.server.feedback import (
     COUNTER,
     DATASCHEMA,
+    FEEDBACK_LABELS,
     FEEDBACK_PATH,
     FEEDBACK_RECEIVED,
     SPAN,
@@ -123,7 +125,7 @@ async def test_feedback_after_a_run_lands_on_its_trace() -> None:
     assert stored.timestamp.tzinfo is not None
     assert body["feedback_id"] == default_feedback_id(run["request_id"], None)
     telemetry = _telemetry(app)
-    assert telemetry.counter_value(COUNTER, label="helpful") == 1
+    assert telemetry.counter_value(COUNTER, label="other") == 1  # not in FEEDBACK_LABELS
     assert any(s.name == SPAN for s in telemetry.spans)
 
 
@@ -264,7 +266,11 @@ async def test_the_lookup_is_in_state_with_the_spec_ttl() -> None:
         run = await _run(client)
         raw = await state.get(lookup_key(AGENT, run["request_id"]))
         assert raw is not None
-        assert json.loads(raw) == {"trace_id": trace_id_hex(run["trace_id"]), "agent": AGENT}
+        assert json.loads(raw) == {
+            "trace_id": trace_id_hex(run["trace_id"]),
+            "agent": AGENT,
+            "subject_sha256": None,
+        }
         now[0] += 61
         late = await client.post(FEEDBACK_PATH, json={"request_id": run["request_id"], "score": 1})
     assert late.status_code == 404
@@ -372,11 +378,6 @@ RATERS = frozenset({"agent:run", "agent:feedback"})
 """R2-10: two callers who both hold the feedback scope."""
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="R2-10 proposal: feedback lookup is not scoped to the caller; open user question in "
-    "contract-v6 and ADR-009",
-)
 async def test_feedback_refuses_another_caller_with_404_when_the_run_ended_for_alice() -> None:
     """Bob cannot score a call that ended for alice: 404 unknown_request, nothing stored."""
     store = InMemoryFeedback()
@@ -398,6 +399,125 @@ async def test_feedback_refuses_another_caller_with_404_when_the_run_ended_for_a
     assert answer.status_code == 404
     assert answer.json()["detail"]["code"] == "unknown_request"
     assert store.records == {}
+
+
+def _bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def test_the_lookup_holds_a_hash_of_the_subject_never_the_subject() -> None:
+    """The lookup stores sha256(subject) hex with auth on; alice may rate her own run."""
+    state = InMemoryState()
+    store = InMemoryFeedback()
+    tokens = {ALICE: Principal("alice", RATERS)}
+    app = _app(feedback=store, state=state, auth=StaticTokens(tokens))
+    async with _client(app) as client:
+        ran = await client.post("/v1/run", json={"input": {"text": "hi"}}, headers=_bearer(ALICE))
+        request_id = ran.json()["request_id"]
+        answer = await client.post(
+            FEEDBACK_PATH, json={"request_id": request_id, "score": 1}, headers=_bearer(ALICE)
+        )
+    raw = await state.get(lookup_key(AGENT, request_id))
+    assert raw is not None and b"alice" not in raw
+    assert json.loads(raw)["subject_sha256"] == hashlib.sha256(b"alice").hexdigest()
+    assert answer.status_code == 202
+    assert store.records[answer.json()["feedback_id"]].subject == "alice"
+
+
+async def test_another_caller_cannot_overwrite_a_score_by_its_feedback_id() -> None:
+    """R7-16: bob names alice's feedback_id on alice's run: 404 and alice's score is unchanged."""
+    store = InMemoryFeedback()
+    tokens = {ALICE: Principal("alice", RATERS), BOB: Principal("bob", RATERS)}
+    app = _app(feedback=store, auth=StaticTokens(tokens))
+    async with _client(app) as client:
+        ran = await client.post("/v1/run", json={"input": {"text": "hi"}}, headers=_bearer(ALICE))
+        body = {"request_id": ran.json()["request_id"], "feedback_id": "fb-1"}
+        mine = await client.post(FEEDBACK_PATH, json=body | {"score": 1}, headers=_bearer(ALICE))
+        theirs = await client.post(FEEDBACK_PATH, json=body | {"score": 0}, headers=_bearer(BOB))
+    assert mine.status_code == 202
+    assert theirs.status_code == 404
+    assert theirs.json()["detail"] == {
+        "code": "unknown_request",
+        "message": "no finished run with this request_id; it may have expired",
+    }
+    assert store.records["fb-1"].score == 1.0
+    assert store.records["fb-1"].subject == "alice"
+
+
+async def test_a_lookup_written_before_the_change_still_accepts_feedback() -> None:
+    """A lookup with no `subject_sha256` (written before the field) is accepted until it
+    expires, with auth on."""
+    state = InMemoryState()
+    store = InMemoryFeedback()
+    old = {"trace_id": "a" * 32, "agent": AGENT}
+    await state.set(lookup_key(AGENT, "old-run"), json.dumps(old).encode(), ttl_s=60)
+    tokens = {BOB: Principal("bob", RATERS)}
+    app = _app(feedback=store, state=state, auth=StaticTokens(tokens))
+    async with _client(app) as client:
+        answer = await client.post(
+            FEEDBACK_PATH, json={"request_id": "old-run", "score": 1}, headers=_bearer(BOB)
+        )
+    assert answer.status_code == 202
+    assert answer.json()["trace_id"] == "a" * 32
+
+
+async def test_with_auth_off_any_caller_may_rate() -> None:
+    """Auth off: the lookup's subject is null, and feedback is accepted from any caller."""
+    state = InMemoryState()
+    store = InMemoryFeedback()
+    app = _app(feedback=store, state=state)
+    async with _client(app) as client:
+        run = await _run(client)
+        answer = await client.post(
+            FEEDBACK_PATH,
+            json={"request_id": run["request_id"], "score": 1},
+            headers=_bearer("anyone"),
+        )
+    raw = await state.get(lookup_key(AGENT, run["request_id"]))
+    assert raw is not None and json.loads(raw)["subject_sha256"] is None
+    assert answer.status_code == 202
+
+
+async def test_a_run_with_auth_off_accepts_a_caller_with_auth_on() -> None:
+    """A stored null subject (the run had auth off) is accepted from an authenticated caller."""
+    state = InMemoryState()
+    store = InMemoryFeedback()
+    async with _client(_app(feedback=store, state=state)) as client:
+        run = await _run(client)
+    tokens = {BOB: Principal("bob", RATERS)}
+    app = _app(feedback=store, state=state, auth=StaticTokens(tokens))
+    async with _client(app) as client:
+        answer = await client.post(
+            FEEDBACK_PATH, json={"request_id": run["request_id"], "score": 1}, headers=_bearer(BOB)
+        )
+    assert answer.status_code == 202
+
+
+async def test_a_free_text_label_is_counted_as_other() -> None:
+    """A label outside `FEEDBACK_LABELS` is counted as `other`; the record keeps it as written."""
+    store = InMemoryFeedback()
+    app = _app(feedback=store)
+    async with _client(app) as client:
+        run = await _run(client)
+        answers = [
+            await client.post(
+                FEEDBACK_PATH,
+                json={
+                    "request_id": run["request_id"],
+                    "score": 1,
+                    "label": label,
+                    "feedback_id": f"f{i}",
+                },
+            )
+            for i, label in enumerate(("good", "mint-a-series-123"))
+        ]
+    assert [a.status_code for a in answers] == [202, 202]
+    assert store.records["f1"].label == "mint-a-series-123"
+    telemetry = _telemetry(app)
+    assert telemetry.counter_value(COUNTER, label="good") == 1
+    assert telemetry.counter_value(COUNTER, label="other") == 1
+    assert telemetry.counter_value(COUNTER, label="mint-a-series-123") == 0
+    assert "good" in FEEDBACK_LABELS and "other" not in FEEDBACK_LABELS
 
 
 class _OddFeedback:

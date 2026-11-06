@@ -37,6 +37,7 @@ SPAN = "chassis.model.call"
 ROUTE_SPAN = "chassis.model.route"  # suggested: the routing choice (PoC-8)
 DENIED = "chassis.model_upstream_denied"  # suggested
 FORCED = "chassis.model_route_forced"  # suggested: a call sent to the run's fallback route
+PINNED = "chassis.model_route_pinned"  # suggested: an uncorrelated call sent to `spec.model.route`
 WINDOW_S = 60.0
 # suggested: the worst case reserved, and forwarded, for an uncorrelated call that sets no
 # `max_tokens`; never more than the cap itself. The epic gives no value.
@@ -300,8 +301,10 @@ def admit(
     app: FastAPI, *, route: str, wanted: int | None, traceparent: str | None, fmt: str
 ) -> Admission | Refusal:
     """Steps 3 to 7 of the shared admission (contract v5, A.6): count the call, find its run,
-    refuse a spent run or a full uncorrelated cap with 429, else reserve. `fmt` is `openai` or
-    `anthropic`. The caller has checked `app.state.ready` and parsed the body.
+    pick the route, refuse a spent run or a full uncorrelated cap with 429, else reserve. A run's
+    fallback route wins over the `model` named; an uncorrelated call always gets
+    `spec.model.route`. `fmt` is `openai` or `anthropic`. The caller has checked
+    `app.state.ready` and parsed the body.
     """
     bundle: PortBundle = app.state.ports
     telemetry = bundle.telemetry
@@ -314,6 +317,10 @@ def admit(
         # PoC-7: the evaluator gate's fallback attempt; the run's route wins.
         route = record.model_route
         telemetry.counter(FORCED, route=route)
+    if record is None and route != app.state.config.spec.model.route:
+        # R6: a call with no run cannot pick its route; it gets the agent's default route.
+        route = app.state.config.spec.model.route
+        telemetry.counter(PINNED, route=route)
     cap: UncorrelatedCap = app.state.uncorrelated_cap
     worst = 0
     if record is None:
@@ -349,6 +356,7 @@ __all__ = [
     "DEFAULT_UNCORRELATED_MAX_TOKENS",
     "DENIED",
     "FORCED",
+    "PINNED",
     "ROUTE_SPAN",
     "SPAN",
     "WINDOW_S",

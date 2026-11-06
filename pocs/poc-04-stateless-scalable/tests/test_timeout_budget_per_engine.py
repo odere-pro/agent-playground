@@ -29,6 +29,7 @@ from typing import Any
 
 import httpx2
 import pytest
+from chassis.core.inbound import public_message
 from chassis.fakes.model import ScriptedModel, ScriptRule
 from chassis.ports.model import ModelChunk, ModelMessage, ModelResult, ToolCallRequest, ToolSpec
 from chassis_contracts.interface import BASE_URL, Chassis
@@ -244,7 +245,8 @@ async def test_a_spent_budget_refuses_the_next_model_call_with_budget_exhausted(
     """Scope item "Timeout and budget per call": `budget.max_tokens` is enforced by the model
     proxy, on every engine. The tool loop's first call spends more than the whole budget; the next
     call is refused with 429 `budget_exhausted`, never reaches the model, and ends the run with an
-    error that names `budget_exhausted`.
+    error. The client reads `public_message(code)` (contract v8, item 1); the log names
+    `budget_exhausted`.
     """
     chassis, model = chassis_for(engine)
     calls, refused = model.call_count(), _refused(chassis)
@@ -253,7 +255,10 @@ async def test_a_spent_budget_refuses_the_next_model_call_with_budget_exhausted(
     assert _refused(chassis) - refused == 1, "the model proxy did not refuse exactly one call"
     error = _error(events)
     # The workloads report the proxy's refusal as its HTTP status; the proxy's own code is in the
-    # message (finding, PoC-4 P9: no engine lifts `budget_exhausted` into the error code).
+    # run's message (finding, PoC-4 P9: no engine lifts `budget_exhausted` into the error code).
+    # That message stays in the log; the client reads the fixed text (contract v8, item 1).
     assert error["code"] == "http_429" and error["retryable"] is False, error
-    assert "budget_exhausted" in error["message"], error
+    assert error["message"] == public_message(error["code"]), error
+    details = [e["detail"] for e in chassis.telemetry.logs if e["message"] == "run error"]
+    assert any("budget_exhausted" in detail for detail in details), details
     assert events[-1]["status"] == "error", events[-1]

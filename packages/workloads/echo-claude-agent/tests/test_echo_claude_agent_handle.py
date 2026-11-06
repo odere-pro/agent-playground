@@ -463,6 +463,35 @@ async def test_handle_sends_each_runs_own_traceparent_when_two_runs_differ(
     assert second.mcp_servers["chassis"]["headers"]["traceparent"] == other
 
 
+async def test_handle_sends_the_run_secret_to_the_cli_and_the_mcp_server_when_ctx_has_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CLI's custom headers get a second line, and the MCP server headers carry it too."""
+    fake = install(monkeypatch, FakeQuery([say("ok"), result()]))
+    run_cap = "run-cap-for-tests"
+
+    await run(ctx={**CTX, "traceparent": TRACEPARENT, "run_secret": run_cap})
+
+    opts: Any = fake.options
+    assert opts.env["ANTHROPIC_CUSTOM_HEADERS"] == (
+        f"traceparent: {TRACEPARENT}\nx-chassis-run-secret: {run_cap}"
+    )
+    assert opts.mcp_servers["chassis"]["headers"]["x-chassis-run-secret"] == run_cap
+
+
+async def test_handle_sends_no_run_secret_when_ctx_has_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No run secret: one header line, and no run-secret header on MCP."""
+    fake = install(monkeypatch, FakeQuery([say("ok"), result()]))
+
+    await run(ctx={**CTX, "traceparent": TRACEPARENT, "run_secret": None})
+
+    opts: Any = fake.options
+    assert opts.env["ANTHROPIC_CUSTOM_HEADERS"] == f"traceparent: {TRACEPARENT}"
+    assert "x-chassis-run-secret" not in opts.mcp_servers["chassis"]["headers"]
+
+
 async def test_handle_gives_each_run_a_fresh_home_and_removes_it_when_the_run_ends(
     monkeypatch: pytest.MonkeyPatch, clean_env: Path
 ) -> None:

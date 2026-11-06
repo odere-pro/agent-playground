@@ -3,8 +3,8 @@ sections 5 and 7).
 
 The tool is generated from the chassis's own OpenAPI spec (`FastMCP.from_fastapi`), never written
 by hand: its input schema is the `/v1/run` request body, and calling it calls `/v1/run` in
-process with `x-chassis-interface: mcp`. This is not the proxy app's `/mcp` (the workload's
-tools, `test_tool_endpoint.py`).
+process with the MCP hop scope flag (contract v8, item 6; no header marks it). This is not the
+proxy app's `/mcp` (the workload's tools, `test_tool_endpoint.py`).
 
 Every test reaches `/v1/mcp` with a real `fastmcp.Client` over streamable HTTP through
 `httpx2.ASGITransport` on the public app. No socket.
@@ -24,6 +24,7 @@ import pytest
 from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Delta, End, Error, Event
 from chassis.core.handle import echo
+from chassis.core.inbound import public_message
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.auth import StaticTokens
 from chassis.fakes.state import InMemoryState
@@ -232,7 +233,10 @@ async def test_a_run_with_status_error_is_a_tool_result_not_an_mcp_error() -> No
     envelope = result.structured_content
     assert envelope is not None
     assert envelope["status"] == "error"
-    assert envelope["output"]["error"] == {"code": "engine_error", "message": "boom"}
+    assert envelope["output"]["error"] == {
+        "code": "engine_error",
+        "message": public_message("engine_error"),
+    }, "the public text, never the run's own (contract v8, item 1)"
 
 
 async def test_a_body_naming_another_agent_is_a_tool_error() -> None:
@@ -244,36 +248,137 @@ async def test_a_body_naming_another_agent_is_a_tool_error() -> None:
     assert result.is_error is True
 
 
-# --- the header on /v1/run gives no trust ------------------------------------------------------
+# --- the MCP hop is a scope flag; a header gives nothing (contract v8, item 6) -----------------
 
 
-async def test_a_direct_caller_sending_the_header_only_loses_streaming() -> None:
-    """The `mcp` interface header on a native call turns off streaming; others stay native."""
-    app = _app()
+@pytest.mark.parametrize("claimed", ["mcp", "openai"])
+async def test_a_direct_x_chassis_interface_mcp_header_is_native(claimed: str) -> None:
+    """A direct caller's `x-chassis-interface` is ignored: its body `trace_id` in use is 409
+    `trace_id_in_use`, `stream: true` streams, and the call is labeled `native`."""
+    in_flight = asyncio.Event()
+    release = asyncio.Event()
+
+    async def handle(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
+        if input.text == "first":
+            in_flight.set()
+            await asyncio.wait_for(release.wait(), timeout=5)
+        yield Delta(text="a")
+        yield End(output={})
+
+    app = _app(FakeEngine(handle=handle))
+    header = {"x-chassis-interface": claimed}
     transport = httpx.ASGITransport(app=app)
     async with (
         app.router.lifespan_context(app),
         httpx.AsyncClient(transport=transport, base_url="http://c") as client,
     ):
-        response = await client.post(
-            "/v1/run",
-            json={"input": {"text": "x"}, "stream": True},
-            headers={"x-chassis-interface": "mcp"},
+        first = asyncio.create_task(
+            client.post("/v1/run", json={"trace_id": TRACE, "input": {"text": "first"}})
         )
-        other = await client.post(
-            "/v1/run",
-            json={"input": {"text": "x"}, "stream": True},
-            headers={"x-chassis-interface": "openai"},
+        await asyncio.wait_for(in_flight.wait(), timeout=5)
+        held = await client.post(
+            "/v1/run", json={"trace_id": TRACE, "input": {"text": "x"}}, headers=header
         )
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("application/json")
-    assert response.json()["status"] == "ok"
-    assert other.headers["content-type"].startswith("text/event-stream"), (
-        "only `mcp` is read; any other value is native"
+        release.set()
+        await first
+        streamed = await client.post(
+            "/v1/run", json={"input": {"text": "x"}, "stream": True}, headers=header
+        )
+    assert held.status_code == 409
+    assert held.json()["detail"]["code"] == "trace_id_in_use"
+    assert streamed.headers["content-type"].startswith("text/event-stream")
+    telemetry = _telemetry(app)
+    assert telemetry.counter_value("chassis.requests", agent="echo", interface="mcp") == 0
+    assert telemetry.counter_value("chassis.requests", agent="echo", interface="native") == 2, (
+        "a 409 opens no run"
     )
+    assert telemetry.counter_value("chassis.trace_id_reminted", interface="mcp") == 0
+
+
+async def test_a_direct_caller_with_the_mcp_header_is_watched_for_a_disconnect() -> None:
+    """The header no longer turns off the disconnect watch: a direct caller that leaves cancels
+    its run, as any native call does."""
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def handle(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
+        started.set()
+        try:
+            await asyncio.sleep(30)  # longer than the test's timeout: only a cancel ends it
+        except BaseException:  # cancelled, or the stream closed
+            cancelled.set()
+            raise
+        yield End(output={})
+
+    app = _app(FakeEngine(handle=handle))
+    receive_done = asyncio.Event()
+    body = json.dumps({"input": {"text": "x"}}).encode()
+    messages = [{"type": "http.request", "body": body, "more_body": False}]
+
+    async def receive() -> dict[str, Any]:
+        if messages:
+            return messages.pop(0)
+        await started.wait()
+        receive_done.set()
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict[str, Any]) -> None:
+        return None
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/v1/run",
+        "raw_path": b"/v1/run",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"content-type", b"application/json"), (b"x-chassis-interface", b"mcp")],
+        "client": ("127.0.0.1", 1),
+        "server": ("chassis", 80),
+    }
+    async with app.router.lifespan_context(app):
+        await asyncio.wait_for(app(scope, receive, send), timeout=5)
+    assert cancelled.is_set()
+    telemetry = _telemetry(app)
+    assert telemetry.counter_value("chassis.client_disconnected", interface="native") == 1
+
+
+async def test_the_mcp_tool_call_is_still_labeled_mcp_and_reminted() -> None:
+    """The in-process hop sets the scope flag: the tool's call is labeled `mcp`, a body
+    `trace_id` in use is re-minted, and the inner request carries no interface header."""
+    in_flight = asyncio.Event()
+    release = asyncio.Event()
+
+    async def handle(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
+        if input.text == "first":
+            in_flight.set()
+            await asyncio.wait_for(release.wait(), timeout=5)
+        yield End(output={"trace": ctx.trace_id})
+
+    app = _app(FakeEngine(handle=handle))
+    seen = _record_run_headers(app)
+    async with _serving(app) as client:
+        native = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://c")
+        async with native:
+            first = asyncio.create_task(
+                native.post("/v1/run", json={"trace_id": TRACE, "input": {"text": "first"}})
+            )
+            await asyncio.wait_for(in_flight.wait(), timeout=5)
+            result = await client.call_tool(
+                "echo", {"trace_id": TRACE, "input": {"text": "second"}}, raise_on_error=False
+            )
+            release.set()
+            await first
+    envelope = result.structured_content
+    assert envelope is not None
+    assert envelope["trace_id"] != TRACE
+    assert "x-chassis-interface" not in seen[-1]
     telemetry = _telemetry(app)
     assert telemetry.counter_value("chassis.requests", agent="echo", interface="mcp") == 1
-    assert telemetry.counter_value("chassis.requests", agent="echo", interface="native") == 1
+    assert telemetry.counter_value("chassis.trace_id_reminted", interface="mcp") == 1
 
 
 # --- mount, readiness, timeout -----------------------------------------------------------------
@@ -327,7 +432,7 @@ async def test_the_tool_call_has_no_client_timeout() -> None:
     client: httpx2.AsyncClient = tool._client
     assert httpx2.AsyncClient().timeout == httpx2.Timeout(5.0), "the default this replaces"
     assert client.timeout == httpx2.Timeout(None)
-    assert client.headers["x-chassis-interface"] == "mcp"
+    assert "x-chassis-interface" not in client.headers, "the scope flag marks the hop"
 
 
 def test_mcp_path_is_not_in_the_openapi_spec() -> None:
@@ -463,7 +568,8 @@ def _record_run_headers(app: FastAPI) -> list[dict[str, str]]:
 @pytest.mark.parametrize("claimed", ["native", "openai", "MCP", "native, mcp"])
 async def test_an_mcp_caller_cannot_override_the_interface_marker(claimed: str) -> None:
     """An MCP caller that sends its own `x-chassis-interface` still gets the MCP tool's run:
-    `stream` read as false, labeled `mcp`, a body trace id in use re-minted (not 409).
+    `stream` read as false, labeled `mcp`, a body trace id in use re-minted (not 409). Its header
+    is dropped; the scope flag marks the hop.
     """
     in_flight = asyncio.Event()
     release = asyncio.Event()
@@ -499,7 +605,7 @@ async def test_an_mcp_caller_cannot_override_the_interface_marker(claimed: str) 
     assert envelope["status"] == "ok"
     assert envelope["trace_id"] != TRACE
     assert len(seen) == 2, "the native call, then the tool's inner hop"
-    assert seen[-1].get("x-chassis-interface") == "mcp"
+    assert "x-chassis-interface" not in seen[-1]
     telemetry = _telemetry(app)
     assert telemetry.counter_value("chassis.requests", agent="echo", interface="mcp") == 1
     assert telemetry.counter_value("chassis.trace_id_reminted", interface="mcp") == 1
@@ -537,13 +643,13 @@ async def _call_through_mcp(
 )
 async def test_the_inner_hop_forwards_only_the_correlation_headers(dropped: str) -> None:
     """The tool's call to `/v1/run` carries `traceparent` and `Idempotency-Key` from the MCP
-    request, its own marker, and nothing else the caller sent.
+    request, and nothing else the caller sent (the hop is marked in the scope, not a header).
     """
     app = _app()
 
     inner, envelope = await _call_through_mcp(app, NOISY_CALLER)
 
-    assert inner["x-chassis-interface"] == "mcp"
+    assert "x-chassis-interface" not in inner
     assert inner["traceparent"] == CALLER_TRACEPARENT
     assert inner["idempotency-key"] == "idem-1"
     assert dropped not in inner
@@ -565,8 +671,8 @@ async def test_the_inner_hop_carries_the_callers_bearer_when_the_caller_also_sen
 
 
 async def test_the_tool_client_forces_the_marker_over_a_header_set_on_the_request() -> None:
-    """Whatever FastMCP merges into the request (its tool path keeps the client's default today,
-    its resource path lets the caller's header win), the tool's client sends `mcp` last.
+    """Whatever FastMCP merges into the request (its resource path lets the caller's header
+    win), the tool's transport marks the hop in the scope, so the call is `mcp`.
     """
     app = _app()
     async with app.router.lifespan_context(app):

@@ -13,7 +13,8 @@ so it is `untrusted` and runs in the `remote` lane only.
   both the main and the small model.
 - Tools: `Bash`, `Read`, `Write`, and the chassis MCP server at `CHASSIS_TOOL_URL` (server name
   `chassis`, so the tools are `mcp__chassis__*`). The CLI does not pass `traceparent` or the token
-  to MCP, so they are set per server in `headers`.
+  to MCP, so they are set per server in `headers`. `ctx["run_secret"]`, when set, is the
+  `x-chassis-run-secret` header on both: a second `ANTHROPIC_CUSTOM_HEADERS` line and in `headers`.
 - Credentials: `CHASSIS_API_TOKEN`, when set and not empty, is `ANTHROPIC_AUTH_TOKEN` and the MCP
   bearer token; else the model gets a placeholder (the loopback proxy ignores it). No provider key
   is read or accepted: see the guard below.
@@ -57,6 +58,8 @@ DEFAULT_ROUTE = "big-default"
 MODEL_URL_VAR = "CHASSIS_MODEL_URL"
 DEFAULT_MODEL_URL = "http://127.0.0.1:8090/v1"
 TOKEN_VAR = "CHASSIS_API_TOKEN"
+# The run-scoped capability the chassis checks on its remote listener (contract v8).
+RUN_SECRET_HEADER = "x-chassis-run-secret"  # pragma: allowlist secret (a header name, not a secret)
 TOOL_URL_VAR = "CHASSIS_TOOL_URL"
 DEFAULT_TOOL_URL = "http://127.0.0.1:8090/mcp"
 HOME_BASE_VAR = "CLAUDE_AGENT_HOME_BASE"
@@ -120,19 +123,25 @@ def build_options(
     stderr: Callable[[str], None],
 ) -> ClaudeAgentOptions:
     traceparent = ctx.get("traceparent")
+    run_secret = ctx.get("run_secret")  # the chassis's per-run check; never logged
+    lines = [f"traceparent: {traceparent}"] if traceparent else []
+    if run_secret:
+        lines.append(f"{RUN_SECRET_HEADER}: {run_secret}")
     env = {
         "ANTHROPIC_BASE_URL": base_url(os.environ.get(MODEL_URL_VAR, DEFAULT_MODEL_URL)),
         "ANTHROPIC_AUTH_TOKEN": token or PLACEHOLDER_TOKEN,
         "ANTHROPIC_MODEL": route,
         "ANTHROPIC_SMALL_FAST_MODEL": route,
-        # Always set (empty without a traceparent), so an inherited value can never get through.
-        "ANTHROPIC_CUSTOM_HEADERS": f"traceparent: {traceparent}" if traceparent else "",
+        # Always set (empty without either header), so an inherited value can never get through.
+        "ANTHROPIC_CUSTOM_HEADERS": "\n".join(lines),
         **DISABLE_FLAGS,
         "HOME": str(home),
     }
     headers: dict[str, str] = {}
     if traceparent:
         headers["traceparent"] = str(traceparent)
+    if run_secret:
+        headers[RUN_SECRET_HEADER] = str(run_secret)
     if token:
         headers["Authorization"] = f"Bearer {token}"
     server: McpHttpServerConfig = {

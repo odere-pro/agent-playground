@@ -57,3 +57,28 @@ def test_parse_event_cuts_the_version_in_its_error_when_the_version_is_long() ->
         parse_event({"type": "end", "schema_version": long_version})
 
     assert "9" * 41 not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        pytest.param({"type": "metrics", "input_tokens": -5}, id="negative-input-tokens"),
+        pytest.param({"type": "metrics", "attempt": 0}, id="attempt-zero"),
+        pytest.param({"type": "metrics", "cost_usd": -0.1}, id="negative-cost"),
+        pytest.param({"type": "error", "code": "bad code", "message": "m"}, id="code-space"),
+        pytest.param({"type": "error", "code": "x", "message": "m" * 9000}, id="long-message"),
+        pytest.param({"type": "tool_call", "call_id": "c", "name": ""}, id="empty-tool-name"),
+        pytest.param({"type": "start", "request_id": "a\nb"}, id="request-id-newline"),
+    ],
+)
+def test_parse_event_refuses_out_of_bound_values(data: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        parse_event(data)
+
+
+def test_parse_event_accepts_values_at_the_bounds() -> None:
+    from chassis.core.events import COUNT_MAX, ERROR_MESSAGE_MAX
+
+    parse_event({"type": "metrics", "input_tokens": COUNT_MAX, "attempt": 1, "cost_usd": 0.0})
+    parse_event({"type": "error", "code": "a2a.bad_event", "message": "m" * ERROR_MESSAGE_MAX})
+    parse_event({"type": "start", "request_id": "0123abcdef" * 12 + "abcdefgh"})

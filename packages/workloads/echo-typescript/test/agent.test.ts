@@ -185,6 +185,24 @@ test("traceparent and the bearer go on every model call and every MCP request", 
   }
 });
 
+test("ctx.run_secret goes on every model call and every MCP request, only when set", async () => {
+  delete process.env["CHASSIS_API_TOKEN"];
+  const runCap = "run-cap-for-tests";
+  const model = scriptedModel([asks(0, "c", "glossary_lookup", '{"term":"SLM"}'), sseBody(["ok"])]);
+  const mcp = mcpStub(benchmarkTools);
+  await run("x", { fetch: model.fetch, toolFetch: mcp.fetch }, { ...CTX, run_secret: runCap });
+  assert.ok(model.calls.length >= 1 && mcp.requests.length >= 1);
+  for (const headers of [...model.calls.map((c) => c.headers), ...mcp.requests.map((r) => r.headers)]) {
+    assert.equal(headers.get("x-chassis-run-secret"), runCap);
+  }
+  const bare = scriptedModel([asks(0, "c", "glossary_lookup", '{"term":"SLM"}'), sseBody(["ok"])]);
+  const bareMcp = mcpStub(benchmarkTools);
+  await run("x", { fetch: bare.fetch, toolFetch: bareMcp.fetch }, { ...CTX, run_secret: null });
+  for (const headers of [...bare.calls.map((c) => c.headers), ...bareMcp.requests.map((r) => r.headers)]) {
+    assert.equal(headers.has("x-chassis-run-secret"), false);
+  }
+});
+
 test("no token and no traceparent: neither header on any call", async () => {
   delete process.env["CHASSIS_API_TOKEN"];
   const model = scriptedModel([asks(0, "c", "glossary_lookup", '{"term":"SLM"}'), sseBody(["ok"])]);

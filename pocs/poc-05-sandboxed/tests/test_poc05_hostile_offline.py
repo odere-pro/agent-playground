@@ -67,7 +67,7 @@ def _chat_body(route: str = ROUTE) -> dict[str, Any]:
 
 async def _remote_chat(lane: RemoteLane, trace: str | None, route: str = ROUTE) -> tuple[int, Any]:
     """One model call to the remote listener with the remote's own token, as the remote pod."""
-    headers = {} if trace is None else {"traceparent": trace}
+    headers = lane.run_headers(trace)
     async with lane.remote_proxy_client(lane.tokens.sends) as client:
         response = await client.post(CHAT, json=_chat_body(route), headers=headers)
     return response.status_code, response.json()
@@ -78,7 +78,7 @@ async def _remote_chat(lane: RemoteLane, trace: str | None, route: str = ROUTE) 
 
 def _mcp_client(lane: RemoteLane, trace: str) -> Client[Any]:
     """An MCP client of the chassis's `/mcp` on the remote listener, with the remote's own token
-    and the run's `traceparent`, over the listener's Unix socket. Never TCP.
+    and the run's `traceparent` and secret, over the listener's Unix socket. Never TCP.
     """
     uds = lane.remote_proxy_uds
 
@@ -96,7 +96,7 @@ def _mcp_client(lane: RemoteLane, trace: str) -> Client[Any]:
             **kw,
         )
 
-    headers = {"Authorization": f"Bearer {lane.tokens.sends}", "traceparent": trace}
+    headers = {"Authorization": f"Bearer {lane.tokens.sends}", **lane.run_headers(trace)}
     transport = StreamableHttpTransport(
         f"{REMOTE_PROXY_URL}/mcp", headers=headers, httpx_client_factory=factory
     )

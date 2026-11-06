@@ -23,6 +23,10 @@ from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.remote_auth import (
     AUTH_FAILED,
+    RUN_REQUIRED,
+    RUN_SECRET,
+    RUN_SECRET_MAX,
+    RUN_SECRET_SKIPPED,
     BearerAuth,
     RequireRun,
     create_remote_proxy_app,
@@ -33,6 +37,8 @@ from starlette.types import Receive, Scope, Send
 
 CURRENT = "c" * 64  # test values, not secrets
 PREVIOUS = "p" * 64
+SECRET = "s" * 43  # the run secret of the default run (R2-02)
+SECRET_B = "b" * 43
 CONFIG: dict[str, Any] = {
     "profile": "fake",
     "agent": {"name": "echo", "version": "0.0.1"},
@@ -72,7 +78,9 @@ def _client(app: Any) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://chassis")
 
 
-def _run(request_id: str = "req-remote", trace: str = TRACE) -> tuple[Request, Context]:
+def _run(
+    request_id: str = "req-remote", trace: str = TRACE, secret: str | None = None
+) -> tuple[Request, Context]:
     request = Request(
         request_id=request_id,
         trace_id=trace,
@@ -90,12 +98,13 @@ def _run(request_id: str = "req-remote", trace: str = TRACE) -> tuple[Request, C
         agent_version=request.agent_version,
         budget=request.budget,
         versions=Versions(chassis=CHASSIS_VERSION),
+        run_secret=SECRET if secret is None else secret,
     )
     return request, ctx
 
 
-def _auth(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}", "traceparent": TRACEPARENT}
+def _auth(token: str, secret: str = SECRET) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}", "traceparent": TRACEPARENT, RUN_SECRET: secret}
 
 
 async def test_no_token_and_a_wrong_token_are_401_with_one_body(
@@ -469,18 +478,13 @@ async def test_lifespan_scope_passes_through() -> None:
 RUN_B_TRACE = "0af7651916cd43dd8448eb211c80319c"  # pragma: allowlist secret
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="R2-02 proposal: one shared bearer lets a remote act under any in-flight run; "
-    "needs a per-run secret",
-)
 async def test_require_run_refuses_another_runs_traceparent_when_two_runs_share_one_remote() -> (
     None
 ):
     """A remote serving run A cannot spend under run B with the shared bearer and B's trace."""
     public, remote, _ = _app()
     run_a, ctx_a = _run("req-a", TRACE)
-    run_b, ctx_b = _run("req-b", RUN_B_TRACE)
+    run_b, ctx_b = _run("req-b", RUN_B_TRACE, SECRET_B)
     headers = {"Authorization": f"Bearer {CURRENT}", "traceparent": OTHER}
 
     async with (
@@ -492,3 +496,215 @@ async def test_require_run_refuses_another_runs_traceparent_when_two_runs_share_
         answer = await client.post("/v1/chat/completions", json=BODY, headers=headers)
 
     assert answer.status_code == 403
+
+
+# --- R2-02: the per-run secret (contract v8, item 4) ---
+
+PLAIN_CONFIG: dict[str, Any] = {
+    "profile": "fake",
+    "agent": {"name": "echo", "version": "0.0.1"},
+    "spec": {
+        "engine": {
+            "connector": "remote",
+            "url": "http://remote.test:8443",
+            "auth": {"scheme": "bearer", "token_env": "POC05_TEST_REMOTE_TOKEN"},
+            "protocol": "a2a",
+        }
+    },
+}
+
+
+def _counted(ports: PortBundle, reason: str) -> int:
+    telemetry = ports.telemetry
+    assert isinstance(telemetry, InMemoryTelemetry)
+    return telemetry.counter_value(RUN_REQUIRED, reason=reason)
+
+
+async def test_require_run_refuses_run_a_secret_with_run_b_traceparent(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """R2-02: run A's secret with run B's traceparent is 403, and B's record is untouched."""
+    public, remote, ports = _app()
+    run_a, ctx_a = _run("req-a", TRACE, SECRET)
+    run_b, ctx_b = _run("req-b", RUN_B_TRACE, SECRET_B)
+    headers = {"Authorization": f"Bearer {CURRENT}", "traceparent": OTHER, RUN_SECRET: SECRET}
+    caplog.set_level(logging.DEBUG)
+    async with (
+        _client(remote) as client,
+        public.router.lifespan_context(public),
+        public.state.runs.register(run_a, ctx_a),
+        public.state.runs.register(run_b, ctx_b) as record_b,
+    ):
+        key_before = record_b.keyed_run_key
+        answer = await client.post("/v1/chat/completions", json=BODY, headers=headers)
+        own = await client.post(
+            "/v1/chat/completions", json=BODY, headers={**headers, RUN_SECRET: SECRET_B}
+        )
+        after = (record_b.spent_tokens, record_b.reserved_tokens, record_b.keyed_run_key)
+    assert answer.status_code == 403 and answer.json()["error"]["code"] == "run_required"
+    assert own.status_code == 200, own.text
+    assert after[1] == 0 and after[2] == key_before
+    assert record_b.model_calls == 1, "only the call with B's own secret was charged to B"
+    assert _counted(ports, "secret_wrong") == 1
+    assert SECRET not in caplog.text and SECRET_B not in caplog.text
+
+
+async def test_require_run_refuses_a_missing_secret_with_403() -> None:
+    """A run in flight, the right bearer and traceparent, no secret: 403 `secret_missing`."""
+    public, remote, ports = _app()
+    request, ctx = _run()
+    headers = {"Authorization": f"Bearer {CURRENT}", "traceparent": TRACEPARENT}
+    async with (
+        _client(remote) as client,
+        public.router.lifespan_context(public),
+        public.state.runs.register(request, ctx) as record,
+    ):
+        answer = await client.post("/v1/chat/completions", json=BODY, headers=headers)
+    assert answer.status_code == 403 and answer.json()["error"]["code"] == "run_required"
+    assert record.model_calls == 0
+    assert _counted(ports, "secret_missing") == 1
+
+
+@pytest.mark.parametrize(
+    "secrets",
+    [[SECRET, SECRET], [SECRET + "x"], ["x" * (RUN_SECRET_MAX + 1)], [SECRET[:-1]]],
+    ids=["two-headers", "longer", "over-the-cap", "shorter"],
+)
+async def test_require_run_refuses_two_secret_headers_and_a_wrong_one(secrets: list[str]) -> None:
+    """More than one secret header, or one that is not the run's, is 403 `secret_wrong`."""
+    public, remote, ports = _app()
+    request, ctx = _run()
+    headers = [
+        ("authorization", f"Bearer {CURRENT}"),
+        ("traceparent", TRACEPARENT),
+        *[(RUN_SECRET, value) for value in secrets],
+    ]
+    async with (
+        _client(remote) as client,
+        public.router.lifespan_context(public),
+        public.state.runs.register(request, ctx),
+    ):
+        answer = await client.post("/v1/chat/completions", json=BODY, headers=headers)
+    assert answer.status_code == 403
+    assert _counted(ports, "secret_wrong") == 1
+
+
+class _Headers:
+    """An inner ASGI app that records each request's headers and answers 204."""
+
+    def __init__(self) -> None:
+        self.seen: list[list[tuple[bytes, bytes]]] = []
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        self.seen.append(list(scope["headers"]))
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+
+def _state(config: dict[str, Any]) -> Any:
+    """What `RequireRun` reads from the app state: the config, the runs, the ports."""
+    public, _, ports = _app()
+    state = type("S", (), {})()
+    state.config = ChassisConfig.model_validate(config)
+    state.runs = public.state.runs
+    state.ports = ports
+    return state
+
+
+async def test_require_run_lets_the_right_secret_in_and_the_header_never_reaches_the_route() -> (
+    None
+):
+    """The right secret is let in, and the header is stripped before the inner app."""
+    inner = _Headers()
+    state = _state(CONFIG)
+    request, ctx = _run()
+    headers = {"traceparent": TRACEPARENT, RUN_SECRET: SECRET}
+    async with (
+        _client(RequireRun(inner, state=state)) as client,
+        state.runs.register(request, ctx),
+    ):
+        answer = await client.get("/x", headers=headers)
+    assert answer.status_code == 204
+    assert [n for n, _ in inner.seen[0] if n.lower() == RUN_SECRET.encode()] == []
+    assert [n for n, _ in inner.seen[0] if n.lower() == b"traceparent"] == [b"traceparent"]
+
+
+async def test_require_run_lets_a_plain_mode_run_in_without_a_secret() -> None:
+    """`spec.engine.protocol: a2a` (kagent-adk) never sees `ctx`: traceparent only, counted."""
+    inner = _Headers()
+    state = _state(PLAIN_CONFIG)
+    request, ctx = _run()
+    plain_ctx = ctx.model_copy(update={"run_secret": None})
+    async with _client(RequireRun(inner, state=state)) as client:
+        async with state.runs.register(request, plain_ctx):
+            answer = await client.get("/x", headers={"traceparent": TRACEPARENT})
+            stray = await client.get("/x", headers={"traceparent": TRACEPARENT, RUN_SECRET: "x"})
+        ended = await client.get("/x", headers={"traceparent": TRACEPARENT})
+    assert (answer.status_code, stray.status_code, ended.status_code) == (204, 204, 403)
+    assert all(n.lower() != RUN_SECRET.encode() for headers in inner.seen for n, _ in headers)
+    telemetry = state.ports.telemetry
+    assert telemetry.counter_value(RUN_SECRET_SKIPPED, reason="lane_without_secret") == 2
+
+
+async def test_require_run_refuses_a_chassis_mode_run_that_holds_no_secret() -> None:
+    """Fail closed: a chassis-mode record without a secret lets no call in."""
+    inner = _Headers()
+    state = _state(CONFIG)
+    request, ctx = _run()
+    async with (
+        _client(RequireRun(inner, state=state)) as client,
+        state.runs.register(request, ctx.model_copy(update={"run_secret": None})),
+    ):
+        answer = await client.get("/x", headers={"traceparent": TRACEPARENT, RUN_SECRET: ""})
+    assert answer.status_code == 403 and inner.seen == []
+
+
+@pytest.mark.parametrize("path", ["/v1/chat/completions", ANTHROPIC_PATH])
+async def test_require_run_body_bytes_are_the_same_for_no_run_and_wrong_secret(path: str) -> None:
+    """No run, a missing secret, and a wrong secret answer the same bytes: no oracle."""
+    public, remote, _ = _app()
+    request, ctx = _run()
+    bearer = {"Authorization": f"Bearer {CURRENT}"}
+    async with (
+        _client(remote) as client,
+        public.router.lifespan_context(public),
+        public.state.runs.register(request, ctx),
+    ):
+        answers = [
+            await client.post(path, json=BODY, headers={**bearer, "traceparent": OTHER}),
+            await client.post(path, json=BODY, headers={**bearer, "traceparent": TRACEPARENT}),
+            await client.post(path, json=BODY, headers=_auth(CURRENT, SECRET_B)),
+        ]
+    assert {a.status_code for a in answers} == {403}
+    if path == ANTHROPIC_PATH:  # each body carries its own fresh request id
+        shapes = {(a.json()["type"], str(a.json()["error"])) for a in answers}
+        assert len(shapes) == 1
+        assert {a.headers.get("x-should-retry") for a in answers} == {"false"}
+    else:
+        assert answers[0].content == answers[1].content == answers[2].content
+
+
+async def test_mcp_on_the_remote_listener_refuses_a_wrong_secret() -> None:
+    """The tool endpoint sits behind `RequireRun` too: a wrong secret is 403, the right one 200."""
+    public, remote, _ = _app()
+    request, ctx = _run()
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {"name": "remote", "version": "0"},
+        },
+    }
+    accept = {"accept": "application/json, text/event-stream"}
+    async with (
+        _client(remote) as client,
+        public.router.lifespan_context(public),
+        public.state.runs.register(request, ctx),
+    ):
+        wrong = await client.post("/mcp", json=body, headers={**_auth(CURRENT, SECRET_B), **accept})
+        right = await client.post("/mcp", json=body, headers={**_auth(CURRENT), **accept})
+    assert wrong.status_code == 403 and wrong.json()["error"]["code"] == "run_required"
+    assert right.status_code == 200, right.text

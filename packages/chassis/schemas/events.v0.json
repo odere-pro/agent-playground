@@ -10,6 +10,7 @@
           "type": "string"
         },
         "text": {
+          "maxLength": 1048576,
           "title": "Text",
           "type": "string"
         },
@@ -72,10 +73,12 @@
       "additionalProperties": false,
       "properties": {
         "code": {
+          "pattern": "^[A-Za-z0-9._:-]{1,64}$",
           "title": "Code",
           "type": "string"
         },
         "message": {
+          "maxLength": 8192,
           "title": "Message",
           "type": "string"
         },
@@ -109,12 +112,14 @@
       "properties": {
         "attempt": {
           "default": 1,
+          "minimum": 1,
           "title": "Attempt",
           "type": "integer"
         },
         "cost_usd": {
           "anyOf": [
             {
+              "minimum": 0,
               "type": "number"
             },
             {
@@ -126,12 +131,16 @@
         },
         "input_tokens": {
           "default": 0,
+          "maximum": 9007199254740992,
+          "minimum": 0,
           "title": "Input Tokens",
           "type": "integer"
         },
         "latency_ms": {
           "anyOf": [
             {
+              "maximum": 9007199254740992,
+              "minimum": 0,
               "type": "integer"
             },
             {
@@ -144,6 +153,7 @@
         "model_route": {
           "anyOf": [
             {
+              "maxLength": 256,
               "type": "string"
             },
             {
@@ -155,6 +165,8 @@
         },
         "output_tokens": {
           "default": 0,
+          "maximum": 9007199254740992,
+          "minimum": 0,
           "title": "Output Tokens",
           "type": "integer"
         },
@@ -178,6 +190,7 @@
       "additionalProperties": false,
       "properties": {
         "request_id": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
           "title": "Request Id",
           "type": "string"
         },
@@ -209,10 +222,14 @@
           "type": "object"
         },
         "call_id": {
+          "maxLength": 256,
+          "minLength": 1,
           "title": "Call Id",
           "type": "string"
         },
         "name": {
+          "maxLength": 128,
+          "minLength": 1,
           "title": "Name",
           "type": "string"
         },

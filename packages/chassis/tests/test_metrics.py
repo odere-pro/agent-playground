@@ -29,6 +29,7 @@ from chassis.server.proxy_app import create_proxy_app
 from fastapi import FastAPI
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from poc_harness.promtext import families, samples, value
+from proxy_fakes import TRACEPARENT, run_request
 
 CONFIG: dict[str, Any] = {
     "version": "cfg-1",
@@ -170,7 +171,9 @@ async def test_model_tokens_and_cost_come_from_the_proxy_usage() -> None:
     """The scripted model reports 10 input and 5 output tokens per call. suggested: prices are USD
     per million tokens, so the cost in micro-USD is tokens times the price."""
     prices = {"big-default": {"input_per_mtok": 1.5, "output_per_mtok": 4.0}}
-    app = create_app(_config(observability={"prices": prices}), _ports())
+    # The route `CHAT` names is the default: the proxy calls here are uncorrelated (R6 pin).
+    model = {"route": "big-default"}
+    app = create_app(_config(observability={"prices": prices}, model=model), _ports())
     async with (
         _client(create_proxy_app(app)) as proxy,
         _client(app) as client,
@@ -179,7 +182,13 @@ async def test_model_tokens_and_cost_come_from_the_proxy_usage() -> None:
         assert (await proxy.post("/v1/chat/completions", json=CHAT)).status_code == 200
         streamed = await proxy.post("/v1/chat/completions", json={**CHAT, "stream": True})
         assert streamed.status_code == 200
-        unpriced = await proxy.post("/v1/chat/completions", json={**CHAT, "model": "other"})
+        # A run's call keeps the route it names; an uncorrelated one would be pinned (R6).
+        async with app.state.runs.register(*run_request(max_tokens=1000)):
+            unpriced = await proxy.post(
+                "/v1/chat/completions",
+                json={**CHAT, "model": "other"},
+                headers={"traceparent": TRACEPARENT},
+            )
         assert unpriced.status_code == 200
         text = (await client.get("/metrics")).text
     tokens = "chassis_model_tokens_total"
