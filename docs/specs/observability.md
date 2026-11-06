@@ -14,7 +14,7 @@ What the container records, and where it goes. Why: [ADR-007](../planning/adr/00
 
 | Span | Attributes |
 | ---- | ---------- |
-| `chassis.run` | `request_id`, `trace_id`, `agent`, `interface`, `user.id`, `session.id` |
+| `chassis.run` | `request_id`, `trace_id`, `agent`, `interface`, `route`, `task` (when `spec.model.routes` named it), `user.id`, `session.id` |
 | `chassis.engine.run` | `lane`, `request_id`, `trace_id` |
 | `chassis.model.call` | `format`, `route`, `trace_id`, `request_id`, `agent`, `correlated` |
 | `chassis.model.route` | the above plus `route.requested`, `route.forced` |

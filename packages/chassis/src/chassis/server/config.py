@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
@@ -153,11 +154,48 @@ def check_remote_url(url: str) -> None:
         )
 
 
+TASK_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$")
+"""A task name in `spec.model.routes` and `input.data.task`: printable, no space, at most 64
+characters, so the name is safe on a span. suggested: the shape."""
+
+
 class ModelSpec(BaseModel):
+    """`spec.model` (`docs/specs/models.md`): the agent's LiteLLM routes. Every field reloads.
+
+    - `route: fake-route`: the route of every task the map does not name.
+    - `fallback_route: null` (PoC-7, 017 H-4): the route of the evaluator gate's last attempt.
+    - `routes: {}`: the route per task, keyed by the task the caller names in `input.data.task`.
+      The pipeline resolves `routes[task]`, else `route`, into `ctx.model_route`, and the model
+      proxy forces every call of the run to it. A route the service's LiteLLM key does not list
+      is 403 `model_route_denied` at the first call; suggested: a check at load, which needs the
+      key and is not built. An empty task or route name is refused here.
+    - `judge_route: null`: the judge evaluator's route. Null: `CHASSIS_JUDGE_ROUTE`.
+    """
+
     model_config = ConfigDict(extra="forbid")
     route: str = "fake-route"
     fallback_route: str | None = None
-    """PoC-7 (017 H-4): the route of the evaluator gate's last attempt. Null: no fallback."""
+    routes: dict[str, str] = Field(default_factory=dict)
+    judge_route: str | None = None
+
+    @model_validator(mode="after")
+    def _named_routes(self) -> ModelSpec:
+        for task, route in self.routes.items():
+            if not TASK_NAME.match(task):
+                raise ValueError(
+                    f"spec.model.routes: task name {task!r} must match {TASK_NAME.pattern}"
+                )
+            if not route.strip():
+                raise ValueError(f"spec.model.routes: task {task!r} names an empty route")
+        if self.judge_route is not None and not self.judge_route.strip():
+            raise ValueError("spec.model.judge_route is empty; set a route or null")
+        return self
+
+    def route_for(self, task: str | None) -> str:
+        """The route of `task`: `routes[task]` when the map names it, else `route`."""
+        if task is not None and task in self.routes:
+            return self.routes[task]
+        return self.route
 
 
 class PromptSpec(BaseModel):
@@ -469,6 +507,8 @@ RELOADABLE: tuple[str, ...] = (
     "version",
     "spec.limits",  # includes PoC-5's `spec.limits.uncorrelated_tokens_per_minute`
     "spec.model.route",
+    "spec.model.routes",
+    "spec.model.judge_route",
     "spec.prompt",
     "spec.idempotency.ttl_s",
     "spec.harness.evaluator_sample_rate",

@@ -33,7 +33,7 @@ Source: `core/envelope.py`; `request.v0.json`, `response.v0.json`, `task_input.v
 | `text` | string or null | null |
 | `data` | object, open | `{}` |
 
-A chat interface may set two keys in `data` (suggested: the names): `system` (string, the caller's system prompt) and `history` (`[{"role": "user" | "assistant", "text": string}]`). Both only when not empty. A native caller may send the same keys; `data` passes through as is.
+A chat interface may set two keys in `data` (suggested: the names): `system` (string, the caller's system prompt) and `history` (`[{"role": "user" | "assistant", "text": string}]`). Both only when not empty. A native caller may send the same keys; `data` passes through as is. A caller may name the task in `data.task` (string, suggested: the key): the pipeline resolves it through `spec.model.routes` into `ctx.model_route` ([models](models.md)); the key stays in `data` for the workload.
 
 ### `Budget`
 
@@ -53,7 +53,7 @@ What the chassis gives `handle` next to the input. It never holds a key. Passed 
 | `request_id`, `trace_id`, `idempotency_key`, `agent`, `agent_version` | string | the pipeline | As in the request |
 | `budget` | `Budget` | the pipeline | The request's |
 | `versions` | `Versions` | the pipeline | As on the response |
-| `model_route` | string or null | the pipeline | `spec.model.route`; the fallback route on a gate fallback attempt (section 11) |
+| `model_route` | string or null | the pipeline | the route of `input.data.task` through `spec.model.routes`, else `spec.model.route`; the fallback route on a gate fallback attempt (section 11) |
 | `traceparent` | string or null | the connector, per run | `00-<trace id>-<parent id>-01`. The trace id is `trace_id_hex(ctx.trace_id)`: `trace_id` as is when it is 32 lowercase hex, else the first 32 hex of its sha256. The parent id is the connector's run span id, else a fresh random 16 hex (suggested). Not a credential |
 
 ### `Response` (`response.v0.json`)
@@ -305,7 +305,7 @@ The chassis handles SIGTERM and SIGINT itself. `chassis serve --drain-delay-s` (
 
 The bootstrap file (`chassis serve --config`) is a whole `ChassisConfig`. With `spec.adapters.config: memory` it is the config. With `minio` or `s3` the store document `<agent.name>` (`<CONFIG_S3_PREFIX><agent.name>.yaml` in `CONFIG_S3_BUCKET`) is the config; at start it may differ from the bootstrap only in reloadable paths, else startup fails with `ConfigRejected`. The S3 adapter refuses a document over 256 KiB, with a YAML alias, or nested deeper than 64.
 
-`RELOADABLE`: `version`, `spec.limits` (all of it, the rate limit and the uncorrelated cap included), `spec.model.route`, `spec.prompt`, `spec.idempotency.ttl_s`, `spec.harness.evaluator_sample_rate`. **Every other path is restart-only**: a document that changes one is refused with `restart_required` and the last good config stays. The swap is one assignment; a run keeps the `Context` it opened with. `/manifest` shows the active `versions.config`; `/openapi.json` keeps the start values. Counters: `chassis.config.reloaded`, `chassis.config.rejected{reason}`, `chassis.config.poll_failed{reason}`.
+`RELOADABLE`: `version`, `spec.limits` (all of it, the rate limit and the uncorrelated cap included), `spec.model.route`, `spec.model.routes`, `spec.model.judge_route`, `spec.prompt`, `spec.idempotency.ttl_s`, `spec.harness.evaluator_sample_rate`. **Every other path is restart-only**: a document that changes one is refused with `restart_required` and the last good config stays. The swap is one assignment; a run keeps the `Context` it opened with. `/manifest` shows the active `versions.config`; `/openapi.json` keeps the start values. Counters: `chassis.config.reloaded`, `chassis.config.rejected{reason}`, `chassis.config.poll_failed{reason}`.
 
 ### `StatePort` (`ports/state.py`)
 
@@ -341,7 +341,7 @@ Anthropic Messages onto the same port and admission, for a workload that speaks 
 
 **The uncorrelated cap.** `spec.limits.uncorrelated_tokens_per_minute` (20000, suggested; 0 refuses every uncorrelated call), a fixed 60 s window per replica, shared by both listeners. A call's worst case is its `max_tokens`, or `min(1024, L)` when unset (suggested). Admitted only if spent plus reserved plus the worst case is at most L. A call with no usage is charged its whole reservation.
 
-**`model_route` and the forced route.** The gate sets the run's `RunRecord.model_route` for a fallback attempt; the proxy then sends every call of that run there, whatever `model` the workload named (`chassis.model_route_forced`). One span `chassis.model.route` per admitted call with `route.requested`, `route`, `route.forced`.
+**`model_route` and the forced route.** A run's `RunRecord.model_route` is `ctx.model_route` from the moment it opens: the route of `input.data.task` through `spec.model.routes`, else `spec.model.route`. The gate replaces it with `spec.model.fallback_route` for its fallback attempt. The proxy sends every call of the run there, whatever `model` the workload named (`chassis.model_route_forced{route}`); a call that names the run's route is not forced. One span `chassis.model.route` per admitted call with `route.requested`, `route`, `route.forced`.
 
 **Model errors.** A `ModelError` with code `http_401` or `http_403` is 403 `model_route_denied` (`permission_error`, `this model route is not allowed for this service`) on both routes; counted `chassis.model_upstream_denied{route}`. On the Anthropic route: 400 `model_rejected_request` (upstream 400, 413, 422), 429 `model_rate_limited`, 503 `model_overloaded` (503, 529), 504 `model_timeout`, 502 `model_unavailable` (any other retryable), 500 `model_error`; every text is fixed. On the chat route: 502 when retryable, else 500, body `{"error": {"message", "type": "model_error", "code", "retryable"}}` with the same fixed text per code; mid-stream, one error frame then `[DONE]`.
 
@@ -424,7 +424,7 @@ Marking is on when `spec.governance.risk_class` is `limited` or `high`, or `ai_g
 
 | Span | Attributes |
 | ---- | ---------- |
-| `chassis.run` | `agent`, `interface`, `request_id`, `trace_id` (32 hex), `user.id`, `session.id`, `error.code` and `error.message` (redacted) on a failed run; continues the caller's `traceparent` when it names the run's trace |
+| `chassis.run` | `agent`, `interface`, `request_id`, `trace_id` (32 hex), `route` (the run's resolved route), `task` (only when `spec.model.routes` named it), `user.id`, `session.id`, `error.code` and `error.message` (redacted) on a failed run; continues the caller's `traceparent` when it names the run's trace |
 | `chassis.engine.run` | `lane`, `request_id`, `a2a.task_id`, `a2a.transport_error`; plain mode adds `a2a.protocol`, `a2a.usage_known` |
 | `chassis.model.call` | `route`, `trace_id`, `request_id`, `agent`, `correlated`, `format` (`openai` \| `anthropic`) |
 | `chassis.model.route` | `route.requested`, `route`, `route.forced` |
@@ -489,7 +489,7 @@ Body, strict: `request_id` (required), `score` (required, a number in [0, 1]), `
 
 ## 11. The evaluator gate
 
-`GatedEngine` (`server/evaluator_gate.py`) wraps the lane's connector when `spec.harness.evaluator_gate` is true. It refuses to start with `spec.adapters.evaluator: none`. `EvaluatorPort.score(EvalCase {input, output, reference?}) -> Score {value in [0, 1], evaluator, reason, input_tokens, output_tokens, cost_usd, latency_ms}`; adapters `none`, `fake` (`ScriptedEvaluator`), `judge` (an LLM judge through `ModelPort` on `CHASSIS_JUDGE_ROUTE`, rubric `judge-facts-v1`, reply exactly `{"score", "reason"}`), `encoder` (TEI `POST {CHASSIS_ENCODER_URL}/predict`, the `entailment` label's score).
+`GatedEngine` (`server/evaluator_gate.py`) wraps the lane's connector when `spec.harness.evaluator_gate` is true. It refuses to start with `spec.adapters.evaluator: none`. `EvaluatorPort.score(EvalCase {input, output, reference?}) -> Score {value in [0, 1], evaluator, reason, input_tokens, output_tokens, cost_usd, latency_ms}`; adapters `none`, `fake` (`ScriptedEvaluator`), `judge` (an LLM judge through `ModelPort` on `spec.model.judge_route`, else `CHASSIS_JUDGE_ROUTE`, rubric `judge-facts-v1`, reply exactly `{"score", "reason"}`), `encoder` (TEI `POST {CHASSIS_ENCODER_URL}/predict`, the `entailment` label's score).
 
 - **Sample.** A call is gated when the hash of `request_id` falls under `evaluator_sample_rate` (1.0; reloadable), so one id always decides the same.
 - **Sync mode** (`evaluator_mode: sync`, complete calls): each attempt's events are buffered; the answer passes when `score >= threshold` (0.7). A failed answer is rerun with the same `ctx`, up to `retries` (1, at most 5) more times; a failed attempt's events never reach the client. Then one fallback attempt with `ctx.model_route = spec.model.fallback_route`, enforced by the proxy, not scored, `end.status: fallback`. With no `fallback_route` the run ends in one `error evaluator_gate_failed` and no answer. The client sees one `start`, one `metrics` per earlier attempt, one `metrics` per score (the judge's tokens, `model_route` = the judge's route, `attempt` = the attempt scored), the chosen attempt's events, one `end`. So `usage` includes the judge; the chassis numbers `attempt`. An attempt that ends in `error` goes out as is, not scored. An evaluator error fails open: the attempt goes out, `chassis.gate_failed_open`.
@@ -504,7 +504,7 @@ Body, strict: `request_id` (required), `score` (required, a number in [0, 1]), `
 | ----- | ------------------- |
 | `spec.adapters` | `model`, `config`, `telemetry`, `tools`, `state`, `events`, `auth`, `guardrails`, `evaluator`, `feedback`; each null means the profile default. `engine` is refused |
 | `spec.engine` | `connector` `sidecar`; `handle`, `url`, `uds`, `auth {scheme bearer, token_env, previous_token_env}`, `probe_timeout_s` 2.0, `protocol` `chassis`, `a2a {usage_key null, context_id omit}` |
-| `spec.model` | `route` `fake-route`; `fallback_route` null |
+| `spec.model` | `route` `fake-route`; `fallback_route` null; `routes` `{}` (task to route, [models](models.md)); `judge_route` null. All reloadable |
 | `spec.prompt` | `version` null |
 | `spec.trust` | `trusted` (required in `cloud`) |
 | `spec.interfaces` | `openai`, `anthropic`, `mcp`: true |
