@@ -2,7 +2,7 @@
 every engine.
 
 The pick is DeepEval (notes/2026-10-28-eval-tool-trial.md). Its committed reports for
-`echo-python` and `echo-langgraph` (notes/evals/, written by `python -m bakeoff.evaltrial`) must be
+`echo-python` and `echo-langgraph` (notes/evals/, written by `python -m eval_kit.evaltrial`) must be
 `eval-report.v0` with the same keys at every level, one row per golden case id, and the same ids.
 The tool's own raw reports must have the same keys too. The golden set has 20 labelled cases.
 Reads committed files only: no socket, no tool install.
@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from bakeoff.evalreport import SCHEMA_ID, validate_report
-from bakeoff.golden import GOLDEN_SIZE, load_cases
+from eval_kit.evalreport import SCHEMA_ID, validate_report
+from eval_kit.golden import GOLDEN_SIZE, load_cases
 
 EVALS = Path(__file__).resolve().parents[1] / "notes" / "evals"
 PICKED = "deepeval"

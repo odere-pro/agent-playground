@@ -5,9 +5,10 @@ Nothing here names an engine: the launcher sets the variables per engine.
   JUDGE_URL     the OpenAI-compatible judge, ends in /v1 (the fake model server in the trial)
   GOLDEN_CASES  the golden set (default: the packaged cases.yaml)
 
-Run: uv run python -m bakeoff.evaltrial --tool deepeval --engine echo-python --out DIR
-It runs `deepeval test run` in an isolated `uv run --no-project --with deepeval==4.3.2`, so this
-file imports only deepeval, httpx, pytest, and yaml. Not collected by `make test` (testpaths).
+Run: uv run python -m eval_kit.evaltrial --tool deepeval --engine echo-python --out DIR
+It runs `deepeval test run` in its own venv, installed from `requirements.txt` (every package by
+sha256, `--require-hashes`), so this file imports only deepeval, httpx, pytest, and yaml.
+Not collected by `make test` (testpaths).
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from deepeval.test_case import LLMTestCase, SingleTurnParams, ToolCall
 
 ROOT = Path(__file__).resolve().parents[2]
 CASES_PATH = Path(
-    os.environ.get("GOLDEN_CASES", ROOT / "packages/bakeoff/src/bakeoff/golden/cases.yaml")
+    os.environ.get("GOLDEN_CASES", ROOT / "packages/eval-kit/src/eval_kit/golden/cases.yaml")
 )
 CASES: list[dict[str, Any]] = yaml.safe_load(CASES_PATH.read_text(encoding="utf-8"))["cases"]
 CHASSIS_URL = os.environ.get("CHASSIS_URL", "http://127.0.0.1:8080").rstrip("/")

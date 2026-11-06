@@ -9,7 +9,7 @@ commit` checks it, extended to PoC-8:
   every PoC test folder, this one included. The script strips `*_API_KEY` and passes
   `--disable-socket --allow-unix-socket --record-mode=none`. Under those flags this folder is
   collected and no test in it is marked `network`.
-- `poc08-evals.yml` runs the eval gate (`bakeoff.evalgate`) for every supported engine, the
+- `poc08-evals.yml` runs the eval gate (`eval_kit.evalgate`) for every supported engine, the
   drop-facts regression (exit 1 required; criterion 5 checks the recipe), and the red-team set for
   every engine `evals/redteam/baseline.json` records.
 - Both workflows: no `secrets.` reference, `contents: read` and nothing more, every action pinned
@@ -170,8 +170,8 @@ def test_poc08_evals_runs_the_gate_and_the_redteam_set_on_every_supported_engine
 
     assert _matrix(jobs["evals"]) == SUPPORTED
     evals_runs = " ".join(_runs(jobs["evals"]))
-    assert "-m bakeoff.evalrun --engine ${{ matrix.engine }}" in evals_runs
-    assert "-m bakeoff.evalgate --report" in evals_runs and "--engine ${{ matrix.engine }}" in (
+    assert "-m eval_kit.evalrun --engine ${{ matrix.engine }}" in evals_runs
+    assert "-m eval_kit.evalgate --report" in evals_runs and "--engine ${{ matrix.engine }}" in (
         evals_runs
     )
     gate = json.loads((ROOT / "evals/gate/baseline.json").read_text())
@@ -186,7 +186,7 @@ def test_poc08_evals_runs_the_gate_and_the_redteam_set_on_every_supported_engine
     assert recorded <= _matrix(jobs["redteam"]), recorded - _matrix(jobs["redteam"])
     assert _matrix(jobs["redteam"]) == SUPPORTED
     assert set(redteam["configs"]) == {"litellm", "keyword"}
-    assert "-m bakeoff.redteam --engine ${{ matrix.engine }}" in " ".join(_runs(jobs["redteam"]))
+    assert "-m eval_kit.redteam --engine ${{ matrix.engine }}" in " ".join(_runs(jobs["redteam"]))
 
 
 @pytest.mark.parametrize("name", SUITE_WORKFLOWS)

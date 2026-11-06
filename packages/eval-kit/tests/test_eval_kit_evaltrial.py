@@ -5,7 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from bakeoff.evaltrial import TELEMETRY_OFF, tool_argv, tool_env
+from eval_kit.evaltrial import (
+    DEEPEVAL_VERSION,
+    PROMPTFOO_VERSION,
+    TELEMETRY_OFF,
+    tool_argv,
+    tool_env,
+)
 
 
 @pytest.fixture
@@ -27,7 +33,7 @@ def _env(tmp_path: Path, offline: bool) -> dict[str, str]:
 
 
 @pytest.mark.usefixtures("parent_env")
-def test_bakeoff_evaltrial_env_turns_telemetry_off_and_holds_no_secret(tmp_path: Path) -> None:
+def test_eval_kit_evaltrial_env_turns_telemetry_off_and_holds_no_secret(tmp_path: Path) -> None:
     env = _env(tmp_path, offline=False)
     assert TELEMETRY_OFF.items() <= env.items()
     assert env["DEEPEVAL_TELEMETRY_OPT_OUT"] == "1"
@@ -38,13 +44,20 @@ def test_bakeoff_evaltrial_env_turns_telemetry_off_and_holds_no_secret(tmp_path:
 
 
 @pytest.mark.usefixtures("parent_env")
-def test_bakeoff_evaltrial_offline_drops_the_network_variables(tmp_path: Path) -> None:
+def test_eval_kit_evaltrial_offline_drops_the_network_variables(tmp_path: Path) -> None:
     env = _env(tmp_path, offline=True)
     assert "HTTPS_PROXY" not in env
     assert env["UV_OFFLINE"] == "1" and env["npm_config_offline"] == "true"
 
 
-def test_bakeoff_evaltrial_pins_both_tools(tmp_path: Path) -> None:
-    assert "promptfoo@0.125.1" in tool_argv("promptfoo", tmp_path)
-    deepeval = tool_argv("deepeval", tmp_path)
-    assert "deepeval==4.3.2" in deepeval and "--no-project" in deepeval
+def test_eval_kit_evaltrial_pins_both_tools() -> None:
+    """The tool versions stay those of the trial; the locks hold them (test_eval_kit_tool_locks)."""
+    assert (PROMPTFOO_VERSION, DEEPEVAL_VERSION) == ("0.125.1", "4.3.2")
+
+
+def test_eval_kit_evaltrial_runs_each_tool_from_its_install_in_the_work_dir(tmp_path: Path) -> None:
+    """Each tool runs from what `tool_install_argv` installed under the run's work dir."""
+    assert tool_argv("deepeval", tmp_path)[0] == str(tmp_path / "deepeval-venv/bin/deepeval")
+    assert tool_argv("promptfoo", tmp_path)[0] == str(
+        tmp_path / "promptfoo-tool/node_modules/.bin/promptfoo"
+    )

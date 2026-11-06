@@ -1,5 +1,5 @@
-# Generated from packages/bakeoff/src/bakeoff/golden/cases.yaml. Do not edit.
-# Regenerate: uv run python -m bakeoff.golden.generate --write
+# Generated from packages/eval-kit/src/eval_kit/golden/cases.yaml. Do not edit.
+# Regenerate: uv run python -m eval_kit.golden.generate --write
 - description: g01 simplifier
   vars:
     input: 'simplify: The SLM, released in 2026 by Acme, cut costs by 30 percent.'

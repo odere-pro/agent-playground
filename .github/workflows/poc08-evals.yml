@@ -5,13 +5,13 @@ name: poc08-evals
 # regression names its engine. The same steps run locally: `make evals`, `make evals-regression`,
 # `make redteam`.
 #
-# - evals: DeepEval 4.3.2 on the 50 gate cases (`bakeoff.evalrun`), then the gate against the
-#   committed baseline `evals/gate/baseline.json` (`bakeoff.evalgate`). The gate exits 1 when the
+# - evals: DeepEval 4.3.2 on the 50 gate cases (`eval_kit.evalrun`), then the gate against the
+#   committed baseline `evals/gate/baseline.json` (`eval_kit.evalgate`). The gate exits 1 when the
 #   pass rate drops below the baseline, a must-pass case fails, or a must-fail case (a wrong answer
 #   on purpose) starts to pass. A failing case on its own is not a job failure; the gate decides.
 # - regression: the planning doc's demo. The `drop-facts` business logic (every answer loses a
 #   fact) must make the gate exit 1; the step fails if the gate passes it or errors.
-# - redteam: the PoC-7 red-team set (`bakeoff.redteam`) on both guardrail stacks, checked against
+# - redteam: the PoC-7 red-team set (`eval_kit.redteam`) on both guardrail stacks, checked against
 #   `evals/redteam/baseline.json`: exit 1 when a block rate drops or a stopped case gets through.
 #
 # The engines' model and the judge are the scripted fake model server on localhost: no secret, no
@@ -69,12 +69,12 @@ jobs:
       - name: Sync
         run: uv sync --all-packages --locked
       - name: Golden files in sync
-        run: uv run python -m bakeoff.golden.generate --check
+        run: uv run python -m eval_kit.golden.generate --check
       # Exit 1 only when a stack does not start or DeepEval writes no report.
       - name: DeepEval on the gate set, every lane
-        run: uv run python -m bakeoff.evalrun --engine ${{ matrix.engine }} --out eval-reports
+        run: uv run python -m eval_kit.evalrun --engine ${{ matrix.engine }} --out eval-reports
       - name: Eval gate
-        run: uv run python -m bakeoff.evalgate --report eval-reports --engine ${{ matrix.engine }}
+        run: uv run python -m eval_kit.evalgate --report eval-reports --engine ${{ matrix.engine }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
@@ -138,7 +138,7 @@ jobs:
         run: uv sync --all-packages --locked
       - name: Red-team set, every lane, both guardrail stacks
         run: >-
-          uv run python -m bakeoff.redteam --engine ${{ matrix.engine }}
+          uv run python -m eval_kit.redteam --engine ${{ matrix.engine }}
           --out redteam/${{ matrix.engine }}.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()

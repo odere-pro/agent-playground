@@ -7,8 +7,9 @@ from typing import Any
 
 import pytest
 import yaml
-from bakeoff.golden import CASES_FILE, GOLDEN_SIZE, load_cases, parse_cases
-from bakeoff.golden.generate import (
+from bakeoff.registry import ROOT
+from eval_kit.golden import CASES_FILE, GOLDEN_SIZE, load_cases, parse_cases
+from eval_kit.golden.generate import (
     JUDGE_DEFAULT,
     judge_script,
     main,
@@ -16,7 +17,6 @@ from bakeoff.golden.generate import (
     rendered,
     simulate,
 )
-from bakeoff.registry import ROOT
 from fake_model_server import Script
 
 
@@ -25,7 +25,7 @@ def _raw() -> dict[str, Any]:
     return data
 
 
-def test_bakeoff_golden_has_20_labelled_cases_of_both_tasks() -> None:
+def test_eval_kit_golden_has_20_labelled_cases_of_both_tasks() -> None:
     cases = load_cases()
     assert len(cases) == GOLDEN_SIZE
     labels = [c.label for c in cases]
@@ -44,21 +44,21 @@ def test_bakeoff_golden_has_20_labelled_cases_of_both_tasks() -> None:
         (lambda d: d["cases"][12]["expect"].update(tool_calls=[]), "expects a tool call"),
     ],
 )
-def test_bakeoff_golden_rejects_a_bad_file(mutate: Any, message: str) -> None:
+def test_eval_kit_golden_rejects_a_bad_file(mutate: Any, message: str) -> None:
     data = copy.deepcopy(_raw())
     mutate(data)
     with pytest.raises(ValueError, match=message):
         parse_cases(data)
 
 
-def test_bakeoff_golden_generated_files_are_in_sync() -> None:
+def test_eval_kit_golden_generated_files_are_in_sync() -> None:
     for rel, text in rendered(load_cases()).items():
         assert (ROOT / rel).read_text(encoding="utf-8") == text, f"{rel}: run --write"
     assert main(["--check"]) == 0
 
 
 @pytest.mark.parametrize("compact", [False, True])
-def test_bakeoff_golden_script_answers_each_case_with_its_plan(compact: bool) -> None:
+def test_eval_kit_golden_script_answers_each_case_with_its_plan(compact: bool) -> None:
     script = Script.model_validate(model_script(load_cases()))
     for case in load_cases():
         calls, reply = simulate(case, script, compact=compact)
@@ -66,7 +66,7 @@ def test_bakeoff_golden_script_answers_each_case_with_its_plan(compact: bool) ->
         assert reply == case.reference
 
 
-def test_bakeoff_golden_judge_agrees_with_the_labels_but_g08() -> None:
+def test_eval_kit_golden_judge_agrees_with_the_labels_but_g08() -> None:
     script = Script.model_validate(judge_script(load_cases()))
     disagree = []
     for case in load_cases():

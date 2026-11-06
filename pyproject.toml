@@ -48,6 +48,7 @@ members = [
   "packages/workloads/echo-claude-agent",
   "packages/workloads/echo-smolagents",
   "packages/bakeoff",
+  "packages/eval-kit",
   "packages/fake-mcp-server",
   "packages/code-runner",
   "packages/fake-langfuse",
@@ -70,6 +71,7 @@ echo-openai-agents = { workspace = true }
 echo-claude-agent = { workspace = true }
 echo-smolagents = { workspace = true }
 bakeoff = { workspace = true }
+eval-kit = { workspace = true }
 fake-mcp-server = { workspace = true }
 code-runner = { workspace = true }
 fake-langfuse = { workspace = true }
@@ -128,6 +130,7 @@ root_packages = [
   "echo_claude_agent",
   "echo_smolagents",
   "bakeoff",
+  "eval_kit",
   "fake_mcp_server",
   "code_runner",
   "fake_langfuse",
@@ -173,6 +176,14 @@ source_modules = ["guardrail_server"]
 forbidden_modules = ["chassis", "chassis_contracts"]
 
 [[tool.importlinter.contracts]]
+name = "the bake-off kit never imports the eval kit (R6-14): eval_kit runs on bakeoff, not back"
+# The compatibility modules (`bakeoff.evaltrial` and the other moved CLIs) reach `eval_kit` only
+# through `importlib` under `__main__`; `test_bakeoff_no_eval.py` checks they load nothing.
+type = "forbidden"
+source_modules = ["bakeoff"]
+forbidden_modules = ["eval_kit"]
+
+[[tool.importlinter.contracts]]
 name = "agentctl never imports the chassis (PoC-9): it renders a template, it runs nothing"
 type = "forbidden"
 source_modules = ["agentctl"]
@@ -203,6 +214,7 @@ forbidden_modules = [
   "echo_claude_agent",
   "echo_smolagents",
   "bakeoff",
+  "eval_kit",
   "fake_mcp_server",
   "code_runner",
   "fake_langfuse",
@@ -267,6 +279,7 @@ source_modules = [
   "echo_claude_agent",
   "echo_smolagents",
   "bakeoff",
+  "eval_kit",
   "fake_mcp_server",
   "code_runner",
   "fake_langfuse",

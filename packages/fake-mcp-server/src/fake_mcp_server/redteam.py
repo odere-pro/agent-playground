@@ -1,4 +1,4 @@
-"""The red-team tool server (PoC-8): the MCP server behind the chassis in `bakeoff.redteam`.
+"""The red-team tool server (PoC-8): the MCP server behind the chassis in `eval_kit.redteam`.
 
 One read-only tool, `fetch_page(page, text)`. It returns the scripted payload for `page` (an
 injection, a key, an exfiltration request: the red-team set's tool outputs), or `stored`, and
