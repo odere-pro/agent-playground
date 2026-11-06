@@ -20,8 +20,10 @@ MCP limit) is `unknown_tool` before any request, so it never reaches the gateway
 `call()`, in order:
 - a write tool (`read_only: false`; a tool with no `readOnlyHint` counts as one) with no
   `idempotency_key` raises `idempotency_key_required` before any request;
-- arguments that fail the listed schema (required fields, top-level types, extra fields when
-  `additionalProperties` is false) raise `bad_arguments` before any request;
+- arguments that fail the listed schema raise `bad_arguments` before any request. The check is
+  `chassis.ports.tool_arguments.check_arguments`, the one the fake tools run (R5b-08): types,
+  `enum`, `anyOf`/`oneOf`, and nested `properties`, `required`, `additionalProperties: false`.
+  The message names fields and paths, never a value;
 - the key goes as `_meta.idempotency_key`, and also as the `idempotency_key` argument when the
   tool's schema declares that property (the fallback for a gateway that drops `_meta`);
 - the gateway's answer maps to: the call's own JSON-RPC error first (an unknown tool
@@ -33,6 +35,14 @@ MCP limit) is `unknown_tool` before any request, so it never reaches the gateway
 
 A `ToolError.message` is fixed text, never an upstream body.
 
+Result size (R5a-24): a result whose serialized form is over `MAX_RESULT_BYTES` (1 MiB, suggested)
+is `tool_unavailable` (not retryable) with a fixed message that names the cap, never the content.
+The MCP client library reads a whole response, then parses it, before the adapter sees the
+result; so the adapter also wraps each response body as it streams in and stops reading past
+`MAX_RESPONSE_BYTES` (twice the cap plus framing: FastMCP sends a result as text and again as
+structured content). The chassis therefore holds at most about `MAX_RESPONSE_BYTES` of one
+response, and relays at most `MAX_RESULT_BYTES`.
+
 Known limit: the refusal texts are matched on any tool's error text, not only the gateway's, so an
 upstream tool whose error starts with one picks its own code (`unknown_tool`, `tool_denied`,
 `idempotency_key_required`, `bad_arguments`). It cannot pick the message, which stays fixed text,
@@ -43,11 +53,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import re
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from typing import Any
 
 import httpx2
@@ -57,6 +68,7 @@ from mcp.shared.exceptions import MCPError
 from mcp_types import CallToolResult, TextContent, Tool
 
 from chassis.ports.tool import ToolDefinition, ToolError, ToolResult
+from chassis.ports.tool_arguments import check_arguments
 
 URL_VAR = "LITELLM_MCP_URL"
 API_KEY_VAR = "LITELLM_API_KEY"
@@ -73,6 +85,12 @@ UNKNOWN_REFRESH_COOLDOWN_S = 10.0
 does for an unknown `kid`, so a flood of made-up names cannot multiply the gateway's load."""
 MAX_TOOL_NAME = 128
 """The longest tool name `call()` accepts (the MCP spec's limit for tool names)."""
+MAX_RESULT_BYTES = 1024 * 1024
+"""suggested: the largest serialized tool result the chassis relays (1 MiB), from the gateway
+here and from any port in `adapters/mcp/server.py`. Over it: `tool_unavailable`."""
+MAX_RESPONSE_BYTES = 2 * MAX_RESULT_BYTES + 64 * 1024
+"""The most body bytes the adapter reads from one gateway response: a result travels as text and
+again as structured content, plus JSON-RPC and SSE framing."""
 
 log = logging.getLogger(__name__)
 
@@ -95,49 +113,6 @@ _BAD_ARGUMENTS = re.compile(
 _INVALID_PARAMS = -32602
 _METHOD_NOT_FOUND = -32601
 
-_JSON_TYPES: dict[str, Callable[[Any], bool]] = {
-    "string": lambda v: isinstance(v, str),
-    "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
-    "number": lambda v: isinstance(v, int | float) and not isinstance(v, bool),
-    "boolean": lambda v: isinstance(v, bool),
-    "object": lambda v: isinstance(v, Mapping),
-    "array": lambda v: isinstance(v, list | tuple),
-    "null": lambda v: v is None,
-}
-
-
-def _matches(schema: Any, value: Any) -> bool:
-    """A small JSON Schema type check: `type` (one or a list), else `anyOf` or `oneOf`."""
-    if not isinstance(schema, Mapping):
-        return True
-    kind = schema.get("type")
-    if isinstance(kind, str):
-        check = _JSON_TYPES.get(kind)
-        return check is None or check(value)
-    if isinstance(kind, list):
-        return any(_JSON_TYPES.get(k, lambda _: True)(value) for k in kind if isinstance(k, str))
-    options = schema.get("anyOf") or schema.get("oneOf")
-    if isinstance(options, list) and options:
-        return any(_matches(option, value) for option in options)
-    return True
-
-
-def _argument_problem(schema: Mapping[str, Any], arguments: Mapping[str, Any]) -> str | None:
-    """What is wrong with the arguments, by field name only, or None."""
-    properties = schema.get("properties")
-    properties = properties if isinstance(properties, Mapping) else {}
-    for field in schema.get("required") or ():
-        if field not in arguments:
-            return f"missing required argument {field!r}"
-    for field, value in arguments.items():
-        if field not in properties:
-            if schema.get("additionalProperties") is False:
-                return f"unexpected argument {field!r}"
-            continue
-        if not _matches(properties[field], value):
-            return f"argument {field!r} has the wrong type"
-    return None
-
 
 def _definition(tool: Tool) -> ToolDefinition:
     hint = tool.annotations.read_only_hint if tool.annotations is not None else None
@@ -151,13 +126,55 @@ def _definition(tool: Tool) -> ToolDefinition:
     )
 
 
-def _content(result: CallToolResult) -> Any:
+def over_cap(name: str) -> ToolError:
+    """The fixed refusal of a result over `MAX_RESULT_BYTES`: the cap, never the content."""
+    return ToolError("tool_unavailable", f"the result of {name!r} is over {MAX_RESULT_BYTES} bytes")
+
+
+def serialized_size(content: Any) -> int:
+    """The bytes `content` takes as the chassis relays it: a string as UTF-8, else as JSON."""
+    text = content if isinstance(content, str) else json.dumps(content, default=str)
+    return len(text.encode("utf-8"))
+
+
+def _content(result: CallToolResult, name: str) -> Any:
+    """The result's content, refused with `over_cap` when its serialized form is too large."""
+    content: Any
     if result.structured_content is not None:
-        return result.structured_content
-    blocks = result.content
-    if len(blocks) == 1 and isinstance(blocks[0], TextContent):
-        return blocks[0].text
-    return [block.model_dump(mode="json", exclude_none=True) for block in blocks]
+        content = result.structured_content
+    elif len(result.content) == 1 and isinstance(result.content[0], TextContent):
+        content = result.content[0].text
+    else:
+        content = [block.model_dump(mode="json", exclude_none=True) for block in result.content]
+    if serialized_size(content) > MAX_RESULT_BYTES:
+        raise over_cap(name)
+    return content
+
+
+class _ResponseTooLarge(Exception):
+    """A gateway response body passed `MAX_RESPONSE_BYTES`; reading stopped there."""
+
+
+class _CappedStream(httpx2.AsyncByteStream):
+    """A response body that raises once more than `MAX_RESPONSE_BYTES` came in, so the rest is
+    never read into the chassis. It records the overrun on `statuses`, because the MCP client
+    may wrap or swallow the exception."""
+
+    def __init__(self, inner: Any, statuses: _Statuses) -> None:
+        self._inner = inner
+        self._statuses = statuses
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        read = 0
+        async for chunk in self._inner:
+            read += len(chunk)
+            if read > MAX_RESPONSE_BYTES:
+                self._statuses.over_cap = True
+                raise _ResponseTooLarge(f"over {MAX_RESPONSE_BYTES} bytes")
+            yield chunk
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
 
 
 def _first_text(result: CallToolResult) -> str:
@@ -183,10 +200,12 @@ class _Statuses:
 
     def __init__(self) -> None:
         self.seen: list[int] = []
+        self.over_cap = False
 
     async def hook(self, response: httpx2.Response) -> None:
         if response.status_code >= 400 and response.request.method != "DELETE":
             self.seen.append(response.status_code)
+        response.stream = _CappedStream(response.stream, self)
 
 
 def _rpc_error(exc: BaseException | None, name: str) -> ToolError | None:
@@ -202,9 +221,28 @@ def _rpc_error(exc: BaseException | None, name: str) -> ToolError | None:
     return None
 
 
-def _failure(exc: BaseException | None, statuses: Sequence[int], name: str) -> ToolError:
+def _iter_leaves(exc: BaseException | None) -> Iterator[BaseException]:
+    """The leaves of `exc` and of its `__cause__` and `__context__` chain."""
+    seen: set[int] = set()
+    todo = [exc] if exc is not None else []
+    while todo:
+        current = todo.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        for leaf in _leaves(current):
+            yield leaf
+            todo.extend(e for e in (leaf.__cause__, leaf.__context__) if e is not None)
+
+
+def _failure(
+    exc: BaseException | None, statuses: Sequence[int], name: str, *, over: bool = False
+) -> ToolError:
     """Map a failed session to a `ToolError`. The message is fixed text, never upstream text.
-    The call's own JSON-RPC error (unknown tool, denial, invalid params) beats any HTTP status."""
+    The call's own JSON-RPC error (unknown tool, denial, invalid params) beats any HTTP status;
+    a response over `MAX_RESPONSE_BYTES` beats both."""
+    if over or any(isinstance(leaf, _ResponseTooLarge) for leaf in _iter_leaves(exc)):
+        return over_cap(name)
     rpc = _rpc_error(exc, name)
     if rpc is not None:
         return rpc
@@ -299,7 +337,7 @@ class McpGatewayTools:
                 tools = await client.list_tools()
         except Exception as exc:  # every failure keeps the last list
             self.refresh_failures += 1
-            error = _failure(exc, statuses.seen, "tools/list")
+            error = _failure(exc, statuses.seen, "tools/list", over=statuses.over_cap)
             log.warning("tool gateway: refresh failed: %s", error.message)
             self._refresh_failed()
             return False
@@ -354,9 +392,7 @@ class McpGatewayTools:
         if definition is not None:
             if not definition.read_only and not idempotency_key:
                 raise ToolError("idempotency_key_required", f"{name!r} is a write tool")
-            problem = _argument_problem(definition.parameters, args)
-            if problem is not None:
-                raise ToolError("bad_arguments", f"{name!r}: {problem}")
+            check_arguments(definition, args)
             properties = definition.parameters.get("properties") or {}
             if idempotency_key and not definition.read_only and META_KEY in properties:
                 args[META_KEY] = idempotency_key
@@ -366,12 +402,12 @@ class McpGatewayTools:
             async with asyncio.timeout(self.timeout), self._client(statuses) as client:
                 result = await client.call_tool_mcp(name, args, meta=meta)
         except Exception as exc:  # every failure maps to a code
-            error = _failure(exc, statuses.seen, name)
+            error = _failure(exc, statuses.seen, name, over=statuses.over_cap)
             log.warning("tool gateway: call %r failed: %s %s", name, error.code, error.message)
             raise error from None
         if result.is_error:
             return self._tool_error(name, result)
-        return ToolResult(content=_content(result))
+        return ToolResult(content=_content(result, name))
 
     def _may_refresh_for_unknown(self) -> bool:
         """True at most once per `unknown_refresh_cooldown_s`; records the refresh it allows."""
@@ -395,4 +431,4 @@ class McpGatewayTools:
             raise ToolError("idempotency_key_required", f"{name!r} needs an idempotency key")
         if _BAD_ARGUMENTS.search(text):
             raise ToolError("bad_arguments", f"the arguments for {name!r} were refused")
-        return ToolResult(content=_content(result), is_error=True)
+        return ToolResult(content=_content(result, name), is_error=True)

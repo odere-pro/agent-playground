@@ -271,3 +271,37 @@ def test_an_override_without_tools_gets_the_profile_default() -> None:
     assert AdapterSpec(model="fake").tools is None
     assert merge_adapters("fake", AdapterSpec(model="fake")).tools == "fake"
     assert merge_adapters("local", AdapterSpec(model="fake")).tools == "mcp"
+
+
+async def test_a_port_result_over_the_cap_reaches_the_workload_as_tool_unavailable() -> None:
+    """R5a-24: the tool endpoint relays no result over `MAX_RESULT_BYTES`, from any port."""
+    from chassis.adapters.mcp.gateway import MAX_RESULT_BYTES
+    from chassis.ports.tool import ToolDefinition
+
+    huge = ToolDefinition(
+        name="huge", description="huge", parameters={"type": "object"}, read_only=True
+    )
+    fits = ToolDefinition(
+        name="fits", description="fits", parameters={"type": "object"}, read_only=True
+    )
+    tools = InMemoryTools(
+        [(huge, lambda: "x" * (50 * 1024 * 1024)), (fits, lambda: {"n": "y" * 1024})]
+    )
+    ports = _ports()
+    ports = PortBundle(
+        model=ports.model,
+        engine=ports.engine,
+        config=ports.config,
+        telemetry=ports.telemetry,
+        state=ports.state,
+        tools=tools,
+    )
+    async with _serving(ports) as app, _mcp_client(app) as client:
+        refused = await client.call_tool("huge", {}, raise_on_error=False)
+        relayed = await client.call_tool("fits", {})
+    assert refused.is_error is True
+    assert refused.structured_content is not None
+    assert refused.structured_content["code"] == "tool_unavailable"
+    assert "xxxx" not in json.dumps(refused.structured_content)
+    assert relayed.structured_content == {"n": "y" * 1024}
+    assert MAX_RESULT_BYTES == 1024 * 1024

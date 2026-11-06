@@ -23,6 +23,7 @@ from chassis.fakes.state import InMemoryState
 from chassis.fakes.tool import InMemoryTools, default_tools
 from chassis.ports.bundle import PortBundle
 from chassis.ports.model import ModelMessage, ToolCallRequest, ToolSpec
+from chassis.ports.tool import ToolDefinition
 from chassis_contracts import (
     ConfigPortContract,
     EngineConnectorContract,
@@ -35,7 +36,7 @@ from chassis_contracts.engine import JSON_VALUES_HANDLE, json_values_handle
 from chassis_contracts.helpers import make_request
 from chassis_contracts.model import ReceivedMessages, ToolCallCase
 from chassis_contracts.telemetry import ReadCounter, ReadSpans
-from chassis_contracts.tool import KnownCall
+from chassis_contracts.tool import NESTED_PARAMETERS, NESTED_TOOL, KnownCall
 from fake_model_server import Script, create_app
 from fastapi import FastAPI
 
@@ -226,6 +227,13 @@ class TestInMemoryTools(ToolPortContract):
     @pytest.fixture
     def known_call(self) -> KnownCall:
         return KnownCall("glossary_lookup", {"term": "SLM"})
+
+    @pytest.fixture
+    def nested_port(self) -> InMemoryTools:
+        definition = ToolDefinition(
+            name=NESTED_TOOL, description="nested", parameters=NESTED_PARAMETERS
+        )
+        return InMemoryTools([(definition, lambda term, filter: {"term": term})])
 
 
 async def _sidecar_over(app: Any) -> AsyncIterator[SidecarConnector]:

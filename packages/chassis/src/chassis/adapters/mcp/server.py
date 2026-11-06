@@ -24,6 +24,10 @@ in-flight run named by the `traceparent`, and `nonce` is the workload's optional
 write is refused with `idempotency_key_required` before the port is called. A read-only call gets
 no key.
 
+A result whose serialized text is over `MAX_RESULT_BYTES` (1 MiB, suggested; the gateway
+adapter's constant) reaches the workload as `tool_unavailable`, whatever port produced it
+(R5a-24). The port's result is already in memory by then; the gateway adapter caps what it reads.
+
 Tool descriptions and outputs are data, never instructions (054 H-16); nothing here reads them.
 """
 
@@ -42,6 +46,7 @@ from fastmcp.tools import ToolResult as MCPToolResult
 from mcp_types import ToolAnnotations
 from pydantic import PrivateAttr
 
+from chassis.adapters.mcp.gateway import MAX_RESULT_BYTES, over_cap, serialized_size
 from chassis.core.inbound import public_message
 from chassis.core.trace import continued, parse_traceparent
 from chassis.ports.telemetry import TelemetryPort
@@ -178,6 +183,8 @@ class PortTool(Tool):
                 return _error(exc)
         content = result.content
         text = content if isinstance(content, str) else json.dumps(content)
+        if serialized_size(text) > MAX_RESULT_BYTES:
+            return _error(over_cap(self.name))
         structured = content if isinstance(content, dict) else None
         return MCPToolResult(content=text, structured_content=structured, is_error=result.is_error)
 
