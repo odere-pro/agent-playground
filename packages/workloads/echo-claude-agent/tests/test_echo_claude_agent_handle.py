@@ -806,3 +806,51 @@ async def test_handle_scrubs_the_token_when_it_is_split_across_delta_chunks(
     assert text_of(events) == full.replace(TOKEN, "[redacted]")
     kinds = [e["type"] for e in events]
     assert kinds.index("metrics") > max(i for i, k in enumerate(kinds) if k == "delta")
+
+
+# --- the run secret scrub (security review of contract v8) --------------------------------
+
+RUN_CAP = "rc-" + "q" * 40  # a test value standing in for `ctx.run_secret`
+
+
+async def test_handle_scrubs_the_run_secret_from_every_event_when_bash_prints_the_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CLI env holds `ctx.run_secret` (in `ANTHROPIC_CUSTOM_HEADERS`): a Bash `env` and the
+    model's echo of it reach no event."""
+    monkeypatch.setenv("CHASSIS_API_TOKEN", TOKEN)
+    header = f"ANTHROPIC_CUSTOM_HEADERS=x-chassis-run-secret: {RUN_CAP}\n"
+    messages = [
+        use("tu_1", "Bash", command="env"),
+        UserMessage(content=[ToolResultBlock("tu_1", header, False)]),
+        say(f"the header is {RUN_CAP}"),
+        result(),
+    ]
+    install(monkeypatch, FakeQuery(messages))
+
+    events = await run(ctx={**CTX, "run_secret": RUN_CAP})
+
+    check_shape(events)
+    assert RUN_CAP not in json.dumps(events)
+    assert "[redacted]" in json.dumps(events)
+
+
+async def test_scrubbed_removes_the_token_and_the_run_secret_across_delta_chunks() -> None:
+    """`_scrubbed` with both values: each is removed, even split across two deltas, and the
+    joined delta text and the event order are kept."""
+
+    async def events() -> AsyncIterator[dict[str, Any]]:
+        yield {"type": "start", "request_id": "r"}
+        yield {"type": "delta", "text": f"a {RUN_CAP[:10]}"}
+        yield {"type": "delta", "text": f"{RUN_CAP[10:]} b {TOKEN} c"}
+        yield {"type": "tool_call", "call_id": "c", "name": "Bash", "result": {"o": RUN_CAP}}
+        yield {"type": "end"}
+
+    out = [e async for e in handle_module._scrubbed(events(), TOKEN, RUN_CAP)]
+
+    assert RUN_CAP not in json.dumps(out) and TOKEN not in json.dumps(out)
+    text = "".join(e["text"] for e in out if e["type"] == "delta")
+    assert text == "a [redacted] b [redacted] c"
+    kinds = [e["type"] for e in out if e["type"] != "delta"]
+    assert kinds == ["start", "tool_call", "end"]
+    assert out[-2]["result"] == {"o": "[redacted]"}

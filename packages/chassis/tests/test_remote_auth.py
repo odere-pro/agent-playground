@@ -708,3 +708,97 @@ async def test_mcp_on_the_remote_listener_refuses_a_wrong_secret() -> None:
         right = await client.post("/mcp", json=body, headers={**_auth(CURRENT), **accept})
     assert wrong.status_code == 403 and wrong.json()["error"]["code"] == "run_required"
     assert right.status_code == 200, right.text
+
+
+# --- security review of contract v8: two traceparents, the no-run compare ---
+
+MCP_INIT: dict[str, Any] = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {},
+        "clientInfo": {"name": "remote", "version": "0"},
+    },
+}
+
+
+@pytest.mark.parametrize(
+    ("path", "body"), [("/v1/chat/completions", BODY), ("/mcp", MCP_INIT)], ids=["model", "mcp"]
+)
+async def test_require_run_refuses_two_traceparents_with_the_first_runs_secret(
+    path: str, body: dict[str, Any]
+) -> None:
+    """Traceparent A, A's secret, then traceparent B: 403 `traceparent_count`, B untouched.
+
+    `RequireRun` would check the first header, but FastMCP's `get_http_headers` keeps the last,
+    so the tool endpoint would write under B. More than one `traceparent` is never guessed."""
+    public, remote, ports = _app()
+    run_a, ctx_a = _run("req-a", TRACE, SECRET)
+    run_b, ctx_b = _run("req-b", RUN_B_TRACE, SECRET_B)
+    headers = [
+        ("authorization", f"Bearer {CURRENT}"),
+        ("accept", "application/json, text/event-stream"),
+        ("traceparent", TRACEPARENT),
+        (RUN_SECRET, SECRET),
+        ("traceparent", OTHER),
+    ]
+    async with (
+        _client(remote) as client,
+        public.router.lifespan_context(public),
+        public.state.runs.register(run_a, ctx_a) as record_a,
+        public.state.runs.register(run_b, ctx_b) as record_b,
+    ):
+        key_before = record_b.keyed_run_key
+        answer = await client.post(path, json=body, headers=headers)
+        no_run = await client.post(
+            path, json=body, headers={"Authorization": f"Bearer {CURRENT}", "traceparent": OTHER}
+        )
+        after = (record_b.model_calls, record_b.reserved_tokens, record_b.keyed_run_key)
+    assert answer.status_code == 403, answer.text
+    assert answer.content == no_run.content, "the same fixed bytes as every other refusal"
+    assert after == (0, 0, key_before)
+    assert record_a.model_calls == 0
+    assert _counted(ports, "traceparent_count") == 1
+
+
+async def test_require_run_compares_a_dummy_secret_when_no_run_is_in_flight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The no-run path runs one `compare_digest` too, so the time does not say a run exists."""
+    import chassis.server.remote_auth as remote_auth
+
+    compared: list[int] = []
+    real = remote_auth.hmac.compare_digest
+
+    def spy(a: Any, b: Any) -> bool:
+        compared.append(len(b))
+        return real(a, b)
+
+    monkeypatch.setattr(remote_auth.hmac, "compare_digest", spy)
+    inner = _Headers()
+    state = _state(CONFIG)
+    async with _client(RequireRun(inner, state=state)) as client:
+        answer = await client.get("/x", headers={"traceparent": OTHER, RUN_SECRET: SECRET})
+    assert answer.status_code == 403 and inner.seen == []
+    assert len(compared) == 1, "one compare on the no-run path, like a wrong secret"
+    assert state.ports.telemetry.counter_value(RUN_REQUIRED, reason="no_run") == 1
+
+
+async def test_plain_mode_still_checks_the_secret_of_a_run_that_holds_one() -> None:
+    """Plain mode lets a call in on the traceparent alone only when the run has no secret. A
+    record that holds one (a run opened before a reload to plain mode) still needs it."""
+    inner = _Headers()
+    state = _state(PLAIN_CONFIG)
+    request, ctx = _run()
+    async with (
+        _client(RequireRun(inner, state=state)) as client,
+        state.runs.register(request, ctx),
+    ):
+        bare = await client.get("/x", headers={"traceparent": TRACEPARENT})
+        right = await client.get("/x", headers={"traceparent": TRACEPARENT, RUN_SECRET: SECRET})
+    assert (bare.status_code, right.status_code) == (403, 204)
+    telemetry = state.ports.telemetry
+    assert telemetry.counter_value(RUN_REQUIRED, reason="secret_missing") == 1
+    assert telemetry.counter_value(RUN_SECRET_SKIPPED, reason="lane_without_secret") == 0

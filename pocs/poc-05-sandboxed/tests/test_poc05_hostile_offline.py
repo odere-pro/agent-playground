@@ -424,6 +424,37 @@ async def test_h29_past_the_run_budget_is_429_and_a_run_with_budget_left_is_200(
     assert after == before, (before, after)
 
 
+# --- H17, two traceparents: the run check and the tool endpoint must read the same run ---
+
+
+async def test_h17_two_traceparents_with_the_first_runs_secret_are_403(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    Exit criterion 1 (offline), H17, contract v8 security review: inside run A, with its own
+    token, the remote sends A's `traceparent` and secret, then a second `traceparent`. The run
+    check would read the first header and FastMCP the last, so the call could land under the
+    other run. It is refused 403 `run_required` before the model is called. The control: the
+    same call with one `traceparent` is 200 in the same run.
+    """
+    async with remote_lane(monkeypatch) as lane, lane.held_run() as run:
+        headers = [
+            *lane.run_headers(run.traceparent).items(),
+            ("traceparent", HeldRun(new_trace_id()).traceparent),
+        ]
+        before = len(lane.model.calls)
+        async with lane.remote_proxy_client(lane.tokens.sends) as client:
+            refused = await client.post(CHAT, json=_chat_body(), headers=headers)
+        after = len(lane.model.calls)
+        allowed = await _remote_chat(lane, run.traceparent)
+    assert refused.status_code == 403 and _code(refused.json()) == "run_required", refused.text
+    assert after == before, (before, after)
+    assert allowed[0] == 200, allowed
+    assert run.response is not None and run.response.json()["status"] == "ok", run.response
+
+
 # --- H17: already covered end to end; named here so the map is complete ---
 
 

@@ -58,10 +58,10 @@ Options considered:
 1. **A per-run secret.**
    - **Mint.** The chassis mints `secrets.token_urlsafe(32)` per run (`RUN_SECRET_BYTES`, suggested) in `context_for`. It puts it in `ctx.run_secret`, and the `RunRecord` keeps a copy. It is minted in every lane but plain mode.
    - **Send back.** The workload forwards it as the header `x-chassis-run-secret` on every model proxy and `/mcp` call, next to `traceparent`. It never logs it.
-   - **Check.** The remote listener's `RequireRun` reads exactly one such header of at most 128 bytes (`RUN_SECRET_MAX`, suggested). It compares it with the record of the run the `traceparent` names, using `hmac.compare_digest`.
-   - **Refuse.** Missing or wrong is 403 `run_required`. The body bytes are the same for every reason, so a caller cannot tell "no such run" from "not your run". Counted as `chassis.remote.run_required{reason}`, with `no_run`, `secret_missing`, or `secret_wrong` (suggested).
+   - **Check.** The remote listener's `RequireRun` needs exactly one `traceparent` header (more is refused, never guessed). It reads exactly one such header of at most 128 bytes (`RUN_SECRET_MAX`, suggested). It compares it with the record of the run the `traceparent` names, using `hmac.compare_digest`.
+   - **Refuse.** Missing or wrong is 403 `run_required`. The body bytes are the same for every reason, so a caller cannot tell "no such run" from "not your run". Counted as `chassis.remote.run_required{reason}`, with `traceparent_count`, `no_run`, `secret_missing`, or `secret_wrong` (suggested).
    - **Strip.** The header is removed before the route.
-   - **Plain mode.** A plain-mode run has no secret and passes on the traceparent alone. It is counted as `chassis.remote.run_secret_skipped{reason="lane_without_secret"}` (suggested).
+   - **Plain mode.** A plain-mode run has no secret and passes on the traceparent alone. A run whose record holds a secret needs it, in any mode. It is counted as `chassis.remote.run_secret_skipped{reason="lane_without_secret"}` (suggested).
    - **Credential class.** The secret is not a product or platform credential. It allows only what the run already allows, and only while the run is in flight. So hard requirement 1 holds.
 2. **Bounds on the v0 wire, with no bump.** Tightening a bound so that it refuses only values no conforming producer emits is compatible under contract v5 C.3:
    - It needs no `schema_version` bump.
@@ -74,7 +74,7 @@ Options considered:
 
 Easier:
 
-- A remote that serves one run can no longer act under another run on the same chassis. A leaked secret is useless once its run ends.
+- A remote process that serves one run, and cannot read another run's secret, can no longer act under that run on the same chassis. A leaked secret is useless once its run ends.
 - The trace id can stay what it is, a correlation id, not a credential.
 - Unbounded ids and negative counts no longer reach logs, spans, the store, or the collector's sums.
 - The rule for future tightening is written down, so the next bound is not a debate about a bump.
@@ -82,7 +82,8 @@ Easier:
 Harder:
 
 - Every chassis-mode remote workload must send one more header. Workloads go first in a rollout. A chassis-mode remote that does not send it gets 403 on every proxy call. The seven built engines do it in contract v8. A new engine must too (the service template, 009 PoC-9).
-- The secret is in `ctx`, so a workload that logs or traces `ctx` as a whole would leak it while the run is in flight. `repr` hides it on the chassis side. A workload must not log `ctx`.
+- The secret isolates runs only between processes that share no memory and no `/proc`. A remote pod that serves several runs gives its one process every run's secret. echo-claude-agent puts the secret in the CLI's environment, which any process with the same uid can read from `/proc`. So a shell tool in one run can read another run's secret in the same pod. Full isolation needs one run per pod: core-review proposal R6-11, not in this decision.
+- The secret is in `ctx`, so a workload that logs or traces `ctx` as a whole would leak it while the run is in flight. `repr` hides it on the chassis side. A workload must not log `ctx`. The a2a-sdk logs the JSON-RPC body, `ctx` included, at DEBUG, so `workload_a2a` pins its loggers to WARNING. A shell that runs `env` can echo the secret: the `remote` connector scrubs it from every event, like the bearer token.
 - Plain mode keeps the old rule. A plain remote can still name another plain run's traceparent.
 - A tightened bound can refuse an old producer that wrote an extreme value. The bounds are set far above any honest value to make that unlikely.
 - The TypeScript template's validator does not know the new schema keywords. It keeps the old copy of `events.v0.json` until it learns them. The chassis enforces the bounds either way.
@@ -100,6 +101,7 @@ Reopen decision 1 on any of these:
 - A plain remote can echo a per-run header. Then plain mode needs the secret too.
 - mTLS per remote arrives with no added controller (ADR-005 Revisit). Then the bearer and the run secret may fold into one identity per run.
 - A remote pool serves several chassis replicas behind one Service, so that a call can land on a replica that did not open the run.
+- R6-11 lands (one run per pod). Then the secret isolates every run, not only runs in separate processes.
 
 Reopen decision 2 on either of these:
 - An engine's mapping test fails a bound.

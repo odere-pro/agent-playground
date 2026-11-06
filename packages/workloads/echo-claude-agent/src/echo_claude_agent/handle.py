@@ -182,25 +182,29 @@ async def handle(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[di
         )
         return
     token = os.environ.get(TOKEN_VAR) or None
-    # The shell tool can print the CLI's env, so the token can be in any event, not just errors.
-    async with aclosing(_scrubbed(_run(input, ctx, token), token)) as events:
+    run_secret = str(ctx.get("run_secret") or "") or None
+    # The shell tool can print the CLI's env, which holds the token and `ctx.run_secret`, so
+    # either can be in any event, not just errors.
+    async with aclosing(_scrubbed(_run(input, ctx, token), token, run_secret)) as events:
         async for out in events:
             yield out
 
 
 async def _scrubbed(
-    events: AsyncGenerator[dict[str, Any], None], token: str | None
+    events: AsyncGenerator[dict[str, Any], None], *values: str | None
 ) -> AsyncGenerator[dict[str, Any], None]:
-    """The events with the token removed. An `error` message is scrubbed on its full text, then
-    cut to `MAX_MESSAGE`. Delta text is scrubbed across chunks: the last `len(token) - 1` chars
-    are held back and sent, scrubbed, before the next other event. The joined delta text and the
-    order of events are kept; only where the text is split into deltas can change."""
-    keep = len(token) - 1 if token else 0
+    """The events with each of `values` (the token, the run secret) removed. An `error` message
+    is scrubbed on its full text, then cut to `MAX_MESSAGE`. Delta text is scrubbed across
+    chunks: the last `len(longest) - 1` chars are held back and sent, scrubbed, before the next
+    other event. The joined delta text and the order of events are kept; only where the text is
+    split into deltas can change."""
+    hidden = _hidden(values)
+    keep = len(hidden[0]) - 1 if hidden else 0
     held = ""
     async with aclosing(events) as stream:
         async for out in stream:
             if out["type"] == "delta" and keep:
-                text = _scrub(held + str(out["text"]), token)
+                text = _scrub(held + str(out["text"]), hidden)
                 held = text[-keep:]
                 if text[:-keep]:
                     yield {**out, "text": text[:-keep]}
@@ -208,7 +212,7 @@ async def _scrubbed(
             if held:
                 yield event("delta", text=held)
                 held = ""
-            yield _final(_scrub(out, token))
+            yield _final(_scrub(out, hidden))
     if held:
         yield event("delta", text=held)
 
@@ -241,7 +245,7 @@ async def _run(
                 else:
                     yield out
     except Exception as exc:
-        final = _failure(exc, stderr_tail, token)
+        final = _failure(exc, stderr_tail, token, str(ctx.get("run_secret") or "") or None)
     finally:
         await _close(stream)
         if home is not None:
@@ -287,13 +291,15 @@ async def _mapped(
             yield out
 
 
-def _failure(exc: BaseException, stderr_tail: deque[str], token: str | None) -> dict[str, Any]:
-    """The `error` for an exception; a `cli_error` gets the last stderr lines. The message is not
-    cut here: `_scrubbed` removes the token from the full text, then cuts it to `MAX_MESSAGE`."""
+def _failure(exc: BaseException, stderr_tail: deque[str], *values: str | None) -> dict[str, Any]:
+    """The `error` for an exception; a `cli_error` gets the last stderr lines. The log line has
+    `values` (the token, the run secret) removed. The message is not cut here: `_scrubbed`
+    removes them from the full text, then cuts it to `MAX_MESSAGE`."""
     error = error_event(exc)
     if error["code"] != "cli_error" or not stderr_tail:
         return error
-    tail = [_scrub(line, token) for line in stderr_tail]
+    hidden = _hidden(values)
+    tail = [_scrub(line, hidden) for line in stderr_tail]
     log.warning("the CLI failed; its last stderr lines: %s", " | ".join(tail))
     return {**error, "message": str(error["message"]) + " | " + " | ".join(stderr_tail)}
 
@@ -312,14 +318,21 @@ async def _close(stream: AsyncIterator[Any] | None) -> None:
             await aclose()
 
 
-def _scrub(value: Any, token: str | None) -> Any:
-    """A copy of `value` with the token replaced in every string, at any depth."""
-    if not token:
+def _hidden(values: tuple[str | None, ...]) -> tuple[str, ...]:
+    """The values to scrub, empty ones dropped, longest first so none leaves part of another."""
+    return tuple(sorted({v for v in values if v}, key=len, reverse=True))
+
+
+def _scrub(value: Any, hidden: tuple[str, ...]) -> Any:
+    """A copy of `value` with each of `hidden` replaced in every string, at any depth."""
+    if not hidden:
         return value
     if isinstance(value, str):
-        return value.replace(token, "[redacted]")
+        for item in hidden:
+            value = value.replace(item, "[redacted]")
+        return value
     if isinstance(value, dict):
-        return {_scrub(key, token): _scrub(item, token) for key, item in value.items()}
+        return {_scrub(key, hidden): _scrub(item, hidden) for key, item in value.items()}
     if isinstance(value, list | tuple):
-        return [_scrub(item, token) for item in value]
+        return [_scrub(item, hidden) for item in value]
     return value

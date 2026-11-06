@@ -10,6 +10,8 @@ error codes as echo-python; the framework mapping is in `mapping.py`.
   is offered what the chassis serves (`glossary_lookup`); this workload defines no tool.
 - `ctx["traceparent"]`, when set, is a default header on both HTTP clients, so every model call
   and every MCP request carries it (contract v1 decision 4). A plain header, no OpenTelemetry.
+- `ctx["run_secret"]`, when set, is the `x-chassis-run-secret` header next to it on the same
+  requests (contract v8). Never logged.
 - No model key. In the `remote` lane `CHASSIS_API_TOKEN`, when set and not empty, is the openai
   client's `api_key` (so `Authorization: Bearer <token>` on every model call) and a default header
   on the MCP client; unset, no `Authorization` header is sent. Read once per run, never logged.
@@ -44,6 +46,8 @@ DEFAULT_ROUTE = "big-default"
 MODEL_URL_VAR = "CHASSIS_MODEL_URL"
 DEFAULT_MODEL_URL = "http://127.0.0.1:8090/v1"
 TOKEN_VAR = "CHASSIS_API_TOKEN"
+# The run-scoped capability the chassis checks on its remote listener (contract v8).
+RUN_SECRET_HEADER = "x-chassis-run-secret"  # pragma: allowlist secret (a header name, not a secret)
 TOOL_URL_VAR = "CHASSIS_TOOL_URL"
 DEFAULT_TOOL_URL = "http://127.0.0.1:8090/mcp"
 # The openai SDK refuses an empty key, so it gets this placeholder, never an `*_API_KEY` variable.
@@ -102,6 +106,8 @@ async def handle(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[di
     timeout = timeout_s(ctx)
     traceparent = ctx.get("traceparent")
     headers = {"traceparent": str(traceparent)} if traceparent else {}
+    if ctx.get("run_secret"):  # the chassis's per-run check; never logged
+        headers[RUN_SECRET_HEADER] = str(ctx["run_secret"])
     token = os.environ.get(TOKEN_VAR) or None
     mapper = EventMapper(route)
     try:

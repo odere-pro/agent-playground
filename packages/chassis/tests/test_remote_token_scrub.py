@@ -195,3 +195,41 @@ def test_redact_removes_a_short_exact_secret_that_the_shapes_miss() -> None:
     short = "hunter2"  # pragma: allowlist secret
     assert short in redact(f"pw is {short}")
     assert redact(f"pw is {short}", secret=short) == "pw is [redacted]"
+
+
+async def test_chassis_mode_scrubs_the_run_secret_a_remote_echoes(token: str) -> None:
+    """Security review of contract v8: a remote whose shell runs `env` can echo
+    `ctx.run_secret` into a delta or a tool call. The connector scrubs it like the token."""
+
+    async def handle(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[Any]:
+        run_cap = ctx["run_secret"]
+        yield {"type": "start", "request_id": ctx["request_id"]}
+        yield {"type": "delta", "text": f"env says {run_cap}"}
+        out = {"stdout": f"X={run_cap}"}
+        yield {"type": "tool_call", "call_id": "c1", "name": "Bash", "result": out}
+        yield {"type": "end", "status": "ok", "output": {"text": run_cap}}
+
+    run_cap = secrets.token_urlsafe(32)
+    app = build_app(handle, build_agent_card(name="r", version="1", url=REMOTE_URL))
+    connector = RemoteConnector()
+    ports = PortBundle(
+        model=ScriptedModel(),
+        engine=connector,
+        config=InMemoryConfig(),
+        telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
+    )
+    request = make_request()
+    ctx = make_context(request).model_copy(update={"run_secret": run_cap})
+    async with serve_uds(RequireBearer(app, token)) as path:
+        await connector.setup(_config(path), ports)
+        try:
+            async with asyncio.timeout(10):
+                events = [e async for e in connector.run(request, ctx)]
+        finally:
+            await connector.close()
+    assert run_cap not in _dump(events)
+    assert [e.text for e in events if isinstance(e, Delta)] == ["env says [redacted]"]
+    call = next(e for e in events if isinstance(e, ToolCall))
+    assert call.result == {"stdout": "X=[redacted]"}
+    assert events[-1] == End(status="ok", output={"text": "[redacted]"})

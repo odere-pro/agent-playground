@@ -541,3 +541,24 @@ async def test_feedback_answers_502_rejected_when_the_store_fails_with_an_unknow
 
     assert answer.status_code == 502
     assert answer.json()["detail"]["code"] == "feedback_rejected"
+
+
+async def test_a_subject_the_span_drops_still_owns_its_run() -> None:
+    """The owner hash is taken from the raw subject, not the span's `user.id` (which drops a
+    non-ASCII subject): another caller still gets 404 unknown_request, the owner gets 202."""
+    state = InMemoryState()
+    store = InMemoryFeedback()
+    tokens = {ALICE: Principal("alice-é", RATERS), BOB: Principal("bob", RATERS)}
+    app = _app(feedback=store, state=state, auth=StaticTokens(tokens))
+    async with _client(app) as client:
+        ran = await client.post("/v1/run", json={"input": {"text": "hi"}}, headers=_bearer(ALICE))
+        body = {"request_id": ran.json()["request_id"], "score": 0}
+        theirs = await client.post(FEEDBACK_PATH, json=body, headers=_bearer(BOB))
+        mine = await client.post(FEEDBACK_PATH, json=body, headers=_bearer(ALICE))
+    raw = await state.get(lookup_key(AGENT, body["request_id"]))
+    assert raw is not None
+    owner = json.loads(raw)["subject_sha256"]
+    assert owner == hashlib.sha256("alice-é".encode()).hexdigest()
+    assert theirs.status_code == 404
+    assert theirs.json()["detail"]["code"] == "unknown_request"
+    assert mine.status_code == 202

@@ -20,7 +20,8 @@ other non-`http` scope (a websocket is closed with 1008 before accept):
    path. `x-api-key` alone is not a credential. Counted as
    `chassis.remote.auth_failed` (`reason`: `missing` or `wrong`, suggested) and logged with the
    method and the path only, never the header. The header is removed before the route sees it.
-2. `RequireRun`: the `traceparent` must name a run in flight in `state.runs`, and the
+2. `RequireRun`: exactly one `traceparent` header (more is refused, never guessed: reason
+   `traceparent_count`), it must name a run in flight in `state.runs`, and the
    `x-chassis-run-secret` header must hold that run's secret (`ctx.run_secret`, contract v8;
    exactly one header, at most `RUN_SECRET_MAX` bytes, `hmac.compare_digest`). Else 403
    `{"error": {"code": "run_required", ...}}` (the Anthropic body on `/v1/messages`), the same
@@ -57,7 +58,8 @@ log = logging.getLogger("chassis.remote_auth")
 AUTH_FAILED = "chassis.remote.auth_failed"  # suggested
 DEFAULT_REMOTE_PROXY_PORT = 8091  # suggested
 RUN_REQUIRED = "chassis.remote.run_required"
-"""The 403 counter; `reason` is `no_run`, `secret_missing`, or `secret_wrong` (suggested)."""
+"""The 403 counter; `reason` is `traceparent_count`, `no_run`, `secret_missing`, or
+`secret_wrong` (suggested)."""
 RUN_SECRET_SKIPPED = "chassis.remote.run_secret_skipped"  # pragma: allowlist secret (a name)
 """suggested: a call let in on the traceparent alone, `reason="lane_without_secret"` (plain
 mode). A separate counter, so admitted calls never inflate the refusal count."""
@@ -204,6 +206,17 @@ class BearerAuth:
             ports.telemetry.counter(AUTH_FAILED, reason=reason)
 
 
+_DUMMY_SECRET = b"0" * 43  # pragma: allowlist secret (a fixed stand-in, not a secret)
+"""The length of a real `ctx.run_secret` (32 random bytes, URL-safe base64)."""
+
+
+def _dummy_compare(presented: Sequence[bytes]) -> None:
+    """One `compare_digest` on the no-run path, as a run in flight would do, so the time does
+    not say whether the trace id names a run. The result is never used."""
+    value = presented[0] if len(presented) == 1 and len(presented[0]) <= RUN_SECRET_MAX else b""
+    hmac.compare_digest(value, _DUMMY_SECRET)
+
+
 class RequireRun:
     """Pure ASGI middleware: the `traceparent` names a run in `state.runs`, and the
     `x-chassis-run-secret` header holds that run's secret (contract v8, R2-02). Else 403
@@ -212,7 +225,8 @@ class RequireRun:
 
     Plain mode (`spec.engine.protocol: a2a`) never sends `ctx` to the remote, so it can never
     send the secret back: its calls are let in on the traceparent alone and counted as
-    `RUN_SECRET_SKIPPED`. That is decided by config, never by the caller.
+    `RUN_SECRET_SKIPPED`. That is decided by config, never by the caller, and only for a run
+    whose record holds no secret.
     """
 
     def __init__(self, app: ASGIApp, *, state: Any) -> None:
@@ -239,17 +253,24 @@ class RequireRun:
     def _refusal_reason(self, scope: Scope) -> str | None:
         """None when the call may pass, else the counter's reason. Never logs a header."""
         pairs = scope.get("headers", [])
-        header = next((v for k, v in pairs if k.lower() == b"traceparent"), None)
-        trace_id = parse_traceparent(header.decode("latin-1") if header is not None else None)
+        name = RUN_SECRET.encode()
+        presented = [v for k, v in pairs if k.lower() == name]
+        traceparents = [v for k, v in pairs if k.lower() == b"traceparent"]
+        if len(traceparents) > 1:
+            # Never guessed: this check would read one header and FastMCP's
+            # `get_http_headers` the other (its dict keeps the last), so the run key could differ.
+            return "traceparent_count"
+        header = traceparents[0].decode("latin-1") if traceparents else None
+        trace_id = parse_traceparent(header)
         runs = getattr(self._state, "runs", None)
         record = runs.lookup(trace_id) if trace_id is not None and runs is not None else None
         if record is None:
+            _dummy_compare(presented)
             return "no_run"
-        if self._plain_mode():
+        if self._plain_mode() and record.run_secret is None:
+            # Both: a run that holds a secret (opened before a reload to plain mode) needs it.
             self._counter(RUN_SECRET_SKIPPED, "lane_without_secret")
             return None
-        name = RUN_SECRET.encode()
-        presented = [v for k, v in pairs if k.lower() == name]
         if not presented:
             return "secret_missing"
         expected = record.run_secret

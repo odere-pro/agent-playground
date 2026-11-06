@@ -15,6 +15,7 @@ Contract v8 supersedes [contract v7](contract-v7.md) for what it names. v7, and 
 
 v8 is **not purely additive**. It narrows the ids and the event fields, changes the error text a native or MCP caller sees, stops reading one header, and adds refusals:
 - a remote call with the wrong run secret;
+- a remote call with more than one `traceparent` header;
 - too many duplicates waiting on one key;
 - feedback from a caller who does not own the run.
 
@@ -176,20 +177,23 @@ Evidence: `uv run python -m pytest packages/chassis/tests/test_contract_freeze.p
 
 `RequireRun`, after `BearerAuth`, on every call to the remote listener: both model proxy routes and `/mcp`.
 
-1. The `traceparent` must name a run in flight. Else the reason is `no_run`.
-2. In plain mode (decided by `spec.engine.protocol`, never by the caller), the call passes on the traceparent alone. It is counted as `chassis.remote.run_secret_skipped{reason="lane_without_secret"}` (suggested). That is a separate counter, so admitted calls never add to the refusal count.
-3. Otherwise:
+1. Exactly one `traceparent` header. More than one is refused, never guessed: the reason is `traceparent_count`. `RequireRun` would read one header and FastMCP's `get_http_headers` the other (its dict keeps the last), so the tool endpoint could write under a run the check never saw.
+2. The `traceparent` must name a run in flight. Else the reason is `no_run`. This path also runs one `hmac.compare_digest` against a fixed stand-in, so the time does not show whether a trace id names a run.
+3. In plain mode (decided by `spec.engine.protocol`, never by the caller), the call passes on the traceparent alone, but only when the run's record holds no secret. It is counted as `chassis.remote.run_secret_skipped{reason="lane_without_secret"}` (suggested). That is a separate counter, so admitted calls never add to the refusal count.
+4. Otherwise:
    - **No `x-chassis-run-secret` header:** `secret_missing`.
    - **Wrong, with any of these:** `secret_wrong`.
      - more than one such header;
      - a value longer than `RUN_SECRET_MAX` (128 bytes, suggested; checked before the compare);
      - a record that holds no secret;
      - a value that does not match under `hmac.compare_digest`.
-4. Any reason is 403 `run_required` with **the same body bytes for every reason**: `{"error": {"code": "run_required", ...}}`, and the Anthropic body on `/v1/messages` (contract v5, A.8). A caller cannot tell "no such run" from "not your run", so the traceparent is no oracle. Counted as `chassis.remote.run_required{reason}`, where `reason` is `no_run`, `secret_missing`, or `secret_wrong` (suggested). Before v8 the counter had no label.
-5. A call that passes has the `x-chassis-run-secret` header removed before the route sees it. So the model proxy and FastMCP can never forward it. The middleware never logs a header.
-6. `tool_endpoint.py` does not change. Each stateless `/mcp` POST passes the middleware.
+5. Any reason is 403 `run_required` with **the same body bytes for every reason**: `{"error": {"code": "run_required", ...}}`, and the Anthropic body on `/v1/messages` (contract v5, A.8). A caller cannot tell "no such run" from "not your run", so the traceparent is no oracle. Counted as `chassis.remote.run_required{reason}`, where `reason` is `traceparent_count`, `no_run`, `secret_missing`, or `secret_wrong` (suggested). Before v8 the counter had no label.
+6. A call that passes has the `x-chassis-run-secret` header removed before the route sees it. So the model proxy and FastMCP can never forward it. The middleware never logs a header.
+7. `tool_endpoint.py` does not change. Each stateless `/mcp` POST passes the middleware.
 
-So a remote that serves run A and holds the shared bearer cannot spend run B's budget or send a write under B's run key.
+So a remote **process** that serves run A and holds the shared bearer cannot spend run B's budget or send a write under B's run key, as long as it cannot read B's secret.
+
+**What the secret does not isolate.** The secret separates runs only between processes that share no memory and no `/proc`. A remote pod that serves several runs gives its one process every run's `ctx`, so it holds every run's secret. echo-claude-agent puts the secret in the CLI's environment (`ANTHROPIC_CUSTOM_HEADERS`), and any process with the same uid can read it from `/proc/<pid>/environ`. A Bash tool in run A can read run B's secret that way. Full isolation needs one run per pod, which is core-review proposal R6-11 (`docs/reviews/2026-10-29-core-review/proposals.md`). It is not in v8.
 
 Evidence: `packages/chassis/tests/test_remote_auth.py::test_require_run_refuses_run_a_secret_with_run_b_traceparent` (the R2-02 strict xfail is removed), plus these tests in the same file:
 - `::test_require_run_refuses_a_missing_secret_with_403`
@@ -199,6 +203,11 @@ Evidence: `packages/chassis/tests/test_remote_auth.py::test_require_run_refuses_
 - `::test_require_run_refuses_a_chassis_mode_run_that_holds_no_secret`
 - `::test_require_run_body_bytes_are_the_same_for_no_run_and_wrong_secret`
 - `::test_mcp_on_the_remote_listener_refuses_a_wrong_secret`
+- `::test_require_run_refuses_two_traceparents_with_the_first_runs_secret` (model and `/mcp`)
+- `::test_require_run_compares_a_dummy_secret_when_no_run_is_in_flight`
+- `::test_plain_mode_still_checks_the_secret_of_a_run_that_holds_one`
+
+The two-traceparent case also runs through the PoC-5 harness: `pocs/poc-05-sandboxed/tests/test_poc05_hostile_offline.py::test_h17_two_traceparents_with_the_first_runs_secret_are_403`.
 
 Also `test_pipeline.py::test_context_for_mints_a_fresh_run_secret_for_every_run`, `::test_context_for_gives_a_plain_mode_run_no_secret`, `test_correlation.py::test_open_copies_the_run_secret_and_never_shows_it`, and `test_envelope.py::test_context_run_secret_is_optional_and_hidden_from_repr`.
 
@@ -208,6 +217,8 @@ Also `test_pipeline.py::test_context_for_mints_a_fresh_run_secret_for_every_run`
 - echo-claude-agent sends it as a second `ANTHROPIC_CUSTOM_HEADERS` line and in the MCP server's `headers`.
 - `workload_a2a` passes `ctx` through unchanged and needs no code.
 - The test kits: `poc_harness` `RemoteLane.run_headers(trace)` builds the pair. `chassis_contracts.interface_harness` masks `run_secret` in `PER_RUN_CTX` when it compares contexts.
+- **Logs.** The a2a-sdk logs each JSON-RPC body at DEBUG, and the body holds `chassis.ctx.run_secret`. `workload_a2a.logs.configure_logging` pins the `a2a` loggers to WARNING at every level. Evidence: `packages/workload-a2a/tests/test_workload_a2a_logs.py::test_configure_logging_pins_the_a2a_loggers_to_warning_at_debug`.
+- **The scrub.** A shell that runs `env` can echo the secret into a delta or a `tool_call`. `RemoteConnector.run` scrubs the run's `ctx.run_secret` from every event it yields, the same way it scrubs the bearer token: each string, key, and list item becomes `[redacted]`. echo-claude-agent's `_scrubbed` removes both values from its own events too, across delta chunks, and from the stderr log line. Evidence: `packages/chassis/tests/test_remote_token_scrub.py::test_chassis_mode_scrubs_the_run_secret_a_remote_echoes`; `packages/workloads/echo-claude-agent/tests/test_echo_claude_agent_handle.py::test_handle_scrubs_the_run_secret_from_every_event_when_bash_prints_the_env`, `::test_scrubbed_removes_the_token_and_the_run_secret_across_delta_chunks`.
 - **Rollout:** workloads first, then the chassis. A workload that sends the header to an older chassis is harmless: the older listener ignores it. A chassis-mode remote that does not send it gets 403 `run_required` on every proxy call.
 
 Known limit: a plain-mode remote (kagent-adk) keeps the v5 rule, traceparent alone. Revisit when a plain remote can echo a per-run header (ADR-011).
@@ -280,7 +291,7 @@ Evidence: `packages/chassis/tests/test_feedback_route.py::test_feedback_refuses_
 ## H. A cap on the waiters of one in-flight key (R4-10)
 
 - At most `MAX_WAITERS_PER_KEY` (16, suggested) duplicates of one in-flight keyed call wait for it on one replica (`chassis.server.idempotency`).
-- The next one gets 409 `idempotency_in_progress` at once, with no poll of the store. That code already exists: `retryable: true`, no `Retry-After`. It is counted as `chassis.idempotency.waiters_full` (suggested).
+- The next one gets 409 `idempotency_in_progress` after one claim try and one read of the store, before it sleeps, with no further poll. That code already exists: `retryable: true`, no `Retry-After`. It is counted as `chassis.idempotency.waiters_full` (suggested).
 - This is load shedding. It keeps nothing a retry needs, so exit criterion 8 holds. The bound per cluster is the cap times the replicas. The count is per key, so other keys are not affected.
 
 Evidence: `packages/chassis/tests/test_idempotency_waiters.py::test_the_17th_waiter_on_one_in_flight_key_gets_409_at_once_and_the_store_sees_no_more_polls`, `::test_the_cap_is_per_key_and_another_replica_has_its_own`.
@@ -323,7 +334,7 @@ suggested: every value in this table.
 
 | Name | Labels | Section |
 | ---- | ------ | ------- |
-| `chassis.remote.run_required` | `reason` (`no_run`, `secret_missing`, `secret_wrong`); new label | D |
+| `chassis.remote.run_required` | `reason` (`traceparent_count`, `no_run`, `secret_missing`, `secret_wrong`); new label | D |
 | `chassis.remote.run_secret_skipped` | `reason` (`lane_without_secret`) | D |
 | `chassis.a2a.stream_capped` | `lane` | E |
 | span `a2a.stream_capped` | | E |
@@ -371,6 +382,7 @@ The one xfail is R3-06, the idempotency key not scoped by the caller. It is not 
   - The v7 open point on `/metrics` still stands.
 - **Known limits:**
   - Plain mode has no run secret (D.3).
+  - The run secret does not isolate runs that share one remote pod (D.2). One run per pod is R6-11.
   - The waiter cap is per replica (H).
   - `tool_call.arguments`, `tool_call.result`, and `end.output` are bounded only by the stream cap (C.2).
   - A lookup written before this change is open to any caller until it expires (G).

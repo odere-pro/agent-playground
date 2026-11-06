@@ -114,6 +114,9 @@ class Observed:
     session_id: str | None = None
     user_id: str | None = None
     traceparent: str | None = None
+    subject: str | None = None
+    """The raw principal subject, never on a span: the feedback owner hash (contract v8, G).
+    `user_id` is the span's printable cut of it and can be None when this is not."""
 
     def span_attributes(self, trace_id: str) -> dict[str, str]:
         """The `chassis.run` attributes for a run in `trace_id` (32 hex). The `traceparent` is
@@ -280,6 +283,7 @@ class RunPipeline:
             session_id=_printable(session),
             user_id=_printable(user_id, 256),
             traceparent=traceparent if isinstance(traceparent, str) else None,
+            subject=user_id or None,
         )
 
     def open(

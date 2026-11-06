@@ -18,6 +18,8 @@ engine = pytest.importorskip("chassis_contracts.engine")
 collector = pytest.importorskip("chassis.core.collector")
 events_module = pytest.importorskip("chassis.core.events")
 helpers = pytest.importorskip("chassis_contracts.helpers")
+inbound = pytest.importorskip("chassis.core.inbound")
+native = pytest.importorskip("chassis.server.interfaces.native")
 
 ORIGINALS: dict[str, Any] = {
     "deltas": lane.deltas_handle,
@@ -80,4 +82,9 @@ async def test_the_envelope_table_is_what_collect_builds(case: str) -> None:
     status, output = lane_cases.ENVELOPES[case]
     assert envelope.status == status
     if output is not None:
-        assert envelope.output == output
+        # As the native interface sends it (contract v8, A): an error's text is public.
+        assert native.public_error(envelope).output == output
+
+
+def test_the_public_error_text_is_the_chassis_text() -> None:
+    assert lane_cases.RUN_FAILED == inbound.RUN_FAILED

@@ -18,9 +18,10 @@ answer goes out; a state failure is counted (`chassis.feedback.lookup_failed`) a
 sent to the client. Shared state, no module global: any replica can take the feedback.
 
 **The owner** (R2-10, R7-16). `subject_sha256` is the sha256 hex of the run's caller subject
-(`run.observed.user_id`), or null with auth off; the store never holds the subject itself. With
-a stored hash, feedback from a caller whose subject hashes otherwise is 404 `unknown_request`,
-the same answer as "no such run", so the route is no oracle for another caller's runs. A stored
+(`run.observed.subject`, the raw principal subject, never the span's cut `user_id`), or null
+with auth off; the store never holds the subject itself. With a stored hash, feedback from a
+caller whose subject hashes otherwise is 404 `unknown_request`, the same answer as "no such
+run", so the route is no oracle for another caller's runs. A stored
 null (the run had auth off) or no field (a lookup written before the field; it expires within
 `lookup_ttl_s`) is accepted from any caller. The check runs before the `feedback_id` is claimed,
 so a stranger cannot take or overwrite one on another caller's run.
@@ -239,11 +240,13 @@ class FeedbackLookup:
         ports: PortBundle = self._state.ports
         config: ChassisConfig = self._state.config
         request = run.request
-        user_id = run.observed.user_id
+        # The raw subject, the one `_subject(http)` reads; never `user_id`, the span's printable
+        # cut, which drops a non-ASCII or long subject and would leave the run anyone's.
+        subject = run.observed.subject
         value = {
             "trace_id": trace_id_hex(request.trace_id),
             "agent": request.agent,
-            "subject_sha256": None if user_id is None else _digest(user_id),
+            "subject_sha256": None if subject is None else _digest(subject),
         }
         try:
             await ports.state.set(

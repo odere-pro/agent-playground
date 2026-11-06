@@ -137,3 +137,35 @@ async def test_the_cap_is_per_key_and_another_replica_has_its_own() -> None:
     for claim in claims:
         assert isinstance(claim, Claim)
         await claim.release()
+
+
+async def test_a_cancelled_waiter_frees_its_slot() -> None:
+    """At the cap, one waiter cancelled (its client gone) frees exactly one slot: the next
+    duplicate waits instead of a 409. With all cancelled, the counter is empty."""
+    state, telemetry, gate = _CountingState(), InMemoryTelemetry(), _Gate()
+    holder = _replica(state, telemetry, gate, "a")
+    waiters = _replica(state, telemetry, gate, "b")
+    claim = await holder.begin(_request("r0"), wait_ms=0)
+    assert isinstance(claim, Claim)
+    tasks = [
+        asyncio.create_task(waiters.begin(_request(f"r{i}"), wait_ms=10_000))
+        for i in range(1, MAX_WAITERS_PER_KEY + 1)
+    ]
+    await _settle()
+    (key,) = waiters._waiters
+    assert waiters._waiters[key] == MAX_WAITERS_PER_KEY
+
+    gone = tasks.pop()
+    gone.cancel()
+    await asyncio.gather(gone, return_exceptions=True)
+    assert waiters._waiters[key] == MAX_WAITERS_PER_KEY - 1
+    tasks.append(asyncio.create_task(waiters.begin(_request("next"), wait_ms=10_000)))
+    await _settle()
+
+    assert waiters._waiters[key] == MAX_WAITERS_PER_KEY
+    assert telemetry.counter_value(WAITERS_FULL) == 0
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+    assert waiters._waiters == {}
+    await claim.release()
