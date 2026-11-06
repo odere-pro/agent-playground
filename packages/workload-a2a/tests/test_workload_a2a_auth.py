@@ -146,6 +146,57 @@ def test_read_token_error_names_the_variable_not_a_value(monkeypatch: pytest.Mon
     assert read_token(ENV) == TOKEN
 
 
+SHORT = "s" * 8  # a test value, not a secret
+
+
+def test_start_refused_naming_the_variable_when_the_token_is_short(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R2-31: an 8-character token variable stops the start, naming the variable only."""
+    monkeypatch.setenv(ENV, SHORT)
+
+    with pytest.raises(SystemExit) as exc:
+        cli.build(_argv("--require-token-env", ENV))
+
+    message = str(exc.value.code)
+    assert ENV in message and "shorter than 32 characters" in message
+    assert SHORT not in message
+
+
+def test_start_refused_naming_the_variable_when_the_previous_token_is_short(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R2-31: a previous token that is set but short is refused too; unset stays fine."""
+    monkeypatch.setenv(ENV, TOKEN)
+    monkeypatch.setenv(PREV_ENV, SHORT)
+
+    with pytest.raises(SystemExit) as exc:
+        cli.build(_argv("--require-token-env", ENV, "--previous-token-env", PREV_ENV))
+
+    message = str(exc.value.code)
+    assert PREV_ENV in message and "shorter than 32 characters" in message
+    assert SHORT not in message and TOKEN not in message
+
+
+def test_read_token_accepts_exactly_32_characters(monkeypatch: pytest.MonkeyPatch) -> None:
+    """R2-31: 32 characters is the minimum, and it is enough."""
+    token = "y" * 32  # a test value, not a secret
+    monkeypatch.setenv(ENV, token)
+    monkeypatch.setenv(PREV_ENV, token)
+
+    assert (read_token(ENV), read_previous_token(PREV_ENV)) == (token, token)
+
+
+@pytest.mark.parametrize("read", [read_token, read_previous_token])
+def test_whitespace_does_not_count_toward_the_32_character_minimum(
+    read: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review LOW 11: the length is measured on the stripped token, so padding is no token."""
+    monkeypatch.setenv(ENV, "a" + " " * 31)
+    with pytest.raises(ValueError, match="shorter than 32 characters"):
+        read(ENV)
+
+
 @pytest.mark.usefixtures("token_env")
 def test_error_messages_never_carry_the_token(monkeypatch: pytest.MonkeyPatch) -> None:
     """A start-up error never carries the token."""

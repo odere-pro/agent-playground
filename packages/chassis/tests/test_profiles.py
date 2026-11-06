@@ -92,7 +92,7 @@ def test_empty_adapters_in_cloud_does_not_build_fakes(monkeypatch: pytest.Monkey
     """The review probe: `adapters: {}` in `cloud` built every fake. Now it is the `cloud`
     defaults, which name adapters that arrive in later PoCs.
     """
-    monkeypatch.setenv("LITELLM_BASE_URL", "http://router:4000/v1")
+    monkeypatch.setenv("LITELLM_BASE_URL", "https://router:4000/v1")
     _no_store_env(monkeypatch)
     with pytest.raises(AdapterNotAvailable, match=NOT_HERE):
         build_ports("cloud", AdapterSpec())
@@ -131,7 +131,7 @@ def test_build_ports_refuses_inprocess_in_cloud() -> None:
 def test_other_profiles_name_the_poc_that_adds_their_adapter(
     profile: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("LITELLM_BASE_URL", "http://router:4000/v1")
+    monkeypatch.setenv("LITELLM_BASE_URL", "https://router:4000/v1")
     _no_store_env(monkeypatch)
     with pytest.raises(AdapterNotAvailable, match=NOT_HERE):
         build_ports(profile)  # type: ignore[arg-type]

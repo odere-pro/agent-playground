@@ -13,6 +13,18 @@ builds `LiteLLMModel` from the environment. Every other adapter that is not buil
 `AdapterNotAvailable` and names the PoC that adds it. suggested: the `cloud` profile refuses a
 `fake` or `memory` adapter (`AdapterNotAllowed`); `local` allows any mix.
 
+The `cloud` profile also refuses, before any adapter is built (so nothing connects), each with
+`AdapterNotAllowed` that names the variable and never its value:
+- `auth: none`, which would run `/v1/run` as the anonymous principal (review R2 note);
+- `CONFIG_S3_SECURE` off when `config` is `s3` or `minio`, and a `VALKEY_URL` that is not
+  `rediss://`, `valkeys://`, or `unix://`, or whose query turns off the certificate or host
+  name check, when `state` is `valkey` (review R4-30, MEDIUM 9), unless
+  `CHASSIS_ALLOW_PLAINTEXT_STORES=1` (suggested: the name and the value), which logs a warning;
+- a URL that is not `https`: `LITELLM_MCP_URL` when `tools` is `mcp` (review R5a-25),
+  `LITELLM_BASE_URL` when `model` or `guardrails` is `litellm` (HIGH 3), and `OIDC_JWKS_URL`
+  when `auth` is `oidc` (MEDIUM 9). No loopback or in-cluster name and no override passes;
+  outside `cloud` the adapters' own checks apply. A URL that does not parse is refused too.
+
 The lanes and the LiteLLM model are lazy too: `inprocess` and `sidecar` are `lazy` entries, and
 `_litellm_from_env` imports `chassis.adapters.litellm` inside the call so its error text stays
 its own. Importing `chassis.profiles` loads no A2A or LiteLLM adapter module.
@@ -35,8 +47,11 @@ are lazy and name PoC-7 until their module lands.
 from __future__ import annotations
 
 import importlib
+import logging
+import os
 from collections.abc import Callable
 from typing import Any, Literal
+from urllib.parse import SplitResult, parse_qsl, urlsplit
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -55,6 +70,8 @@ from chassis.ports.evaluator import NoEvaluator
 from chassis.ports.events import NoEvents
 from chassis.ports.feedback import NoFeedback
 from chassis.ports.guardrail import NoGuardrails
+
+log = logging.getLogger(__name__)
 
 Profile = Literal["fake", "local", "cloud"]
 PROFILES: tuple[Profile, ...] = ("fake", "local", "cloud")
@@ -75,6 +92,29 @@ DEFAULT_LANE: Lane = "sidecar"
 """ADR-001 item 4. `spec.engine.connector` defaults to it too (`chassis.server.config`)."""
 IN_MEMORY = frozenset({"fake", "memory", "static"})
 """suggested: the adapter names the `cloud` profile refuses."""
+
+# The adapters import their SDK (minio, valkey, FastMCP, httpx, pyjwt) at module level, so
+# these names are copies, not imports. `test_profiles_cloud_transport.py` checks they match.
+S3_SECURE_VAR = "CONFIG_S3_SECURE"
+"""Read by `chassis.adapters.s3.config.S3Config.from_env` (`config: s3` and `config: minio`)."""
+VALKEY_URL_VAR = "VALKEY_URL"
+"""`chassis.adapters.valkey.state.URL_VAR`."""
+LITELLM_MCP_URL_VAR = "LITELLM_MCP_URL"
+"""`chassis.adapters.mcp.gateway.URL_VAR`."""
+LITELLM_BASE_URL_VAR = "LITELLM_BASE_URL"
+"""`chassis.adapters.litellm.client.BASE_URL_VAR`, read by the model and guardrails adapters."""
+OIDC_JWKS_URL_VAR = "OIDC_JWKS_URL"
+"""`chassis.adapters.oidc.JWKS_URL_VAR`."""
+ALLOW_PLAINTEXT_STORES_VAR = "CHASSIS_ALLOW_PLAINTEXT_STORES"
+"""suggested: set to `1` to let the `cloud` profile reach S3 and Valkey without TLS."""
+S3_CONFIGS = frozenset({"s3", "minio"})
+"""The `config` adapters that read `CONFIG_S3_SECURE`."""
+_S3_OFF = frozenset({"0", "false", "no", "off"})
+"""The values `S3Config.from_env` reads as `secure=False` (its `_flag`)."""
+VALKEY_TLS_SCHEMES = frozenset({"rediss", "valkeys", "unix"})
+"""TLS, or a local socket that never crosses a network."""
+_VALKEY_FALSE = frozenset({"0", "f", "false", "n", "no"})
+"""The query values valkey-py reads as false (its `to_bool`)."""
 
 
 class AdapterSpec(BaseModel):
@@ -331,6 +371,84 @@ def _check_cloud(profile: Profile, spec: AdapterSpec) -> None:
                 f"{port}: {adapter!r} is an in-memory double; profile 'cloud' runs real "
                 "adapters only (use profile 'local' for a mix)"
             )
+    _check_cloud_auth(spec)
+    _check_store_tls(spec)
+    _check_https("tools", LITELLM_MCP_URL_VAR, spec.tools == "mcp")
+    _check_https("model", LITELLM_BASE_URL_VAR, spec.model == "litellm")
+    _check_https("guardrails", LITELLM_BASE_URL_VAR, spec.guardrails == "litellm")
+    _check_https("auth", OIDC_JWKS_URL_VAR, spec.auth == "oidc")
+
+
+def _check_cloud_auth(spec: AdapterSpec) -> None:
+    if spec.auth == "none":
+        raise AdapterNotAllowed(
+            "auth: 'none' runs every call as the anonymous principal; profile 'cloud' needs a "
+            "real authenticator"
+        )
+
+
+def _url_parts(var: str, url: str) -> SplitResult:
+    """`urlsplit(url)`. Its `ValueError` echoes part of the URL, so it becomes an
+    `AdapterNotAllowed` that names only `var` (review LOW 10)."""
+    try:
+        parts = urlsplit(url)
+        _ = parts.hostname
+    except ValueError:
+        raise AdapterNotAllowed(f"{var} is not a valid URL") from None
+    return parts
+
+
+def _valkey_without_tls(url: str) -> bool:
+    """Not `rediss`, `valkeys`, or `unix`; or a query that turns off the certificate check
+    (`ssl_cert_reqs` other than `required`) or the host name check (`ssl_check_hostname`
+    false, as valkey-py reads it). Names and values are compared case-insensitively."""
+    parts = _url_parts(VALKEY_URL_VAR, url)
+    if parts.scheme not in VALKEY_TLS_SCHEMES:
+        return True
+    query = {k.lower(): v.strip().lower() for k, v in parse_qsl(parts.query)}
+    if query.get("ssl_cert_reqs", "required") != "required":
+        return True
+    return query.get("ssl_check_hostname", "true") in _VALKEY_FALSE
+
+
+def _plaintext_stores(spec: AdapterSpec) -> list[str]:
+    """The variables that send a store's traffic without TLS. Names only, never values."""
+    found: list[str] = []
+    secure = os.environ.get(S3_SECURE_VAR, "true").strip().lower()
+    if spec.config in S3_CONFIGS and secure in _S3_OFF:
+        found.append(S3_SECURE_VAR)
+    url = os.environ.get(VALKEY_URL_VAR)  # unset: the adapter names it as "not configured"
+    if spec.state == "valkey" and url and _valkey_without_tls(url):
+        found.append(VALKEY_URL_VAR)
+    return found
+
+
+def _check_store_tls(spec: AdapterSpec) -> None:
+    """S3 and Valkey without TLS are refused, unless the override is set; then each is logged
+    as a warning (review LOW 12)."""
+    found = _plaintext_stores(spec)
+    if not found:
+        return
+    names = ", ".join(found)
+    if os.environ.get(ALLOW_PLAINTEXT_STORES_VAR) == "1":
+        log.warning(
+            "profile 'cloud': %s=1 lets a store run without TLS (%s)",
+            ALLOW_PLAINTEXT_STORES_VAR,
+            names,
+        )
+        return
+    raise AdapterNotAllowed(
+        f"{names} turns TLS off; profile 'cloud' needs TLS to its stores "
+        f"(set {ALLOW_PLAINTEXT_STORES_VAR}=1 to allow it)"
+    )
+
+
+def _check_https(port: str, var: str, applies: bool) -> None:
+    """`var` carries a credential (the LiteLLM key) or the keys that check one (the JWKS), so
+    `cloud` needs `https` with no loopback, in-cluster, or override exemption."""
+    url = os.environ.get(var)  # unset: the adapter names it as "not configured"
+    if applies and url and _url_parts(var, url).scheme != "https":
+        raise AdapterNotAllowed(f"{port}: profile 'cloud' needs an https {var}")
 
 
 def _named(spec: AdapterSpec, port: str) -> str:

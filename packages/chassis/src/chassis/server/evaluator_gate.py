@@ -4,8 +4,12 @@ and refuses to start with `NoEvaluator` (`GateNotConfigured`). It knows nothing 
 it reruns `run(request, ctx)` through the connector, so it works the same in every lane.
 
 **Which calls are gated.** Each call is gated with probability `spec.harness.evaluator_sample_rate`
-(reloadable, read per call), decided by a hash of the `request_id` (`sampled`), so the same request
-id always decides the same. A call that is not sampled passes through untouched.
+(reloadable, read per call), decided by a hash of a salt and the `request_id` (`sampled`). The salt
+is a per-process secret (`secrets.token_bytes(32)`), drawn once when `GatedEngine` is built, so a
+caller who picks its own `request_id` cannot pick ids that are never gated (finding R7-17). Within
+one process the same request id always decides the same. Across replicas, or after a restart, it
+may decide differently: the sample is a rate, not a contract. A call that is not sampled passes
+through untouched.
 
 **Sync mode** (`evaluator_mode: sync`, a call that is not a stream). Each attempt's events are
 buffered. The answer (the `delta` texts) is scored with `EvaluatorPort.score(EvalCase(input,
@@ -25,8 +29,14 @@ each `metrics` with its `attempt`. So the response's `metrics` count every attem
 `attempts` is the number of attempts, and `model_route` is the route of the answer.
 
 An attempt that ends with an `error` event is sent as it is, not scored and not retried: retry on a
-model error is the H-4 retry stage, not this gate. An evaluator outage (`EvaluatorError`) fails
-open (suggested): the attempt goes out as it is, counted as `chassis.gate_failed_open` and logged.
+model error is the H-4 retry stage, not this gate. An evaluator outage (`EvaluatorError`) follows
+`spec.harness.evaluator_on_error` (reloadable, read per call). `fail_open` (the default,
+suggested): the attempt goes out as it is, counted as `chassis.gate_failed_open` and logged.
+`fail_closed`: the run ends with its `start`, the `metrics` so far, and one
+`error {code: evaluator_gate_failed, retryable: false}`; the attempt's other events are never
+sent (as for a failed gate), and it is counted as `chassis.gate_failed_closed`. The code and its
+`retryable: false` match contract v6, so the public error mapping already knows it. A new,
+retryable `evaluator_unavailable` code is left for the contract owner.
 
 **Async mode** (`evaluator_mode: async`, and every stream in either mode). Events pass through
 untouched. When the `end` event passes, the answer is scored in a background task (at most
@@ -39,8 +49,9 @@ inner connector.
 
 **Counters** (suggested names): `chassis.evaluator_calls{evaluator, mode, outcome}` with outcome
 `pass`, `fail`, or `error`; `chassis.gate_retries`; `chassis.gate_fallbacks`;
-`chassis.gate_failed_open`; `chassis.gate_runs{mode}` (PoC-8), each sampled call, so the fallback
-rate is `chassis.gate_fallbacks` over `chassis.gate_runs{mode="sync"}`.
+`chassis.gate_failed_open`; `chassis.gate_failed_closed`; `chassis.gate_runs{mode}` (PoC-8), each
+sampled call, so the fallback rate is `chassis.gate_fallbacks` over
+`chassis.gate_runs{mode="sync"}`.
 
 **Known gaps.** The gate does not shrink `budget.timeout_ms` across attempts: each attempt gets the
 whole budget (the H-4 timeout stage). The judge's tokens are in `metrics` but not charged to the
@@ -55,6 +66,7 @@ import contextlib
 import dataclasses
 import hashlib
 import json
+import secrets
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -74,10 +86,12 @@ __all__ = [
     "ASYNC_MAX_PENDING",
     "EVALUATOR_CALLS",
     "GATE_FAILED",
+    "GATE_FAILED_CLOSED",
     "GATE_FAILED_OPEN",
     "GATE_FALLBACKS",
     "GATE_RETRIES",
     "GATE_RUNS",
+    "SALT_BYTES",
     "SCORE_SPAN",
     "SHUTDOWN_WAIT_S",
     "GateNotConfigured",
@@ -91,6 +105,7 @@ GATE_RETRIES = "chassis.gate_retries"
 GATE_FALLBACKS = "chassis.gate_fallbacks"
 GATE_RUNS = "chassis.gate_runs"
 GATE_FAILED_OPEN = "chassis.gate_failed_open"
+GATE_FAILED_CLOSED = "chassis.gate_failed_closed"
 EVALUATOR_DROPPED = "chassis.evaluator_dropped"
 EVALUATOR_ABANDONED = "chassis.evaluator_abandoned"
 SCORE_SPAN = "chassis.evaluator.score"
@@ -100,20 +115,22 @@ ASYNC_MAX_PENDING = 64
 """suggested: background scores in flight per replica; one more is dropped and counted."""
 SHUTDOWN_WAIT_S = 5.0
 """suggested: how long `close()` waits for pending background scores."""
+SALT_BYTES = 32
+"""The size of the per-process sampling salt."""
 
 
 class GateNotConfigured(RuntimeError):
     """`spec.harness.evaluator_gate` is on but `spec.adapters.evaluator` is `none`."""
 
 
-def sampled(request_id: str, rate: float) -> bool:
-    """Is this call gated? The first 64 bits of sha256(request_id), as a fraction, below `rate`.
-    The same request id always decides the same."""
+def sampled(request_id: str, rate: float, salt: bytes) -> bool:
+    """Is this call gated? The first 64 bits of sha256(salt + request_id), as a fraction, below
+    `rate`. The same salt and request id always decide the same."""
     if rate >= 1.0:
         return True
     if rate <= 0.0:
         return False
-    digest = hashlib.sha256(request_id.encode("utf-8")).digest()
+    digest = hashlib.sha256(salt + request_id.encode("utf-8")).digest()
     return int.from_bytes(digest[:8], "big") / 2**64 < rate
 
 
@@ -150,7 +167,9 @@ class GatedEngine:
         telemetry: TelemetryPort,
         runs: RunRegistry | None = None,
         max_pending: int = ASYNC_MAX_PENDING,
+        salt: bytes | None = None,
     ) -> None:
+        """`salt` is for tests; unset, a fresh secret salt is drawn for this process."""
         self.inner = inner
         self.kind: Lane = inner.kind
         self.capabilities: frozenset[str] = inner.capabilities
@@ -160,6 +179,7 @@ class GatedEngine:
         self._runs = runs
         self._max_pending = max_pending
         self._pending: set[asyncio.Task[None]] = set()
+        self._salt = secrets.token_bytes(SALT_BYTES) if salt is None else salt
 
     # --- EngineConnector, delegated ---
 
@@ -201,7 +221,7 @@ class GatedEngine:
     def run(self, request: Request, ctx: Context) -> AsyncIterator[Event]:
         config = self._config()
         harness = config.spec.harness
-        if not sampled(request.request_id, harness.evaluator_sample_rate):
+        if not sampled(request.request_id, harness.evaluator_sample_rate, self._salt):
             return self._passthrough(request, ctx, score=False)
         if request.stream or harness.evaluator_mode == "async":
             self._telemetry.counter(GATE_RUNS, mode="async")
@@ -324,6 +344,13 @@ class GatedEngine:
             try:
                 score = await self._score(request, ctx, case, mode="sync", attempt=attempt)
             except EvaluatorError:
+                if harness.evaluator_on_error == "fail_closed":
+                    self._telemetry.counter(GATE_FAILED_CLOSED)
+                    before.extend(_metrics_of(events, attempt))
+                    message = f"the evaluator failed on attempt {attempt}; failing closed"
+                    for event in _closing(events, before, message):
+                        yield event
+                    return
                 self._telemetry.counter(GATE_FAILED_OPEN)
                 for event in _emit(events, attempt, before):
                     yield event
@@ -337,11 +364,9 @@ class GatedEngine:
             if attempt < attempts:
                 self._telemetry.counter(GATE_RETRIES)
         if fallback is None:
-            start = [e for e in events if isinstance(e, Start)][:1]
             message = f"the answer scored below {harness.threshold} on {attempts} attempts"
-            for event in [*start, *before]:
+            for event in _closing(events, before, message):
                 yield event
-            yield Error(code=GATE_FAILED, message=message, retryable=False)
             return
         self._telemetry.counter(GATE_FALLBACKS)
         record = self._runs.lookup(trace_id_hex(ctx.trace_id)) if self._runs else None
@@ -355,6 +380,13 @@ class GatedEngine:
 
 def _metrics_of(events: list[Event], attempt: int) -> list[Event]:
     return [e.model_copy(update={"attempt": attempt}) for e in events if isinstance(e, Metrics)]
+
+
+def _closing(events: list[Event], before: list[Event], message: str) -> list[Event]:
+    """A run the gate ends with no answer: the attempt's `start`, `before`, and one
+    `error {code: evaluator_gate_failed}`. The attempt's other events are not sent."""
+    start = [e for e in events if isinstance(e, Start)][:1]
+    return [*start, *before, Error(code=GATE_FAILED, message=message, retryable=False)]
 
 
 def _emit(

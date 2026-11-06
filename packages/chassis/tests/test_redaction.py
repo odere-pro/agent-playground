@@ -1,4 +1,5 @@
-"""PoC-7: `chassis.redaction` stays linear on long input and leaves non-PII numbers alone."""
+"""PoC-7: `chassis.redaction` stays linear on long input and leaves non-PII numbers alone
+(review R1-01 and R1-04)."""
 
 from __future__ import annotations
 
@@ -79,6 +80,10 @@ def test_redact_masks_two_emails_when_the_second_starts_where_the_first_ends() -
         "version 1.24.3",
         "version 2.0.10",
         "version 12.34.56",
+        "order 1234567890",
+        "order 14155550100",
+        "ref 4111111111111112",
+        "ref 41111111111111123",
     ],
     ids=[
         "iso-date",
@@ -87,18 +92,23 @@ def test_redact_masks_two_emails_when_the_second_starts_where_the_first_ends() -
         "version",
         "version-two-digit-patch",
         "version-two-digit-groups",
+        "ten-digit-order-id",
+        "eleven-digit-order-id",
+        "sixteen-digits-failing-luhn",
+        "seventeen-digits-failing-luhn",
     ],
 )
-def test_redact_leaves_dates_ips_and_versions_alone(text: str) -> None:
-    """An ISO date, an IPv4 address, or a dotted version is not a phone number."""
+def test_redact_leaves_dates_ips_versions_and_order_ids_alone(text: str) -> None:
+    """An ISO date, an IPv4 address, a dotted version, or a bare digit run that fails the Luhn
+    check is not a phone or a card number."""
     out = redact(text)
 
     assert out == text
 
 
 def test_redact_leaves_the_spec_sentence_unchanged_when_it_holds_no_pii() -> None:
-    """A sentence with only a date and an IPv4 address comes back exactly as it went in."""
-    text = "released 2026-10-29 from 10.0.0.12"
+    """A sentence with only a date, an IPv4 address, and an order id comes back as it went in."""
+    text = "released 2026-10-29 from 10.0.0.12, order 1234567890"
 
     out = redact(text)
 
@@ -143,17 +153,34 @@ def test_redact_masks_a_phone_number_when_written_in_a_common_format(phone: str)
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("order 1234567890", "order <PHONE_NUMBER>"),
-        ("call 4155550100", "call <PHONE_NUMBER>"),
-        ("call 14155550100", "call <PHONE_NUMBER>"),
-        ("ref 4111111111111112", "ref <CREDIT_CARD>"),
+        ("ref 4111111111111111", "ref <CREDIT_CARD>"),
+        ("card 4111-1111-1111-1111 ok", "card <CREDIT_CARD> ok"),
+        ("amex 378282246310005", "amex <CREDIT_CARD>"),
     ],
-    ids=["ten-digit-order-id", "ten-digit-phone", "eleven-digit-phone", "sixteen-digits"],
+    ids=["bare-sixteen-digits", "dashed-sixteen-digits", "fifteen-digit-amex"],
 )
-def test_redact_still_masks_a_bare_digit_run_when_it_could_be_a_phone_or_card(
+def test_redact_masks_a_card_number_when_it_passes_the_luhn_check(text: str, expected: str) -> None:
+    """A 13 to 19 digit run that passes the Luhn check is `<CREDIT_CARD>`, with or without
+    separators."""
+    out = redact(text)
+
+    assert out == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("ref 4111 1111 1111 1112 ok", "ref <PHONE_NUMBER> ok"),
+        ("ref 4111-1111-1111-1112 ok", "ref <PHONE_NUMBER> ok"),
+        ("ref +4111111111111112 ok", "ref <PHONE_NUMBER> ok"),
+    ],
+    ids=["spaced", "dashed", "plus-sign"],
+)
+def test_redact_masks_a_luhn_failing_run_as_a_phone_when_it_has_separators_or_a_plus(
     text: str, expected: str
 ) -> None:
-    """A bare digit run cannot be told apart from a phone or card, so it stays masked."""
+    """A run that fails the Luhn check is not a card. It is still a phone when it has a leading
+    `+` or a separator, by the phone rule."""
     out = redact(text)
 
     assert out == expected

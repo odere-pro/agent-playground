@@ -402,6 +402,35 @@ def test_remote_tokens_reads_the_named_variables_and_never_shows_a_value(
         remote_tokens(None)
 
 
+@pytest.mark.parametrize("slot", ["current", "previous"])
+def test_remote_tokens_refuses_a_short_token_naming_only_the_variable(
+    slot: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R2-31: a set token shorter than 32 characters is refused, current or previous; the error
+    names the variable, never the value."""
+    short = "x" * 31  # a test value, not a secret
+    auth = {"scheme": "bearer", "token_env": "REMOTE_TOKEN", "previous_token_env": "REMOTE_OLD"}
+    monkeypatch.setenv("REMOTE_TOKEN", short if slot == "current" else CURRENT)
+    monkeypatch.setenv("REMOTE_OLD", short if slot == "previous" else PREVIOUS)
+    name = "REMOTE_TOKEN" if slot == "current" else "REMOTE_OLD"
+
+    with pytest.raises(ValueError, match="shorter than 32 characters") as exc:
+        remote_tokens(auth)
+
+    assert name in str(exc.value)
+    assert short not in str(exc.value) and "31" not in str(exc.value)
+
+
+def test_remote_tokens_accepts_a_token_of_exactly_32_characters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R2-31: 32 characters is the minimum, and it is enough."""
+    token = "y" * 32  # a test value, not a secret
+    monkeypatch.setenv("REMOTE_TOKEN", token)
+
+    assert remote_tokens({"scheme": "bearer", "token_env": "REMOTE_TOKEN"}) == (token,)
+
+
 class _Recorder:
     """An inner ASGI app that records every scope it is called with."""
 

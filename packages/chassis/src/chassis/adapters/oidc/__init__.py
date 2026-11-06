@@ -24,6 +24,10 @@ the token.
 
 Config from the environment (suggested names): `OIDC_ISSUER`, `OIDC_AUDIENCE`, `OIDC_JWKS_URL`.
 `from_env` raises `LookupError` when one is unset (the registry's "not configured").
+The JWKS URL must use `https`, unless its host is loopback (`localhost`, `127.0.0.0/8`, `::1`;
+a local fake IdP). Any other URL is a `ValueError` at construction that names `OIDC_JWKS_URL`,
+so the chassis does not start (R5a-12): JWKS over cleartext lets an on-path attacker swap the
+signing keys.
 """
 
 from __future__ import annotations
@@ -33,11 +37,13 @@ import os
 import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import jwt
 
-from chassis.ports.auth import AuthError, Principal
+from chassis.adapters.loopback import is_loopback_host
+from chassis.ports.auth import ANY_SCOPE, AuthError, Principal
 
 __all__ = [
     "ALGORITHMS",
@@ -75,8 +81,25 @@ def _unavailable(message: str) -> AuthError:
     return AuthError("auth_unavailable", message, retryable=True)
 
 
+def _check_jwks_url(url: str) -> None:
+    """R5a-12: `https`, or plain `http` to a loopback host (a local fake IdP). Else `ValueError`
+    naming `JWKS_URL_VAR`: a JWKS over cleartext lets an on-path attacker swap the keys."""
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+    except ValueError:
+        raise ValueError(f"{JWKS_URL_VAR} is not a valid URL") from None
+    if parts.scheme == "https" and host:
+        return
+    if parts.scheme == "http" and is_loopback_host(host):
+        return
+    raise ValueError(f"{JWKS_URL_VAR} must use https unless its host is loopback")
+
+
 def _scopes(claims: Mapping[str, Any]) -> frozenset[str]:
-    """`scope` (a space-separated string) and `scp` (a list, or a string), merged."""
+    """`scope` (a space-separated string) and `scp` (a list, or a string), merged. `ANY_SCOPE`
+    is dropped: it marks auth off (`NoAuth`), so a token that claims it would turn off the
+    per-caller idempotency scope, the rate limit, and every scope check (review HIGH 4)."""
     found: set[str] = set()
     for name in ("scope", "scp"):
         value = claims.get(name)
@@ -84,6 +107,7 @@ def _scopes(claims: Mapping[str, Any]) -> frozenset[str]:
             found.update(value.split())
         elif isinstance(value, list):
             found.update(str(v) for v in value if isinstance(v, str))
+    found.discard(ANY_SCOPE)
     return frozenset(found)
 
 
@@ -109,6 +133,7 @@ class OidcAuth:
         unsafe = [a for a in algorithms if a.lower() == "none" or a.upper().startswith("HS")]
         if unsafe:
             raise ValueError(f"OidcAuth refuses the algorithms {unsafe}")
+        _check_jwks_url(jwks_url)
         self.issuer = issuer
         self.audience = audience
         self.jwks_url = jwks_url
