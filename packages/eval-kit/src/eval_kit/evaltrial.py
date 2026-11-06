@@ -19,6 +19,7 @@ so the run proves the tool works with a warm cache and no network.
 Each tool installs into the run's temp dir from a committed, hashed lock before the stack starts
 (R7-18): DeepEval into its own venv with `uv pip install --require-hashes --no-deps -r` on
 `evals/deepeval/requirements.txt`, promptfoo with `npm ci` from `evals/promptfoo/package-lock.json`.
+npm reads only the run's own `.npmrc` (registry and proxies, `write_npmrc`), never the user's.
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 import yaml
 from bakeoff.envs import build_env, is_secret_name
@@ -49,6 +51,7 @@ from eval_kit.golden.generate import JUDGE_SCRIPT, MODEL_SCRIPT
 __all__ = [
     "DEEPEVAL_LOCK",
     "DEEPEVAL_VERSION",
+    "NPM_REGISTRY",
     "PROMPTFOO_DIR",
     "PROMPTFOO_VERSION",
     "TELEMETRY_OFF",
@@ -57,6 +60,7 @@ __all__ = [
     "tool_argv",
     "tool_env",
     "tool_install_argv",
+    "write_npmrc",
 ]
 
 Tool = Literal["promptfoo", "deepeval"]
@@ -96,13 +100,23 @@ NETWORK_VARS = (
     "REQUESTS_CA_BUNDLE",
     "npm_config_https_proxy",
     "npm_config_noproxy",
-    "NPM_CONFIG_USERCONFIG",
     "UV_NATIVE_TLS",
     "UV_SYSTEM_CERTS",
     "UV_INDEX_URL",
     "UV_DEFAULT_INDEX",
 )
-"""Copied from this process only to fetch the tool (never with `--offline`). No secret names."""
+"""Copied from this process only to fetch the tool (never with `--offline`). No secret names.
+
+Never `NPM_CONFIG_USERCONFIG`: the user's `.npmrc` may hold a registry token, and `npm ci` runs
+install scripts (`esbuild`). npm reads the run's own file instead (`write_npmrc`)."""
+
+NPM_REGISTRY = "https://registry.npmjs.org/"
+NPMRC_PROXIES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("https-proxy", ("npm_config_https_proxy", "HTTPS_PROXY", "https_proxy")),
+    ("proxy", ("npm_config_proxy", "HTTP_PROXY", "http_proxy")),
+    ("noproxy", ("npm_config_noproxy", "NO_PROXY", "no_proxy")),
+)
+"""Each `.npmrc` proxy key, and the variables it is read from, first one set wins."""
 
 
 def _deepeval_venv(work: Path) -> Path:
@@ -224,9 +238,37 @@ def _fetch_vars(offline: bool) -> dict[str, str]:
     return {**_caches(), **network}
 
 
+def _first_set(names: Sequence[str]) -> str | None:
+    return next((os.environ[n] for n in names if os.environ.get(n)), None)
+
+
+def write_npmrc(home: Path, *, offline: bool) -> Path:
+    """Write `home/.npmrc`: the registry (`npm_config_registry`, else npm's default) and, unless
+    `offline`, the proxies (`NPMRC_PROXIES`). Nothing else, so no token. Returns its path.
+
+    Raises `ValueError`, naming the key only, for a registry URL with credentials in it or a value
+    with a line break."""
+    registry = os.environ.get("npm_config_registry")  # noqa: SIM112 - npm's own lowercase name
+    parts = urlsplit(registry or NPM_REGISTRY)
+    if parts.username is not None or parts.password is not None:
+        raise ValueError("refusing credentials in the npm registry setting")
+    lines = [("registry", registry or NPM_REGISTRY)]
+    if not offline:
+        found = ((key, _first_set(names)) for key, names in NPMRC_PROXIES)
+        lines += [(key, value) for key, value in found if value]
+    for key, value in lines:
+        if "\n" in value or "\r" in value:
+            raise ValueError(f"refusing a line break in the npm {key} setting")
+    path = home / ".npmrc"
+    path.write_text("".join(f"{key}={value}\n" for key, value in lines), encoding="utf-8")
+    return path
+
+
 def install_env(home: Path, *, offline: bool) -> dict[str, str]:
-    """The environment of the install steps: telemetry off, caches, and the fetch variables."""
-    return build_env(home, {**TELEMETRY_OFF, **_fetch_vars(offline)})
+    """The environment of the install steps: telemetry off, caches, the fetch variables, and npm
+    pointed at the run's `.npmrc` (`write_npmrc`)."""
+    npmrc = {"NPM_CONFIG_USERCONFIG": str(home / ".npmrc")}
+    return build_env(home, {**TELEMETRY_OFF, **_fetch_vars(offline), **npmrc})
 
 
 def _raw_report(tool: Tool, work: Path) -> Path | None:
@@ -284,6 +326,7 @@ def _run_tool(
     golden: Golden,
 ) -> _ToolRun:
     """Install `tool`, start the judge and the stack, run `tool` against them, and stop both."""
+    write_npmrc(work / "home", offline=offline)
     install_tool(tool, work, install_env(work / "home", offline=offline))
     judge = FakeModel(ROOT / golden.judge_script, free_port())
     judge.start()
