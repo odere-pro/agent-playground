@@ -20,7 +20,7 @@ import httpx
 import jwt
 import pytest
 from chassis.adapters.oidc import OidcAuth
-from chassis.ports.auth import AuthError
+from chassis.ports.auth import ANY_SCOPE, AuthError
 from chassis_contracts import AuthPortContract, GoodToken
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
@@ -246,6 +246,18 @@ async def test_scp_list_is_read_as_scopes(idp: Idp) -> None:
     assert principal.issuer == ISSUER
 
 
+@pytest.mark.parametrize(
+    "claims", [{"scope": "* agent:run"}, {"scope": None, "scp": ["*", "agent:run"]}]
+)
+async def test_a_token_cannot_claim_the_any_scope_marker(idp: Idp, claims: dict[str, Any]) -> None:
+    """Review HIGH 4: `*` (`ANY_SCOPE`) means auth is off. A token that carries it gets a
+    principal without it, so per-caller scoping and scope checks still apply."""
+    principal = await _auth(idp).authenticate(idp.token(**claims))
+    assert ANY_SCOPE not in principal.scopes
+    assert principal.scopes == frozenset({"agent:run"})
+    assert not principal.allows("agent:feedback")
+
+
 async def test_hs256_is_refused_even_with_a_jwks_secret(idp: Idp) -> None:
     claims = jwt.decode(idp.token(), options={"verify_signature": False})
     token = _hs256(claims, b"anything", kid="k1")
@@ -354,3 +366,40 @@ def test_registry_builds_oidc_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OIDC_AUDIENCE", AUDIENCE)
     monkeypatch.setenv("OIDC_JWKS_URL", JWKS_URL)
     assert isinstance(resolve("auth", "oidc"), OidcAuth)
+
+
+def test_from_env_refuses_an_http_jwks_url_naming_the_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R5a-12: `OIDC_JWKS_URL=http://idp.example/jwks` raises, so the chassis does not start."""
+    monkeypatch.setenv("OIDC_ISSUER", ISSUER)
+    monkeypatch.setenv("OIDC_AUDIENCE", AUDIENCE)
+    monkeypatch.setenv("OIDC_JWKS_URL", "http://idp.example/jwks")
+
+    with pytest.raises(ValueError, match="OIDC_JWKS_URL"):
+        OidcAuth.from_env()
+
+
+@pytest.mark.parametrize(
+    "url", ["http://idp.example/jwks", "ftp://idp.example/jwks", "idp.example/jwks", "http://[::1"]
+)
+def test_construction_refuses_a_jwks_url_that_is_not_https(url: str) -> None:
+    """R5a-12: a JWKS over cleartext lets an on-path attacker swap the keys."""
+    with pytest.raises(ValueError, match="OIDC_JWKS_URL"):
+        OidcAuth(ISSUER, AUDIENCE, url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost:8080/jwks",
+        "http://127.0.0.1:8080/jwks",
+        "http://[::1]:8080/jwks",
+        "https://idp.example/jwks",
+    ],
+)
+def test_construction_accepts_https_or_a_loopback_http_jwks_url(url: str) -> None:
+    """R5a-12: `https` anywhere, and plain `http` only to a loopback host (a local fake IdP)."""
+    auth = OidcAuth(ISSUER, AUDIENCE, url)
+
+    assert auth.jwks_url == url

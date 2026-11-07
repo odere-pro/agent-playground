@@ -15,11 +15,11 @@ Many tools come as MCP servers, and one server can hold many tools. MCP import r
 
 ## What
 
-- Import by MCP server URL, with a Vault reference for its credentials, using the MCP Python SDK.
+- Import by MCP server URL, with a secret reference for its credentials (a name resolved by the chassis's secret mechanism), using the MCP Python SDK.
 - Calls `initialize`, then `tools/list`, following the page cursor to the end.
 - Registers the server as an `mcp` entry, and each tool as a `tool` entry linked to its server, with `inputSchema` and `outputSchema` as its input and output schema.
 - Stores tool annotations (`readOnlyHint`, `destructiveHint`) as hints only. The tool's read or write mode still comes from the agent config (B.3).
-- External servers get `trust: external` and wait for approval (080 R-7).
+- External servers get `trust_level: external` and wait for approval (080 R-7).
 - Every tool description goes through the scanner (081 R-8).
 - Import again on demand and on a schedule (suggested: daily, and on `notifications/tools/list_changed`). New tools are added, removed tools become `inactive`, and changed descriptions go back to review (082 R-9).
 
@@ -42,7 +42,7 @@ Many tools come as MCP servers, and one server can hold many tools. MCP import r
 - [ ] A tool with a poisoned description is flagged, and its findings show in the approval queue.
 - [ ] After one tool's description changes on the server, a new import sends only that tool back to review.
 - [ ] A tool removed from the server becomes `inactive`, and its row is kept.
-- [ ] No credential is stored in an entry, only the Vault reference.
+- [ ] No credential is stored in an entry, only the secret reference.
 
 ## Dependencies
 

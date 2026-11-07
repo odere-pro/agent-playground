@@ -427,7 +427,7 @@
     },
     "HarnessSpec": {
       "additionalProperties": false,
-      "description": "`spec.harness` (PoC-7, 017 H-4): the evaluator gate. suggested: every name and default.\n\n- `evaluator_gate: false`: off makes no evaluator call.\n- `threshold: 0.7`: a score below it fails the attempt.\n- `retries: 1`: attempts after the first, before the fallback.\n- `evaluator_sample_rate: 1.0`: the share of calls that are gated. Reloadable.\n- `evaluator_mode: sync`: `sync` scores before the answer leaves, then retries or falls back;\n  `async` scores after, never changes the answer, and records the score. A stream is async.",
+      "description": "`spec.harness` (PoC-7, 017 H-4): the evaluator gate. suggested: every name and default.\n\n- `evaluator_gate: false`: off makes no evaluator call.\n- `threshold: 0.7`: a score below it fails the attempt.\n- `retries: 1`: attempts after the first, before the fallback.\n- `evaluator_sample_rate: 1.0`: the share of calls that are gated. Reloadable.\n- `evaluator_mode: sync`: `sync` scores before the answer leaves, then retries or falls back;\n  `async` scores after, never changes the answer, and records the score. A stream is async.\n- `evaluator_on_error: fail_open` (finding R7-17): what a sync-mode evaluator outage does.\n  `fail_open` sends the attempt as it is and counts it; `fail_closed` ends the run with one\n  `error {code: evaluator_gate_failed}` (not retryable, as in contract v6) and sends none of\n  the attempt's events.\n  Async mode ignores it. Reloadable.",
       "properties": {
         "evaluator_gate": {
           "default": false,
@@ -441,6 +441,15 @@
             "async"
           ],
           "title": "Evaluator Mode",
+          "type": "string"
+        },
+        "evaluator_on_error": {
+          "default": "fail_open",
+          "enum": [
+            "fail_open",
+            "fail_closed"
+          ],
+          "title": "Evaluator On Error",
           "type": "string"
         },
         "evaluator_sample_rate": {
@@ -616,7 +625,7 @@
     },
     "ModelSpec": {
       "additionalProperties": false,
-      "description": "`spec.model` (`docs/specs/models.md`): the agent's LiteLLM routes. Every field reloads.\n\n- `route: fake-route`: the route of every task the map does not name.\n- `fallback_route: null` (PoC-7, 017 H-4): the route of the evaluator gate's last attempt.\n- `routes: {}`: the route per task, keyed by the task the caller names in `input.data.task`.\n  The pipeline resolves `routes[task]`, else `route`, into `ctx.model_route`, and the model\n  proxy forces every call of the run to it. A route the service's LiteLLM key does not list\n  is 403 `model_route_denied` at the first call; suggested: a check at load, which needs the\n  key and is not built. An empty task or route name is refused here.\n- `judge_route: null`: the judge evaluator's route. Null: `CHASSIS_JUDGE_ROUTE`.",
+      "description": "`spec.model` (`docs/specs/models.md`): the agent's LiteLLM routes. `route`, `routes`, and\n`judge_route` reload without a restart; `fallback_route` is restart-only.\n\n- `route: fake-route`: the route of every task the map does not name.\n- `fallback_route: null` (PoC-7, 017 H-4): the route of the evaluator gate's last attempt.\n  Restart-only.\n- `routes: {}`: the route per task, keyed by the task the caller names in `input.data.task`.\n  The pipeline resolves `routes[task]`, else `route`, into `ctx.model_route`, and the model\n  proxy forces every call of the run to it. A route the service's LiteLLM key does not list\n  is 403 `model_route_denied` at the first call; suggested: a check at load, which needs the\n  key and is not built. An empty task or route name is refused here.\n- `judge_route: null`: the judge evaluator's route. Null: `CHASSIS_JUDGE_ROUTE`.",
       "properties": {
         "fallback_route": {
           "anyOf": [

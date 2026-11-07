@@ -8,7 +8,7 @@ PYTEST := scripts/check_offline.sh
 .PHONY: help setup evals evals-regression redteam fmt fmt-check lint lint-extra type \
 	test test-poc test-integration load-test \
 	kind-poc04 kind-poc05 kind-poc06 bakeoff poc06-mac record-cassettes \
-	quick check planning-sync planning-check schemas harness-lint \
+	quick check planning-sync planning-check planning-check-strict schemas harness-lint \
 	fake-model-server ts-check clean
 
 help: ## Show this help
@@ -120,6 +120,10 @@ planning-sync: ## Regenerate the generated parts of the backlog
 
 planning-check: ## Verify the backlog and the planning docs
 	cd docs/planning && python3 tools/check.py
+
+# Not in `check` yet: PR-R of the 2026-11-06 backlog review turns it on.
+planning-check-strict: ## planning-check plus the evidence rules on ticked boxes and done (WD) issues
+	cd docs/planning && python3 tools/check.py --strict
 
 schemas: ## Regenerate the JSON Schemas in packages/chassis/schemas from the models
 	$(PY) -m chassis.schemas --write

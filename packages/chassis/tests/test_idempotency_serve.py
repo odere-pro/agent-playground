@@ -484,10 +484,12 @@ async def test_chat_refusal_bodies_match_their_declared_schemas(
         # key is claimed first with the call's own request (same fingerprint): a run in flight.
         original = Idempotency.begin
 
-        async def behind_a_held_claim(self: Idempotency, request: Any, *, wait_ms: int) -> Any:
-            held = await original(self, request, wait_ms=0)
+        async def behind_a_held_claim(
+            self: Idempotency, request: Any, *, wait_ms: int, subject: str | None = None
+        ) -> Any:
+            held = await original(self, request, wait_ms=0, subject=subject)
             assert held.__class__.__name__ == "Claim"
-            return await original(self, request, wait_ms=1)
+            return await original(self, request, wait_ms=1, subject=subject)
 
         monkeypatch.setattr(Idempotency, "begin", behind_a_held_claim)
         _, body = _call(interface, "in flight")

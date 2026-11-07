@@ -22,6 +22,7 @@ A run with no limits can loop or spend without bound, especially when a smart mo
 - `timeout_s` becomes the Temporal workflow run timeout.
 - When a limit is hit, the run stops, keeps its checkpoints, and reports which limit it hit and the totals so far (suggested status: `stopped_budget`).
 - Budget use per run shows in metrics and traces.
+- Status after PoC-4: the per-request budget exists (contract section 7, "Budgets per call"; the per-run budget in `docs/contracts/contract-v1.md`). The model proxy caps the forwarded `max_tokens`, `budget.timeout_ms` holds, and a spent budget is 429 `budget_exhausted` (`packages/chassis/tests/test_model_proxy.py::test_an_exhausted_run_is_refused_with_429_complete_and_streamed`). The envelope `Budget` has only `max_tokens` and `timeout_ms`: no cost cap, no step count, no `timeout_s`, and no `stopped_budget` status. The judge's cost is not charged to the run. Boxes 3 and 7 need a contract change (`chassis-architect`). Boxes 2 and 4 need a per-run test (suggested: `test_a_run_budget_counts_steps_and_cost_across_calls`).
 
 ## Out of scope
 

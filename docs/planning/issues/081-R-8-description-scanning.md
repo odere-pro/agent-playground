@@ -22,7 +22,7 @@ A tool description is read by a model, so an attacker can hide instructions in i
 - A flagged entry goes to the approval queue (080 R-7) with its findings, even if it is `internal-signed`.
 - Suggested: an optional model check through the evaluator port, off by default, that gets the description as quoted data, never as instructions.
 - A fixture set of poisoned and clean descriptions, based on the OWASP examples [R5], versioned next to the rules.
-- Proposed in PoC-7 ([ADR-008](../adr/008-security-identity-guardrails-defense-in-depth.md); the user accepts it at the PoC-7 pull request): Snyk Agent Scan runs in CI in a container sandbox on our own MCP servers. It reports and does not replace this issue's scan at registration.
+- Decided in [ADR-008](../adr/008-security-identity-guardrails-defense-in-depth.md). Built in PoC-7: `poc07-agent-scan` and `deploy/agent-scan/`, with 13 offline checks (`pocs/poc-07-cross-cutting-decisions/tests/test_poc07_agent_scan_static.py`); no real scan has run (needs `SNYK_TOKEN`). It reports on our own servers and does not replace this scan.
 
 ## Reuse
 
@@ -36,6 +36,7 @@ A tool description is read by a model, so an attacker can hide instructions in i
 - Catching a description that changes after approval (082 R-9).
 - Reading tools from MCP servers and OpenAPI specs (087 R-4, 088 R-5).
 - The human review of flagged entries, which uses the approval queue (080 R-7).
+- Limiting the Snyk Agent Scan run's egress to `api.snyk.io` (open since PoC-7).
 
 ## Acceptance criteria
 

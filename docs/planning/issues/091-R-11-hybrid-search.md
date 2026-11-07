@@ -15,11 +15,11 @@ With thousands of entries, the orchestrator must find the right tool from a shor
 
 ## What
 
-- SQL filters first: `status: active`, minimum trust, type, task, tags, owner, and risk class.
+- SQL filters first: `status: active`, minimum `trust_level`, type, task, tags, owner, and risk class.
 - Keyword search with BGE-M3 sparse vectors in pgvector (no extra extension).
 - Vector search with dense embeddings in pgvector. Default model Qwen3-Embedding-0.6B; the final pick is tested on the registry's own queries [R9].
 - Reciprocal rank fusion of the keyword and vector lists [R6], then Qwen3-Reranker-0.6B on the top results.
-- Embedding and reranker models served on vLLM and called through named routes in the LLM router (suggested: `registry-embed`, `registry-rerank`).
+- Embedding and reranker models are called through named routes in the LLM router (suggested: `registry-embed`, `registry-rerank`), on whatever server the route map names, hosted or self-hosted. The Appendix I comparison (box 3) decides.
 - Embedded text (suggested): name, task, description, and schema field names, embedded again when any of them change.
 - The embedding model name is stored with every vector. A model change triggers a full re-index, and search never mixes vectors from two models.
 - A search endpoint with query, filters, and `top_k`; each stage can be switched off by config.

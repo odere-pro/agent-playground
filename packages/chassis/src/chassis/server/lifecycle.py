@@ -24,8 +24,15 @@ On the first signal, `Drain.run` does, in order:
    one (PoC-5, the `remote` lane): in-flight workloads call the model proxy and the tool endpoint
    until their runs end.
 
-A second signal sets `force_exit` on every server. If any server stops on its own (a failed
-startup), the others stop too.
+A second signal means exit now, even with a stream open. On every server it aborts each open
+connection and sets `should_exit`. uvicorn's shutdown waits for open connections even under
+`force_exit`, so cutting them is what ends the wait. Each run sees the disconnect and is
+cancelled (the disconnect watcher, or the stream's own). So no result reaches the client. The
+public lifespan still runs: it waits, bounded, for pending result events and closes the ports.
+The proxies get `force_exit` too, so they wait for nothing. The servers stop together, not in the
+order above. A connection accepted after the second signal, before uvicorn closes the public
+listener, is not cut; it holds the exit until its run ends or `timeout_s`. If any server stops on
+its own (a failed startup), the others stop too.
 
 Bind order (PoC-5 plan, section 2.12, H14). `Drain.serve` starts the proxy listeners first and
 waits until each one has bound. Only then does it start the public server, whose lifespan builds
@@ -161,7 +168,7 @@ class Drain:
 
     def signal(self) -> None:
         """Called from the loop's signal handler. The first call starts the drain; the second
-        forces every server out.
+        cuts every open connection and stops every server at once (module docstring).
         """
         self.signals += 1
         if self.signals == 1:
@@ -170,8 +177,11 @@ class Drain:
             return
         log.warning("second signal: exiting now")
         for server in self._servers():
-            server.force_exit = True
+            for connection in list(server.server_state.connections):
+                connection.transport.abort()  # uvicorn's `wait_closed` waits for these
             server.should_exit = True
+            if server is not self.public:  # the public lifespan must still close the ports
+                server.force_exit = True
 
     async def run(self) -> None:
         if self.state is not None:

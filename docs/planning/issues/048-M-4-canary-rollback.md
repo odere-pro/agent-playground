@@ -22,6 +22,7 @@ After shadow mode, a candidate needs a safe way to take real traffic and a fast 
 - One-step manual rollback: one CI job or command points the route back to the previous model version.
 - Full promotion updates the model stage in MLflow and publishes `models.model.promoted.v1`.
 - `versions` in each response shows which model version served it.
+- A per-task model swap (phase B) needs no canary: it is a config reload of the route map. A chassis-release rollback is 056 CH-7 (rings). The rolling-restart drills in PoC-4 and PoC-9 close none of these boxes.
 
 ## Reuse
 

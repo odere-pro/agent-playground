@@ -94,6 +94,7 @@ Waves are GitHub milestones. Each one ends in something that can be shown.
 
 | Wave | Issues | Ends with |
 | ---- | ------ | --------- |
+| Done: delivered by the PoC track | {{R:WD}} | {{N_DONE}} issues, {{DONE_DAYS}} days of the first estimate, not counted below |
 | W0 Decisions | {{R:W0}} | Broker, first cloud, public A2A endpoint, banned words, and metric targets decided |
 | W1 Router and baseline | {{R:W1}} | Every model call goes through the router; token spend is counted and on a dashboard; the baseline clock is running |
 | W2 Chassis MVP | {{R:W2}} | An echo workload runs behind the chassis: in the `sidecar` lane from the shared library chart, locally and in Kubernetes, and over A2A in memory in the chassis's tests. It answers through native, OpenAI, and Anthropic APIs (streaming and complete), is started by events and emits result events, is traced, holds no key, and passes the contract tests over both transports |
@@ -107,6 +108,7 @@ Waves are GitHub milestones. Each one ends in something that can be shown.
 | W10 Production readiness | {{R:W10}} | Phase 8 done-when: both clouds from Terraform, restore test passes, SLO alerts fire |
 | W11 Compliance evidence | {{R:W11}} | Phase 9 done-when: documentation pack and control mapping for any agent version |
 | W12 Later | {{R:W12}} | Plans for Phases 10 and 11 |
+| Parked: the SLM track (2026-11-06) | {{R:WP}} | {{N_PARKED}} issues, {{PARKED_DAYS}} days, not counted above |
 
 With one engineer, the waves run one after another in index order. With more people, W1 runs next to W2, and the W3 data work (S-1 to S-4) starts during W2, as the epic says.
 
@@ -123,7 +125,7 @@ With one engineer, the waves run one after another in index order. With more peo
 
 ## Critical path
 
-- **To first savings (A-3):** {{MVP_PATH}}. About {{MVP_DAYS}} working days, plus the two weeks of baseline data that G-5 needs before S-6. The chassis MVP ({{R:W2}}) must finish before A-1.
+- **To template GA (H-15):** {{MVP_PATH}}. About {{MVP_DAYS}} working days, plus the two weeks of baseline data that G-5 needs before S-6. The chassis MVP ({{R:W2}}) must finish before A-1.
 - **Longest chain overall:** {{ALL_PATH}}. The registry search and the orchestrator engine are the long pole.
 
 ## Open decisions and what they block

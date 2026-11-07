@@ -76,11 +76,28 @@ jobs:
       # The PoC-5 bring-up, then the PoC-6 images, trust params, fake-model script, seeds, manifests.
       - name: Up
         run: deploy/kind/poc06/run.sh up
+      # kagent-adk footprint for the 6a scorecard, criterion 7: image size and workload RSS, idle
+      # and after the tests. Evidence only, so a failed read warns and does not fail the job.
+      - name: kagent-adk footprint, idle
+        continue-on-error: true
+        run: pocs/poc-06b-bake-off-remote-lane/notes/kagent-footprint/measure.sh idle "$RUNNER_TEMP/kagent-adk-footprint"
       - name: PoC-6 kind tests
         run: deploy/kind/poc06/run.sh test
-      # No upload-artifact SHA is pinned in this repo yet, so logs go to the job output. Every pod
-      # log goes through run.sh `logs` (PoC-5's redact_logs, pinned to kind-poc05); never a bare
-      # `kubectl logs` here (test_poc06b_kind_static.py).
+      - name: kagent-adk footprint, after the tests
+        if: always()
+        continue-on-error: true
+        run: pocs/poc-06b-bake-off-remote-lane/notes/kagent-footprint/measure.sh after-tests "$RUNNER_TEMP/kagent-adk-footprint"
+      - name: Upload the kagent-adk footprint
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kagent-adk-footprint
+          path: ${{ runner.temp }}/kagent-adk-footprint
+          if-no-files-found: warn
+          retention-days: 90
+      # Pod logs go to the job output, never to an artifact. Every pod log goes through run.sh
+      # `logs` (PoC-5's redact_logs, pinned to kind-poc05); never a bare `kubectl logs` here
+      # (test_poc06b_kind_static.py).
       - name: Pod logs
         if: failure()
         run: |

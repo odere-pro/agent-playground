@@ -11,7 +11,7 @@ epic_refs: [phase-11-later-ideas]
 
 ## Why
 
-Every run that no routing rule matches calls the big planner, which costs money and time. A router SLM trained on logged runs could handle the common cases, with a confidence threshold and a fallback to the planner. It is a Phase 11 idea, so this P3 issue is a plan. It needs the recorder's logged runs (040 D-0) and the routing and planner modes (108 O-12) first.
+Every run that no routing rule matches calls the big planner, which costs money and time. A router SLM trained on logged runs could handle the common cases, with a confidence threshold and a fallback to the planner. It is a Phase 11 idea, so this P3 issue is a plan. It needs the recorder's logged runs (040 D-0) and the routing and planner modes (108 O-12) first. Parked 2026-11-06 with the SLM track (product plan).
 
 ## What
 

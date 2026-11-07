@@ -16,13 +16,16 @@ When an alert fires at night, the person on call needs steps, not a design doc. 
 ## What
 
 - One runbook per common failure, each with five parts: symptoms, checks, fix, rollback, and escalation.
-- Failures to cover: model server down or GPU node lost; router or provider outage and high fallback rate; broker consumer lag and dead-letter growth; stuck or failed Temporal runs (resume and cancel); a bad config or workflow (rollback); registry not registering or search degraded; Postgres failover on CloudNativePG; object storage errors; evaluator drift.
-- Chassis failures to cover, from [ADR-001](../adr/001-chassis-delivery-model.md):
+- The base is `docs/guides/poc-05-runbooks.md` (leaked-token rotation, admission refusal, stuck claims). This issue adds the rollback and escalation parts it lacks.
+- First, the failures of components that exist, from [ADR-001](../adr/001-chassis-delivery-model.md) and the PoCs:
+  - a router or provider outage, and a high fallback rate;
   - a bad chassis release: stop the rings, and pin the previous tag;
-  - a pod refused by the minimum-version rule;
+  - a pod refused by the minimum-version rule (admission rule 9 in `deploy/helm/agent-lib`, PR #79);
   - a compromised workload: revoke its key, tool grants, and network label, which cuts off that service alone. The ADR leaves this playbook out of scope, so it lives here;
-  - a `remote` endpoint or cloud auth failure;
+  - a `remote` auth failure;
+  - a bad config (rollback);
   - the urgent-fix order from ADR item 10: change the central limits first, then roll out one chassis image in fast rings.
+- Failures of parts that are `later` or parked join when those parts ship: model server down or GPU node lost, broker lag and dead letters, stuck Temporal runs, registry degraded, Postgres failover on CloudNativePG, object storage errors, and evaluator drift.
 - Every alert from X-3 carries a `runbook_url` annotation.
 - Runbooks live in the repo as Markdown and are reviewed like code.
 - A CI check that every alert rule has a runbook link that resolves.
@@ -37,7 +40,7 @@ When an alert fires at night, the person on call needs steps, not a design doc. 
 
 - [ ] Each failure in the list has a runbook with all five parts.
 - [ ] Every alert rule links to a runbook, and the CI check passes.
-- [ ] At least three runbooks (suggested: model server down, stuck run, bad config) are tried in a drill on staging, and the gaps found are fixed.
+- [ ] At least three runbooks (suggested: router outage, bad chassis release, bad config) are tried in a drill on staging, and the gaps found are fixed.
 - [ ] In a drill, a person who did not write the runbook follows it without help.
 
 ## Dependencies

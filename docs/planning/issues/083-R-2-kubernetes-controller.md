@@ -11,7 +11,7 @@ epic_refs: [F.3, G.4]
 
 ## Why
 
-New agents must register on deploy with no hand steps (Phase 5 done-when). A kopf controller watches labeled deployments and reads each agent's `/manifest`. It replaces the registration stub in the template CI (025 H-10), so the registry follows what really runs in the cluster, not what CI thinks it deployed.
+New agents must register on deploy with no hand steps (Phase 5 done-when). A kopf controller watches labeled deployments and reads each agent's `/manifest`. A new agent from the template carries the registration label (025 H-10) and registers through the controller only, so the registry follows what really runs in the cluster, not what CI thinks it deployed.
 
 ## What
 
@@ -25,7 +25,6 @@ New agents must register on deploy with no hand steps (Phase 5 done-when). A kop
 - Deleting a deployment marks its entry `inactive`, never deleted. Scaling to zero (KEDA) is not a delete, so the entry stays `active`.
 - Registration is an idempotent upsert, with retries and backoff when the registry is down.
 - A service account with only the RBAC rights it needs: watch deployments and read services.
-- Removes the registration stub from the template CI (025 H-10).
 
 ## Out of scope
 
@@ -43,7 +42,7 @@ New agents must register on deploy with no hand steps (Phase 5 done-when). A kop
 - [ ] A chassis ring rollout creates no new agent version, and the entry's `chassis_version` shows the new tag.
 - [ ] A `remote` agent's entry points at its chassis Service, not at the remote workload.
 - [ ] Restarting the controller creates no duplicate entries.
-- [ ] The template CI no longer has the registration stub, and a new agent from the template registers through the controller only.
+- [ ] A new agent from the template carries the registration label and registers through the controller only.
 
 ## Dependencies
 
