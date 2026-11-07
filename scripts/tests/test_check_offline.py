@@ -1,4 +1,4 @@
-"""check_offline.sh: no test inherits GIT_* from a git hook."""
+"""check_offline.sh: no test inherits GIT_* from a git hook or a key from a local .env."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "check_offline.sh"
@@ -40,16 +41,25 @@ def test_check_offline_strips_git_variables_when_a_git_hook_runs_it(tmp_path: Pa
     assert "GIT_INDEX_FILE" not in names
 
 
-def test_check_offline_disables_dotenv_loading_when_it_runs_pytest(tmp_path: Path) -> None:
-    """A library's `load_dotenv()` would read a `.env` above the repo and bring real keys back."""
+def test_check_offline_keeps_dotenv_keys_out_when_a_library_loads_dotenv(tmp_path: Path) -> None:
+    """A library calling load_dotenv() after startup must not pull a local .env key in."""
     (tmp_path / "scripts").mkdir()
     shutil.copy(SCRIPT, tmp_path / "scripts" / SCRIPT.name)
+    (tmp_path / ".env").write_text("FAKE_DOTENV_API_KEY=dummy\n")
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        "import os\n"
+        "from dotenv import load_dotenv\n"
+        "load_dotenv()\n"
+        "print(os.environ.get('FAKE_DOTENV_API_KEY', 'absent'))\n"
+    )
     bin_dir = tmp_path / "stub-bin"
     bin_dir.mkdir()
     stub = bin_dir / "uv"
-    stub.write_text("#!/usr/bin/env bash\nenv\n")
+    stub.write_text(f'#!/usr/bin/env bash\nexec "{sys.executable}" "{probe}"\n')
     stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
-    env = {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    env = {k: v for k, v in os.environ.items() if k != "PYTHON_DOTENV_DISABLED"}
+    env["PATH"] = f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
 
     result = subprocess.run(
         ["bash", str(tmp_path / "scripts" / SCRIPT.name)],
@@ -59,4 +69,4 @@ def test_check_offline_disables_dotenv_loading_when_it_runs_pytest(tmp_path: Pat
         check=True,
     )
 
-    assert "PYTHON_DOTENV_DISABLED=1" in result.stdout.splitlines()
+    assert result.stdout.strip() == "absent"

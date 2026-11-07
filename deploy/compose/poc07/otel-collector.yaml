@@ -75,6 +75,7 @@ processors:
           - set(cache["route"], attributes["route"]) where attributes["route"] != nil
           - set(cache["session.id"], attributes["session.id"]) where attributes["session.id"] != nil
           - set(cache["span_id"], attributes["span_id"]) where attributes["span_id"] != nil
+          - set(cache["task"], attributes["task"]) where attributes["task"] != nil
           - set(cache["tool"], attributes["tool"]) where attributes["tool"] != nil
           - set(cache["trace_id"], attributes["trace_id"]) where attributes["trace_id"] != nil
           - set(cache["user.id"], attributes["user.id"]) where attributes["user.id"] != nil
@@ -98,6 +99,7 @@ processors:
           - set(attributes["route"], cache["route"]) where cache["route"] != nil
           - set(attributes["session.id"], cache["session.id"]) where cache["session.id"] != nil
           - set(attributes["span_id"], cache["span_id"]) where cache["span_id"] != nil
+          - set(attributes["task"], cache["task"]) where cache["task"] != nil
           - set(attributes["tool"], cache["tool"]) where cache["tool"] != nil
           - set(attributes["trace_id"], cache["trace_id"]) where cache["trace_id"] != nil
           - set(attributes["user.id"], cache["user.id"]) where cache["user.id"] != nil

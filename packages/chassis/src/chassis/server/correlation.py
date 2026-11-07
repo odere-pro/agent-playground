@@ -69,9 +69,10 @@ class RunRecord:
     on, so a replay under a new `request_id` dedups its writes. Neither the raw key nor its bare
     hash is held here."""
     model_route: str | None = None
-    """PoC-7: set by the evaluator gate for its fallback attempt. The model proxy sends every
-    model call of the run to this route, whatever route the workload names
-    (`chassis.server.evaluator_gate`)."""
+    """The run's route: `ctx.model_route` at `open` (the task's route through `spec.model.routes`,
+    else `spec.model.route`), replaced by the fallback route when the evaluator gate makes its
+    fallback attempt (`chassis.server.evaluator_gate`). The model proxy sends every model call of
+    the run to this route, whatever route the workload names (`chassis.model_route_forced`)."""
 
     @property
     def spent_tokens(self) -> int:
@@ -164,6 +165,7 @@ class RunRegistry:
             trace_id=trace_id,
             budget=request.budget.model_copy(),
             keyed_run_key=keyed_run_key(request),
+            model_route=ctx.model_route,
         )
         self._runs[trace_id] = record
         return record

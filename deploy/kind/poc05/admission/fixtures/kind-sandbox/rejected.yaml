@@ -1,7 +1,7 @@
 # An agent-sandbox Sandbox, rule 5: the remote pod template has no runtimeClassName.
 # expect: rejected
 # rule: 5
-# message: trust rule 5: a remote workload pod must set runtimeClassName gvisor and automountServiceAccountToken false, and take no Secret but remote-<name>-token
+# message: trust rule 5: a remote workload pod must set runtimeClassName gvisor and automountServiceAccountToken false, and take no Secret but its own <name>-token
 # differs: .spec.podTemplate.spec.runtimeClassName
 apiVersion: agents.x-k8s.io/v1beta1
 kind: Sandbox

@@ -24,8 +24,8 @@ FRAMEWORKS: tuple[str, ...] = (
     "claude-agent",
 )
 CONNECTORS: tuple[str, ...] = ("sidecar", "remote")
-DEFAULT_FRAMEWORK = "pydanticai"
-"""ADR-006 decision 1: the default engine for new agents."""
+DEFAULT_FRAMEWORK = "langgraph"
+"""ADR-006 decision 1, amended 2026-11-06: the default engine for new agents."""
 DEFAULT_CONNECTOR = "sidecar"
 """ADR-001 item 4: the default lane."""
 UNTRUSTED: frozenset[str] = frozenset({"smolagents", "claude-agent"})

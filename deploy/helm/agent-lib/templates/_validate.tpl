@@ -9,11 +9,48 @@ the merged values; prints nothing; fails the render with an "agent-lib:" message
 - The chassis gets Secrets only through chassis.secretEnv, chassis.envFromSecrets, and
   chassis.secretVolumes. No `command` (admission rule 6b).
 - The trust rule: spec.trust untrusted needs spec.engine.connector remote (ADR-005 decision 4).
-- Images pinned: the chassis by tag or digest, never latest; the workload by tag or digest.
+- Images pinned: the chassis by a tag from the library's supported list, with or without a digest
+  next to it, never latest (ADR-001 item 9; admission rule 9); the workload by tag or digest.
 - The remote lane: one replica (the remote listener answers only for a run in this process), no
-  HPA, a token Secret, a fixed ClusterIP for the remote proxy (the remote pod has no DNS), gVisor.
-- Egress rules name a peer by label; no ipBlock and no rule without a `to` (deploy/CLAUDE.md).
+  HPA, a fixed ClusterIP for the remote proxy (the remote pod has no DNS), gVisor. The token
+  Secret is named by the chart (admission rule 7c), not by a value.
+- Egress rules name a peer by namespace and pod labels and a port; no ipBlock, no rule without a
+  `to`, no empty selector (deploy/CLAUDE.md; 026 CH-4: default-deny egress).
+- The service's raw values (agent-lib.validateServiceValues): a key the chart does not read is
+  refused, so no value can look like it switches a rule off; the admission rules are the
+  platform's (agent-lib.admission), the supported chassis tags the library's.
 */}}
+{{- define "agent-lib.validateServiceValues" -}}
+{{- $keys := list "nameOverride" "replicas" "terminationGracePeriodSeconds" "chassis" "workload" "service" "remote" "networkPolicy" "hpa" -}}
+{{- range $k, $_ := . -}}
+{{- if eq $k "admission" -}}
+{{- fail "agent-lib: admission is not a service value. The admission rules are the platform's (agent-lib.admission, deploy/helm/agent-admission) and bind to the namespace, so a service cannot switch them off" -}}
+{{- end -}}
+{{- if not (or (has $k $keys) (has $k (list "global" "agent-lib"))) -}}
+{{- fail (printf "agent-lib: %s is not a value the chart reads. Allowed: %s" $k (join ", " $keys)) -}}
+{{- end -}}
+{{- end -}}
+{{- if hasKey (dig "chassis" "image" (dict) .) "supportedTags" -}}
+{{- fail "agent-lib: chassis.image.supportedTags is set once, in the library chart (ADR-001 item 9), never by a service; pin chassis.image.tag to one of them" -}}
+{{- end -}}
+{{- if dig "remote" "tokenSecret" "name" "" . -}}
+{{- fail "agent-lib: remote.tokenSecret.name is not a value: the chart names the remote's one Secret after its pod, <name>-workload-token (ADR-005 decision 1; admission rule 7c)" -}}
+{{- end -}}
+{{- end -}}
+
+{{/* A NetworkPolicy peer named by labels: no ipBlock, a namespace and a pod, neither empty. Takes (dict "peer" <peer> "where" <values path>). */}}
+{{- define "agent-lib.validatePeer" -}}
+{{- $p := .peer -}}
+{{- if hasKey $p "ipBlock" -}}
+{{- fail (printf "agent-lib: %s uses an ipBlock; name the peer by namespace and pod labels (deploy/CLAUDE.md, default-deny egress)" .where) -}}
+{{- end -}}
+{{- if not (dig "namespaceSelector" "matchLabels" (dict) $p) -}}
+{{- fail (printf "agent-lib: %s names no namespace: a peer needs namespaceSelector.matchLabels (an empty selector is every namespace)" .where) -}}
+{{- end -}}
+{{- if not (dig "podSelector" "matchLabels" (dict) $p) -}}
+{{- fail (printf "agent-lib: %s names no pod: a peer needs podSelector.matchLabels (an empty selector is every pod)" .where) -}}
+{{- end -}}
+{{- end -}}
 {{- define "agent-lib.validate" -}}
 {{- $v := . -}}
 {{- $credential := "(?i)(^|_)(API_?KEY|KEY|TOKEN|PGPASSWORD|PASSWORD|PASSWD|SECRET|CREDENTIALS?)($|_)" -}}
@@ -103,10 +140,13 @@ and argparse accepts abbreviations, so a deny-list cannot hold. */ -}}
 {{- end -}}
 {{- $img := $v.chassis.image -}}
 {{- if eq (toString $img.tag) "latest" -}}
-{{- fail "agent-lib: chassis.image.tag latest is not a pin; set a tag or a digest" -}}
+{{- fail "agent-lib: chassis.image.tag latest is not a pin; set a supported tag, with a digest next to it if you pin by digest" -}}
 {{- end -}}
-{{- if and (not $img.digest) (not $img.tag) -}}
-{{- fail "agent-lib: chassis.image needs a tag or a digest" -}}
+{{- if not $img.tag -}}
+{{- fail "agent-lib: chassis.image.tag is required, with or without a digest next to it: admission rule 9 reads the chassis tag, and a chassis pinned by digest alone has none" -}}
+{{- end -}}
+{{- if not (has (toString $img.tag) $img.supportedTags) -}}
+{{- fail (printf "agent-lib: chassis.image.tag %s is below the minimum chassis version; the library chart supports %s (ADR-001 item 9; admission rule 9 refuses it too)" (toString $img.tag) (join ", " $img.supportedTags)) -}}
 {{- end -}}
 {{- if and $img.digest (not (regexMatch "^sha256:[a-f0-9]{64}$" $img.digest)) -}}
 {{- fail (printf "agent-lib: chassis.image.digest %s is not sha256:<64 hex>" $img.digest) -}}
@@ -136,9 +176,6 @@ and argparse accepts abbreviations, so a deny-list cannot hold. */ -}}
 {{- if $v.hpa.enabled -}}
 {{- fail "agent-lib: hpa.enabled in the remote lane; it runs one replica (run_required)" -}}
 {{- end -}}
-{{- if not $v.remote.tokenSecret.name -}}
-{{- fail "agent-lib: the remote lane needs remote.tokenSecret.name, the Secret with the per-remote bearer token (ADR-005 decision 1)" -}}
-{{- end -}}
 {{- if not $v.remote.tokenSecret.key -}}
 {{- fail "agent-lib: remote.tokenSecret.key is empty" -}}
 {{- end -}}
@@ -164,20 +201,22 @@ and argparse accepts abbreviations, so a deny-list cannot hold. */ -}}
 {{- end -}}
 {{- end -}}
 
-{{- /* Egress: peers by label only. */ -}}
+{{- /* Egress: default deny, with peers named by labels and ports (026 CH-4). */ -}}
 {{- range $i, $rule := $v.networkPolicy.chassisEgress -}}
 {{- if not (and (kindIs "map" $rule) $rule.to) -}}
 {{- fail (printf "agent-lib: networkPolicy.chassisEgress[%d] has no `to`, which would allow every destination" $i) -}}
 {{- end -}}
 {{- range $peer := $rule.to -}}
-{{- if hasKey $peer "ipBlock" -}}
-{{- fail (printf "agent-lib: networkPolicy.chassisEgress[%d] uses an ipBlock; name the peer by namespace and pod labels (deploy/CLAUDE.md, default-deny egress)" $i) -}}
+{{- include "agent-lib.validatePeer" (dict "peer" $peer "where" (printf "networkPolicy.chassisEgress[%d]" $i)) -}}
 {{- end -}}
+{{- if not $rule.ports -}}
+{{- fail (printf "agent-lib: networkPolicy.chassisEgress[%d] has no ports, which would open every port on the peer" $i) -}}
 {{- end -}}
 {{- end -}}
 {{- range $i, $peer := $v.networkPolicy.ingressFrom -}}
-{{- if hasKey $peer "ipBlock" -}}
-{{- fail (printf "agent-lib: networkPolicy.ingressFrom[%d] uses an ipBlock; name the peer by labels" $i) -}}
+{{- include "agent-lib.validatePeer" (dict "peer" $peer "where" (printf "networkPolicy.ingressFrom[%d]" $i)) -}}
 {{- end -}}
+{{- if not $v.networkPolicy.dns.podLabels -}}
+{{- fail "agent-lib: networkPolicy.dns.podLabels is empty, which would open port 53 on every pod in the DNS namespace" -}}
 {{- end -}}
 {{- end -}}

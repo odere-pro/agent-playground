@@ -6,8 +6,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 from agentctl import rules
 from agentctl.cli import main
+from agentctl.scaffold import TEMPLATE
 
 
 def _new(tmp_path: Path, platform: Path, *args: str) -> int:
@@ -66,7 +68,7 @@ def test_an_untrusted_framework_is_refused_in_the_sidecar_lane(
 
 
 def test_the_trust_table_matches_adr_006() -> None:
-    assert rules.DEFAULT_FRAMEWORK == "pydanticai"
+    assert rules.DEFAULT_FRAMEWORK == "langgraph"  # amended 2026-11-06
     assert rules.DEFAULT_CONNECTOR == "sidecar"
     trusted = {f for f in rules.FRAMEWORKS if rules.trust_of(f) == "trusted"}
     assert trusted == {"python", "pydanticai", "langgraph", "openai-agents"}
@@ -76,20 +78,43 @@ def test_the_trust_table_matches_adr_006() -> None:
         rules.check_lane(framework, "sidecar")
 
 
-def test_the_defaults_scaffold_a_pydanticai_sidecar_agent_with_a_first_commit(
+def test_the_template_default_framework_matches_the_rules() -> None:
+    """`copier copy` without agentctl gets the same default (ADR-006 decision 1)."""
+    framework = yaml.safe_load((TEMPLATE / "copier.yml").read_text())["framework"]
+    assert framework["default"] == rules.DEFAULT_FRAMEWORK
+    assert rules.DEFAULT_FRAMEWORK in framework["help"]
+    assert list(framework["choices"]) == list(rules.FRAMEWORKS)
+
+
+def test_the_defaults_scaffold_a_langgraph_sidecar_agent_with_a_first_commit(
     tmp_path: Path, platform: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """ADR-006 decision 1, amended 2026-11-06: LangGraph is the default engine."""
     assert _new(tmp_path, platform, "invoice-reader", "--kind", "transformer") == 0
     agent = tmp_path / "invoice-reader"
-    assert (agent / "src/invoice_reader/mapping.py").is_file()
+    src = agent / "src/invoice_reader"
+    for file in ("handle.py", "mapping.py", "telemetry.py", "tools.py"):
+        assert (src / file).is_file(), f"{file}: the LangGraph partial was not rendered"
+    assert "StateGraph" in (src / "handle.py").read_text()
     answers = (agent / ".copier-answers.yml").read_text()
-    assert "framework: pydanticai" in answers and "connector: sidecar" in answers
+    assert "framework: langgraph" in answers and "connector: sidecar" in answers
     log = _git(agent, "log", "--format=%s")
     assert log.splitlines() == ["chore: scaffold invoice-reader with agentctl"]
     assert _git(agent, "status", "--porcelain") == ""
     assert _git(agent, "branch", "--show-current").strip() == "main"
     assert _git(agent, "remote") == ""
     assert "invoice-reader" in capsys.readouterr().out
+
+
+def test_pydanticai_still_renders_when_asked_for(tmp_path: Path, platform: Path) -> None:
+    """PydanticAI stays supported in the sidecar lane (ADR-006 decision 2)."""
+    code = _new(tmp_path, platform, "reader", "--kind", "tool", "--framework", "pydanticai")
+    assert code == 0
+    src = tmp_path / "reader/src/reader"
+    assert (src / "handle.py").is_file() and (src / "mapping.py").is_file()
+    assert not (src / "tools.py").exists(), "tools.py belongs to the LangGraph partial"
+    answers = (tmp_path / "reader/.copier-answers.yml").read_text()
+    assert "framework: pydanticai" in answers and "connector: sidecar" in answers
 
 
 def test_an_existing_folder_that_is_not_empty_is_refused(
