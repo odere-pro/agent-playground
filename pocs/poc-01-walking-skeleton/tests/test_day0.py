@@ -205,7 +205,7 @@ async def test_the_review_probe_no_longer_runs_in_process_in_cloud(
     with pytest.raises(ValueError, match=r"spec\.engine\.connector"):
         load_config(_config("cloud", sidecar, {"engine": "inprocess"}))
 
-    monkeypatch.setenv("LITELLM_BASE_URL", "http://router:4000/v1")
+    monkeypatch.setenv("LITELLM_BASE_URL", "https://router:4000/v1")
     monkeypatch.delenv("CONFIG_S3_ENDPOINT", raising=False)
     empty = load_config(_config("cloud", sidecar, {}))
     with pytest.raises(AdapterNotAvailable, match=r"is unavailable|is not configured"):

@@ -241,7 +241,9 @@ async def _begin_idempotency[BodyT](
     idempotency = pipeline.idempotency
     if not idempotency.applies(ids.key_from):
         return request, None
-    outcome = await idempotency.begin(request, wait_ms=request.budget.timeout_ms)
+    outcome = await idempotency.begin(
+        request, wait_ms=request.budget.timeout_ms, subject=current_user_id()
+    )
     if isinstance(outcome, Refusal):
         return to_response(
             adapter.error(

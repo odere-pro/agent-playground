@@ -238,6 +238,9 @@ Each is built by `from_env()` and loaded lazily.
   - Otherwise it frees the key.
 - An entry of another version is a final 409. So is a `too_large` marker.
 - `store_key` is `chassis:idem:v1:<agent>:<sha256>`.
+  - With auth off, the digest is the sha256 of the key, as before.
+  - With auth on, it is the sha256 of the canonical JSON `[subject, key]`. `serve` passes `subject=current_user_id()`, so one caller never replays another's result.
+- A `done` entry holds the sha256 hex of the key in `request` and `response`, never the raw key. A replay puts the caller's own key back.
 - `fingerprint` covers `{agent, input, context_ref}`.
 
 ### readiness.py
@@ -256,7 +259,8 @@ Each is built by `from_env()` and loaded lazily.
   - SIGTERM sets `draining`.
   - It sleeps the delay, then closes the public listener.
   - It waits for in-flight runs, then closes the proxy listener last.
-  - A second signal forces exit.
+  - A second signal exits at once, even with a stream open. It cuts every open connection, so each run is cancelled.
+  - The public lifespan still runs then: the bounded wait for result events, then the ports close.
 
 ### results.py
 
@@ -387,7 +391,7 @@ The Anthropic proxy route (`POST /v1/messages` on the proxy port; contract v5, p
 
 - The public listener is on `--port` 8080. suggested.
 - The proxy is on `--proxy-host 127.0.0.1 --proxy-port 8090`. suggested.
-- A non-loopback proxy host is refused unless `--allow-any-proxy-host`. That flag is for tests; it is not the `remote` lane.
+- A non-loopback proxy host is refused unless `--allow-any-proxy-host`. That flag is for tests; it is not the `remote` lane. After the config loads, the flag itself is refused with status 2 in profile `cloud` and when `spec.trust` is `untrusted` (R5a-22).
 - The `remote` lane adds a third listener: `--remote-proxy-host <pod IP>` and `--remote-proxy-port` (8091, suggested). See [remote_auth.py](#remote_authpy).
 - The proxy listeners bind first. A taken proxy port exits with status 3 before the public listener binds.
 - `--drain-delay-s` 5 and `--drain-timeout-s` 30. suggested.
@@ -411,7 +415,7 @@ Spec: [contract v4](../contracts/contract-v4.md). How it works: [the PoC-5 guide
 - Two ASGI middlewares wrap it, outermost first. Both refuse every non-`http` scope except `lifespan`.
   - `BearerAuth(tokens)`: `Authorization: Bearer <t>` must equal the current or the previous token. It compares with `hmac.compare_digest`. Else 401 `remote_unauthenticated`, one fixed body (the Anthropic shape on `/v1/messages`). It counts `chassis.remote.auth_failed{reason}` and removes the header before the route sees it.
   - `RequireRun`: the `traceparent` must name a run in flight. Else 403 `run_required`. So a remote spends tokens and calls tools only inside a run, under its budget.
-- `remote_tokens(auth)` reads the tokens from `spec.engine.auth.token_env` and `previous_token_env`. A missing variable is a `LookupError` that names it.
+- `remote_tokens(auth)` reads the tokens from `spec.engine.auth.token_env` and `previous_token_env`. A missing variable is a `LookupError` that names it. A set token shorter than `MIN_TOKEN_LENGTH` (suggested: 32 characters), current or previous, is a `ValueError` that names the variable, never the value (R2-31); `chassis serve` exits with status 2.
 - `chassis serve` runs it only when `spec.engine.connector` is `remote` (see [cli.py](#clipy)).
 - Tests: `tests/test_remote_auth.py`, `tests/test_server_cli.py`. Scenarios: `pocs/poc-05-sandboxed/tests/test_poc05_remote_lane_offline.py`; on kind, `test_poc05_kind_remote_controls.py` (`POC05_KIND=1`).
 
@@ -421,6 +425,7 @@ Spec: [contract v4](../contracts/contract-v4.md). How it works: [the PoC-5 guide
 
 - It authenticates with the service's own LiteLLM virtual key. The gateway's per-key allow-list is the hard limit; the adapter adds none of its own.
 - The httpx client ignores the environment (`trust_env=False`) and never follows a redirect. The key is never logged, never in an error, and never in `repr`.
+- `from_env` refuses a `LITELLM_MCP_URL` that is not `https`, unless the host is loopback or an in-cluster name: one label with no dot, or a name ending in `.svc` or `.svc.cluster.local` (suggested). The `ValueError` names the variable, never the URL. Profile `cloud` requires `https` always. Tests: `tests/test_tool_gateway_url.py`.
 - `list_tools()` is sync, so the adapter keeps a cached list. `await refresh()` fills it. `start()` refreshes it in the background. A failed refresh keeps the last list.
 - The tool endpoint's lifespan calls `refresh()`, then `start()`, and `aclose()` on shutdown.
 - `call()` checks before any request: a write tool with no key raises `idempotency_key_required`; arguments that fail the schema raise `bad_arguments`.
@@ -475,7 +480,7 @@ Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 
 | `chassis/ports/{auth,guardrail,evaluator,feedback}.py` | The four new ports, each with a no-op default in `PortBundle` | A.1 to A.4 |
 | `chassis/fakes/{auth,guardrail,evaluator,feedback}.py` | `StaticTokens`, `KeywordGuardrails`, `ScriptedEvaluator`, `InMemoryFeedback` | A.1 to A.4 |
 | `chassis/adapters/otel` | `OtelTelemetry`: OTLP over HTTP, the run span on the request's W3C trace id, `user.id` and `session.id` as baggage | A.5, F |
-| `chassis/adapters/oidc` | `OidcAuth`: a JWT checked against the IdP's JWKS (pyjwt) | A.1, D.1 |
+| `chassis/adapters/oidc` | `OidcAuth`: a JWT checked against the IdP's JWKS (pyjwt). `OIDC_JWKS_URL` must be `https` unless its host is loopback; else a `ValueError` at construction (R5a-12) | A.1, D.1 |
 | `chassis/adapters/litellm/guardrails.py` | `LiteLLMGuardrails`: LiteLLM's `POST /guardrails/apply_guardrail`, guardrail names per stage | A.2, D.3 |
 | `chassis/adapters/langfuse` | `LangfuseFeedback`: Langfuse `POST /api/public/scores`, plain httpx | A.4 |
 | `chassis/adapters/evaluators.py` | `JudgeEvaluator` (an LLM judge through `ModelPort`; its route is `spec.model.judge_route` through `bind_route`, else `CHASSIS_JUDGE_ROUTE`) and `EncoderEvaluator` (a TEI classifier) | A.3 |
@@ -483,8 +488,8 @@ Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 
 | `chassis/server/guard.py` | The `input`, `tool_output`, and `output` guard stages | D.2 |
 | `chassis/server/marking.py` | `MarkOutputs`: `X-AI-Generated` and `X-AI-Disclosure-Required` on every run interface | E |
 | `chassis/server/feedback.py` | `POST /v1/feedback`, the request-to-trace lookup in `StatePort`, the event `agents.feedback.received.v1` | B, C |
-| `chassis/server/evaluator_gate.py` | `GatedEngine`: sync and async gating, retry, fallback, sample rate | G |
-| `chassis/redaction.py` | Regex redaction of the chassis's logs and events. Never a named-entity model | B.6, ADR-008 item 6 |
+| `chassis/server/evaluator_gate.py` | `GatedEngine`: sync and async gating, retry, fallback, sample rate (salted per process, R7-17), `evaluator_on_error` (`fail_open` or `fail_closed`) | G |
+| `chassis/redaction.py` | Regex redaction of the chassis's logs and events: `<SECRET>` first (`SECRET_PREFIXES`, assignments), then emails, Luhn-valid cards, and phones with a `+` or a separator. Never a named-entity model | B.6, ADR-008 item 6 |
 | `chassis/core/trace.py` (`continued`, `parent_span_id`) | A checked inbound `traceparent` for the model proxy and the tool endpoint to continue | A.5 |
 
 - The model proxy also sends every call of the gate's fallback attempt to the fallback route (`chassis.model_route_forced`), the same rule that holds every call of a run to the run's route (see [model_proxy.py](#model_proxypy)). `with_gate` binds the judge's route to the live `spec.model.judge_route`, so a reload changes it.
@@ -520,6 +525,10 @@ Spec: [contract v7](../contracts/contract-v7.md). Decisions: ADR-007 and ADR-008
 - `connector: remote` builds `RemoteConnector`. It adds `spec.engine.auth`, and `spec.engine.protocol: a2a` for a third-party agent.
 - `spec.adapters` (`model`, `config`, `telemetry`, `tools`, `state`, `events`) merges over the profile defaults per field.
 - `cloud` refuses `fake` and `memory` adapters. suggested.
+- `cloud` refuses `auth: none`. A call would run as the anonymous principal.
+- `cloud` refuses `CONFIG_S3_SECURE` off (`config: s3` or `minio`). It refuses a `VALKEY_URL` that is not `rediss://`, `valkeys://`, or `unix://`, or that sets `ssl_cert_reqs` other than `required` or `ssl_check_hostname` false (`state: valkey`). `CHASSIS_ALLOW_PLAINTEXT_STORES=1` allows both and logs a warning. suggested.
+- `cloud` requires `https` for `LITELLM_MCP_URL` (`tools: mcp`), `LITELLM_BASE_URL` (`model` or `guardrails: litellm`), and `OIDC_JWKS_URL` (`auth: oidc`). No exemption or override applies.
+- Each `cloud` refusal is `AdapterNotAllowed`. It runs before any adapter is built, and it names the variable, never its value. Tests: `test_profiles_cloud_transport.py`.
 - `state` is `memory` or `valkey`. The default is `memory` in `fake`, and `valkey` in `local` and `cloud`.
 - `events` is `none`, `memory`, `kafka`, or `dapr`. The default is `none` everywhere.
 - `config` adds `minio` and `s3`.
