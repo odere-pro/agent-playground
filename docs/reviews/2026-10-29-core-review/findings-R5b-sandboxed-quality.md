@@ -67,7 +67,7 @@ Problem: `_JSON_TYPES`, `_matches`, and `_argument_problem` (lines 87 to 128) ar
 Why it matters: This breaks "no second helper"; the fake and the real adapter can accept different arguments while the shared contract suite passes.
 Fix: Keep one checker in a neutral module (`core` or `ports`, no SDK) and have both import it. Keeps behavior: no (nested and `enum` checks start to run in the adapter).
 Spec: "given a schema with a nested property of the wrong type, when the fake and the gateway adapter get the same arguments, then both refuse with `bad_arguments`."
-Status: proposal (#28; decide in [proposals.md](proposals.md))
+Status: fixed (#91)
 
 ### R5b-09 [MEDIUM] [maintainable] packages/fake-mcp-server/src/fake_mcp_server/server.py:30
 Problem: `GLOSSARY` and `ACRONYMS` (lines 30 to 51) are byte copies of `chassis/fakes/tool.py:158` and `:194`, joined only by comments; no test compares them.

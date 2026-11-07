@@ -29,7 +29,7 @@ Problem: The tests and the bake-off kit use two task lists with different prompt
 Why it matters: The offline tests and the scorecard can both pass while they measure different things. The fake model script matches only the prefixes, so the gap shows only on a real model.
 Fix: Keep one `Task` source (text, facts, tool steps) in `bakeoff.tasks` and import it in the harness. Keeps behavior: no (one side's prompt changes; check the recorded scorecards still hold).
 Spec: "given the harness and `bakeoff.tasks`, when both are loaded, then each task name maps to the same text."
-Status: proposal (#29; decide in [proposals.md](proposals.md))
+Status: fixed (#86)
 
 ### R6-02 [HIGH] [secure] packages/workloads/echo-claude-agent/src/echo_claude_agent/handle.py:218
 Problem: `_scrub` removes the token only from the final `error` event. The CLI env carries the token as `ANTHROPIC_AUTH_TOKEN` (`:128`), Bash is an allowed tool with `permission_mode="dontAsk"` (`:68`, `:154`), and every other event is yielded as is (`:207`).
@@ -99,7 +99,7 @@ Problem: A remote Sandbox pod is long-lived, and every run in it shares one uid,
 Why it matters: One hostile run can leave a file or a background process for the next run, or read a concurrent run's files. The PoC-5 code runner closes this with one sandbox per call; these engines do not.
 Fix: Use one Sandbox per run, or serve one request at a time and recycle the pod after each run. Keeps behavior: no.
 Spec: "given a remote-claude-agent pod, when run 1's Bash writes `/tmp/marker` and starts `sleep 600 &`, then run 2 sees no marker and no stray process."
-Status: proposal (#29; decide in [proposals.md](proposals.md))
+Status: fixed (#91)
 
 ### R6-12 [MEDIUM] [secure] deploy/compose/poc06/litellm-hosted.yaml:31
 Problem: On the Mac hosted step, the chassis's `LITELLM_API_KEY` is the LiteLLM master key (`scripts/poc06_mac.sh:584-585`, `packages/bakeoff/src/bakeoff/config.py:134`). It has no route scope and no budget, and `deploy/compose/poc06/litellm.config.yaml` sets no `max_budget`.
@@ -148,7 +148,7 @@ Problem: Criterion 1 (`:182-194`) promises "only `spec.model.route` changed" but
 Why it matters: The evidence in the README is stronger than the asserts behind it, and an unconditional stub is easy to forget.
 Fix: Assert the counts or reword the README claim; skip criterion 2 only while the hosted results file is absent, as `need_results` does. Keeps behavior: no (changes what the criterion tests assert).
 Spec: "given a committed hosted-run results file, when the 6c criteria run, then the side-by-side test runs instead of skipping."
-Status: proposal (#63; decide in [proposals.md](proposals.md))
+Status: fixed (#86)
 
 ### R6-19 [MEDIUM] [tests] pocs/poc-06c-pretrained-slm/tests/test_poc06c_mac_static.py:297
 Problem: Several "static" tests match exact text in a shell script or a note, and their names do not say so. `test_the_script_keeps_the_key_rules` (`:297-321`) regex-matches one line of `poc06_mac.sh`; `test_the_record_names_each_exception` (`test_poc06b_kind_static.py:1018`) greps a note for six phrases.

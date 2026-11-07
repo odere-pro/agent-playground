@@ -2,8 +2,30 @@
 
 What is left after the core review of PoC-0 to PoC-7, ranked by risk. Written 2026-11-05.
 
+## Update 2026-11-07: the proposals are done
+
+The user accepted every proposal on 2026-11-06. P0 to P2, and the proposals in P3, are now fixed, except R0-01. The rest of this page is the 2026-11-05 ranking, kept as the record.
+
+- The PRs: #85 (contract v8 and the run secret), #86 (PoC-6 tests and the CI token), #87 (the stream guard and guardrail and OTLP auth), #89 (chassis hardening), #91 (admission, network, and tools), and #97 (R0-14, R2-09, R2-27).
+- 283 findings are fixed. R0-01 is deferred, because only the user may edit `.claude/settings.json`.
+- Items 24 to 32 below still stand. The PoC-7 README ADR line is fixed.
+
+Follow-ups the proposal sessions found:
+
+- Two flaky timing tests. In PoC-4, `test_idempotency_replicas.py::test_every_interface_replays_the_same_result[anthropic-stream]` got a 409 "still running" once in CI. In the chassis, `test_a2a_sidecar.py::test_timeout_mid_run_yields_a2a_timeout_and_cancels` lost its `delta` once under load. Both are the B-1 class: give each a fake clock or a wider margin.
+- The agentctl template renders any local `__pycache__` under `template/`. Exclude it in the Copier config.
+- `echo-python` may parse model chunks without a check, as `echo-typescript` did before R2-27.
+- The PoC-5 guides, the manifests, and the `workload-a2a` rotation runbook still describe one shared remote token. They work through the fallback, but none sets `proxy_token_env` (R2-09).
+- The evaluator gate texts in contract v6 and ADR-010 still describe the old gate (unsalted, fail-open).
+- `pii-mask` runs only before the call, so PII split across two stream windows has no backstop.
+- The guardrail server checks auth after JSON parsing, and the Collector masks card-shaped runs that fail Luhn, because RE2 cannot check Luhn.
+- The kind proofs for R5a-23 (the LiteLLM bearer `os.environ/` expansion) and R6-11 are first proven by CI's kind jobs, not on this Mac.
+- `deploy/agent-scan/scan.sh` still says "a fork PR, or no secret yet". Only a GitHub environment limited to `main` closes a `workflow_dispatch` from a branch.
+
+The 2026-11-05 ranking:
+
 - The review filed 285 findings. Fix sessions fixed 242 without a behavior change.
-- 42 need a behavior change, so they wait for your decision in [proposals.md](proposals.md): the 41 filed proposals and F8-01. The fix sessions do not apply them.
+- 42 needed a behavior change, so they waited for the user's decision in [proposals.md](proposals.md): the 41 filed proposals and F8-01.
 - Each finding's outcome is on its `Status:` line, with the PR that closed it.
 
 Ranks:

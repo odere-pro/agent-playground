@@ -77,7 +77,7 @@ Why it matters: The pipeline writes a workload or connector `Error.message` to l
 Fix: Add a `SECRET` entity (Bearer tokens, key shapes, PEM headers) to `PATTERNS`, replacing with `<SECRET>`.
 Keeps behavior: no (the redacted text in result events and logs changes).
 Spec: "given an engine `Error.message` of 'upstream said Bearer abc.def-123 and sk-abcdefgh12345678', when it is redacted, then neither token remains."
-Status: proposal (#24; decide in [proposals.md](proposals.md))
+Status: fixed (#89)
 
 ### R1-08 [MEDIUM] [secure] packages/chassis/src/chassis/core/collector.py:45
 Problem: `collect` copies the raw `Error.message` into `output.error.message`, which the native `/v1/run` and MCP replies return to the caller.
@@ -85,7 +85,7 @@ Why it matters: OpenAI and Anthropic send `public_message(code)` because run-err
 Fix: Return `public_message(code)` in the native and MCP envelope and keep the raw text in the log and span.
 Keeps behavior: no (it changes the `output.error.message` wire value that contract-v2 freezes).
 Spec: "given a run that ends with `Error(code='a2a.bad_event', message=<text with an internal URL>)`, when `/v1/run` answers, then `output.error.message` is the fixed public text."
-Status: proposal (#24; decide in [proposals.md](proposals.md))
+Status: fixed (#85)
 
 ### R1-09 [MEDIUM] [secure] packages/chassis/src/chassis/core/envelope.py:40
 Problem: `request_id`, `trace_id`, and `idempotency_key` (also lines 55-57 and 67-69) have no length or charset limit, and event payloads (`core/events.py:61`: `Error.message`, `Delta.text`, `ToolCall.arguments`, `Metrics` counts) have no `max_length` or `ge=0`; the published schemas match that looseness.
@@ -93,7 +93,7 @@ Why it matters: Control characters and values up to the 1 MiB body cap reach log
 Fix: Add `Field(min_length=1, max_length=128, pattern=...)` on id fields and `max_length` or `ge=0` on event fields, then run `make schemas`; ask `chassis-architect` first.
 Keeps behavior: no (it narrows the wire contract and the event schema).
 Spec: "given an `idempotency_key` with a newline or a `Metrics(input_tokens=-5)` event, when the chassis parses it, then it is refused."
-Status: proposal (#24; decide in [proposals.md](proposals.md))
+Status: fixed (#85)
 
 ### R1-10 [MEDIUM] [simple] packages/contract-suites/src/chassis_contracts/interface.py:637
 Problem: `interface.py` is 934 lines and `inbound.py` is 880 lines, both over the 800 limit; lines 124-636 of `interface.py` are a serving and client harness, and lines 1-400 of `inbound.py` are case tables and an SSE parser.
@@ -245,7 +245,7 @@ Why it matters: It is a PoC-numbered option that outlived its purpose.
 Fix: Drop the `poc` argument, say "adapter X is unavailable (no module Y)", and rename `_POC07_OFF` (line 110).
 Keeps behavior: no (error text changes; `test_profiles.py:222`, `pocs/poc-05-sandboxed/tests/test_poc05_trust_config.py:274`, and `pocs/poc-01-walking-skeleton/tests/test_day0.py:103` match it).
 Spec: "given a lazy factory whose module is missing, when called, then it raises `AdapterNotAvailable` naming the port and adapter and no PoC number."
-Status: proposal (#24; decide in [proposals.md](proposals.md))
+Status: fixed (#86)
 
 ### R1-29 [LOW] [maintainable] packages/chassis/src/chassis/profiles.py:39
 Problem: Lines 39-40 import `chassis.adapters.a2a` and `chassis.adapters.litellm` eagerly, while the docstring (line 16) says profiles reach adapters through `lazy`.

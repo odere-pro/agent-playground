@@ -82,7 +82,7 @@ Problem: a duplicate of an in-flight keyed call polls `set_if_absent` and `get` 
 Why it matters: one slow call plus N duplicates sends about 20N operations a second to the shared Valkey, and a saturated store turns into 503 for every keyed call on every replica.
 Fix: poll with jittered exponential backoff up to `wait_poll_ms`, and stop when the client goes away; a waiter cap with a 409 is a new refusal and goes to a proposal. Keeps behavior: yes (backoff); no (waiter cap).
 Spec: "given a claim in flight and 500 duplicates of its key, when they wait for 1 s, then the store sees fewer than 500 × 10 operations."
-Status: proposal (#35; decide in [proposals.md](proposals.md))
+Status: fixed (#85)
 
 ### R4-11 [MEDIUM] [secure] deploy/compose/docker-compose.scale.yaml:361
 Problem: the one network `poc04` is not `internal: true`, so every workload (which shares its chassis's network namespace) can reach the internet, the LAN, and the host through `host.docker.internal`.
@@ -215,14 +215,14 @@ Problem: the `done` entry stores `request.model_dump`, which holds the raw clien
 Why it matters: the key is often built from business data and now sits in clear text at rest, and the docstring tells the reader otherwise.
 Fix: correct the docstring now; storing the hash in place of the key changes the stored entry format, so it goes to a proposal. Keeps behavior: yes (docstring); no (entry format).
 Spec: "given a finished keyed run, when the raw bytes under `store_key` are read, then the client's key string does not appear in them."
-Status: partly fixed (#35: docstring: fixed (PR). Entry format: proposal)
+Status: fixed (#89)
 
 ### R4-30 [LOW] [secure] packages/chassis/src/chassis/adapters/s3/config.py:122
 Problem: `CONFIG_S3_SECURE=false` is honored on every profile, including `cloud`, and `ValkeyState` takes a plain `redis://` URL with `VALKEY_PASSWORD` the same way.
 Why it matters: the document that sets `spec.prompt`, `spec.model.route`, and `spec.limits` can then be swapped on the wire, and it passes every check because those paths are reloadable.
 Fix: on the `cloud` profile, refuse `secure=false` and a non-TLS Valkey URL unless a named override is set. Keeps behavior: no (a plaintext cloud deployment fails at start).
 Spec: "given profile `cloud` and `CONFIG_S3_SECURE=false`, when `build_ports` runs, then it raises with the variable name and does not connect."
-Status: proposal (#35; decide in [proposals.md](proposals.md))
+Status: fixed (#89)
 
 ## Wall-clock tests (same pattern as B-1)
 

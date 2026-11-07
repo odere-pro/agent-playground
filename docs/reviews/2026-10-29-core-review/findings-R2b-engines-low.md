@@ -14,7 +14,7 @@ Problem: `remote_tokens` and the workload's `read_token` (`workload_a2a/auth.py:
 Why it matters: the remote listener binds the pod IP, so a short token can be guessed online.
 Fix: require a minimum length (suggested: 32 characters) at startup, and name only the variable in the error. Keeps behavior: no (short tokens are refused; tests with short tokens change).
 Spec: "given an 8-character token variable, when the chassis or `workload-a2a` starts, then it exits naming the variable and never the value."
-Status: proposal (#31; decide in [proposals.md](proposals.md))
+Status: fixed (#89)
 
 ### R2-32 [LOW] [tests] packages/chassis/tests/test_dapr_inbound.py:354
 Problem: `proxy_app.py` has no test of the 503 that `_EventsInbound` sends before the lifespan builds the ports, nor of the router rebuild when `ports.events` changes; only the 404 branches are tested (:349, :363).

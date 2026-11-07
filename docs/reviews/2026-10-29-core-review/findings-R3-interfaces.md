@@ -23,7 +23,7 @@ Problem: `workload.exception` puts `f"{type(exc).__name__}: {exc}"` in the error
 Why it matters: Rubric "errors do not leak internals": exception text, internal URLs, and upstream bodies reach callers on the public port. Only the OpenAI and Anthropic paths use `public_message(code)`.
 Fix: In native `complete` and `stream` (`server/interfaces/native.py:176-189`), send `public_message(code)` and keep the raw text in the log and the span. Keeps behavior: no (the native error `message` text changes; codes and schema do not).
 Spec: "given a workload that raises RuntimeError('http://internal:9000 refused'), when a native stream or an MCP call returns the error, then the client sees the fixed public text and the raw text is only in the log."
-Status: proposal (#38; decide in [proposals.md](proposals.md))
+Status: fixed (#85)
 
 ### R3-03 [HIGH] [maintainable] pocs/poc-03-one-interface-every-client/tests/poc03_harness.py:49
 Problem: The harness inserts the PoC-2 tests folder into `sys.path`. PoC-4 to PoC-7 then import `poc03_harness` pieces (`OutboundRouter`, `chassis_on_unix_sockets`, `ENGINES`, `AGENT`) through their own `sys.path` inserts (for example `poc04_conftest.py:27`, `poc05_conftest.py:32`, `poc-06a .../conftest.py:20`, `poc-07 .../conftest.py:19`).
@@ -51,7 +51,7 @@ Problem: `store_key` is scoped only by agent and the client's key, not by the au
 Why it matters: Caller B can get caller A's stored response by sending A's key with the same input. With a different input, B gets a 422 that confirms the key is in use.
 Fix: Hash the principal's subject into the store key when auth is on. Keeps behavior: no (replay across principals stops; entries stored before the change are not found).
 Spec: "given caller A finished a run with Idempotency-Key K, when caller B sends K with the same input, then B never gets A's stored response."
-Status: proposal (#38; decide in [proposals.md](proposals.md))
+Status: fixed (#89)
 
 ### R3-07 [MEDIUM] [simple] packages/chassis/src/chassis/server/interfaces/serve.py:158
 Problem: `serve()` is 83 lines and holds four jobs: the idempotency outcome (184-198), the open run and trace-id handling (199-217), the answer, and the failure fallback (231-240).
@@ -111,7 +111,7 @@ Problem: Two implementations read lazy iterators and turn a `ValidationError` in
 Why it matters: Rubric "no second helper". The 400 text already differs between the two formats.
 Fix: Write one `materialize(value, path)` in the shared module, with one location format. Keeps behavior: no (one format's `invalid_body` text changes).
 Spec: "given a lazy messages iterator that fails at item 1, when either chat route reads it, then the 400 invalid_body text names the item the same way."
-Status: proposal (#38; decide in [proposals.md](proposals.md))
+Status: fixed (#85)
 
 ### R3-15 [MEDIUM] [simple] packages/chassis/src/chassis/adapters/anthropic_compat/inbound.py:247
 Problem: `to_request` is 54 lines. Both adapters walk the turns the same way and build `input.data` (`system`, `history`) in their own code (Anthropic 285-289, OpenAI `_task_input` 288-290).
@@ -232,4 +232,4 @@ Problem: A direct caller can send `x-chassis-interface: mcp` to `/v1/run`. That 
 Why it matters: A run whose client has left keeps going until its timeout, and the comment understates the trust this header carries.
 Fix: Mark the MCP hop with an ASGI scope flag set by the in-process transport, and read it through one constant. Fix the comment. Keeps behavior: yes for real MCP calls.
 Spec: "given a direct POST to /v1/run with x-chassis-interface: mcp, when it is handled, then it is labeled native, its disconnect is watched, and a trace_id in use gets 409."
-Status: proposal (#38; decide in [proposals.md](proposals.md))
+Status: fixed (#85)
