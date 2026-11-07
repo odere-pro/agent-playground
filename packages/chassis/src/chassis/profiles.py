@@ -17,11 +17,12 @@ The lanes and the LiteLLM model are lazy too: `inprocess` and `sidecar` are `laz
 `_litellm_from_env` imports `chassis.adapters.litellm` inside the call so its error text stays
 its own. Importing `chassis.profiles` loads no A2A or LiteLLM adapter module.
 
-PoC-4 adapters are lazy (`lazy`): the factory imports its module only when the adapter is named,
-so an unused SDK (valkey, aiokafka, minio) is never loaded. A module that is not there yet names
-PoC-4; an adapter whose `from_env` raises `LookupError` is "not configured".
+Adapters with an SDK are lazy (`lazy`): the factory imports its module only when the adapter is
+named, so an unused SDK (valkey, aiokafka, minio) is never loaded. A missing module or SDK is
+"adapter X is unavailable (no module Y)"; an adapter whose `from_env` raises `LookupError` is
+"not configured".
 
-PoC-5 entries are lazy too and name PoC-5 until their module lands: `engine: remote` is
+`engine: remote` is
 `chassis.adapters.a2a.remote:RemoteConnector` (built with no arguments, set up with
 `spec.engine` like the other lanes), `tools: mcp` is
 `chassis.adapters.mcp.gateway:McpGatewayTools.from_env`.
@@ -29,7 +30,7 @@ PoC-5 entries are lazy too and name PoC-5 until their module lands: `engine: rem
 PoC-7 adds four ports, each with `none` (off, the `fake` and `local` default) and a fake: `auth`
 (`static`, `oidc`), `guardrails` (`fake`, `litellm`), `evaluator` (`fake`, `judge`, `encoder`),
 `feedback` (`memory`, `langfuse`). `telemetry: otel` is `OtelTelemetry.from_env`. The real ones
-are lazy and name PoC-7 until their module lands.
+are lazy.
 """
 
 from __future__ import annotations
@@ -109,8 +110,9 @@ class AdapterSpec(BaseModel):
         return data
 
 
-_POC07_OFF = {"auth": "none", "guardrails": "none", "evaluator": "none", "feedback": "none"}
-"""suggested: the four PoC-7 ports are off in `fake` and `local` until an agent names them."""
+_OPTIONAL_OFF = {"auth": "none", "guardrails": "none", "evaluator": "none", "feedback": "none"}
+"""suggested: the four optional ports (auth, guardrails, evaluator, feedback) are off in `fake`
+and `local` until an agent names them."""
 
 PROFILE_DEFAULTS: dict[Profile, AdapterSpec] = {
     "fake": AdapterSpec(
@@ -120,7 +122,7 @@ PROFILE_DEFAULTS: dict[Profile, AdapterSpec] = {
         tools="fake",
         state="memory",
         events="none",
-        **_POC07_OFF,
+        **_OPTIONAL_OFF,
     ),
     "local": AdapterSpec(
         model="litellm",
@@ -129,7 +131,7 @@ PROFILE_DEFAULTS: dict[Profile, AdapterSpec] = {
         tools="mcp",
         state="valkey",
         events="none",
-        **_POC07_OFF,
+        **_OPTIONAL_OFF,
     ),
     "cloud": AdapterSpec(
         model="litellm",
@@ -177,13 +179,13 @@ def _litellm_from_env(agent: str | None = None) -> object:
         raise AdapterNotAvailable(str(exc)) from exc
 
 
-def lazy(port: str, adapter: str, target: str, poc: str = "PoC-4") -> Factory:
+def lazy(port: str, adapter: str, target: str) -> Factory:
     """A factory that imports `target` (`module:attr`, `attr` may be dotted, as in
     `Class.from_env`) only when called, then calls it with the factory's arguments.
 
     A `ModuleNotFoundError` (the adapter module or its SDK is not there) becomes
-    `AdapterNotAvailable("<port>: adapter '<name>' arrives in <poc>")`. A `LookupError` from the
-    target (a required environment variable is unset) becomes
+    `AdapterNotAvailable("<port>: adapter '<name>' is unavailable (no module '<module>')")`.
+    A `LookupError` from the target (a required environment variable is unset) becomes
     `AdapterNotAvailable("<port>: adapter '<name>' is not configured: <message>")`.
     """
     module_name, _, attr = target.partition(":")
@@ -193,7 +195,7 @@ def lazy(port: str, adapter: str, target: str, poc: str = "PoC-4") -> Factory:
             found: Any = importlib.import_module(module_name)
         except ModuleNotFoundError as exc:
             raise AdapterNotAvailable(
-                f"{port}: adapter {adapter!r} arrives in {poc} (no module {exc.name!r})"
+                f"{port}: adapter {adapter!r} is unavailable (no module {exc.name!r})"
             ) from exc
         for part in attr.split("."):
             found = getattr(found, part)
@@ -218,10 +220,12 @@ REGISTRY: dict[str, dict[str, Factory | str]] = {
     },
     "engine": {
         "inprocess": lazy(
-            "engine", "inprocess", "chassis.adapters.a2a:InProcessConnector", "PoC-1"
+            "engine",
+            "inprocess",
+            "chassis.adapters.a2a:InProcessConnector",
         ),
-        "sidecar": lazy("engine", "sidecar", "chassis.adapters.a2a:SidecarConnector", "PoC-2"),
-        "remote": lazy("engine", "remote", "chassis.adapters.a2a.remote:RemoteConnector", "PoC-5"),
+        "sidecar": lazy("engine", "sidecar", "chassis.adapters.a2a:SidecarConnector"),
+        "remote": lazy("engine", "remote", "chassis.adapters.a2a.remote:RemoteConnector"),
     },
     "config": {
         "memory": InMemoryConfig,
@@ -230,12 +234,14 @@ REGISTRY: dict[str, dict[str, Factory | str]] = {
     },
     "telemetry": {
         "memory": InMemoryTelemetry,
-        "otel": lazy("telemetry", "otel", "chassis.adapters.otel:OtelTelemetry.from_env", "PoC-7"),
+        "otel": lazy("telemetry", "otel", "chassis.adapters.otel:OtelTelemetry.from_env"),
     },
     "tools": {
         "fake": default_tools,
         "mcp": lazy(
-            "tools", "mcp", "chassis.adapters.mcp.gateway:McpGatewayTools.from_env", "PoC-5"
+            "tools",
+            "mcp",
+            "chassis.adapters.mcp.gateway:McpGatewayTools.from_env",
         ),
     },
     "state": {
@@ -250,8 +256,8 @@ REGISTRY: dict[str, dict[str, Factory | str]] = {
     },
     "auth": {
         "none": NoAuth,
-        "static": lazy("auth", "static", "chassis.fakes.auth:StaticTokens.from_env", "PoC-7"),
-        "oidc": lazy("auth", "oidc", "chassis.adapters.oidc:OidcAuth.from_env", "PoC-7"),
+        "static": lazy("auth", "static", "chassis.fakes.auth:StaticTokens.from_env"),
+        "oidc": lazy("auth", "oidc", "chassis.adapters.oidc:OidcAuth.from_env"),
     },
     "guardrails": {
         "none": NoGuardrails,
@@ -260,24 +266,29 @@ REGISTRY: dict[str, dict[str, Factory | str]] = {
             "guardrails",
             "litellm",
             "chassis.adapters.litellm.guardrails:LiteLLMGuardrails.from_env",
-            "PoC-7",
         ),
     },
     "evaluator": {
         "none": NoEvaluator,
         "fake": ScriptedEvaluator,
         "judge": lazy(
-            "evaluator", "judge", "chassis.adapters.evaluators:JudgeEvaluator.from_env", "PoC-7"
+            "evaluator",
+            "judge",
+            "chassis.adapters.evaluators:JudgeEvaluator.from_env",
         ),
         "encoder": lazy(
-            "evaluator", "encoder", "chassis.adapters.evaluators:EncoderEvaluator.from_env", "PoC-7"
+            "evaluator",
+            "encoder",
+            "chassis.adapters.evaluators:EncoderEvaluator.from_env",
         ),
     },
     "feedback": {
         "none": NoFeedback,
         "memory": InMemoryFeedback,
         "langfuse": lazy(
-            "feedback", "langfuse", "chassis.adapters.langfuse:LangfuseFeedback.from_env", "PoC-7"
+            "feedback",
+            "langfuse",
+            "chassis.adapters.langfuse:LangfuseFeedback.from_env",
         ),
     },
 }

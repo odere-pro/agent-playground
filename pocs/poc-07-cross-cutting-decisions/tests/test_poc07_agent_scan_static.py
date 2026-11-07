@@ -143,6 +143,23 @@ def test_the_scan_runs_through_scan_sh_and_the_token_is_only_in_its_env() -> Non
     assert all(f"secrets.{TOKEN}" not in json.dumps(s.get("with", {})) for s in steps)
 
 
+TOKEN_GATE = (
+    "${{ (github.event_name == 'workflow_dispatch' "
+    "|| (github.event_name == 'push' && github.ref == 'refs/heads/main')) "
+    "&& secrets.SNYK_TOKEN || '' }}"
+)
+"""R0-08: the token only on a push to main or a manual dispatch; every PR and every other push
+(a branch, a tag) gets an empty token and runs the inspect pass only."""
+
+
+def test_the_token_reaches_the_scan_only_on_main_or_a_dispatch() -> None:
+    """Security, review R0-08: branch code never runs with the token. The step's env value is
+    exactly the gate, so dropping or loosening the condition fails here."""
+    scan = [s for s in _steps() if "deploy/agent-scan/scan.sh" in s.get("run", "")]
+    assert len(scan) == 1
+    assert " ".join(str(scan[0]["env"][TOKEN]).split()) == TOKEN_GATE
+
+
 def test_a_missing_token_is_a_clear_skip_not_a_failure() -> None:
     """Security: "Snyk Agent Scan in CI": no token is a skip notice."""
     text = SCAN_SH.read_text()

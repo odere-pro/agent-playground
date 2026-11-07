@@ -8,8 +8,9 @@ from dataclasses import fields
 from typing import Any
 
 import pytest
+from bakeoff import tasks as kit_tasks
 from bakeoff.registry import get_engine, lanes_for
-from poc_harness import bakeoff_kind, kind
+from poc_harness import bakeoff_kind, bakeoff_tasks, kind
 from poc_harness.bakeoff_kind import (
     CONTAINER_ERRORS,
     KindEngine,
@@ -36,6 +37,13 @@ def test_the_task_table_has_the_registrys_trust_and_lane(engine: Engine) -> None
     assert (engine.trust == "trusted") is entry.trusted
     assert engine.lane in lanes_for(entry)
     assert (engine.lane == "remote") is (not entry.trusted)
+
+
+@pytest.mark.parametrize("task", kit_tasks.TASKS, ids=lambda t: t.name)
+def test_the_harness_runs_the_kits_task_text_facts_and_tool_steps(task: kit_tasks.Task) -> None:
+    """R6-01: one task source. The tests and the scorecard ask the same prompt."""
+    by_name = {t.name: t for t in bakeoff_tasks.TASKS}
+    assert by_name[task.name] is task
 
 
 def test_the_task_table_has_no_unread_column() -> None:

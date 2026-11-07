@@ -318,5 +318,5 @@ def test_the_poc05_adapters_are_lazy_registry_entries(port: str, adapter: str, m
     try:
         __import__(module)
     except ModuleNotFoundError:
-        with pytest.raises(AdapterNotAvailable, match="arrives in PoC-5"):
+        with pytest.raises(AdapterNotAvailable, match="is unavailable"):
             resolve(port, adapter)
