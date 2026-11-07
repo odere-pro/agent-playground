@@ -68,7 +68,7 @@ $ PATH=/opt/homebrew/bin:$PATH deploy/kind/poc05/run.sh test-remote
 The kind tier (73 before T22, 17 new):
 
 ```text
-$ POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs
+$ KIND_DRILLS=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs
 SKIPPED [1] packages/contract-suites/src/chassis_contracts/tool.py:157: provide other_write_arguments: valid write_call arguments of another value
 SKIPPED [1] packages/contract-suites/src/chassis_contracts/tool.py:204: provide a make_unavailable fixture: the next call fails as unavailable
 90 passed, 2 skipped, 353 deselected in 127.18s (0:02:07)
@@ -141,7 +141,7 @@ Each in a temporary copy under `tests/`, deleted after (load 1.56). `7 failed in
 ### Runs
 
 ```
-$ POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs   # load 2.87 2.66 3.41
+$ KIND_DRILLS=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs   # load 2.87 2.66 3.41
 SKIPPED [1] packages/contract-suites/src/chassis_contracts/tool.py:157: provide other_write_arguments: ...
 SKIPPED [1] packages/contract-suites/src/chassis_contracts/tool.py:204: provide a make_unavailable fixture: ...
 146 passed, 2 skipped, 483 deselected, 1 xfailed in 167.33s (0:02:47)

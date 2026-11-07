@@ -23,8 +23,8 @@ expected shape; on runc the same scan would list only the pod's own PID namespac
 second step runs the same scan in its own pod as the control: it sees its own `sleep 601`.
 Modelled on PoC-5's `test_poc05_kind_code_runner.py::test_files_do_not_cross_calls`.
 
-A kind test: marked `POC06_KIND` (`poc_harness.drills`), so also `network`, and skipped unless
-`POC06_KIND=1`.
+A kind test: marked `KIND_BAKEOFF` (`poc_harness.drills`), so also `network`, and skipped unless
+`KIND_DRILLS=1`.
 Run: `deploy/kind/poc06/run.sh test`.
 """
 
@@ -42,10 +42,10 @@ from typing import Any
 
 import pytest
 from poc_harness.bakeoff_kind import REMOTES, KindEngine, run_stream
-from poc_harness.drills import POC06_KIND
+from poc_harness.drills import KIND_BAKEOFF
 from poc_harness.kind import REMOTE_NS, get_json, kubectl
 
-pytestmark = POC06_KIND
+pytestmark = KIND_BAKEOFF
 
 ENGINE: KindEngine = next(e for e in REMOTES if e.pod == "remote-claude-agent")
 PLANT = "isolation [plant]"

@@ -12,9 +12,9 @@ The `remote` lane (PoC-5 plan, section 2.3; ADR-001 item 8) adds a third listene
 `--remote-proxy-host <pod IP>` and `--remote-proxy-port` (suggested: 8091) serve the remote proxy
 app (`chassis.server.remote_auth`): the model proxy and the tool endpoint behind a bearer token
 and a run in flight. The flag is refused unless `spec.engine.connector` is `remote` and the
-token variable named in `spec.engine.auth.token_env` is set, with 32 characters or more (a set
-previous token too; `remote_auth.MIN_TOKEN_LENGTH`); the host must be one IP address, neither
-loopback nor a wildcard (`0.0.0.0`, `::`).
+listener's token variable (`spec.engine.auth.proxy_token_env`, else `token_env`; R2-09) is set,
+with 32 characters or more (a set previous token too; `remote_auth.MIN_TOKEN_LENGTH`); the host
+must be one IP address, neither loopback nor a wildcard (`0.0.0.0`, `::`).
 
 Bind order (H14): the proxy listeners bind first. A taken proxy port exits with status 3 and a
 message naming the address, before the public listener binds and before anything reaches the

@@ -347,15 +347,15 @@ Before criterion 9 can be ticked:
 
 ## The pytest drills
 
-`tests/test_kind.py` reruns both drills per variant and engine when `POC04_KIND=1` (skipped
+`tests/test_kind.py` reruns both drills per variant and engine when `KIND_DRILLS=1` (skipped
 otherwise, and never in the offline gate). Run on the live cluster, after the `run.sh` flushall
 step went in:
 
 ```
-$ POC04_KIND=1 uv run pytest pocs/poc-04-stateless-scalable/tests/test_kind.py -q -k "hung and native-sidecar and python"
+$ KIND_DRILLS=1 uv run pytest pocs/poc-04-stateless-scalable/tests/test_kind.py -q -k "hung and native-sidecar and python"
 1 passed, 7 deselected in 57.98s
 
-$ POC04_KIND=1 uv run pytest pocs/poc-04-stateless-scalable/tests/test_kind.py -q -k "rolling and native-sidecar and python"
+$ KIND_DRILLS=1 uv run pytest pocs/poc-04-stateless-scalable/tests/test_kind.py -q -k "rolling and native-sidecar and python"
 E         steady_client: no-retry, 20 workers, 90 s -> sent 8420, ok 8416, failed 4, ...
 E           failed steady-0d202629fc024160b45c198ce3f76d1e: RemoteProtocolError: Server disconnected without sending a response.
 (fails, as expected: 4 RemoteProtocolError)
@@ -475,7 +475,7 @@ whether the in-cluster path makes it rarer.
 
 ### Test checks (mutation)
 
-- `POC04_KIND=1 uv run pytest tests/test_kind.py -k "rolling and native-sidecar and python"`:
+- `KIND_DRILLS=1 uv run pytest tests/test_kind.py -k "rolling and native-sidecar and python"`:
   `1 passed, 7 deselected in 99.49s`.
 - The same with the native sidecar's `--drain-delay-s` set to 0 (put back to 10 afterward):
   `sent 6505, ok 6500, failed 5`, so the test fails. The delay is what the pass depends on.

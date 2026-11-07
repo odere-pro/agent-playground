@@ -111,8 +111,16 @@ export function parseArguments(call: ToolCall): Json {
   return parsed as Json;
 }
 
-/** Fold one streamed chunk's `delta.tool_calls` in: pieces of one call share an `index`. */
-export function addDeltas(calls: Map<number, ToolCall>, pieces: Json[]): void {
+/** A JSON object: not null, not an array. */
+export function isJsonObject(value: unknown): value is Json {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Fold one streamed chunk's `delta.tool_calls` in: pieces of one call share an `index`.
+ * Returns false, and folds nothing, when a piece is not a JSON object (R2-27): the caller
+ * reports a `bad_response`. */
+export function addDeltas(calls: Map<number, ToolCall>, pieces: unknown[]): boolean {
+  if (!pieces.every(isJsonObject)) return false;
   for (const piece of pieces) {
     const fn = (piece["function"] as Json | undefined) ?? {};
     const index = typeof piece["index"] === "number" ? piece["index"] : calls.size;
@@ -122,6 +130,7 @@ export function addDeltas(calls: Map<number, ToolCall>, pieces: Json[]): void {
     if (typeof fn["name"] === "string" && fn["name"]) call.name = fn["name"];
     if (typeof fn["arguments"] === "string") call.arguments += fn["arguments"];
   }
+  return true;
 }
 
 export function assistantMessage(calls: ToolCall[]): Json {

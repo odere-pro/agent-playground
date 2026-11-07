@@ -7,7 +7,7 @@
 
 ## Status
 
-Proposed, 2026-11-06. The user approved the core-review proposals R2-02 and R1-09, with the cap part of R4-27, as one contract step. The code is in the worktree on top of `0a2e4df` and is described in contract v8, parts C and D. It waits on the remote suites on kind (`POC05_KIND=1`) and the 6b remote lane on the Mac before it is Accepted.
+Proposed, 2026-11-06. The user approved the core-review proposals R2-02 and R1-09, with the cap part of R4-27, as one contract step. The code is in the worktree on top of `0a2e4df` and is described in contract v8, parts C and D. It waits on the remote suites on kind (`KIND_DRILLS=1`) and the 6b remote lane on the Mac before it is Accepted.
 
 ## Context
 

@@ -64,19 +64,21 @@ The registered list is in [pyproject.toml](../../pyproject.toml) (`[tool.pytest.
 
 - `slow`: a subprocess or import-lint test. It still runs in `make test`.
 - `network`: needs a real socket. Never in `make test`; `make test-integration` runs it.
-- `requires_env(variable, *, context=None, hint="")`: a drill. Also `network`. The `poc_harness.plugin` pytest plugin reads it; the named marks are in `poc_harness.drills`.
+- `kind(*, context=None, hint="")`: a drill against a kind cluster. Also `network`. Runs only with `KIND_DRILLS=1`.
+- `stack`: a drill against a running Compose stack. Also `network`. Runs only with `COMPOSE_STACK=1`.
+- `requires_env(variable, *, context=None, hint="")`: a drill on any other variable. Also `network`.
+- The `poc_harness.plugin` pytest plugin reads all three. The named marks are in `poc_harness.drills`: `COMPOSE_STACK`, `KIND_SCALE`, `KIND_SANDBOX`, `KIND_BAKEOFF`.
 - `contract`: every case of a contract suite.
 
-A drill runs only when its gate variable is `1`. With `requires_env`, the variable on and a `context` kubectl lacks is an error, not a skip, so a kind run cannot pass having checked nothing.
+A drill runs only when its gate variable is `1`. The variable on and a `context` kubectl lacks is an error, not a skip, so a kind run cannot pass having checked nothing.
+
+The variable names what it turns on, not a PoC. It turns on every drill of its kind, so pick the drills by path.
 
 | Variable | Gates |
 | -------- | ----- |
-| `POC04_STACK` | PoC-4 Compose drills |
-| `POC04_KIND` | PoC-4 kind drills |
-| `POC05_KIND` | PoC-5 kind suites |
-| `POC06_KIND` | PoC-6 kind tests |
-| `POC07_STACK` | PoC-7 real-service stack tests |
-| `POC08_STACK` | PoC-8 Compose stack drill |
-| `POC08_LITELLM` | PoC-8 LiteLLM drill |
+| `KIND_DRILLS` | every kind drill: PoC-4 (`deploy/kind/run.sh`), PoC-5 (`deploy/kind/poc05`), PoC-6 (`deploy/kind/poc06`) |
+| `COMPOSE_STACK` | every Compose stack drill: PoC-4 scale stack, PoC-7 real-service stack, PoC-8 metrics and LiteLLM stacks |
 
-The PoC-7 and PoC-8 drills use a plain `skipif` on their variable, not `requires_env`. The PoC-8 `conftest.py` also leaves its two drills out of collection unless the variable is `1`.
+The PoC-7 and PoC-8 drills use a `skipif` on `poc_harness.drills.gate_is_on("COMPOSE_STACK")`, not the `stack` marker. The PoC-8 `conftest.py` also leaves its two drills out of collection unless the gate is on.
+
+Deprecated: the PoC-numbered names `POC04_KIND`, `POC05_KIND`, `POC06_KIND`, `POC04_STACK`, `POC07_STACK`, `POC08_STACK`, and `POC08_LITELLM` still turn their gate on for one release, with a `DeprecationWarning`.

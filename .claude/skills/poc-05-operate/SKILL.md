@@ -46,7 +46,7 @@ make test-poc POC=05
 
 The kind tier, every PoC-5 kind test, through the gateway wrapper:
 ```
-POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs
+KIND_DRILLS=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs
 ```
 Last good numbers: `pocs/poc-05-sandboxed/notes/2026-10-09-close-runs.md`, section 6. The two skips are contract-suite fixtures the gateway binding does not provide.
 
@@ -58,7 +58,7 @@ Last good numbers: the same section.
 
 One file:
 ```
-POC05_KIND=1 uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py -q -rs
+KIND_DRILLS=1 uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py -q -rs
 ```
 One test by name: add `-k <test name>` to the line above (not yet run in this form). A test that calls the gateway needs the `with-gateway` wrapper, or it skips.
 

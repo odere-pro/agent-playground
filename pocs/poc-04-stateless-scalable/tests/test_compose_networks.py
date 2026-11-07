@@ -8,7 +8,7 @@ is on whatever its chassis is on.
 
 Reads `docker-compose.scale.yaml` with the `docker-compose.scale-dapr.yaml` overlay merged on
 top, as `scale.sh` passes them. Parses YAML only; no Docker. The live check (the stack starts and
-`127.0.0.1:18080` answers) is `test_compose_scale.py` (`POC04_STACK=1`).
+`127.0.0.1:18080` answers) is `test_compose_scale.py` (`COMPOSE_STACK=1`).
 """
 
 from __future__ import annotations

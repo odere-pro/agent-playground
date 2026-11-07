@@ -149,7 +149,7 @@
     },
     "EngineAuthSpec": {
       "additionalProperties": false,
-      "description": "`spec.engine.auth` (PoC-5, plan section 2.2): the per-remote credential, by reference.\n\nThe token is read from `os.environ[token_env]` at connector setup; the config never holds it.\n`previous_token_env` is the token being rotated out: the chassis's remote listener accepts\neither, the connector sends `token_env`. suggested: every name; `scheme` leaves room for\n`sigv4` and `google` (PoC-6), only `bearer` now.",
+      "description": "`spec.engine.auth` (PoC-5, plan section 2.2): the per-remote credential, by reference.\n\nThe token is read from `os.environ[token_env]` at connector setup; the config never holds it.\nThe connector sends `token_env` to the remote. The chassis's remote listener accepts\n`proxy_token_env` and, during a rotation, `proxy_previous_token_env` (R2-09), so the remote\nnever holds the token the listener accepts. With `proxy_token_env` unset, the listener falls\nback to `token_env` and `previous_token_env` (one token both ways, as before). suggested:\nevery name; `scheme` leaves room for `sigv4` and `google` (PoC-6), only `bearer` now.",
       "properties": {
         "previous_token_env": {
           "anyOf": [
@@ -163,6 +163,32 @@
           ],
           "default": null,
           "title": "Previous Token Env"
+        },
+        "proxy_previous_token_env": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z_][A-Z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proxy Previous Token Env"
+        },
+        "proxy_token_env": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z_][A-Z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proxy Token Env"
         },
         "scheme": {
           "const": "bearer",

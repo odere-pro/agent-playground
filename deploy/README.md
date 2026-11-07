@@ -100,7 +100,7 @@ Whether an untrusted workload can be held in its own sandbox while the chassis k
 ```bash
 make kind-poc05 ARGS="up"            # from nothing: create, smoke, admission, build, load, seed, apply, request
 make kind-poc05 ARGS="status"        # nodes, RuntimeClass, namespaces, policies, controller
-make kind-poc05 ARGS="test"          # every PoC-5 kind test (POC05_KIND=1, -m network)
+make kind-poc05 ARGS="test"          # every PoC-5 kind test (KIND_DRILLS=1, -m network)
 make kind-poc05 ARGS="test-remote"   # the CI job: remote lane, code runner, /dev/shm, sidecar controls, hard requirement 1, tool gateway, runtime hardening, admission
 make kind-poc05 ARGS="pods logs"     # every pod, Sandbox, and claim; logs through the redaction filter
 make kind-poc05 ARGS="delete"        # kind delete cluster --name poc05

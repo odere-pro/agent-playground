@@ -61,7 +61,7 @@ jobs:
           set -euo pipefail
           # `stack.sh env` prints POC08_LITELLM_KEY_FILE=<path>: the path, never the value.
           export "$(deploy/compose/poc08-litellm/stack.sh env)"
-          POC08_LITELLM=1 uv run pytest -m network -v -s \
+          COMPOSE_STACK=1 uv run pytest -m network -v -s \
             pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_litellm.py \
             2>&1 | tee "$POC08_LITELLM_OUT/drill.txt"
       - name: Logs

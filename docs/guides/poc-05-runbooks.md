@@ -71,7 +71,7 @@ $ deploy/kind/poc05/platform/seed.sh status
 **Check.** First the paired allowed control in the same test. Every PoC-5 kind test asserts one. If the control failed, the refusal proves nothing. Then run the test on its own:
 
 ```
-$ POC05_KIND=1 uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_sidecar_controls.py -q -rs
+$ KIND_DRILLS=1 uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_sidecar_controls.py -q -rs
 6 passed in 12.80s
 ```
 
@@ -326,7 +326,7 @@ Not yet run. No step below has output in a note. Values marked `suggested:` are 
    - Each check runs inside the remote probe pod (`kubectl exec ... python -m hostile <check_id>`).
    - The sidecar half: a server dry run of each sidecar probe fixture is refused with trust rule 2's or rule 4's message.
    - Each refusal is paired with its allowed control in the same test, as in the other kind files ("A refusal test passes when it should fail").
-   - Marked `network`, skipped unless `POC05_KIND=1`. The docstring names criterion 8.
+   - Marked `network`, skipped unless `KIND_DRILLS=1`. The docstring names criterion 8.
    - Add the file to `REMOTE_TESTS` in `run.sh` and to the `REMOTE_TESTS` tuple in `pocs/poc-05-sandboxed/tests/test_poc05_ci_wiring.py`.
    - Break each test once in a temporary copy and see it fail; delete the copy. Then run `run.sh test-remote` and the kind tier, and paste both tails in a dated note.
 5. **Demo.** `pocs/poc-05-sandboxed/demo/demo.sh` runs the probe suite in step 4 when `test_poc05_kind_probe.py` exists. Today it prints `T10 | - | exception: in-pod probe not built (WIP)` instead. Check the probe step runs, then re-record the demo.

@@ -20,7 +20,7 @@ a pod can tunnel data out in DNS names. PoC-5's threat model records it as H20
 Checked on the raw `base/network-policy.yaml` always, and on the output of `kubectl kustomize` for
 each variant and engine (a local render: no cluster, no socket) when `kubectl` is on PATH; without
 it an overlay falls back to the raw file, as `test_read_only_kind.py` keeps a raw layer. The
-packets are the kind drill's job (`test_kind.py`, `POC04_KIND=1`).
+packets are the kind drill's job (`test_kind.py`, `KIND_DRILLS=1`).
 """
 
 from __future__ import annotations

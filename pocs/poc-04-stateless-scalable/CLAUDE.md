@@ -8,7 +8,7 @@ Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still appl
 
 ## What is here
 
-- `tests/`: one scenario file per exit criterion, the docstring names it. `poc_harness.replicas` builds two replicas on Unix sockets sharing one `InMemoryState` and one `InMemoryBus`. Offline: `test_swap_drill.py` (1), `test_idempotency_replicas.py` (2), `test_killed_replica.py` (3), `test_load_results.py` (4, 11; reads `notes/load/results.json`), `test_read_only_compose.py`, `test_read_only_kind.py` (5), `test_graceful_shutdown.py`, `test_workload_drain.py` (6), `test_config_reload.py` with `fixtures/bad-configs/` (7), `test_hidden_state.py` (8), `test_liveness.py` (9), `test_timeout_budget_per_engine.py` (timeout and budget in all four engines). `network`: `test_idempotency_valkey.py`, `test_config_minio.py`; drills (`poc_harness.drills`): `test_compose_scale.py` (`POC04_STACK=1`), `test_kind.py` (`POC04_KIND=1`, 9).
+- `tests/`: one scenario file per exit criterion, the docstring names it. `poc_harness.replicas` builds two replicas on Unix sockets sharing one `InMemoryState` and one `InMemoryBus`. Offline: `test_swap_drill.py` (1), `test_idempotency_replicas.py` (2), `test_killed_replica.py` (3), `test_load_results.py` (4, 11; reads `notes/load/results.json`), `test_read_only_compose.py`, `test_read_only_kind.py` (5), `test_graceful_shutdown.py`, `test_workload_drain.py` (6), `test_config_reload.py` with `fixtures/bad-configs/` (7), `test_hidden_state.py` (8), `test_liveness.py` (9), `test_timeout_budget_per_engine.py` (timeout and budget in all four engines). `network`: `test_idempotency_valkey.py`, `test_config_minio.py`; drills (`poc_harness.drills`): `test_compose_scale.py` (`COMPOSE_STACK=1`), `test_kind.py` (`KIND_DRILLS=1`, 9).
 - `load/`: `locustfile.py`, `run_matrix.py` (`make load-test`), `run_quiet.sh` (the quiet pass), `run_passes.sh` and `median.py` (the earlier three passes), `idem_cost.py` (keyed against unkeyed, back to back), `steady_client.py`, `kill_drill.py`, `reload_drill.py` (the config drill, exits 1 on a failure); see `load/README.md`.
 - `notes/`: `2026-10-01-drills.md` (Compose drills), `2026-10-01-load-results.md`, `2026-10-01-container-roles.md` (kind), `2026-10-01-dapr-vs-broker.md`, `2026-10-01-hidden-state.md`, `2026-10-01-debt.md` (open items and owners), `backlog-changes.md`; `drills/`, `dapr/`, `load/` (scripts, `results.json`, raw files). `demo/`: `demo.sh` (kill, drain, reload on two pairs) and its record `2026-10-01-demo-scale.md`.
 
@@ -30,7 +30,7 @@ flowchart LR
 
 ## How to run
 
-- Gate: `make test-poc POC=04` (offline, inside `make test`). Integration: `make test-integration` (Docker). Drills and load: the commands are in `load/README.md`; dry-run the load matrix first. Stack test: `POC04_STACK=1` with `test_compose_scale.py`. kind: `make kind-poc04 ARGS="up native-sidecar"`.
+- Gate: `make test-poc POC=04` (offline, inside `make test`). Integration: `make test-integration` (Docker). Drills and load: the commands are in `load/README.md`; dry-run the load matrix first. Stack test: `COMPOSE_STACK=1` with `test_compose_scale.py`. kind: `make kind-poc04 ARGS="up native-sidecar"`.
 - The Docker VM is shared: pass `-p poc04` (scale.sh does), never prune, never stop another project's container. One stack at a time.
 
 ## Done means and do not touch

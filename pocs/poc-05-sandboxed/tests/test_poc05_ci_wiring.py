@@ -196,7 +196,7 @@ def test_poc05_run_sh_test_remote_selects_by_file_path() -> None:
     assert selection[-1] == "pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py"
     assert "pocs/poc-05-sandboxed/tests/test_poc05_kind_sidecar_controls.py" in selection
     body = _function(text, "run_tests_remote")
-    assert "POC05_KIND=1" in body and '"${REMOTE_TESTS[@]}"' in body
+    assert "KIND_DRILLS=1" in body and '"${REMOTE_TESTS[@]}"' in body
     assert " -k " not in body and "pocs/poc-05-sandboxed/tests " not in body
 
 

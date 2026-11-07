@@ -22,7 +22,7 @@ chassis-echo-remote  "glossary" HTTP 200  {"status":"ok","output":{"text":"From 
 
 ## 2. The remote probe: H25, H19, H21, H23, H08, H17
 
-$ run.sh with-gateway env POC05_KIND=1 uv run pytest -m network -q -rs pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py::test_remote_holds_one_secret_its_own_token pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py::test_h19_remote_reaches_no_outside_address pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py::test_h21_root_is_read_only_and_tmp_is_writable pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py::test_h23_pids_cap_is_the_configured_limit pocs/poc-05-sandboxed/tests/test_poc05_kind_tool_gateway.py::test_unlisted_probe_is_refused_with_its_control pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py::test_h17_listener_answers_only_the_remote_token_inside_a_run
+$ run.sh with-gateway env KIND_DRILLS=1 uv run pytest -m network -q -rs pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py::test_remote_holds_one_secret_its_own_token pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py::test_h19_remote_reaches_no_outside_address pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py::test_h21_root_is_read_only_and_tmp_is_writable pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py::test_h23_pids_cap_is_the_configured_limit pocs/poc-05-sandboxed/tests/test_poc05_kind_tool_gateway.py::test_unlisted_probe_is_refused_with_its_control pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py::test_h17_listener_answers_only_the_remote_token_inside_a_run
 ......                                                                   [100%]
 6 passed in 11.59s
 
@@ -43,7 +43,7 @@ chassis-echo-remote  "glossary" HTTP 200  {"status":"ok","output":{"text":"From 
 
 ## 4. The sidecar probe: H05 and H07 from the workload, then the in-pod probe suite
 
-$ run.sh with-gateway env POC05_KIND=1 uv run pytest -m network -q -rs pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py::test_litellm_refuses_the_workload_without_the_chassis_key pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py::test_mcp_gateway_refuses_the_workload_without_the_chassis_key
+$ run.sh with-gateway env KIND_DRILLS=1 uv run pytest -m network -q -rs pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py::test_litellm_refuses_the_workload_without_the_chassis_key pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py::test_mcp_gateway_refuses_the_workload_without_the_chassis_key
 ..                                                                       [100%]
 2 passed in 2.21s
 
@@ -53,7 +53,7 @@ T10 | - | exception: in-pod probe not built (WIP) | notes/2026-10-09-t10-probe-e
 
 ## 5. Admission: every fixture through a server dry run
 
-$ run.sh with-gateway env POC05_KIND=1 uv run pytest -m network -q -rs pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py::test_fixture_outcome_matches_its_header
+$ run.sh with-gateway env KIND_DRILLS=1 uv run pytest -m network -q -rs pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py::test_fixture_outcome_matches_its_header
 ...............................................................          [100%]
 63 passed in 4.32s
 
@@ -123,7 +123,7 @@ ruleT5-template-network-policy/rejected | apply --dry-run=server of the fixture 
 
 ## 6. The code runner: run_python on gVisor, no egress
 
-$ run.sh with-gateway env POC05_KIND=1 uv run pytest -m network -q -rs pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py::test_code_runs_on_gvisor_with_no_egress
+$ run.sh with-gateway env KIND_DRILLS=1 uv run pytest -m network -q -rs pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py::test_code_runs_on_gvisor_with_no_egress
 .                                                                        [100%]
 1 passed in 7.01s
 
@@ -131,7 +131,7 @@ H28                                | run_python TCP to outside, LiteLLM, dispatc
 
 ## 7. H11, the broker: Kafka with SASL
 
-$ run.sh with-gateway env POC05_KIND=1 uv run pytest -m network -q -rs pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py -k kafka
+$ run.sh with-gateway env KIND_DRILLS=1 uv run pytest -m network -q -rs pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py -k kafka
 .                                                                        [100%]
 1 passed, 4 deselected in 2.42s
 

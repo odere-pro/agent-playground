@@ -9,7 +9,8 @@ URL).
   cannot use.
 - `auth` (required): `{scheme: bearer, token_env, previous_token_env}`. The token is read from
   `os.environ[token_env]` here; a missing or empty variable is a `LookupError` that names the
-  variable. `previous_token_env` is for the chassis's remote listener, not for this client.
+  variable. `previous_token_env`, `proxy_token_env`, and `proxy_previous_token_env` are for the
+  chassis's remote listener, not for this client (R2-09).
 - `uds` (optional): a Unix socket path the requests go over instead of TCP, for tests and local
   runs. The `url` still fills the `Host` header and the path.
 - `probe_timeout_s` (default `PROBE_TIMEOUT_S`): the probe crosses the network.

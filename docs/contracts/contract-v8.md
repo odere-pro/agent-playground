@@ -348,7 +348,7 @@ suggested: every name. On `/metrics` they show as `<name>_total` (contract v7, A
 
 - **`inprocess`.** One `secrets.token_urlsafe(32)` per run, sent in `ctx` and never checked. Pydantic checks the bounds on each event. The connector counts bytes and events per stream item. One dict copy per native error.
 - **`sidecar`.** The same. The loopback proxy has no `RequireRun`, so the secret is sent and ignored. An uncorrelated call costs one route comparison.
-- **`remote`.** The same, plus one `hmac.compare_digest` per proxy call and one more header (43 characters) on every model and MCP call from the remote. No new hop and no new credential to mount. Waits on: p50 and p95 on the PoC-5 remote suite on kind (`POC05_KIND=1`) and the 6b remote lane on the Mac.
+- **`remote`.** The same, plus one `hmac.compare_digest` per proxy call and one more header (43 characters) on every model and MCP call from the remote. No new hop and no new credential to mount. Waits on: p50 and p95 on the PoC-5 remote suite on kind (`KIND_DRILLS=1`) and the 6b remote lane on the Mac.
 
 ## Contract suites
 

@@ -28,7 +28,7 @@ The per-call plan's `can-i` lists (`CAN_I`, in `poc_harness.admission_manifests`
 kind tests never drift) and the check that no agent-sandbox object owns a NetworkPolicy close the
 security review's required changes 1, 2, and 4 on the cluster.
 
-A kind test: marked `network` and skipped unless `POC05_KIND=1` and the `kind-poc05` context exists
+A kind test: marked `network` and skipped unless `KIND_DRILLS=1` and the `kind-poc05` context exists
 (`poc_harness.drills`). Needs `deploy/kind/poc05/base/` and `admission/` applied (T19).
 """
 
@@ -47,11 +47,11 @@ from poc_harness.admission_manifests import CAN_I
 from poc_harness.admission_manifests import DEPLOYER as DEPLOYER_ACCOUNT
 from poc_harness.admission_manifests import DISPATCHER as DISPATCHER_ACCOUNT
 from poc_harness.admission_manifests import SUBMITTER as SUBMITTER_ACCOUNT
-from poc_harness.drills import POC05_KIND
+from poc_harness.drills import KIND_SANDBOX
 from poc_harness.kind import AGENTS_NS, SIDECAR_POD, get_json, pod
 from poc_harness.manifests import load_manifests
 
-pytestmark = POC05_KIND
+pytestmark = KIND_SANDBOX
 
 ROOT = Path(__file__).resolve().parents[3]
 ADMISSION = ROOT / "deploy/kind/poc05/admission"

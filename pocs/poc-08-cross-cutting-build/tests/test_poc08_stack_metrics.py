@@ -1,11 +1,11 @@
 """PoC-8 scope item "Observability", the part that waited: Prometheus and Grafana load the
 generated dashboards (`deploy/dashboards/`) against a real chassis. `network`; collected only
-with `POC08_STACK=1` (`conftest.py`), and skipped without it when named by path. CI runs it in
+with `COMPOSE_STACK=1` (`conftest.py`), and skipped without it when named by path. CI runs it in
 `.github/workflows/poc08-stack.yml`; by hand:
 
     deploy/compose/poc08/stack.sh up && deploy/compose/poc08/stack.sh wait
     export "$(deploy/compose/poc08/stack.sh env)"
-    POC08_STACK=1 uv run pytest -m network -v \\
+    COMPOSE_STACK=1 uv run pytest -m network -v \\
         pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_metrics.py
 
 The load, in each of two rounds (`ROUNDS`), on the `echo` chassis with every PoC-8 stage on
@@ -37,6 +37,7 @@ from typing import Any
 
 import httpx
 import pytest
+from poc_harness.drills import gate_is_on
 from poc_harness.metrics_stack import (
     AGENT,
     CHASSIS,
@@ -74,7 +75,7 @@ from poc_harness.metrics_stack import (
 pytestmark = [
     pytest.mark.network,
     pytest.mark.skipif(
-        os.environ.get(STACK_VAR) != "1",
+        not gate_is_on(STACK_VAR),
         reason=f"a PoC-8 stack drill: needs deploy/compose/poc08 up and {STACK_VAR}=1",
     ),
 ]

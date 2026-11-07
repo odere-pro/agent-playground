@@ -84,7 +84,7 @@ def test_poc05_demo_redacts_what_it_captures() -> None:
     assert '"$@" 2>&1 | "$RUN" redact' in text
     assert '--junitxml="$xml" "$@" 2>&1 | "$RUN" redact' in text
     assert '"$RUN" logs 2>/dev/null | "$RUN" redact' in text
-    assert "with-gateway env POC05_KIND=1 uv run pytest -m network" in text
+    assert "with-gateway env KIND_DRILLS=1 uv run pytest -m network" in text
 
 
 def test_poc05_demo_writes_a_dated_record_and_ends_ok() -> None:

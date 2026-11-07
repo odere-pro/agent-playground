@@ -30,7 +30,7 @@ It stops non-zero on the first failed step. The last line of a good run is `resu
 | 7 | H11, Kafka with SASL | `test_poc05_kind_hardreq1.py -k kafka` |
 | 8 | Where it was logged: `probe.check`, `remote_unauthenticated`, LiteLLM's 401 lines | `run.sh logs`, counted |
 
-Every pytest step runs through `run.sh with-gateway` with `POC05_KIND=1` and prints one line per check: id, attempt, outcome, control. A failed, skipped, or deselected check fails the step. A test file that does not exist yet fails the step by name.
+Every pytest step runs through `run.sh with-gateway` with `KIND_DRILLS=1` and prints one line per check: id, attempt, outcome, control. A failed, skipped, or deselected check fails the step. A test file that does not exist yet fails the step by name.
 
 Every check is an existing kind test or a `run.sh` verb; the demo has no probe logic of its own. All captured output goes through `run.sh redact`. The gateway key reaches pytest only through `run.sh with-gateway`: in its environment, never in argv or the record. Every `kubectl` call passes the cluster's context.
 

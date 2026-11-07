@@ -122,6 +122,14 @@ interface Turn {
   failed: boolean;
 }
 
+/** A chunk's `choices` (absent or null is none), or undefined when it is not an array of
+ * JSON objects (R2-27). */
+function chunkChoices(chunk: Json): Json[] | undefined {
+  const choices = chunk["choices"] ?? [];
+  if (!Array.isArray(choices) || !choices.every(tools.isJsonObject)) return undefined;
+  return choices;
+}
+
 /** One streamed model call: `delta` events, or one `error` (and `turn.failed`). */
 async function* stream(send: typeof fetch, url: string, init: RequestInit, turn: Turn): AsyncGenerator<ChassisEvent> {
   const response = await send(url, init);
@@ -140,14 +148,22 @@ async function* stream(send: typeof fetch, url: string, init: RequestInit, turn:
     if (!line.startsWith("data:")) continue;
     const payload = line.slice(5).trim();
     if (payload === "[DONE]") break;
-    let chunk: Json;
+    let parsed: unknown;
     try {
-      chunk = JSON.parse(payload) as Json;
+      parsed = JSON.parse(payload);
     } catch {
       turn.failed = true;
       yield error("bad_response", "bad SSE payload", false);
       return;
     }
+    // R2-27: a chunk of the wrong shape is the model's fault, not a connection failure.
+    const choices = tools.isJsonObject(parsed) ? chunkChoices(parsed) : undefined;
+    if (!tools.isJsonObject(parsed) || choices === undefined) {
+      turn.failed = true;
+      yield error("bad_response", "bad SSE chunk", false);
+      return;
+    }
+    const chunk = parsed;
     const err = chunk["error"] as Json | undefined;
     if (err && typeof err === "object") {
       turn.failed = true;
@@ -156,10 +172,14 @@ async function* stream(send: typeof fetch, url: string, init: RequestInit, turn:
     }
     const u = chunk["usage"] as Json | undefined;
     if (u) turn.usage = [int(u["prompt_tokens"]), int(u["completion_tokens"])];
-    for (const choice of (chunk["choices"] as Json[] | undefined) ?? []) {
-      const delta = (choice["delta"] as Json | undefined) ?? {};
+    for (const choice of choices) {
+      const delta = tools.isJsonObject(choice["delta"]) ? choice["delta"] : {};
       const pieces = delta["tool_calls"];
-      if (Array.isArray(pieces)) tools.addDeltas(turn.calls, pieces as Json[]);
+      if (Array.isArray(pieces) && !tools.addDeltas(turn.calls, pieces)) {
+        turn.failed = true;
+        yield error("bad_response", "bad SSE tool call", false);
+        return;
+      }
       const content = delta["content"];
       if (typeof content === "string" && content) yield event("delta", { text: content });
     }

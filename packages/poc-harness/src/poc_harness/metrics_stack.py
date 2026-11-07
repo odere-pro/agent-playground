@@ -26,7 +26,7 @@ from poc_harness.paths import ROOT
 
 STACK = ROOT / "deploy/compose/poc08"
 DASHBOARDS = ROOT / "deploy/dashboards"
-STACK_VAR = "POC08_STACK"
+STACK_VAR = "COMPOSE_STACK"
 """`1` turns the drill on: `conftest.py` collects `DRILL_FILE` only then."""
 ENV_FILE_VAR = "POC08_ENV_FILE"
 DRILL_FILE = "test_poc08_stack_metrics.py"

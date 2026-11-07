@@ -53,18 +53,18 @@ h01 | 1 failed, 5 deselected in 0.23s
 The new files on their own:
 
 ```text
-$ POC05_KIND=1 uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py -q -rs
+$ KIND_DRILLS=1 uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py -q -rs
 4 passed in 9.65s
-$ POC05_KIND=1 uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_sidecar_controls.py -q -rs
+$ KIND_DRILLS=1 uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_sidecar_controls.py -q -rs
 6 passed in 12.80s
-$ POC05_KIND=1 uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py -q -rs
+$ KIND_DRILLS=1 uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py -q -rs
 51 passed in 4.19s
 ```
 
 The kind tier, through the wrapper (`grep -c 'sk-'` on the log: 0):
 
 ```text
-$ POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs
+$ KIND_DRILLS=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs
 SKIPPED [1] packages/contract-suites/src/chassis_contracts/tool.py:157: provide other_write_arguments: valid write_call arguments of another value
 SKIPPED [1] packages/contract-suites/src/chassis_contracts/tool.py:204: provide a make_unavailable fixture: the next call fails as unavailable
 73 passed, 2 skipped, 353 deselected in 32.23s
@@ -110,9 +110,9 @@ Mutation check, each in a temporary copy of the file (`test_poc05_kind_admission
 Runs (`grep -c sk-` on each saved log: 0):
 
 ```text
-$ POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py -q -rs
+$ KIND_DRILLS=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py -q -rs
 103 passed in 8.17s
-$ POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs   # load 6.34 4.77 4.43
+$ KIND_DRILLS=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs   # load 6.34 4.77 4.43
 SKIPPED [1] packages/contract-suites/src/chassis_contracts/tool.py:157: provide other_write_arguments: valid write_call arguments of another value
 SKIPPED [1] packages/contract-suites/src/chassis_contracts/tool.py:204: provide a make_unavailable fixture: the next call fails as unavailable
 2 failed, 140 passed, 2 skipped, 483 deselected in 109.43s (0:01:49)

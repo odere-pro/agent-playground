@@ -20,8 +20,8 @@ A policy refusal expects a timeout (`POLICY_DROPPED`), never a refused connectio
 target is shown up from an allowed peer in the same test. H13's loopback refusal is the one place
 a refused connection is the claim.
 
-A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc_harness.drills`). Run:
-`POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network <this file>`.
+A kind test: marked `network`, skipped unless `KIND_DRILLS=1` (`poc_harness.drills`). Run:
+`KIND_DRILLS=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network <this file>`.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from poc_harness.drills import POC05_KIND
+from poc_harness.drills import KIND_SANDBOX
 from poc_harness.kind import (
     AGENTS_NS,
     CHASSIS,
@@ -59,7 +59,7 @@ from poc_harness.kind_controls import (
     secret_refs,
 )
 
-pytestmark = POC05_KIND
+pytestmark = KIND_SANDBOX
 
 # agent-echo's chassis reads its config from MinIO, so it holds its own MinIO secret key too.
 ECHO_SECRET_ENV = CHASSIS_SECRET_ENV | CONFIG_STORE_SECRET_ENV

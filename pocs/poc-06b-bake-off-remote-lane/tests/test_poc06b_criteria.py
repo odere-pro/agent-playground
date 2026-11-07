@@ -4,7 +4,7 @@ Each docstring starts with the README criterion, word for word, and
 `test_the_criteria_tests_quote_every_readme_criterion` pins that. A test here is a cheap check
 that the offline evidence the README cites is there: the bound suite class, the note, the pinning
 test file. It never reruns the heavy suites; those run in their own files in the same gate. The
-kind half of a criterion stays with the kind tests (`POC06_KIND`, `poc06-kind.yml`). An open
+kind half of a criterion stays with the kind tests (`KIND_DRILLS`, `poc06-kind.yml`). An open
 criterion is a skip that names what it waits on.
 """
 
@@ -73,15 +73,15 @@ def binds_suite(path: Path, cls: str, suite: str = SUITE) -> bool:
 
 
 def is_kind_drill(path: Path) -> bool:
-    """True when `path` imports `POC06_KIND` from `poc_harness.drills` and marks tests with it."""
+    """True when `path` imports `KIND_BAKEOFF` from `poc_harness.drills` and marks tests with it."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
     imported = any(
         isinstance(n, ast.ImportFrom)
         and n.module == "poc_harness.drills"
-        and any(a.name == "POC06_KIND" for a in n.names)
+        and any(a.name == "KIND_BAKEOFF" for a in n.names)
         for n in ast.walk(tree)
     )
-    uses = sum(isinstance(n, ast.Name) and n.id == "POC06_KIND" for n in ast.walk(tree))
+    uses = sum(isinstance(n, ast.Name) and n.id == "KIND_BAKEOFF" for n in ast.walk(tree))
     return imported and uses >= 1
 
 
@@ -115,7 +115,7 @@ def test_criterion_2_the_plain_a2a_remote_binds_the_engine_suite() -> None:
     to the chassis core.
 
     Here: `TestPlainA2ARemoteLane` binds the same suite over a plain-A2A stub. The real
-    `kagent-adk` is the kind half, `test_poc06b_kind_engines.py` (`POC06_KIND`)."""
+    `kagent-adk` is the kind half, `test_poc06b_kind_engines.py` (`KIND_DRILLS`)."""
     path = TESTS / "test_poc06b_plain_a2a_contract.py"
 
     assert binds_suite(path, "TestPlainA2ARemoteLane")
@@ -138,7 +138,7 @@ def test_criterion_3_the_scorecard_has_no_blank_kagent_cell() -> None:
 def test_criterion_4_the_kind_suites_are_kind_drills() -> None:
     """Every supported engine passes the contract, load, and hostile suites, in its lane.
 
-    Here, the offline half: each kind test the criterion cites is gated on `POC06_KIND`, so it
+    Here, the offline half: each kind test the criterion cites is gated on `KIND_DRILLS`, so it
     cannot pass offline having checked nothing. `test_poc06b_kind_static.py` runs in this gate."""
     not_drills = [name for name in KIND_SUITES if not is_kind_drill(TESTS / name)]
 

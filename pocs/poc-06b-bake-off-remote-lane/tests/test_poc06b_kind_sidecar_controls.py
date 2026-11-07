@@ -15,8 +15,8 @@ The H26 `/proc` scan (the workload cannot read the chassis's environ) is not rep
 process table with Python, and the pod-level fact it rests on, no shared PID namespace, is checked
 on the spec.
 
-A kind test: marked `POC06_KIND` (`poc_harness.drills`), so also `network`, and skipped unless
-`POC06_KIND=1`.
+A kind test: marked `KIND_BAKEOFF` (`poc_harness.drills`), so also `network`, and skipped unless
+`KIND_DRILLS=1`.
 Run: `deploy/kind/poc06/run.sh test`.
 """
 
@@ -26,7 +26,7 @@ from typing import Any
 
 import pytest
 from poc_harness.bakeoff_kind import SIDECARS, KindEngine, probe_in
-from poc_harness.drills import POC06_KIND
+from poc_harness.drills import KIND_BAKEOFF
 from poc_harness.kind import (
     AGENTS_NS,
     CHASSIS,
@@ -53,7 +53,7 @@ from poc_harness.kind_controls import (
     secret_refs,
 )
 
-pytestmark = POC06_KIND
+pytestmark = KIND_BAKEOFF
 
 ENGINE_IDS = [e.id for e in SIDECARS]
 

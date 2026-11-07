@@ -16,7 +16,7 @@
 #   deploy/kind/poc06/run.sh apply    admission params and the front door's RBAC, fake model script,
 #                                     seed, remote/, the front door, agents/, kagent/ (no build,
 #                                     no PoC-5 bring-up)
-#   deploy/kind/poc06/run.sh test     the kind tests: POC06_KIND=1 pytest -m network (PoC-6b tests)
+#   deploy/kind/poc06/run.sh test     the kind tests: KIND_DRILLS=1 pytest -m network (PoC-6b tests)
 #   deploy/kind/poc06/run.sh pods     every pod, Sandbox, warm pool, and claim in the PoC-5 namespaces
 #   deploy/kind/poc06/run.sh logs     every pod's last log lines, through PoC-5's redact_logs
 #   deploy/kind/poc06/run.sh redact   PoC-5's redact_logs as a filter: stdin to stdout
@@ -400,7 +400,7 @@ run_tests() {
   done
   ((${#missing[@]} == 0)) || die "test: kind test files missing, nothing run: ${missing[*]}"
   kctl get namespace "$AGENTS_NS" >/dev/null || die "test: no context $CONTEXT; run: $0 up"
-  (cd "$ROOT" && env POC06_KIND=1 uv run pytest -m network "${KIND_TESTS[@]}" -q -rsx)
+  (cd "$ROOT" && env KIND_DRILLS=1 uv run pytest -m network "${KIND_TESTS[@]}" -q -rsx)
 }
 
 usage() { sed -n '2,28p' "$0"; }

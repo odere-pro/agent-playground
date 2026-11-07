@@ -77,7 +77,7 @@ The first two runs failed at the control, not at a refusal:
 After the rebuild (section 4), at 14:35:13Z, node load 1.49 3.54 14.12:
 
 ```
-$ POC05_KIND=1 POC05_KAFKA=1 uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py -k kafka -q -rs
+$ KIND_DRILLS=1 POC05_KAFKA=1 uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py -k kafka -q -rs
 1 passed, 4 deselected in 2.90s
 ```
 
@@ -123,7 +123,7 @@ $ kubectl exec deploy/code-runner-dispatch -- grep -c ConnectTimeout .../code_ru
 
 ## 5. The code-runner flake
 
-The command is `POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py -q -rs`. It ran 10 times, 10 s apart. The pass mark was 5 of 5.
+The command is `KIND_DRILLS=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py -q -rs`. It ran 10 times, 10 s apart. The pass mark was 5 of 5.
 
 | Run | Start (Z) | Node load at start | Mac 15 min | Result |
 | --- | --- | --- | --- | --- |
@@ -160,7 +160,7 @@ The poc05-tools events show `Readiness probe failed` warnings on per-call pods: 
 At 14:47:11Z, node load 1.14 1.52 7.21, Mac 5.20, 3 min 7 s:
 
 ```
-$ POC05_KIND=1 POC05_KAFKA=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs -rx
+$ KIND_DRILLS=1 POC05_KAFKA=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs -rx
 XFAIL test_poc05_kind_code_runner.py::test_dev_shm_is_capped - 2026-10-09 on kind: runsc mounts its own sentry tmpfs at /dev/shm ...
 XFAIL test_poc05_kind_remote_shm.py::test_dev_shm_is_capped_at_32mi - runsc mounts its own sentry tmpfs at /dev/shm, and remote-echo.yaml sets no /dev/shm volume ...
 150 passed, 2 skipped, 529 deselected, 2 xfailed in 187.83s (0:03:07)

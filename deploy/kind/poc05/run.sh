@@ -15,7 +15,7 @@
 #                                     its topics, and agent-echo-events, each waited for
 #   deploy/kind/poc05/run.sh up       all of it from nothing, in the plan's section 8 order; a
 #                                     second `up` on a running cluster converges
-#   deploy/kind/poc05/run.sh test     the kind tier: POC05_KIND=1 pytest -m network (PoC-5 tests),
+#   deploy/kind/poc05/run.sh test     the kind tier: KIND_DRILLS=1 pytest -m network (PoC-5 tests),
 #                                     through with_gateway like test-remote
 #   deploy/kind/poc05/run.sh test-remote  the kind remote-lane, code-runner, and sidecar hostile
 #                                     files (CI job); fails naming any file in REMOTE_TESTS that
@@ -547,7 +547,7 @@ up() {
 # The code-runner and host-side gateway tests skip without the gateway, so this runs through
 # with_gateway like test-remote (code review 2026-10-09).
 run_tests() {
-  (cd "$ROOT" && with_gateway env POC05_KIND=1 uv run pytest -m network pocs/poc-05-sandboxed/tests \
+  (cd "$ROOT" && with_gateway env KIND_DRILLS=1 uv run pytest -m network pocs/poc-05-sandboxed/tests \
     -q -rs)
 }
 
@@ -580,7 +580,7 @@ run_tests_remote() {
   done
   ((${#missing[@]} == 0)) ||
     die "test-remote: kind remote tests not written yet, nothing run: ${missing[*]}"
-  (cd "$ROOT" && with_gateway env POC05_KIND=1 uv run pytest -m network "${REMOTE_TESTS[@]}" -q -rs)
+  (cd "$ROOT" && with_gateway env KIND_DRILLS=1 uv run pytest -m network "${REMOTE_TESTS[@]}" -q -rs)
 }
 
 # with_gateway CMD...: the kind tests that call the gateway from the host (test_poc05_kind_*.py)

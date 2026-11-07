@@ -21,7 +21,7 @@ Offline, in `make test-poc POC=07` (`pocs/poc-07-cross-cutting-decisions/tests/t
 - `test_stack_sh_generates_the_otlp_token`
 - `test_the_stack_tests_send_the_token_to_the_collector`
 
-On the stack (`network`, `POC07_STACK=1`), in `test_poc07_stack.py`:
+On the stack (`network`, `COMPOSE_STACK=1`), in `test_poc07_stack.py`:
 
 - `test_collector_refuses_otlp_without_the_chassis_token[none]` and `[wrong]`: a POST to `127.0.0.1:4318/v1/traces` answers 401.
 - `test_collector_takes_otlp_with_the_chassis_token`: the same empty export with the token answers 200.
@@ -32,7 +32,7 @@ On the stack (`network`, `POC07_STACK=1`), in `test_poc07_stack.py`:
 ```bash
 deploy/compose/poc07/stack.sh up && deploy/compose/poc07/stack.sh wait
 export "$(deploy/compose/poc07/stack.sh env)"
-POC07_STACK=1 uv run pytest -m network -v \
+COMPOSE_STACK=1 uv run pytest -m network -v \
     pocs/poc-07-cross-cutting-decisions/tests/test_poc07_stack.py
 deploy/compose/poc07/stack.sh down
 ```

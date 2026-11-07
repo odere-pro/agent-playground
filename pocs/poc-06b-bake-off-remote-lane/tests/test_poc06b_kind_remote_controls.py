@@ -19,8 +19,8 @@ Recorded exceptions (notes/2026-10-09-lanes-b-kind.md):
   pod spec and the node. Its image is built from source (`run.sh build_kagent`) and has the venv
   Python at /.kagent/.venv/bin/python, so the probe is expected to run.
 
-A kind test: marked `POC06_KIND` (`poc_harness.drills`), so also `network`, and skipped unless
-`POC06_KIND=1`.
+A kind test: marked `KIND_BAKEOFF` (`poc_harness.drills`), so also `network`, and skipped unless
+`KIND_DRILLS=1`.
 Run: `deploy/kind/poc06/run.sh test`.
 """
 
@@ -47,7 +47,7 @@ from poc_harness.bakeoff_kind import (
     delete_missing_profile_pod,
     probe_in,
 )
-from poc_harness.drills import POC06_KIND
+from poc_harness.drills import KIND_BAKEOFF
 from poc_harness.kind import (
     AGENTS_NS,
     CALLER_NS,
@@ -73,7 +73,7 @@ from poc_harness.kind import (
 )
 from poc_harness.kind_controls import secret_sources, traceparent_headers
 
-pytestmark = POC06_KIND
+pytestmark = KIND_BAKEOFF
 
 REPO = Path(__file__).resolve().parents[3]
 CLUSTER_YAML = REPO / "deploy" / "kind" / "poc05" / "cluster.yaml"

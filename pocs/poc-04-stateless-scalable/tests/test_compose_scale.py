@@ -1,5 +1,5 @@
 """The Compose scale stack, live (plan, sections 8a and 10). Every test here is a Compose drill:
-it needs Docker, the images of `deploy/compose/scale.sh build`, and POC04_STACK=1. Each test
+it needs Docker, the images of `deploy/compose/scale.sh build`, and COMPOSE_STACK=1. Each test
 brings up project `poc04` and takes it down again. Evidence of the recorded run:
 `notes/2026-10-01-drills.md`.
 
@@ -9,7 +9,7 @@ The README's exit criteria the drills here give evidence for:
 - 3: "A killed replica loses no request that the client retries."
 - 6: "Stopping a pair under load fails no request in flight: the workload finishes its `handle` calls before it exits."
 
-    POC04_STACK=1 uv run pytest pocs/poc-04-stateless-scalable/tests/test_compose_scale.py -v
+    COMPOSE_STACK=1 uv run pytest pocs/poc-04-stateless-scalable/tests/test_compose_scale.py -v
 """  # noqa: E501
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from poc_harness.drills import POC04_STACK
+from poc_harness.drills import COMPOSE_STACK
 from poc_harness.waits import wait_ready
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -54,7 +54,7 @@ print(json.dumps({
 """
 """Run in chassis-1: each way out prints `reached` or the error that stopped it."""
 
-pytestmark = POC04_STACK
+pytestmark = COMPOSE_STACK
 
 
 def scale(*args: str, timeout_s: float = 400) -> None:

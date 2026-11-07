@@ -21,8 +21,8 @@ H23 never exhausts the cap (under gVisor that would end the sandbox): it reads t
 cgroup on the node and compares it with the kubelet's configured `podPidsLimit`. The per-call
 process limit inside the code runner is in `test_poc05_kind_code_runner.py`.
 
-A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc_harness.drills`). Run:
-`POC05_KIND=1 uv run pytest -m network <this file>`.
+A kind test: marked `network`, skipped unless `KIND_DRILLS=1` (`poc_harness.drills`). Run:
+`KIND_DRILLS=1 uv run pytest -m network <this file>`.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from typing import Any
 
 import pytest
 import yaml
-from poc_harness.drills import POC05_KIND
+from poc_harness.drills import KIND_SANDBOX
 from poc_harness.kind import (
     AGENTS_NS,
     CHASSIS,
@@ -64,7 +64,7 @@ from poc_harness.kind import (
 )
 from poc_harness.kind_controls import secret_sources, traceparent_headers
 
-pytestmark = POC05_KIND
+pytestmark = KIND_SANDBOX
 
 REPO = Path(__file__).resolve().parents[3]
 CLUSTER_YAML = REPO / "deploy" / "kind" / "poc05" / "cluster.yaml"

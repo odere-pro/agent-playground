@@ -35,15 +35,27 @@ class EngineAuthSpec(BaseModel):
     """`spec.engine.auth` (PoC-5, plan section 2.2): the per-remote credential, by reference.
 
     The token is read from `os.environ[token_env]` at connector setup; the config never holds it.
-    `previous_token_env` is the token being rotated out: the chassis's remote listener accepts
-    either, the connector sends `token_env`. suggested: every name; `scheme` leaves room for
-    `sigv4` and `google` (PoC-6), only `bearer` now.
+    The connector sends `token_env` to the remote. The chassis's remote listener accepts
+    `proxy_token_env` and, during a rotation, `proxy_previous_token_env` (R2-09), so the remote
+    never holds the token the listener accepts. With `proxy_token_env` unset, the listener falls
+    back to `token_env` and `previous_token_env` (one token both ways, as before). suggested:
+    every name; `scheme` leaves room for `sigv4` and `google` (PoC-6), only `bearer` now.
     """
 
     model_config = ConfigDict(extra="forbid")
     scheme: Literal["bearer"] = "bearer"
     token_env: str = Field(pattern=ENV_NAME)
     previous_token_env: str | None = Field(default=None, pattern=ENV_NAME)
+    proxy_token_env: str | None = Field(default=None, pattern=ENV_NAME)
+    """The remote listener's own bearer (R2-09). Null: the listener accepts `token_env`."""
+    proxy_previous_token_env: str | None = Field(default=None, pattern=ENV_NAME)
+    """The listener's token being rotated out. Needs `proxy_token_env`."""
+
+    @model_validator(mode="after")
+    def _proxy_pair(self) -> EngineAuthSpec:
+        if self.proxy_previous_token_env is not None and self.proxy_token_env is None:
+            raise ValueError("spec.engine.auth.proxy_previous_token_env needs proxy_token_env")
+        return self
 
 
 Protocol = Literal["chassis", "a2a"]

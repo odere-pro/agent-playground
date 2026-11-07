@@ -30,9 +30,13 @@ other non-`http` scope (a websocket is closed with 1008 before accept):
    under that run's budget, and only the remote serving that run can. Plain mode
    (`spec.engine.protocol: a2a`) has no secret: traceparent only, counted.
 
-`remote_tokens(auth)` reads the tokens at start. A token shorter than `MIN_TOKEN_LENGTH`
-(suggested: 32 characters), current or a set previous one, is refused; the error names the
-variable, never the value (R2-31).
+`remote_tokens(auth)` reads the tokens at start. The listener's own token is
+`spec.engine.auth.proxy_token_env`, with `proxy_previous_token_env` for a rotation (R2-09): the
+remote never receives it, so it cannot replay the token the chassis sends it (`token_env`)
+against this listener. With `proxy_token_env` unset, the listener falls back to `token_env` and
+`previous_token_env`, one token both ways. A token shorter than `MIN_TOKEN_LENGTH` (suggested:
+32 characters), current or a set previous one, is refused; the error names the variable, never
+the value (R2-31).
 
 `chassis serve --remote-proxy-host <pod IP>` runs this app on `--remote-proxy-port` (suggested
 8091), only in the `remote` lane (`chassis.server.cli`). The loopback proxy app is unchanged.
@@ -118,21 +122,30 @@ def _refusal(
 
 
 def remote_tokens(auth: Mapping[str, Any] | None) -> tuple[str, ...]:
-    """The tokens the remote listener accepts, from `spec.engine.auth` (its mapping form): the
-    current one from `token_env` (required, not empty), then the previous one from
-    `previous_token_env` when it is set and not empty. Raises `LookupError` when the current
-    variable is unset or empty, and `ValueError` when a set token is shorter than
-    `MIN_TOKEN_LENGTH` (R2-31). Each error names the variable, never a value.
+    """The tokens the remote listener accepts, from `spec.engine.auth` (its mapping form).
+
+    With `proxy_token_env` set (R2-09): that token (required, not empty), then the one from
+    `proxy_previous_token_env` when it is set and not empty. The outbound `token_env` is then
+    not accepted, so a remote cannot replay the token the chassis sends it. With
+    `proxy_token_env` unset: `token_env` and `previous_token_env`, as before. Raises
+    `LookupError` when the current variable is unset or empty, and `ValueError` when a set token
+    is shorter than `MIN_TOKEN_LENGTH` (R2-31). Each error names the variable, never a value.
     """
     if not auth:
         raise LookupError("the remote proxy needs spec.engine.auth (a bearer token variable)")
-    name = str(auth.get("token_env") or "")
+    if auth.get("proxy_token_env"):
+        return _read_pair(auth.get("proxy_token_env"), auth.get("proxy_previous_token_env"))
+    return _read_pair(auth.get("token_env"), auth.get("previous_token_env"))
+
+
+def _read_pair(current_name: object, previous_name: object) -> tuple[str, ...]:
+    """The current token (required) and the previous one when set; both length-checked."""
+    name = str(current_name or "")
     current = os.environ.get(name, "") if name else ""
     if not current:
         raise LookupError(f"the remote proxy token variable {name or '(none)'} is not set")
     _check_length(name, current)
     tokens = [current]
-    previous_name = auth.get("previous_token_env")
     if previous_name:
         previous = os.environ.get(str(previous_name), "")
         if previous:
