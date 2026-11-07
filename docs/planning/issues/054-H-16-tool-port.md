@@ -26,6 +26,8 @@ Tool agents answer by calling tools. Small models call tools less reliably than 
 - Tool descriptions and tool outputs are treated as data, never as instructions.
 - A failed or malformed tool call is retried, then goes to `fallback_route` (017 H-4).
 - The code-execution tool behind `ToolPort`. Decided in [ADR-005](../adr/005-remote-lane-auth-and-trust-admission.md), decision 6: `code-runner`, an MCP server in a gVisor sandbox with no network, with one agent-sandbox sandbox per call. B12 is closed for the code runner, and stays open everywhere else. Generated code that runs through it does not make an agent untrusted (ADR-001 item 5).
+- A tool result over 1 MiB (suggested: `MAX_RESULT_BYTES`) is a non-retryable `tool_unavailable`, in the gateway and in the tool proxy. The gateway decodes gzip or deflate itself, in bounded pieces, and refuses any other encoding. Built in PR #91: `packages/chassis/tests/test_tool_gateway_contract.py::test_a_result_one_byte_over_the_cap_is_refused`, `::test_a_gzip_answer_over_the_cap_is_refused_on_its_decoded_size`, `packages/chassis/tests/test_tool_endpoint.py::test_a_port_result_over_the_cap_reaches_the_workload_as_tool_unavailable`.
+- One argument checker, `chassis/ports/tool_arguments.py`, used by the fake and the gateway. Built in PR #91: `packages/chassis/tests/test_tool_arguments.py::test_each_rule_refuses_and_names_the_path`, `packages/chassis/tests/test_tool_gateway_contract.py::test_enum_and_nested_arguments_are_refused_before_any_request`.
 - Suggested: first tool adapters for MCP tools (MCP Python SDK) and plain HTTP APIs, with endpoints set in config.
 
 ## Reuse

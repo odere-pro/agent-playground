@@ -48,7 +48,9 @@ Each finding id is assigned here once, in bold. P-24 has no id: it carries two i
 - **P-6:** option 1. The 011 H-2 box is rewritten to the contract; 011 H-2 retires.
 - Not a proposal, decided the same day: the 023 C-5 client guide joins phase A, before 2026-12-02.
 
-The other proposals, P-3 to P-5 and P-7 to P-34, stay open. Each one's owner agent advises; a pick that changes code is its own PR after PR-R.
+Done by a merged PR: **P-16.** Rule 9, the minimum chassis version, landed in `agent-lib` in PR #79; `docs/specs/architecture.md` and `docs/specs/security.md` name it.
+
+The other proposals, P-3 to P-5, P-7 to P-15, and P-17 to P-34, stay open. Each one's owner agent advises; a pick that changes code is its own PR after PR-R.
 
 ## P-1: An evaluator outage: fail open or fail closed
 

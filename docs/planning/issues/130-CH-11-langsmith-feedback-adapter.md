@@ -21,7 +21,7 @@ Langfuse is the only `FeedbackPort` backend today (the [product plan](../../plan
 
 ## Out of scope
 
-- Subject binding, a reviewer role, and comment redaction (ADR-009 open questions, the user's).
+- A reviewer role and comment redaction (ADR-009 open questions, the user's). Subject binding is no longer open: contract v8 G binds feedback to the run's caller (`packages/chassis/tests/test_feedback_route.py::test_feedback_refuses_another_caller_with_404_when_the_run_ended_for_alice`).
 
 ## Acceptance criteria
 

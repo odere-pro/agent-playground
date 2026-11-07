@@ -55,6 +55,7 @@ epic_refs: [G.4, H]
 - [ ] A workload that stops answering its liveness probe gets the pod restarted, on this chart on kind.
 - [ ] A rolling restart under load fails no request, on this chart on kind.
 - [x] The chart runs on a local kind or k3d cluster with native sidecars. · Delivered in PoC-9: `pocs/poc-09-agent-mvp-template/notes/2026-11-05-kind-hpa-drill.md` (sidecar lane, chassis as the native sidecar)
+- [ ] One ADR picks the container order, so that the bind order (contract v4) and the drain order hold together (`docs/specs/contract.md`: the workload gets SIGTERM after the chassis has drained), or the chart adds a preStop. The chart follows it. Owner: `chassis-architect`.
 
 ## Dependencies
 

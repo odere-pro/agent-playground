@@ -43,7 +43,7 @@ In the `sidecar` lane the workload holds no key ([ADR-001](../adr/001-chassis-de
 - The scripted fake model server (015 H-8). This issue uses the fake `ModelPort` adapter from 007 H-1.
 - The `remote`-lane credential for the proxies (055 CH-6).
 - A finish reason on `ModelPort`: `stop_reason: max_tokens` cannot be sent, because stop reasons are always `stop` and `end_turn` ([ADR-003](../adr/003-chat-formats-onto-the-canonical-request.md) item 8).
-- Debt from PoC-2: the trace id that keys a call to its run is not a credential. `/v1/run` refuses a second in-flight run on one trace id (409 `trace_id_in_use`, suggested), but any caller in the namespace can name any trace id. A chassis-minted per-run credential replaces it in 026 CH-4.
+- Debt from PoC-2: the trace id that keys a call to its run is not a credential. `/v1/run` refuses a second in-flight run on one trace id (409 `trace_id_in_use`, suggested), but any caller in the namespace can name any trace id. A chassis-minted per-run credential replaces it in 026 CH-4. It is built for the `remote` listener (contract v8 D, [ADR-011](../adr/011-per-run-secret-and-v0-wire-bounds.md), PR #85). The loopback proxy still keys calls by trace id alone.
 - Debt from PoC-2: a scoped key per service. The proxy still adds the PoC-1 key. It moves to 026 CH-4.
 
 ## Acceptance criteria

@@ -91,7 +91,7 @@ Companion: [phase-map.md](phase-map.md), which places each issue named below in 
 - **What it changes.** 017 H-4's sentence reads "An evaluator outage fails open as built (ADR-010 item 4), decided 2026-11-06." 042 A-2 box 5 is rewritten to the fail-open rule and ticked with the test above. 022 H-6 gets no fail-closed box, and one `## What` sentence: "A store outage lets calls through unlimited, decided 2026-11-06 (P-2)." 117 X-3 (phase E) gains two alert boxes: `gate_failed_open / gate_runs` above suggested: 1% over 15 minutes, and the rate-limit store unavailable.
 - **Where it is recorded.** ADR-010 item 4 (its "OPEN (user)" note closes) and 022 H-6 `## What`, in the apply PRs.
 
-The other gate defaults are not open: the product plan sets "async at 0.1 on `decision-small`" for phase B, and ADR-010's rule confirms or changes them from the Mac run's numbers.
+The other gate defaults are not open: the product plan sets "async at 0.1 on the judge route" for phase B, and ADR-010's rule confirms or changes them from the Mac run's numbers.
 
 ## 6. An absolute `facts_kept` floor for a hosted model (proposed box)
 
@@ -109,7 +109,7 @@ The other gate defaults are not open: the product plan sets "async at 0.1 on `de
 - **What the PoCs learned.** `/metrics` moved to the public port in the PoC-8 build (ADR-008, item 2 note). The product plan lists "`/metrics` open by default" as a P2 gap for phase E. The question is PoC-8's Q1 ([PoC-8 backlog changes](../../../pocs/poc-08-cross-cutting-build/notes/backlog-changes.md#open-questions-for-the-user)). 022 H-6 box 1 splits into an OIDC box and a caller API key box around it (W2b-09).
 - **`suggested:`** behind a scope in `cloud`; open in `local` and `fake`, where the Compose Prometheus scrapes it.
 - **Unblocks.** Phase E: 022 H-6 box 1; how 117 X-3's Prometheus scrapes in each profile.
-- **Where to record.** An amendment to ADR-008. This is the same decision as proposal P-4 in [proposals.md](proposals.md); decide it once.
+- **Where to record.** An amendment to ADR-008. This is the same decision as proposal P-4 in [proposals.md](proposals.md); decide it once. The two suggestions differ: this item suggests a scope in `cloud`, and P-4 suggests option 2, no token and a NetworkPolicy that lets only the scraper in. The user decides both in one go.
 
 ## 8. Where the week of real numbers runs (proposed box)
 
