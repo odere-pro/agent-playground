@@ -8,7 +8,7 @@ Load tools for the Compose scale stack (`deploy/compose/scale.sh`, project `poc0
 | `load_tools.locustfile` | One Locust user: native `POST /v1/run`, complete mode, a fixed short input. `LOAD_KEY_SHARE`, `LOAD_NO_KEY`, `LOAD_RATE_PER_USER`, `LOAD_TEXT`. | `locust -f packages/load-tools/src/load_tools/locustfile.py` (`run_matrix` does this) |
 | `load_tools.steady_client` | Plain httpx steady load for the drills. `--no-retry` (default) or `--retry`. Prints totals; exit 1 when a call failed. | `uv run python -m load_tools.steady_client --url <url> --concurrency 20 --no-retry` |
 
-Locust is not a workspace dependency. `run_matrix` runs it through `uv run --no-project --with "locust==2.46.6"`, and Locust loads `locustfile.py` by path in that environment. So `locustfile.py` imports no workspace package.
+Locust is not a workspace dependency. Before the first scenario `run_matrix` installs it into a venv in a new temp dir, removed when the run ends, from the hashed lock `locust/requirements.txt`, with `uv pip install --require-hashes --no-deps`. Locust loads `locustfile.py` by path in that venv, so `locustfile.py` imports no workspace package.
 
 `run_matrix` writes under `pocs/poc-04-stateless-scalable/notes/load/` by default, where the dated PoC-4 results live. `--results` moves `results.json`; `deploy/compose/poc06/load_driver.py` moves the raw files too.
 

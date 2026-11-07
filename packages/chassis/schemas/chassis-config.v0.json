@@ -625,6 +625,7 @@
     },
     "ModelSpec": {
       "additionalProperties": false,
+      "description": "`spec.model` (`docs/specs/models.md`): the agent's LiteLLM routes. Every field reloads.\n\n- `route: fake-route`: the route of every task the map does not name.\n- `fallback_route: null` (PoC-7, 017 H-4): the route of the evaluator gate's last attempt.\n- `routes: {}`: the route per task, keyed by the task the caller names in `input.data.task`.\n  The pipeline resolves `routes[task]`, else `route`, into `ctx.model_route`, and the model\n  proxy forces every call of the run to it. A route the service's LiteLLM key does not list\n  is 403 `model_route_denied` at the first call; suggested: a check at load, which needs the\n  key and is not built. An empty task or route name is refused here.\n- `judge_route: null`: the judge evaluator's route. Null: `CHASSIS_JUDGE_ROUTE`.",
       "properties": {
         "fallback_route": {
           "anyOf": [
@@ -638,10 +639,29 @@
           "default": null,
           "title": "Fallback Route"
         },
+        "judge_route": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Judge Route"
+        },
         "route": {
           "default": "fake-route",
           "title": "Route",
           "type": "string"
+        },
+        "routes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Routes",
+          "type": "object"
         }
       },
       "title": "ModelSpec",

@@ -31,7 +31,8 @@ The service chassis for the SLM agent platform, and the nine PoC iterations that
   - PoC-7: `deploy/compose/poc07/stack.sh` (Langfuse v4, OTel Collector, Jaeger) and `deploy/agent-scan/` (Snyk Agent Scan in a sandbox).
   - PoC-8: `deploy/dashboards/` (written by `python -m chassis.dashboards`). PoC-9: `deploy/helm/` (the library chart `agent-lib` and `example-agent`).
 - `scripts/` the gate scripts, the git hook, and `scripts/poc06_mac.sh`, the one Mac command (`make poc06-mac`).
-- `docs/` contracts, guides, templates, and `plans/`. Start at `docs/README.md`.
+- `docs/` specs, contracts, guides, templates, and `plans/`. Start at `docs/README.md`.
+  - What the product is, one fact in one place: `docs/specs/README.md`. The plan: `docs/plans/2026-11-06-agent-container-product.md`.
   - Chassis modules: `docs/guides/chassis-reference.md`.
   - How a PoC works: `docs/guides/poc-04-how-it-works.md`, `poc-05-how-it-works.md`, `poc-06-how-it-works.md`.
   - A new agent's business logic: `docs/guides/how-to-add-business-logic.md`.

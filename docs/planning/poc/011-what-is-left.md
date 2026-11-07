@@ -12,7 +12,7 @@ No PoC is left to build. All nine have code, tests, and CI. Four are still `in p
 | --- | ------ | ------------------ |
 | [1](001-PoC-1-walking-skeleton.md), [2](002-PoC-2-two-engines-one-contract.md), [3](003-PoC-3-one-interface-every-client.md) | Done | Nothing |
 | [4](004-PoC-4-stateless-scalable.md) | Done, criterion 4 flagged | Throughput at 4 pairs, moved to [122 X-5](../issues/122-X-5-load-tests.md) |
-| [5](005-PoC-5-sandboxed.md) | Done, criteria 1, 3, and 8 flagged | Sidecar hostile suite not in CI; MinIO through the chassis; the T10 probe workload |
+| [5](005-PoC-5-sandboxed.md) | Done, criteria 3 and 8 flagged | MinIO through the chassis; the T10 probe workload. Criterion 1 closed on 2026-11-06: the sidecar hostile suite runs in CI |
 | [6a and 6b](006-PoC-6-framework-bake-off.md) | In progress | The hosted big-model run on the Mac (criterion 5) |
 | [6c](006c-PoC-6c-pretrained-slm.md) | In progress | The big-model half of the side-by-side numbers, from the same Mac run |
 | [7](007-PoC-7-cross-cutting-decisions.md) | In progress | The Mac run, a `SNYK_TOKEN` secret, a look at the Langfuse UI, and applying its backlog changes |
@@ -55,7 +55,7 @@ Each one is carried as "open, user decision" in the issue it belongs to.
 
 Code an engineer or an agent can do now. Each item names the PoC criterion it moves.
 
-- [ ] **A CI job for the sidecar hostile suite (PoC-5 criterion 1).** CI runs only `run.sh test-remote`. Add the sidecar kind tests (`test_poc05_kind_sidecar_controls.py`, `test_poc05_kind_hardreq1.py`, `test_poc05_kind_admission.py`) to a workflow.
+- [x] **A CI job for the sidecar hostile suite (PoC-5 criterion 1).** Done 2026-11-06: `run.sh test-remote` in `remote-lane.yml` runs `test_poc05_kind_sidecar_controls.py`, `test_poc05_kind_hardreq1.py` (with the broker, after a `run.sh kafka` step), `test_poc05_kind_tool_gateway.py`, and `test_poc05_kind_admission.py`; the run is named in [the PoC-5 README](../../../pocs/poc-05-sandboxed/README.md), criterion 1.
 - [ ] **MinIO through the chassis (PoC-5 criterion 3).** Give a chassis a scoped MinIO key, then show the allowed call through it. MinIO already refuses the workload.
 - [ ] **The T10 probe workload (PoC-5 criterion 8).** Owned by the user. It closes when [the T10 runbook](../../guides/poc-05-runbooks.md#testing-the-probe-workload-t10-after-it-is-built) passes.
 - [ ] **The `kagent-adk` scorecard cells (6b exit criterion 3).** The image, RSS, latency, cold start, streaming, and token cells still say "not measured: kind, from CI". `poc06-kind.yml` passes its contract and hostile checks, but it has no step that measures image size, RSS, or tokens. Add that step, then fill the cells. Kind latency under load is already in [the load note](../../../pocs/poc-06b-bake-off-remote-lane/notes/2026-10-10-remote-load-on-kind.md).

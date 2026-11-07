@@ -35,5 +35,5 @@ Load: 24 threads inside one pod's chassis container, `POST /v1/run` to that pod'
 
 - The load came from one pod to itself, so it shows the HPA acting on CPU. It does not show traffic spread over the replicas through the Service.
 - The `sidecar` lane only. The remote lane (gVisor, two pods) was not run on kind.
-- No NetworkPolicy enforcement: kind's default CNI does not enforce it. PoC-5 runs Calico for that.
+- No NetworkPolicy check: this drill applied no policy. kind's default CNI, kindnet, does enforce NetworkPolicy (ADR-005 decision 7), and PoC-5 runs on it.
 - Scale-down was not waited for.

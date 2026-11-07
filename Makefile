@@ -61,7 +61,7 @@ test-poc: ## Scenario tests of one PoC: make test-poc POC=01 (POC=06 runs 06a, 0
 test-integration: ## Network tests: real adapters in testcontainers, sockets on, keys stripped; needs Docker
 	scripts/check_integration.sh $(ARGS)
 
-load-test: ## PoC-4 load matrix (Locust via uv run --with, Compose): make load-test ARGS="--engine echo-python"
+load-test: ## PoC-4 load matrix (Locust from its hashed lock, Compose): make load-test ARGS="--engine echo-python"
 	$(PY) -m load_tools.run_matrix $(ARGS)
 
 kind-poc04: ## PoC-4 kind cluster and drills: make kind-poc04 ARGS="up native-sidecar"
@@ -80,7 +80,7 @@ poc06-mac: ## PoC-6 runs on a Mac: make poc06-mac ARGS="..."
 	scripts/poc06_mac.sh $(ARGS)
 
 # PoC-8: the offline eval gate and the red-team set, the same steps as .github/workflows/poc08-evals.yml.
-# Localhost processes and the fake model server only; DeepEval comes from `uv run --with` (fetched once).
+# Localhost processes and the fake model server only; DeepEval installs from its hashed lock per run.
 EVAL_OUT ?= build/evals
 EVAL_ARGS ?=
 REDTEAM_ARGS ?=

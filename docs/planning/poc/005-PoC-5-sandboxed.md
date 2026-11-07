@@ -15,11 +15,10 @@ Can untrusted code, including code that a framework writes and runs, run in the 
 
 ## Status
 
-Done on 2026-10-09. ADR-005 is accepted. Three exit criteria were closed with a flag.
+Done on 2026-10-09. ADR-005 is accepted. Three exit criteria were closed with a flag; criterion 1's flag was lifted on 2026-11-06, when the sidecar hostile suite (sidecar controls, hard requirement 1 with the broker, the tool gateway, admission) joined the remote-lane CI job (`run.sh test-remote` after `run.sh kafka`; [the README](../../../pocs/poc-05-sandboxed/README.md) names the run).
 
 ## What is left
 
-- **The sidecar hostile suite is not in CI (exit criterion 1).** The remote-lane kind suite runs in CI. The sidecar-lane kind suite runs only by hand (`deploy/kind/poc05/run.sh test`). Add a CI job for it.
 - **MinIO through the chassis (exit criterion 3).** MinIO refuses the workload, as it should. But no chassis holds a MinIO key yet, so the allowed call through the chassis cannot be shown. Show it once a chassis gets a MinIO key.
 - **The probe workload, T10 (exit criterion 8).** The in-pod probe workload is not built yet. It is a recorded exception owned by the user. It closes when [the T10 runbook](../../guides/poc-05-runbooks.md#testing-the-probe-workload-t10-after-it-is-built) passes.
 

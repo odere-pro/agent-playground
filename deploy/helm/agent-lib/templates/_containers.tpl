@@ -3,7 +3,8 @@ The containers. Each takes (dict "root" $ "v" <merged values> "lane" <sidecar|re
 one list item at column 0; the caller indents it.
 
 The chassis (uid 10001) is the only container with a Secret: chassis.secretEnv,
-chassis.envFromSecrets, chassis.secretVolumes, and in the remote lane REMOTE_TOKEN. Its public
+chassis.envFromSecrets, chassis.secretVolumes, and in the remote lane REMOTE_TOKEN from the
+remote's token Secret, <name>-workload-token (agent-lib.remoteTokenSecret). Its public
 port binds the pod IP, never 0.0.0.0, so loopback carries only the proxies (H13). The image's
 ENTRYPOINT is `chassis serve`; the chart sets args only, never a command (admission rule 6b).
 */}}
@@ -60,7 +61,7 @@ ENTRYPOINT is `chassis serve`; the chart sets args only, never a command (admiss
     - name: REMOTE_TOKEN
       valueFrom:
         secretKeyRef:
-          name: {{ $v.remote.tokenSecret.name | quote }}
+          name: {{ include "agent-lib.remoteTokenSecret" .root | quote }}
           key: {{ $v.remote.tokenSecret.key | quote }}
     {{- end }}
   {{- with $c.envFromSecrets }}
@@ -211,7 +212,7 @@ remote proxy is a fixed ClusterIP given as plain env. Probes are TCP: the kubele
     - name: CHASSIS_API_TOKEN
       valueFrom:
         secretKeyRef:
-          name: {{ $v.remote.tokenSecret.name | quote }}
+          name: {{ include "agent-lib.remoteTokenSecret" .root | quote }}
           key: {{ $v.remote.tokenSecret.key | quote }}
     {{- range $w.env }}
     - name: {{ .name | quote }}
