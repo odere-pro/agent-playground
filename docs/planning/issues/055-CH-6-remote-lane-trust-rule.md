@@ -60,6 +60,7 @@ epic_refs: [G.3, G.4, H]
 - [x] Every pipeline stage runs on remote calls. What the chassis cannot control is listed per kind of remote. · Delivered in PoC-5, PoC-8: `pocs/poc-08-cross-cutting-build/tests/test_poc08_c7_stages_redteam.py::test_every_stage_runs_in_every_lane`; `pocs/poc-05-sandboxed/notes/2026-10-02-blind-spots.md` section 1; `docs/contracts/contract-v5.md` part B.8.
 - [x] gVisor's latency and memory overhead are measured and recorded. · Delivered in PoC-5: `pocs/poc-05-sandboxed/notes/2026-10-09-gvisor-overhead.md` "Result".
 - [ ] A remote's output over `spec.limits` ends the run with a fixed error (`pocs/poc-06b-bake-off-remote-lane/notes/backlog-changes.md`, line 20).
+- [ ] The workload token Secret holds two keys, one per direction, and a test shows the key for one direction is refused in the other (gap review, 2026-11-07).
 
 ## Dependencies
 

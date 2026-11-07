@@ -7,8 +7,10 @@
 # `remote-probe`) are not built in this pass, so they have no row. Add rows when they exist.
 #
 # Differences from the plan table (the manifests win; each is a decision for the orchestrator):
-#   - MinIO 9000 is not in any chassis egress, and minio's ingress does not take chassis pods. No
-#     chassis uses `config: s3` in PoC-5 (security review F10). minio takes only the one-shot
+#   - MinIO 9000 is in `agent-echo`'s egress only, and minio's ingress takes `agent-echo` by name
+#     (not by `agents.platform/role: chassis`): it is the one chassis that reads its config from
+#     the store (`config: minio`, 2026-11-07; security review F10 as amended). The other chassis
+#     pods keep `config: memory` and have no MinIO edge. minio also takes the one-shot
 #     `minio-init` Job, which is not in the plan table.
 #   - Kafka (T25, H11) admits only `agent-echo-events` by name, which has no
 #     `agents.platform/role: chassis` label: it calls neither LiteLLM nor Valkey.
@@ -64,6 +66,11 @@ egress:
   - src: {ns: poc05-agents, labels: {app.kubernetes.io/name: agent-echo}}
     dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: valkey}}
     ports: [TCP/6379]
+  # Its config document (`config: minio`); the workload rides this edge, so MinIO's SigV4 is
+  # the control (H12).
+  - src: {ns: poc05-agents, labels: {app.kubernetes.io/name: agent-echo}}
+    dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: minio}}
+    ports: [TCP/9000]
 
   # The H11 agent (T25): DNS and the broker's SASL port only.
   - src: {ns: poc05-agents, labels: {app.kubernetes.io/name: agent-echo-events}}
@@ -166,6 +173,9 @@ ingress:
     dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: valkey}}
     ports: [TCP/6379]
   - src: {ns: poc05-platform, labels: {app.kubernetes.io/name: minio-init}}
+    dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: minio}}
+    ports: [TCP/9000]
+  - src: {ns: poc05-agents, labels: {app.kubernetes.io/name: agent-echo}}
     dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: minio}}
     ports: [TCP/9000]
   - src: {ns: poc05-agents, labels: {app.kubernetes.io/name: agent-echo-events}}

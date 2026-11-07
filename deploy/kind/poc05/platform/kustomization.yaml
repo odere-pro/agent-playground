@@ -20,3 +20,7 @@ configMapGenerator:
   - name: litellm-config
     files:
       - config.yaml=litellm/config.yaml
+  # The agent config documents minio-init copies into the store (minio.yaml).
+  - name: agent-configs-seed
+    files:
+      - echo.yaml=agent-configs/echo.yaml

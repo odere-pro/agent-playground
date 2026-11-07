@@ -5,7 +5,7 @@ milestone: "W4 Simplifier agent live"
 index: 42
 epic_id: A-2
 depends_on: ["017 H-4", "028 S-3"]
-blocks: ["046 A-5", "047 M-3", "064 D-1", "075 E-3", "126 L-2"]
+blocks: ["046 A-5", "047 M-3", "064 D-1", "075 E-3", "126 L-2", "137 CH-17", "138 CH-18"]
 epic_refs: [B.2]
 ---
 
@@ -49,7 +49,7 @@ The top quality risk is that an agent drops facts. This issue guards answers wit
 ## Dependencies
 
 - Depends on: [017 H-4](017-H-4-harness-features.md), [028 S-3](028-S-3-simplifier-metrics.md)
-- Blocks: [046 A-5](046-A-5-agent-dashboard.md), [047 M-3](047-M-3-shadow-mode.md), [064 D-1](064-D-1-golden-set-agent.md), [075 E-3](075-E-3-evaluator-replaces-judge.md), [126 L-2](126-L-2-system-prompt-improver.md)
+- Blocks: [046 A-5](046-A-5-agent-dashboard.md), [047 M-3](047-M-3-shadow-mode.md), [064 D-1](064-D-1-golden-set-agent.md), [075 E-3](075-E-3-evaluator-replaces-judge.md), [126 L-2](126-L-2-system-prompt-improver.md), [137 CH-17](137-CH-17-judge-calibration.md), [138 CH-18](138-CH-18-judge-per-agent.md)
 
 ## References
 

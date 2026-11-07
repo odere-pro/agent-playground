@@ -34,6 +34,7 @@ from poc_harness.kind import (
     AGENTS_NS,
     CHASSIS,
     CHASSIS_SECRET_ENV,
+    CONFIG_STORE_SECRET_ENV,
     METADATA_IP,
     PLATFORM_NS,
     POLICY_DROPPED,
@@ -59,6 +60,9 @@ from poc_harness.kind_controls import (
 )
 
 pytestmark = POC05_KIND
+
+# agent-echo's chassis reads its config from MinIO, so it holds its own MinIO secret key too.
+ECHO_SECRET_ENV = CHASSIS_SECRET_ENV | CONFIG_STORE_SECRET_ENV
 
 DISPATCH = "code-runner-dispatch"
 # What the probe's `http` check returns when the connect fails: urllib raises URLError for a
@@ -120,16 +124,17 @@ def test_h25_no_secret_value_reaches_the_workload(sidecar: dict[str, Any]) -> No
     H25, criterion 4: the control refuses the workload any Secret: its container spec has no
     `secretKeyRef`, no `envFrom` Secret, and no Secret or token volume, and its live env holds none
     of the chassis's Secret-sourced names. The control: the chassis container's spec references
-    both Secrets and its live env has both names. Names only; no value is read or printed."""
+    its three (the LiteLLM key, the Valkey password, its MinIO secret key) and its live env has
+    the three names. Names only; no value is read or printed."""
     volumes = {v["name"]: v for v in sidecar["spec"].get("volumes", [])}
     assert secret_refs(container(sidecar, WORKLOAD), volumes) == []
-    assert set(secret_refs(container(sidecar, CHASSIS), volumes)) == CHASSIS_SECRET_ENV
+    assert set(secret_refs(container(sidecar, CHASSIS), volumes)) == ECHO_SECRET_ENV
 
     name = sidecar["metadata"]["name"]
     (workload_env,) = probe(AGENTS_NS, name, WORKLOAD, [{"kind": "env_names"}])
     (chassis_env,) = probe(AGENTS_NS, name, CHASSIS, [{"kind": "env_names"}])
-    assert CHASSIS_SECRET_ENV.isdisjoint(workload_env["names"])
-    assert set(chassis_env["names"]) >= CHASSIS_SECRET_ENV
+    assert ECHO_SECRET_ENV.isdisjoint(workload_env["names"])
+    assert set(chassis_env["names"]) >= ECHO_SECRET_ENV
 
 
 def test_h26_chassis_environ_not_readable_from_the_workload(sidecar: dict[str, Any]) -> None:
@@ -142,7 +147,7 @@ def test_h26_chassis_environ_not_readable_from_the_workload(sidecar: dict[str, A
     the same scan in the chassis container finds the chassis process and those names."""
     assert sidecar["spec"].get("shareProcessNamespace") is not True
     name = sidecar["metadata"]["name"]
-    check = [{"kind": "procs", "names": sorted(CHASSIS_SECRET_ENV)}]
+    check = [{"kind": "procs", "names": sorted(ECHO_SECRET_ENV)}]
     (workload,) = probe(AGENTS_NS, name, WORKLOAD, check)
     (chassis,) = probe(AGENTS_NS, name, CHASSIS, check)
 
@@ -155,7 +160,7 @@ def test_h26_chassis_environ_not_readable_from_the_workload(sidecar: dict[str, A
     own = chassis["procs"][0]
     assert own["argv"][1].endswith("/chassis"), own
     assert own["environ_readable"] is True
-    assert set(own["secret_names"]) == CHASSIS_SECRET_ENV
+    assert set(own["secret_names"]) == ECHO_SECRET_ENV
 
 
 def test_h03_h04_kubernetes_api_unreachable_from_the_workload(sidecar: dict[str, Any]) -> None:

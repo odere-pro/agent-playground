@@ -5,7 +5,7 @@ milestone: "W1 Router and baseline"
 index: 3
 epic_id: G-1b
 depends_on: ["002 G-1"]
-blocks: ["012 H-3", "029 S-2", "036 S-7", "091 R-11"]
+blocks: ["012 H-3", "029 S-2", "036 S-7", "091 R-11", "136 CH-16"]
 epic_refs: [C.1, I]
 ---
 
@@ -41,7 +41,7 @@ Agents name a route, not a model, so any model is swapped by changing router con
 ## Dependencies
 
 - Depends on: [002 G-1](002-G-1-litellm-router.md)
-- Blocks: [012 H-3](012-H-3-model-port.md), [029 S-2](029-S-2-training-data-generation.md), [036 S-7](036-S-7-serve-with-vllm.md), [091 R-11](091-R-11-hybrid-search.md)
+- Blocks: [012 H-3](012-H-3-model-port.md), [029 S-2](029-S-2-training-data-generation.md), [036 S-7](036-S-7-serve-with-vllm.md), [091 R-11](091-R-11-hybrid-search.md), [136 CH-16](136-CH-16-model-proxy-failures.md)
 
 ## References
 

@@ -192,10 +192,12 @@ spec:
         - port: 6379
           protocol: TCP
 ---
-# MinIO: only the one-shot minio-init Job (not in the section 2.10 table: it exists only to set up
-# the bucket and the chassis's user). No chassis reads its config from S3 in PoC-5 (`config:
-# memory`), so no chassis edge (security review F10). Add the poc05-agents chassis edge back with
-# the first chassis that uses `config: s3`, and seed minio-chassis into poc05-agents then.
+# MinIO: the one-shot minio-init Job (not in the section 2.10 table: it sets up the bucket, the
+# documents, and the users), and `agent-echo` by name, the one chassis that reads its config from
+# the store (`config: minio`; security review F10 as amended on 2026-11-07). Not by
+# `agents.platform/role: chassis`: the other chassis pods keep `config: memory` and get no edge.
+# agent-echo's workload shares the pod's network, so it reaches 9000 too; MinIO's SigV4 refuses it
+# (H12, test_poc05_kind_hardreq1.py), a recorded sidecar-lane risk (the blind-spots note).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -210,6 +212,16 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: minio-init
+      ports:
+        - port: 9000
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: agent-echo
       ports:
         - port: 9000
           protocol: TCP

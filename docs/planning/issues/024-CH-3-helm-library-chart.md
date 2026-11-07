@@ -5,7 +5,7 @@ milestone: "W2 Chassis MVP"
 index: 24
 epic_id: CH-3
 depends_on: ["009 CH-1", "016 H-9"]
-blocks: ["025 H-10", "026 CH-4", "055 CH-6", "056 CH-7", "059 H-15"]
+blocks: ["025 H-10", "026 CH-4", "055 CH-6", "056 CH-7", "059 H-15", "139 CH-19"]
 epic_refs: [G.4, H]
 ---
 
@@ -59,7 +59,7 @@ epic_refs: [G.4, H]
 ## Dependencies
 
 - Depends on: [009 CH-1](009-CH-1-engine-connectors-a2a.md), [016 H-9](016-H-9-local-debug-profile.md)
-- Blocks: [025 H-10](025-H-10-template-repo.md), [026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [056 CH-7](056-CH-7-chassis-release-rings.md), [059 H-15](059-H-15-agent-factory-cli.md)
+- Blocks: [025 H-10](025-H-10-template-repo.md), [026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [056 CH-7](056-CH-7-chassis-release-rings.md), [059 H-15](059-H-15-agent-factory-cli.md), [139 CH-19](139-CH-19-reference-stack.md)
 
 ## References
 

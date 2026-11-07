@@ -48,6 +48,7 @@ epic_refs: [G.4]
 - [ ] The chassis version in `/manifest` equals the image tag.
 - [ ] Before a ring rollout, the contract suite passes against a pinned workload image built on the previous event schema version.
 - [ ] The urgent-fix path is written down and tried once on the local cluster.
+- [ ] Once the `sign` job is required, admission checks the chassis image's signature, and an unsigned image is refused on kind (gap review, 2026-11-07).
 
 ## Dependencies
 

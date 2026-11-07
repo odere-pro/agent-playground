@@ -2,8 +2,10 @@
 # `default-deny` (base/default-deny.yaml) refuses everything else, both ways. Peers are pod labels,
 # plus `kubernetes.io/metadata.name` for another namespace; no rule uses an `ipBlock`.
 #
+# MinIO 9000: `agent-echo` only, the one chassis that reads its config from the store
+# (`config: minio`). `chassis-echo-remote` and `agent-echo-events` keep the mounted file
+# (`config: memory`) and have no edge to it.
 # Left from the section 2.10 table on purpose:
-# - MinIO 9000: the chassis config is the mounted file (`config: memory`), so no chassis needs it.
 # - `agent-probe-sidecar`, `chassis-probe-remote`: the probe workload is out of scope for this pass.
 # The chassis public port 8080 takes only the gateway peer (core review R5a-07): /v1/run takes no
 # credential, so an open 8080 let any pod whose own egress is not policed (`default`,
@@ -69,6 +71,16 @@ spec:
               app.kubernetes.io/name: valkey
       ports:
         - port: 6379
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-platform
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: minio
+      ports:
+        - port: 9000
           protocol: TCP
 ---
 # 8091 only from its own remote's pod label (H17, H18).

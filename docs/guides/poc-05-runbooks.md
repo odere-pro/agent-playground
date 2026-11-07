@@ -177,6 +177,31 @@ Not yet run as a recipe: a watch on claims and pods while the failing call runs.
 
 **Fix.** Retry the call; both codes are safe to retry. If `sandbox_unavailable` repeats, see "The code-runner pool is not settled" and "A claim is stuck". If `sandbox_lost` repeats, read the claimed pod's `lastState.terminated.reason` before it is gone. One `sandbox_lost` after a 31-child burst, at load 4.7 (remote suite, 2026-10-09), led to `0399a04`, a retry of a connect timeout; it did not recur in 10 runs (close runs, section 5). The retry was not seen firing on kind; a `connect_retry` log line is being added. Do not loosen the test.
 
+## `agent-echo` does not start after a MinIO restart
+
+**Symptom.** `agent-echo`'s chassis container restarts, and `/ready` never turns 200. Its log ends with `startup failed after N attempt(s)`. Or `run.sh apply` stops at `wait_rollout poc05-agents agent-echo`.
+
+**Check.** Is MinIO newer than the last `minio-init`, and does the Secret exist (names only)?
+
+```
+$ kubectl --context kind-poc05 -n poc05-platform get pods -l app.kubernetes.io/name=minio
+$ kubectl --context kind-poc05 -n poc05-platform get job minio-init
+$ deploy/kind/poc05/platform/seed.sh status
+```
+
+**Cause.** `agent-echo` reads its config from MinIO (`config: minio`): the document `agents/echo.yaml`, as the user `chassis-echo`. MinIO keeps its data in an `emptyDir`, so a MinIO restart loses the bucket, the document, and the user. The chassis cannot start without its document. The same happens after `seed.sh rotate chassis-echo-minio` until MinIO has the new secret key.
+
+**Fix.** Rerun `minio-init` first, then restart the chassis:
+
+```
+$ kubectl --context kind-poc05 -n poc05-platform delete job minio-init --ignore-not-found
+$ deploy/kind/poc05/run.sh apply
+```
+
+`apply` makes the Job again and waits for it to finish before it applies `agents/`. If `agent-echo` was already crash-looping, delete its pod after the Job is done. While the chassis is down, its workload keeps running and could bind the chassis's ports first (the restart window, F6, in `agents/agent-echo.yaml`), so do not leave it in that state.
+
+**Verify.** `run.sh test-remote` runs `test_poc05_kind_hardreq1.py::test_minio_refuses_the_workload_without_the_chassis_key`: a run through the chassis reports the store document's version.
+
 ## Rotating the remote token
 
 **Symptom.** The remote token must change: it leaked, or it is due.

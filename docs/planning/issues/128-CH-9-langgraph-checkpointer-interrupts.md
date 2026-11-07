@@ -15,7 +15,7 @@ The default engine for new agents is LangGraph ([ADR-006](../adr/006-agent-engin
 
 ## What
 
-- Two ADRs: where a LangGraph agent keeps state between runs (none, the store behind `StatePort`, or a LangGraph saver), and how an interrupt maps onto the `handle` contract (A2A `input-required`, or a refused feature).
+- Two ADRs: where a LangGraph agent keeps state between runs (none, the store behind `StatePort`, or a LangGraph saver). The gap review of 2026-11-07 suggests a fourth: the chassis exposes the store as MCP tools scoped by `session.id`, writes keyed by the run, with LangGraph's saver over them in the template, and how an interrupt maps onto the `handle` contract (A2A `input-required`, or a refused feature).
 - Each ADR closes one ADR-006 Revisit trigger. 100 O-2, 109 O-8, 095 P-4, and 125 L-1 cite them once they land.
 
 ## Out of scope
