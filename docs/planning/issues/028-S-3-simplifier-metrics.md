@@ -1,11 +1,11 @@
 ---
-title: "S-3: Simplifier metrics: tokens, readability, semantic similarity, facts_kept, banned words"
-labels: ["story", "priority:P0", "phase:2-simplifier-slm", "area:slm", "size:M", "layer:platform"]
+title: "S-3: `facts_kept` and banned-word scoring for the eval gate and the judge"
+labels: ["story", "priority:P0", "phase:2-simplifier-slm", "area:slm", "size:S", "layer:platform"]
 milestone: "W3 Simplifier SLM"
 index: 28
 epic_id: S-3
-depends_on: ["027 S-1"]
-blocks: ["029 S-2", "037 M-2", "042 A-2"]
+depends_on: []
+blocks: ["029 S-2", "037 M-2", "042 A-2", "064 D-1"]
 epic_refs: [I, success-metrics]
 ---
 
@@ -40,8 +40,8 @@ The score decides what "good" means for an answer. The SLM data track that used 
 
 ## Dependencies
 
-- Depends on: [027 S-1](027-S-1-rewrite-rules.md)
-- Blocks: [029 S-2](029-S-2-training-data-generation.md), [037 M-2](037-M-2-eval-gate-ci.md), [042 A-2](042-A-2-evaluator-gate-fallback.md)
+- Depends on: none
+- Blocks: [029 S-2](029-S-2-training-data-generation.md), [037 M-2](037-M-2-eval-gate-ci.md), [042 A-2](042-A-2-evaluator-gate-fallback.md), [064 D-1](064-D-1-golden-set-agent.md)
 
 ## References
 

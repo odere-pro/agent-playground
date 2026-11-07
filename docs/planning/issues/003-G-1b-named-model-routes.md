@@ -1,6 +1,6 @@
 ---
 title: "G-1b: Named model routes, swapped in router config only"
-labels: ["story", "priority:P0", "phase:1-router", "area:router", "size:S", "layer:platform"]
+labels: ["story", "priority:P0", "phase:1-router", "area:router", "size:M", "layer:platform"]
 milestone: "W1 Router and baseline"
 index: 3
 epic_id: G-1b

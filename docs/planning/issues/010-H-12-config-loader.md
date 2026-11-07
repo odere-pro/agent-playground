@@ -5,7 +5,7 @@ milestone: "W2 Chassis MVP"
 index: 10
 epic_id: H-12
 depends_on: ["007 H-1"]
-blocks: ["016 H-9", "017 H-4", "023 C-5", "050 CH-5", "055 CH-6", "077 C-1", "098 O-10"]
+blocks: ["017 H-4", "023 C-5", "050 CH-5", "055 CH-6", "077 C-1", "098 O-10"]
 epic_refs: [C.1, E.4]
 ---
 
@@ -61,7 +61,7 @@ Every agent's config lives in the config store, checked against a JSON Schema an
 ## Dependencies
 
 - Depends on: [007 H-1](007-H-1-harness-library-ports-envelope.md)
-- Blocks: [016 H-9](016-H-9-local-debug-profile.md), [017 H-4](017-H-4-harness-features.md), [023 C-5](023-C-5-ai-generated-marking.md), [050 CH-5](050-CH-5-service-operations.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [077 C-1](077-C-1-governance-enforcement.md), [098 O-10](098-O-10-orchestrator-schemas.md)
+- Blocks: [017 H-4](017-H-4-harness-features.md), [023 C-5](023-C-5-ai-generated-marking.md), [050 CH-5](050-CH-5-service-operations.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [077 C-1](077-C-1-governance-enforcement.md), [098 O-10](098-O-10-orchestrator-schemas.md)
 
 ## References
 

@@ -1,11 +1,11 @@
 ---
 title: "D-0: Recorder agent: reads result events, removes PII, drops duplicates, writes records to Postgres"
-labels: ["story", "priority:P0", "phase:4-golden-set", "area:data", "size:M", "layer:platform"]
+labels: ["story", "priority:P0", "phase:4-golden-set", "area:data", "size:L", "layer:platform"]
 milestone: "W4 Simplifier agent live"
 index: 40
 epic_id: D-0
 depends_on: ["008 H-14", "019 H-17", "020 X-8", "021 H-20", "022 H-6"]
-blocks: ["043 A-3", "044 G-4", "064 D-1", "071 D-8", "127 L-3"]
+blocks: ["043 A-3", "044 G-4", "053 H-22", "064 D-1", "071 D-8", "127 L-3"]
 epic_refs: [B.4, D.1, D.3]
 ---
 
@@ -55,7 +55,7 @@ Stateless agents never store anything. The recorder is the data agent that turns
 ## Dependencies
 
 - Depends on: [008 H-14](008-H-14-one-agent-interface.md), [019 H-17](019-H-17-event-port.md), [020 X-8](020-X-8-event-broker.md), [021 H-20](021-H-20-event-consumer-adapter.md), [022 H-6](022-H-6-security-middleware.md)
-- Blocks: [043 A-3](043-A-3-result-events.md), [044 G-4](044-G-4-history-swap.md), [064 D-1](064-D-1-golden-set-agent.md), [071 D-8](071-D-8-data-rules.md), [127 L-3](127-L-3-router-slm.md)
+- Blocks: [043 A-3](043-A-3-result-events.md), [044 G-4](044-G-4-history-swap.md), [053 H-22](053-H-22-event-reliability.md), [064 D-1](064-D-1-golden-set-agent.md), [071 D-8](071-D-8-data-rules.md), [127 L-3](127-L-3-router-slm.md)
 
 ## References
 

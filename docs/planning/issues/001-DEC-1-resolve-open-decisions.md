@@ -5,7 +5,7 @@ milestone: "W0 Decisions"
 index: 1
 epic_id: DEC-1
 depends_on: []
-blocks: ["019 H-17", "020 X-8", "027 S-1", "038 X-1a", "061 H-5"]
+blocks: ["019 H-17", "020 X-8", "027 S-1", "038 X-1a", "046 A-5", "061 H-5"]
 epic_refs: [open-decisions, success-metrics, D.1, H]
 ---
 
@@ -54,7 +54,7 @@ Decide and write down, with an owner and a date for each:
 ## Dependencies
 
 - Depends on: none
-- Blocks: [019 H-17](019-H-17-event-port.md), [020 X-8](020-X-8-event-broker.md), [027 S-1](027-S-1-rewrite-rules.md), [038 X-1a](038-X-1a-terraform-first-cloud.md), [061 H-5](061-H-5-a2a-adapter.md)
+- Blocks: [019 H-17](019-H-17-event-port.md), [020 X-8](020-X-8-event-broker.md), [027 S-1](027-S-1-rewrite-rules.md), [038 X-1a](038-X-1a-terraform-first-cloud.md), [046 A-5](046-A-5-agent-dashboard.md), [061 H-5](061-H-5-a2a-adapter.md)
 
 ## References
 

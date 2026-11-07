@@ -1,7 +1,7 @@
 ---
 title: "E-2: Evaluator agreement test against human labels"
 labels: ["story", "priority:P1", "phase:4-golden-set", "area:evaluator", "size:S", "layer:platform"]
-milestone: "W6 Golden set and evaluator SLM"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 74
 epic_id: E-2
 depends_on: ["073 E-1", "030 S-4"]

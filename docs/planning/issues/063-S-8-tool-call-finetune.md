@@ -1,7 +1,7 @@
 ---
 title: "S-8: Optional: fine-tune an SLM on tool-call examples for tool agents"
 labels: ["story", "priority:P2", "phase:2-simplifier-slm", "area:slm", "size:L", "layer:platform"]
-milestone: "W5 Chassis completion"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 63
 epic_id: S-8
 depends_on: ["033 S-5", "054 H-16"]

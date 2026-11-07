@@ -35,7 +35,7 @@ The MCP server gives an AI client access to the whole platform, so its tools nee
 
 - Golden set and metrics tools (096 P-2a), and run, memory, config, and workflow tools (114 P-2b), which reuse these guards.
 - Human oversight controls in the orchestrator (110 C-6).
-- Mapping the workload's A2A `input-required` state to MCP elicitation. Today it is the error `a2a.unsupported_state`; it waits on the interrupt ADR (CH-9).
+- Mapping the workload's A2A `input-required` state to MCP elicitation. Today it is the error `a2a.unsupported_state`; it waits on the interrupt ADR (128 CH-9).
 
 ## Acceptance criteria
 

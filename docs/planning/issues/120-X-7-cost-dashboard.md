@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:8-production", "area:infra", "size:S", "
 milestone: "W10 Production readiness"
 index: 120
 epic_id: X-7
-depends_on: ["004 G-2", "104 O-3"]
+depends_on: ["004 G-2"]
 blocks: []
 epic_refs: [J]
 ---
@@ -37,7 +37,7 @@ The epic's goal is lower cost, so cost must be visible where it is spent: per ag
 
 ## Dependencies
 
-- Depends on: [004 G-2](004-G-2-token-cost-counting.md), [104 O-3](104-O-3-agent-pools-keda.md)
+- Depends on: [004 G-2](004-G-2-token-cost-counting.md)
 - Blocks: none
 
 ## References

@@ -1,11 +1,11 @@
 ---
-title: "H-3: Model port to the LLM router, plus direct vLLM and llama.cpp adapters"
-labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:M", "layer:agent-profile"]
+title: "H-3: Model port to the LLM router, with a route map per task"
+labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:L", "layer:agent-profile"]
 milestone: "W2 Chassis MVP"
 index: 12
 epic_id: H-3
 depends_on: ["003 G-1b", "007 H-1", "004 G-2"]
-blocks: ["013 CH-2", "014 H-7", "015 H-8", "017 H-4", "044 G-4", "054 H-16", "062 H-11"]
+blocks: ["013 CH-2", "015 H-8", "017 H-4", "044 G-4"]
 epic_refs: [F.1, I, R3]
 ---
 
@@ -57,7 +57,7 @@ Agents call models only through the LLM router, so any model is swapped by route
 ## Dependencies
 
 - Depends on: [003 G-1b](003-G-1b-named-model-routes.md), [007 H-1](007-H-1-harness-library-ports-envelope.md), [004 G-2](004-G-2-token-cost-counting.md)
-- Blocks: [013 CH-2](013-CH-2-outbound-model-proxy.md), [014 H-7](014-H-7-observability.md), [015 H-8](015-H-8-testing-kit.md), [017 H-4](017-H-4-harness-features.md), [044 G-4](044-G-4-history-swap.md), [054 H-16](054-H-16-tool-port.md), [062 H-11](062-H-11-adapter-package.md)
+- Blocks: [013 CH-2](013-CH-2-outbound-model-proxy.md), [015 H-8](015-H-8-testing-kit.md), [017 H-4](017-H-4-harness-features.md), [044 G-4](044-G-4-history-swap.md)
 
 ## References
 

@@ -1,7 +1,7 @@
 ---
 title: "C-8: Training compute logged per fine-tune run, checked against the GPAI threshold"
 labels: ["story", "priority:P1", "phase:9-governance", "area:governance", "size:S", "layer:platform"]
-milestone: "W3 Simplifier SLM"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 34
 epic_id: C-8
 depends_on: ["033 S-5"]

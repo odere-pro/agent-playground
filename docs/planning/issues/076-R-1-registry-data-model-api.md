@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:5-registry", "area:registry", "size:L", 
 milestone: "W7 Registry and governance gate"
 index: 76
 epic_id: R-1
-depends_on: ["008 H-14", "051 H-13", "019 H-17", "022 H-6"]
+depends_on: ["008 H-14", "051 H-13", "019 H-17", "022 H-6", "059 H-15"]
 blocks: ["077 C-1", "080 R-7", "083 R-2", "084 R-3", "086 R-10", "089 R-15", "090 R-13", "091 R-11"]
 epic_refs: [F.3]
 ---
@@ -55,7 +55,7 @@ The registry is how agents and the orchestrator find agents, tools, APIs, and MC
 
 ## Dependencies
 
-- Depends on: [008 H-14](008-H-14-one-agent-interface.md), [051 H-13](051-H-13-openapi-mcp-tools.md), [019 H-17](019-H-17-event-port.md), [022 H-6](022-H-6-security-middleware.md)
+- Depends on: [008 H-14](008-H-14-one-agent-interface.md), [051 H-13](051-H-13-openapi-mcp-tools.md), [019 H-17](019-H-17-event-port.md), [022 H-6](022-H-6-security-middleware.md), [059 H-15](059-H-15-agent-factory-cli.md)
 - Blocks: [077 C-1](077-C-1-governance-enforcement.md), [080 R-7](080-R-7-trust-levels.md), [083 R-2](083-R-2-kubernetes-controller.md), [084 R-3](084-R-3-docker-watcher.md), [086 R-10](086-R-10-health-checks.md), [089 R-15](089-R-15-event-schemas-registered.md), [090 R-13](090-R-13-search-test-set.md), [091 R-11](091-R-11-hybrid-search.md)
 
 ## References

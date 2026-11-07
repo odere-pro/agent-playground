@@ -1,11 +1,11 @@
 ---
 title: "H-7: Observability: logs, traces, metrics, Langfuse"
-labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:S", "layer:chassis"]
+labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
 milestone: "W2 Chassis MVP"
 index: 14
 epic_id: H-7
-depends_on: ["007 H-1", "012 H-3", "009 CH-1"]
-blocks: ["016 H-9", "046 A-5", "056 CH-7", "086 R-10", "117 X-3"]
+depends_on: ["007 H-1", "009 CH-1"]
+blocks: ["046 A-5", "056 CH-7", "086 R-10", "117 X-3", "129 CH-10"]
 epic_refs: [G.2]
 ---
 
@@ -43,7 +43,7 @@ Every call must be traced, and the Phase 0 done-when says the echo agent appears
 - The egress policy that lets the workload reach the OTel Collector (026 CH-4).
 - The simplifier's own dashboard (046 A-5).
 - SLOs and alerts (117 X-3).
-- LangSmith as a trace backend behind the Collector (ADR-007 item 10): a new phase-D issue, CH-10.
+- LangSmith as a trace backend behind the Collector (ADR-007 item 10): phase D, in 129 CH-10.
 
 ## Acceptance criteria
 
@@ -61,8 +61,8 @@ Every call must be traced, and the Phase 0 done-when says the echo agent appears
 
 ## Dependencies
 
-- Depends on: [007 H-1](007-H-1-harness-library-ports-envelope.md), [012 H-3](012-H-3-model-port.md), [009 CH-1](009-CH-1-engine-connectors-a2a.md)
-- Blocks: [016 H-9](016-H-9-local-debug-profile.md), [046 A-5](046-A-5-agent-dashboard.md), [056 CH-7](056-CH-7-chassis-release-rings.md), [086 R-10](086-R-10-health-checks.md), [117 X-3](117-X-3-slos-alerts.md)
+- Depends on: [007 H-1](007-H-1-harness-library-ports-envelope.md), [009 CH-1](009-CH-1-engine-connectors-a2a.md)
+- Blocks: [046 A-5](046-A-5-agent-dashboard.md), [056 CH-7](056-CH-7-chassis-release-rings.md), [086 R-10](086-R-10-health-checks.md), [117 X-3](117-X-3-slos-alerts.md), [129 CH-10](129-CH-10-langsmith-trace-backend.md)
 
 ## References
 

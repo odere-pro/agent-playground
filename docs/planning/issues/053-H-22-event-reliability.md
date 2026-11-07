@@ -1,11 +1,11 @@
 ---
 title: "H-22: Event reliability: idempotent consumers, retries with backoff, dead-letter topic"
-labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:S", "layer:chassis"]
+labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
 milestone: "W5 Chassis completion"
 index: 53
 epic_id: H-22
-depends_on: ["018 H-18", "021 H-20"]
-blocks: ["072 C-3"]
+depends_on: ["018 H-18", "021 H-20", "040 D-0"]
+blocks: ["060 H-23", "072 C-3"]
 epic_refs: [D.1]
 ---
 
@@ -27,7 +27,7 @@ Delivery is at least once, so every consumer must handle duplicates, and a faili
 
 ## Reuse
 
-- **Use:** the `EventPort` adapter's own retries with backoff, `max_attempts`, and a dead-letter topic per subscription (ADR-004); the broker's own dead-letter feature where it has one.
+- **Use:** the `EventPort` adapter's own retries with backoff, `max_attempts`, and a dead-letter topic per subscription (ADR-004). The broker's own dead-letter feature is not used (ADR-004 item 8).
 - **Build:** the duplicate drop (through 018 H-18), the replay command, and metrics.
 - **Watch:** retry behavior differs slightly per broker. Test each one.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
@@ -51,8 +51,8 @@ Delivery is at least once, so every consumer must handle duplicates, and a faili
 
 ## Dependencies
 
-- Depends on: [018 H-18](018-H-18-idempotency.md), [021 H-20](021-H-20-event-consumer-adapter.md)
-- Blocks: [072 C-3](072-C-3-audit-log-agent.md)
+- Depends on: [018 H-18](018-H-18-idempotency.md), [021 H-20](021-H-20-event-consumer-adapter.md), [040 D-0](040-D-0-recorder-agent.md)
+- Blocks: [060 H-23](060-H-23-broker-adapters.md), [072 C-3](072-C-3-audit-log-agent.md)
 
 ## References
 

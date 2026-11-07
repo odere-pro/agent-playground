@@ -4,8 +4,8 @@ labels: ["story", "priority:P1", "phase:8-production", "area:infra", "size:M", "
 milestone: "W10 Production readiness"
 index: 117
 epic_id: X-3
-depends_on: ["014 H-7", "038 X-1a", "056 CH-7"]
-blocks: ["118 C-7", "119 X-6"]
+depends_on: ["014 H-7"]
+blocks: ["118 C-7", "119 X-6", "133 X-5b"]
 epic_refs: [G.2]
 ---
 
@@ -48,8 +48,8 @@ Without SLOs, nobody knows when an agent is failing its users. SLOs and alerts t
 
 ## Dependencies
 
-- Depends on: [014 H-7](014-H-7-observability.md), [038 X-1a](038-X-1a-terraform-first-cloud.md), [056 CH-7](056-CH-7-chassis-release-rings.md)
-- Blocks: [118 C-7](118-C-7-incident-flow.md), [119 X-6](119-X-6-runbooks.md)
+- Depends on: [014 H-7](014-H-7-observability.md)
+- Blocks: [118 C-7](118-C-7-incident-flow.md), [119 X-6](119-X-6-runbooks.md), [133 X-5b](133-X-5b-load-tests-pools-registry.md)
 
 ## References
 

@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:8-production", "area:infra", "size:M", "
 milestone: "W10 Production readiness"
 index: 121
 epic_id: X-4
-depends_on: ["038 X-1a", "069 D-7"]
+depends_on: ["038 X-1a"]
 blocks: []
 epic_refs: [E.6]
 ---
@@ -39,7 +39,7 @@ Records, golden sets, and the audit log are the platform's training data and its
 
 ## Dependencies
 
-- Depends on: [038 X-1a](038-X-1a-terraform-first-cloud.md), [069 D-7](069-D-7-lakefs-versions.md)
+- Depends on: [038 X-1a](038-X-1a-terraform-first-cloud.md)
 - Blocks: none
 
 ## References

@@ -1,11 +1,11 @@
 ---
 title: "S-4: Hand review of a sample and a held-out test set of at least 300 records"
 labels: ["story", "priority:P0", "phase:2-simplifier-slm", "area:slm", "size:M", "layer:platform"]
-milestone: "W3 Simplifier SLM"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 30
 epic_id: S-4
 depends_on: ["029 S-2"]
-blocks: ["033 S-5", "037 M-2", "068 D-3", "074 E-2"]
+blocks: ["033 S-5", "074 E-2"]
 epic_refs: [E.5]
 ---
 
@@ -42,7 +42,7 @@ Metrics alone can miss bad pairs, so a person checks a sample before training. T
 ## Dependencies
 
 - Depends on: [029 S-2](029-S-2-training-data-generation.md)
-- Blocks: [033 S-5](033-S-5-training-pipeline.md), [037 M-2](037-M-2-eval-gate-ci.md), [068 D-3](068-D-3-import.md), [074 E-2](074-E-2-evaluator-agreement-test.md)
+- Blocks: [033 S-5](033-S-5-training-pipeline.md), [074 E-2](074-E-2-evaluator-agreement-test.md)
 
 ## References
 

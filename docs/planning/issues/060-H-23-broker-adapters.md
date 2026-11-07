@@ -4,7 +4,7 @@ labels: ["story", "priority:P2", "phase:0-harness", "area:harness", "size:S", "l
 milestone: "W5 Chassis completion"
 index: 60
 epic_id: H-23
-depends_on: ["021 H-20"]
+depends_on: ["021 H-20", "053 H-22"]
 blocks: []
 epic_refs: [D.1, H]
 ---
@@ -27,7 +27,7 @@ The broker sits behind a port, so the platform can run with any broker and on an
 
 ## Reuse
 
-- **Use:** one broker client per broker behind `EventPort` (ADR-004): aiokafka for Kafka; suggested: nats-py for NATS JetStream, and the cloud SDKs for SNS/SQS and Pub/Sub. The `dapr` adapter stays as a tested alternative that reaches other brokers through Dapr components, the default in no profile.
+- **Use:** one broker client per broker behind `EventPort` (ADR-004): aiokafka for Kafka; suggested: nats-py for NATS JetStream, and the cloud SDKs for SNS/SQS and Pub/Sub. Dapr: parked on 2026-11-06 (product plan).
 - **Build:** one adapter per broker, each bound to `EventPortContract`, and the shared contract suite with local emulators.
 - **Watch:** each adapter must pass the whole suite against a real broker with no xfail (ADR-004, item 8). Broker auth (SASL or the cloud's IAM) is the adapter's, with 020 X-8.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
@@ -49,7 +49,7 @@ The broker sits behind a port, so the platform can run with any broker and on an
 
 ## Dependencies
 
-- Depends on: [021 H-20](021-H-20-event-consumer-adapter.md)
+- Depends on: [021 H-20](021-H-20-event-consumer-adapter.md), [053 H-22](053-H-22-event-reliability.md)
 - Blocks: none
 
 ## References

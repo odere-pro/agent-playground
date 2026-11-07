@@ -5,7 +5,7 @@ milestone: "W2 Chassis MVP"
 index: 22
 epic_id: H-6
 depends_on: ["011 H-2", "018 H-18"]
-blocks: ["026 CH-4", "040 D-0", "065 D-2", "072 C-3", "076 R-1"]
+blocks: ["040 D-0", "054 H-16", "065 D-2", "072 C-3", "076 R-1", "132 CH-13"]
 epic_refs: [G.3]
 ---
 
@@ -68,7 +68,7 @@ Every agent needs the same auth, limits, and PII rules, so the chassis pipeline 
 ## Dependencies
 
 - Depends on: [011 H-2](011-H-2-inbound-adapters.md), [018 H-18](018-H-18-idempotency.md)
-- Blocks: [026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [040 D-0](040-D-0-recorder-agent.md), [065 D-2](065-D-2-review-ui.md), [072 C-3](072-C-3-audit-log-agent.md), [076 R-1](076-R-1-registry-data-model-api.md)
+- Blocks: [040 D-0](040-D-0-recorder-agent.md), [054 H-16](054-H-16-tool-port.md), [065 D-2](065-D-2-review-ui.md), [072 C-3](072-C-3-audit-log-agent.md), [076 R-1](076-R-1-registry-data-model-api.md), [132 CH-13](132-CH-13-owasp-agentic-map.md)
 
 ## References
 

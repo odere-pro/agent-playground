@@ -1,6 +1,6 @@
 ---
 title: "O-14: Workflow validation and dry run before activation, and rollback"
-labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:M", "layer:platform"]
+labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:L", "layer:platform"]
 milestone: "W9 Orchestrator"
 index: 111
 epic_id: O-14

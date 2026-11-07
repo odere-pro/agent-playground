@@ -26,7 +26,7 @@ Every agent can be started by events and publishes events, so its event contract
 
 ## Reuse
 
-- **Use:** AsyncAPI 3.1, with the AsyncAPI generator (Node) for docs and validation.
+- **Use:** AsyncAPI 3.0, as the epic says, with the AsyncAPI generator (Node) for docs and validation.
 - **Build:** the AsyncAPI file, generated from `spec.events` in config. Dapr does not generate it.
 - **Watch:** FastStream generates AsyncAPI, but it supports neither SQS, Pub/Sub, nor CloudEvents, so it is not used.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)

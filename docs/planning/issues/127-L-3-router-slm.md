@@ -1,7 +1,7 @@
 ---
 title: "L-3: Router SLM: classifier that replaces part of the orchestrator's routing"
 labels: ["later", "priority:P3", "phase:11-later", "area:orchestrator", "size:L", "layer:platform"]
-milestone: "W12 Later"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 127
 epic_id: L-3
 depends_on: ["040 D-0", "108 O-12"]

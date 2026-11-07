@@ -1,10 +1,10 @@
 ---
 title: "CH-6: Remote lane and the trust rule: sandboxed pod or managed runtime over A2A, cloud auth adapter, admission check"
-labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:L", "layer:chassis"]
+labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:S", "layer:chassis"]
 milestone: "W5 Chassis completion"
 index: 55
 epic_id: CH-6
-depends_on: ["009 CH-1", "026 CH-4", "010 H-12", "038 X-1a"]
+depends_on: ["009 CH-1", "026 CH-4", "010 H-12", "024 CH-3"]
 blocks: ["056 CH-7", "059 H-15", "077 C-1", "116 X-1b"]
 epic_refs: [G.3, G.4, H]
 ---
@@ -36,8 +36,8 @@ epic_refs: [G.3, G.4, H]
 
 ## Reuse
 
-- **Use:** the a2a-sdk client from 009 CH-1; `kubernetes-sigs/agent-sandbox` and a gVisor RuntimeClass for sandboxed pods; AWS SigV4 or OAuth 2.0 for AgentCore and Google auth for Vertex AI Agent Engine, per the first cloud; Kyverno or ValidatingAdmissionPolicy for the admission check.
-- **Build:** the `remote` connector, one cloud auth adapter, the admission policy, and the CI job with a fake remote workload.
+- **Use:** the a2a-sdk client from 009 CH-1; `kubernetes-sigs/agent-sandbox` and a gVisor RuntimeClass for sandboxed pods. Decided in ADR-005: a bearer token for the remote auth, and the `agent-trust-rule` ValidatingAdmissionPolicy for the admission check (decision 4). Managed runtimes are out of scope (ADR-006).
+- **Build:** the `remote` connector, the admission policy, and the CI job with a fake remote workload.
 - **Watch:** agent-sandbox reached v1.0 in 2026, so pin it. On EKS, gVisor or Kata must be installed on the nodes.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
 
@@ -63,7 +63,7 @@ epic_refs: [G.3, G.4, H]
 
 ## Dependencies
 
-- Depends on: [009 CH-1](009-CH-1-engine-connectors-a2a.md), [026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [010 H-12](010-H-12-config-loader.md), [038 X-1a](038-X-1a-terraform-first-cloud.md)
+- Depends on: [009 CH-1](009-CH-1-engine-connectors-a2a.md), [026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [010 H-12](010-H-12-config-loader.md), [024 CH-3](024-CH-3-helm-library-chart.md)
 - Blocks: [056 CH-7](056-CH-7-chassis-release-rings.md), [059 H-15](059-H-15-agent-factory-cli.md), [077 C-1](077-C-1-governance-enforcement.md), [116 X-1b](116-X-1b-terraform-second-cloud.md)
 
 ## References

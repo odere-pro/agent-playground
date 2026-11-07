@@ -1,7 +1,7 @@
 ---
 title: "X-2: GPU setup on Kubernetes (NVIDIA GPU Operator) and model weight storage with fast cold start"
 labels: ["story", "priority:P1", "phase:8-production", "area:infra", "size:M", "layer:platform"]
-milestone: "W3 Simplifier SLM"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 39
 epic_id: X-2
 depends_on: ["036 S-7", "038 X-1a"]

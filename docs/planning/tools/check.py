@@ -122,10 +122,21 @@ def check_ticked_line(p, line, repo):
     if not tokens and not LINK.search(line):
         errors.append(f"{p.name}: ticked line has no backtick token or link: {line}")
     for token in tokens:
-        path = token.split("::", 1)[0]
-        if path.startswith(EVIDENCE_DIRS) and not (repo / path).exists():
-            errors.append(f"{p.name}: ticked line cites {path}, which does not exist")
+        errors += check_cited_path(p, token, repo)
     return errors
+
+
+def check_cited_path(p, token, repo):
+    """--strict: a cited `path`, `path::test`, or `path#anchor` exists, and so does its anchor."""
+    path, _, anchor = token.split("::", 1)[0].partition("#")
+    if not path.startswith(EVIDENCE_DIRS):
+        return []
+    target = repo / path
+    if not target.exists():
+        return [f"{p.name}: ticked line cites {path}, which does not exist"]
+    if anchor and (not target.is_file() or anchor not in slugs(target.read_text())):
+        return [f"{p.name}: ticked line cites {path}#{anchor}, which has no such anchor"]
+    return []
 
 
 def check_strict(p, s, fm, repo):

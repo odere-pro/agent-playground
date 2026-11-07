@@ -1,11 +1,11 @@
 ---
 title: "E-3: Evaluator SLM replaces the big-model judge in the harness"
 labels: ["story", "priority:P1", "phase:4-golden-set", "area:evaluator", "size:S", "layer:platform"]
-milestone: "W6 Golden set and evaluator SLM"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 75
 epic_id: E-3
 depends_on: ["042 A-2", "074 E-2", "047 M-3", "046 A-5"]
-blocks: ["126 L-2"]
+blocks: []
 epic_refs: [F.1, J]
 ---
 
@@ -47,7 +47,7 @@ Until now, a big model judges every simplifier call, which eats into the savings
 ## Dependencies
 
 - Depends on: [042 A-2](042-A-2-evaluator-gate-fallback.md), [074 E-2](074-E-2-evaluator-agreement-test.md), [047 M-3](047-M-3-shadow-mode.md), [046 A-5](046-A-5-agent-dashboard.md)
-- Blocks: [126 L-2](126-L-2-system-prompt-improver.md)
+- Blocks: none
 
 ## References
 

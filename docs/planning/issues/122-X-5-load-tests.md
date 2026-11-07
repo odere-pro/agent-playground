@@ -1,17 +1,17 @@
 ---
-title: "X-5: Load tests for agent pools and the registry"
+title: "X-5: Load tests: throughput and sidecar overhead on a Linux host"
 labels: ["story", "priority:P1", "phase:8-production", "area:infra", "size:M", "layer:platform"]
 milestone: "W10 Production readiness"
 index: 122
 epic_id: X-5
-depends_on: ["091 R-11", "104 O-3"]
+depends_on: []
 blocks: []
 epic_refs: [G.4]
 ---
 
 ## Why
 
-PoC-4 closed on 2026-10-08 with its throughput criterion flagged: on Docker Desktop, throughput grew cleanly with pairs for one engine only, and 4 pairs did not fit the VM. The product plan's phase A asks for every PoC-1 to PoC-5 flag to have plain evidence. This issue reruns the throughput test on a Linux host with pinned CPUs, for every engine, and measures the chassis sidecar, which [ADR-001](../adr/001-chassis-delivery-model.md) sized from estimates only. The pool, registry, and event-burst load tests moved to X-5b (added in PR-R), because they need parts that are `later`.
+PoC-4 closed on 2026-10-08 with its throughput criterion flagged: on Docker Desktop, throughput grew cleanly with pairs for one engine only, and 4 pairs did not fit the VM. The product plan's phase A asks for every PoC-1 to PoC-5 flag to have plain evidence. This issue reruns the throughput test on a Linux host with pinned CPUs, for every engine, and measures the chassis sidecar, which [ADR-001](../adr/001-chassis-delivery-model.md) sized from estimates only. The pool, registry, and event-burst load tests moved to 133 X-5b, because they need parts that are `later`.
 
 ## What
 
@@ -29,7 +29,7 @@ PoC-4 closed on 2026-10-08 with its throughput criterion flagged: on Docker Desk
 ## Out of scope
 
 - Fixes for the bottlenecks found; each gets its own issue.
-- Pool scale to zero, the pool p95, registry search p95 at 5,000 entries, the registry top 3, and the event burst: moved to X-5b (added in PR-R).
+- Pool scale to zero, the pool p95, registry search p95 at 5,000 entries, the registry top 3, and the event burst: moved to 133 X-5b.
 - Cost per pool (104 O-3).
 - New SLO rules (117 X-3).
 - Changing ADR-001 if the Revisit trigger is met. That needs a new ADR.
@@ -45,7 +45,7 @@ PoC-4 closed on 2026-10-08 with its throughput criterion flagged: on Docker Desk
 
 ## Dependencies
 
-- Depends on: [091 R-11](091-R-11-hybrid-search.md), [104 O-3](104-O-3-agent-pools-keda.md)
+- Depends on: none
 - Blocks: none
 
 ## References

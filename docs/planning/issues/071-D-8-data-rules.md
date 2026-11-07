@@ -22,6 +22,11 @@ Records and golden sets hold real text, so they must follow data rules: no PII i
 - Suggested: past lakeFS versions that held deleted data are marked withdrawn, and their objects are removed by lakeFS garbage collection.
 - Each deletion writes a deletion report: who asked, what scope, when, and which stores changed, without the deleted content.
 
+## Reuse
+
+- **Use:** the chassis redaction, so the rule is not rebuilt: `packages/chassis/tests/test_redaction_and_chunks.py::test_redact_masks_emails_phones_and_ids` and `packages/chassis/tests/test_collector_log_redaction.py::test_the_log_pipeline_masks_each_entity`. Names stay a gap until the Presidio question (011 section 3, Q6) is answered.
+- Details: [reuse analysis](../poc/010-reuse-analysis.md)
+
 ## Out of scope
 
 - Backups and their retention (121 X-4).

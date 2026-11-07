@@ -8,7 +8,7 @@ CLAUDE.md agent and skill lists equal to the disk, caps CLAUDE.md size, checks t
 cited in CLAUDE.md files exist, rejects two test files with the same name (test folders
 have no __init__.py, so pytest cannot import both), and checks that every test a PoC README or a
 ticked backlog box in docs/planning/issues/ cites (`::test_x`, `::TestX`) is defined under
-packages/ or pocs/. Drift is a finding, not a traceback.
+packages/, pocs/, or scripts/tests/. Drift is a finding, not a traceback.
 """
 
 from __future__ import annotations
@@ -181,10 +181,11 @@ DEFINED_TEST = re.compile(r"^\s*(?:async\s+def|def|class)\s+((?:test_|Test)\w+)"
 
 
 def defined_test_names() -> set[str]:
-    """Every `test_*` function or method and `Test*` class under packages/ and pocs/. A method a
-    contract suite defines (chassis_contracts) counts, so an inherited test resolves too."""
+    """Every `test_*` function or method and `Test*` class under packages/, pocs/, and
+    scripts/tests/ (the planning tools' tests). A method a contract suite defines
+    (chassis_contracts) counts, so an inherited test resolves too."""
     names: set[str] = set()
-    for top in ("packages", "pocs"):
+    for top in ("packages", "pocs", "scripts/tests"):
         for path in repo_files("*.py", ROOT / top):
             names.update(DEFINED_TEST.findall(path.read_text(errors="replace")))
     return names

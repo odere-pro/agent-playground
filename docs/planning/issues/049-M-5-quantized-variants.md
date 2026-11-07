@@ -1,7 +1,7 @@
 ---
 title: "M-5: Quantized 4-bit variants for CPU and edge, each with its own eval"
 labels: ["story", "priority:P2", "phase:2-simplifier-slm", "area:lifecycle", "size:M", "layer:platform"]
-milestone: "W4 Simplifier agent live"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 49
 epic_id: M-5
 depends_on: ["037 M-2"]

@@ -1,11 +1,11 @@
 ---
 title: "S-1: Rewrite rules and banned-word list"
 labels: ["story", "priority:P0", "phase:2-simplifier-slm", "area:slm", "size:S", "layer:platform"]
-milestone: "W3 Simplifier SLM"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 27
 epic_id: S-1
 depends_on: ["001 DEC-1"]
-blocks: ["028 S-3", "029 S-2"]
+blocks: ["029 S-2"]
 epic_refs: [C.1, F.9]
 ---
 
@@ -41,7 +41,7 @@ The rewrite rules define a good simplification, so the teacher (029 S-2), the me
 ## Dependencies
 
 - Depends on: [001 DEC-1](001-DEC-1-resolve-open-decisions.md)
-- Blocks: [028 S-3](028-S-3-simplifier-metrics.md), [029 S-2](029-S-2-training-data-generation.md)
+- Blocks: [029 S-2](029-S-2-training-data-generation.md)
 
 ## References
 

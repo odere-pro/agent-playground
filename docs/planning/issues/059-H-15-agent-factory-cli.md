@@ -1,11 +1,11 @@
 ---
 title: "H-15: Agent factory CLI: scaffold an agent by class and kind, modules by config"
-labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
+labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:L", "layer:chassis"]
 milestone: "W5 Chassis completion"
 index: 59
 epic_id: H-15
-depends_on: ["008 H-14", "025 H-10", "051 H-13", "057 H-19", "058 CH-8", "055 CH-6"]
-blocks: []
+depends_on: ["025 H-10", "057 H-19", "058 CH-8", "055 CH-6", "024 CH-3"]
+blocks: ["076 R-1", "099 O-1"]
 epic_refs: [B.5]
 ---
 
@@ -60,8 +60,8 @@ Every new agent should start from the same template, with only the parts its cla
 
 ## Dependencies
 
-- Depends on: [008 H-14](008-H-14-one-agent-interface.md), [025 H-10](025-H-10-template-repo.md), [051 H-13](051-H-13-openapi-mcp-tools.md), [057 H-19](057-H-19-stateless-check-ci.md), [058 CH-8](058-CH-8-framework-event-mappings.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md)
-- Blocks: none
+- Depends on: [025 H-10](025-H-10-template-repo.md), [057 H-19](057-H-19-stateless-check-ci.md), [058 CH-8](058-CH-8-framework-event-mappings.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [024 CH-3](024-CH-3-helm-library-chart.md)
+- Blocks: [076 R-1](076-R-1-registry-data-model-api.md), [099 O-1](099-O-1-orchestrator-agent.md)
 
 ## References
 
