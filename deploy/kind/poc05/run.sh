@@ -17,8 +17,9 @@
 #                                     second `up` on a running cluster converges
 #   deploy/kind/poc05/run.sh test     the kind tier: POC05_KIND=1 pytest -m network (PoC-5 tests),
 #                                     through with_gateway like test-remote
-#   deploy/kind/poc05/run.sh test-remote  the kind remote-lane and code-runner files (CI job); fails
-#                                     naming any file in REMOTE_TESTS that does not exist yet
+#   deploy/kind/poc05/run.sh test-remote  the kind remote-lane, code-runner, and sidecar hostile
+#                                     files (CI job); fails naming any file in REMOTE_TESTS that
+#                                     does not exist yet
 #   deploy/kind/poc05/run.sh with-gateway CMD...  run CMD with a port-forward to LiteLLM and
 #                                     POC05_GATEWAY_MCP_URL, POC05_CHASSIS_VIRTUAL_KEY exported
 #                                     (the key from its Secret, never in argv or output); last verb
@@ -551,16 +552,20 @@ run_tests() {
 }
 
 # The kind tests the CI job runs, selected by file path (review B1: a `-k` match picked only
-# admission fixture ids). The remote-lane and code-runner files, then the sidecar-control files
-# and the runtime hardening per lane (R5a-03, R5a-08). The admission file runs last: it deletes and
+# admission fixture ids). The remote-lane and code-runner files, then the sidecar hostile suite
+# (R5a-03; README criterion 1): the sidecar controls, hard requirement 1, the tool gateway, the
+# runtime hardening per lane (R5a-08), and admission. The admission file runs last: it deletes and
 # patches the trust rule's params, which refuses new pods (a warm-pool refill) until restored.
-# None needs Kafka; `up` applies all they use.
+# `up` applies all they use; the broker test in the hard requirement 1 file runs only after
+# `run.sh kafka` (the CI job runs it, with POC05_KAFKA=1 on the test step) and skips otherwise.
 REMOTE_TESTS=(
   pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_lane.py
   pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py
   pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py
   pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_shm.py
   pocs/poc-05-sandboxed/tests/test_poc05_kind_sidecar_controls.py
+  pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py
+  pocs/poc-05-sandboxed/tests/test_poc05_kind_tool_gateway.py
   pocs/poc-05-sandboxed/tests/test_poc05_kind_runtime_hardening.py
   pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py
 )

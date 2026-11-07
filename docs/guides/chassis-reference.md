@@ -15,6 +15,7 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
 - PoC-6 adds the plain-A2A mode of the `remote` lane and the Anthropic proxy route. Spec: [contract v5](../contracts/contract-v5.md). How it works: [the PoC-6 guide](poc-06-how-it-works.md). See [PoC-6 modules](#poc-6-modules).
 - PoC-7 adds security, observability, feedback, and the evaluator gate. Spec: [contract v6](../contracts/contract-v6.md). See [PoC-7 modules](#poc-7-modules).
 - PoC-8 adds `/metrics`, JSON logs, the router span, dashboards, rate limits, the stream secret check, the output URL allow-list, and the rest of the marking. Spec: [contract v7](../contracts/contract-v7.md). See [PoC-8 modules](#poc-8-modules).
+- The product plan's phase B adds the route map per task and the judge route (`spec.model.routes`, `spec.model.judge_route`). Spec: [models](../specs/models.md). The modules are under [config.py](#configpy), [pipeline.py](#pipelinepy), [model_proxy.py](#model_proxypy), [correlation.py](#correlationpy), and [PoC-7 modules](#poc-7-modules). Tests: `tests/test_model_routes.py` (the demo is its last test), plus one each in `test_config_loader.py` and `test_evaluators.py`. The Collector's span rules (`deploy/compose/poc07/otel-collector.yaml`) save `task` around the masks like every other id key.
 - The contract in force is named once, on the `Spec:` line of [packages/chassis/CLAUDE.md](../../packages/chassis/CLAUDE.md). Each version names only its changes; read the earlier ones for the rest.
 
 ## core
@@ -208,6 +209,7 @@ Each is built by `from_env()` and loaded lazily.
 - `spec.idempotency` is `IdempotencySpec`: `enabled`, `ttl_s`, `lease_s`, `wait_poll_ms`, `max_entry_bytes`.
 - `spec.events` is `EventsSpec` with `result_events`. A non-null `consume` is refused at load until event-triggered runs exist.
 - `spec.engine.protocol` is `chassis` (the default) or `a2a`. `a2a` is for `connector: remote` only. `spec.engine.a2a` is `{usage_key: null, context_id: omit | trace_id}`. It needs `protocol: a2a`. Both are restart-only. `as_mapping()` leaves them out for `sidecar` and `inprocess`. suggested: the names and defaults.
+- `spec.model` is `ModelSpec`: `route`, `fallback_route`, `routes` (the route per task, `{}`), `judge_route` (null: `CHASSIS_JUDGE_ROUTE`). `route_for(task)` is `routes[task]`, else `route`. A task name matches `TASK_NAME` (printable, no space, at most 64 characters; suggested); an empty route name is refused. A route outside the service's key is not checked at load (suggested, needs the key). All reloadable.
 - `RELOADABLE` lists the field paths a reload may change. Every other path is restart-only.
 - `spec.idempotency.ttl_s` is at most `TTL_S_MAX` (30 days) and `lease_s` at most `LEASE_S_MAX` (one hour). Neither may be `.inf` or `.nan`. suggested: both caps.
 - suggested: every default.
@@ -282,8 +284,9 @@ Each is built by `from_env()` and loaded lazily.
 `RunPipeline` lives at `app.state.pipeline`. It is the run every inbound adapter shares.
 
 - `served` and `to_request`.
-- `open(request, *, interface="native")` raises `TraceIdInUse`, which is counted and logged.
-- `Run.events()` runs in one `chassis.run` span. An engine exception becomes one `engine_error` event.
+- `task_of(request)` is the caller's `input.data.task` when it is a non-empty string (`TASK_KEY`). `context_for(request, config)` puts `spec.model.route_for(task)` in `ctx.model_route`; `versions.model_route` stays `spec.model.route`. `mapped_task` is the task only when `spec.model.routes` names it.
+- `open(request, *, interface="native")` raises `TraceIdInUse`, which is counted and logged. The run's `RunRecord.model_route` is `ctx.model_route` from here on.
+- `Run.events()` runs in one `chassis.run` span with `route` (the resolved route) and `task` (when the map named it). An engine exception becomes one `engine_error` event.
 - `chassis.requests` and the span are labeled `interface`.
 - `Run.response()`, `Run.complete()`, and an idempotent `Run.close()`.
 - `RunStream` takes optional `headers` and `on_close`. It frees the trace id even when the body is never iterated.
@@ -351,6 +354,7 @@ The model proxy (proxy port) is the OpenAI-compatible pass-through a workload ca
 - When nothing is left, it answers 429 `budget_exhausted`. That is `retryable` only when in-flight reservations hold the rest.
 - Uncorrelated calls are served with their own `max_tokens` and counted.
 - `admit(...)` is the one admission step both routes use: count the call, find the run, refuse with 429, else reserve.
+- A correlated call whose `model` is not the run's `RunRecord.model_route` (the task's route through `spec.model.routes`, else `spec.model.route`; the gate's fallback route for its fallback attempt) is sent to the run's route and counted `chassis.model_route_forced{route}`. The `chassis.model.route` span records the choice.
 - An upstream 401 or 403 answers 403 `model_route_denied` on both routes (it was 500 `http_401`). It counts `chassis.model_upstream_denied{route}` and logs once. A chat stream keeps its 200 and its error frame.
 
 ### model_proxy_messages.py
@@ -374,7 +378,7 @@ The Anthropic proxy route (`POST /v1/messages` on the proxy port; contract v5, p
 ### correlation.py
 
 - `RunRegistry` holds at most one in-flight run per trace id. A second gets `TraceIdInUse`.
-- `RunRecord` has `reserve`, `settle`, and `release`.
+- `RunRecord` has `reserve`, `settle`, and `release`. Its `model_route` is the run's route, set at `open` from `ctx.model_route` and replaced by the evaluator gate for its fallback attempt.
 - It re-exports `parse_traceparent`.
 
 ### cli.py
@@ -475,7 +479,7 @@ Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 
 | `chassis/adapters/oidc` | `OidcAuth`: a JWT checked against the IdP's JWKS (pyjwt) | A.1, D.1 |
 | `chassis/adapters/litellm/guardrails.py` | `LiteLLMGuardrails`: LiteLLM's `POST /guardrails/apply_guardrail`, guardrail names per stage | A.2, D.3 |
 | `chassis/adapters/langfuse` | `LangfuseFeedback`: Langfuse `POST /api/public/scores`, plain httpx | A.4 |
-| `chassis/adapters/evaluators.py` | `JudgeEvaluator` (an LLM judge through `ModelPort`) and `EncoderEvaluator` (a TEI classifier) | A.3 |
+| `chassis/adapters/evaluators.py` | `JudgeEvaluator` (an LLM judge through `ModelPort`; its route is `spec.model.judge_route` through `bind_route`, else `CHASSIS_JUDGE_ROUTE`) and `EncoderEvaluator` (a TEI classifier) | A.3 |
 | `chassis/server/security.py` | `CallerAuth`: the bearer token and the route's scope on the public app | D.1, D.4 |
 | `chassis/server/guard.py` | The `input`, `tool_output`, and `output` guard stages | D.2 |
 | `chassis/server/marking.py` | `MarkOutputs`: `X-AI-Generated` and `X-AI-Disclosure-Required` on every run interface | E |
@@ -484,7 +488,7 @@ Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 
 | `chassis/redaction.py` | Regex redaction of the chassis's logs and events. Never a named-entity model | B.6, ADR-008 item 6 |
 | `chassis/core/trace.py` (`continued`, `parent_span_id`) | A checked inbound `traceparent` for the model proxy and the tool endpoint to continue | A.5 |
 
-- The model proxy also sends every call of the gate's fallback attempt to the fallback route (`chassis.model_route_forced`).
+- The model proxy also sends every call of the gate's fallback attempt to the fallback route (`chassis.model_route_forced`), the same rule that holds every call of a run to the run's route (see [model_proxy.py](#model_proxypy)). `with_gate` binds the judge's route to the live `spec.model.judge_route`, so a reload changes it.
 - Tests: the fake bindings are in `tests/test_contracts_cross_cutting_ports.py`; each real adapter binds the same suite in its own file (`test_oidc_adapter.py`, `test_litellm_guardrails.py`, `test_evaluators.py`, `test_langfuse_feedback.py`, `test_otel_telemetry.py`), offline against a stub. The scenarios are in `pocs/poc-07-cross-cutting-decisions/tests/`.
 
 ## PoC-8 modules

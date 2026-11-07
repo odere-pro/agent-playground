@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 import pytest
 from poc_harness.paths import ROOT
-from poc_harness.waits import wait_ready, wait_ready_async, wait_until_serving
+from poc_harness.waits import BODY_LIMIT, wait_ready, wait_ready_async, wait_until_serving
 
 POC04_TESTS = ROOT / "pocs" / "poc-04-stateless-scalable" / "tests"
 OWN_POLL_LOOP = re.compile(
@@ -71,6 +71,29 @@ async def test_wait_ready_async_returns_the_answer_with_the_wanted_status() -> N
     answer = await wait_ready_async(client, 5.0, status=503, interval=0)
 
     assert answer.status_code == 503
+
+
+async def test_wait_ready_async_fails_with_the_last_answer_and_its_body_at_the_deadline() -> None:
+    """At the deadline `wait_ready_async` fails with the URL, the last status, and its body."""
+    client = httpx.AsyncClient(transport=_answers(503), base_url="http://agent")
+
+    with pytest.raises(
+        pytest.fail.Exception,
+        match=r'http://agent/ready to answer 200; last answer 503: \{"n":1\}$',
+    ):
+        await wait_ready_async(client, PAST, interval=0)
+
+
+async def test_wait_ready_async_cuts_a_long_body_in_the_failure() -> None:
+    """A long `/ready` body is cut to `BODY_LIMIT` characters in the failure message."""
+    long_body = "x" * (BODY_LIMIT * 3)
+    transport = httpx.MockTransport(lambda _: httpx.Response(503, text=long_body))
+    client = httpx.AsyncClient(transport=transport, base_url="http://agent")
+
+    with pytest.raises(pytest.fail.Exception) as failed:
+        await wait_ready_async(client, PAST, interval=0)
+
+    assert str(failed.value).endswith(f"last answer 503: {'x' * BODY_LIMIT}...")
 
 
 def test_wait_until_serving_kills_and_raises_with_the_output_when_the_child_exits() -> None:

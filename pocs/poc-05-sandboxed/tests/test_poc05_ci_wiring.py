@@ -9,8 +9,11 @@ test requires every one). Whether gVisor starts on a GitHub runner is shown only
 Exit criterion 2: "CI runs a fake workload through the `remote` lane on every commit, and it passes
 the same contract suite as the `sidecar` lane." Offline that is the `LaneContract` file in `make
 check`. On kind, the `test-remote` verb selects the kind remote test files by path and fails, naming
-them, if one is missing. It also runs the kind admission and sidecar-control files (R5a-03), so
-criteria 5 and 7 are checked on the cluster in CI.
+them, if one is missing. It also runs the sidecar hostile suite (R5a-03; the product plan, phase A):
+the sidecar controls, hard requirement 1, the tool gateway, and admission, so criteria 3, 5, and 7
+are checked on the cluster in CI. The job runs the Kafka pass (`run.sh kafka`) between `up` and
+the tests, with `POC05_KAFKA=1` on the test step, so the broker half of hard requirement 1 (H11)
+runs there too instead of skipping.
 
 Also checked: the workflow pins every action by a full commit SHA, uses no secret, is never
 triggered by `pull_request_target`, always deletes the cluster, and sends every pod log through
@@ -51,7 +54,16 @@ REMOTE_TESTS = (
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_shm.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_sidecar_controls.py",
+    "pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py",
+    "pocs/poc-05-sandboxed/tests/test_poc05_kind_tool_gateway.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_runtime_hardening.py",
+    "pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py",
+)
+# The sidecar hostile suite (README criterion 1): every file runs in CI through `test-remote`.
+SIDECAR_SUITE = (
+    "pocs/poc-05-sandboxed/tests/test_poc05_kind_sidecar_controls.py",
+    "pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py",
+    "pocs/poc-05-sandboxed/tests/test_poc05_kind_tool_gateway.py",
     "pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py",
 )
 
@@ -128,6 +140,37 @@ def test_poc05_remote_lane_brings_up_and_runs_remote_suite(remote_lane: dict[str
     up = runs.find("deploy/kind/poc05/run.sh up")
     test = runs.find("deploy/kind/poc05/run.sh test-remote")
     assert up >= 0 and test > up, "the job must run run.sh up, then run.sh test-remote"
+
+
+def test_poc05_remote_lane_runs_the_kafka_pass_before_the_suites(
+    remote_lane: dict[str, Any],
+) -> None:
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    The broker half of hard requirement 1 (H11) skips after a plain `up`. The job runs `run.sh
+    kafka` after `up` and before `test-remote`, and the test step carries `POC05_KAFKA=1`, so a
+    missing broker fails the job instead of skipping the test."""
+    runs = workflow_runs(remote_lane)
+    up = runs.find("deploy/kind/poc05/run.sh up")
+    kafka = runs.find("deploy/kind/poc05/run.sh kafka")
+    test = runs.find("deploy/kind/poc05/run.sh test-remote")
+
+    assert 0 <= up < kafka < test, "the job must run up, then kafka, then test-remote"
+    (step,) = [s for s in workflow_steps(remote_lane) if "run.sh test-remote" in str(s.get("run"))]
+    assert str(step.get("env", {}).get("POC05_KAFKA")) == "1", step
+
+
+def test_poc05_test_remote_runs_the_whole_sidecar_hostile_suite() -> None:
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    The sidecar controls, hard requirement 1, the tool gateway, and admission are all in the CI
+    selection, with admission last (it patches the trust rule's params)."""
+    selection = _remote_selection(RUN_SH.read_text())
+
+    assert set(SIDECAR_SUITE) <= set(selection), sorted(set(SIDECAR_SUITE) - set(selection))
+    assert selection[-1] == SIDECAR_SUITE[-1]
 
 
 def _remote_selection(text: str) -> list[str]:

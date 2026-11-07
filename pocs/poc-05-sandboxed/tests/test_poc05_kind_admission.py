@@ -341,11 +341,13 @@ RULE8_MESSAGE = "trust rule 8"
 
 
 def _pinned(image: str) -> str:
-    return image.split(":", 1)[0] + DIGEST
+    # The tag stays next to the digest (`repo:tag@sha256:...`), as the library chart renders it:
+    # rule 9 reads the chassis tag, and a digest alone has none.
+    return image + DIGEST
 
 
 def _with_digests(pod: dict[str, object]) -> dict[str, object]:
-    """A copy of `pod` with every image's tag replaced by `DIGEST`."""
+    """A copy of `pod` with every image pinned by `DIGEST` next to its tag."""
     spec = pod["spec"]
     assert isinstance(spec, dict)
     pinned = {
@@ -369,7 +371,8 @@ def test_digest_mode_refuses_a_tag_and_admits_its_digest_twin(tmp_path: Path) ->
     pinned_path.write_text(yaml.safe_dump(_with_digests(tagged)))
     ns, name = PARAMS
     params = str(ADMISSION / "params.yaml")
-    patch = '{"data":{"imageSource":"digest"}}'
+    # Rule 9 in digest mode reads the chassis digest, so the made-up one is listed for the patch.
+    patch = f'{{"data":{{"imageSource":"digest","supportedChassisDigests":"{DIGEST[1:]}"}}}}'
     patched = kubectl("patch", "configmap", name, "-n", ns, "--type", "merge", "-p", patch)
     assert patched.returncode == 0, patched.stderr
     try:

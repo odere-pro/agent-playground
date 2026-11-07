@@ -182,11 +182,12 @@ def test_the_template_variable_reads_a_sandbox_template_pod(policy: Doc) -> None
     assert "request.kind.kind in ['Sandbox', 'SandboxTemplate'] ? object.spec.podTemplate" in expr
 
 
-def test_policy_has_only_the_params_check_and_rules_1_to_8(policy: Doc) -> None:
+def test_policy_has_only_the_params_check_and_rules_1_to_9(policy: Doc) -> None:
     """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
     in the `sidecar` lane."
 
-    Criterion 7: the trust policy holds rule 0 and rules 1 to 8, and no other rule."""
+    Criterion 7: the trust policy holds rule 0 and rules 1 to 9, and no other rule. Rule 9 is
+    the minimum chassis version (ADR-001 item 9; the product plan, phase A)."""
     assert sorted(_messages(policy)) == sorted(["0", *RULES])
 
 
@@ -458,6 +459,9 @@ def test_params_live_in_the_platform_namespace_and_list_our_repositories(params:
     assert PREFIX + "hostile" not in p.trusted
     assert all(r.startswith(p.prefix) for r in p.trusted)
     assert all(":" not in r and "@" not in r for r in p.trusted), "repositories, not tags"
+    # Rule 9: the kind cluster runs the poc05 chassis image and nothing older, loaded by tag.
+    assert p.chassis_tags == ("poc05",)
+    assert p.chassis_digests == ()
 
 
 # --- fixtures ---------------------------------------------------------------------------------
@@ -618,6 +622,7 @@ READS: dict[str, str] = {
     "7e": rf"\.spec\.automountServiceAccountToken|{TOKEN_VOLUME}|{TOKEN_MOUNT}",
     "7f": rf"\.spec\.shareProcessNamespace|{RUN_AS_USER}",
     "8": rf"{CONTAINER}\.imagePullPolicy",
+    "9": IMAGE,
     "T1": r"\.spec\.networkPolicyManagement",
     "T2": r"\.spec\.envVarsInjectionPolicy",
     "T3": r"\.spec\.volumeClaimTemplatesPolicy",
@@ -690,6 +695,7 @@ def test_fixtures_meet_the_restricted_pod_security_standard(fixture: Fixture) ->
         ("7f", "0cfab182efbb2dc4"),  # pragma: allowlist secret
         ("7g", "6c75f42057868396"),  # pragma: allowlist secret
         ("8", "7f98972336329322"),
+        ("9", "29739222dddb258f"),  # pragma: allowlist secret
         ("T1", "ca53815103a2c2af"),  # pragma: allowlist secret
         ("T2", "11f516c4a675f8e4"),  # pragma: allowlist secret
         ("T3", "06d8e73ceaac1d74"),  # pragma: allowlist secret
@@ -727,7 +733,7 @@ def test_rule_expression_matches_its_pin_when_the_policy_loads(
 @pytest.mark.parametrize(
     ("name", "pinned"),
     [
-        ("agent-trust-rule", "7423687c4c37f0d8"),  # pragma: allowlist secret
+        ("agent-trust-rule", "0b424ea969cea927"),  # pragma: allowlist secret
         ("sandbox-template-rule", "e3b0c44298fc1c14"),  # pragma: allowlist secret
         ("sandbox-claim-rule", "e3b0c44298fc1c14"),  # pragma: allowlist secret
     ],

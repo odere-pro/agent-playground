@@ -14,7 +14,7 @@ Build the images first: `deploy/compose/scale.sh build`. The scripts only touch 
 | `kill_drill.py` | `--mode kill`: SIGKILL one pair under retried load, then replay the retried keys and check the same envelope comes back. `--mode graceful`: SIGTERM the chassis, wait, stop the workload, with no retry; expects 0 failures. |
 | `reload_drill.py` | The config drill on a running stack: a good change in MinIO takes effect with no restart, and a bad one is refused. It checks every step, exits 1 on a failure, and restores the seed document. |
 
-Locust is not a workspace dependency. It runs through `uv run --no-project --with "locust==2.46.6"` (pinned in `run_matrix.py`).
+Locust is not a workspace dependency. It runs from its own venv, installed from the hashed lock `packages/load-tools/locust/requirements.txt` (`load_tools.run_matrix.install_locust`). The dated notes name the earlier `uv run --with "locust==2.46.6"`; the version is the same.
 
 ## The matrix
 

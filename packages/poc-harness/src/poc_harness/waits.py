@@ -21,6 +21,8 @@ POLL_S = 0.02
 PROBE_TIMEOUT_S = 1.0
 """One probe request's own timeout, so a hung listener cannot outlast the wait's deadline."""
 REAP_TIMEOUT_S = 5.0
+BODY_LIMIT = 500
+"""The most characters of a `/ready` body a failure message quotes."""
 
 
 def wait_until(
@@ -61,6 +63,15 @@ def _last_seen(response: httpx.Response | None) -> str:
     return "no answer" if response is None else f"last answer {response.status_code}"
 
 
+def _with_body(response: httpx.Response | None) -> str:
+    """`_last_seen`, then the answer's body, cut to `BODY_LIMIT` characters."""
+    if response is None:
+        return _last_seen(response)
+    body = response.text
+    cut = f"{body[:BODY_LIMIT]}..." if len(body) > BODY_LIMIT else body
+    return f"{_last_seen(response)}: {cut}"
+
+
 def wait_ready(
     client: httpx.Client,
     timeout_s: float,
@@ -95,7 +106,8 @@ async def wait_ready_async(
     status: int = 200,
     interval: float = POLL_S,
 ) -> httpx.Response:
-    """`wait_ready` on the event loop."""
+    """`wait_ready` on the event loop. The failure also quotes the last answer's body, which
+    names the check that is not ready."""
     seen: list[httpx.Response] = []
 
     async def answers() -> bool:
@@ -109,7 +121,7 @@ async def wait_ready_async(
     try:
         await wait_until_async(answers, label, timeout_s, interval=interval)
     except pytest.fail.Exception as failed:
-        pytest.fail(f"{failed.msg}; {_last_seen(seen[-1] if seen else None)}")
+        pytest.fail(f"{failed.msg}; {_with_body(seen[-1] if seen else None)}")
     return seen[-1]
 
 

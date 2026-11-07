@@ -364,11 +364,15 @@ async def test_h29_a_route_outside_the_key_is_refused_and_an_in_scope_call_is_20
     """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
     every commit."
 
-    Exit criterion 1 (offline), H29, route scope: inside a run, with its own token, the
-    remote calls the chassis's model proxy with a route the key does not list. The chassis
-    forwards the route as is (no rewrite, no fallback), and the key's refusal reaches the remote
-    as a non-retryable error with no completion. The control: the in-scope route in the same
-    run is 200, and the run ends `ok`.
+    Exit criterion 1 (offline), H29, route scope, in two halves. First: inside a run, with its
+    own token, the remote calls the chassis's model proxy with a route the key does not list.
+    The chassis holds every call of a run to the run's route (`spec.model.routes`, else
+    `spec.model.route`, `docs/specs/models.md`; counted `chassis.model_route_forced`), so the
+    key never sees the remote's route: the call is 200 on the run's route, the control in-scope
+    call is 200, and the run ends `ok`. Second: the run's own route is outside the key
+    (`spec.model.route` reloaded to it, no restart). The key's refusal reaches the remote as the
+    fixed `model_route_denied` text, not retryable, with no completion, and the run ends in
+    `error`: a 403 on a plain call, an error frame on the stream the workload opens.
 
     Stand-in: the route scope is LiteLLM's virtual key (`models: [<route>]`, seed script), and
     the chassis has no route check of its own; `KeyScopedModel` refuses the way the LiteLLM
@@ -381,18 +385,33 @@ async def test_h29_a_route_outside_the_key_is_refused_and_an_in_scope_call_is_20
         return scoped[-1]
 
     monkeypatch.setattr(remote_lane_module, "scripted_model", model)
-    async with remote_lane(monkeypatch) as lane, lane.held_run() as run:
-        out_of_scope = await _remote_chat(lane, run.traceparent, OUT_OF_SCOPE)
-        in_scope = await _remote_chat(lane, run.traceparent)
-    assert in_scope[0] == 200, in_scope
-    assert in_scope[1]["choices"][0]["message"]["content"] == REPLY
-    assert run.response is not None and run.response.json()["status"] == "ok", run.response
-    # Contract v5, A.9: an upstream 401 or 403 is 403 `model_route_denied` (it was 500
-    # `http_401` in v4). The remote can act on a 403, and it does not read as a chassis outage.
-    assert out_of_scope[0] == 403 and "choices" not in out_of_scope[1], out_of_scope
-    error = out_of_scope[1]["error"]
-    assert error["code"] == "model_route_denied" and error["retryable"] is False, error
-    assert error["type"] == "permission_error", error
+    async with remote_lane(monkeypatch) as lane:
+        async with lane.held_run() as run:
+            picked = await _remote_chat(lane, run.traceparent, OUT_OF_SCOPE)
+            in_scope = await _remote_chat(lane, run.traceparent)
+        assert run.response is not None and run.response.json()["status"] == "ok", run.response
+        # The remote's own route never reaches the key: the call runs on the run's route.
+        assert picked[0] == 200, picked
+        assert picked[1]["choices"][0]["message"]["content"] == REPLY, picked
+        assert in_scope[0] == 200, in_scope
+        assert in_scope[1]["choices"][0]["message"]["content"] == REPLY
+        assert scoped[0].refused == [], scoped[0].refused
+        assert lane.counter_total("chassis.model_route_forced") == 1
+        # The run's route outside the key: `spec.model.route` reloads, the next run uses it.
+        document = lane.app.state.config.model_dump(mode="json")
+        document["spec"]["model"]["route"] = OUT_OF_SCOPE
+        await lane.app.state.ports.config.put("simplifier", document)
+        async with lane.client() as client:
+            body = {"trace_id": new_trace_id(), "input": {"text": "simplify: x"}}
+            refused = (await client.post("/v1/run", json=body)).json()
+    # Contract v5, A.9: an upstream 401 or 403 is 403 `model_route_denied` with a fixed text
+    # (it was 500 `http_401` in v4), so it does not read as a chassis outage. The workload
+    # streams, so it sees the chat stream's error frame, whose `code` is still the upstream's
+    # `http_401` (suggested: `model_route_denied` there too; not pinned here).
+    assert refused["status"] == "error", refused
+    error = refused["output"]["error"]
+    assert error["message"] == "this model route is not allowed for this service", error
+    assert not refused["output"].get("text"), refused
     assert scoped[0].refused == [OUT_OF_SCOPE], scoped[0].refused
 
 

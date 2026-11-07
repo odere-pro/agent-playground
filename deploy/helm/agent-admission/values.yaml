@@ -1,0 +1,19 @@
+# agent-admission values: the params the trust rule reads (agent-lib.admissionDefaults in
+# ../agent-lib/templates/_admission.tpl holds the defaults). There is no switch: the rules bind to
+# every namespace labeled agents.platform/admission: enforce, and the render refuses any other key.
+# supportedChassisTags is not here: it is the library's (chassis.image.supportedTags).
+admission:
+  params:
+    # A registry host no public registry serves (PoC-5 review F1). A cloud: its private registry.
+    registryPrefix: kind.local/agent-platform/
+    # pull-never on kind: every image is loaded into the node. digest on a cloud: every image
+    # is pinned by @sha256.
+    imageSource: pull-never
+    # The repositories CI builds from this repo, without a tag (rule 4). Hand-kept until
+    # signatures (025 H-10).
+    trustedRepositories:
+      - kind.local/agent-platform/echo-python
+      - kind.local/agent-platform/echo-typescript
+    # Digest mode only (rule 9): the chassis digests at or above the minimum version, as the
+    # registry holds them (sha256:<64 hex>). Empty on kind, where the store is loaded by tag.
+    supportedChassisDigests: []

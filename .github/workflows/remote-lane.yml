@@ -10,6 +10,11 @@
 # check. The offline remote lane in `make check` (ci.yml, LaneContract over the remote lane)
 # stays the every-commit gate either way (hard requirement 2).
 #
+# What it runs after `up`: the Kafka pass, then `run.sh test-remote`, which is the remote lane,
+# the code runner, and the whole sidecar hostile suite (sidecar controls, hard requirement 1, the
+# tool gateway, runtime hardening, admission). About 10 minutes of the 30 allowed, measured on
+# run 42216573065 before the Kafka pass and the two files were added.
+#
 # No secret is used: the seed step makes every credential inside the cluster. Pod logs go
 # through run.sh `logs`, which sends each through redact_logs (the one filter, in run.sh).
 # kind and kubectl are pinned by version and by a sha256 in the job env, each read once from the
@@ -72,7 +77,16 @@ jobs:
       # Create, gVisor, build, load, seed, apply, one request per lane (run.sh header).
       - name: Up
         run: deploy/kind/poc05/run.sh up
-      - name: Remote lane and code-runner suites
+      # The deferred Kafka pass (T25, H11): the broker with SASL, its topics, and agent-echo-events.
+      # Without it the broker test in test_poc05_kind_hardreq1.py skips; POC05_KAFKA=1 on the test
+      # step turns a missing broker into a failure (the test's own rule).
+      - name: Kafka pass
+        run: deploy/kind/poc05/run.sh kafka
+      # The remote lane, the code runner, and the sidecar hostile suite (run.sh REMOTE_TESTS;
+      # PoC-5 README criterion 1).
+      - name: Remote lane, code-runner, and sidecar hostile suites
+        env:
+          POC05_KAFKA: "1"
         run: deploy/kind/poc05/run.sh test-remote
       # No upload-artifact SHA is pinned in this repo yet, so logs go to the job output. Every
       # pod log goes through run.sh `logs` (redact_logs, pinned to kind-poc05); never a bare

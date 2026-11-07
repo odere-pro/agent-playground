@@ -33,6 +33,7 @@ NAME = "app.kubernetes.io/name"
 PREFIX = "kind.local/agent-platform/"
 RULES = (
     "1", "2", "3", "4", "5", "6a", "6b", "6c", "7a", "7b", "7c", "7d", "7e", "7f", "7g", "8",
+    "9",
 )  # fmt: skip
 # Rules with no fixture file: a Pod may not carry ephemeralContainers at create, so the API server
 # refuses such a file before admission. The kind test patches `pods/ephemeralcontainers` instead.

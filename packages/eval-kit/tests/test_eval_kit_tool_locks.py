@@ -32,6 +32,23 @@ PR_JOBS = [
     ("poc06-load.yml", "poc06-load"),
 ]
 _PIN = re.compile(r"^([A-Za-z0-9_.\-\[\],]+)==(\S+)")
+_NAME = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_.\-]*)")  # not an option line (`-r`, `--index-url`)
+
+
+def _canonical(name: str) -> str:
+    """A distribution name as pip compares it (PEP 503): `PyYAML` and `pyyaml` are one name."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def unpinned_inputs(inputs: str, lock: str) -> set[str]:
+    """The names in `inputs` (a `requirements.in`) that no `==` line of `lock` pins."""
+    names = {_canonical(m.group(1)) for line in inputs.splitlines() if (m := _NAME.match(line))}
+    pins = {
+        _canonical(m.group(1).split("[")[0])
+        for line in lock.splitlines()
+        if (m := _PIN.match(line))
+    }
+    return names - pins
 
 
 def _requirements() -> dict[str, list[str]]:
@@ -74,6 +91,26 @@ def test_eval_kit_deepeval_lock_pins_and_hashes_every_requirement() -> None:
 
     assert {"deepeval", "httpx", "pytest", "pyyaml"} <= reqs.keys()
     assert [name for name, hashes in reqs.items() if not hashes] == []
+
+
+def test_eval_kit_unpinned_inputs_finds_a_name_the_lock_dropped() -> None:
+    """A name in `requirements.in` that the lock does not pin is reported; case and `_` agree."""
+    inputs = "# comment\ndeepeval==4.3.2\nPyYAML\nhttpx>=0.28\n"
+    lock = "deepeval==4.3.2 \\\n    --hash=sha256:00\npyyaml==6.0.2 \\\n"
+
+    missing = unpinned_inputs(inputs, lock)
+
+    assert missing == {"httpx"}
+
+
+def test_eval_kit_deepeval_lock_pins_every_input() -> None:
+    """Each name in `requirements.in` is pinned in `requirements.txt`: the lock is not behind."""
+    inputs = (ROOT / DEEPEVAL_LOCK).with_suffix(".in").read_text(encoding="utf-8")
+    lock = (ROOT / DEEPEVAL_LOCK).read_text(encoding="utf-8")
+
+    missing = unpinned_inputs(inputs, lock)
+
+    assert missing == set()
 
 
 def test_eval_kit_deepeval_lock_holds_the_pinned_version() -> None:

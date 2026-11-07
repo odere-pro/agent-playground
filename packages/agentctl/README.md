@@ -4,7 +4,7 @@ The PoC-9 agent factory. It scaffolds a new agent from the service template.
 
 ```bash
 # Once, in the platform checkout: make setup (installs agentctl).
-uv run agentctl new invoice-reader --kind transformer                       # pydanticai, sidecar
+uv run agentctl new invoice-reader --kind transformer                       # langgraph, sidecar
 uv run agentctl new coder --kind tool --framework smolagents --connector remote
 cd invoice-reader && make setup test run
 ```
@@ -13,7 +13,7 @@ cd invoice-reader && make setup test run
 | ------ | ------ | ------- |
 | `name` | a DNS label: lower case letters, digits, dashes | required |
 | `--kind` | `transformer`, `evaluator`, `tool` | required |
-| `--framework` | `python`, `pydanticai`, `langgraph`, `openai-agents`, `smolagents`, `claude-agent` | `pydanticai` (ADR-006) |
+| `--framework` | `python`, `pydanticai`, `langgraph`, `openai-agents`, `smolagents`, `claude-agent` | `langgraph` (ADR-006, amended 2026-11-06) |
 | `--connector` | `sidecar`, `remote` | `sidecar` |
 | `--dest` | the parent folder | `.` |
 | `--platform-path` | the agent-platform checkout | the one agentctl runs from |

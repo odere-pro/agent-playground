@@ -407,3 +407,25 @@ async def test_reloader_leaves_the_port_alone_when_it_does_not_poll() -> None:
     # Assert
     assert not hasattr(port, "on_poll_failed")
     await loader.stop()
+
+
+async def test_a_reload_changes_the_route_map_and_the_judge_route() -> None:
+    """`spec.model.routes` and `spec.model.judge_route` reload like `spec.model.route`."""
+    loader, state, port, telemetry = reloader()
+    await loader.start()
+    await port.put(
+        "echo",
+        doc(
+            version="cfg-2",
+            **{
+                "spec.model.routes": {"simplify": "small-default", "lookup": "big-default"},
+                "spec.model.judge_route": "decision-small",
+            },
+        ),
+    )
+    config: ChassisConfig = state.config
+    assert config.spec.model.routes == {"simplify": "small-default", "lookup": "big-default"}
+    assert config.spec.model.judge_route == "decision-small"
+    assert telemetry.counter_value("chassis.config.reloaded") == 1
+    assert restart_required(load_config(DOC), config) == []
+    await loader.stop()

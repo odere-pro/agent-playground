@@ -9,6 +9,8 @@
 
 Accepted, 2026-10-30, by the user. Proposed 2026-10-28. Its open questions stay open; a change to one of them needs a new ADR or an edit here.
 
+**Amended on 2026-11-06, by the user: LangSmith joins as a backend behind the Collector (item 10).** The shape of O1 does not change: every process still exports to the one Collector, and the Collector fans out. LangSmith is one more exporter in its list, with its key in the Collector's environment. No workload exports to LangSmith itself. The reason is the [product definition](../../plans/2026-11-06-agent-container-product.md), which puts LangChain, LangGraph, and LangSmith first. [ADR-009](009-feedback-langfuse-scores-event.md) gains the matching scores adapter, and [ADR-010](010-evals-offline-tool-online-gate.md) the matching dataset store candidate.
+
 Evidence that is not in yet:
 
 - **The Collector, Langfuse, and Jaeger run only in CI or on the Mac.** The Docker registries need auth in the build container, so the stack in `deploy/compose/poc07/` runs in `poc07-stack.yml` or on the Mac. Every offline check uses the in-memory span exporter.
@@ -62,6 +64,15 @@ Options considered:
 7. **Workload logs are redacted in the Collector's log pipeline.** The chassis redacts its own logs and events with regex (`chassis.redaction`, ADR-008). As built in PoC-7, the Collector's log pipeline masks emails and phone numbers by regex only (`transform/redact`; `pocs/poc-07-cross-cutting-decisions/tests/test_poc07_stack_static.py::test_collector_logs_pipeline_masks_emails_and_phones`). Named-entity redaction there is not built. It needs a Presidio call from the pipeline or a custom processor. Owner: 014 H-7, in PoC-8. Until then, names in workload logs are a recorded gap.
 8. **Sampling.** The chassis marks every run sampled today (`traceparent` flags `01`). suggested: sample in the Collector (tail sampling), so one decision covers the chassis, the workload, and LiteLLM. The epic's `observability.trace_sample_rate` maps to that policy. Deferred to PoC-8 (014 H-7): head or tail sampling, decided with the volume numbers.
 9. **The egress rule.** The workload pod may reach the Collector's OTLP port and nothing else of the telemetry stack. That rule belongs to 026 CH-4. OPEN (user): what may an `untrusted` remote send? suggested: a remote exports to a separate Collector receiver that requires the remote's token and marks its spans as untrusted data, or it exports nothing and the trace holds only the chassis and LiteLLM spans for that remote.
+10. **LangSmith as a backend (amended 2026-11-06).** The Collector gains an `otlphttp/langsmith` exporter next to `otlphttp/langfuse` in the traces pipeline. suggested: endpoint `https://api.smith.langchain.com/otel`, headers `x-api-key: ${env:LANGSMITH_API_KEY}` and `Langsmith-Project: <project>`; check LangSmith's OpenTelemetry page before pinning, and record the version. The rules that make this safe:
+
+    - **The key lives in the Collector's environment only** (item 4, hard requirement 1). No chassis and no workload holds it.
+    - **The workload never exports to LangSmith itself.** `LANGSMITH_TRACING` stays unset, no engine imports the `langsmith` client for export (it is in the lock only as a dependency of `langchain-core`), and the egress rule (item 9) stops a direct call anyway. This keeps the vault's rule for LangChain agents, "LangSmith stays off": the agent sends through its tracer port, and the Collector forwards. The workload's spans reach LangSmith with the same OpenInference names they carry today.
+    - **Redaction runs before every exporter.** `transform/redact_spans` and `transform/redact` sit before the exporter list, so LangSmith gets what Langfuse and Jaeger get.
+    - **Which backends an environment lists is a deploy choice.** Langfuse stays supported. Tempo stays the production pick for the non-LLM backend (item 6). OPEN (user): is LangSmith the primary LLM-trace view in `cloud`, with Langfuse for `local` and self-hosted runs, or do both run everywhere? suggested: one LangSmith project per environment, and a key that can only write, if LangSmith offers one; a Collector key that can read every trace is the same exposure ADR-009 notes for Langfuse.
+    - **A test-only fake, `fake-langsmith`,** follows `packages/fake-langfuse`: the OTLP route and the feedback route the Collector and the chassis use, enough for the offline suites.
+
+    Waits on: a stack test that reads the same spans back from LangSmith, as `test_same_spans_reach_langfuse_and_jaeger_through_the_collector` does for Langfuse and Jaeger. It needs a LangSmith key and a network run, so it is a `network` test on the Mac or a CI job with the secret. Until it passes, LangSmith is a backend on paper.
 
 ## Consequences
 
@@ -108,6 +119,7 @@ Reopen this decision on any of these:
 - **The Collector costs too much.** If the Collector's CPU or memory per pod-equivalent exceeds the chassis sidecar's own reservation (ADR-001, suggested: 0.05–0.1 vCPU), reopen O2 for the chassis only.
 - **Langfuse's self-hosted edition loses a needed feature** (the reuse analysis watch-out on roles and audit), or its licence changes.
 - **The GenAI conventions become stable.** Then move the chassis attributes to them and record the rename.
+- **LangSmith drops what the Collector sends (amended 2026-11-06).** If LangSmith's OTLP ingestion loses the OpenInference attributes the workloads emit, or cannot join the workload's spans under the chassis run span, or offers no key scoped to writing, item 10 is reopened: LangSmith then stays a view fed from Langfuse's export, or is dropped.
 
 ## Sources
 
@@ -115,9 +127,11 @@ Reopen this decision on any of these:
 - Langfuse and OpenTelemetry: <https://langfuse.com/integrations/native/opentelemetry>
 - W3C Baggage: <https://www.w3.org/TR/baggage/>
 - OpenTelemetry Collector: <https://opentelemetry.io/docs/collector/>
+- LangSmith and OpenTelemetry: <https://docs.smith.langchain.com/observability/how_to_guides/trace_with_opentelemetry> (suggested: the page to check for item 10's endpoint and headers)
 
 ## Open questions for the user
 
 1. Should `user.id` be a keyed hash of the caller's subject rather than the subject itself? Today it is the raw subject (item 3).
 2. Should an `untrusted` remote get `user.id` in its baggage? Today it does, in every lane (item 3).
 3. What may an `untrusted` remote send to the trace: its spans through a separate, token-checked Collector receiver, or nothing (item 9)?
+4. Is LangSmith the primary LLM-trace view in `cloud`, with Langfuse for `local` and self-hosted runs, or do both run in every environment (item 10)?
