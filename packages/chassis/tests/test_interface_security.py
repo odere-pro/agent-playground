@@ -149,11 +149,18 @@ async def _leaking(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
 def _mcp_client(app: FastAPI) -> Client[Any]:
     """A `fastmcp.Client` on `/v1/mcp` through `httpx2.ASGITransport`: no socket."""
 
-    def factory(headers: dict[str, str] | None = None, **kw: Any) -> httpx2.AsyncClient:
+    def factory(
+        headers: dict[str, str] | None = None,
+        timeout: httpx2.Timeout | None = None,
+        auth: httpx2.Auth | None = None,
+        **kw: Any,
+    ) -> httpx2.AsyncClient:
         return httpx2.AsyncClient(
             transport=httpx2.ASGITransport(app=app),
             base_url="http://chassis",
             headers=headers,
+            timeout=timeout,
+            auth=auth,
             **kw,
         )
 

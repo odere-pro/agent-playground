@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, MutableMapping
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -322,7 +322,7 @@ async def test_a_direct_caller_with_the_mcp_header_is_watched_for_a_disconnect()
         receive_done.set()
         return {"type": "http.disconnect"}
 
-    async def send(message: dict[str, Any]) -> None:
+    async def send(message: MutableMapping[str, Any]) -> None:
         return None
 
     scope = {

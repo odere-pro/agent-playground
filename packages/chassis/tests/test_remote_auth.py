@@ -9,6 +9,7 @@ other path is 404; the token never reaches a log, a counter label, or the route.
 
 from __future__ import annotations
 
+import hmac
 import logging
 from typing import Any
 
@@ -767,16 +768,14 @@ async def test_require_run_compares_a_dummy_secret_when_no_run_is_in_flight(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The no-run path runs one `compare_digest` too, so the time does not say a run exists."""
-    import chassis.server.remote_auth as remote_auth
-
     compared: list[int] = []
-    real = remote_auth.hmac.compare_digest
+    real = hmac.compare_digest
 
     def spy(a: Any, b: Any) -> bool:
         compared.append(len(b))
         return real(a, b)
 
-    monkeypatch.setattr(remote_auth.hmac, "compare_digest", spy)
+    monkeypatch.setattr(hmac, "compare_digest", spy)
     inner = _Headers()
     state = _state(CONFIG)
     async with _client(RequireRun(inner, state=state)) as client:

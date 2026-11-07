@@ -89,7 +89,9 @@ class _Wide(BaseModel):
 
 def test_invalid_body_keeps_at_most_three_distinct_parts() -> None:
     """At most three distinct `<loc>: <msg>` parts, then `"; ..."`; the input is not echoed."""
-    lazy = TypeAdapter(Iterable[_Wide]).validate_python([{"a": 1, "b": 2, "c": 3, "d": 4}])
+    lazy: Iterable[_Wide] = TypeAdapter(Iterable[_Wide]).validate_python(
+        [{"a": 1, "b": 2, "c": 3, "d": 4}]
+    )
 
     with pytest.raises(InvalidBody) as info:
         materialize({"messages": lazy})

@@ -58,8 +58,9 @@ FALLBACK_ANSWER = "Dana Ruiz signed the report."
 FALLBACK_ROUTE = "fallback-route"
 JUDGE_ROUTE = "judge"
 MAIN_ROUTE = "big-default"
-THUMBS_DOWN = "thumbs-down"
-THUMBS_UP = "thumbs-up"
+# Contract v8 (R7-16): the feedback counter keeps only labels from a fixed set.
+THUMBS_DOWN = "bad"
+THUMBS_UP = "good"
 
 RUN_TIMEOUT_S = 30.0
 """suggested: one run, the gate's retry and fallback included, on the fake model."""
