@@ -47,4 +47,6 @@ USER 10007:10007
 EXPOSE 8095
 HEALTHCHECK --interval=5s --timeout=3s --retries=12 \
     CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8095/health', timeout=2).status == 200 else 1)"]
-ENTRYPOINT ["guardrail-server", "--host", "0.0.0.0", "--port", "8095", "--classifier", "pattern"]
+# The server refuses a non-loopback host without a token file. The file is the Compose secret
+# `guardrail_token` (docker-compose.yaml); the POST routes then need `x-api-key` or a Bearer token.
+ENTRYPOINT ["guardrail-server", "--host", "0.0.0.0", "--port", "8095", "--classifier", "pattern", "--token-file", "/run/secrets/guardrail_token"]

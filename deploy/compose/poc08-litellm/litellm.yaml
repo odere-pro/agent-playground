@@ -1,13 +1,14 @@
 # LiteLLM for the PoC-8 drill: the model router with its real guardrails and its OpenTelemetry
 # callback, auth on. Mounted read-only at /etc/litellm/config.yaml. No credential in this file:
-# the master key and the database URL come from the environment, which stack.sh fills from its
-# git-ignored env file. The chassis gets a virtual key that stack.sh mints (ADR-001 hard
-# requirement 1); the master key stays in this container.
+# the master key, the database URL, and the guardrail server's token come from the environment,
+# which stack.sh fills from its git-ignored env file. The chassis gets a virtual key that
+# stack.sh mints (ADR-001 hard requirement 1); the master key stays in this container.
 #
 # Shapes from deploy/kind/poc05/platform/litellm/config.yaml (the same image, auth on, Postgres)
 # and packages/guardrail-server/litellm/config.yaml (the three guardrail names the chassis's
-# LiteLLMGuardrails calls). Field names not run on this image before: `default_on`, the presidio
-# api bases, `callbacks: ["otel"]`. The drill is their check.
+# LiteLLMGuardrails calls). Field names first run on this image by the drill: `default_on`, the
+# presidio api bases, `callbacks: ["otel"]`. Added on 2026-11-06, not yet run: `pii_entities_config`
+# and `api_key` on the generic guardrails. The drill is their check.
 
 model_list:
   # The chassis config's route (chassis.yaml, `spec.model.route`). The fake model server takes no
@@ -21,8 +22,9 @@ model_list:
 # ADR-008 item 4: every guardrail is on for every call (`default_on`), so no key can skip it,
 # and the chassis's guard stages call the same names through `POST /guardrails/apply_guardrail`.
 guardrails:
-  # LiteLLM's built-in Presidio hook against the analyzer and anonymizer containers. With no
-  # `pii_entities_config`, every entity the analyzer finds is masked as `<ENTITY_TYPE>`.
+  # LiteLLM's built-in Presidio hook against the analyzer and anonymizer containers. Only the
+  # entities in `pii_entities_config` are masked, each as `<ENTITY_TYPE>`; the drill's PII values
+  # (model_script.py: email, phone, card) are among them.
   - guardrail_name: pii-mask
     litellm_params:
       guardrail: presidio
@@ -31,6 +33,19 @@ guardrails:
       presidio_language: en
       presidio_analyzer_api_base: os.environ/PRESIDIO_ANALYZER_API_BASE
       presidio_anonymizer_api_base: os.environ/PRESIDIO_ANONYMIZER_API_BASE
+      # Fail closed on an analyzer error (LiteLLM v1.103.0, presidio.py,
+      # `_fail_on_invalid_response`): with `pii_entities_config` set, an analyzer HTTP error or an
+      # invalid answer blocks the call; with none, it logs a warning and the text passes
+      # unmasked. LiteLLM then sends the analyzer only these entities: ADR-008's set (items 4
+      # and 6), each masked as `<ENTITY_TYPE>`.
+      pii_entities_config:
+        EMAIL_ADDRESS: MASK
+        PHONE_NUMBER: MASK
+        CREDIT_CARD: MASK
+        IBAN_CODE: MASK
+        US_SSN: MASK
+        PERSON: MASK
+        LOCATION: MASK
   # The injection check: guardrail-server with the pattern stand-in, not Prompt Guard 2 (no
   # Hugging Face token in CI). Its numbers are never Prompt Guard 2 numbers.
   - guardrail_name: prompt-guard
@@ -39,6 +54,8 @@ guardrails:
       mode: pre_call
       default_on: true
       api_base: http://guardrail-server:8095
+      # The guardrail server's token, sent as `x-api-key` (LiteLLM v1.103.0 generic_guardrail_api).
+      api_key: os.environ/GUARDRAIL_API_KEY  # pragma: allowlist secret (an env name)
       # Fail closed, stated, not left to the default: both are LiteLLM v1.103.0 params (the pinned
       # image), and an unreachable or failing check blocks the call. A check error never passes.
       unreachable_fallback: fail_closed
@@ -51,6 +68,8 @@ guardrails:
       mode: post_call
       default_on: true
       api_base: http://guardrail-server:8095
+      # The guardrail server's token, sent as `x-api-key` (LiteLLM v1.103.0 generic_guardrail_api).
+      api_key: os.environ/GUARDRAIL_API_KEY  # pragma: allowlist secret (an env name)
       # Fail closed, stated, not left to the default: both are LiteLLM v1.103.0 params (the pinned
       # image), and an unreachable or failing check blocks the call. A check error never passes.
       unreachable_fallback: fail_closed

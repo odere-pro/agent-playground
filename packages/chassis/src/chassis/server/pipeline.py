@@ -13,7 +13,8 @@ PoC-7 guard stages (`chassis.server.guard`): `input` runs before the engine, and
 run's one `error` event (the engine never runs); `output` runs on a complete call's events after
 the engine ends and may replace `Run.seen` (masked, or blocked with a closing `error`). PoC-8: a
 streamed run's events pass `stream_guard.guard_stream` (a secret closes the stream, URLs to hosts
-not on `spec.guardrails.output_url_allow` are masked), and a complete answer's URLs are masked
+not on `spec.guardrails.output_url_allow` are masked, and with the `output` stage on each sentence
+window goes through the guardrail port, review R7-04), and a complete answer's URLs are masked
 after the `output` stage (`output_filter.mask_answer`), so the cache and result events hold the
 masked answer.
 
@@ -419,15 +420,16 @@ class Run:
                     self.close()
                     return
                 source = _guarded(ports.engine.run(request, self.ctx))
-                if request.stream and stream_guard_on(guards):  # PoC-8: secrets, URLs
-                    source = guard_stream(source, guards, telemetry, request_id=request.request_id)
+                streamed_output = guard.enabled(ports, guards, "output")  # R7-04: port windows
+                if request.stream and (stream_guard_on(guards) or streamed_output):
+                    source = guard_stream(source, guards, ports, request_id=request.request_id)
                 async with aclosing(source):
                     async for event in source:
                         self._seen.append(event)
                         if isinstance(event, Error):
                             self._record_error(span.attributes, event)
                         yield event
-                if not request.stream:  # the `output` stage: complete calls only
+                if not request.stream:  # the `output` stage; a stream got it per window above
                     checked = await guard.check_output(
                         ports, guards, self._seen, request_id=request.request_id
                     )
