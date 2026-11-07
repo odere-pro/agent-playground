@@ -196,7 +196,7 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 
 - **Open:** about {{TOTAL_DAYS}} engineer-days ({{TOTAL_WEEKS}} weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
 - **Done** (wave `WD`): {{DONE_DAYS}} days over {{N_DONE}} of the issues. **Parked** (wave `WP`): {{PARKED_DAYS}} days over {{N_PARKED}}. Neither is in the open total.
-- **Phases A to F:** 86.5 days against the product plan's 10–12 weeks (suggested: 50–60 engineer-days), from [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md#totals). Phases A, B, and E are each about twice the plan's size. The rest of the open total is `later`: no phase needs it.
+- **Phases A to F:** 86.5 days against the 8–10 weeks the product plan has left (suggested: 50–60 engineer-days), from [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md#totals). Phases A, B, and E are each about twice the plan's size. The rest of the open total is `later`: no phase needs it.
 - **The epic** says 29–33 weeks for one engineer. Either the epic assumes a lot of reuse, or the phase estimates need a second look with the team. The sizes here are first guesses; re-size in planning.
 
 ## Backlog

@@ -22,7 +22,7 @@ A tool description is read by a model, so an attacker can hide instructions in i
 - A flagged entry goes to the approval queue (080 R-7) with its findings, even if it is `internal-signed`.
 - Suggested: an optional model check through the evaluator port, off by default, that gets the description as quoted data, never as instructions.
 - A fixture set of poisoned and clean descriptions, based on the OWASP examples [R5], versioned next to the rules.
-- Decided in [ADR-008](../adr/008-security-identity-guardrails-defense-in-depth.md). Built in PoC-7: `poc07-agent-scan` and `deploy/agent-scan/`, with 13 offline checks (`pocs/poc-07-cross-cutting-decisions/tests/test_poc07_agent_scan_static.py`); no real scan has run (needs `SNYK_TOKEN`). It reports on our own servers and does not replace this scan.
+- Decided in [ADR-008](../adr/008-security-identity-guardrails-defense-in-depth.md). Built in PoC-7: `poc07-agent-scan` and `deploy/agent-scan/`, with 15 offline checks (`pocs/poc-07-cross-cutting-decisions/tests/test_poc07_agent_scan_static.py`); no real scan has run (needs `SNYK_TOKEN`). It reports on our own servers and does not replace this scan.
 
 ## Reuse
 

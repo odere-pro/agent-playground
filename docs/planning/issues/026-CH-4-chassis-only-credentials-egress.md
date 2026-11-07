@@ -30,7 +30,7 @@ This is hard requirement 1 of [ADR-001](../adr/001-chassis-delivery-model.md). T
 - Network labels per service.
 - A negative suite run from inside the workload container. It also probes the public interfaces: `/v1/mcp`, `/v1/chat/completions` and `/v1/messages` on the public port (not the model proxy), and `/v1/run`.
 - A revoke step: revoking one service's key, tool grants, and network label cuts that service off alone.
-- The trace id keys proxy calls to a run, but it comes from an inbound `traceparent`, so it is not a credential. A chassis-minted per-run credential is 001 DEC-1's (suggested).
+- The trace id keys proxy calls to a run, but it comes from an inbound `traceparent`, so it is not a credential. A chassis-minted per-run credential is 001 DEC-1's (suggested). It is built for the `remote` listener (contract v8 D, [ADR-011](../adr/011-per-run-secret-and-v0-wire-bounds.md), PR #85). The loopback proxy still keys calls by trace id alone.
 - If the pod has a Dapr sidecar, its API needs a token that only the chassis holds (gap (c) in the backlog plan).
 
 ## Reuse

@@ -33,6 +33,7 @@ Agents call models only through the LLM router, so any model is swapped by route
 ## Out of scope
 
 - Retry, fallback to `fallback_route`, timeout, and budget (017 H-4).
+- `fallback_route` is restart-only (PR #83). Making it reloadable needs a `RELOADABLE` entry and a reload test; that is not decided.
 - History swap before a model call (044 G-4).
 - Tool calls and JSON with guided decoding (054 H-16).
 - The workload-facing model proxy (013 CH-2). It uses this port.

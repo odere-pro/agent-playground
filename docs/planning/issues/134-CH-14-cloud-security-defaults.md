@@ -17,7 +17,7 @@ The [product plan's gap review](../../plans/2026-11-06-agent-container-product.m
 
 - `spec.limits.uncorrelated_tokens_per_minute: 0` in the `cloud` profile. Today the loopback model proxy serves 20k tokens a minute per replica to a call with no run (`packages/chassis/src/chassis/server/model_admission.py`), so a hijacked sidecar can spend the key with no run.
 - A tool name that is not in the gateway's cached list. The adapter refreshes the list once; if there is still no definition, it answers `unknown_tool` before any request. Today the name skips the write-key and schema checks (`packages/chassis/src/chassis/adapters/mcp/gateway.py`, `if definition is not None`).
-- The `cloud` profile refuses `auth: none` at load, as it already refuses `static`. Under `auth: none` the rate limit is off too.
+- The `cloud` profile refuses `auth: none` at load, as it already refuses `static`. Under `auth: none` the rate limit is off too. This part is built (PR #89).
 - Three values wait on a user decision in the [backlog review proposals](../../reviews/2026-11-06-backlog-review/proposals.md):
   - `/metrics` behind `agent:read` in `cloud` (`metrics_scope`): P-4. The gap review prefers P-4 option 1;
   - `rate_limit_on_unavailable: fail_closed` in `cloud`: P-26, which reopens P-2 for `cloud` only;
@@ -32,7 +32,7 @@ The [product plan's gap review](../../plans/2026-11-06-agent-container-product.m
 
 - [ ] With the `cloud` profile, a call on the loopback model proxy with no run in flight is refused with a fixed code (suggested: `uncorrelated_refused`), and the `local` and `fake` profiles still serve it.
 - [ ] A call to a tool name the gateway's list lacks gets one refresh, then `unknown_tool`, and the fake gateway sees no tool request.
-- [ ] The `cloud` profile refuses `auth: none` at load, with a test next to the `static` refusal.
+- [x] The `cloud` profile refuses `auth: none` at load, with a test next to the `static` refusal. · Delivered by: PR #89, `packages/chassis/tests/test_profiles_cloud_transport.py::test_cloud_refuses_auth_none`
 - [ ] With the `cloud` profile and auth on, `/metrics` needs a token with `agent:read`. If P-4 picks another option, this box is rewritten to the pick.
 - [ ] With the `cloud` profile, a rate-limit store outage refuses counted calls with 503 `state_unavailable`. If P-26 keeps fail-open, this box is rewritten to the pick.
 - [ ] `user.id` in baggage is the `sha256[:32]` of the subject. If P-27 picks another option, this box is rewritten to the pick.

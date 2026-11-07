@@ -78,7 +78,7 @@ Options for the online gate:
    - Below it, the gate retries: it calls `handle` again with the same `ctx`, up to `spec.harness.retries` times.
    - Still below, it falls back: one more attempt with `ctx.model_route = spec.model.fallback_route`. The fallback's answer is not scored: it is the last resort, and scoring it adds a judge call to the worst path.
    - `end.status` is `ok` when an attempt on the agent's route passes, the first or a retry (`metrics.attempts` says which), and `fallback` when the fallback answers (`packages/chassis/tests/test_evaluator_gate.py::test_a_retry_that_passes_is_ok_not_fallback`, `::test_a_failing_answer_retries_once_then_falls_back`).
-   - As built, an evaluator outage fails open: the attempt goes out as it is, counted as `chassis.gate_failed_open` (`packages/chassis/tests/test_evaluator_gate.py::test_an_evaluator_outage_fails_open`). This differs from 042 A-2's suggestion that an error counts as a failed attempt. OPEN (user): keep fail-open, or make an outage a failed attempt?
+   - As built, an evaluator outage fails open: the attempt goes out as it is, counted as `chassis.gate_failed_open` (`packages/chassis/tests/test_evaluator_gate.py::test_an_evaluator_outage_fails_open`). This differs from 042 A-2's suggestion that an error counts as a failed attempt. OPEN (user): keep fail-open, or make an outage a failed attempt? Decided by the user on 2026-11-06 (P-1 in the [backlog review proposals](../../reviews/2026-11-06-backlog-review/proposals.md)): an outage fails open everywhere, as built.
    - An attempt that ends in an `error` event is sent as it is, not scored and not retried (`packages/chassis/tests/test_evaluator_gate.py::test_an_engine_error_is_sent_as_is_and_not_scored`). Retry on a model error is the H-4 retry stage.
    - With no `fallback_route`, the run ends with one `error {code: evaluator_gate_failed}` and no answer (`packages/chassis/tests/test_evaluator_gate.py::test_no_fallback_route_ends_in_evaluator_gate_failed`). Native: a 200 envelope with `status: error`; OpenAI and Anthropic: 502 by the frozen `status_for` rule.
    - The client sees one stream: one `start`, the chosen attempt's `delta` and `tool_call` events, one `metrics` per attempt and per scoring, one `end`. The events of a failed attempt are never sent; they stay on the trace.
@@ -165,6 +165,6 @@ Reopen this decision on any of these:
 
 ## Open questions for the user
 
-1. Keep the evaluator outage as fail-open in sync mode, or count it as a failed attempt, as 042 A-2 suggests (item 4)?
+1. Keep the evaluator outage as fail-open in sync mode, or count it as a failed attempt, as 042 A-2 suggests (item 4)? Decided by the user on 2026-11-06 (P-1): an outage fails open everywhere.
 2. Change the gate's defaults from `sync` and 1.0 to `async` and 0.1 now, or wait for the Mac numbers (item 10)?
 3. Does 042 A-2 keep the `evaluator-facts` agent behind `EvaluatorPort`, or use the `judge` adapter (G7)?
