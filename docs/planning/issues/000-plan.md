@@ -94,6 +94,7 @@ Waves are GitHub milestones. Each one ends in something that can be shown.
 
 | Wave | Issues | Ends with |
 | ---- | ------ | --------- |
+| Done: delivered by the PoC track | — | 0 issues, 0 days of the first estimate, not counted below |
 | W0 Decisions | 001 | Broker, first cloud, public A2A endpoint, banned words, and metric targets decided |
 | W1 Router and baseline | 002–006 | Every model call goes through the router; token spend is counted and on a dashboard; the baseline clock is running |
 | W2 Chassis MVP | 007–026 | An echo workload runs behind the chassis: in the `sidecar` lane from the shared library chart, locally and in Kubernetes, and over A2A in memory in the chassis's tests. It answers through native, OpenAI, and Anthropic APIs (streaming and complete), is started by events and emits result events, is traced, holds no key, and passes the contract tests over both transports |
@@ -107,6 +108,7 @@ Waves are GitHub milestones. Each one ends in something that can be shown.
 | W10 Production readiness | 116–122 | Phase 8 done-when: both clouds from Terraform, restore test passes, SLO alerts fire |
 | W11 Compliance evidence | 123–124 | Phase 9 done-when: documentation pack and control mapping for any agent version |
 | W12 Later | 125–127 | Plans for Phases 10 and 11 |
+| Parked: the SLM track (2026-11-06) | — | 0 issues, 0 days, not counted above |
 
 With one engineer, the waves run one after another in index order. With more people, W1 runs next to W2, and the W3 data work (S-1 to S-4) starts during W2, as the epic says.
 
@@ -123,7 +125,7 @@ With one engineer, the waves run one after another in index order. With more peo
 
 ## Critical path
 
-- **To first savings (A-3):** 007 H-1 → 008 H-14 → 009 CH-1 → 011 H-2 → 015 H-8 → 025 H-10 → 026 CH-4 → 041 A-1 → 043 A-3. About 31 working days, plus the two weeks of baseline data that G-5 needs before S-6. The chassis MVP (007–026) must finish before A-1.
+- **To template GA (H-15):** 007 H-1 → 008 H-14 → 009 CH-1 → 011 H-2 → 015 H-8 → 025 H-10 → 026 CH-4 → 038 X-1a → 055 CH-6 → 059 H-15. About 40 working days, plus the two weeks of baseline data that G-5 needs before S-6. The chassis MVP (007–026) must finish before A-1.
 - **Longest chain overall:** 007 H-1 → 008 H-14 → 009 CH-1 → 011 H-2 → 016 H-9 → 018 H-18 → 022 H-6 → 076 R-1 → 090 R-13 → 091 R-11 → 092 R-12 → 099 O-1 → 100 O-2 → 103 O-11 → 108 O-12 → 112 O-16. The registry search and the orchestrator engine are the long pole.
 
 ## Open decisions and what they block
@@ -187,6 +189,11 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 The sizes add up to about 283.5 engineer-days (57 weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks). The epic says 29–33 weeks for one engineer. Either the epic assumes a lot of reuse, or the phase estimates need a second look with the team. The sizes here are first guesses; re-size in planning.
 
 ## Backlog
+
+### Done: delivered by the PoC track
+
+| # | ID | Issue | Layer | Priority | Size | Depends on |
+| - | -- | ----- | ----- | -------- | ---- | ---------- |
 
 ### W0 Decisions
 
@@ -379,6 +386,11 @@ The sizes add up to about 283.5 engineer-days (57 weeks) for W0–W11, after the
 | 125 | L-1 | [Shared memory at scale: session context, long-term memory, context_ref](125-L-1-shared-memory-at-scale.md) | platform | P3 | L | [113](113-O-9-orchestrator-memory.md) |
 | 126 | L-2 | [System prompt improver](126-L-2-system-prompt-improver.md) | platform | P3 | L | [070](070-D-4-export-formats.md), [075](075-E-3-evaluator-replaces-judge.md) |
 | 127 | L-3 | [Router SLM: classifier that replaces part of the orchestrator's routing](127-L-3-router-slm.md) | platform | P3 | L | [040](040-D-0-recorder-agent.md), [108](108-O-12-routing-planner-modes.md) |
+
+### Parked: the SLM track (2026-11-06)
+
+| # | ID | Issue | Layer | Priority | Size | Depends on |
+| - | -- | ----- | ----- | -------- | ---- | ---------- |
 
 ## Coverage by epic phase
 
