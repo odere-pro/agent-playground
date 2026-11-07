@@ -28,8 +28,8 @@ suggested: the sizes. Phases A and B can run in parallel. C needs B's route map.
 
 | Phase | What | Done when | Size |
 | ----- | ---- | --------- | ---- |
-| A. Close the must-haves | The engineering items in [what is left](../planning/poc/011-what-is-left.md#4-engineering-work) that touch PoC-4 and PoC-5: the sidecar hostile suite in CI, MinIO through the chassis, the T10 probe, throughput at 4 pairs on Linux (122 X-5); plus default-deny egress as a product rule ([026 CH-4](../planning/issues/026-CH-4-chassis-only-credentials-egress.md)) and the admission rules in the chart | every PoC-1 to PoC-5 flag has plain evidence; the chart carries the egress and admission rules | 2 weeks |
-| B. Models and the judge | `ModelSpec.routes` and `judge_route`; the gate on by default, async at 0.1 on `decision-small`; the judge's cost, latency, and agreement from the Mac run ([what is left](../planning/poc/011-what-is-left.md#1-runs-on-the-users-mac)); the retry stage on a model error ([017 H-4](../planning/issues/017-H-4-harness-features.md)) | a config map swaps a model per task with no agent change; the judge's numbers are recorded and the defaults confirmed or changed by ADR-010's rule | 2 weeks |
+| A. Close the must-haves | Done 2026-11-06 (PR #79): the sidecar hostile suite in CI (PoC-5 criterion 1, run 42299094368), default-deny egress as a chart rule ([026 CH-4](../planning/issues/026-CH-4-chassis-only-credentials-egress.md)), and the admission rules in `agent-lib` (`agent-admission` installs them once per cluster). Left, from [what is left](../planning/poc/011-what-is-left.md#4-engineering-work): MinIO through the chassis, the T10 probe (user-owned), throughput at 4 pairs on Linux (122 X-5), warn-first for a new minimum chassis version | every PoC-1 to PoC-5 flag has plain evidence | 1 week left |
+| B. Models and the judge | Done 2026-11-06 (PR #78): `ModelSpec.routes` and `judge_route`, resolved per task and enforced by the proxy. Left: the gate on by default, async at 0.1 on the judge route, after the judge's cost, latency, and agreement from the Mac run ([what is left](../planning/poc/011-what-is-left.md#1-runs-on-the-users-mac)); the retry stage on a model error ([017 H-4](../planning/issues/017-H-4-harness-features.md)) | the judge's numbers are recorded and the defaults confirmed or changed by ADR-010's rule | 1 week left |
 | C. LangChain first | LangGraph as the template default (step 1, done: merged to `main` on 2026-11-06 in PR #71); the MCP stand-in replaced by `langchain-mcp-adapters` on `mcp` 2, or a test that fails when it is ready; a trace-join test that shows LangGraph's graph steps under the run span; a `langchain` `create_agent` variant; the checkpointer and interrupt decisions (an ADR each, `chassis-architect`) | `agentctl new` defaults to LangGraph and passes the lane contract and the evals; the two ADR-006 Revisit triggers are closed | 2 weeks |
 | D. LangSmith | The `otlphttp/langsmith` exporter in the Collector; `fake-langsmith`; the `langsmith` feedback adapter; LangSmith datasets against the 20 golden cases (ADR-010's trial rule); the two stack tests | one trace, one score, and one eval run visible in LangSmith, with the key only in the Collector and the chassis | 1–2 weeks |
 | E. Measure and show | SLOs and alerts ([117 X-3](../planning/issues/117-X-3-slos-alerts.md)); the container dashboard; a guard-stage span; sampling in the Collector; the OWASP agentic threat list (ASI01–ASI10) mapped to the controls; the weekly record | the north star, inputs, and counters are on one dashboard with one week of real numbers | 2 weeks |
@@ -39,13 +39,11 @@ The user's own items, Mac runs and repository settings, are in [what is left](..
 
 ## Gaps the PoC track did not cover
 
-These are the product's gaps, beyond the per-PoC flags in [what is left](../planning/poc/011-what-is-left.md). P1 blocks a first production agent; P2 blocks the metrics; P3 is next.
+These are the product's gaps, beyond the per-PoC flags in [what is left](../planning/poc/011-what-is-left.md). P1 blocks a first production agent; P2 blocks the metrics; P3 is next. Closed on 2026-11-06: the route map per task (PR #78) and default-deny egress with the admission rules in the chart (PR #79).
 
 | # | Gap | Phase |
 | - | --- | ----- |
-| P1 | No route map per task: one route per agent, no per-request or per-task choice | B |
 | P1 | The judge is off in every profile; the gate is off; no real judge numbers | B |
-| P1 | Default-deny egress is not a product rule; the admission rules are not in the chart | A |
 | P1 | LangSmith is in no code or config; Langfuse is the only `FeedbackPort` backend | D |
 | P1 | LangGraph's MCP client is a stand-in; its instrumentor coverage is a doc claim | C |
 | P2 | No SLOs, no alerts, no container dashboard, no weekly record | E |
@@ -59,6 +57,63 @@ These are the product's gaps, beyond the per-PoC flags in [what is left](../plan
 | P3 | HPA on CPU only; the `remote` lane has one replica and no HPA | later ([104 O-3](../planning/issues/104-O-3-agent-pools-keda.md)) |
 | P3 | The public A2A endpoint, the first cloud, and the broker are open decisions | [001 DEC-1](../planning/issues/001-DEC-1-resolve-open-decisions.md) |
 | P3 | Orchestration of many agents (the epic's figure 3) | after the MVP |
+
+## If phases A to F are all built: what is still missing
+
+Reviewed on 2026-11-07 by three read-only passes over `main` at `4aa4eb1` (the chassis architect, platform security against the OWASP agentic list and the vault's threat model, the eval expert against the vault's eval rules). Verdict: phases A to F make the container complete for one stateless agent behind one chassis. They do not make it a platform a team can run under load, roll out safely, compose, or trust to judge its own answers. The gaps, ranked by what blocks a first production agent, each with the smallest change that closes it. Code paths are under `packages/chassis/src/chassis/` unless named.
+
+**Security defaults a hijacked agent would use (fix first, one PR, mostly profile values):**
+
+| Gap | Smallest change |
+| --- | --------------- |
+| The loopback model proxy serves uncorrelated calls, 20k tokens a minute per replica with no run (`server/model_admission.py`), so a hijacked sidecar spends the key without a run | `uncorrelated_tokens_per_minute: 0` in the `cloud` profile |
+| A tool name not in the gateway's cached list skips the write-key and schema checks (`adapters/mcp/gateway.py`, `if definition is not None`) | raise `unknown_tool` after a refresh that still has no definition, before any request |
+| `/metrics` is open by default and the NetworkPolicy admits any pod to it; the rate limit is `fail_open` and off under `auth: none` | in `cloud`: `metrics_scope: agent:read`, `rate_limit_on_unavailable: fail_closed`, refuse `auth: none` as it refuses `static` |
+| `user.id` goes into baggage raw (`server/pipeline.py`), so the IdP subject reaches an untrusted pod | hash it with the `sha256[:32]` the rate limit already uses (ADR-007 open question 1) |
+| The LiteLLM key never expires; the remote token is one symmetric key for both directions; image signatures are not verified at admission; MCP tool descriptions refresh every 60 s with no pin (a rug pull goes unseen) | `duration` on the key and a `seed.sh rekey`; two keys in the workload token Secret; a `verifyImages` admission rule once the `sign` job is required; hash and diff tool descriptions, alert on change |
+| A write tool is "write" only by the absence of `readOnlyHint`, and no person approves a write with an outside effect: the vault's lethal trifecta meets in any agent loop whose key grants one (Rule of Two, phase 3, not met) | write tools off unless named in the key's `mcp_tool_permissions`; an ADR for an approval checkpoint on writes with outside effect |
+
+**Runtime behavior under load and on rollout (a new phase G, suggested: 2 weeks):**
+
+| Gap | Smallest change |
+| --- | --------------- |
+| No backpressure: nothing caps runs in flight per replica; the HPA is CPU-only while the chassis idles on CPU waiting for the model; overload shows as 504s | `spec.limits.max_in_flight` (suggested: 32), 503 `overloaded` with `Retry-After`, counter `requests_refused{reason="overloaded"}`, a gauge for 104 O-3 |
+| The drain order is wrong on every rollout: the chart makes the chassis the native sidecar, so Kubernetes stops the workload first while the chassis still answers `/ready` 200 (`deploy/helm/agent-lib/templates/_deployment.tpl`; 024 CH-3 left the pick open) | an ADR: the chassis is the main container and the workload the native sidecar |
+| LiteLLM's daily budget refusal reaches the workload as `http_400` with no counter and no alert | a fixed code `service_budget_exhausted` on both proxy routes, counter `model_budget_exhausted{route}`, an alert in phase E |
+| The model proxy's upstream call has no per-call timeout: a cancelled run keeps paying for it (`adapters/litellm/client.py`) | pass the run's remaining time into `ModelPort.complete` and `.stream` |
+| Rings are in no phase: CH-7 "not built: warn-first, the rings, and the promotion checks"; one bad image still reaches every service | three values overlays (canary, 10%, all) as sync waves, the X-3 error-rate alert as the promotion gate |
+| The "previous major accepted" rule has no second version to test; a chassis ahead of a workload learns of a mismatch on the first run | a card extension `chassis.event_schema_versions` read at `setup`, a test with a fake `"1"` |
+| The retry stage (017 H-4) is planned as a rerun of the whole agent; LiteLLM has no `num_retries` or `fallbacks` per route | set those per route first; build the stage only for errors LiteLLM cannot see |
+
+**The judge (phase B, second step; blocks "on by default"):**
+
+| Gap | Smallest change |
+| --- | --------------- |
+| No calibration against people: the gate set has 10 `fail` cases against the vault's 30-fail floor, one author, no second label; the vault bars an uncalibrated judge from blocking | add 20–40 `fail` cases to `eval-kit` `golden/cases-gate.yaml`, a second person labels 20% and kappa is recorded; TPR and TNR at or above 0.85 before `sync` gates anywhere; `async` only until then |
+| The rubric returns a 0–1 score, score before reason, and a bad reply fails open; the vault wants pass, fail, or unknown, reasoning first, and a reply that does not parse is never a pass | `judge-facts-v2` with `{reasoning, verdict}`; `unknown` and `bad_reply` count as a failed attempt in sync (ADR-010 open question 1) |
+| One module-constant rubric for every agent and task, no code check first, no agent kind in the chassis | `spec.harness.rubric` (a name, version pinned); skip the judge when the answer is structured (`end.output` without `text`) |
+| The judge calls LiteLLM directly, so in async mode its cost reaches no metric; "cost per good task, judge included" is not computable at the target defaults | count `model_cost_microusd{route=judge}` and tokens from the score, `evaluator.cost_usd` on the span |
+| "Escapes" needs a per-run join of two counters; "first-attempt pass rate" reads 100% in async, which never retries | write the gate score through `FeedbackPort` as a score named after the rubric version, so escapes are one query on the trace; the formula is `1 − evaluator_calls{outcome="fail"} / evaluator_calls{outcome in pass, fail}` |
+| One evaluator, no drift check, no sampled second judge (075 E-3, ADR-010 item 10) | `spec.harness.shadow_evaluator` and `shadow_sample_rate`, agreement counted as `evaluator_agreement{pair, agree}` |
+| The golden set is author-written, not error analysis on real inputs; phase D would add a second result store | after the first Mac run, add cases per failure type with `source`; the YAML stays the only source of cases, one result store per environment |
+| The template's `make eval` has no judge and one plumbing case | render `evals/cases.yaml` in the `eval_kit` schema once the fake model scripts per case (phase F) |
+
+**Composition and entry points (after the MVP, but they decide the shape now):**
+
+| Gap | Smallest change |
+| --- | --------------- |
+| No agent-to-agent path: the chassis is an A2A client only, a workload may call only the model and tool proxies, so the epic's orchestrator (figure 3) and the public A2A endpoint have no counterpart | ADR-011: agents call agents as MCP tools through the gateway (the callee's `/v1/mcp` exists; the gateway holds the `agent:run` token, allow-listed per key), complete-only; the callee's budget is its own; `traceparent` passes the gateway |
+| Every run is one HTTP connection capped at 120 s; `spec.events.consume` is refused, though the epic says every agent starts from an event, and result events and A2A task ids exist | build `consume` on `EventPort` (the 019 H-17 subscribe path) as the async entry; a run from an event answers through `agents.task.completed.v1` |
+| `context_ref` is accepted and unused; a workload may hold no store credential, so a LangGraph checkpointer has nowhere to write | the phase C checkpointer ADR: the chassis exposes the store as MCP tools scoped by `session.id`, writes keyed by the run; LangGraph's saver sits over them in the template |
+| Multi-tenancy: the subject is the app; the end user's id is unchecked (ADR-009 question 4); budgets and rate limits are per service and per subject only | an ADR on the end-user header and a per-subject daily token cap in `StatePort` |
+| Streamed answers skip the `output` guard (a strict xfail; LiteLLM's after-call guardrail waits on the Mac run) | phase E carries that run as a gate, not a wish |
+
+**Operating it (no phase owns these):**
+
+- One reference stack. Each PoC has its own Compose or kind stack; nothing brings up LiteLLM, the gateway, Valkey, Kafka, the Collector, a trace backend, and the example agent together. suggested: `make platform-up` on kind from `deploy/helm`, with the example agent's demo as its smoke test, and the chart's default chassis image a published tag, not `kind.local/...:poc09`.
+- Runbooks for an operator: rotate a key, cut one service off and prove it, roll a chassis tag back, read one trace end to end, act on a gate fallback spike, a kill-switch drill (the vault's control 10). Today only PoC-5 has runbooks.
+- Cost per task: `chassis_model_cost_microusd_total` is labeled `route` and `agent`; with routes per task, a `task` label is what the route map's decisions need.
+- The epic's six success metrics: three (token spend, fallback rate, run recovery) belong to the parked SLM track and the orchestrator; [metrics](../specs/metrics.md) should say so in one line each rather than replace them silently.
 
 ## What is reused
 
