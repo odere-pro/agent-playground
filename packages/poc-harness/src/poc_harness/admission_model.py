@@ -1,11 +1,13 @@
 """A Python model of the PoC-5 admission rules. It mirrors the CEL in `admission/policy.yaml` and
-`extension-policy.yaml`; it does not run it. The kind suite runs the real policy.
+`extension-policy.yaml`; it does not run it. The kind suite runs the real policy. The library
+chart renders the same policy (`deploy/helm/agent-lib/templates/_admission.tpl`), so the chart
+test runs this model on the chart's rendered pods too.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from poc_harness.admission_manifests import (
@@ -26,25 +28,50 @@ class AdmissionParams:
     prefix: str
     trusted: tuple[str, ...]
     image_source: str = "pull-never"
+    chassis_tags: tuple[str, ...] = ()
+    """`supportedChassisTags`: the chassis tags at or above the minimum version (rule 9, with
+    `imageSource: pull-never`)."""
+    chassis_digests: tuple[str, ...] = ()
+    """`supportedChassisDigests`: the chassis digests at or above the minimum version (rule 9,
+    with `imageSource: digest`)."""
 
     @classmethod
     def of(cls, doc: Doc) -> AdmissionParams:
         data = doc.get("data", {})
-        trusted = tuple(
-            r.strip() for r in data.get("trustedRepositories", "").split(",") if r.strip()
-        )
         return cls(
             prefix=data.get("registryPrefix", ""),
-            trusted=trusted,
+            trusted=_csv(data.get("trustedRepositories", "")),
             image_source=data.get("imageSource", ""),
+            chassis_tags=_csv(data.get("supportedChassisTags", "")),
+            chassis_digests=_csv(data.get("supportedChassisDigests", "")),
         )
+
+
+def _csv(value: str) -> tuple[str, ...]:
+    return tuple(v.strip() for v in value.split(",") if v.strip())
 
 
 def _is_repo(image: str, repo: str) -> bool:
     return image == repo or image.startswith((repo + ":", repo + "@"))
 
 
-TOKEN_SECRET = re.compile(r"remote-[a-z0-9]([-a-z0-9]*[a-z0-9])?-token")
+def tag_of(image: str) -> str:
+    """The tag of an image reference, or '' for a digest-only or untagged one (the CEL variable
+    `chassisTags`): the part after the last ':' of the reference without its digest, when that
+    ':' comes after the last '/' (a registry port is before it)."""
+    ref = image.split("@", 1)[0]
+    colon = ref.rfind(":")
+    return ref[colon + 1 :] if colon > ref.rfind("/") else ""
+
+
+def digest_of(image: str) -> str:
+    """The digest of an image reference, after its `@`, or '' (the CEL `chassisDigests`)."""
+    return image.split("@", 1)[1] if "@" in image else ""
+
+
+# A remote pod's one Secret is its own token, `<app.kubernetes.io/name>-token` (rules 5 and 7c).
+# Rule 5 holds every Secret to the `-token` shape; rule 7c holds every such Secret to its own name.
+TOKEN_SECRET = re.compile(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?-token")
 
 
 def _projected_token(spec: Doc) -> bool:
@@ -98,8 +125,12 @@ class _Pod:
     own_store: bool
 
 
-def _pod_facts(doc: Doc, p: AdmissionParams, namespace: str | None) -> _Pod:
+def _pod_facts(
+    doc: Doc, p: AdmissionParams, namespace: str | None, shapes: Mapping[str, str] | None
+) -> _Pod:
     ns = namespace or doc.get("metadata", {}).get("namespace", "")
+    if shapes is None:
+        shapes = {n: lab.get(SHAPE_LABEL, "") for n, lab in namespace_labels().items()}
     template = template_of(doc)
     labels = template.get("metadata", {}).get("labels", {})
     spec = template["spec"]
@@ -124,7 +155,7 @@ def _pod_facts(doc: Doc, p: AdmissionParams, namespace: str | None) -> _Pod:
         sidecar=bool(chassis) and any(i not in chassis for i in images),
         remote=remote,
         shape="chassis" if chassis else ("remote" if remote else "tool"),
-        ns_shape=namespace_labels().get(ns, {}).get(SHAPE_LABEL, ""),
+        ns_shape=shapes.get(ns, ""),
         names=list(secret_names_of(spec)),
         secret_users=[c.get("image", "") for c in containers if _uses_secret(c, secret_volumes)],
         own_store=own_store,
@@ -170,18 +201,30 @@ def _rule_checks(pod: _Pod, p: AdmissionParams) -> dict[str, Callable[[], bool]]
         ),
         "7d": lambda: pod.shape != "tool" or _gvisor_no_token(pod.spec),
         "8": lambda: pod.remote or pod.own_store,
+        "9": lambda: (
+            all(digest_of(i) in p.chassis_digests for i in pod.chassis)
+            if p.image_source == "digest"
+            else all(tag_of(i) in p.chassis_tags and not digest_of(i) for i in pod.chassis)
+        ),
     }
 
 
-def broken_rules(doc: Doc, p: AdmissionParams, namespace: str | None = None) -> set[str]:
+def broken_rules(
+    doc: Doc,
+    p: AdmissionParams,
+    namespace: str | None = None,
+    *,
+    shapes: Mapping[str, str] | None = None,
+) -> set[str]:
     """The rules `doc` breaks, by the same logic as the CEL in `policy.yaml`. `namespace` defaults
-    to the object's own; its shape label comes from `base/namespaces.yaml`.
+    to the object's own; its shape label comes from `shapes` (namespace to `pod-shape` label), or
+    from `base/namespaces.yaml` when `shapes` is not given.
 
     This is a hand-written model of the rules, not the policy: it never reads `policy.yaml`, so a
     fixture that agrees with it proves nothing about the CEL by itself. The expression pins in
     `test_rule_expression_matches_its_pin_when_the_policy_loads` tie the two together offline;
     `test_poc05_kind_admission.py` runs the real policy."""
-    checks = _rule_checks(_pod_facts(doc, p, namespace), p)
+    checks = _rule_checks(_pod_facts(doc, p, namespace, shapes), p)
     return {n for n, ok in checks.items() if not ok()}
 
 

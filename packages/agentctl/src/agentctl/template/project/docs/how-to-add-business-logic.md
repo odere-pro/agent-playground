@@ -12,12 +12,12 @@ First, once, in the platform checkout: `make setup`. It installs `agentctl` into
 
 ```bash
 cd <the platform checkout>
-uv run agentctl new my-agent --kind transformer --dest ~/work   # pydanticai, sidecar
+uv run agentctl new my-agent --kind transformer --dest ~/work   # langgraph, sidecar
 cd ~/work/my-agent && make setup test
 ```
 
 - `--kind` is `transformer` (text in, text out), `evaluator` (scores or labels an input), or `tool` (answers by calling tools). These are the stateless kinds of the epic.
-- `--framework` is `python`, `pydanticai`, `langgraph`, `openai-agents`, `smolagents`, or `claude-agent`. The default is `pydanticai` ([ADR-006](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/006-agent-engines-default-supported-lanes.md), item 1).
+- `--framework` is `python`, `pydanticai`, `langgraph`, `openai-agents`, `smolagents`, or `claude-agent`. The default is `langgraph` ([ADR-006](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/006-agent-engines-default-supported-lanes.md), item 1, amended 2026-11-06); `pydanticai` stays supported.
 - `--connector` is `sidecar` (the default) or `remote`. `smolagents` and `claude-agent` are allowed only with `remote` (section 5).
 - `--dest DIR` is the parent folder of the new repo (default: the current folder). `--platform-path PATH` is the platform checkout (default: the one `agentctl` runs from).
 - `--no-lock` skips pinning the agent to the platform's tested versions. Without it, `agentctl` writes a `uv.lock` into the first commit.
@@ -50,7 +50,7 @@ async def handle(input: dict, ctx: dict) -> AsyncIterator[dict]: ...
 
 - It is an async generator. Plain dicts in, event dicts out ([ADR-002](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/002-template-a2a-server-placement.md), item 2).
 - The workload never imports `chassis`. The template A2A server, [workload-a2a](https://github.com/odere-pro/agent-playground/blob/main/packages/workload-a2a/README.md), wraps `handle` and serves it on localhost.
-- A worked example is the default engine: [echo-pydanticai `handle.py`](https://github.com/odere-pro/agent-playground/blob/main/packages/workloads/echo-pydanticai/src/echo_pydanticai/handle.py).
+- A worked example is the default engine: [echo-langgraph `handle.py`](https://github.com/odere-pro/agent-playground/blob/main/packages/workloads/echo-langgraph/src/echo_langgraph/handle.py).
 
 ### 2.1 What comes in
 

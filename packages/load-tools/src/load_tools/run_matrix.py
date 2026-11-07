@@ -9,8 +9,10 @@ One scenario at a time, because the Docker VM is shared and small:
 1. `deploy/compose/scale.sh up <engine> <pairs>`, then wait until `/ready` answers 200 several
    times in a row through Traefik (127.0.0.1:18080).
 2. One idle `docker stats` sample, then a Locust warm-up whose numbers are thrown away.
-3. Locust headless for `--duration-s` (through `uv run --with`, never a workspace dependency),
-   while `docker stats` samples every container of Compose project `poc04` every 2 s.
+3. Locust headless for `--duration-s`, while `docker stats` samples every container of Compose
+   project `poc04` every 2 s. Locust is never a workspace dependency: before the first scenario
+   `main` installs it (`install_locust`) into a venv in a new temp dir (`locust_venv`) from the
+   hashed lock `LOCUST_LOCK`, with `uv pip install --require-hashes --no-deps`.
 4. `scale.sh down`, always, even when a step failed.
 
 Scenarios: `main` is every engine (echo-python, echo-pydanticai, echo-langgraph, echo-openai-agents,
@@ -37,9 +39,11 @@ import platform
 import statistics
 import subprocess
 import sys
+import tempfile
 import threading
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -55,7 +59,13 @@ SCALE_SH = ROOT / "deploy" / "compose" / "scale.sh"
 NOTES = ROOT / "pocs" / "poc-04-stateless-scalable" / "notes" / "load"
 # Locust loads this file by path (`locust -f`), outside the workspace, so it imports no package.
 LOCUSTFILE = HERE / "locustfile.py"
-LOCUST = "locust==2.46.6"  # the newest 2.x on 2026-10-01
+LOCUST_VERSION = "2.46.6"  # the newest 2.x on 2026-10-01
+# Locust and every dependency, each pinned by sha256 (`requirements.in` names the inputs). To bump:
+# uv pip compile packages/load-tools/locust/requirements.in --generate-hashes --universal
+#   --python-version 3.12 -o packages/load-tools/locust/requirements.txt
+LOCUST_LOCK = HERE.parents[1] / "locust" / "requirements.txt"
+# What `--dry-run` prints for the venv `locust_venv` makes: a new temp dir on every run.
+PLAN_VENV = Path("<temp dir>/venv")
 PROJECT = "poc04"
 URL = "http://127.0.0.1:18080"
 
@@ -122,8 +132,53 @@ def scenarios(args: argparse.Namespace) -> list[Scenario]:
     return out
 
 
-def locust_cmd(s: Scenario, seconds: int, csv_prefix: Path | None, processes: int) -> list[str]:
-    cmd = ["uv", "run", "--no-project", "--with", LOCUST, "locust", "-f", str(LOCUSTFILE)]
+def locust_bin(venv: Path) -> Path:
+    return venv / "bin" / "locust"
+
+
+def locust_install_argv(venv: Path) -> list[list[str]]:
+    """The commands that install Locust into `venv` from `LOCUST_LOCK`, in order: a fresh venv,
+    then every pinned file by hash and nothing else."""
+    return [
+        ["uv", "venv", "--clear", "--quiet", "--python", sys.executable, str(venv)],
+        [
+            "uv",
+            "pip",
+            "install",
+            "--quiet",
+            "--python",
+            str(venv / "bin" / "python"),
+            "--require-hashes",
+            "--no-deps",
+            "-r",
+            str(LOCUST_LOCK),
+        ],
+    ]
+
+
+def install_locust(venv: Path) -> None:
+    """Install Locust into `venv` from its lock. Raises `subprocess.CalledProcessError`."""
+    for argv in locust_install_argv(venv):
+        run(argv)
+
+
+@contextmanager
+def locust_venv() -> Iterator[Path]:
+    """Where `install_locust` puts this run's Locust: a new private temp dir, removed on exit, so
+    no other run and no other user shares it."""
+    with tempfile.TemporaryDirectory(prefix="load-tools-locust-") as tmp:
+        yield Path(tmp) / "venv"
+
+
+def locust_cmd(
+    s: Scenario,
+    seconds: int,
+    csv_prefix: Path | None,
+    processes: int,
+    venv: Path,
+) -> list[str]:
+    """One Locust run of `s`, from the venv `locust_venv` filled."""
+    cmd = [str(locust_bin(venv)), "-f", str(LOCUSTFILE)]
     cmd += ["--host", URL, "--headless", "-u", str(s.users), "-r", str(s.users)]
     # A run with failed requests is still a result: keep it with its failure count (Locust exits 1
     # otherwise, and the scenario was dropped on 2026-10-01). `ok_rps` excludes the failures.
@@ -298,7 +353,7 @@ def write_samples(path: Path, rows: Sequence[dict[str, Any]], phase: str) -> Non
             writer.writerow({"phase": phase, **row})
 
 
-def run_scenario(s: Scenario, args: argparse.Namespace) -> dict[str, Any]:
+def run_scenario(s: Scenario, args: argparse.Namespace, venv: Path) -> dict[str, Any]:
     raw = NOTES / "raw"
     raw.mkdir(parents=True, exist_ok=True)
     stats_csv = raw / f"{s.name}-docker-stats.csv"
@@ -310,11 +365,11 @@ def run_scenario(s: Scenario, args: argparse.Namespace) -> dict[str, Any]:
         idle = sample_stats(names)
         write_samples(stats_csv, idle, "idle")
         if args.warmup_s > 0:
-            run(locust_cmd(s, args.warmup_s, None, args.locust_processes), s.env)
+            run(locust_cmd(s, args.warmup_s, None, args.locust_processes, venv), s.env)
         sampler = Sampler(names, SAMPLE_EVERY_S)
         sampler.start()
         try:
-            run(locust_cmd(s, args.duration_s, raw / s.name, args.locust_processes), s.env)
+            run(locust_cmd(s, args.duration_s, raw / s.name, args.locust_processes, venv), s.env)
         finally:
             rows = sampler.stop()
             write_samples(stats_csv, rows, "load")
@@ -427,34 +482,36 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args = parse_args(argv)
-    todo = scenarios(args)
-    if not todo:
-        print("run_matrix: nothing selected")
-        return 2
-    if args.dry_run:
-        print(f"run_matrix: {len(todo)} scenario(s), one at a time; results -> {args.results}")
-        for s in todo:
-            env = " ".join(f"{k}={v}" for k, v in s.env.items())
-            print(f"\n[{s.kind}] {s.name}: {s.users} users, {args.duration_s} s")
-            print(f"  {SCALE_SH} up {s.engine} {s.pairs}")
-            print(f"  wait for {URL}/ready 200 x{READY_IN_A_ROW}; one idle docker stats sample")
-            if args.warmup_s > 0:
-                warm = locust_cmd(s, args.warmup_s, None, args.locust_processes)
-                print(f"  {env + ' ' if env else ''}{' '.join(warm)}")
-            cmd = locust_cmd(s, args.duration_s, NOTES / "raw" / s.name, args.locust_processes)
-            print(f"  {env + ' ' if env else ''}{' '.join(cmd)}")
-            print(f"  meanwhile every {SAMPLE_EVERY_S:g} s: docker stats of project {PROJECT}")
-            print(f"  {SCALE_SH} down")
-        return 0
+def print_plan(todo: Sequence[Scenario], args: argparse.Namespace) -> None:
+    """What `main` would run, in order, without running it."""
+    print(f"run_matrix: {len(todo)} scenario(s), one at a time; results -> {args.results}")
+    print("\ninstall Locust from its hashed lock:")
+    for argv in locust_install_argv(PLAN_VENV):
+        print(f"  {' '.join(argv)}")
+    for s in todo:
+        env = " ".join(f"{k}={v}" for k, v in s.env.items())
+        print(f"\n[{s.kind}] {s.name}: {s.users} users, {args.duration_s} s")
+        print(f"  {SCALE_SH} up {s.engine} {s.pairs}")
+        print(f"  wait for {URL}/ready 200 x{READY_IN_A_ROW}; one idle docker stats sample")
+        if args.warmup_s > 0:
+            warm = locust_cmd(s, args.warmup_s, None, args.locust_processes, PLAN_VENV)
+            print(f"  {env + ' ' if env else ''}{' '.join(warm)}")
+        raw = NOTES / "raw" / s.name
+        cmd = locust_cmd(s, args.duration_s, raw, args.locust_processes, PLAN_VENV)
+        print(f"  {env + ' ' if env else ''}{' '.join(cmd)}")
+        print(f"  meanwhile every {SAMPLE_EVERY_S:g} s: docker stats of project {PROJECT}")
+        print(f"  {SCALE_SH} down")
+
+
+def run_all(todo: Sequence[Scenario], args: argparse.Namespace, venv: Path) -> list[str]:
+    """Run each scenario and merge it into `--results`. Returns the names that failed."""
     results = load_results(args.results)
     results["host"] = host_info()
     failed: list[str] = []
     for s in todo:
         print(f"\n=== {s.name} ===", flush=True)
         try:
-            outcome = run_scenario(s, args)
+            outcome = run_scenario(s, args, venv)
         except (subprocess.SubprocessError, TimeoutError, OSError, KeyError) as exc:
             print(f"run_matrix: {s.name} failed: {exc}", file=sys.stderr)
             failed.append(s.name)
@@ -465,6 +522,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"{s.name}: {outcome['rps']} rps, p50 {outcome['p50_ms']} ms,"
             f" p95 {outcome['p95_ms']} ms, failures {outcome['failures']}/{outcome['requests']}"
         )
+    return failed
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    todo = scenarios(args)
+    if not todo:
+        print("run_matrix: nothing selected")
+        return 2
+    if args.dry_run:
+        print_plan(todo, args)
+        return 0
+    with locust_venv() as venv:
+        try:
+            install_locust(venv)
+        except (subprocess.SubprocessError, OSError) as exc:
+            print(f"run_matrix: Locust install failed: {exc}", file=sys.stderr)
+            return 1
+        failed = run_all(todo, args, venv)
     print(f"\nrun_matrix: results in {args.results}")
     if failed:
         print(f"run_matrix: failed scenarios: {', '.join(failed)}", file=sys.stderr)

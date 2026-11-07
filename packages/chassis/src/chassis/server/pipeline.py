@@ -84,6 +84,8 @@ __all__ = [
     "RunStream",
     "TraceIdInUse",
     "context_for",
+    "mapped_task",
+    "task_of",
     "versions_for",
 ]
 
@@ -140,10 +142,31 @@ def versions_for(config: ChassisConfig) -> Versions:
     )
 
 
+TASK_KEY = "task"
+"""`input.data.task`: the task the caller names, resolved through `spec.model.routes`
+(`docs/specs/models.md`). suggested: the key."""
+
+
+def task_of(request: Request) -> str | None:
+    """The task the caller named in `input.data.task`: a non-empty string, else None."""
+    task = request.input.data.get(TASK_KEY)
+    if not isinstance(task, str) or not task.strip():
+        return None
+    return task
+
+
+def mapped_task(request: Request, config: ChassisConfig) -> str | None:
+    """The caller's task when `spec.model.routes` names it, else None: what the run span shows."""
+    task = task_of(request)
+    return task if task is not None and task in config.spec.model.routes else None
+
+
 def context_for(request: Request, config: ChassisConfig) -> Context:
-    """The run's `ctx`, with a fresh `run_secret` (contract v8, R2-02) the workload sends back as
-    `x-chassis-run-secret`. Plain mode (`spec.engine.protocol: a2a`) never sends `ctx` to the
-    remote, so it gets None."""
+    """The run's `Context`. `model_route` is the route of the caller's task through
+    `spec.model.routes`, else `spec.model.route`; `versions.model_route` stays the agent's
+    configured route. `run_secret` is fresh per run (contract v8, R2-02): the workload sends it
+    back as `x-chassis-run-secret`. Plain mode (`spec.engine.protocol: a2a`) never sends `ctx` to
+    the remote, so it gets None."""
     plain = config.spec.engine.protocol == "a2a"
     return Context(
         request_id=request.request_id,
@@ -153,7 +176,7 @@ def context_for(request: Request, config: ChassisConfig) -> Context:
         agent_version=request.agent_version,
         budget=request.budget,
         versions=versions_for(config),
-        model_route=config.spec.model.route,
+        model_route=config.spec.model.route_for(task_of(request)),
         run_secret=None if plain else secrets.token_urlsafe(RUN_SECRET_BYTES),
     )
 
@@ -298,7 +321,8 @@ class RunPipeline:
         `interface` labels the run's `chassis.requests` count and `chassis.run` span; `observed`
         adds the caller's session, user, and `traceparent` to the span.
         """
-        ctx = self.context_for(request)
+        config = self.config
+        ctx = context_for(request, config)
         telemetry = self.ports.telemetry
         try:
             record = self.runs.open(request, ctx)
@@ -312,7 +336,15 @@ class RunPipeline:
                 holder=exc.request_id,
             )
             raise
-        return Run(self, request, ctx, record, interface=interface, observed=observed)
+        return Run(
+            self,
+            request,
+            ctx,
+            record,
+            interface=interface,
+            observed=observed,
+            task=mapped_task(request, config),
+        )
 
 
 class Run:
@@ -327,12 +359,15 @@ class Run:
         *,
         interface: Interface = "native",
         observed: Observed | None = None,
+        task: str | None = None,
     ) -> None:
         self.request = request
         self.ctx = ctx
         self.record = record
         self.interface: Interface = interface
         self.observed = observed or Observed()
+        self.task = task
+        """The caller's task when `spec.model.routes` named it; on the `chassis.run` span."""
         self._pipeline = pipeline
         self._seen: list[Event] = []
         self._started = False
@@ -368,6 +403,7 @@ class Run:
                 trace_id=trace_id,
                 agent=request.agent,
                 interface=interface,
+                **self._route_attributes(),
                 **self.observed.span_attributes(trace_id),
             ) as span:
                 telemetry.counter("chassis.requests", agent=request.agent, interface=interface)
@@ -406,6 +442,16 @@ class Run:
                 self.close()  # the run is over; a trailing frame is not part of it
         finally:
             self.close()
+
+    def _route_attributes(self) -> dict[str, str]:
+        """`route`, the run's resolved route, and `task` when `spec.model.routes` named it. Both
+        bounded by the config, so neither is caller text on the span."""
+        out: dict[str, str] = {}
+        if self.ctx.model_route:
+            out["route"] = self.ctx.model_route
+        if self.task:
+            out["task"] = self.task
+        return out
 
     def _mask_urls(self, guards: GuardrailsSpec) -> None:
         """PoC-8: image and link URLs to hosts not on `output_url_allow` leave a complete answer

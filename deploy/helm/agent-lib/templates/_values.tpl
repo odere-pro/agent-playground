@@ -18,6 +18,11 @@ chassis:
   image:
     repository: kind.local/agent-platform/chassis
     tag: poc09
+    # The chassis tags at or above the minimum version: the current tag and the previous one a
+    # service may pin to roll back (ADR-001 item 9). Set once here, never by a service. The
+    # render and admission rule 9 (agent-lib.admission) refuse any other chassis tag.
+    # suggested: poc08 as the previous tag until the chassis has release tags (056 CH-7).
+    supportedTags: [poc09, poc08]
     digest: ""
     pullPolicy: IfNotPresent
   port: 8080
@@ -62,8 +67,8 @@ remote:
   runtimeClassName: gvisor
   proxyClusterIP: ""
   terminationGracePeriodSeconds: 40
+  # The Secret's name is not a value: <name>-workload-token (agent-lib.remoteTokenSecret).
   tokenSecret:
-    name: ""
     key: token
 networkPolicy:
   ingressFrom: []
@@ -82,9 +87,19 @@ hpa:
 {{- define "agent-lib.values" -}}
 {{- $defaults := include "agent-lib.defaults" . | fromYaml -}}
 {{- $user := .Values | toYaml | fromYaml -}}
+{{- include "agent-lib.validateServiceValues" $user -}}
 {{- $v := mergeOverwrite $defaults $user -}}
 {{- include "agent-lib.validate" $v -}}
 {{- toYaml $v -}}
+{{- end -}}
+
+{{/*
+The remote workload's token Secret: one per remote, named after its pod's app.kubernetes.io/name
+(ADR-005 decision 1; admission rule 7c holds the pod to it). It must exist in the chassis's
+namespace and in remote.namespace. Takes the root.
+*/}}
+{{- define "agent-lib.remoteTokenSecret" -}}
+{{- printf "%s-workload-token" (include "agent-lib.fullname" .) -}}
 {{- end -}}
 
 {{/* The lane and the trust level come from the chassis config, so the chart and the chassis read one value. */}}

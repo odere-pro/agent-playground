@@ -393,6 +393,12 @@ def with_gate(bundle: PortBundle, state: Any) -> PortBundle:
         raise GateNotConfigured(
             "spec.harness.evaluator_gate is on, but spec.adapters.evaluator is none"
         )
+    # The judge takes `spec.model.judge_route` from the live config, so a reload applies.
+    # suggested: `bind_route` by name, outside `EvaluatorPort`; the judge is the only adapter
+    # with a route the config names. A second one moves the route into the port.
+    bind_route = getattr(bundle.evaluator, "bind_route", None)
+    if callable(bind_route):
+        bind_route(lambda: state.config.spec.model.judge_route)
     gate = GatedEngine(
         bundle.engine,
         bundle.evaluator,

@@ -7,7 +7,7 @@
 
 ## Status
 
-Accepted, 2026-10-09, by Oleksandr (epic owner). Proposed 2026-10-02, from the design; built and run on kind in PoC-5. On 2026-10-08 the owner kept it Proposed until T21 and T22 had run on kind, and confirmed the remote pod's own token, one env var, as its only secret: "no secrets mounted" means no provider key and no internal credential. <!-- pragma: allowlist secret (prose, no value) --> Both suites ran on 2026-10-08 and again on 2026-10-09; what they showed is in "What the cluster showed", below. Decision 6 is closed there: the code runner is a sandbox per call. Decision 7 is closed: kindnet.
+Accepted, 2026-10-09, by Oleksandr (epic owner). Proposed 2026-10-02, from the design; built and run on kind in PoC-5. Amended 2026-11-06 (the product plan, phase A): the admission rules are rendered by the library chart (`deploy/helm/agent-lib`, `agent-lib.admission`) and installed by the platform's `deploy/helm/agent-admission`, once per cluster; the PoC-5 cluster applies the same policy, held equal by a test. Rule 9, the minimum chassis version (ADR-001 item 9), joined the policy. Rule 5's token name lost its `remote-` prefix: the chart names a remote's one Secret `<name>-workload-token`, and rule 7c holds the name to the pod's. On 2026-10-08 the owner kept it Proposed until T21 and T22 had run on kind, and confirmed the remote pod's own token, one env var, as its only secret: "no secrets mounted" means no provider key and no internal credential. <!-- pragma: allowlist secret (prose, no value) --> Both suites ran on 2026-10-08 and again on 2026-10-09; what they showed is in "What the cluster showed", below. Decision 6 is closed there: the code runner is a sandbox per call. Decision 7 is closed: kindnet.
 
 ## Context
 

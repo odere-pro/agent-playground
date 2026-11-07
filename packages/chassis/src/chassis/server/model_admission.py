@@ -36,7 +36,7 @@ log = logging.getLogger("chassis.model_proxy")
 SPAN = "chassis.model.call"
 ROUTE_SPAN = "chassis.model.route"  # suggested: the routing choice (PoC-8)
 DENIED = "chassis.model_upstream_denied"  # suggested
-FORCED = "chassis.model_route_forced"  # suggested: a call sent to the run's fallback route
+FORCED = "chassis.model_route_forced"  # suggested: a call sent to the run's route, not its own
 PINNED = "chassis.model_route_pinned"  # suggested: an uncorrelated call sent to `spec.model.route`
 WINDOW_S = 60.0
 # suggested: the worst case reserved, and forwarded, for an uncorrelated call that sets no
@@ -314,7 +314,8 @@ def admit(
     runs: RunRegistry = app.state.runs
     record = runs.lookup(trace_id) if trace_id is not None else None
     if record is not None and record.model_route and record.model_route != route:
-        # PoC-7: the evaluator gate's fallback attempt; the run's route wins.
+        # The run's route wins: the task's route through `spec.model.routes`, else
+        # `spec.model.route`, or the gate's fallback route for its fallback attempt (PoC-7).
         route = record.model_route
         telemetry.counter(FORCED, route=route)
     if record is None and route != app.state.config.spec.model.route:

@@ -1,8 +1,10 @@
 """Locust user for the PoC-4 load matrix: native `POST /v1/run`, complete mode (plan, section 9).
 
-Locust is not a workspace dependency. Run it through uv, pinned here and in `run_matrix.py`:
+Locust is not a workspace dependency. `run_matrix` installs it from the hashed lock
+`packages/load-tools/locust/requirements.txt` into a venv of its own for each run
+(`run_matrix.locust_venv`, `run_matrix.install_locust`), then runs, from that venv:
 
-    uv run --no-project --with "locust==2.46.6" locust \
+    <venv>/bin/locust \
         -f packages/load-tools/src/load_tools/locustfile.py \
         --host http://127.0.0.1:18080 --headless -u 64 -r 64 --run-time 60s
 

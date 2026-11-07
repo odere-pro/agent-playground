@@ -89,6 +89,7 @@ ID_KEYS = frozenset(
         "interface",
         "lane",
         "route",
+        "task",
         "format",
         "tool",
         "a2a.task_id",
