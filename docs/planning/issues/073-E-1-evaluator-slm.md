@@ -1,7 +1,7 @@
 ---
 title: "E-1: First evaluator SLM (ModernBERT or DeBERTa) trained on approved records"
 labels: ["story", "priority:P1", "phase:4-golden-set", "area:evaluator", "size:L", "layer:platform"]
-milestone: "W6 Golden set and evaluator SLM"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 73
 epic_id: E-1
 depends_on: ["033 S-5", "065 D-2", "070 D-4"]

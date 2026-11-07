@@ -1,11 +1,11 @@
 ---
 title: "H-4: Harness features: schema check, evaluator gate, retry, fallback, timeout, budget"
-labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:L", "layer:chassis", "layer:agent-profile"]
+labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:M", "layer:chassis", "layer:agent-profile"]
 milestone: "W2 Chassis MVP"
 index: 17
 epic_id: H-4
 depends_on: ["010 H-12", "012 H-3", "009 CH-1", "013 CH-2"]
-blocks: ["041 A-1", "042 A-2", "064 D-1"]
+blocks: ["041 A-1", "042 A-2", "054 H-16", "064 D-1"]
 epic_refs: [B.2, G.1]
 ---
 
@@ -57,7 +57,7 @@ The gate's cost, a second model call per gated request, is decided in [ADR-010](
 ## Dependencies
 
 - Depends on: [010 H-12](010-H-12-config-loader.md), [012 H-3](012-H-3-model-port.md), [009 CH-1](009-CH-1-engine-connectors-a2a.md), [013 CH-2](013-CH-2-outbound-model-proxy.md)
-- Blocks: [041 A-1](041-A-1-simplifier-core.md), [042 A-2](042-A-2-evaluator-gate-fallback.md), [064 D-1](064-D-1-golden-set-agent.md)
+- Blocks: [041 A-1](041-A-1-simplifier-core.md), [042 A-2](042-A-2-evaluator-gate-fallback.md), [054 H-16](054-H-16-tool-port.md), [064 D-1](064-D-1-golden-set-agent.md)
 
 ## References
 

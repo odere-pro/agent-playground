@@ -22,6 +22,11 @@ Training and testing need clean splits, or test data leaks into training and the
 - An API to set tags and to list records by tag and split. Changes need the write scope.
 - Tags can also be set in the review UI (065 D-2).
 
+## Reuse
+
+- **Decision:** decide with the dataset store (ADR-010 item 2): splits and tags may be dataset fields, not tables.
+- Details: [reuse analysis](../poc/010-reuse-analysis.md)
+
 ## Out of scope
 
 - Export by split (070 D-4).

@@ -1,7 +1,7 @@
 ---
 title: "H-2: Inbound adapters: native, OpenAI-compatible, Anthropic-compatible, with streaming"
 labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:L", "layer:chassis", "layer:agent-profile"]
-milestone: "W2 Chassis MVP"
+milestone: "Done: delivered by the PoC track"
 index: 11
 epic_id: H-2
 depends_on: ["007 H-1", "008 H-14", "009 CH-1"]

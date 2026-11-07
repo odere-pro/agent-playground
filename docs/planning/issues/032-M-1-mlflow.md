@@ -1,11 +1,11 @@
 ---
 title: "M-1: MLflow: experiments, model registry, links to data version and scores"
 labels: ["story", "priority:P0", "phase:2-simplifier-slm", "area:lifecycle", "size:S", "layer:platform"]
-milestone: "W3 Simplifier SLM"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 32
 epic_id: M-1
 depends_on: []
-blocks: ["033 S-5", "037 M-2", "123 C-4"]
+blocks: ["033 S-5"]
 epic_refs: [E.5, H]
 ---
 
@@ -49,7 +49,7 @@ Every model must trace back to its data version, config, and scores. This is evi
 ## Dependencies
 
 - Depends on: none
-- Blocks: [033 S-5](033-S-5-training-pipeline.md), [037 M-2](037-M-2-eval-gate-ci.md), [123 C-4](123-C-4-documentation-pack.md)
+- Blocks: [033 S-5](033-S-5-training-pipeline.md)
 
 ## References
 

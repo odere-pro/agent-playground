@@ -30,6 +30,7 @@ Each finding id is assigned here once, in bold. P-24 has no id: it carries two i
 | P-22 | The cost-per-good-task target | W3-13 | `observability-expert` |
 | P-23 | The gate set's size in the models spec | W6-24 | `eval-expert` |
 | P-24 | Two PoC-6b review leftovers | (from body edits) | `platform-security` |
+| P-25 | A call that names another route: refuse or force | (from the W2a apply, 2026-11-07) | `chassis-architect` |
 
 ## Decided by the user, 2026-11-06
 
@@ -349,3 +350,15 @@ The other proposals, P-3 to P-5 and P-7 to P-24, stay open. Each one's owner age
   2. Leave both.
 - suggested: option 1.
 - Owner: `platform-security`.
+
+## P-25: A call that names another route: refuse or force
+
+- Findings: none; found by the W2a apply worker on 2026-11-07.
+- Issues: 012 H-3.
+- Where: 012 H-3's admission box says the proxy "refuses another with 403 `model_route_denied`". The code forces the call onto the resolved route and counts `chassis.model_route_forced` (`packages/chassis/tests/test_model_routes.py::test_the_proxy_forces_a_call_that_names_another_route_to_the_resolved_route`). Only LiteLLM answers 403, when the service key lacks the route.
+- Options:
+  1. Reword the box to what the code does, and tick it with that test.
+  2. Change the proxy to refuse with 403 `model_route_denied`, as the box says (a contract change).
+- suggested: option 1. Forcing keeps a framework that hard-codes a model name working, the count makes it visible, and LiteLLM's key is still the hard limit.
+- Owner: `chassis-architect`.
+- In the backlog: 012 H-3's admission box stays open until P-25 is decided.

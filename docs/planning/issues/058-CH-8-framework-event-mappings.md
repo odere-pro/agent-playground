@@ -1,11 +1,11 @@
 ---
 title: "CH-8: Framework event mappings and one non-Python workload in the service template"
-labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
+labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:L", "layer:chassis"]
 milestone: "W5 Chassis completion"
 index: 58
 epic_id: CH-8
-depends_on: ["015 H-8", "025 H-10"]
-blocks: ["059 H-15", "062 H-11"]
+depends_on: ["015 H-8"]
+blocks: ["059 H-15", "062 H-11", "128 CH-9"]
 epic_refs: [F.1, B.5]
 ---
 
@@ -35,7 +35,7 @@ epic_refs: [F.1, B.5]
 - Frameworks that fail the trust rule's behavior test, such as the Claude Agent SDK with shell and file tools switched on, or smolagents. They run in the `remote` lane (055 CH-6).
 - The factory CLI's `--framework` option (059 H-15).
 - The TypeScript agent in the template. ADR-006 (D5) keeps it out: the case for it is a team, not a default.
-- The checkpointer and interrupt ADRs: CH-9 (added in PR-R).
+- The checkpointer and interrupt ADRs: 128 CH-9.
 - The hosted-model numbers per engine. They are a Mac run on the owner list ([what is left](../poc/011-what-is-left.md), section 1).
 
 ## Acceptance criteria
@@ -53,8 +53,8 @@ epic_refs: [F.1, B.5]
 
 ## Dependencies
 
-- Depends on: [015 H-8](015-H-8-testing-kit.md), [025 H-10](025-H-10-template-repo.md)
-- Blocks: [059 H-15](059-H-15-agent-factory-cli.md), [062 H-11](062-H-11-adapter-package.md)
+- Depends on: [015 H-8](015-H-8-testing-kit.md)
+- Blocks: [059 H-15](059-H-15-agent-factory-cli.md), [062 H-11](062-H-11-adapter-package.md), [128 CH-9](128-CH-9-langgraph-checkpointer-interrupts.md)
 
 ## References
 

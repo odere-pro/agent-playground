@@ -1,7 +1,7 @@
 # packages/chassis
 
 The service chassis. It serves one workload's `handle` behind the public interfaces and holds every credential.
-Spec: `docs/contracts/contract-v7.md` (PoC-8's additive changes; v6 and earlier for the rest). Per-module detail: `docs/guides/chassis-reference.md`. Read it before you change a module.
+Spec: `docs/contracts/contract-v8.md` (the core-review step: the run secret, the v0 bounds, the public error text; v7 and earlier for the rest). Per-module detail: `docs/guides/chassis-reference.md`. Read it before you change a module.
 
 ## Where things live
 
@@ -34,7 +34,7 @@ Under `packages/chassis/`: `configs/` the bundled specs, `schemas/` the publishe
 - Two `/v1/messages` routes exist too. The Anthropic interface (public port) calls the agent. The Anthropic proxy route (proxy port, `server/model_proxy_messages.py`) calls the model. The proxy port serves `/v1/chat/completions`, `/v1/messages`, and `/mcp`, and the remote listener serves exactly those three.
 - `/v1/mcp` on the public port is the agent as a tool. `/mcp` on the proxy port is the tools for workloads.
 - Credentials stay in the chassis. The model proxy never forwards `Authorization` or `x-api-key`. The LiteLLM key is never logged.
-- OpenAI and Anthropic errors send `public_message(code)`, never the run's own message. The detail stays in the log and the span.
+- Every interface sends `public_message(code)` for a run error, never the run's own message: OpenAI, Anthropic, and since contract v8 native and MCP. The detail stays in the log and the span.
 - A replica keeps nothing a retry needs. What must outlive a call goes behind `StatePort`, `ConfigPort`, or `EventPort`. Never a module global or `app.state` (exit criterion 8; `pocs/poc-04-stateless-scalable/notes/2026-10-01-hidden-state.md`).
 - A new `spec.*` field is restart-only unless it is in `RELOADABLE` and read per request from `state.config`. A reload never changes a run that is already open.
 - Idempotency applies only to a key the client sent. Only a run that ended with `end` is cached. A keyed call fails closed with 503 `state_unavailable` when the store fails (suggested).

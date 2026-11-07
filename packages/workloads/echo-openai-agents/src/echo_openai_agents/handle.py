@@ -18,6 +18,8 @@ error codes as echo-python and echo-pydanticai; the framework mapping is in `map
   on (`workload_a2a.telemetry`), the OpenInference instrumentor is the SDK's only trace processor
   (`telemetry.py`), the run's `RunConfig` has tracing on, and a request hook on both clients
   replaces that header with the current span's `traceparent` and `baggage`. Off, as before.
+- `ctx["run_secret"]`, when set, is the `x-chassis-run-secret` header next to it on the same
+  requests (contract v8). Never logged.
 - No model key. In the `remote` lane `CHASSIS_API_TOKEN`, when set and not empty, is the bearer on
   every model call and MCP request. Unset, the client gets a placeholder key and the
   `Authorization` header is dropped before each request leaves. No `*_API_KEY` variable is read.
@@ -69,6 +71,8 @@ DEFAULT_ROUTE = "big-default"
 MODEL_URL_VAR = "CHASSIS_MODEL_URL"
 DEFAULT_MODEL_URL = "http://127.0.0.1:8090/v1"
 TOKEN_VAR = "CHASSIS_API_TOKEN"
+# The run-scoped capability the chassis checks on its remote listener (contract v8).
+RUN_SECRET_HEADER = "x-chassis-run-secret"  # pragma: allowlist secret (a header name, not a secret)
 TOOL_URL_VAR = "CHASSIS_TOOL_URL"
 DEFAULT_TOOL_URL = "http://127.0.0.1:8090/mcp"
 # suggested: 3 tool rounds, the same cap as echo-python.
@@ -137,6 +141,8 @@ async def handle(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[di
     timeout = timeout_s(ctx)
     traceparent = ctx.get("traceparent")
     headers = {"traceparent": str(traceparent)} if traceparent else {}
+    if ctx.get("run_secret"):  # the chassis's per-run check; never logged
+        headers[RUN_SECRET_HEADER] = str(ctx["run_secret"])
     token = os.environ.get(TOKEN_VAR) or None
     mapper = EventMapper(route)
     try:

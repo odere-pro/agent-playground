@@ -1,11 +1,11 @@
 ---
 title: "R-10: Health checks: dead entries marked inactive, never deleted"
-labels: ["story", "priority:P1", "phase:5-registry", "area:registry", "size:S", "layer:platform"]
+labels: ["story", "priority:P1", "phase:5-registry", "area:registry", "size:M", "layer:platform"]
 milestone: "W7 Registry and governance gate"
 index: 86
 epic_id: R-10
 depends_on: ["076 R-1", "083 R-2", "014 H-7"]
-blocks: []
+blocks: ["092 R-12"]
 epic_refs: [F.3]
 ---
 
@@ -47,7 +47,7 @@ In a registry with thousands of entries, some will stop working. Health checks k
 ## Dependencies
 
 - Depends on: [076 R-1](076-R-1-registry-data-model-api.md), [083 R-2](083-R-2-kubernetes-controller.md), [014 H-7](014-H-7-observability.md)
-- Blocks: none
+- Blocks: [092 R-12](092-R-12-main-pick-fallbacks.md)
 
 ## References
 

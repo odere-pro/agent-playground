@@ -27,6 +27,7 @@ from chassis.core.inbound import (
     ReplyMeta,
     Served,
     StreamReply,
+    public_message,
     status_for,
 )
 from chassis_contracts.inbound import (
@@ -147,8 +148,9 @@ class ToyInbound:
                 for frame in self._frames(event):
                     sent = True
                     yield frame
-                if isinstance(event, Error):
-                    yield _data({"error": {"code": event.code, "message": event.message}})
+                if isinstance(event, Error):  # the fixed text per code (contract v8, item 1)
+                    message = public_message(event.code)
+                    yield _data({"error": {"code": event.code, "message": message}})
                     yield "data: [END]\n\n"
                     return
             response = await meta.collect(seen)

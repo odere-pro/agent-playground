@@ -13,16 +13,23 @@ its 409 (contract v1). Every other source re-mints once: a fresh `uuid4().hex` r
 id, `chassis.trace_id_reminted{interface}` (suggested) is counted, and the run opens. So an SDK
 client never sees a 409, which it would retry. The client reads the id it got from its format's
 reply (`x-trace-id`, or the native envelope).
+
+`id_problem(ids)` says which resolved id falls outside the envelope's pattern (`ID_PATTERN` for
+`request_id` and `trace_id`, `KEY_PATTERN` for `idempotency_key`), without echoing the value.
+`serve` answers it as 400 `invalid_body` in the format's shape, before the request is built
+(contract v8, item 3). `resolve_ids` itself never raises: the validation handlers in `errors.py`
+call it too.
 """
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-from chassis.core.envelope import Request
+from chassis.core.envelope import ID_MAX, ID_PATTERN, KEY_MAX, KEY_PATTERN, Request
 from chassis.core.inbound import Ids, Interface
 from chassis.core.trace import parse_traceparent, trace_id_hex
 from chassis.server.pipeline import Observed, Run, RunPipeline
@@ -34,6 +41,7 @@ __all__ = [
     "KeyFrom",
     "ResolvedIds",
     "TraceFrom",
+    "id_problem",
     "may_remint",
     "open_run",
     "resolve_ids",
@@ -86,6 +94,24 @@ def resolve_ids(
     if not key:
         key, key_from = _mint(), "minted"
     return ResolvedIds(Ids(request_id or _mint(), trace_id, key), trace_from, key_from)
+
+
+_ID_RULE = f"1 to {ID_MAX} characters of letters, digits, '.', '_', ':', or '-'"
+_KEY_RULE = f"1 to {KEY_MAX} visible ASCII characters, with no space"
+
+
+def id_problem(ids: Ids) -> str | None:
+    """Why one of `ids` is outside the envelope's pattern, naming the field but not the value;
+    None when all three fit. `fullmatch`: a `$` alone would let a trailing newline through."""
+    checks = (
+        ("request_id", ids.request_id, ID_PATTERN, _ID_RULE),
+        ("trace_id", ids.trace_id, ID_PATTERN, _ID_RULE),
+        ("idempotency_key", ids.idempotency_key, KEY_PATTERN, _KEY_RULE),
+    )
+    for field, value, pattern, rule in checks:
+        if re.fullmatch(pattern, value) is None:
+            return f"{field} must be {rule}"
+    return None
 
 
 def may_remint(ids: ResolvedIds, interface: Interface) -> bool:

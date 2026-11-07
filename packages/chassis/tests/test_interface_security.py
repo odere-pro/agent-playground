@@ -1,22 +1,26 @@
 """Inbound security on the public interfaces (code review F3).
 
 `BodyLimit` counts every byte it lets through, whatever `Content-Length` claims (R3-01). The
-native 422 sends only `loc`, `msg`, and `type`, never the caller's input (R3-29). Two proposals
-are pinned as strict xfails: raw exception text reaches a native client (R3-02), and the
-idempotency store key is not scoped by the caller (R3-06). Offline: ASGI only.
+native 422 sends only `loc`, `msg`, and `type`, never the caller's input (R3-29). Native and
+MCP send `public_message(code)`, never the exception text (R3-02, contract v8 item 1). A header id
+outside the envelope pattern is 400 `invalid_body` (contract v8 item 3). One proposal is pinned as
+a strict xfail: the idempotency store key is not scoped by the caller (R3-06). Offline: ASGI only.
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
+import httpx2
 import pytest
 from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Event, Start
 from chassis.core.handle import echo
+from chassis.core.inbound import public_message
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.auth import StaticTokens
 from chassis.fakes.state import InMemoryState
@@ -25,6 +29,8 @@ from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.interfaces.limits import BodyLimit
 from fastapi import FastAPI
+from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
 from starlette.types import Message, Receive, Scope, Send
 
 AGENT = "echo"
@@ -138,6 +144,27 @@ async def _leaking(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
     """A workload that fails with an internal address in its exception text."""
     yield Start(request_id=ctx.request_id)
     raise RuntimeError(LEAK)
+
+
+def _mcp_client(app: FastAPI) -> Client[Any]:
+    """A `fastmcp.Client` on `/v1/mcp` through `httpx2.ASGITransport`: no socket."""
+
+    def factory(
+        headers: dict[str, str] | None = None,
+        timeout: httpx2.Timeout | None = None,
+        auth: httpx2.Auth | None = None,
+        **kw: Any,
+    ) -> httpx2.AsyncClient:
+        return httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
+            base_url="http://chassis",
+            headers=headers,
+            timeout=timeout,
+            auth=auth,
+            **kw,
+        )
+
+    return Client(StreamableHttpTransport("http://chassis/v1/mcp", httpx_client_factory=factory))
 
 
 # --- R3-01: the body limit counts every byte ---------------------------------------------------
@@ -260,12 +287,9 @@ async def test_chat_validation_error_stays_400_invalid_body_when_the_body_is_wro
     assert (reply.status_code, reply.json()["error"]["type"]) == (400, "invalid_request_error")
 
 
-# --- R3-02 proposal: raw exception text reaches a native client ---------------------------------
+# --- R3-02: native and MCP send the public text, never the exception text ----------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="R3-02 proposal: native and MCP errors send raw exception text"
-)
 async def test_native_run_hides_the_exception_text_when_the_workload_raises() -> None:
     """A workload's exception text, with an internal address, does not reach the native client."""
     app = _app(FakeEngine(handle=_leaking))
@@ -274,6 +298,85 @@ async def test_native_run_hides_the_exception_text_when_the_workload_raises() ->
         reply = await client.post("/v1/run", json={"input": {"text": "hi"}})
 
     assert "internal:9000" not in reply.text
+
+
+def _sse_frames(text: str) -> list[tuple[str, dict[str, Any]]]:
+    """`(event, data)` of each SSE frame."""
+    frames = []
+    for block in text.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in block.splitlines())
+        frames.append((lines["event"], json.loads(lines["data"])))
+    return frames
+
+
+async def test_native_stream_and_complete_send_the_public_text_and_log_the_raw_text() -> None:
+    """Contract v8, item 1: `output.error.message` and the stream's `error` frame hold
+    `public_message(code)`; the raw text stays in the log."""
+    app = _app(FakeEngine(handle=_leaking))
+    body = {"input": {"text": "hi"}}
+
+    async with _client(app) as client:
+        complete = await client.post("/v1/run", json=body)
+        streamed = await client.post("/v1/run", json={**body, "stream": True})
+
+    public = public_message("engine_error")
+    frames = dict(_sse_frames(streamed.text))
+    logged = [
+        log["detail"] for log in app.state.ports.telemetry.logs if log["message"] == "run error"
+    ]
+    assert complete.json()["output"]["error"]["message"] == public
+    assert frames["error"]["message"] == public
+    assert frames["response"]["output"]["error"]["message"] == public
+    assert "internal:9000" not in streamed.text
+    assert len(logged) == 2 and all("internal:9000" in detail for detail in logged), logged
+
+
+async def test_mcp_tool_call_sends_the_public_text_when_the_workload_raises() -> None:
+    """`tools/call` on `/v1/mcp` answers the envelope `/v1/run` gave: the public text."""
+    app = _app(FakeEngine(handle=_leaking))
+
+    async with app.router.lifespan_context(app), _mcp_client(app) as mcp:
+        result = await mcp.call_tool(AGENT, {"input": {"text": "hi"}}, raise_on_error=False)
+
+    envelope = result.structured_content
+    assert envelope is not None
+    assert envelope["output"]["error"]["message"] == public_message("engine_error")
+    assert "internal:9000" not in json.dumps(envelope)
+
+
+# --- contract v8, item 3: a header id outside the envelope pattern is 400 invalid_body -------
+
+HEADER_ID_CALLS: dict[str, tuple[str, dict[str, Any]]] = {
+    "native": ("/v1/run", {"input": {"text": "hi"}}),
+    "openai": (
+        "/v1/chat/completions",
+        {"model": AGENT, "messages": [{"role": "user", "content": "hi"}]},
+    ),
+    "anthropic": (
+        "/v1/messages",
+        {"model": AGENT, "max_tokens": 64, "messages": [{"role": "user", "content": "hi"}]},
+    ),
+}
+
+
+@pytest.mark.parametrize("interface", sorted(HEADER_ID_CALLS))
+async def test_an_idempotency_key_header_with_a_newline_is_400_invalid_body_on_every_interface(
+    interface: str,
+) -> None:
+    """The `Idempotency-Key` header is checked against `KEY_PATTERN` before the run; the answer
+    names the field and never echoes the value."""
+    path, body = HEADER_ID_CALLS[interface]
+    app = _app(state=InMemoryState())
+
+    async with _client(app) as client:
+        reply = await client.post(path, json=body, headers={"Idempotency-Key": "k-secret\nX"})
+
+    text = reply.json()["detail"] if interface == "native" else reply.json()["error"]["message"]
+    assert reply.status_code == 400, reply.text
+    assert "idempotency_key" in text
+    assert "k-secret" not in reply.text
+    if interface != "native":
+        assert "invalid_body" in reply.text
 
 
 # --- R3-06 proposal: the idempotency store key is not scoped by the caller ----------------------
@@ -298,3 +401,20 @@ async def test_idempotency_does_not_replay_another_callers_run_when_the_key_is_r
 
     assert first.status_code == 200
     assert second.json()["request_id"] != first.json()["request_id"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("request_id", "a\nb"), ("trace_id", "t" * 129), ("idempotency_key", "k y")],
+)
+async def test_a_native_body_id_outside_the_pattern_is_422(field: str, value: str) -> None:
+    """`RunRequest` carries the envelope's id types, so a bad body id is FastAPI's 422, and the
+    value is not echoed."""
+    app = _app(state=InMemoryState())
+
+    async with _client(app) as client:
+        reply = await client.post("/v1/run", json={"input": {"text": "hi"}, field: value})
+
+    assert reply.status_code == 422, reply.text
+    assert reply.json()["detail"][0]["loc"] == ["body", field]
+    assert value not in reply.text

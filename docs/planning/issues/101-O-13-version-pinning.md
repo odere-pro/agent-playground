@@ -1,6 +1,6 @@
 ---
 title: "O-13: Version pinning per run"
-labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:S", "layer:platform"]
+labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:M", "layer:platform"]
 milestone: "W9 Orchestrator"
 index: 101
 epic_id: O-13

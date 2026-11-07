@@ -167,3 +167,18 @@ def test_a_ticked_issue_line_citing_a_defined_test_is_clean(
     _write_issue(lint, "- [x] met · Delivered in PoC-1: `tests/test_a.py::test_it_works`\n")
 
     assert lint.main() == 0, capsys.readouterr().out
+
+
+def test_a_ticked_issue_line_citing_a_test_under_scripts_tests_is_clean(
+    lint: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The planning tools' tests live in scripts/tests/, so a box may cite them as evidence."""
+    monkeypatch.setattr(lint, "SCAN_ISSUE_TICKS", True)
+    _write(
+        lint.ROOT / "scripts" / "tests" / "test_tool.py", "def test_the_tool_works():\n    pass\n"
+    )
+    _write_issue(
+        lint, "- [x] met · Delivered by: `scripts/tests/test_tool.py::test_the_tool_works`\n"
+    )
+
+    assert lint.main() == 0, capsys.readouterr().out

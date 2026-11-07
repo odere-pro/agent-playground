@@ -5,7 +5,7 @@ milestone: "W2 Chassis MVP"
 index: 13
 epic_id: CH-2
 depends_on: ["012 H-3", "009 CH-1"]
-blocks: ["017 H-4", "041 A-1", "044 G-4", "047 M-3", "054 H-16"]
+blocks: ["017 H-4", "041 A-1", "044 G-4", "047 M-3", "062 H-11"]
 epic_refs: [F.1, R3, J]
 ---
 
@@ -61,7 +61,7 @@ In the `sidecar` lane the workload holds no key ([ADR-001](../adr/001-chassis-de
 ## Dependencies
 
 - Depends on: [012 H-3](012-H-3-model-port.md), [009 CH-1](009-CH-1-engine-connectors-a2a.md)
-- Blocks: [017 H-4](017-H-4-harness-features.md), [041 A-1](041-A-1-simplifier-core.md), [044 G-4](044-G-4-history-swap.md), [047 M-3](047-M-3-shadow-mode.md), [054 H-16](054-H-16-tool-port.md)
+- Blocks: [017 H-4](017-H-4-harness-features.md), [041 A-1](041-A-1-simplifier-core.md), [044 G-4](044-G-4-history-swap.md), [047 M-3](047-M-3-shadow-mode.md), [062 H-11](062-H-11-adapter-package.md)
 
 ## References
 

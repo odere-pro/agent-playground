@@ -100,7 +100,7 @@ Render without a daemon, with dummy secrets: `VALKEY_PASSWORD=x MINIO_ROOT_PASSW
 
 ## PoC-7 stack
 
-`poc07/docker-compose.yaml` is a file of its own, project `poc07`. It runs Langfuse v4 (web, worker, ClickHouse, MinIO, Redis, Postgres), an OTel Collector, and Jaeger v2. The chassis sends OTLP to the Collector. The Collector sends the same spans to Langfuse and to Jaeger. Before it sends them, it masks emails, phone numbers, and ids in span attributes, with the logs pipeline's rules. It leaves the chassis's id keys alone. Every port binds `127.0.0.1`. Plan: `docs/plans/2026-10-28-poc-07-cross-cutting.md`, criterion 1.
+`poc07/docker-compose.yaml` is a file of its own, project `poc07`. It runs Langfuse v4 (web, worker, ClickHouse, MinIO, Redis, Postgres), an OTel Collector, and Jaeger v2. The chassis sends OTLP to the Collector with a bearer token, `OTLP_CHASSIS_TOKEN`; the receiver answers 401 without it (review R7-15), and a workload gets no token. The Collector sends the same spans to Langfuse and to Jaeger. Before it sends them, it masks emails, phone numbers, and ids in span attributes, with the logs pipeline's rules. It leaves the chassis's id keys alone. Every port binds `127.0.0.1`. Plan: `docs/plans/2026-10-28-poc-07-cross-cutting.md`, criterion 1.
 
 Use `stack.sh`, never a bare `docker compose`. It makes every credential into the git-ignored `poc07/.env.poc07` (mode 600) and passes `-p poc07` on every call.
 
@@ -112,7 +112,7 @@ deploy/compose/poc07/stack.sh down    # project poc07 only
 
 `stack.sh digests` prints each image's current digest, to bump the pins. CI runs the stack in `.github/workflows/poc07-stack.yml`. The offline checks are `pocs/poc-07-cross-cutting-decisions/tests/test_poc07_stack_static.py`.
 
-**Hardening.** `jaeger` and `otel-collector` use the same `x-hardening` block as the scale stack: `cap_drop: [ALL]`, `no-new-privileges`, `read_only: true`, and a tmpfs for `/tmp`. Both keep data in memory only. The Collector holds `LANGFUSE_AUTH`.
+**Hardening.** `jaeger` and `otel-collector` use the same `x-hardening` block as the scale stack: `cap_drop: [ALL]`, `no-new-privileges`, `read_only: true`, and a tmpfs for `/tmp`. Both keep data in memory only. The Collector holds `LANGFUSE_AUTH` and `OTLP_CHASSIS_TOKEN`.
 
 **Deviations.** These services run without the hardening block. Each image is third party, and what it writes or needs was not checked with a run:
 

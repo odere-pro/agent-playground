@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "s
 milestone: "W9 Orchestrator"
 index: 113
 epic_id: O-9
-depends_on: ["100 O-2", "068 D-3"]
+depends_on: ["100 O-2"]
 blocks: ["114 P-2b", "125 L-1"]
 epic_refs: [F.8, F.9]
 ---
@@ -38,7 +38,7 @@ The orchestrator needs two kinds of memory. Short-term memory is the state of th
 
 ## Dependencies
 
-- Depends on: [100 O-2](100-O-2-temporal-checkpoints.md), [068 D-3](068-D-3-import.md)
+- Depends on: [100 O-2](100-O-2-temporal-checkpoints.md)
 - Blocks: [114 P-2b](114-P-2b-mcp-run-memory-config-tools.md), [125 L-1](125-L-1-shared-memory-at-scale.md)
 
 ## References

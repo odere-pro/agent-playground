@@ -141,6 +141,133 @@ def test_a_guardrail_server_fault_blocks_the_call(name: str) -> None:
     assert params["fail_on_error"] is True
 
 
+REFERENCE_CONFIG = ROOT / "packages/guardrail-server/litellm/config.yaml"
+"""The PoC-7 reference LiteLLM config: the same guardrails, the same rules."""
+GUARDRAIL_KEY = "GUARDRAIL_API_KEY"
+"""The env var LiteLLM reads the guardrail-server token from (`api_key: os.environ/...`)."""
+GUARDRAIL_SECRET = "guardrail_token"  # pragma: allowlist secret (a Compose secret name)
+TOKEN_PATH = f"/run/secrets/{GUARDRAIL_SECRET}"
+ADR008_ENTITIES = {
+    "EMAIL_ADDRESS",
+    "PHONE_NUMBER",
+    "CREDIT_CARD",
+    "IBAN_CODE",
+    "US_SSN",
+    "PERSON",
+    "LOCATION",
+}
+"""ADR-008 items 4 and 6: the chassis's regex set plus the named entities (names, places)."""
+PII_ENTITY_OF = {"EMAIL": "EMAIL_ADDRESS", "PHONE": "PHONE_NUMBER", "CARD": "CREDIT_CARD"}
+"""The drill's raw PII values (`model_script.PII_VALUES`) by constant name, to their entity."""
+CONFIGS = {"poc08-litellm": STACK / "litellm.yaml", "reference": REFERENCE_CONFIG}
+
+
+def _guardrails_of(path: Path) -> dict[str, dict[str, Any]]:
+    return {g["guardrail_name"]: g["litellm_params"] for g in _yaml(path)["guardrails"]}
+
+
+@pytest.mark.parametrize("config", sorted(CONFIGS))
+def test_every_guardrail_is_on_for_every_call(config: str) -> None:
+    """ADR-008 item 4: every guardrail runs on every call, in both configs (review R7)."""
+    guardrails = _guardrails_of(CONFIGS[config])
+    assert set(guardrails) == {"pii-mask", "prompt-guard", "secret-guard"}
+    assert {n: g.get("default_on") for n, g in guardrails.items()} == dict.fromkeys(
+        guardrails, True
+    )
+
+
+@pytest.mark.parametrize("config", sorted(CONFIGS))
+def test_pii_mask_names_every_adr008_entity_with_mask(config: str) -> None:
+    """LiteLLM v1.103.0's presidio hook fails closed on an analyzer error only when
+    `pii_entities_config` is set; each ADR-008 entity is `MASK`, so masking stays as it was."""
+    entities = _guardrails_of(CONFIGS[config])["pii-mask"]["pii_entities_config"]
+    assert entities == dict.fromkeys(ADR008_ENTITIES, "MASK")
+
+
+def test_every_pii_value_the_drill_checks_is_a_listed_entity() -> None:
+    """With `pii_entities_config` set, the analyzer gets only those entities: each raw value
+    the drill checks, and the mask token it looks for, is one of them."""
+    spec = importlib.util.spec_from_file_location("poc08_model_script", STACK / "model_script.py")
+    assert spec is not None and spec.loader is not None
+    model_script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(model_script)
+    by_value = {getattr(model_script, name): e for name, e in PII_ENTITY_OF.items()}
+    assert set(by_value) == set(model_script.PII_VALUES)
+    assert set(by_value.values()) <= ADR008_ENTITIES
+    assert model_script.MASK_TOKEN.strip("<>") in ADR008_ENTITIES
+    drill = (ROOT / DRILL).read_text()
+    looked_for = set(re.findall(r'"<([A-Z_]+)>"', drill))
+    assert looked_for and looked_for <= ADR008_ENTITIES, looked_for
+
+
+@pytest.mark.parametrize("config", sorted(CONFIGS))
+@pytest.mark.parametrize("name", ["prompt-guard", "secret-guard"])
+def test_the_generic_guardrails_send_the_token_from_the_environment(config: str, name: str) -> None:
+    """The guardrail server needs a token (`x-api-key`, which LiteLLM sends from `api_key`);
+    LiteLLM reads it from its environment, never from the file."""
+    assert _guardrails_of(CONFIGS[config])[name]["api_key"] == f"os.environ/{GUARDRAIL_KEY}"
+
+
+def test_the_guardrail_token_reaches_litellm_and_the_guardrail_server_only() -> None:
+    """stack.sh makes the token into the env file; LiteLLM gets it as an env var, the
+    guardrail server as a Compose secret file (copied in, mode 0400, its own uid), the chassis
+    gets nothing new."""
+    services = _services()
+    with_var = {
+        n: v
+        for n, s in services.items()
+        for k, v in (s.get("environment") or {}).items()
+        if k == GUARDRAIL_KEY
+    }
+    assert with_var == {"litellm": "${GUARDRAIL_TOKEN:?}"}
+    secret = _yaml(COMPOSE)["secrets"][GUARDRAIL_SECRET]
+    assert secret == {"environment": "GUARDRAIL_TOKEN"}
+    holders = {n: s["secrets"] for n, s in services.items() if s.get("secrets")}
+    assert list(holders) == ["guardrail-server"]
+    [ref] = holders["guardrail-server"]
+    assert ref["source"] == GUARDRAIL_SECRET
+    assert (str(ref["uid"]), str(ref["gid"]), ref["mode"]) == ("10007", "10007", 0o400)
+    assert not [n for n, s in services.items() if "GUARDRAIL_TOKEN" in (s.get("environment") or {})]
+    script = _code(STACK / "stack.sh")
+    assert re.search(r'echo "GUARDRAIL_TOKEN=\$\(openssl rand -hex \d+\)"', script)
+
+
+def test_the_guardrail_server_image_reads_its_token_file() -> None:
+    """The server refuses a non-loopback host without a token file; the image names the
+    secret's path."""
+    text = (STACK / "guardrail-server.Dockerfile").read_text()
+    entrypoint = re.search(r"^ENTRYPOINT (\[.*\])$", text, re.M)
+    assert entrypoint is not None
+    args = json.loads(entrypoint.group(1))
+    assert args[args.index("--token-file") + 1] == TOKEN_PATH
+    assert args[args.index("--host") + 1] == "0.0.0.0"
+
+
+def test_stack_sh_can_stop_and_start_only_the_allowed_guardrail_services() -> None:
+    """The fail-closed drill stops a guardrail service through stack.sh, never raw docker; the
+    verbs take an allow-list and always use the project's own `-p poc08-litellm`."""
+    script = _code(STACK / "stack.sh")
+    allowed = re.search(r"^faultable=\(([^)]*)\)", script, re.M)
+    assert allowed is not None
+    assert set(allowed.group(1).split()) == {
+        "guardrail-server",
+        "presidio-analyzer",
+        "presidio-anonymizer",
+    }
+    assert re.search(r"^\s*stop\)", script, re.M) and re.search(r"^\s*start\)", script, re.M)
+    assert script.count("docker compose") == 1, "every call goes through the one `compose` array"
+    assert "docker compose -p poc08-litellm" in script
+    drill = _code(ROOT / DRILL)
+    assert "docker" not in drill.replace("docker-compose", "")
+
+
+@pytest.mark.parametrize("config", sorted(CONFIGS))
+def test_no_token_literal_in_the_guardrail_config(config: str) -> None:
+    text = CONFIGS[config].read_text()
+    assert not KEY_SHAPE.findall(text)
+    assert not re.search(r"(?i)token:\s*\S", _code(CONFIGS[config]))
+
+
 def test_litellm_exports_its_spans_to_the_collector() -> None:
     assert "otel" in _litellm_config()["litellm_settings"]["callbacks"]
     env = _env("litellm")
@@ -325,5 +452,5 @@ def test_without_its_variable_the_drill_is_not_collected(value: str | None) -> N
 
 def test_with_its_variable_every_drill_test_is_collected_and_network() -> None:
     items = _collect("1", DRILL)
-    assert len(items) == 4, sorted(items)
+    assert len(items) == 6, sorted(items)
     assert all("network" in marks for marks in items.values())

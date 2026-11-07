@@ -1,6 +1,6 @@
 ---
 title: "O-2: Temporal workflows with a checkpoint per step"
-labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:M", "layer:platform"]
+labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:L", "layer:platform"]
 milestone: "W9 Orchestrator"
 index: 100
 epic_id: O-2

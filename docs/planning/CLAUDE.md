@@ -23,10 +23,10 @@ From the repo root: `make planning-sync` and `make planning-check`. Or from this
 python3 tools/sync.py          # regenerate the generated parts of issues/ (see below)
 python3 tools/check.py         # epic unchanged, numbering, dependency order, story coverage, sections, links and anchors
 python3 tools/check.py 37 67   # body checks for issues 037–067 only; every other check still runs
-python3 tools/check.py --strict  # plus the evidence rules below; `make planning-check-strict`
+python3 tools/check.py --strict  # plus the evidence rules below; what `make planning-check` runs
 ```
 
-Run `sync.py` and then `check.py` after any change to `issues/`, `poc/`, or `adr/`. `make check` at the repo root runs `check.py` too.
+Run `sync.py` and then `check.py --strict` after any change to `issues/`, `poc/`, or `adr/`. `make planning-check` and `make check` at the repo root run it with `--strict`, so CI enforces the evidence rules.
 
 ## How the backlog is built
 
@@ -46,8 +46,8 @@ Numbers are stable. A done or parked issue keeps its number and its size.
 - **Evidence form** for a ticked box: `- [x] <criterion> · Delivered in PoC-N: <evidence>`, or `Delivered by:`, with each path in backticks or a link.
 - **To retire:** every box is ticked. Add a `Delivered by:` line under `## Acceptance criteria`. In `ROWS`, set the wave to `WD` and the note to `Was Wn. Retired <date>: ...`. Run sync, then check.
 - **To park:** in `ROWS`, set the wave to `WP` and the note to `Was Wn. Parked <date> ...`. First drop the row from the deps of every live issue: a live issue on a `WP` row fails `check.py`.
-- **`--strict`** adds: a ticked line has the evidence form; a cited path under `pocs/`, `packages/`, `deploy/`, `docs/`, or `.github/` exists; a `WD` issue has no open box and a `Delivered by:` line; a live issue with no open box fails ("retire it"). Not in `make check` yet.
-- `make harness-lint` fails when a ticked box cites a `::test_name` no test file defines.
+- **`--strict`** adds: a ticked line has the evidence form; a cited path under `pocs/`, `packages/`, `deploy/`, `docs/`, or `.github/` exists, and so does a `path#anchor` anchor; a `WD` issue has no open box and a `Delivered by:` line; a live issue with no open box fails ("retire it"). `make planning-check`, and so `make check` and CI, run it.
+- `make harness-lint` fails when a ticked box cites a `::test_name` no test file under `packages/`, `pocs/`, or `scripts/tests/` defines.
 
 ## Conventions
 

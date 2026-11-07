@@ -1,7 +1,7 @@
 ---
 title: "G-5: Cost model: GPU hosting cost vs API savings, with the break-even point"
 labels: ["story", "priority:P0", "phase:1-router", "area:router", "size:S", "layer:platform"]
-milestone: "W3 Simplifier SLM"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 31
 epic_id: G-5
 depends_on: ["005 G-3"]

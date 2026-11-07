@@ -1,7 +1,7 @@
 ---
 title: "M-3: Shadow mode: new model runs next to the current one without serving users"
 labels: ["story", "priority:P1", "phase:2-simplifier-slm", "area:lifecycle", "size:M", "layer:platform"]
-milestone: "W4 Simplifier agent live"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 47
 epic_id: M-3
 depends_on: ["037 M-2", "041 A-1", "042 A-2", "013 CH-2"]

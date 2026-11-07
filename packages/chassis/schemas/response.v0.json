@@ -75,6 +75,7 @@
       "title": "Context Ref"
     },
     "idempotency_key": {
+      "pattern": "^[\\x21-\\x7E]{1,255}$",
       "title": "Idempotency Key",
       "type": "string"
     },
@@ -89,6 +90,7 @@
       "type": "object"
     },
     "request_id": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
       "title": "Request Id",
       "type": "string"
     },
@@ -103,6 +105,7 @@
       "type": "string"
     },
     "trace_id": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
       "title": "Trace Id",
       "type": "string"
     },

@@ -221,9 +221,10 @@ async def test_the_context_a_workload_gets_differs_only_by_the_route(
 
 def _only_route_differs(before: Context, after: Context) -> None:
     """The context the workload gets differs only in the route, the config version it names, and
-    the per-run ids. Everything else (agent, budget, versions of chassis and prompt) is equal."""
+    the per-run ids and secret. Everything else (agent, budget, versions of chassis and prompt)
+    is equal."""
     a, b = before.model_dump(mode="json"), after.model_dump(mode="json")
-    per_run = {"request_id", "trace_id", "traceparent", "idempotency_key"}
+    per_run = {"request_id", "trace_id", "traceparent", "idempotency_key", "run_secret"}
     differing = {k for k in a if a[k] != b[k]} - per_run
     assert differing == {"model_route", "versions"}, differing
     va, vb = a["versions"], b["versions"]

@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "s
 milestone: "W9 Orchestrator"
 index: 99
 epic_id: O-1
-depends_on: ["008 H-14", "092 R-12", "098 O-10"]
+depends_on: ["008 H-14", "092 R-12", "098 O-10", "059 H-15"]
 blocks: ["100 O-2"]
 epic_refs: [Fig.3, F.6]
 ---
@@ -49,7 +49,7 @@ The orchestrator is the second agent class, and it must use the same interface a
 
 ## Dependencies
 
-- Depends on: [008 H-14](008-H-14-one-agent-interface.md), [092 R-12](092-R-12-main-pick-fallbacks.md), [098 O-10](098-O-10-orchestrator-schemas.md)
+- Depends on: [008 H-14](008-H-14-one-agent-interface.md), [092 R-12](092-R-12-main-pick-fallbacks.md), [098 O-10](098-O-10-orchestrator-schemas.md), [059 H-15](059-H-15-agent-factory-cli.md)
 - Blocks: [100 O-2](100-O-2-temporal-checkpoints.md)
 
 ## References

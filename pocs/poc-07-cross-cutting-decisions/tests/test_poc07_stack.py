@@ -9,6 +9,9 @@ OTel Collector, Jaeger). `network`; skipped unless `POC07_STACK=1`. CI runs it i
 
 Credentials come from the env file named by `POC07_ENV_FILE` (made by `stack.sh`). They are
 read into the process environment through `monkeypatch` and never printed or put in a message.
+The Collector's OTLP receiver needs the chassis's bearer token (`OTLP_CHASSIS_TOKEN`, review
+R7-15), so every export to it carries `Authorization=Bearer%20<token>` in
+`OTEL_EXPORTER_OTLP_HEADERS`, and a call without it answers 401.
 
 The read paths are the ones the `langfuse` 5.0.4 generated client calls (`langfuse/api/`):
 
@@ -88,6 +91,8 @@ class _Keys:
         self.secret = values["LANGFUSE_SECRET_KEY"]
         self.basic = values["LANGFUSE_AUTH"]
         """base64 of `public:secret`."""
+        self.otlp = values["OTLP_CHASSIS_TOKEN"]
+        """The Collector receiver's bearer token: only the chassis sends it."""
 
     def __repr__(self) -> str:
         return "_Keys(***)"
@@ -105,7 +110,12 @@ def keys() -> _Keys:
             values[name.strip()] = value.strip()
     missing = [
         n
-        for n in ("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_AUTH")
+        for n in (
+            "LANGFUSE_PUBLIC_KEY",
+            "LANGFUSE_SECRET_KEY",
+            "LANGFUSE_AUTH",
+            "OTLP_CHASSIS_TOKEN",
+        )
         if n not in values
     ]
     if missing:
@@ -139,6 +149,11 @@ def _export_to(monkeypatch: pytest.MonkeyPatch, endpoint: str, headers: str | No
     # Neither Langfuse nor the Collector's pipelines take metrics; the same in both runs.
     monkeypatch.setenv("OTEL_METRICS_EXPORTER", "none")
     monkeypatch.setenv("OTEL_SERVICE_NAME", "poc07-stack-test")
+
+
+def _collector_headers(keys: _Keys) -> str:
+    """The chassis's OTLP header for the Collector (the SDK URL-decodes it, so `%20`)."""
+    return f"Authorization=Bearer%20{keys.otlp}"
 
 
 def _poll(read: Callable[[], set[str]], want: set[str], wait_s: float) -> set[str]:
@@ -189,10 +204,10 @@ def _emit_run(trace_id: str) -> None:
 
 
 def test_same_spans_reach_langfuse_and_jaeger_through_the_collector(
-    langfuse: httpx.Client, monkeypatch: pytest.MonkeyPatch
+    langfuse: httpx.Client, keys: _Keys, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Criterion 1: "the same spans reach Langfuse and a second OpenTelemetry backend"."""
-    _export_to(monkeypatch, COLLECTOR)
+    _export_to(monkeypatch, COLLECTOR, _collector_headers(keys))
     trace_id = uuid.uuid4().hex
     _emit_run(trace_id)
 
@@ -222,6 +237,41 @@ def test_swap_to_direct_langfuse_by_exporter_config_only(
     assert want <= _poll(lambda: _langfuse_names(langfuse, trace_id), want, SPAN_WAIT_S)
     # The Collector is out of the path now, so Jaeger never sees this trace.
     assert _jaeger_names(trace_id) == set()
+
+
+# --- the Collector's receiver takes the chassis's token only (review R7-15) ---
+
+
+EMPTY_EXPORT = b"{}"
+"""An empty OTLP/JSON `ExportTraceServiceRequest`: valid, and it writes no span."""
+
+
+def _post_traces(authorization: str | None) -> httpx.Response:
+    headers = {"Content-Type": "application/json"}
+    if authorization is not None:
+        headers["Authorization"] = authorization
+    return httpx.post(
+        f"{COLLECTOR}/v1/traces", content=EMPTY_EXPORT, headers=headers, timeout=10, trust_env=False
+    )
+
+
+@pytest.mark.parametrize("sent", ["none", "wrong"])
+def test_collector_refuses_otlp_without_the_chassis_token(sent: str) -> None:
+    """Criterion 1: "by exporter config only": only the chassis may write spans that the
+    Collector sends on to Langfuse; no token, or a wrong one, is 401."""
+    authorization = None if sent == "none" else f"Bearer wrong-{uuid.uuid4().hex}"
+
+    answer = _post_traces(authorization)
+
+    assert answer.status_code == 401
+
+
+def test_collector_takes_otlp_with_the_chassis_token(keys: _Keys) -> None:
+    """Criterion 1: "by exporter config only": the same empty export with the chassis's token
+    is taken, so the 401 above is the token, not the body."""
+    answer = _post_traces(f"Bearer {keys.otlp}")
+
+    assert answer.status_code == 200
 
 
 # --- (b) criterion 2: LangfuseFeedback passes the FeedbackPort suite against the real Langfuse --
@@ -291,7 +341,7 @@ class TestLangfuseFeedbackOnTheStack(FeedbackPortContract):
 
 
 async def test_chassis_feedback_lands_on_the_run_trace(
-    langfuse: httpx.Client, langfuse_env: _Keys, monkeypatch: pytest.MonkeyPatch
+    langfuse: httpx.Client, langfuse_env: _Keys, keys: _Keys, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Feedback scope: "onto the call's trace", on a real Langfuse."""
     from chassis.profiles import REGISTRY
@@ -300,7 +350,7 @@ async def test_chassis_feedback_lands_on_the_run_trace(
     for port, adapter in (("telemetry", "otel"), ("feedback", "langfuse")):
         if adapter not in REGISTRY[port]:
             pytest.fail(f"REGISTRY[{port!r}] has no {adapter!r} yet (not merged)", pytrace=False)
-    _export_to(monkeypatch, COLLECTOR)
+    _export_to(monkeypatch, COLLECTOR, _collector_headers(keys))
     config = ChassisConfig.model_validate(
         {
             "version": "cfg-1",

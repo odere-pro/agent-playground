@@ -19,9 +19,17 @@ The stream is one SSE frame per event (`event: <type>`, `data: <event>`), then o
 frame with the collected envelope. The two headers are read raw, not declared as header
 parameters, so the operation's inputs are the body alone (the MCP tool's arguments, section 7).
 
-`x-chassis-interface: mcp`, also read raw, marks the MCP tool's call (`interfaces.mcp`): `stream`
-is read as false, telemetry is labeled `mcp`, and a body `trace_id` in use is re-minted, not 409.
-It grants nothing; any other value is native.
+A run error is a 200 envelope whose `output.error.message` is `public_message(code)`, never the
+run's own text, which can hold internal URLs or an upstream body (contract v8, item 1; R3-02).
+A stream's `error` frame carries the same text. `public_error` maps it at this back-mapping only:
+the collected `Response`, the result events, the idempotency cache, the span, and the log keep
+the raw (redacted) text, and a replay from the cache is mapped the same way.
+
+The MCP tool's call is marked by the ASGI scope flag `MCP_HOP_SCOPE_KEY`, which only the
+in-process hop sets (`interfaces.mcp`); a request header never counts (contract v8, item 6;
+R3-30). The flag carries trust: `stream` is read as false, the disconnect is not watched (the hop
+never sees its client leave), telemetry is labeled `mcp`, and a body `trace_id` in use is
+re-minted, not 409. A direct caller's `x-chassis-interface` header is ignored: its call is native.
 """
 
 from __future__ import annotations
@@ -33,8 +41,8 @@ from fastapi import APIRouter
 from fastapi import Request as HTTPRequest
 from pydantic import BaseModel, ConfigDict, Field, Strict, field_validator
 
-from chassis.core.envelope import Budget, Request, Response, TaskInput
-from chassis.core.events import Event
+from chassis.core.envelope import Budget, Id, IdempotencyKey, Request, Response, TaskInput
+from chassis.core.events import Error, Event
 from chassis.core.inbound import (
     Ids,
     Interface,
@@ -43,10 +51,11 @@ from chassis.core.inbound import (
     ReplyMeta,
     Served,
     StreamReply,
+    public_message,
     status_for,
 )
 from chassis.server.config import LimitsSpec
-from chassis.server.interfaces.errors import INTERFACE_KEY
+from chassis.server.interfaces.errors import INTERFACE_KEY, MCP_HOP_SCOPE_KEY
 from chassis.server.interfaces.ids import resolve_ids
 from chassis.server.interfaces.serve import event_stream_content, serve
 from chassis.server.pipeline import RunPipeline
@@ -59,16 +68,18 @@ __all__ = [
     "add_run_route",
     "describe_run",
     "native_router",
+    "public_error",
 ]
 
 
 class RunRequest(BaseModel):
-    """The `/v1/run` body: the native `Request` with the ids and the agent optional."""
+    """The `/v1/run` body: the native `Request` with the ids and the agent optional. The ids
+    carry the envelope's patterns (contract v8, item 3), so a bad body id is a 422."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
-    request_id: str | None = None
-    trace_id: str | None = None
-    idempotency_key: str | None = None
+    request_id: Id | None = None
+    trace_id: Id | None = None
+    idempotency_key: IdempotencyKey | None = None
     agent: str | None = None
     agent_version: str | None = None
     input: TaskInput
@@ -139,6 +150,24 @@ class DetailIssues(BaseModel):
     detail: list[ValidationIssue]
 
 
+def public_error(response: Response) -> Response:
+    """`response` with `output.error.message` set to `public_message(code)`, as a copy; any other
+    response as is. Never changes `response`."""
+    error = response.output.get("error")
+    if not isinstance(error, Mapping):
+        return response
+    message = public_message(str(error.get("code") or ""))
+    output = {**response.output, "error": {**error, "message": message}}
+    return response.model_copy(update={"output": output})
+
+
+def _public_event(event: Event) -> Event:
+    """An `error` event with `public_message(code)` as its message, as a copy; any other as is."""
+    if isinstance(event, Error):
+        return event.model_copy(update={"message": public_message(event.code)})
+    return event
+
+
 def _frame(name: str, payload: BaseModel) -> str:
     return f"event: {name}\ndata: {payload.model_dump_json()}\n\n"
 
@@ -174,15 +203,15 @@ class NativeInbound:
         )
 
     def complete(self, response: Response, meta: ReplyMeta) -> Reply:
-        return Reply(200, {}, response.model_dump(mode="json"))
+        return Reply(200, {}, public_error(response).model_dump(mode="json"))
 
     def stream(self, events: AsyncIterator[Event], meta: ReplyMeta) -> StreamReply:
         async def frames() -> AsyncIterator[str]:
-            seen: list[Event] = []
+            seen: list[Event] = []  # the raw events: `collect` is unchanged
             async for event in events:
                 seen.append(event)
-                yield _frame(event.type, event)
-            yield _frame("response", await meta.collect(seen))
+                yield _frame(event.type, _public_event(event))
+            yield _frame("response", public_error(await meta.collect(seen)))
 
         return StreamReply(frames())
 
@@ -295,9 +324,9 @@ def add_run_route(
             idempotency_key=body.idempotency_key,
         )
         adapter = inbound
-        if http.headers.get(INTERFACE_KEY) == "mcp":
-            # The MCP tool's call (section 7): complete only, labeled `mcp`, and a body trace_id
-            # in use is re-minted. No trust: a direct caller that sends it only loses streaming.
+        if http.scope.get(MCP_HOP_SCOPE_KEY) is True:
+            # The MCP tool's in-process call (module docstring): complete only, labeled `mcp`,
+            # and a body trace_id in use is re-minted. No header can set this flag.
             adapter, body = mcp_inbound, body.model_copy(update={"stream": False})
         # MCP's inner hop never sees its client leave; only a direct call is watched.
         watch = http.is_disconnected if adapter is inbound else None

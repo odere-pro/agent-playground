@@ -176,3 +176,19 @@ async def test_secret_guard_answers_the_input_text_when_the_server_intervenes_wi
 def test_mask_pii_masks_the_entity_when_the_text_holds_one(text: str, masked: str) -> None:
     """mask_pii puts each email, card, and phone number as its entity tag."""
     assert mask_pii(text) == masked
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "order 4111111111111112 shipped",  # a bare run that fails Luhn
+        "order 0123456789012 shipped",  # a bare digit run is never a phone
+        "on 2026-10-29 at noon",  # an ISO date
+        "from 192.168.10.20 ok",  # an IPv4 address
+        "version 1.12.3 ok",  # an x.y.z version
+    ],
+)
+def test_mask_pii_keeps_what_the_chassis_rules_keep(text: str) -> None:
+    """R1-04, as in `chassis.redaction`: a card needs the Luhn check, a phone needs a leading `+`
+    or a separator, and a date, an IPv4 address, or a version is not a phone."""
+    assert mask_pii(text) == text

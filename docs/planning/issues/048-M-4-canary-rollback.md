@@ -1,7 +1,7 @@
 ---
 title: "M-4: Canary rollout and one-step rollback"
 labels: ["story", "priority:P1", "phase:2-simplifier-slm", "area:lifecycle", "size:S", "layer:platform"]
-milestone: "W4 Simplifier agent live"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 48
 epic_id: M-4
 depends_on: ["047 M-3", "046 A-5"]

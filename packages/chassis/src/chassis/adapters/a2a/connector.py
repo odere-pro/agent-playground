@@ -18,6 +18,13 @@ a timeout, a transport failure, an early end, or a local refusal of the stream s
 stream raised (that is logged). One span per run; the task id is the span attribute
 `a2a.task_id`.
 
+Contract v8 (R2-11): one run's stream may send at most `STREAM_EVENTS_MAX` chassis events and
+`STREAM_BYTES_MAX` bytes (each item's protobuf size, counted before it is parsed; plain mode
+too). Past either cap the run ends with one `error {code: "a2a.stream_too_large", retryable:
+false}`, counted as `chassis.a2a.stream_capped{lane}` and set as the span attribute
+`a2a.stream_capped`, and the task is cancelled. Exception text in an `Error` is cut to
+`ERROR_MESSAGE_MAX`.
+
 Two hooks let a lane read another dialect (the plain-A2A mode of `remote`): `_message_for` builds
 the request, and `_translator_for` makes the run's `EventTranslator`, which turns each A2A stream
 item into raw events and says whether the remote's task is finished and what its id is. The base
@@ -61,7 +68,15 @@ from pydantic import ValidationError
 
 from chassis.adapters.a2a.mapping import BadJson, request_to_message, update_to_event
 from chassis.core.envelope import Context, Request
-from chassis.core.events import SCHEMA_VERSION, End, Error, Event, Start, parse_event
+from chassis.core.events import (
+    ERROR_MESSAGE_MAX,
+    SCHEMA_VERSION,
+    End,
+    Error,
+    Event,
+    Start,
+    parse_event,
+)
 from chassis.core.trace import trace_id_hex, traceparent_for
 from chassis.ports.engine import Lane
 from chassis.ports.telemetry import Span, TelemetryPort
@@ -76,6 +91,17 @@ CANCEL_TIMEOUT_S = 5.0
 """suggested: the cancel has its own short timeout; the run's budget may already be spent."""
 BAD_EVENT_TEXT = "the agent sent an event that is not valid"
 """suggested: the fixed `a2a.bad_event` message. The parse error's own text goes to the log."""
+STREAM_EVENTS_MAX = 10_000
+"""suggested: the most chassis events one run's stream may send (contract v8, R2-11)."""
+STREAM_BYTES_MAX = 4_194_304
+"""suggested: the most bytes (4 MiB, protobuf `ByteSize` per stream item) one run's stream may
+send, counted before the item is parsed."""
+STREAM_TOO_LARGE = "a2a.stream_too_large"
+"""The error code of a stream past either cap. Not retryable: HTTP 502 by `status_for`."""
+STREAM_TOO_LARGE_TEXT = "the agent sent more than the stream limit"
+"""suggested: the fixed message of `a2a.stream_too_large`."""
+STREAM_CAPPED = "chassis.a2a.stream_capped"
+"""suggested: the counter of a stream ended at a cap, labeled `lane`."""
 
 
 PROPAGATED = frozenset({"baggage"})
@@ -147,6 +173,17 @@ class ChassisTranslator:
         return [raw]
 
 
+def _task_id_of(response: StreamResponse) -> str | None:
+    """The task id one stream item names, or None."""
+    if response.HasField("task"):
+        return response.task.id or None
+    if response.HasField("status_update"):
+        return response.status_update.task_id or None
+    if response.HasField("artifact_update"):
+        return response.artifact_update.task_id or None
+    return None
+
+
 class _DeadlinePassed(Exception):
     """The run passed its deadline, `budget.timeout_ms` after the send (`a2a.timeout`)."""
 
@@ -162,6 +199,10 @@ class _Run:
     headers: dict[str, str]
     telemetry: TelemetryPort
     task_id: str | None = None
+    events: int = 0
+    """Chassis events read so far, against `STREAM_EVENTS_MAX`."""
+    bytes: int = 0
+    """Stream bytes read so far, against `STREAM_BYTES_MAX`."""
 
     def note_task_id(self) -> None:
         """Keep the translator's task id once it has one, and put it on the span, capped."""
@@ -218,8 +259,9 @@ class A2AConnector:
         )
 
     def _failure_text(self, code: str, exc: BaseException) -> str:
-        """The text of a timeout or transport `Error`: the exception text, in the base."""
-        return str(exc)
+        """The text of a timeout or transport `Error`: the exception text, in the base, cut to
+        `ERROR_MESSAGE_MAX` so the event stays valid."""
+        return str(exc)[:ERROR_MESSAGE_MAX]
 
     def _translator_for(self, request: Request) -> EventTranslator:
         """The reader of one run's stream. The base reads `chassis.event`."""
@@ -299,6 +341,10 @@ class A2AConnector:
                     retryable=True,
                 )
                 return
+            run.bytes += response.ByteSize()
+            if run.bytes > STREAM_BYTES_MAX:
+                yield self._capped(run, response)
+                return
             try:
                 raws = run.translator.feed(response)
             except BadJson as exc:
@@ -307,9 +353,26 @@ class A2AConnector:
                 return
             run.note_task_id()
             for event in self._events_from(raws, run.request):
+                run.events += 1
+                if run.events > STREAM_EVENTS_MAX:
+                    yield self._capped(run, response)
+                    return
                 yield event
                 if isinstance(event, End | Error):
                     return
+
+    def _capped(self, run: _Run, response: StreamResponse) -> Error:
+        """The stream passed a cap: one `a2a.stream_too_large`, counted and on the span. The
+        caller returns, and `_finish` cancels the task. An item past the byte cap is never fed,
+        so its task id, when the run has none yet, is read from the item itself."""
+        if run.task_id is None:
+            task_id = _task_id_of(response)
+            if task_id:
+                run.task_id = task_id
+                run.span.attributes["a2a.task_id"] = task_id[:SPAN_TASK_ID_CAP]
+        run.span.attributes["a2a.stream_capped"] = True
+        run.telemetry.counter(STREAM_CAPPED, lane=self.kind)
+        return Error(code=STREAM_TOO_LARGE, message=STREAM_TOO_LARGE_TEXT, retryable=False)
 
     def _events_from(self, raws: list[dict[str, Any]], request: Request) -> Iterator[Event]:
         """Each raw event parsed, lazily. One that fails `parse_event` is `a2a.bad_event`; a

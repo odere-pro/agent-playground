@@ -1,11 +1,11 @@
 ---
 title: "H-10: Service template: workload Dockerfile, Helm chart on the chassis library chart, CI (tests, signing, deploy, registration)"
-labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:L", "layer:chassis"]
+labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
 milestone: "W2 Chassis MVP"
 index: 25
 epic_id: H-10
 depends_on: ["015 H-8", "016 H-9", "024 CH-3"]
-blocks: ["026 CH-4", "038 X-1a", "041 A-1", "057 H-19", "058 CH-8", "059 H-15", "083 R-2", "104 O-3"]
+blocks: ["038 X-1a", "041 A-1", "057 H-19", "059 H-15", "062 H-11", "080 R-7", "083 R-2", "104 O-3"]
 epic_refs: [G.4, H]
 ---
 
@@ -60,7 +60,7 @@ Every service is built from one template, so a new service gets its workload ske
 ## Dependencies
 
 - Depends on: [015 H-8](015-H-8-testing-kit.md), [016 H-9](016-H-9-local-debug-profile.md), [024 CH-3](024-CH-3-helm-library-chart.md)
-- Blocks: [026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [038 X-1a](038-X-1a-terraform-first-cloud.md), [041 A-1](041-A-1-simplifier-core.md), [057 H-19](057-H-19-stateless-check-ci.md), [058 CH-8](058-CH-8-framework-event-mappings.md), [059 H-15](059-H-15-agent-factory-cli.md), [083 R-2](083-R-2-kubernetes-controller.md), [104 O-3](104-O-3-agent-pools-keda.md)
+- Blocks: [038 X-1a](038-X-1a-terraform-first-cloud.md), [041 A-1](041-A-1-simplifier-core.md), [057 H-19](057-H-19-stateless-check-ci.md), [059 H-15](059-H-15-agent-factory-cli.md), [062 H-11](062-H-11-adapter-package.md), [080 R-7](080-R-7-trust-levels.md), [083 R-2](083-R-2-kubernetes-controller.md), [104 O-3](104-O-3-agent-pools-keda.md)
 
 ## References
 

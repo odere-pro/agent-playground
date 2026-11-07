@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:5-registry", "area:registry", "size:M", 
 milestone: "W7 Registry and governance gate"
 index: 92
 epic_id: R-12
-depends_on: ["091 R-11"]
+depends_on: ["091 R-11", "086 R-10"]
 blocks: ["093 R-14", "099 O-1"]
 epic_refs: [F.3]
 ---
@@ -40,7 +40,7 @@ The orchestrator needs more than a ranked list. It needs one main pick and a cle
 
 ## Dependencies
 
-- Depends on: [091 R-11](091-R-11-hybrid-search.md)
+- Depends on: [091 R-11](091-R-11-hybrid-search.md), [086 R-10](086-R-10-health-checks.md)
 - Blocks: [093 R-14](093-R-14-registry-mcp-server.md), [099 O-1](099-O-1-orchestrator-agent.md)
 
 ## References

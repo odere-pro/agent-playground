@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 # PoC-8 drill stack: the chassis -> a real LiteLLM (Presidio hook, OTel callback) -> the fake
 # model; the chassis and LiteLLM -> the OTel Collector -> Jaeger.
-# Usage: stack.sh up|wait|down|digests|env|logs
+# Usage: stack.sh up|wait|down|digests|env|logs|stop <service>|start <service>
 #
 # Keys (ADR-001 hard requirement 1, as PoC-5's seed.sh and PoC-7's stack.sh do it):
 # - `up` makes the LiteLLM master key and the database password with `openssl rand` into
 #   .env.poc08-litellm (mode 600, git-ignored). Only the LiteLLM and Postgres services get them.
+# - `up` also makes the guardrail server's token (GUARDRAIL_TOKEN) into that file. LiteLLM gets
+#   it as GUARDRAIL_API_KEY; the guardrail server gets it as a Compose secret file (copied into
+#   the container, mode 0400). The chassis gets nothing new.
 # - Once LiteLLM answers, `up` mints one virtual key for the chassis through `/key/generate`. The
 #   master key goes to curl as a header on stdin (`-H @-`), never in argv; the new key goes from
 #   the response, through python, into .run/chassis.env (mode 600), which only the chassis loads.
 # - No value is printed. `logs` masks every value of both files. No `set -x`.
+#
+# `stop <service>` and `start <service>` are for the fail-closed drill: they act on one service of
+# `faultable` only, always in project poc08-litellm. `start` waits for the service's health.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
@@ -20,6 +26,8 @@ compose=(docker compose -p poc08-litellm --env-file "$env_file" -f "$here/docker
 # Everything but the chassis: it starts once its key exists.
 platform=(postgres fake-model-server guardrail-server presidio-analyzer presidio-anonymizer
   litellm jaeger otel-collector)
+# The services the drill may stop and start (`health_url` names what `start` polls).
+faultable=(guardrail-server presidio-analyzer presidio-anonymizer)
 litellm=http://127.0.0.1:4000
 model_route=big-default
 
@@ -27,12 +35,36 @@ make_env() {
   umask 077
   mkdir -p "$run_dir"
   [[ -f "$key_file" ]] || : >"$key_file"
-  [[ -f "$env_file" ]] && return 0
+  if [[ -f "$env_file" ]]; then
+    # An env file from before the guardrail server took a token: add one, keep the rest.
+    grep -q '^GUARDRAIL_TOKEN=' "$env_file" ||
+      echo "GUARDRAIL_TOKEN=$(openssl rand -hex 24)" >>"$env_file"
+    return 0
+  fi
   {
     # LiteLLM wants a master key that starts with `sk-`.
     echo "LITELLM_MASTER_KEY=sk-$(openssl rand -hex 24)"
     echo "LITELLM_DB_PASSWORD=$(openssl rand -hex 16)"
+    echo "GUARDRAIL_TOKEN=$(openssl rand -hex 24)"
   } >"$env_file"
+}
+
+# The health URL of a `faultable` service, polled from inside LiteLLM (both are internal).
+health_url() {
+  case $1 in
+    guardrail-server) echo http://guardrail-server:8095/health ;;
+    *) echo "http://$1:3000/health" ;;
+  esac
+}
+
+# Exits unless $1 is one of `faultable`.
+faultable_service() {
+  local name=${1:-} allowed
+  for allowed in "${faultable[@]}"; do
+    [[ $name == "$allowed" ]] && return 0
+  done
+  echo "stack.sh: '$name' is not one of: ${faultable[*]}" >&2
+  exit 2
 }
 
 # The fake model's script (model_script.py): the PII rules and the red-team triggers.
@@ -126,7 +158,8 @@ wait_ready() {
   poll http://127.0.0.1:8080/ready "$deadline"
 }
 
-# Masks every value of the two key files, and anything shaped like a LiteLLM key, in stdin.
+# Masks every value of the two key files (the guardrail token is in the env file), and anything
+# shaped like a LiteLLM key or a Bearer header, in stdin.
 redact() {
   python3 -I -c '
 import re, sys
@@ -168,6 +201,15 @@ case "${1:-}" in
     "${compose[@]}" down -v --remove-orphans
     rm -rf "$env_file" "$run_dir"
     ;;
+  stop)
+    faultable_service "${2:-}"
+    "${compose[@]}" stop "$2"
+    ;;
+  start)
+    faultable_service "${2:-}"
+    "${compose[@]}" start "$2"
+    poll_inside "$(health_url "$2")" $((SECONDS + ${POC08_LITELLM_START_WAIT_S:-180}))
+    ;;
   digests)
     # image@digest for each third-party image, to pin them in docker-compose.yaml.
     make_env
@@ -180,7 +222,7 @@ case "${1:-}" in
     echo "POC08_LITELLM_KEY_FILE=$key_file"
     ;;
   *)
-    echo "usage: $0 up|wait|down|digests|env|logs" >&2
+    echo "usage: $0 up|wait|down|digests|env|logs|stop <service>|start <service>" >&2
     exit 2
     ;;
 esac

@@ -39,6 +39,9 @@ release answers the other's entry with a final 409.
   `Claim.timeout_ms` is what is left of `wait_ms` (at least `MIN_RUN_MS`, suggested 500); `serve`
   runs it with that timeout, so the client never waits about twice its own. An entry gone
   between the claim attempt and the read is polled the same way, within the same deadline.
+  At most `MAX_WAITERS_PER_KEY` calls wait on one key per replica; the next is this 409 at
+  once, with no poll, counted as `WAITERS_FULL` (load shedding: the cluster bound is the cap
+  times the replicas, and nothing a retry needs is kept).
 - A final `Refusal("idempotency_in_progress")` (409, not retryable, its own `message`): the key
   holds a `too_large` marker (below), or an entry of another version (`v` is not 1, as in a
   rolling upgrade). The entry is left alone; counted as `.unknown_version` for the second. A
@@ -170,6 +173,12 @@ FENCE_FRACTION = 0.8
 """suggested: a claim is lost when no renew got through for this share of `lease_s`, measured on
 the replica's own monotonic clock from the send time of the last renew that did (or the claim).
 The store's lease runs at least `lease_s` from that send time, so the fence comes first."""
+
+MAX_WAITERS_PER_KEY = 16
+"""suggested: the most duplicates that poll the store for one in-flight key on one replica
+(R4-10). One more is 409 `idempotency_in_progress` (retryable) at once."""
+WAITERS_FULL = "chassis.idempotency.waiters_full"
+"""suggested: a duplicate refused because its key already had `MAX_WAITERS_PER_KEY` waiters."""
 
 RefusalCode = Literal["idempotency_conflict", "idempotency_in_progress", "state_unavailable"]
 
@@ -456,6 +465,8 @@ class Idempotency:
         self.clock = clock
         self.sleep = sleep
         self.renew_sleep = renew_sleep or sleep
+        self._waiters: dict[str, int] = {}
+        """The calls in the wait loop on this replica, by store key; load shedding only."""
 
     def reload(self, spec: IdempotencySpec) -> None:
         """Take a reloaded `spec.idempotency`. Only `ttl_s` reloads (`RELOADABLE`); a claim
@@ -489,6 +500,7 @@ class Idempotency:
         deadline = self.clock() + max(wait_ms, 0) / 1000
         poll_s = self.spec.wait_poll_ms / 1000
         waited = False
+        waiting = False
         try:
             while True:
                 sent = self.clock()
@@ -500,6 +512,10 @@ class Idempotency:
                 found = self._classify(await self.state.get(key), key, mine, request)
                 if not isinstance(found, _Pending):
                     return found
+                if not waiting:
+                    if not self._enter_wait(key):
+                        return self._refuse("idempotency_in_progress")
+                    waiting = True
                 count = found is _Pending.RUNNING and not waited
                 refusal = await self._wait_or_refuse(deadline, poll_s, count=count)
                 if refusal is not None:
@@ -508,6 +524,25 @@ class Idempotency:
         except StateUnavailable as exc:
             self.log("idempotency store failed", key, exc)
             return self._refuse("state_unavailable")
+        finally:
+            if waiting:
+                self._leave_wait(key)
+
+    def _enter_wait(self, key: str) -> bool:
+        """Count this call as a waiter on `key`; False (counted as `WAITERS_FULL`) at the cap."""
+        held = self._waiters.get(key, 0)
+        if held >= MAX_WAITERS_PER_KEY:
+            self.telemetry.counter(WAITERS_FULL)
+            return False
+        self._waiters[key] = held + 1
+        return True
+
+    def _leave_wait(self, key: str) -> None:
+        left = self._waiters.get(key, 0) - 1
+        if left > 0:
+            self._waiters[key] = left
+        else:
+            self._waiters.pop(key, None)
 
     async def _try_claim(
         self, request: Request, key: str, running: bytes, sent: float, deadline: float, waited: bool

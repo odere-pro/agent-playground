@@ -72,8 +72,76 @@ def test_collector_receives_otlp_http_and_reports_health() -> None:
     assert config["service"]["pipelines"]["traces"]["receivers"] == ["otlp"]
 
 
-MASK_TOKENS = ("<EMAIL_ADDRESS>", "<PHONE_NUMBER>", "<CREDIT_CARD>", "<IBAN_CODE>", "<US_SSN>")
-"""PoC-8: the chassis's entity set and tokens (`chassis.redaction`, ADR-008)."""
+OTLP_TOKEN = "OTLP_CHASSIS_TOKEN"
+"""R7-15: the Collector's receiver token, made by stack.sh into .env.poc07; the chassis sends it."""
+AUTHENTICATOR = "bearertokenauth"
+
+
+def test_collector_otlp_receiver_requires_a_bearer_token() -> None:
+    """Criterion 1: "by exporter config only": the OTLP/HTTP receiver names a bearer-token
+    server authenticator, so a sender without the chassis's token cannot write into Langfuse
+    (review R7-15)."""
+    config = _yaml(COLLECTOR)
+    http = config["receivers"]["otlp"]["protocols"]["http"]
+
+    assert http["auth"]["authenticator"] == AUTHENTICATOR
+    assert AUTHENTICATOR in config["extensions"]
+    assert AUTHENTICATOR in config["service"]["extensions"]
+    # The health check stays open: `stack.sh wait` polls it with no token.
+    assert "health_check" in config["service"]["extensions"]
+    assert "auth" not in config["extensions"]["health_check"]
+
+
+def test_collector_bearer_token_comes_from_the_environment_never_the_file() -> None:
+    """Criterion 1: "by exporter config only": the token is `${env:OTLP_CHASSIS_TOKEN}` (keys
+    `token` and `scheme` of contrib 0.163's bearertokenauth), never a literal."""
+    extension = _yaml(COLLECTOR)["extensions"][AUTHENTICATOR]
+
+    assert extension["token"] == f"${{env:{OTLP_TOKEN}}}"
+    assert extension.get("scheme", "Bearer") == "Bearer"
+    assert "tokens" not in extension
+    assert "filename" not in extension, "a filename would override `token`"
+
+
+def test_compose_gives_the_otlp_token_to_the_collector_only() -> None:
+    """Criterion 1: "by exporter config only": only otel-collector gets `OTLP_CHASSIS_TOKEN`,
+    from the env file and with no default; the chassis runs on the host and reads the file."""
+    holders = {
+        name: (svc.get("environment") or {}).get(OTLP_TOKEN)
+        for name, svc in _yaml(COMPOSE)["services"].items()
+        if OTLP_TOKEN in (svc.get("environment") or {})
+    }
+
+    assert holders == {"otel-collector": f"${{{OTLP_TOKEN}:?}}"}
+
+
+def test_stack_sh_generates_the_otlp_token() -> None:
+    """Criterion 1: "by exporter config only": `stack.sh` makes the token with `openssl rand`
+    into the env file, and `logs` masks Bearer values."""
+    script = _code(STACK_SH)
+
+    assert re.search(rf'echo "{OTLP_TOKEN}=\$\(openssl rand -hex \d+\)"', script)
+    assert re.search(r"shapes = re\.compile\(.*Bearer", script), "redact() masks Bearer values"
+
+
+def test_the_stack_tests_send_the_token_to_the_collector() -> None:
+    """Criterion 1: "by exporter config only": the drill exports to the Collector with the
+    token from the env file, as the chassis's OTLP header."""
+    text = (Path(__file__).parent / "test_poc07_stack.py").read_text()
+
+    assert "Authorization=Bearer%20" in text
+    assert f'"{OTLP_TOKEN}"' in text
+
+
+MASK_TOKENS = (
+    "<SECRET>",
+    "<EMAIL_ADDRESS>",
+    "<PHONE_NUMBER>",
+    "<CREDIT_CARD>",
+    "<IBAN_CODE>",
+    "<US_SSN>",
+)
+"""PoC-8: the chassis's entity set and tokens (`chassis.redaction`, ADR-008; R1-07 `SECRET`)."""
 
 
 def _log_redaction_statements() -> str:
@@ -328,7 +396,8 @@ def _run_span_rules(attributes: dict[str, str]) -> dict[str, str]:
             match = _REPLACE.match(statement)
             if match is None:
                 raise ValueError(f"not a save, restore, or replace statement: {statement}")
-            out = {k: re.sub(match.group(1), match.group(2), v) for k, v in out.items()}
+            pattern = re.sub(r'\\([\\"])', r"\1", match.group(1))  # undo the OTTL escapes
+            out = {k: re.sub(pattern, match.group(2), v) for k, v in out.items()}
     return out
 
 

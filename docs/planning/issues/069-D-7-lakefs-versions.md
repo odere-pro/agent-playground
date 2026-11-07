@@ -5,7 +5,7 @@ milestone: "W6 Golden set and evaluator SLM"
 index: 69
 epic_id: D-7
 depends_on: ["064 D-1"]
-blocks: ["070 D-4", "071 D-8", "121 X-4"]
+blocks: ["070 D-4", "071 D-8"]
 epic_refs: [H, R7, R8]
 ---
 
@@ -24,7 +24,7 @@ A model is only reproducible if the exact data it trained on can be read back la
 
 ## Reuse
 
-- **Decision:** lakeFS moved to the Business Source License 1.1 from v1.87.0 (2026-09-22). Unmodified internal use is allowed. Options: keep lakeFS and accept the license, use DVC (Apache 2.0, Git-based), or use Langfuse dataset versions if 064 D-1 moves to Langfuse. Record the choice in DEC-1.
+- **Decision:** lakeFS moved to the Business Source License 1.1 from v1.87.0 (2026-09-22). Unmodified internal use is allowed. Options: keep lakeFS and accept the license, use DVC (Apache 2.0, Git-based), or use Langfuse dataset versions if 064 D-1 moves to Langfuse. Decided in ADR-010 item 2: default Langfuse dataset versions; lakeFS only if exports must be byte-identical objects.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
 
 ## Out of scope
@@ -45,7 +45,7 @@ A model is only reproducible if the exact data it trained on can be read back la
 ## Dependencies
 
 - Depends on: [064 D-1](064-D-1-golden-set-agent.md)
-- Blocks: [070 D-4](070-D-4-export-formats.md), [071 D-8](071-D-8-data-rules.md), [121 X-4](121-X-4-backups-restore.md)
+- Blocks: [070 D-4](070-D-4-export-formats.md), [071 D-8](071-D-8-data-rules.md)
 
 ## References
 

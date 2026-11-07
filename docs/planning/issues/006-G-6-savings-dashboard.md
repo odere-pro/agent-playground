@@ -1,6 +1,6 @@
 ---
-title: "G-6: Savings dashboard with live token spend"
-labels: ["story", "priority:P0", "phase:1-router", "area:router", "size:M", "layer:platform"]
+title: "G-6: Token and cost dashboard with live spend"
+labels: ["story", "priority:P0", "phase:1-router", "area:router", "size:S", "layer:platform"]
 milestone: "W1 Router and baseline"
 index: 6
 epic_id: G-6

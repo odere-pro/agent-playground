@@ -34,7 +34,6 @@ import json
 import re
 import threading
 import time
-import warnings
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -202,17 +201,10 @@ def test_a_run_sees_no_process_and_no_run_secret_of_a_concurrent_run() -> None:
         assert not held.done(), "run B ended before run A scanned; raise its hold"
         (b_scan,) = held.result()
     assert b_scan.holders >= 1, b_scan
-    # The positive control for the secret scan: run B must find its own secret, so a zero in
-    # run A is not a grep that never matches or an environ that cannot be read. The per-run
-    # secret comes with contract v7 (P-A); on a chassis without it the secret half is unproven,
-    # and the test says so instead of passing on a zero.
-    if b_scan.secrets == 0:
-        warnings.warn(
-            "x-chassis-run-secret not seen in run B: the secret half of this test is unproven",
-            stacklevel=1,
-        )
-    else:
-        assert b_scan.secrets == 1, b_scan
+    # The positive control for the secret scan: run B finds its own `x-chassis-run-secret`
+    # (contract v8), so a zero in run A is not a grep that never matches or an environ that
+    # cannot be read.
+    assert b_scan.secrets == 1, b_scan
     assert a_scan.host != b_scan.host, (a_scan, b_scan)
     assert seen.uid(a_scan.host) != seen.uid(b_scan.host), (a_scan, b_scan)
     assert a_scan.holders == 0, a_scan

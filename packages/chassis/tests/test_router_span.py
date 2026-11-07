@@ -115,4 +115,65 @@ async def test_an_uncorrelated_call_has_a_route_span_too() -> None:
     assert isinstance(telemetry, InMemoryTelemetry)
     (span,) = [s for s in telemetry.spans if s.name == ROUTE_SPAN]
     assert span.attributes["correlated"] is False
-    assert span.attributes["route"] == "big-default"
+    assert span.attributes["route.requested"] == "big-default"
+    assert span.attributes["route"] == "fake-route", "pinned to `spec.model.route` (R6)"
+
+
+DEFAULT_ROUTE = "fake-route"  # `spec.model.route` when the config names none
+OTHER_ROUTE = "some-other-route"
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [("/v1/chat/completions", CHAT), ("/v1/messages", MESSAGES)],
+    ids=["openai", "anthropic"],
+)
+async def test_an_uncorrelated_call_naming_another_route_is_sent_to_the_default_route(
+    path: str, body: dict[str, Any]
+) -> None:
+    """R6: a call with no run cannot pick its route; it goes to `spec.model.route` (design 10)."""
+    ports = _ports()
+    app = create_app(ChassisConfig.model_validate(CONFIG), ports)
+    async with _client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+        res = await client.post(path, json={**body, "model": OTHER_ROUTE})
+    assert res.status_code == 200, res.text
+    telemetry = ports.telemetry
+    assert isinstance(telemetry, InMemoryTelemetry)
+    (span,) = [s for s in telemetry.spans if s.name == ROUTE_SPAN]
+    assert span.attributes["correlated"] is False
+    assert span.attributes["route.requested"] == OTHER_ROUTE
+    assert span.attributes["route"] == DEFAULT_ROUTE
+    assert span.attributes["route.forced"] is True
+    (call,) = [s for s in telemetry.spans if s.name == "chassis.model.call"]
+    assert call.attributes["route"] == DEFAULT_ROUTE
+    assert telemetry.counter_value("chassis.model_route_pinned", route=DEFAULT_ROUTE) == 1
+    assert telemetry.counter_value("chassis.model_route_forced", route=DEFAULT_ROUTE) == 0
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [("/v1/chat/completions", CHAT), ("/v1/messages", MESSAGES)],
+    ids=["openai", "anthropic"],
+)
+async def test_a_correlated_call_naming_another_route_keeps_its_route(
+    path: str, body: dict[str, Any]
+) -> None:
+    """The pin is for uncorrelated calls only: a run's call keeps the route it names."""
+    ports = _ports()
+    app = create_app(ChassisConfig.model_validate(CONFIG), ports)
+    request, ctx = _run()
+    async with (
+        _client(create_proxy_app(app)) as client,
+        app.router.lifespan_context(app),
+        app.state.runs.register(request, ctx),
+    ):
+        res = await client.post(
+            path, json={**body, "model": OTHER_ROUTE}, headers={"traceparent": TRACEPARENT}
+        )
+    assert res.status_code == 200, res.text
+    telemetry = ports.telemetry
+    assert isinstance(telemetry, InMemoryTelemetry)
+    (span,) = [s for s in telemetry.spans if s.name == ROUTE_SPAN]
+    assert span.attributes["route"] == OTHER_ROUTE
+    assert span.attributes["route.forced"] is False
+    assert telemetry.counter_value("chassis.model_route_pinned", route=DEFAULT_ROUTE) == 0

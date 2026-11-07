@@ -155,10 +155,15 @@ def test_store_key_returns_a_key_when_the_key_is_a_lone_surrogate() -> None:
 
 
 async def test_begin_claims_the_key_when_it_is_a_lone_surrogate() -> None:
-    """`begin` with a lone-surrogate key claims it like any other key."""
-    idem = Idempotency(InMemoryState(), SPEC, InMemoryTelemetry())
+    """`begin` with a lone-surrogate key claims it like any other key.
 
-    outcome = await idem.begin(_request(key="\ud800"), wait_ms=0)
+    `Request` refuses such a key since contract v8 (`KEY_PATTERN`, R4-27), so the key is set on an
+    unvalidated copy: `begin` stays safe for a key that reached it some other way.
+    """
+    idem = Idempotency(InMemoryState(), SPEC, InMemoryTelemetry())
+    request = _request().model_copy(update={"idempotency_key": "\ud800"})
+
+    outcome = await idem.begin(request, wait_ms=0)
 
     assert isinstance(outcome, Claim)
     await outcome.release()

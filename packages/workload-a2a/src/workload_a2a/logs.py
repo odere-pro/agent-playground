@@ -15,6 +15,9 @@ from `trace_id_of`: the A2A request's `traceparent` header, else `ctx["tracepare
 `ctx["trace_id"]`. A line the workload logs anywhere inside `handle` carries both. uvicorn's
 access line is written outside `handle` and carries neither.
 
+**The a2a-sdk stays at WARNING.** At DEBUG it logs each JSON-RPC body, which holds
+`chassis.ctx.run_secret`; `configure_logging` pins the `a2a` loggers whatever the level.
+
 **No redaction here.** Unlike the chassis's lines, these are not redacted in process: the OTel
 Collector's log pipeline redacts workload logs (ADR-007 item 7). Do not copy `chassis.redaction`.
 """
@@ -44,6 +47,9 @@ __all__ = [
 
 REQUEST_FIELDS = ("request_id", "trace_id")
 UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
+A2A_LOGGER = "a2a"
+"""The a2a-sdk's loggers (`a2a.*`). Pinned to WARNING at every level: at DEBUG the SDK logs the
+JSON-RPC body, and the body holds `chassis.ctx.run_secret` (contract v8)."""
 _HEX32 = re.compile(r"[0-9a-f]{32}")
 _TRACEPARENT = re.compile(r"[0-9a-f]{2}-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}")
 _NO_TRACE = "0" * 32
@@ -146,7 +152,8 @@ _LEVELS |= {"error": logging.ERROR, "critical": logging.CRITICAL}
 
 def configure_logging(*, agent: str, level: str = "info", stream: IO[str] | None = None) -> None:
     """One JSON handler on the root logger, at `level`. Called again, it replaces its own handler
-    and leaves any other alone. uvicorn's loggers lose their handlers and write through the root."""
+    and leaves any other alone. uvicorn's loggers lose their handlers and write through the root.
+    The a2a-sdk's loggers stay at WARNING whatever `level` is (`A2A_LOGGER`)."""
     root = logging.getLogger()
     for handler in [h for h in root.handlers if isinstance(h.formatter, JsonFormatter)]:
         root.removeHandler(handler)
@@ -154,6 +161,7 @@ def configure_logging(*, agent: str, level: str = "info", stream: IO[str] | None
     handler.setFormatter(JsonFormatter(agent=agent))
     root.addHandler(handler)
     root.setLevel(_LEVELS.get(level.lower(), logging.INFO))
+    logging.getLogger(A2A_LOGGER).setLevel(logging.WARNING)
     for name in UVICORN_LOGGERS:
         named = logging.getLogger(name)
         named.handlers.clear()

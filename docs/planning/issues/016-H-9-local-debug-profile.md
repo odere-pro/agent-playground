@@ -4,7 +4,7 @@ labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:S", "l
 milestone: "W2 Chassis MVP"
 index: 16
 epic_id: H-9
-depends_on: ["010 H-12", "011 H-2", "014 H-7", "009 CH-1"]
+depends_on: ["011 H-2", "009 CH-1"]
 blocks: ["018 H-18", "020 X-8", "024 CH-3", "025 H-10", "084 R-3"]
 epic_refs: [G.4]
 ---
@@ -42,7 +42,7 @@ The whole platform must run locally with `docker compose up`; this is an epic ac
 
 ## Dependencies
 
-- Depends on: [010 H-12](010-H-12-config-loader.md), [011 H-2](011-H-2-inbound-adapters.md), [014 H-7](014-H-7-observability.md), [009 CH-1](009-CH-1-engine-connectors-a2a.md)
+- Depends on: [011 H-2](011-H-2-inbound-adapters.md), [009 CH-1](009-CH-1-engine-connectors-a2a.md)
 - Blocks: [018 H-18](018-H-18-idempotency.md), [020 X-8](020-X-8-event-broker.md), [024 CH-3](024-CH-3-helm-library-chart.md), [025 H-10](025-H-10-template-repo.md), [084 R-3](084-R-3-docker-watcher.md)
 
 ## References

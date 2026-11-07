@@ -1,11 +1,11 @@
 ---
 title: "O-3: Agent pools on task queues with KEDA autoscaling"
-labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:M", "layer:platform"]
+labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:L", "layer:platform"]
 milestone: "W9 Orchestrator"
 index: 104
 epic_id: O-3
 depends_on: ["025 H-10", "100 O-2"]
-blocks: ["105 O-4", "120 X-7", "122 X-5"]
+blocks: ["105 O-4", "133 X-5b"]
 epic_refs: [F.6, J]
 ---
 
@@ -36,7 +36,7 @@ Agents run in pools: groups of identical stateless containers behind Temporal ta
 ## Out of scope
 
 - Fan-out logic (105 O-4).
-- The cost dashboard per agent (120 X-7) and the load tests (122 X-5). The pool load tests are X-5b (added in PR-R).
+- The cost dashboard per agent (120 X-7) and the load tests (122 X-5). The pool load tests are 133 X-5b.
 - GPU node setup (039 X-2).
 - A `remote` workload pod that scales on its own. The product plan runs a `remote` pod as one replica with no HPA; this is `later`.
 
@@ -54,7 +54,7 @@ Agents run in pools: groups of identical stateless containers behind Temporal ta
 ## Dependencies
 
 - Depends on: [025 H-10](025-H-10-template-repo.md), [100 O-2](100-O-2-temporal-checkpoints.md)
-- Blocks: [105 O-4](105-O-4-fan-out-fan-in.md), [120 X-7](120-X-7-cost-dashboard.md), [122 X-5](122-X-5-load-tests.md)
+- Blocks: [105 O-4](105-O-4-fan-out-fan-in.md), [133 X-5b](133-X-5b-load-tests-pools-registry.md)
 
 ## References
 

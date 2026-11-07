@@ -4,8 +4,8 @@ labels: ["story", "priority:P1", "phase:4-golden-set", "area:data", "size:S", "l
 milestone: "W6 Golden set and evaluator SLM"
 index: 68
 epic_id: D-3
-depends_on: ["067 D-5", "030 S-4"]
-blocks: ["070 D-4", "071 D-8", "106 O-5", "113 O-9"]
+depends_on: ["067 D-5", "037 M-2"]
+blocks: ["070 D-4", "071 D-8", "106 O-5"]
 epic_refs: [H]
 ---
 
@@ -49,8 +49,8 @@ Golden sets also come from outside the recorder: hand-labeled files, other teams
 
 ## Dependencies
 
-- Depends on: [067 D-5](067-D-5-import-schema-dedup.md), [030 S-4](030-S-4-hand-review-test-set.md)
-- Blocks: [070 D-4](070-D-4-export-formats.md), [071 D-8](071-D-8-data-rules.md), [106 O-5](106-O-5-compare-runs.md), [113 O-9](113-O-9-orchestrator-memory.md)
+- Depends on: [067 D-5](067-D-5-import-schema-dedup.md), [037 M-2](037-M-2-eval-gate-ci.md)
+- Blocks: [070 D-4](070-D-4-export-formats.md), [071 D-8](071-D-8-data-rules.md), [106 O-5](106-O-5-compare-runs.md)
 
 ## References
 

@@ -5,8 +5,9 @@ replaced `echo_claude_agent.handle.query_fn` with replayed SDK messages, which n
 chassis. This stand-in goes one step further, so the chassis stages see a real Claude run:
 
 - It reads what the workload hands the CLI (`ClaudeAgentOptions`): `ANTHROPIC_BASE_URL`,
-  `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_MODEL`, `ANTHROPIC_CUSTOM_HEADERS` (the `traceparent`), the
-  system prompt, and the `chassis` MCP server's URL and headers.
+  `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_MODEL`, `ANTHROPIC_CUSTOM_HEADERS` (one header per line:
+  `traceparent` and the run secret), the system prompt, and the `chassis` MCP server's URL and
+  headers.
 - It lists the MCP tools, then calls `POST /v1/messages` on the chassis model proxy in a loop: a
   `tool_use` block is a call to the chassis `/mcp`, its result goes back as a `tool_result`.
 - It yields the SDK message objects the real CLI would (`AssistantMessage`, `UserMessage` with
@@ -40,14 +41,16 @@ MAX_TOKENS = 1024
 
 
 def _headers(env: Mapping[str, str]) -> dict[str, str]:
-    """What the CLI sends: the bearer and the custom headers (`name: value`)."""
+    """What the CLI sends: the bearer and the custom headers, one `Name: Value` per line
+    (contract v8: `traceparent` and `x-chassis-run-secret`)."""
     headers = {
         "authorization": f"Bearer {env['ANTHROPIC_AUTH_TOKEN']}",
         "anthropic-version": "2023-06-01",
     }
-    name, _, value = env.get("ANTHROPIC_CUSTOM_HEADERS", "").partition(":")
-    if name.strip() and value.strip():
-        headers[name.strip().lower()] = value.strip()
+    for line in env.get("ANTHROPIC_CUSTOM_HEADERS", "").splitlines():
+        name, _, value = line.partition(":")
+        if name.strip() and value.strip():
+            headers[name.strip().lower()] = value.strip()
     return headers
 
 

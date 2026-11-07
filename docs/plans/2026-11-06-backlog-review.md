@@ -1,7 +1,9 @@
 # Backlog review 2026-11-06: re-verify the backlog against the agent container product plan
 
-Status: in progress
+Status: done
 Date: 2026-11-06
+
+Done on 2026-11-07. Merged as PRs #67, #69, #74, #77, #82, #88, #93, and the close. The results and what is left for owners are in [verification.md](../reviews/2026-11-06-backlog-review/verification.md).
 
 ## Context
 

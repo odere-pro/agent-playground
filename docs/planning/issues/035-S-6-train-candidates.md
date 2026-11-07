@@ -1,7 +1,7 @@
 ---
 title: "S-6: Train candidates on Qwen3, Gemma 3, and Llama 3.2, and pick the best"
 labels: ["story", "priority:P0", "phase:2-simplifier-slm", "area:slm", "size:L", "layer:platform"]
-milestone: "W3 Simplifier SLM"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 35
 epic_id: S-6
 depends_on: ["031 G-5", "033 S-5"]

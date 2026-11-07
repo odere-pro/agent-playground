@@ -1,11 +1,11 @@
 ---
 title: "CH-4: Chassis-only credentials for every internal service, and default-deny egress per workload pod"
-labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
+labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:L", "layer:chassis"]
 milestone: "W2 Chassis MVP"
 index: 26
 epic_id: CH-4
-depends_on: ["002 G-1", "020 X-8", "022 H-6", "025 H-10"]
-blocks: ["038 X-1a", "041 A-1", "055 CH-6"]
+depends_on: ["002 G-1", "024 CH-3"]
+blocks: ["038 X-1a", "041 A-1", "055 CH-6", "132 CH-13"]
 epic_refs: [G.3, G.4]
 ---
 
@@ -67,8 +67,8 @@ This is hard requirement 1 of [ADR-001](../adr/001-chassis-delivery-model.md). T
 
 ## Dependencies
 
-- Depends on: [002 G-1](002-G-1-litellm-router.md), [020 X-8](020-X-8-event-broker.md), [022 H-6](022-H-6-security-middleware.md), [025 H-10](025-H-10-template-repo.md)
-- Blocks: [038 X-1a](038-X-1a-terraform-first-cloud.md), [041 A-1](041-A-1-simplifier-core.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md)
+- Depends on: [002 G-1](002-G-1-litellm-router.md), [024 CH-3](024-CH-3-helm-library-chart.md)
+- Blocks: [038 X-1a](038-X-1a-terraform-first-cloud.md), [041 A-1](041-A-1-simplifier-core.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [132 CH-13](132-CH-13-owasp-agentic-map.md)
 
 ## References
 
