@@ -17,8 +17,8 @@ Routing rules make orchestration config: a task maps to a workflow, and changing
 
 - `routing` rules from the orchestrator config: `match: { task }` picks a `workflow`, and `default` says what happens when nothing matches.
 - Planner modes (`planner.mode`): `fixed` runs only configured workflows and rejects unmatched tasks; `planned` lets the smart model plan every run; `hybrid` uses a workflow when a rule matches and plans otherwise.
-- The planner calls `planner.model_route` (for example `big-planner`) through the model port, with the task and only the registry's top matches (`top_k`, `min_trust`).
-- The planner returns a plan in the workflow shape, as JSON with guided decoding, checked against `workflow.schema.json` before it runs.
+- The planner calls `planner.model_route` (suggested: a `planner` route in the route map, `docs/specs/models.md`) through the model port, with the task and only the registry's top matches (`top_k`, `min_trust`).
+- The planner returns a plan in the workflow shape, as JSON. The planner validates it against `workflow.schema.json` before it runs, and retries once on a failure. `ModelPort` has no structured-output field, and guided decoding is parked with the vLLM work.
 - The plan runs on the workflow engine and is kept with the run.
 - A new or changed rule takes effect on the next run after the config reload. Running runs keep their pinned config.
 - The planner route, tokens, and cost show in the run's metrics.
@@ -33,10 +33,10 @@ Routing rules make orchestration config: a task maps to a workflow, and changing
 
 - [ ] With `mode: fixed`, a matched task runs its workflow, and an unmatched task is rejected with a clear error.
 - [ ] With `mode: planned`, every task is planned, and the plan passes the workflow schema before it runs.
-- [ ] With `mode: hybrid`, `simplify_text` runs `simplify-long-doc`, and an unknown task is planned.
-- [ ] Pointing the `simplify_text` rule at another workflow in the config store changes the next run, with no deploy or restart.
+- [ ] With `mode: hybrid`, the echo agent's task runs `echo-long-doc`, and an unknown task is planned.
+- [ ] Pointing the echo task's rule at another workflow in the config store changes the next run, with no deploy or restart.
 - [ ] The planner prompt holds at most `top_k` registry entries, all at or above `min_trust`.
-- [ ] A plan that fails the schema is not run; the run fails with the schema errors.
+- [ ] A plan that fails the schema is retried once. A second failure is not run, and the run fails with the schema errors.
 
 ## Dependencies
 

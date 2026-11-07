@@ -11,7 +11,7 @@ epic_refs: [G.4, H]
 
 ## Why
 
-Every service is built from one template, so a new service gets its workload skeleton, Dockerfile, Helm chart, and CI with no extra work. Under [ADR-001](../adr/001-chassis-delivery-model.md), the template holds only the workload. The chassis comes as the generic chassis image, added by the shared library chart (024 CH-3), and is never copied into the service repo. With this issue, the echo agent runs in Kubernetes in the `sidecar` lane and passes contract tests in CI, as the Phase 0 done-when asks. The registry registration step is a stub until the registry exists (076 R-1) and the controller replaces it (083 R-2).
+Every service is built from one template, so a new service gets its workload skeleton, Dockerfile, Helm chart, and CI with no extra work. Under [ADR-001](../adr/001-chassis-delivery-model.md), the template holds only the workload. The chassis comes as the generic chassis image, added by the shared library chart (024 CH-3), and is never copied into the service repo. This issue is the template side: a new agent repo that passes CI on its own, signs its image, and carries a chart on the library chart. The cluster deploy is 038 X-1a's. Registration is by label, through the controller (083 R-2).
 
 ## What
 
@@ -19,18 +19,14 @@ Every service is built from one template, so a new service gets its workload ske
   - `handle`, and the small A2A server from 009 CH-1 that wraps it on localhost;
   - the echo workload;
   - an example config, with `spec.engine.connector: sidecar`.
+- Built in PoC-9 as a Copier template in `packages/agentctl/src/agentctl/template/`. The template depends on `packages/workload-a2a`, the Python template server, instead of copying files ([ADR-002](../adr/002-template-a2a-server-placement.md) item 4, amended 2026-10-01). Its TypeScript port is `packages/workloads/echo-typescript/src/a2a_server.ts`, with an inbound bearer flag (`packages/workloads/echo-typescript/src/auth.ts`).
 - No chassis code is copied into the repo. The chassis comes as the generic chassis image, with its tag set in the library chart.
 - A template rule: input text is treated as data. It goes to the model in its own message, never merged into the system prompt. In the `sidecar` lane, the workload builds the prompt, so the chassis cannot enforce this (moved from 022 H-6). A contract test checks it. LiteLLM's prompt-injection guardrails stay the hard control.
-- A Dockerfile that builds the workload image only: Python 3.12 and uv, a small image, a non-root user.
-- A Helm chart that includes the shared library chart (024 CH-3). The library chart adds the chassis sidecar with a pinned tag. The service's own values set the replicas from `scaling`, the config store location, secret references through External Secrets, and the labels the registry controller will watch.
+- A Dockerfile that builds the workload image only: Python 3.12 and uv, a small image, a non-root user. The PoC-2 Dockerfiles are the starting point: uid 10001, the base pinned by digest, and all four ran hardened (`cap_drop: ALL`, `no-new-privileges`, `read_only` with a `tmpfs` on `/tmp`) in [the Compose demo](../../../pocs/poc-02-two-engines-one-contract/demo/2026-10-01-demo-sidecar.md).
+- A Helm chart that includes the shared library chart (024 CH-3). The library chart adds the chassis sidecar with a pinned tag. The service's own values set the replicas from `scaling`, the config store location, secret references through External Secrets, and the registration label the controller watches.
 - The Service points at the chassis port only. Probes run on the chassis's `/health` and `/ready`. Secrets are mounted into the chassis container only.
-- CI (suggested: GitHub Actions): lint, unit tests, and the contract suite from 015 H-8, run over both transports: over A2A on localhost and in memory.
-- Image signing with cosign, and a Kyverno policy that refuses unsigned images at deploy.
-- Deploy with Argo CD from the Helm chart (GitOps) to a dev cluster (suggested: a local test cluster until 038 X-1a builds the cloud one).
-- A registry registration step that only prints the manifest it would send.
-- Status after PoC-2: the template has two parts to draw on: `packages/workload-a2a`, the Python template server (`workload-a2a serve --handle module:attribute`), and its TypeScript port in `packages/workloads/echo-typescript/src/a2a_server.ts`. [ADR-002](../adr/002-template-a2a-server-placement.md) item 4 is amended (2026-10-01): one shared package, not an `a2a_server.py` per workload, so the template depends on `workload-a2a` instead of copying files. Each workload Dockerfile from PoC-2 is a starting point: non-root uid 10001, the base pinned by digest (the Node base too, since 2026-10-01), and all four ran hardened (`cap_drop: ALL`, `no-new-privileges`, `read_only` with a `tmpfs` on `/tmp`) in [the Compose demo](../../../pocs/poc-02-two-engines-one-contract/demo/2026-10-01-demo-sidecar.md). Carried in from 009 CH-1: the Python template server cannot interrupt `handle` mid-await.
-- Status after PoC-6: the TypeScript agent has an inbound bearer flag and prunes finished tasks (`packages/workloads/echo-typescript/src/auth.ts`, `test/auth.test.ts`, `test/prune.test.ts`). This closes the PoC-5 gap "the TypeScript template has no inbound token flag". `trustedRepositories` is still a hand-kept ConfigMap; PoC-6 added one entry (`echo-openai-agents`).
-- Status after PoC-9 ([open items](../../../pocs/poc-09-agent-mvp-template/notes/2026-10-30-open-items.md)): the template is built as a Copier template in `packages/agentctl/src/agentctl/template/`. A rendered agent names the platform through a git-ignored `.platform` link, made from `PLATFORM_PATH`, so a fresh clone passes `lint`, `test`, and its suites with no edits, on all six engines. Not on a hosted runner yet. CI signs the image with keyless cosign after the suites, and pins the platform by commit SHA. Not built here: the Kyverno refusal, Argo CD, the cluster run, and publishing the platform packages, which replaces the link.
+- CI on GitHub Actions: lint, unit tests, and the contract suite from 015 H-8, run over both transports: over A2A on localhost and in memory. CI signs the image after the suites (suggested: keyless cosign).
+- A pinned platform. Today a rendered agent names the platform through a git-ignored `.platform` link, made from `PLATFORM_PATH`, and CI pins the platform by commit SHA. Publishing the platform packages replaces the link with a release pin.
 
 ## Reuse
 
@@ -43,24 +39,23 @@ Every service is built from one template, so a new service gets its workload ske
 
 - Chassis-only credentials for every internal service, and default-deny egress (026 CH-4).
 - Cloud infrastructure in Terraform (038 X-1a).
+- The cluster deploy (038 X-1a): the cluster refuses an unsigned image, Argo CD deploys the echo agent from the chart, and the echo agent answers on the native, OpenAI, and Anthropic APIs in the cluster.
+- The echo agent started by an event in the cluster, with result events and traces (021 H-20 and 019 H-17).
+- A chassis tag change that restarts the services, and the workload port closed to other pods (024 CH-3).
 - The CI job that runs a fake workload through the `remote` lane (055 CH-6).
-- The Kyverno trust rule (055 CH-6) and minimum-version rule (056 CH-7). They join the signed-image rule in one policy set.
+- The Kyverno trust rule (055 CH-6) and minimum-version rule (056 CH-7). They join the signed-image rule in one policy set. The hand-kept `trustedRepositories` ConfigMap is 055 CH-6's too.
 - Framework event mappings and one non-Python workload in the template (058 CH-8).
 - The stateless check in CI (057 H-19) and the `agentctl new` CLI (059 H-15).
-- Real registry registration (083 R-2).
+- Registration, which is by label, through the controller (083 R-2).
 
 ## Acceptance criteria
 
 - [ ] CI runs unit tests and the contract suite over A2A on localhost and in memory, and a failing test fails the build.
-- [ ] CI signs the workload image, and the cluster refuses an unsigned image.
-- [ ] Argo CD deploys the echo agent from the Helm chart. Its pods run two containers, the chassis and the workload, and pass the `/health` and `/ready` probes.
-- [ ] In the cluster, the echo agent answers through native, OpenAI, and Anthropic APIs, streaming and complete.
-- [ ] In the cluster, the echo agent is started by an event, emits result events, and shows in traces.
-- [ ] Changing the chassis tag in the library chart restarts the services on the new chassis, with no workload image rebuilt.
-- [ ] The workload port cannot be reached from another pod. Only the chassis port is in the Service.
+- [ ] CI signs the workload image.
 - [ ] The input-as-data contract test fails for a workload that merges the input into the system prompt.
-- [ ] The registration step runs as a stub and prints the manifest.
-- [ ] A new agent repo made from the template passes CI with only its name changed.
+- [x] A new agent repo made from the template passes CI with only its name changed. · Delivered in PoC-9: `pocs/poc-09-agent-mvp-template/tests/test_poc09_scaffold.py::test_c4_ci_steps_pass_from_a_fresh_clone`, `pocs/poc-09-agent-mvp-template/notes/2026-10-30-open-items.md` (hosted run 41087571278, all eight jobs)
+- [ ] The generated repo carries a chart on `agent-lib`.
+- [ ] The template pins a published platform release, not the `.platform` link.
 
 ## Dependencies
 

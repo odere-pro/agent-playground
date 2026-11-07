@@ -11,34 +11,32 @@ epic_refs: [I, success-metrics]
 
 ## Why
 
-The metrics decide what "good" means for every pair, model, and release. They are placed before data generation so every generated pair can be scored. The same metrics feed the eval gate (037 M-2) and the agent's `facts_kept` gate (042 A-2), against the success target `facts_kept` ≥ 0.95.
+The score decides what "good" means for an answer. The SLM data track that used it to filter training pairs is parked, so the live half is the score the gate and the judge use. The same score feed the eval gate (037 M-2) and the agent's `facts_kept` gate (042 A-2), against the success target `facts_kept` ≥ 0.95.
 
 ## What
 
-- A metrics package that scores one (original, simplified) pair or a whole JSONL set.
-- Tokens: the count before and after, and the reduction ratio.
-- Readability: a readability score (suggested: a standard formula such as Flesch reading ease).
-- Semantic similarity: cosine similarity of embeddings from an open embedding model in Appendix I (for example Qwen3-Embedding-0.6B).
-- `facts_kept`: the share of facts in the original that are still in the simplified text, from 0 to 1, scored by the open judge model (a large open Qwen3 or Gemma 3 on vLLM) through a named route.
-- Banned words: the count of words from the versioned 027 S-1 list.
-- Judge and embedding calls at temperature 0, with model and route versions recorded in the output.
-- Per-pair and aggregate results as JSON, ready to log to MLflow later.
-- Status after PoC-6: the bake-off checks are string matches, no judge model: the simplifier output holds `2026`, `Acme`, and `30`; the lookup answer holds `small language model` and `retrieval-augmented generation` (`packages/bakeoff/src/bakeoff/tasks.py`). They stand in for `facts_kept`; the real metric is still this issue's.
+- A scoring module that scores one (input, answer) pair or a whole golden case file.
+- `facts_kept`: the share of facts in the original that are still in the answer, from 0 to 1, scored by the judge (`JudgeEvaluator`, rubric `judge-facts-v1`) through a named route.
+- Banned words: the count of words from the case's `banned:` list in the golden set.
+- Judge calls at temperature 0, with the judge route and the rubric version recorded in the output.
+- Per-case and aggregate results as JSON.
 
 ## Out of scope
 
 - The CI eval gate (037 M-2).
 - The harness evaluator gate for the simplifier (042 A-2).
 - The evaluator SLM that later replaces the judge (073 E-1, 075 E-3).
+- Tokens before and after, readability, and semantic similarity of embeddings: parked with the SLM track. They filter and rank SLM training pairs; no phase needs them.
+- The bake-off string matches (`packages/bakeoff/src/bakeoff/tasks.py`) stand in for `facts_kept` in the bake-off only. They are not the score this issue builds (`pocs/poc-06a-bake-off-sidecar-lane/notes/backlog-changes.md`).
 
 ## Acceptance criteria
 
-- [ ] One command scores a JSONL file of pairs and writes per-pair and aggregate results for all five metrics.
+- [ ] One command scores a golden case file and writes per-case and aggregate results for `facts_kept` and banned words.
 - [ ] `facts_kept` is 1.0 for an identical pair and drops for a pair with a removed number or name (unit tests with fixed fixtures).
-- [ ] Banned-word counts use the 027 S-1 list, and the list version is in the output.
+- [ ] Banned words use the case's `banned:` list.
 - [ ] Scoring the same input twice gives the same scores.
-- [ ] `facts_kept` is checked against a hand-labeled sample (suggested: 50 pairs), and the agreement is reported.
-- [ ] Judge and embedding models are called by route name, and their versions are in the output.
+- [ ] The judge's `facts_kept` agrees with the 50 hand labels of the gate set, and the agreement is reported from the Mac run. The label of g08 is settled first.
+- [ ] The judge route and the rubric version are in the report. (`packages/chassis/tests/test_evaluators.py` `test_judge_reports_usage_cost_and_route` covers the route, not the rubric version.)
 
 ## Dependencies
 

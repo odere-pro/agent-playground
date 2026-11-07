@@ -30,6 +30,7 @@ The simplifier is the first real agent and the source of the first measured savi
 - Result events and records (043 A-3).
 - MCP tools (051 H-13) and A2A (061 H-5).
 - History swap (044 G-4, 045 A-4).
+- Decided 2026-11-06 (W4): this issue is parked with the SLM track and keeps its text. If it returns, it calls a named route from the route map, not `simplifier-slm`, and its rewrite rules are the golden set's `banned:` and `contains:` fields, not 027 S-1.
 
 ## Acceptance criteria
 

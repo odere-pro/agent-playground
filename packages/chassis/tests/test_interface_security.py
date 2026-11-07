@@ -382,9 +382,6 @@ async def test_an_idempotency_key_header_with_a_newline_is_400_invalid_body_on_e
 # --- R3-06 proposal: the idempotency store key is not scoped by the caller ----------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="R3-06 proposal: idempotency store key is not scoped by principal"
-)
 async def test_idempotency_does_not_replay_another_callers_run_when_the_key_is_reused() -> None:
     """Bob, reusing Alice's Idempotency-Key with the same input, does not get her stored run."""
     app = _app(auth=StaticTokens(TOKENS), state=InMemoryState())

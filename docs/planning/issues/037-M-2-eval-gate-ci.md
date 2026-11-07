@@ -11,35 +11,36 @@ epic_refs: [E.5, principles]
 
 ## Why
 
-This is P0 because of the epic principle: nothing ships without an eval. The gate makes the rule automatic, so a new model or prompt ships only if it beats the current one on the golden set. Until the golden set agent exists in Phase 4, it uses the 030 S-4 held-out test set as the golden set.
+This is P0 because of the epic principle: nothing ships without an eval. The gate makes the rule automatic: a change to the repo ships only if it passes the golden set against the recorded baseline. It is a repo gate on a change, run on every pull request. There is no model registry: routes are LiteLLM config, and no trained model is promoted.
 
 ## What
 
-- A CI job that runs when a new model version is registered in MLflow, or when a change to the simplifier prompt is proposed.
-- The candidate and the current model scored on the golden set with the S-3 metrics.
-- A pass rule (suggested, to confirm with the owner): meet the hard targets (`facts_kept` ≥ 0.95, no banned words), be no worse than the current model on any metric beyond a set tolerance, and be better on `facts_kept` or token reduction.
-- On pass: the version is marked promoted in MLflow, and a `models.model.promoted.v1` event is published. The route then changes through a reviewed router config change.
-- On fail: promotion is blocked, with a report.
-- The golden set location as config, so the Phase 4 golden set replaces the S-4 test set with no code change.
-- Eval results for both models attached to the CI run and to the MLflow model version.
-- Proposed in PoC-7 ([ADR-010](../adr/010-evals-offline-tool-online-gate.md); the user accepts it at the PoC-7 pull request): one offline eval tool for CI, promptfoo or DeepEval, picked by a trial on the same 20 golden cases on two engines; it calls the agent through the chassis, so the report format is the same for every engine; Langfuse datasets hold the cases and experiments the results. The pick is added when PoC-7 closes.
-- Status after PoC-8 ([eval-gate note](../../../pocs/poc-08-cross-cutting-build/notes/2026-10-29-eval-gate.md)): the golden set is 50 cases for the `simplifier` agent (`packages/eval-kit/src/eval_kit/golden/cases-gate.yaml` plus the 20 PoC-7 cases), with the baseline `evals/gate/baseline.json` (`eval-baseline.v0`) and `python -m bakeoff.evalgate`. `poc08-evals.yml` runs DeepEval, the gate, and the drop-facts regression per engine; run 40919685333 on `0457ae1` passed, and the drop-facts logic failed the gate at 0/50 against 0.780. Still open: `poc08-evals` as a required check on `main` (a repository setting); a real judge's agreement with the labels; the label of g08. suggested: no tolerance on the pass rate while the model is scripted. The other agents' sets are 064 D-1.
+- A CI job, `poc08-evals`, that runs on every pull request: DeepEval on the golden set, the gate against the baseline, and the drop-facts regression, per engine.
+- The golden set is 50 cases for the `simplifier` agent (`packages/eval-kit/src/eval_kit/golden/cases-gate.yaml` plus the 20 PoC-7 cases). The baseline is `evals/gate/baseline.json` (`eval-baseline.v0`), read by `python -m eval_kit.evalgate`.
+- A pass rule: each target keeps its recorded pass rate, and the `must_pass` cases pass. suggested: no tolerance on the pass rate while the model is scripted.
+- The absolute floor for a hosted judge is a phase B decision, in the DEC-1 decision pack.
+- On fail: the job fails, with a report attached to the run.
+- The golden set location as config, so another dataset needs no code change.
+- Decided in [ADR-010](../adr/010-evals-offline-tool-online-gate.md) item 1: DeepEval is the one offline tool (trial in `pocs/poc-07-cross-cutting-decisions/notes/2026-10-28-eval-tool-trial.md`).
 
 ## Out of scope
 
 - Shadow mode, canary rollout, and one-step rollback (047 M-3, 048 M-4).
 - Evals for quantized variants (049 M-5).
 - The golden set agent and versioned golden sets (064 D-1, 069 D-7).
+- A model registry, MLflow promotion, and a `models.model.promoted.v1` event: parked with the SLM track (032 M-1).
+- The judge's agreement with the hand labels, and the label of g08 (028 S-3).
+- Making `poc08-evals` a required check on `main`: a repository setting, on the owner list ([011 section 2](../poc/011-what-is-left.md#2-repository-settings)).
+- Uploading the golden cases to Langfuse datasets: `eval_kit.langfuse_datasets` is tested against a stub and called by no workflow or Makefile target. A phase D hand-off.
 
 ## Acceptance criteria
 
-- [ ] Registering a new model version starts the gate in CI with no manual step.
-- [ ] A candidate worse than the current model on `facts_kept` fails, and promotion is blocked with a report.
-- [ ] A candidate below `facts_kept` 0.95 fails, even when there is no current model.
-- [ ] A passing candidate is marked promoted in MLflow, and a `models.model.promoted.v1` event is published.
-- [ ] A change to the simplifier prompt runs the same gate before release.
-- [ ] Pointing the gate at another dataset version needs a config change only.
-- [ ] Eval results for both models are attached to the CI run and to the MLflow model version.
+- [x] A pull request starts the eval gate in CI with no manual step. · Delivered in PoC-8: `.github/workflows/poc08-evals.yml` (on: pull_request with no paths filter; jobs evals, regression, redteam); `pocs/poc-08-cross-cutting-build/tests/test_poc08_c1_ci.py::test_poc08_evals_runs_the_gate_and_the_redteam_set_on_every_supported_engine`; run 40919685333 on `0457ae1` (`pocs/poc-08-cross-cutting-build/README.md`, exit criterion "Offline evals")
+- [x] A change that drops facts fails the gate, and the merge is blocked with a report. · Delivered in PoC-8: `packages/eval-kit/tests/test_eval_kit_evalgate.py::test_eval_kit_evalgate_fails_the_drop_facts_logic_on_every_baseline_target` and `::test_eval_kit_evalgate_fails_when_a_known_bad_answer_starts_to_pass`; `pocs/poc-08-cross-cutting-build/tests/test_poc08_c5_regression.py::test_the_gate_fails_drop_facts_and_passes_normal_on_every_baseline_target`; `pocs/poc-08-cross-cutting-build/notes/2026-10-29-eval-gate.md` (drop-facts 0/50 against 0.780); `evals/gate/baseline.json`
+- [ ] A pass rate below the baseline floor fails, with or without a previous run. (Proving test, suggested name: `test_a_run_below_the_floor_fails_with_no_previous_report`.)
+- [x] Eval results are attached to the CI run. · Delivered in PoC-8: `.github/workflows/poc08-evals.yml`, upload-artifact steps `poc08-eval-reports-<engine>` and `poc08-eval-reports-drop-facts` (run 40919685333)
+- [ ] A change to the simplifier prompt runs the same gate before release, and the prompt reaches the gate's input. (Proving test, suggested name: `test_a_changed_prompt_changes_the_gate_input`.)
+- [ ] Pointing the gate at another dataset version needs a config change only. (Proving test, suggested name: `test_evalgate_reads_the_dataset_named_in_the_baseline`.)
 
 ## Dependencies
 

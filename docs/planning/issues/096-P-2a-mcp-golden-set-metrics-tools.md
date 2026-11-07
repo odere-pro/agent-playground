@@ -19,7 +19,7 @@ The Phase 6 done-when asks that an MCP client export a golden set version end to
 - `golden_export`: exports a version ID in JSONL, CSV, Parquet, or Hugging Face datasets format (070 D-4). Suggested: it returns a short-lived download link, not the file inline.
 - `golden_import`: imports from a file reference or bucket path through the golden set agent's import (068 D-3), with the same schema check and dedup (067 D-5).
 - `review_list` and `review_decide`: the review queue, and approve, reject, or edit, with the same rules and access control as the review UI (065 D-2).
-- `metrics_get`: tokens saved, cost, and pass rate per agent and time range, from the same data as the savings dashboard (006 G-6).
+- `metrics_get`: tokens, cost, and pass rate per agent and time range, from the same data as the container dashboard's token and cost panels (046 A-5).
 - `golden_import` and `review_decide` are write tools with confirmation and audit (095 P-4); the others are read tools.
 - Tools generated from the OpenAPI spec (051 H-13) and forwarded to the golden set agent.
 
@@ -34,7 +34,7 @@ The Phase 6 done-when asks that an MCP client export a golden set version end to
 - [ ] Exporting the same version ID twice gives the same records.
 - [ ] `golden_import` and `review_decide` are refused without the write scope, ask for confirmation, and are audited.
 - [ ] A `review_decide` call records the reviewer, the same as a decision made in the review UI.
-- [ ] `metrics_get` numbers match the savings dashboard for the same agent and period.
+- [ ] `metrics_get` numbers match the container dashboard's token and cost panels for the same agent and period.
 - [ ] Phase 6 done-when: in one MCP client session, a user searches the registry, runs the simplifier, and exports a golden set version; the steps run as an end-to-end test.
 
 ## Dependencies

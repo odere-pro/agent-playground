@@ -1,8 +1,10 @@
 """The bake-off tasks: what PoC-6a, 6b, 6c, 7, and 8 run and how they judge it.
 
-Holds the three benchmark tasks as data, a pass check for each, the engine table, and an
-in-process tool stub with both read-only tools. Everything runs offline: the model is the fake
-model server on `scripts/bakeoff.yaml`, the tools are `fake_mcp_server` over an ASGI transport.
+Re-exports the three benchmark tasks from `bakeoff.tasks`: the same text and facts the kit
+checks. Holds a pass check for each that adds the event schema, the exact smoke answer, and the
+tool results; the engine table; and an in-process tool stub with both read-only tools.
+Everything runs offline: the model is the fake model server on `scripts/bakeoff.yaml`, the tools
+are `fake_mcp_server` over an ASGI transport.
 The chassis is never imported here: a workload is driven through its wire-form `handle`.
 """
 
@@ -19,6 +21,14 @@ import httpx2
 import jsonschema
 from bakeoff.registry import Engine as RegistryEngine
 from bakeoff.registry import get_engine, lanes_for
+
+# Re-exported: the PoC tests import the tasks from here (R6-01: `bakeoff.tasks` is the source).
+from bakeoff.tasks import LOOKUP as LOOKUP
+from bakeoff.tasks import SIMPLIFIER as SIMPLIFIER
+from bakeoff.tasks import SMOKE as SMOKE
+from bakeoff.tasks import TASKS as TASKS
+from bakeoff.tasks import Task as Task
+from bakeoff.tasks import ToolStep as ToolStep
 from fake_mcp_server.server import FakeMcpState, create_app
 
 from poc_harness.paths import ROOT
@@ -30,52 +40,10 @@ MODEL_URL = "http://model.invalid/v1"
 TOOL_URL = "http://tools.invalid/mcp/"
 """The fake MCP app serves `/mcp/`; the trailing slash avoids a redirect."""
 
-# --- The task spec, as data ---------------------------------------------------------------------
+# --- The task spec, from the bake-off kit -------------------------------------------------------
+# `bakeoff.tasks` is the one task source (R6-01): the tests run the same text, facts, and tool
+# steps as the scorecard runs.
 
-
-@dataclass(frozen=True)
-class ToolStep:
-    """One expected tool call: the tool, its arguments, and a text its result must hold."""
-
-    name: str
-    arguments: Mapping[str, str]
-    result_key: str
-    result_contains: str
-
-
-@dataclass(frozen=True)
-class Task:
-    """A benchmark task: the input text, the facts the answer must hold, and the tool calls the
-    run must make, in order. `exact_text`, when set, is the whole answer."""
-
-    name: str
-    text: str
-    facts: tuple[str, ...]
-    tool_calls: tuple[ToolStep, ...] = ()
-    exact_text: str | None = None
-
-
-SMOKE = Task(name="smoke", text="simplify: Hello.", facts=("Hello.",), exact_text="Hello.")
-SIMPLIFIER = Task(
-    name="simplifier",
-    text=(
-        "simplify: The SLM was released by Acme in 2026, thereby reducing operating costs "
-        "by approximately 30 percent."
-    ),
-    facts=("SLM", "Acme", "2026", "30 percent"),
-)
-LOOKUP = Task(
-    name="lookup",
-    text="lookup: What does SLM mean, and what does RAG stand for?",
-    facts=("small language model", "retrieval-augmented generation"),
-    tool_calls=(
-        ToolStep("glossary_lookup", {"term": "SLM"}, "definition", "small language model"),
-        ToolStep(
-            "acronym_expand", {"acronym": "RAG"}, "expansion", "retrieval-augmented generation"
-        ),
-    ),
-)
-TASKS: tuple[Task, ...] = (SMOKE, SIMPLIFIER, LOOKUP)
 TOOL_NAMES = ("glossary_lookup", "acronym_expand")
 """The two read-only tools the lookup task uses."""
 

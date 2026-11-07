@@ -17,11 +17,11 @@ Long documents do not fit one small-model call. Fan-out splits the text into sec
 
 - `split` from the workflow file: `by: section`, `max_tokens`, `overlap_tokens`. Section breaks follow headings and paragraphs; a section above `max_tokens` is split again.
 - Each section overlaps its neighbor by `overlap_tokens`, so no fact is cut at a boundary.
-- The `simplify` step runs once per section, with `parallel: true`, on the `simplify` pool.
+- The per-section step runs once per section, with `parallel: true`, on the `echo` pool.
 - A `merger` agent joins the section outputs in order and removes the overlap text. C.2 names this agent but no story builds it, so it is built here as a stateless transformer (`agentctl new merger --kind transformer`; suggested: a deterministic join with no model call).
-- The `consistency` step runs the simplifier on `input: merged` to smooth the seams.
-- `evaluate` runs `evaluator-facts` on the final output against `threshold: 0.95`. Below it, `on_failure` applies.
-- Uses the `simplify-long-doc` workflow file (version 2.1.0) from C.2 as written.
+- The `consistency` step runs the reference agent on `input: merged` to smooth the seams.
+- `evaluate` scores the final output with the `EvaluatorPort` judge against `threshold: 0.95`, a workflow field (the chassis gate defaults to 0.7). Below it, `on_failure` applies.
+- Uses an `echo-long-doc` workflow file, shaped like C.2's `simplify-long-doc` (version 2.1.0). The reference agents are the echo agent (`packages/workloads/echo-*`) and a fake evaluator, not the parked simplifier. The epic's example stays in the epic.
 
 ## Out of scope
 
@@ -31,11 +31,11 @@ Long documents do not fit one small-model call. Fan-out splits the text into sec
 
 ## Acceptance criteria
 
-- [ ] `simplify-long-doc` runs from the config store on a test document of at least 10 sections and returns one simplified text.
-- [ ] No section sent to the simplifier is longer than `max_tokens`, and neighbors share `overlap_tokens` of text.
-- [ ] Sections run in parallel on the `simplify` pool; the trace shows overlapping spans.
+- [ ] `echo-long-doc` runs from the config store on a test document of at least 10 sections and returns one merged text.
+- [ ] No section sent to the agent is longer than `max_tokens`, and neighbors share `overlap_tokens` of text.
+- [ ] Sections run in parallel on the `echo` pool; the trace shows overlapping spans.
 - [ ] The merged output has no duplicated overlap text.
-- [ ] The final output scores `facts_kept` ≥ 0.95 against the source, or the run follows `on_failure`.
+- [ ] The `EvaluatorPort` judge scores the final output at or above the workflow `threshold` against the source, or the run follows `on_failure`.
 - [ ] Changing `max_tokens` in the workflow file changes the split on the next run, with no code change.
 
 ## Dependencies

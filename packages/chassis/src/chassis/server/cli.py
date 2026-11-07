@@ -5,14 +5,16 @@ Two listeners in one event loop: the public app (`/health`, `/ready`, `/v1/run`)
 (suggested: 8090). Only the public app runs a lifespan; the proxy app shares its state. The proxy
 listener binds loopback only unless `--allow-any-proxy-host` is given (`deploy/CLAUDE.md`: the
 proxies are localhost-only). That flag is for the loopback listener's tests; it is not the
-`remote` lane.
+`remote` lane. After the config loads, the flag is refused (status 2) in profile `cloud` and
+when `spec.trust` is `untrusted` (R5a-22): that listener has no authentication.
 
 The `remote` lane (PoC-5 plan, section 2.3; ADR-001 item 8) adds a third listener:
 `--remote-proxy-host <pod IP>` and `--remote-proxy-port` (suggested: 8091) serve the remote proxy
 app (`chassis.server.remote_auth`): the model proxy and the tool endpoint behind a bearer token
 and a run in flight. The flag is refused unless `spec.engine.connector` is `remote` and the
-token variable named in `spec.engine.auth.token_env` is set; the host must be one IP address,
-neither loopback nor a wildcard (`0.0.0.0`, `::`).
+token variable named in `spec.engine.auth.token_env` is set, with 32 characters or more (a set
+previous token too; `remote_auth.MIN_TOKEN_LENGTH`); the host must be one IP address, neither
+loopback nor a wildcard (`0.0.0.0`, `::`).
 
 Bind order (H14): the proxy listeners bind first. A taken proxy port exits with status 3 and a
 message naming the address, before the public listener binds and before anything reaches the
@@ -82,8 +84,9 @@ def _parser() -> argparse.ArgumentParser:
     serve.add_argument(
         "--allow-any-proxy-host",
         action="store_true",
-        help="let --proxy-host be off loopback, with no authentication (tests only); this is "
-        "not the remote lane: use --remote-proxy-host for that",
+        help="let --proxy-host be off loopback, with no authentication (tests only; refused in "
+        "profile cloud and for spec.trust untrusted); this is not the remote lane: use "
+        "--remote-proxy-host for that",
     )
     serve.add_argument(
         "--remote-proxy-host",
@@ -114,7 +117,25 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _check_remote(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+def _check_any_proxy_host(parser: argparse.ArgumentParser, config: ChassisConfig) -> None:
+    """R5a-22: `--allow-any-proxy-host` puts the model proxy and `/mcp` off loopback with no
+    authentication, so it is refused in profile `cloud` and when `spec.trust` is `untrusted`.
+    Each refusal exits with status 2 and says why."""
+    if config.profile == "cloud":
+        parser.error(
+            "--allow-any-proxy-host is refused in profile 'cloud': the model proxy spends the "
+            "chassis key with no authentication. Use the remote lane (--remote-proxy-host)"
+        )
+    if config.spec.trust == "untrusted":
+        parser.error(
+            "--allow-any-proxy-host is refused when spec.trust is 'untrusted': untrusted code "
+            "must reach the proxies through the remote listener (--remote-proxy-host)"
+        )
+
+
+def _check_remote(
+    parser: argparse.ArgumentParser, args: argparse.Namespace, config: ChassisConfig
+) -> None:
     """The `--remote-proxy-host` rules; each failure exits with status 2 and says why."""
     host = args.remote_proxy_host
     try:
@@ -130,7 +151,6 @@ def _check_remote(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
         parser.error(f"--remote-proxy-host {host} binds every address; give the pod IP only")
     if args.remote_proxy_port in (args.port, args.proxy_port):
         parser.error("--remote-proxy-port must differ from --port and --proxy-port")
-    config: ChassisConfig = load_config(args.config)
     connector = config.spec.engine.connector
     if connector != "remote":
         parser.error(
@@ -140,7 +160,7 @@ def _check_remote(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
     auth = config.spec.engine.auth
     try:
         remote_tokens(auth.model_dump() if auth is not None else None)
-    except LookupError as exc:
+    except (LookupError, ValueError) as exc:
         parser.error(f"--remote-proxy-host: {exc}")
 
 
@@ -160,8 +180,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                 parser.error(f"--{flag.replace('_', '-')} must be 0 or more")
         if args.proxy_port == args.port:
             parser.error("--proxy-port must differ from --port: the proxies never share it")
-        if args.remote_proxy_host is not None:
-            _check_remote(parser, args)
+        if args.allow_any_proxy_host or args.remote_proxy_host is not None:
+            config = load_config(args.config)  # once, for the checks that need it
+            if args.allow_any_proxy_host:
+                _check_any_proxy_host(parser, config)
+            if args.remote_proxy_host is not None:
+                _check_remote(parser, args, config)
     return args
 
 

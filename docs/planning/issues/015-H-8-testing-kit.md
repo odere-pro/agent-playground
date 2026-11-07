@@ -17,19 +17,18 @@ Contract tests are part of the Phase 0 done-when, and every agent needs the same
 
 - Fake adapters for every port from 007 H-1, with scripted answers and scripted errors.
 - A scripted fake model server: OpenAI-compatible `/v1/chat/completions`, streaming and complete, with tool calls. Frameworks call models over HTTP with their own clients, so this is how every engine is tested offline.
-- A fixture kit for business logic authors: fake model, fake tools, and event assertions.
+- A fixture kit for business logic authors: fake model, fake tools, and event assertions. In the `fake` profile, a test scripts the model's answer per case.
 - Integration fixtures with testcontainers (Valkey, Postgres, Kafka, MinIO) for real adapters.
-- Schemathesis property tests generated from the OpenAPI spec.
-- A contract test suite per API: `/v1/run`, `/v1/chat/completions`, and `/v1/messages`, streaming and complete, plus `/health` and `/ready`.
+- Schemathesis property tests generated from the OpenAPI spec. Built in PoC-3 (`pocs/poc-03-one-interface-every-client/tests/test_openapi_props.py`).
+- A contract test suite per API: `/v1/run`, `/v1/chat/completions`, and `/v1/messages`, streaming and complete, plus `/health` and `/ready`. Built in PoC-3: the inbound suite (`chassis_contracts.inbound`) and the interface suite (`chassis_contracts.interface`).
 - Each case runs two ways: over A2A on localhost through the `sidecar` connector, and over A2A in memory through `inprocess` (hard requirement 2).
-- One command to run the suite against any workload image, in any language (suggested: a pytest plugin). It starts the chassis in the `fake` profile as a separate process (suggested: `uvx chassis serve --profile fake`), so a workload's environment never installs the chassis package or its dependencies.
+- One command to run the suite against a workload, by handle or by A2A endpoint, in any language (suggested: a pytest plugin). It starts the chassis in the `fake` profile as a separate process (suggested: `uvx chassis serve --profile fake`), so a workload's environment never installs the chassis package or its dependencies. Built in PoC-9: `packages/agent-testkit`.
 - A contract test that checks a framework's events map to the chassis JSON event schema. 058 CH-8 uses it for each framework mapping.
-- Record and replay: record real model calls through the router once, then replay them in tests with no network.
+- Record and replay: record real model calls through the router once, then replay them in tests with no network. Built in PoC-3: `chassis_contracts.recording.CassetteTransport`, and `make record-cassettes` re-records offline.
 - Recordings stripped of API keys and auth headers.
 - A determinism check: the same input and config version give the same output on replay.
-- Packaged with the chassis, so the template CI (025 H-10) runs it against the workload image.
+- Packaged with the chassis, so the template CI (025 H-10) runs it against the workload.
 - Built so later adapters can add their own contract tests.
-- Status after PoC-3: Schemathesis property tests run from the OpenAPI spec (`pocs/poc-03-one-interface-every-client/tests/test_openapi_props.py`). The inbound contract suite (`chassis_contracts.inbound`) is bound for native, OpenAI, and Anthropic. The interface contract suite (`chassis_contracts.interface`) runs four interfaces, four engines, stream and complete, in both lanes: 49 of 64 cells run, 15 skip with a reason. Model calls replay from cassettes through `chassis_contracts.recording.CassetteTransport`; `make record-cassettes` re-records offline, and a test scans the cassettes for keys. Still open: refuse to record unless the host ends in `.invalid` or the inner transport is ASGI; filter query strings; scan for key shapes other than `sk-`; vcrpy is pinned to 8.3.0 because of the private `Cassette._save`; one Unix-socket test runner instead of three; the gate grew from about 35 s to about 100-130 s. See [the PoC-3 debt note](../../../pocs/poc-03-one-interface-every-client/notes/2026-10-01-debt.md).
 
 ## Out of scope
 
@@ -37,20 +36,24 @@ Contract tests are part of the Phase 0 done-when, and every agent needs the same
 - The CI job that runs a fake workload through the `remote` lane (055 CH-6).
 - The framework event mappings, and a non-Python workload to run the suite against (058 CH-8).
 - Running the suite in the template CI for each new service (025 H-10).
+- The suite as a release gate for the chassis and for every new service (ADR-001 item 11): the published pin (025 H-10) and the release rings (056 CH-7).
 - The stateless check in CI (057 H-19).
+- PoC-3 debt that stays as it is: vcrpy is pinned to 8.3.0 because of the private `Cassette._save`; three Unix-socket test runners instead of one; the gate grew from about 35 s to about 100-130 s ([the PoC-3 debt note](../../../pocs/poc-03-one-interface-every-client/notes/2026-10-01-debt.md)).
 
 ## Acceptance criteria
 
-- [ ] The echo agent passes the contract suite for all three APIs, streaming and complete, in both transports: over A2A on localhost through `sidecar`, and over A2A in memory through `inprocess`.
+- [x] The echo agent passes the contract suite for all three APIs, streaming and complete, in both transports: over A2A on localhost through `sidecar`, and over A2A in memory through `inprocess`. · Delivered in PoC-3: `pocs/poc-03-one-interface-every-client/tests/test_exit_criteria.py::test_exit_2_only_the_two_legitimate_groups_of_cells_skip`; `pocs/poc-03-one-interface-every-client/tests/test_interface_contract.py::TestInterfaces`.
 - [ ] A broken response shape (for example a missing `status`) fails the matching contract test in both transports.
 - [ ] The event-mapping contract test fails on a fixture stream with an event that does not match the schema.
-- [ ] A recorded model call replays with no network access and gives the same output.
-- [ ] Recordings contain no API keys or auth headers.
+- [x] A recorded model call replays with no network access and gives the same output. · Delivered in PoC-3: `packages/contract-suites/tests/test_recording.py::test_streamed_record_then_replay_gives_the_same_bytes_frame_by_frame`, `::test_replay_never_calls_inner_even_on_a_miss`.
+- [x] Recordings contain no API keys or auth headers. · Delivered in PoC-3: `packages/chassis/tests/test_recorded_model.py::test_cassettes_hold_no_key`; `packages/contract-suites/tests/test_recording.py::test_save_raises_when_a_key_shaped_string_survives_the_scrub`.
 - [ ] Each fake adapter can return a scripted error, so retry and fallback paths can be tested.
-- [ ] The whole suite runs with one command against a given workload image, from an environment that has the kit but not the chassis package.
-- [ ] The suite is a release gate for the chassis and for every new service (ADR-001 item 11). A chassis build that fails any case, in either transport, is not released.
-- [ ] An engine that calls the model over HTTP runs offline against the fake model server, including streaming and a tool call.
+- [x] The whole suite runs with one command against a workload, by handle or by A2A endpoint, from an environment that has the kit but not the chassis package. · Delivered in PoC-9: `packages/agent-testkit/tests/test_agent_testkit_isolation.py::test_the_kit_imports_with_the_chassis_unimportable`.
+- [x] The suite runs in the `check` job on every PR. · Delivered in PoC-3: `.github/workflows/ci.yml` job `check` runs `make check`, which runs `make test`, the contract suites included.
+- [x] An engine that calls the model over HTTP runs offline against the fake model server, including streaming and a tool call. · Delivered in PoC-2 and PoC-6: `pocs/poc-02-two-engines-one-contract/tests/test_engines.py::test_python_engine_passes_offline_against_the_fake_model_server` (streaming); `pocs/poc-06a-bake-off-sidecar-lane/tests/test_poc06a_spec.py::test_the_lookup_task_calls_both_tools_in_order` (tool call).
 - [ ] A real adapter and its fake pass the same port contract suite, one with testcontainers and one in memory.
+- [ ] Recording is refused unless the host ends in `.invalid` or the inner transport is ASGI.
+- [ ] In the `fake` profile, a test scripts the model's answer per case, with no chassis import.
 
 ## Dependencies
 

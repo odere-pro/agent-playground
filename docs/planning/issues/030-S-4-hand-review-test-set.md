@@ -29,13 +29,13 @@ Metrics alone can miss bad pairs, so a person checks a sample before training. T
 - The golden set agent (064 D-1).
 - The review UI (065 D-2).
 - Tags and splits in the golden set store (066 D-6), and lakeFS versions (069 D-7).
+- Reviewer, date, and reason per label: moved on 2026-11-06 to 064 D-1 and 065 D-2, as the label metadata the golden set lacks today. The 50-case gate set (`evals/gate/baseline.json`) is the golden set for the eval gate (037 M-2), not this held-out set.
 
 ## Acceptance criteria
 
 - [ ] A random sample of generated pairs is reviewed, and the pass rate and main failure reasons are reported.
 - [ ] A held-out test set of at least 300 records exists, and every record is hand-checked.
 - [ ] No test record, and no record from the same source document, is in the training split.
-- [ ] Every review decision records reviewer, date, and reason.
 - [ ] The test set has an immutable data version ID and is read-only.
 - [ ] S-3 scores for the test set are stored as the reference.
 
