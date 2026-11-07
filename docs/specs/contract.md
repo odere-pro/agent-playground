@@ -504,7 +504,7 @@ Body, strict: `request_id` (required), `score` (required, a number in [0, 1]), `
 | ----- | ------------------- |
 | `spec.adapters` | `model`, `config`, `telemetry`, `tools`, `state`, `events`, `auth`, `guardrails`, `evaluator`, `feedback`; each null means the profile default. `engine` is refused |
 | `spec.engine` | `connector` `sidecar`; `handle`, `url`, `uds`, `auth {scheme bearer, token_env, previous_token_env}`, `probe_timeout_s` 2.0, `protocol` `chassis`, `a2a {usage_key null, context_id omit}` |
-| `spec.model` | `route` `fake-route`; `fallback_route` null; `routes` `{}` (task to route, [models](models.md)); `judge_route` null. All reloadable |
+| `spec.model` | `route` `fake-route`; `fallback_route` null (restart-only); `routes` `{}` (task to route, [models](models.md)); `judge_route` null. `route`, `routes`, `judge_route` reload |
 | `spec.prompt` | `version` null |
 | `spec.trust` | `trusted` (required in `cloud`) |
 | `spec.interfaces` | `openai`, `anthropic`, `mcp`: true |

@@ -160,10 +160,12 @@ characters, so the name is safe on a span. suggested: the shape."""
 
 
 class ModelSpec(BaseModel):
-    """`spec.model` (`docs/specs/models.md`): the agent's LiteLLM routes. Every field reloads.
+    """`spec.model` (`docs/specs/models.md`): the agent's LiteLLM routes. `route`, `routes`, and
+    `judge_route` reload without a restart; `fallback_route` is restart-only.
 
     - `route: fake-route`: the route of every task the map does not name.
     - `fallback_route: null` (PoC-7, 017 H-4): the route of the evaluator gate's last attempt.
+      Restart-only.
     - `routes: {}`: the route per task, keyed by the task the caller names in `input.data.task`.
       The pipeline resolves `routes[task]`, else `route`, into `ctx.model_route`, and the model
       proxy forces every call of the run to it. A route the service's LiteLLM key does not list
