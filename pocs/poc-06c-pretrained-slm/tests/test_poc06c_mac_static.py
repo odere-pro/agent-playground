@@ -396,15 +396,21 @@ def test_the_script_refuses_an_engine_it_does_not_know(tmp_path: Path) -> None:
     assert "not on the trusted list" in done.stderr
 
 
-def test_the_script_text_lists_the_registrys_trusted_engines() -> None:
-    """The script's TRUSTED_ENGINES and UNTRUSTED_ENGINES lines are the registry's split."""
-    text = mac_script_text()
+DRY_TRUSTED = re.compile(r"engines \(trusted only\): (\S+)")
+DRY_UNTRUSTED = re.compile(r"untrusted engines ([a-z0-9 -]+?), kind remote lane")
 
-    trusted = re.search(r'^TRUSTED_ENGINES="([^"]*)"', text, re.M)
-    untrusted = re.search(r'^UNTRUSTED_ENGINES="([^"]*)"', text, re.M)
 
-    assert trusted and untrusted
-    assert sorted(trusted.group(1).split()) == TRUSTED
+def test_the_dry_run_lists_the_registrys_trusted_and_untrusted_engines(tmp_path: Path) -> None:
+    """The dry run's default engines are the registry's trusted engines, and its kind step runs
+    the registry's untrusted engines: the script and `bakeoff.registry` keep one split."""
+    done = run_script(tmp_path, "--dry-run")
+
+    trusted = DRY_TRUSTED.search(done.stdout)
+    untrusted = DRY_UNTRUSTED.search(done.stdout)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert trusted and untrusted, done.stdout[:2000]
+    assert sorted(trusted.group(1).split(",")) == TRUSTED
     assert sorted(untrusted.group(1).split()) == UNTRUSTED
 
 
@@ -415,8 +421,9 @@ SAYS = re.compile(r"\b(echo|printf|say|warn|die|tee)\b")
 
 
 def test_the_script_text_keeps_the_key_rules() -> None:
-    """The script's text: strict, no xtrace, no forced push, the key never exported or printed
-    (one stdin pipe to hosted.sh), one prefix hand-off, and `--push` stages exact paths off main."""
+    """The script's text, for the rules no run can show: strict mode, no xtrace, no forced push,
+    the key never exported or printed (one stdin pipe to hosted.sh), and one prefix hand-off.
+    What `--push` stages, and that it refuses main, is run in `test_push_*` below."""
     code = [line for line in mac_script_text().splitlines() if not line.lstrip().startswith("#")]
     text = "\n".join(code)
 
@@ -440,27 +447,128 @@ def test_the_script_text_keeps_the_key_rules() -> None:
     assert not printed, printed
     # the key is handed to one command only, as a prefix assignment
     assert text.count('POC06_HOSTED_API_KEY="$key"') == 1
-    # --push stages exact paths, on a branch that is not main
-    assert 'git -C "$ROOT" add -- "${NOTE_FILES[@]}"' in text
     assert re.search(r"git [^\n]*\badd (-A|\.|--all|-u)", text) is None
-    assert "main | master" in text
 
 
-@pytest.mark.parametrize("stem", ["hosted-run", "slm-run", "scale-run", "load-run", "kind-run"])
-def test_the_script_text_writes_the_note_the_task_lists(stem: str) -> None:
-    """The script's text writes each note the task names."""
-    text = mac_script_text()
+NOTE_FOLDERS = {
+    "hosted-run": "pocs/poc-06a-bake-off-sidecar-lane/notes",
+    "load-run": "pocs/poc-06a-bake-off-sidecar-lane/notes",
+    "kind-run": "pocs/poc-06b-bake-off-remote-lane/notes",
+    "slm-run": "pocs/poc-06c-pretrained-slm/notes",
+    "scale-run": "pocs/poc-06c-pretrained-slm/notes",
+}
+"""Each note and the PoC folder whose tests read it (`test_poc06c_criteria.py` reads 6a's
+hosted-run results for the side by side)."""
 
-    assert f"write_note {stem}" in text
+
+@pytest.fixture(scope="module")
+def dry_run_out(tmp_path_factory: pytest.TempPathFactory) -> str:
+    done = run_script(tmp_path_factory.mktemp("dry"), "--dry-run")
+    assert done.returncode == 0, done.stdout + done.stderr
+    return done.stdout
 
 
-def test_the_script_text_names_the_three_notes_folders() -> None:
-    """The script's text puts the notes in the 6a, 6b, and 6c notes folders."""
-    text = mac_script_text()
+@pytest.mark.parametrize(("stem", "folder"), NOTE_FOLDERS.items())
+def test_the_dry_run_writes_each_note_in_its_poc_folder(
+    dry_run_out: str, stem: str, folder: str
+) -> None:
+    """The dry run plans each note the task names, with its results file, in its PoC folder."""
+    note = re.compile(
+        rf"would write {re.escape(folder)}/(\d{{4}}-\d{{2}}-\d{{2}})-{stem}\.md "
+        rf"\(and \1-{stem}\.results\.json\)"
+    )
 
-    assert 'NOTES_A="pocs/poc-06a-bake-off-sidecar-lane/notes"' in text
-    assert 'NOTES_C="pocs/poc-06c-pretrained-slm/notes"' in text
-    assert 'NOTES_B="pocs/poc-06b-bake-off-remote-lane/notes"' in text
+    assert note.search(dry_run_out), f"no planned {stem} note in {folder}"
+
+
+def _push_repo(tmp_path: Path, branch: str) -> tuple[Path, dict[str, str]]:
+    """A temp repo with a bare `origin`, on `branch`, upstream set, and an env that reads no
+    global git config (no signing, no hooks of this machine)."""
+    env = {
+        "PATH": os.environ["PATH"],
+        "HOME": str(tmp_path),
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+    origin, repo = tmp_path / "origin.git", tmp_path / "repo"
+
+    def git(*args: str, cwd: Path = repo) -> None:
+        subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True)
+
+    git("init", "-q", "--bare", "-b", "main", str(origin), cwd=tmp_path)
+    git("init", "-q", "-b", "main", str(repo), cwd=tmp_path)
+    for key, value in (("user.name", "t"), ("user.email", "t@example.invalid")):
+        git("config", key, value)
+    git("config", "commit.gpgsign", "false")
+    git("remote", "add", "origin", str(origin))
+    (repo / "README").write_text("x\n")
+    git("add", "README")
+    git("commit", "-q", "-m", "init")
+    git("push", "-q", "-u", "origin", "main")
+    if branch != "main":
+        git("switch", "-q", "-c", branch)
+        git("push", "-q", "-u", "origin", branch)
+    return repo, env
+
+
+def _do_push(repo: Path, env: dict[str, str], *notes: str) -> subprocess.CompletedProcess[str]:
+    """Run the script's own `do_push` from `push.sh`, with `say` and `die` stubbed."""
+    script = (
+        'say() { printf "%s\\n" "$*"; }; die() { printf "%s\\n" "$1" >&2; exit "${2:-2}"; }; '
+        'DRY=0; ONLY=" slm"; ROOT="$1"; shift; NOTE_FILES=("$@"); '
+        f'. "{PIECES_DIR / "push.sh"}"; do_push'
+    )
+    return subprocess.run(
+        ["bash", "-c", script, "push", str(repo), *notes],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize("branch", ["main", "master"])
+def test_push_refuses_main_and_master(tmp_path: Path, branch: str) -> None:
+    """`--push` refuses to push the notes from main or master and commits nothing."""
+    repo, env = _push_repo(tmp_path, "main")
+    if branch == "master":
+        subprocess.run(["git", "branch", "-q", "-m", "master"], cwd=repo, env=env, check=True)
+    (repo / "note.md").write_text("n\n")
+
+    done = _do_push(repo, env, "note.md")
+    log = subprocess.run(
+        ["git", "log", "--oneline"], cwd=repo, env=env, capture_output=True, text=True, check=True
+    )
+
+    assert done.returncode == 1
+    assert f"refusing to push from '{branch}'" in done.stderr
+    assert len(log.stdout.splitlines()) == 1
+
+
+def test_push_stages_exactly_the_note_files(tmp_path: Path) -> None:
+    """`--push` on a branch commits and pushes the note files only; other changes stay out."""
+    repo, env = _push_repo(tmp_path, "notes")
+    (repo / "note.md").write_text("n\n")
+    (repo / "stray.txt").write_text("s\n")
+    (repo / "README").write_text("changed\n")
+
+    done = _do_push(repo, env, "note.md")
+    shown = subprocess.run(
+        ["git", "show", "--name-only", "--format=", "origin/notes"],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=repo, env=env, capture_output=True, text=True
+    )
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert shown.stdout.split() == ["note.md"]
+    assert sorted(status.stdout.split()) == ["??", "M", "README", "stray.txt"]
 
 
 # ---- the split: an entry script and its sourced pieces ----------------------------------------
@@ -690,14 +798,23 @@ def test_the_run_key_is_never_exported(tmp_path: Path) -> None:
     assert "outside-value" not in done.stdout + done.stderr
 
 
-def test_the_script_text_gives_the_provider_key_to_the_hosted_litellm_only() -> None:
-    """The script's text starts LiteLLM twice, once with `hosted`, and hands it the key."""
-    code = _code()
+def _step(out: str, name: str) -> str:
+    """The dry-run lines of one `== step <name>` block."""
+    start = out.index(f"== step {name}:")
+    end = out.find("\n== step ", start + 1)
+    return out[start : end if end != -1 else len(out)]
 
-    assert code.count('start_litellm "$log" hosted') == 1
-    assert code.count('start_litellm "$log"') == 2
-    assert 'POC06_HOSTED_API_KEY="$key"' in code
-    assert "key=$HOSTED_KEY" in code
+
+def test_the_dry_run_gives_the_provider_key_to_the_hosted_litellm_only(dry_run_out: str) -> None:
+    """LiteLLM starts twice in a full dry run. Only the hosted step's start gets the provider key;
+    the slm step's start gets none. The plan line comes from the same branch that sets the key."""
+    starts = [line for line in dry_run_out.splitlines() if "docker compose -p" in line]
+    keyed = [line for line in starts if "provider key: from the env file, not shown" in line]
+
+    assert len(starts) == 2, starts
+    assert len(keyed) == 1, starts
+    assert keyed[0] in _step(dry_run_out, "hosted")
+    assert "# no provider key" in _step(dry_run_out, "slm")
 
 
 def test_the_slm_dry_run_never_looks_at_the_env_file(tmp_path: Path) -> None:

@@ -34,6 +34,10 @@ from bakeoff.runner import Cell
 
 ROOT = Path(__file__).resolve().parents[3]
 NOTES = ROOT / "pocs" / "poc-06c-pretrained-slm" / "notes"
+NOTES_A = ROOT / "pocs" / "poc-06a-bake-off-sidecar-lane" / "notes"
+"""Where the Mac's `hosted` step writes `YYYY-MM-DD-hosted-run.results.json` (`NOTES_A` in
+`scripts/poc06_mac/lib.sh`)."""
+README = ROOT / "pocs" / "poc-06c-pretrained-slm" / "README.md"
 POC06 = ROOT / "deploy" / "compose" / "poc06"
 PIN_FILE = POC06 / "model.sha256"
 DRIVER = POC06 / "load_driver.py"
@@ -41,6 +45,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "poc06-slm.yml"
 ADR = ROOT / "docs" / "planning" / "adr" / "006-agent-engines-default-supported-lanes.md"
 
 ROUTE = "local-small"
+HOSTED_ROUTE = "big-default"
 GGUF_FILE = "Qwen3-1.7B-Q8_0.gguf"
 TASKS = ("smoke", "simplifier", "lookup")
 RUN_LANES = ("inprocess", "sidecar")  # step_slm: `--lane inprocess,sidecar`
@@ -48,6 +53,9 @@ SCALE_ENGINES = ("echo-python", "echo-openai-agents")  # step_scale: SCALE_ENGIN
 SCALE_PAIRS = (1, 2, 4)
 PLACEHOLDER = "To be written after review"
 WAITS = "waits on the poc06-slm CI run"
+WAITS_HOSTED = "waits on the Mac run (`make poc06-mac`, step hosted)"
+RUN_CLAIM = re.compile(r"\((\d+) of (\d+) runs(?: passed)?\)")
+"""The README's run-count claim, as in "(135 of 135 runs passed)"."""
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 
@@ -61,9 +69,9 @@ EXPECTED_CELLS = frozenset(
 # ---- readers ----------------------------------------------------------------------------------
 
 
-def newest_note(stem: str) -> Path | None:
-    """The newest `YYYY-MM-DD-<stem>.md` in notes/, or None."""
-    found = sorted(NOTES.glob(f"[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-{stem}.md"))
+def newest_note(stem: str, notes: Path = NOTES) -> Path | None:
+    """The newest `YYYY-MM-DD-<stem>.md` in `notes`, or None."""
+    found = sorted(notes.glob(f"[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-{stem}.md"))
     return found[-1] if found else None
 
 
@@ -144,6 +152,40 @@ def pass_counts(data: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def run_totals(data: dict[str, Any]) -> tuple[int, int]:
+    """(passed, runs) over every task of every cell that ran."""
+    results = [r for c in data.get("cells", []) if c["status"] == "ok" for r in c["tasks"].values()]
+    return sum(r["passed"] for r in results), sum(r["runs"] for r in results)
+
+
+def side_by_side_problems(slm: dict[str, Any], hosted: dict[str, Any]) -> list[str]:
+    """Criterion 2, second half: the hosted big-model run has a cell, with its numbers, for every
+    engine and lane that ran on the SLM, so the two can be read side by side."""
+    problems: list[str] = []
+    meta = hosted.get("meta", {})
+    if meta.get("route") != HOSTED_ROUTE:
+        problems.append(f"hosted meta.route is {meta.get('route')!r}, not {HOSTED_ROUTE!r}")
+    if meta.get("hosted") is not True:
+        problems.append("hosted meta.hosted is not true: the run used the fake model")
+    cells = {(c["engine"], c["lane"]): c for c in hosted.get("cells", [])}
+    for cell in slm.get("cells", []):
+        if cell["status"] != "ok":
+            continue
+        key = (cell["engine"], cell["lane"])
+        other = cells.get(key)
+        if other is None:
+            problems.append(f"no hosted cell for {key[0]} {key[1]}")
+        elif other["status"] != "ok":
+            problems.append(f"hosted {key[0]} {key[1]} did not run: {other['status']}")
+        else:
+            problems += [
+                f"hosted {key[0]} {key[1]} has no {task} result"
+                for task in cell["tasks"]
+                if task not in other["tasks"]
+            ]
+    return problems + [f"hosted {p}" for p in metric_problems(hosted)]
+
+
 def scale_problems(data: dict[str, Any]) -> list[str]:
     """Criterion 4: every scale engine has a row for 1, 2, and 4 pairs with requests > 0."""
     problems: list[str] = []
@@ -185,10 +227,16 @@ def test_every_trusted_engine_ran_every_task_on_local_small() -> None:
 
     Checks the slm-run results: `meta.route` is `local-small`, each trusted engine has a cell in
     each lane it supports (inprocess and sidecar; echo-typescript sidecar only), and each cell ran
-    smoke, simplifier, and lookup. Pass counts are printed, not gated: an SLM may fail tasks.
+    smoke, simplifier, and lookup the same number of times. The run count is asserted, and the
+    README's "N of M runs" claim must match the recorded totals. A failed task is a result, not a
+    test failure: the pass count is gated only against what the README claims.
     """
     data = need_results("slm-run")
     assert bakeoff_problems(data) == []
+    passed, runs = run_totals(data)
+    assert runs == len(EXPECTED_CELLS) * len(TASKS) * data["meta"]["repeat"]
+    claims = {(int(a), int(b)) for a, b in RUN_CLAIM.findall(README.read_text(encoding="utf-8"))}
+    assert claims == {(passed, runs)}, f"README claims {claims}; the results hold {passed}/{runs}"
     for key, count in sorted(pass_counts(data).items()):
         print(f"{key}: {count}")
 
@@ -208,8 +256,19 @@ def test_every_cell_that_ran_records_success_tool_calls_tokens_and_latency() -> 
 
 
 def test_the_slm_numbers_sit_next_to_the_big_model_numbers() -> None:
-    """Exit criterion 2, second half: the SLM numbers next to the big-model numbers from 6a."""
-    pytest.skip("hosted big-model numbers come from the Mac run (`make poc06-mac`, step hosted)")
+    """Exit criterion 2, second half: the SLM numbers next to the big-model numbers from 6a.
+
+    Skips only while 6a's `notes/*-hosted-run.md` is absent. Once the Mac's `hosted` step commits
+    it, every engine and lane of the SLM run must have its hosted numbers too.
+    """
+    slm = need_results("slm-run")
+    note = newest_note("hosted-run", NOTES_A)
+    if note is None:
+        pytest.skip(f"no 6a notes/*-hosted-run.md yet: {WAITS_HOSTED}")
+    path = results_of(note)
+    assert path.is_file(), f"{note.name} exists but {path.name} does not"
+    hosted: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    assert side_by_side_problems(slm, hosted) == []
 
 
 # ---- criterion 3: request features ------------------------------------------------------------
@@ -375,6 +434,30 @@ def test_the_readers_reject_a_missing_cell_a_skip_a_wrong_route_and_null_latency
     numbers = metric_problems(data)
     assert any("latency_p95_ms null" in p for p in numbers)
     assert any("no tool-call success" in p for p in numbers)
+
+
+def test_the_side_by_side_reader_needs_a_hosted_cell_for_every_slm_cell(tmp_path: Path) -> None:
+    """Criterion 2 reader: a full hosted run passes; a missing cell or the wrong route does not."""
+    slm = fixture_results(tmp_path)
+    hosted = fixture_results(tmp_path)
+    hosted["meta"]["route"] = HOSTED_ROUTE
+    assert side_by_side_problems(slm, hosted) == []
+    hosted["meta"]["route"] = ROUTE
+    hosted["cells"] = [c for c in hosted["cells"] if c["engine"] != "echo-python"]
+    problems = side_by_side_problems(slm, hosted)
+    assert any("hosted meta.route" in p for p in problems)
+    assert "no hosted cell for echo-python sidecar" in problems
+
+
+def test_the_run_totals_count_every_task_of_every_cell_that_ran(tmp_path: Path) -> None:
+    """Criterion 1 reader: the totals the README claim is checked against."""
+    data = fixture_results(tmp_path)
+    cells = len(EXPECTED_CELLS) * len(TASKS)
+    assert run_totals(data) == (cells, 2 * cells)
+    assert RUN_CLAIM.findall("all (135 of 135 runs passed) and (9 of 10 runs)") == [
+        ("135", "135"),
+        ("9", "10"),
+    ]
 
 
 def test_a_task_with_no_completed_run_needs_its_failure_reason(tmp_path: Path) -> None:
