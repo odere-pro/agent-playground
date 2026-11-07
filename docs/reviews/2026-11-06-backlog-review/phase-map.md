@@ -1,6 +1,6 @@
 # Phase map: the backlog against the product plan's phases A to F
 
-Session: C2. Date: 2026-11-06. Revised the same day to match [fix-plan.md](fix-plan.md), including its "User decisions, 2026-11-06" (P-1, P-2, P-6, and 023 C-5 in phase A).
+Session: C2. Date: 2026-11-06. Revised the same day to match [fix-plan.md](fix-plan.md), including its "User decisions, 2026-11-06" (P-1, P-2, P-6, and 023 C-5 in phase A). Refreshed on 2026-11-07 for what landed since: phase A's boundary items (PR #79, PR #80), phase B's route map (PR #78), and the product plan's 2026-11-07 gap review (PR #81).
 Inputs: [fix-plan.md](fix-plan.md) (C1; the source of truth for the apply PRs), the ten `findings-W*.md` files in this folder, the product plan [2026-11-06-agent-container-product.md](../../plans/2026-11-06-agent-container-product.md) ("The order of work", "Gaps the PoC track did not cover"), `docs/planning/tools/backlog.py` `ROWS`, and [011-what-is-left.md](../../planning/poc/011-what-is-left.md).
 Companions: [decision-pack-DEC-1.md](decision-pack-DEC-1.md) and [proposals.md](proposals.md).
 
@@ -14,103 +14,125 @@ Companions: [decision-pack-DEC-1.md](decision-pack-DEC-1.md) and [proposals.md](
 - `P-n` is a proposal in [proposals.md](proposals.md): a user decision. A box a proposal touches stays open until it is decided.
 - The product plan sizes its phases in weeks and does not say how many engineers. suggested: one week is 5 engineer-days, so "2 weeks" is 10 days.
 - Every live issue with a phase A to F appears in exactly one section. Every `later` issue and every parked issue appears in its table at the end.
+- "What landed" lists work merged to `main` after `fix-plan.md` was written, with its evidence. It ticks nothing: the tick PRs tick each box in its issue, and PR-R re-sizes. Until then, sizes and totals stay `fix-plan.md`'s, so phases A and B show more days than are left.
 
 ## Phase A: close the must-haves
 
-Product plan size: 2 weeks (suggested: 10 days). Issue days: **21.5**, 9 issues. **Flag: about twice the plan's size.** Most of it is 024 CH-3 and 026 CH-4 (5 days each), cluster work on an enforcing CNI. 023 C-5 joined on 2026-11-06 by the user's decision; it has a date, 2026-12-02.
+**Partly landed on 2026-11-06 (PR #79, PR #80).** The product plan marks the boundary items done and says "1 week left".
+
+Product plan size: 1 week left (suggested: 5 days). Issue days: **21.5**, 9 issues, at `fix-plan.md` sizes set before PR #79. **Flag: about four times the plan's remaining size.** 026 CH-4 now holds less open work than its L. The tick PRs tick the landed boxes below and re-size in `ROWS`; this file does not re-size. 023 C-5 joined on 2026-11-06 by the user's decision; it has a date, 2026-12-02.
+
+### What landed
+
+| Item | Issue | Evidence |
+| ---- | ----- | -------- |
+| The sidecar hostile suite in CI (PoC-5 criterion 1): sidecar controls, hard requirement 1 with the broker, the tool gateway, and admission, in the `remote-lane` job | 026 CH-4 box 6 | `remote-lane` run [42299094368](https://github.com/odere-pro/agent-playground/actions/runs/42299094368) on `f17a482`: `175 passed, 2 skipped, 2 xfailed`; the PoC-5 README drops the flag (PR #80) |
+| Default-deny egress as a chart rule, with a default deny per namespace | 026 CH-4 (the P1 gap) | `pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_boundary.py::test_every_pod_the_chart_renders_is_default_deny_both_ways`, `::test_each_namespace_the_chart_uses_gets_a_default_deny` |
+| The admission rules in the chart: `agent-lib.admission`, installed once per cluster by `deploy/helm/agent-admission` | 026 CH-4, the two new admission boxes | `test_poc09_chart_boundary.py::test_the_admission_chart_renders_the_poc05_trust_rule_unchanged`, `::test_every_pod_the_chart_renders_passes_the_chart_admission_rules` |
+| Rule 9, the minimum chassis version, with a digest mode | 026 CH-4, the minimum-version box from 056 CH-7 (P-16) | `test_poc09_chart_boundary.py::test_a_chassis_below_the_minimum_version_is_refused_at_render_and_by_rule_9`; `pocs/poc-05-sandboxed/tests/test_poc05_admission_rule9_static.py`. Warn-first for a new minimum is still open |
 
 ### Issues it closes
 
-| Issue | Boxes | Size | Days | Open boxes after the review |
-| ----- | ----- | ---- | ---- | --------------------------- |
+| Issue | Boxes | Size | Days | Open boxes |
+| ----- | ----- | ---- | ---- | ---------- |
 | 007 H-1 | 6/10 | S (was L) | 1 | image version against package version, with `chassis serve` started in CI; the wheel build; box 2 ticks after the port renames; box 7 rewritten to "unknown `schema_version` refused"; the core import rule is P-10 |
 | 009 CH-1 | 6/8 | S (was M) | 1 | one box left: a JSON-RPC error from the workload surfaces as an `a2a.*` code (W2a-18, P-9). Box 3 moves to 024 CH-3; box 5 is scoped to `sidecar` and `remote` (P-7) |
 | 010 H-12 | 8/11 | M | 2.5 | box 11 `ctx` half (P-8) and its no-credential half (kind only); box 4 a bad `risk_class` test; box 5 "credential-shaped value refused"; new boxes: reload ceilings for `spec.limits` and `ttl_s`, `/openapi.json` after a reload |
 | 018 H-18 | 7/8 | M | 2.5 | box 5 tick-blocked until a sidecar-lane test sends `Idempotency-Key` and reads it from `ctx`; new box: with auth on, the store key and fingerprint include the principal |
 | 023 C-5 | 5/8 | S | 1 | the phase A box is the client guide (box 4), published before the AI Act Art. 50(2) date, 2026-12-02 (user decision, 2026-11-06). `fix-plan.md` section 3 has the body edits for the other boxes (box 6 a contract-suite case, box 8 the body field) |
-| 024 CH-3 | 3/9 | L (was M) | 5 | box 2; box 3 tag roll and pin; box 4 "on a CNI that enforces NetworkPolicy"; box 5 render only; boxes 7 and 8 on the chart on kind with the chassis as native sidecar; takes 009 box 3, 011 box 8, and a cluster box from 025 H-10 |
-| 026 CH-4 | 1/6 | L (was M) | 5 | box 2 MinIO through the chassis; box 3 per-service Valkey user; box 4 public-address and other-pod probe against the `agent-lib` NetworkPolicy; box 5 revoke test; box 6 names the workflow that runs all four kind suites; new boxes: `agent-lib` carries the admission rules, chart defaults pass every PoC-5 admission rule; 056 CH-7's minimum chassis version box (P-16) |
+| 024 CH-3 | 3/9 | L (was M) | 5 | box 2; box 3 tag roll and pin; box 4 "on a CNI that enforces NetworkPolicy"; box 5 render only; boxes 7 and 8 on the chart on kind with the chassis as native sidecar; takes 009 box 3, 011 box 8, and a cluster box from 025 H-10. PR #79 changed the chart's NetworkPolicy for 026; no 024 box is claimed here. The 2026-11-07 review adds the drain order (see "After phases A to F") |
+| 026 CH-4 | 1/6, before PR #79's ticks | L (was M) | 5 | landed in PR #79 (above): box 6, the two admission boxes, the minimum-version box. Still open: box 2 MinIO through the chassis; box 3 per-service Valkey user; box 4 public-address and other-pod probe against the `agent-lib` NetworkPolicy on an enforcing CNI; box 5 revoke test; warn-first for a new minimum chassis version |
 | 055 CH-6 | 5/7 | S (was L) | 1 | box 2: the T10 probe, with `test_poc05_kind_tool_gateway.py` in `remote-lane.yml`; new box: remote output over `spec.limits` ends the run with a fixed error; ADR-005 replaces the `suggested:` markers. The managed runtime moves to `## Out of scope` (ADR-006). Deps lose 038 X-1a and gain 024 CH-3 |
 | 122 X-5 | 0/8 | M | 2.5 | re-titled "Load tests: throughput and sidecar overhead on a Linux host": throughput at 4 pairs on a Linux host, xfails emptied, PoC-4 criterion 4 ticked; sidecar p95 CPU and memory and hop p50 and p95 (tick-blocked); the sidecar's cost line (from 120 X-7); chart requests from p95 and the ADR-001 Revisit trigger; the rare 502 at 4 pairs and its source; box 6, a report per run. Boxes 1 to 5 move to 133 X-5b. No deps |
 
 ### Gaps it covers
 
-| Gap (product plan) | Owner |
-| ------------------ | ----- |
-| P1: default-deny egress is not a product rule | 026 CH-4; the chart's NetworkPolicy lives in 024 CH-3 |
-| P1: the admission rules are not in the chart | 026 CH-4, two new boxes, plus the minimum-version box from 056 CH-7 (P-16) |
-| Phase A item: the sidecar hostile suite in CI (PoC-5 criterion 1) | 026 CH-4 box 6 |
-| Phase A item: MinIO through the chassis (PoC-5 criterion 3) | 026 CH-4 box 2 |
-| Phase A item: the T10 probe (PoC-5 criterion 8) | 055 CH-6 box 2; the probe workload itself is the user's (011 section 4) |
-| Phase A item: throughput at 4 pairs on Linux (PoC-4 criterion 4) | 122 X-5; needs a Linux host (owner list) |
-| Not in the product plan: the AI Act Art. 50(2) client guide, due 2026-12-02 | 023 C-5 box 4, moved to phase A by the user on 2026-11-06 |
+| Gap (product plan) | Owner | State |
+| ------------------ | ----- | ----- |
+| P1: default-deny egress is not a product rule | 026 CH-4 | closed 2026-11-06 (PR #79) |
+| P1: the admission rules are not in the chart | 026 CH-4 | closed 2026-11-06 (PR #79); warn-first left |
+| Phase A item: the sidecar hostile suite in CI (PoC-5 criterion 1) | 026 CH-4 box 6 | closed 2026-11-06 (PR #79, PR #80) |
+| Phase A item: MinIO through the chassis (PoC-5 criterion 3) | 026 CH-4 box 2 | open |
+| Phase A item: the T10 probe (PoC-5 criterion 8) | 055 CH-6 box 2; the probe workload itself is the user's (011 section 4) | open |
+| Phase A item: throughput at 4 pairs on Linux (PoC-4 criterion 4) | 122 X-5; needs a Linux host (owner list) | open |
+| Not in the product plan: the AI Act Art. 50(2) client guide, due 2026-12-02 | 023 C-5 box 4, moved to phase A by the user on 2026-11-06 | open |
 
 ### What it reuses
 
 - The kind cluster and its suites: `deploy/kind/poc05/`, `pocs/poc-05-sandboxed/tests/test_poc05_kind_sidecar_controls.py`, `test_poc05_kind_hardreq1.py`, `test_poc05_kind_admission.py`, `test_poc05_kind_tool_gateway.py`.
-- The admission policy: `deploy/kind/poc05/admission/`.
-- The chart: `deploy/helm/agent-lib`, `deploy/helm/example-agent`, `.github/workflows/poc09-helm.yml`, `pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py`.
+- The admission policy: `deploy/kind/poc05/admission/`, now also rendered by `deploy/helm/agent-admission`.
+- The chart: `deploy/helm/agent-lib`, `deploy/helm/example-agent`, `.github/workflows/poc09-helm.yml`, `pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py`, `test_poc09_chart_boundary.py`.
 - The remote lane: `.github/workflows/remote-lane.yml`, `pocs/poc-05-sandboxed/tests/test_poc05_remote_lane_contract.py`.
 - The load kit: `packages/load-tools`, `pocs/poc-04-stateless-scalable/tests/test_load_results.py`, `pocs/poc-04-stateless-scalable/notes/2026-10-01-load-results.md`.
 - The AI marking the client guide describes: `packages/chassis/src/chassis/server/marking.py`, `packages/chassis/tests/test_marking.py`, `packages/chassis/tests/test_marking_body.py`.
 
 ### Done when
 
-From the product plan: "every PoC-1 to PoC-5 flag has plain evidence; the chart carries the egress and admission rules". The user's decision adds the 023 C-5 client guide, before 2026-12-02.
+From the product plan, as updated on 2026-11-07: "every PoC-1 to PoC-5 flag has plain evidence". The chart half of the old done-when landed in PR #79. The user's decision adds the 023 C-5 client guide, before 2026-12-02.
 
-Evidence that will show it:
+Evidence that will show the rest:
 
-- a named workflow that runs the four PoC-5 kind suites on every PR, and a green run of it;
-- a test id for the allowed MinIO call through the chassis, next to the existing refusal for the workload;
-- a passing T10 runbook run ([poc-05 runbooks](../../guides/poc-05-runbooks.md)) and `test_poc05_kind_tool_gateway.py` green in `remote-lane.yml`;
-- a dated `pocs/poc-04-stateless-scalable/notes/` load record at 4 pairs on Linux, and `test_load_results.py` with no xfail;
-- `poc09-helm.yml` rendering `agent-lib` with a default-deny NetworkPolicy and admission rules, and the chart's defaults passing every PoC-5 admission rule;
+- a test id for the allowed MinIO call through the chassis, next to the existing refusal for the workload (PoC-5 criterion 3);
+- a passing T10 runbook run ([poc-05 runbooks](../../guides/poc-05-runbooks.md)) and `test_poc05_kind_tool_gateway.py` green in `remote-lane.yml` (PoC-5 criterion 8);
+- a dated `pocs/poc-04-stateless-scalable/notes/` load record at 4 pairs on Linux, and `test_load_results.py` with no xfail (PoC-4 criterion 4);
 - the client guide, dated before 2026-12-02 and linked from 023 C-5 box 4.
 
 ## Phase B: models and the judge
 
-Product plan size: 2 weeks (suggested: 10 days). Issue days: **19.5**, 8 issues. **Flag: about twice the plan's size.** 012 H-3 (5 days) carries the route map. Four issues (002, 003, 028, 042) close only with the Mac run.
+**First step landed on 2026-11-06 (PR #78): the route map per task and the judge route.** The product plan says "1 week left".
+
+Product plan size: 1 week left (suggested: 5 days). Issue days: **19.5**, 8 issues, at `fix-plan.md` sizes set before PR #78. **Flag: about four times the plan's remaining size.** 012 H-3 now holds less open work than its L. Four issues (002, 003, 028, 042) close only with the Mac run, and the 2026-11-07 review adds judge work no issue holds yet (see "After phases A to F").
+
+### What landed
+
+| Item | Issue | Evidence |
+| ---- | ----- | -------- |
+| `spec.model.routes`: the route for the task the caller names in `input.data.task`, else `spec.model.route` | 012 H-3, route-map box 1 | `packages/chassis/tests/test_model_routes.py::test_model_spec_resolves_a_task_through_the_map_else_the_route`, `::test_context_for_resolves_the_route_per_task_else_the_default` |
+| The proxy holds every call of a run to the run's route; a route outside the key ends the run with `model_route_denied` | 012 H-3, route-map box 2 | `pocs/poc-05-sandboxed/tests/test_poc05_hostile_offline.py::test_h29_a_route_outside_the_key_is_refused_and_an_in_scope_call_is_200`. Built as: a workload call that names another route is forced to the run's route (`chassis.model_route_forced{route}`), not refused with a 403. The tick PR rewords the box |
+| The map and the judge route reload with no restart | 012 H-3, route-map box 3 | `test_model_routes.py::test_a_reload_changes_the_map_with_no_restart`, `::test_the_map_and_the_judge_route_are_reloadable` |
+| `spec.model.judge_route`: the gate scores on it, else `CHASSIS_JUDGE_ROUTE` | 042 A-2, the `judge_route` box | `test_model_routes.py::test_the_gate_scores_on_spec_model_judge_route_else_the_judges_own` |
+
+The gate's defaults did not change in PR #78. They wait on the judge's numbers from the Mac run.
 
 ### Issues it closes
 
-| Issue | Boxes | Size | Days | Open boxes after the review |
-| ----- | ----- | ---- | ---- | --------------------------- |
+| Issue | Boxes | Size | Days | Open boxes |
+| ----- | ----- | ---- | ---- | ---------- |
 | 002 G-1 | 2/7 | M | 2.5 | box 2 rewritten (OpenAI and Anthropic formats through the router; closes with the Mac run); box 3 one call per provider (Mac run); box 4 no provider key in router logs (tick-blocked, needs `test_no_provider_key_in_the_router_logs`); box 5 the master key in the `local` Compose variant (P-3); box 7 the router guide |
 | 003 G-1b | 0/6 | M (was S) | 2.5 | box 1 `big-default` and `local-small` answer by name (one hosted run); a model swap behind a route; the tool-call flag; route versions; the unknown-route error; the route table. The SLM routes are parked |
-| 012 H-3 | 2/10 | L (was M) | 5 | re-titled "Model port to the LLM router, with a route map per task"; three route-map boxes: the map in `ChassisConfig`, admission enforces the resolved route with 403 `model_route_denied`, the map reloads; box 1; box 4 `latency_ms`; box 5 virtual-key spend test; box 6 the agent tag (P-5); box 9 temperature. The vLLM half moves to `## Out of scope` |
-| 013 CH-2 | 6/8 | M | 2.5 | box 1 stock Anthropic SDK, offline; box 6 proxy counts against router counts; new box: per-call timeout capped at the run budget, with 017 H-4 |
-| 017 H-4 | 6/8 | M (was L) | 2.5 | box 8 scripted model errors; new box: retry on a model error up to `retries`, then `fallback_route`, both lanes, counted; new box: one `timeout_ms` and `max_tokens` across attempts, judge tokens counted; the outage sentence: "An evaluator outage fails open as built (ADR-010 item 4), decided 2026-11-06" (P-1); the budget error code (P-11) |
+| 012 H-3 | 2/10, before PR #78's ticks | L (was M) | 5 | landed in PR #78: the three route-map boxes (above). Still open: box 1; box 4 `latency_ms`; box 5 virtual-key spend test; box 6 the agent tag (P-5); box 9 temperature. The vLLM half moves to `## Out of scope` |
+| 013 CH-2 | 6/8 | M | 2.5 | box 1 stock Anthropic SDK, offline; box 6 proxy counts against router counts; new box: per-call timeout capped at the run budget, with 017 H-4 (the 2026-11-07 review names the same gap) |
+| 017 H-4 | 6/8 | M (was L) | 2.5 | box 8 scripted model errors; new box: retry on a model error up to `retries`, then `fallback_route`, both lanes, counted; new box: one `timeout_ms` and `max_tokens` across attempts, judge tokens counted; the outage sentence: "An evaluator outage fails open as built (ADR-010 item 4), decided 2026-11-06" (P-1); the budget error code (P-11). The 2026-11-07 review: set LiteLLM's `num_retries` and `fallbacks` per route first, and build the stage only for errors LiteLLM cannot see |
 | 028 S-3 | 0/6 | S (was M) | 1 | re-titled "`facts_kept` and banned-word scoring for the eval gate and the judge"; box 2 a 0–1 `facts_kept` fixture test; box 4 a repeat-run test; box 5 agreement with the 50 hand labels from the Mac run; box 6 judge route and rubric version in the report. Tokens, readability, and cosine parked. No deps |
 | 037 M-2 | 3/6 | S (was M) | 1 | re-titled "Eval gate in CI: a change ships only if it passes the golden set against the baseline"; box 3 the baseline floor (tick-blocked by `test_a_run_below_the_floor_fails_with_no_previous_report`); box 5 a prompt change reaches the gate; box 6 the dataset by config. Deps: 028 S-3 only |
-| 042 A-2 | 4/7 | M (was S) | 2.5 | box 4 "the gate calls only the configured evaluator adapter"; box 6 the 30-case gate set; box 7 judge cost and tokens in `/metrics` (P-14); new boxes: `judge_route` on the route map, `cloud` profile gate settings with a test each, the judge's latency, cost, and agreement from the Mac run. Box 5 is rewritten to "an evaluator outage fails open" and ticked with `test_an_evaluator_outage_fails_open` (P-1, decided 2026-11-06). Deps: 017 H-4, 028 S-3 |
+| 042 A-2 | 4/7, before PR #78's tick | M (was S) | 2.5 | landed in PR #78: the `judge_route` box (above). Still open: box 4 "the gate calls only the configured evaluator adapter"; box 6 the 30-case gate set; box 7 judge cost and tokens in `/metrics` (P-14); `cloud` profile gate settings with a test each; the judge's latency, cost, and agreement from the Mac run. Box 5 is rewritten to "an evaluator outage fails open" and ticked with `test_an_evaluator_outage_fails_open` (P-1, decided 2026-11-06). Deps: 017 H-4, 028 S-3 |
 
 ### Gaps it covers
 
-| Gap (product plan) | Owner |
-| ------------------ | ----- |
-| P1: no route map per task (`ModelSpec.routes`, `judge_route`) | 012 H-3, re-scoped with three boxes (`fix-plan.md` correction 20); `judge_route` is a 042 A-2 box; `agentctl`'s route check goes to 059 H-15 |
-| P1: the judge is off in every profile; the gate is off; no real judge numbers | 042 A-2 (`cloud` profile, outage rule, metrics, Mac numbers); the agreement box is 028 S-3 box 5; the run itself is the user's (011 section 1) |
-| P2: the retry stage on a model error is not built | 017 H-4, two new boxes |
-| Phase B item: the gate on by default, async at 0.1 on `decision-small` | 042 A-2 `cloud` profile box; the outage rule is decided: fail open everywhere, as built (P-1, 2026-11-06) |
+| Gap (product plan) | Owner | State |
+| ------------------ | ----- | ----- |
+| P1: no route map per task (`ModelSpec.routes`, `judge_route`) | 012 H-3; `judge_route` is a 042 A-2 box; `agentctl`'s route check goes to 059 H-15 | closed 2026-11-06 (PR #78); the `agentctl` check is open |
+| P1: the judge is off in every profile; the gate is off; no real judge numbers | 042 A-2 (`cloud` profile, metrics, Mac numbers); the agreement box is 028 S-3 box 5; the run itself is the user's (011 section 1) | open |
+| P2: the retry stage on a model error is not built | 017 H-4, two new boxes | open |
+| Phase B item: the gate on by default, async at 0.1 on the judge route | 042 A-2 `cloud` profile box; the outage rule is decided: fail open everywhere, as built (P-1, 2026-11-06) | open; waits on the Mac run |
 
 ### What it reuses
 
-- The config and profiles: `packages/chassis/src/chassis/server/config.py`, `packages/chassis/src/chassis/profiles.py` (both changed by the product plan).
+- The config and profiles: `packages/chassis/src/chassis/server/config.py` (the route map, PR #78), `packages/chassis/src/chassis/profiles.py` (the judge on in `cloud`, still to change).
+- The route map and its tests: `packages/chassis/src/chassis/server/model_admission.py`, `packages/chassis/tests/test_model_routes.py`.
 - The gate and the judge: `packages/chassis/src/chassis/server/evaluator_gate.py`, `packages/chassis/src/chassis/adapters/evaluators.py`, `packages/chassis/tests/test_evaluator_gate.py`, `pocs/poc-08-cross-cutting-build/tests/test_poc08_c6_gate.py`.
 - The golden cases and the offline gate: `packages/eval-kit/src/eval_kit/golden/cases-gate.yaml`, `evals/deepeval`, `evals/gate/baseline.json`, `.github/workflows/poc08-evals.yml`.
 - The router: `deploy/compose/litellm/config.yaml`, `deploy/compose/poc08-litellm/stack.sh`.
-- The route-switch test pattern: `pocs/poc-06c-pretrained-slm/tests/test_poc06c_route_switch.py::test_only_the_route_changes_and_every_task_passes_both_times`. PoC-6c is parked; the test shape is reused, not the SLM.
 
 ### Done when
 
-From the product plan: "a config map swaps a model per task with no agent change; the judge's numbers are recorded and the defaults confirmed or changed by ADR-010's rule".
+From the product plan, as updated on 2026-11-07: "the judge's numbers are recorded and the defaults confirmed or changed by ADR-010's rule". The route-map half of the old done-when landed in PR #78.
 
-Evidence that will show it:
+Evidence that will show the rest:
 
-- a test id that changes only the route map in config and shows a task's model change with `handle` and the workload unchanged;
-- the reload test for the route map, and the 403 `model_route_denied` test;
 - a dated `notes/` record from the Mac run with the judge's latency, cost per gated call, and agreement on the 50 labels;
-- an ADR-010 amendment that confirms or changes the defaults (mode, sample rate); the outage rule is already decided (fail open).
+- an ADR-010 amendment that confirms or changes the defaults (mode, sample rate); the outage rule is already decided (fail open);
+- a test per `cloud` profile gate setting (042 A-2).
 
 The product plan says phase B cannot close without the Mac run.
 
@@ -279,6 +301,45 @@ Evidence that will show it:
 
 - a `poc09-scaffold.yml` run where the generated repo uses the published pin and carries its chart;
 - a dated trial record, timed, by a person new to the code, from `agentctl new` to a demo.
+
+## After phases A to F: the 2026-11-07 gap review
+
+The product plan gained a section on 2026-11-07, "If phases A to F are all built: what is still missing" (PR #81). Three read-only passes over `main` at `4aa4eb1` found that A to F make the container complete for one stateless agent, not a platform a team can run under load, roll out safely, compose, or trust to judge its own answers. It proposes a new phase G (suggested: 2 weeks).
+
+This table gives each gap the live issue that already holds it, or says no issue does. It is a suggested home for the next consolidation, not a `ROWS` change. New issues get their IDs in a fix plan, not here. None of these days are in the totals below.
+
+| Gap (product plan, 2026-11-07) | Group | Suggested home |
+| ------------------------------ | ----- | -------------- |
+| The loopback model proxy serves uncorrelated calls with no run | security defaults | 013 CH-2 (a `cloud` profile value) |
+| A tool name not in the gateway's cache skips the write-key and schema checks | security defaults | 054 H-16, its new box "a bare tool name resolves or is refused" |
+| `/metrics` open; the rate limit `fail_open` and off under `auth: none` | security defaults | 022 H-6 box 1 (P-4). **Conflict:** the review proposes `rate_limit_on_unavailable: fail_closed` in `cloud`; the user decided P-2 on 2026-11-06 as fail open everywhere. The user re-decides or the review line drops |
+| `user.id` goes into baggage raw | security defaults | ADR-007 open question 1, the user's (decision pack, "Open, for the user") |
+| The LiteLLM key never expires; one symmetric remote token; no image signature check at admission; MCP tool descriptions not pinned | security defaults | 026 CH-4 box 5 (revoke, rekey); 055 CH-6 (two token keys); 080 R-7 and 025 H-10 (signatures, `later`); 082 R-9 (description pin, `later`) |
+| A write tool is "write" only by a missing `readOnlyHint`; no person approves a write with an outside effect | security defaults | 054 H-16 with P-21 (the `read_only` default); the approval ADR has no issue (new issue needed) |
+| No backpressure: no cap on runs in flight, CPU-only HPA | phase G | no issue (new issue needed); its gauge feeds 104 O-3 |
+| The drain order on rollout: the chart makes the chassis the native sidecar | phase G | 024 CH-3 (it left the pick open): an ADR |
+| LiteLLM's budget refusal reaches the workload as `http_400`, with no counter | phase G | 013 CH-2, with P-11 (the budget error code); the alert in 117 X-3 |
+| No per-call timeout on the proxy's upstream call | phase G | 013 CH-2, its new per-call timeout box |
+| Rings in no phase | phase G | 056 CH-7 (`later`) |
+| No second event-schema version to test "previous major accepted" | phase G | 056 CH-7 box 6 (`later`) |
+| The retry stage planned as a rerun of the whole agent | phase G | 017 H-4 (LiteLLM per-route retries first) |
+| No judge calibration against people; 10 `fail` cases against the vault's 30 | the judge | 028 S-3 box 5; the extra cases and the second labeler have no box (new box needed) |
+| The rubric's score-first 0–1 reply; a bad reply fails open | the judge | 042 A-2 and ADR-010 open question 1. P-1 decided the evaluator outage, not a bad reply |
+| One rubric for every agent and task; no skip for structured answers | the judge | 042 A-2 (new box needed) |
+| The judge's cost reaches no metric in async mode | the judge | 042 A-2 box 7 (P-14) |
+| "Escapes" needs a join of two counters; first-attempt pass rate reads 100% in async | the judge | 046 A-5 and 130 CH-11 (the score through `FeedbackPort`); the formula is in [metrics](../../specs/metrics.md) since PR #81 |
+| One evaluator, no drift check, no sampled second judge | the judge | 075 E-3 is parked; no live issue holds a shadow judge (new issue needed, or unpark part of 075) |
+| The golden set is author-written, not error analysis on real inputs | the judge | 131 CH-12 keeps one result store; the error-analysis cases have no box (new box needed) |
+| The template's `make eval` has no judge | the judge | 015 H-8 (the fake model scripted per case) and 059 H-15, phase F |
+| No agent-to-agent path | composition | no issue (an ADR-011); 094 P-1 and 099 O-1 are `later` |
+| Every run is one HTTP connection capped at 120 s; `spec.events.consume` refused | composition | 021 H-20 (`later`) |
+| `context_ref` unused; a checkpointer has nowhere to write | composition | 128 CH-9, the checkpointer ADR |
+| Multi-tenancy: the end user's id is unchecked; no per-subject token cap | composition | ADR-009 open question 4, the user's; no issue |
+| Streamed answers skip the `output` guard | composition | 022 H-6 box 8 (the Mac run) |
+| One reference stack for the whole platform | operating | no issue (new issue needed) |
+| Operator runbooks | operating | 119 X-6 (`later`) |
+| A `task` label on the cost metric | operating | 120 X-7 |
+| The epic's six success metrics, three of them parked | operating | a line each in [metrics](../../specs/metrics.md); no issue |
 
 ## Cross-phase dependencies
 
@@ -535,18 +596,18 @@ later W12: 2 issues 5 days
 
 | Bucket | Issues | Days | Product plan |
 | ------ | ------ | ---- | ------------ |
-| A | 9 | 21.5 | 2 weeks (suggested: 10) |
-| B | 8 | 19.5 | 2 weeks (suggested: 10) |
+| A | 9 | 21.5 | 1 week left (suggested: 5); boundary items landed 2026-11-06 |
+| B | 8 | 19.5 | 1 week left (suggested: 5); route map landed 2026-11-06 |
 | C | 2 | 6 | 2 weeks (suggested: 10) |
 | D | 3 | 4.5 | 1–2 weeks (suggested: 5–10) |
 | E | 10 | 21.5 | 2 weeks (suggested: 10) |
 | F | 5 | 13.5 | 1–2 weeks (suggested: 5–10) |
-| A to F | 37 | 86.5 | 10–12 weeks (suggested: 50–60) |
+| A to F | 37 | 86.5 | 8–10 weeks left (suggested: 40–50) |
 | later | 72 | 190.5 | — |
 | parked | 23 | 52.5 | — |
 | done | 1 | 5 | — |
 
-All open work is 277 days (A to F plus `later`). The first estimate was 298.5 days with W12, or 283.5 for W0 to W11 as `baseline.md` counts it. Phases A to F hold 86.5 days against the product plan's 50 to 60. The phases run partly in parallel (A with B, E after A), so two engineers could still fit A and B into the plan's two weeks.
+All open work is 277 days (A to F plus `later`). The first estimate was 298.5 days with W12, or 283.5 for W0 to W11 as `baseline.md` counts it. Phases A to F hold 86.5 days against the product plan's 40 to 50 left. The days are `fix-plan.md`'s sizes, set before PRs #78 and #79 landed, so phases A and B overstate what is left until PR-R re-sizes 012 H-3, 026 CH-4, and 042 A-2. The phases run partly in parallel (A with B, E after A). The 2026-11-07 review's phase G and its other gaps are not in these totals.
 
 ## Differences from fix-plan.md
 
