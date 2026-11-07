@@ -3,7 +3,7 @@
 - **Date:** 2026-10-02
 - **Deciders:** Oleksandr (epic owner) and the delivery team
 - **Format:** Michael Nygard's template: Status, Context, Decision, Consequences
-- **Related:** [ADR-001](001-chassis-delivery-model.md) (items 4 to 8, hard requirements 1 and 2), [ADR-002](002-template-a2a-server-placement.md), [PoC plan](../poc/000-plan.md), [PoC-5](../poc/005-PoC-5-sandboxed.md), [022 H-6](../issues/022-H-6-security-middleware.md), [054 H-16](../issues/054-H-16-tool-port.md), [026 CH-4](../issues/026-CH-4-chassis-only-credentials-egress.md), [055 CH-6](../issues/055-CH-6-remote-lane-trust-rule.md), the PoC-5 design `docs/plans/2026-10-02-poc-05-sandboxed.md` (sections 2.2, 2.3, 2.5, 2.8, 2.10, and 9), and the threat model `pocs/poc-05-sandboxed/notes/2026-10-02-threat-model.md`
+- **Related:** [ADR-001](001-chassis-delivery-model.md) (items 4 to 8, hard requirements 1 and 2), [ADR-002](002-template-a2a-server-placement.md), [PoC plan](../poc/000-plan.md), [PoC-5](../poc/005-PoC-5-sandboxed.md), [022 H-6](../issues/022-H-6-security-middleware.md), [054 H-16](../issues/054-H-16-tool-port.md), [026 CH-4](../issues/026-CH-4-chassis-only-credentials-egress.md), [055 CH-6](../issues/055-CH-6-remote-lane-trust-rule.md), the PoC-5 design `docs/plans/2026-10-02-poc-05-sandboxed.md` (sections 2.2, 2.3, 2.5, 2.8, 2.10, and 9), the threat model `pocs/poc-05-sandboxed/notes/2026-10-02-threat-model.md`, and [ADR-011](011-per-run-secret-and-v0-wire-bounds.md), which extends decision 2 with a per-run secret (`x-chassis-run-secret`) next to the `traceparent` ([contract v8](../../contracts/contract-v8.md), part D)
 
 ## Status
 

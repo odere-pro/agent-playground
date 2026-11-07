@@ -62,13 +62,22 @@ def _as_dict(raw: Any) -> dict[str, Any]:
     raise TypeError(f"handle yielded {type(raw).__name__}, not an event dict")
 
 
+ERROR_MESSAGE_MAX = 8192
+"""The `maxLength` of `error.message` in `events.v0.json` (`chassis.core.events.ERROR_MESSAGE_MAX`;
+this module cannot import it, ADR-002). A test in each package checks the two are equal."""
+
+
 def error_event(code: str, message: str) -> dict[str, Any]:
-    """An `error` event of the server's own, not retryable."""
+    """An `error` event of the server's own, not retryable.
+
+    The message is cut to `ERROR_MESSAGE_MAX`, so exception or validation text never makes the
+    server's own error event fail the schema.
+    """
     return {
         "schema_version": SCHEMA_VERSION,
         "type": "error",
         "code": code,
-        "message": message,
+        "message": message[:ERROR_MESSAGE_MAX],
         "retryable": False,
     }
 

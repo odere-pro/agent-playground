@@ -3,7 +3,8 @@
 #
 # Run only through ./stack.sh (project `poc07`). It makes every credential into .env.poc07
 # (mode 600, git-ignored); nothing here has a default secret, so `${VAR:?}` fails closed.
-# The chassis exports OTLP to the Collector; the Collector fans the same spans out to Langfuse
+# The chassis exports OTLP to the Collector with a bearer token (OTLP_CHASSIS_TOKEN; of the
+# services, only the Collector gets it). The Collector fans the same spans out to Langfuse
 # (otlphttp with Basic auth) and to Jaeger (otlp). The swap is exporter config only
 # (otel-collector.yaml). Ports bind 127.0.0.1 only.
 #
@@ -153,6 +154,8 @@ services:
         condition: service_started
     environment:
       LANGFUSE_AUTH: ${LANGFUSE_AUTH:?}
+      # The receiver's bearer token (review R7-15). The chassis runs on the host and sends it.
+      OTLP_CHASSIS_TOKEN: ${OTLP_CHASSIS_TOKEN:?}
     volumes:
       - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
     ports:

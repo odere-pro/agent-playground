@@ -41,7 +41,8 @@ from chassis.ports.engine import EngineConnector
 from chassis.ports.model import ToolCallRequest
 from chassis.ports.tool import ToolDefinition, ToolResult
 from chassis.server import ChassisConfig, create_app
-from chassis.server.remote_auth import create_remote_proxy_app, remote_tokens
+from chassis.server.correlation import parse_traceparent
+from chassis.server.remote_auth import RUN_SECRET, create_remote_proxy_app, remote_tokens
 
 from poc_harness.apps import bundle_for, running
 from poc_harness.lane_tokens import (
@@ -216,6 +217,17 @@ class RemoteLane:
     def workload_client(self, token: str | None) -> httpx.AsyncClient:
         """A caller of the workload's A2A server, the way the chassis or anything else calls it."""
         return uds_client(self.workload_uds, REMOTE_URL, token)
+
+    def run_headers(self, trace: str | None) -> dict[str, str]:
+        """The headers a remote pod sends with `trace` (a `traceparent`): the traceparent, and
+        the `x-chassis-run-secret` of the in-flight run it names, the way the workload reads it
+        from `ctx` (contract v8). No run, no secret header. Empty when `trace` is None."""
+        if trace is None:
+            return {}
+        trace_id = parse_traceparent(trace)
+        record = self.app.state.runs.lookup(trace_id) if trace_id is not None else None
+        secret = getattr(record, "run_secret", None)
+        return {"traceparent": trace, **({RUN_SECRET: secret} if secret else {})}
 
     def counter_total(self, name: str) -> int:
         return sum(v for (n, _), v in self.telemetry.counters.items() if n == name)

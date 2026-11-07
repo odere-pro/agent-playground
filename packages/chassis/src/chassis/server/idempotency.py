@@ -4,7 +4,10 @@ A call with a key the client sent (the `Idempotency-Key` header or the native bo
 `idempotency_key`) runs once per agent and key. A minted key never repeats, so such a call never
 touches the store: check `Idempotency.applies(key_from)` first.
 
-**The store key** is `chassis:idem:v1:<agent>:<sha256(key) hex>` (`store_key`, suggested).
+**The store key** is `chassis:idem:v1:<agent>:<digest>` (`store_key`, suggested). With auth off
+the digest is `sha256(key) hex`. With auth on it is the sha256 hex of the canonical JSON of
+`[subject, key]`, the caller's subject from `current_user_id()`, so caller B never gets caller A's
+stored result for the same key (review R3-06).
 **The fingerprint** is the sha256 of the canonical JSON of `{agent, input, context_ref}`
 (`fingerprint`); the ids, `stream`, `budget`, `agent_version`, and the interface are not in it.
 
@@ -14,9 +17,17 @@ while the run is alive:
 A finished run is cached for `ttl_s`:
 `{"v": 1, "state": "done", "fingerprint": "...", "request": <Request>, "events": [<wire
 events>], "response": <Response>}`. `request` is the original request, so a replay can bind
-its `ReplyMeta` to the original ids.
+its `ReplyMeta` to the original ids. In `request` and `response`, `idempotency_key` holds the
+sha256 hex of the client's key (as `server.results.key_hash`), never the key; a replay puts the
+caller's own key back (review R4-29).
 
-**`begin(request, *, wait_ms)`** returns one of:
+During a rolling deploy from a release before R3-06 and R4-29, two effects last until the old
+replicas are gone. An old replica that replays a new `done` entry sends the hash back as
+`idempotency_key`. With auth on, old and new replicas use different store keys, so a retry that
+lands on the other release runs again instead of replaying. The entry version stays 1, so neither
+release answers the other's entry with a final 409.
+
+**`begin(request, *, wait_ms, subject=None)`** returns one of:
 
 - `Claim`: this call runs. Its renew task is already started.
 - `Replay(request, events, response)`: a run with the same fingerprint finished; replay it.
@@ -28,6 +39,9 @@ its `ReplyMeta` to the original ids.
   `Claim.timeout_ms` is what is left of `wait_ms` (at least `MIN_RUN_MS`, suggested 500); `serve`
   runs it with that timeout, so the client never waits about twice its own. An entry gone
   between the claim attempt and the read is polled the same way, within the same deadline.
+  At most `MAX_WAITERS_PER_KEY` calls wait on one key per replica; the next is this 409 at
+  once, with no poll, counted as `WAITERS_FULL` (load shedding: the cluster bound is the cap
+  times the replicas, and nothing a retry needs is kept).
 - A final `Refusal("idempotency_in_progress")` (409, not retryable, its own `message`): the key
   holds a `too_large` marker (below), or an entry of another version (`v` is not 1, as in a
   rolling upgrade). The entry is left alone; counted as `.unknown_version` for the second. A
@@ -74,7 +88,9 @@ reload, call `idempotency.reload(spec)` with the new spec (only `ttl_s` reloads)
 After `to_request` and `enforce_limits`, and before `open_run`:
 
     if idempotency.applies(ids.key_from):
-        outcome = await idempotency.begin(request, wait_ms=request.budget.timeout_ms)
+        outcome = await idempotency.begin(
+            request, wait_ms=request.budget.timeout_ms, subject=current_user_id()
+        )
 
 - `Refusal`: answer `adapter.error(outcome.code, outcome.message, outcome.retryable, meta)`.
   No run is opened.
@@ -96,10 +112,10 @@ After `to_request` and `enforce_limits`, and before `open_run`:
 **Telemetry** (suggested: the names): `chassis.idempotency.claimed`,
 `.refused{code}`, `.waited`, `.taken_over`, `.lease_lost`, `.renew_failed`,
 `.fenced`, `.unknown_version`, `.not_cached{reason}` (`no_end`, `too_large`), `.finish_failed`.
-Logs carry the store key, which holds only the hash of the client's key. The store itself is
-not hash-only: a `done` entry holds the original `request` as is, so the client's raw
-`idempotency_key` sits in the store for `ttl_s` (the replay binds its `ReplyMeta` to it). A
-`running` or `too_large` entry holds no key.
+Logs carry the store key, which holds only a hash of the client's key (and of the subject).
+No entry holds the client's raw key: a `done` entry holds its sha256 hex in `request` and
+`response`, and a `running` or `too_large` entry holds no key. The input and the output of a
+`done` entry are stored as they are, for `ttl_s`.
 """
 
 from __future__ import annotations
@@ -158,6 +174,12 @@ FENCE_FRACTION = 0.8
 the replica's own monotonic clock from the send time of the last renew that did (or the claim).
 The store's lease runs at least `lease_s` from that send time, so the fence comes first."""
 
+MAX_WAITERS_PER_KEY = 16
+"""suggested: the most duplicates that poll the store for one in-flight key on one replica
+(R4-10). One more is 409 `idempotency_in_progress` (retryable) at once."""
+WAITERS_FULL = "chassis.idempotency.waiters_full"
+"""suggested: a duplicate refused because its key already had `MAX_WAITERS_PER_KEY` waiters."""
+
 RefusalCode = Literal["idempotency_conflict", "idempotency_in_progress", "state_unavailable"]
 
 _RETRYABLE: dict[str, bool] = {
@@ -173,13 +195,24 @@ def _nothing() -> None:
     return None
 
 
-def store_key(agent: str, idempotency_key: str) -> str:
-    """`chassis:idem:v1:<agent>:<sha256(idempotency_key) hex>`: scoped by agent, and hashed, so a
-    long or odd key cannot shape the store key."""
+def store_key(agent: str, idempotency_key: str, *, subject: str | None = None) -> str:
+    """`chassis:idem:v1:<agent>:<digest>`: scoped by agent and caller, and hashed, so a long or
+    odd key cannot shape the store key. With `subject` None (auth off) the digest is
+    `sha256(idempotency_key) hex`, as before. With a subject it is the sha256 hex of the
+    canonical JSON of `[subject, idempotency_key]`, which no other pair gives."""
+    if subject is None:
+        return f"{KEY_PREFIX}{agent}:{_key_digest(idempotency_key)}"
+    # `_canonical` escapes every non-ASCII character, a lone surrogate too, so it never fails.
+    digest = hashlib.sha256(_canonical([subject, idempotency_key])).hexdigest()
+    return f"{KEY_PREFIX}{agent}:{digest}"
+
+
+def _key_digest(idempotency_key: str) -> str:
+    """The sha256 hex of a key: the store key's digest with auth off, and what a `done` entry
+    holds instead of the key. The same as `server.results.key_hash`."""
     # `surrogatepass`: a lone surrogate is valid in a JSON string but not in UTF-8. Every other
     # key encodes to the same bytes as with strict UTF-8, so existing store keys do not move.
-    digest = hashlib.sha256(idempotency_key.encode("utf-8", errors="surrogatepass")).hexdigest()
-    return f"{KEY_PREFIX}{agent}:{digest}"
+    return hashlib.sha256(idempotency_key.encode("utf-8", errors="surrogatepass")).hexdigest()
 
 
 def _canonical(value: Any) -> bytes:
@@ -368,14 +401,15 @@ class Claim:
         return stored is True
 
     def _done_entry(self, events: Sequence[Event], response: Response) -> bytes:
+        hashed = {"idempotency_key": _key_digest(self.request.idempotency_key)}
         return _canonical(
             {
                 "v": ENTRY_VERSION,
                 "state": "done",
                 "fingerprint": self._fingerprint,
-                "request": self.request.model_dump(mode="json"),
+                "request": self.request.model_dump(mode="json") | hashed,
                 "events": [event.model_dump(mode="json") for event in events],
-                "response": response.model_dump(mode="json"),
+                "response": response.model_dump(mode="json") | hashed,
             }
         )
 
@@ -431,6 +465,8 @@ class Idempotency:
         self.clock = clock
         self.sleep = sleep
         self.renew_sleep = renew_sleep or sleep
+        self._waiters: dict[str, int] = {}
+        """The calls in the wait loop on this replica, by store key; load shedding only."""
 
     def reload(self, spec: IdempotencySpec) -> None:
         """Take a reloaded `spec.idempotency`. Only `ttl_s` reloads (`RELOADABLE`); a claim
@@ -449,10 +485,13 @@ class Idempotency:
         self.telemetry.counter("chassis.idempotency.refused", code=code)
         return Refusal(code, final=detail is not None, detail=detail)
 
-    async def begin(self, request: Request, *, wait_ms: int) -> Claim | Replay | Refusal:
+    async def begin(
+        self, request: Request, *, wait_ms: int, subject: str | None = None
+    ) -> Claim | Replay | Refusal:
         """Claim the key, replay its cached result, or refuse. `wait_ms` bounds the wait for a
-        duplicate in flight; pass the caller's own `budget.timeout_ms`."""
-        key = store_key(request.agent, request.idempotency_key)
+        duplicate in flight; pass the caller's own `budget.timeout_ms`. `subject` is the checked
+        caller's subject (`current_user_id()`), None with auth off: it scopes the store key."""
+        key = store_key(request.agent, request.idempotency_key, subject=subject)
         mine = fingerprint(request)
         owner = f"{self.replica_id}:{uuid.uuid4().hex}"
         running = _canonical(
@@ -461,6 +500,7 @@ class Idempotency:
         deadline = self.clock() + max(wait_ms, 0) / 1000
         poll_s = self.spec.wait_poll_ms / 1000
         waited = False
+        waiting = False
         try:
             while True:
                 sent = self.clock()
@@ -469,9 +509,13 @@ class Idempotency:
                 claim = await self._try_claim(request, key, running, sent, deadline, waited)
                 if claim is not None:
                     return claim
-                found = self._classify(await self.state.get(key), key, mine)
+                found = self._classify(await self.state.get(key), key, mine, request)
                 if not isinstance(found, _Pending):
                     return found
+                if not waiting:
+                    if not self._enter_wait(key):
+                        return self._refuse("idempotency_in_progress")
+                    waiting = True
                 count = found is _Pending.RUNNING and not waited
                 refusal = await self._wait_or_refuse(deadline, poll_s, count=count)
                 if refusal is not None:
@@ -480,6 +524,25 @@ class Idempotency:
         except StateUnavailable as exc:
             self.log("idempotency store failed", key, exc)
             return self._refuse("state_unavailable")
+        finally:
+            if waiting:
+                self._leave_wait(key)
+
+    def _enter_wait(self, key: str) -> bool:
+        """Count this call as a waiter on `key`; False (counted as `WAITERS_FULL`) at the cap."""
+        held = self._waiters.get(key, 0)
+        if held >= MAX_WAITERS_PER_KEY:
+            self.telemetry.counter(WAITERS_FULL)
+            return False
+        self._waiters[key] = held + 1
+        return True
+
+    def _leave_wait(self, key: str) -> None:
+        left = self._waiters.get(key, 0) - 1
+        if left > 0:
+            self._waiters[key] = left
+        else:
+            self._waiters.pop(key, None)
 
     async def _try_claim(
         self, request: Request, key: str, running: bytes, sent: float, deadline: float, waited: bool
@@ -497,9 +560,12 @@ class Idempotency:
         claim._start_renewing()
         return claim
 
-    def _classify(self, raw: bytes | None, key: str, mine: str) -> Replay | Refusal | _Pending:
+    def _classify(
+        self, raw: bytes | None, key: str, mine: str, request: Request
+    ) -> Replay | Refusal | _Pending:
         """What the entry another call holds means for this call: a replay, a refusal, or a
-        wait (`GONE` between the claim attempt and the read, or `RUNNING` with our fingerprint)."""
+        wait (`GONE` between the claim attempt and the read, or `RUNNING` with our fingerprint).
+        A replay carries `request`'s own key."""
         if raw is None:
             return _Pending.GONE
         entry = _read(raw)
@@ -515,7 +581,7 @@ class Idempotency:
             return self._refuse("idempotency_in_progress", detail=TOO_LARGE_MESSAGE)
         if entry.get("state") != "done":
             return _Pending.RUNNING
-        replay = _replay(entry)
+        replay = _replay(entry, request.idempotency_key)
         return self._unreadable(key) if replay is None else replay
 
     def _unreadable(self, key: str) -> Refusal:
@@ -564,12 +630,16 @@ def _read(raw: bytes) -> dict[str, Any] | None:
     return entry
 
 
-def _replay(entry: dict[str, Any]) -> Replay | None:
+def _replay(entry: dict[str, Any], idempotency_key: str) -> Replay | None:
+    """The stored run, with `idempotency_key` put back from the call that replays it. The entry
+    holds only its hash (or, written before review R4-29, the raw key); the store key matched, so
+    it is this caller's key."""
+    own = {"idempotency_key": idempotency_key}
     try:
         return Replay(
-            request=Request.model_validate(entry["request"]),
+            request=Request.model_validate(entry["request"] | own),
             events=tuple(parse_event(event) for event in entry["events"]),
-            response=Response.model_validate(entry["response"]),
+            response=Response.model_validate(entry["response"] | own),
         )
     except (KeyError, TypeError, ValidationError, UnsupportedSchemaVersion):
         return None

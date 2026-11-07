@@ -9,12 +9,22 @@ no route (404) and no lookup write, so the public OpenAPI is unchanged. With an 
 
 **Request id to trace id.** The engine exposes nothing for this: the chassis owns both ids. After
 every run whose engine stream ended (`Run.done`), `FeedbackLookup` writes
-`chassis:feedback:v1:req:<agent>:<sha256(request_id)>` -> `{"trace_id", "agent"}` into `StatePort`
-with `ttl = spec.feedback.lookup_ttl_s`. `trace_id` is `trace_id_hex(request.trace_id)`, the W3C
+`chassis:feedback:v1:req:<agent>:<sha256(request_id)>` ->
+`{"trace_id", "agent", "subject_sha256"}` into `StatePort` with
+`ttl = spec.feedback.lookup_ttl_s`. `trace_id` is `trace_id_hex(request.trace_id)`, the W3C
 trace id the chassis spans and the workload's `traceparent` carry, which Langfuse uses as its
 trace id. The write is awaited inside `on_finished`, so in complete mode it is there before the
 answer goes out; a state failure is counted (`chassis.feedback.lookup_failed`) and logged, never
 sent to the client. Shared state, no module global: any replica can take the feedback.
+
+**The owner** (R2-10, R7-16). `subject_sha256` is the sha256 hex of the run's caller subject
+(`run.observed.subject`, the raw principal subject, never the span's cut `user_id`), or null
+with auth off; the store never holds the subject itself. With a stored hash, feedback from a
+caller whose subject hashes otherwise is 404 `unknown_request`, the same answer as "no such
+run", so the route is no oracle for another caller's runs. A stored
+null (the run had auth off) or no field (a lookup written before the field; it expires within
+`lookup_ttl_s`) is accepted from any caller. The check runs before the `feedback_id` is claimed,
+so a stranger cannot take or overwrite one on another caller's run.
 
 **The call.** Body `{request_id, score, label?, comment?, feedback_id?}`, strict, no other field.
 `subject` is `request.state.principal.subject` when an auth middleware set one, never a body
@@ -27,7 +37,7 @@ timestamp), and a `feedback_id` already used for another request is 409 `feedbac
 | Answer | When |
 | ------ | ---- |
 | 202 `{feedback_id, trace_id}` | stored |
-| 404 `unknown_request` | no lookup: unknown, unfinished, expired, or another agent's |
+| 404 `unknown_request` | no lookup: unknown, unfinished, expired, another agent's or caller's |
 | 409 `feedback_id_conflict` | the `feedback_id` belongs to another request |
 | 422 | the body fails validation (FastAPI's shape) |
 | 501 `feedback_not_configured` | `NoFeedback` |
@@ -37,7 +47,8 @@ timestamp), and a `feedback_id` already used for another request is 409 `feedbac
 Errors are `{"detail": {"code", "message"}}` with a fixed message, as `/v1/run`'s refusals.
 
 **Telemetry.** One `chassis.feedback` span (`request_id`, `feedback_id`, `trace_id`), the counter
-`chassis.feedback{label}` per stored feedback (`label` is `none` when unset), and
+`chassis.feedback{label}` per stored feedback (`label` is the body's label when it is in
+`FEEDBACK_LABELS`, `none` when unset, `other` for any other text: a bounded label set), and
 `chassis.feedback_failed{code}` otherwise. The comment is never logged or put on a span.
 
 **The comment** goes to the store as written: it is content the user gave on purpose to be read
@@ -55,6 +66,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import uuid
 from datetime import UTC, datetime
@@ -88,6 +100,7 @@ __all__ = [
     "COUNTER",
     "DATASCHEMA",
     "FAILED",
+    "FEEDBACK_LABELS",
     "FEEDBACK_PATH",
     "FEEDBACK_RECEIVED",
     "LOOKUP_FAILED",
@@ -112,6 +125,10 @@ DATASCHEMA = "feedback.v0.json"
 SPAN = "chassis.feedback"
 COUNTER = "chassis.feedback"
 """suggested: a stored feedback, labeled `label`."""
+FEEDBACK_LABELS = frozenset({"good", "bad", "wrong", "unsafe", "slow"})
+"""suggested: the labels `COUNTER` counts by name; any other label counts as `other`. The record
+and the event keep the label as written. A `spec.feedback.labels` field would be better (P-A
+item 7; `config.py` is outside this change)."""
 FAILED = "chassis.feedback_failed"
 """suggested: a feedback not stored, labeled `code`."""
 LOOKUP_FAILED = "chassis.feedback.lookup_failed"
@@ -223,7 +240,14 @@ class FeedbackLookup:
         ports: PortBundle = self._state.ports
         config: ChassisConfig = self._state.config
         request = run.request
-        value = {"trace_id": trace_id_hex(request.trace_id), "agent": request.agent}
+        # The raw subject, the one `_subject(http)` reads; never `user_id`, the span's printable
+        # cut, which drops a non-ASCII or long subject and would leave the run anyone's.
+        subject = run.observed.subject
+        value = {
+            "trace_id": trace_id_hex(request.trace_id),
+            "agent": request.agent,
+            "subject_sha256": None if subject is None else _digest(subject),
+        }
         try:
             await ports.state.set(
                 lookup_key(request.agent, request.request_id),
@@ -343,13 +367,17 @@ def _subject(http: HTTPRequest) -> str | None:
     return subject if isinstance(subject, str) and subject else None
 
 
-async def _lookup(ports: PortBundle, agent: str, request_id: str) -> str:
-    """The run's trace id, or `_Refusal`."""
+async def _lookup(ports: PortBundle, agent: str, request_id: str, subject: str | None) -> str:
+    """The run's trace id, or `_Refusal`. A stored owner hash that is not the caller's is
+    `unknown_request`; a null or missing one (auth off, or an older lookup) is anyone's."""
     raw = await ports.state.get(lookup_key(agent, request_id))
     if raw is None:
         raise _Refusal("unknown_request")
     found = json.loads(raw)
     if found.get("agent") != agent:
+        raise _Refusal("unknown_request")
+    owner = found.get("subject_sha256")
+    if owner is not None and not hmac.compare_digest(str(owner), _digest(subject or "")):
         raise _Refusal("unknown_request")
     trace_id: str = found["trace_id"]
     return trace_id
@@ -387,7 +415,7 @@ async def _store(
     store error is logged first, its detail redacted, never the comment."""
     agent = config.agent.name
     feedback_id = body.feedback_id or default_feedback_id(body.request_id, subject)
-    trace_id = await _lookup(ports, agent, body.request_id)
+    trace_id = await _lookup(ports, agent, body.request_id, subject)
     span_attributes["trace_id"] = trace_id
     timestamp = await _first_seen(
         ports, agent, feedback_id, body.request_id, config.spec.feedback.lookup_ttl_s
@@ -427,9 +455,16 @@ def _failure_code(exc: StateUnavailable | _Refusal | FeedbackError) -> str:
     return exc.code if exc.code in STATUS else "feedback_rejected"
 
 
+def _counted_label(label: str | None) -> str:
+    """`COUNTER`'s bounded label: `none`, a `FEEDBACK_LABELS` member, or `other`."""
+    if label is None:
+        return "none"
+    return label if label in FEEDBACK_LABELS else "other"
+
+
 def _accepted(state: State, record: Feedback, agent: str) -> JSONResponse:
     """Count the stored feedback, publish its event when events are on, and answer 202."""
-    state.ports.telemetry.counter(COUNTER, label=record.label or "none")
+    state.ports.telemetry.counter(COUNTER, label=_counted_label(record.label))
     events: FeedbackEvents | None = state.feedback_events
     if events is not None:
         events.publish(feedback_event(record, agent, datetime.now(UTC)))

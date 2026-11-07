@@ -1,6 +1,6 @@
 # Remote engines under concurrent load on kind (2026-10-10)
 
-Status: the test exists; the numbers are not in yet. They come from the next `poc06-kind.yml` run. Nothing below is a measurement.
+Status: measured. The numbers below are from two `poc06-kind.yml` runs on head `978c2ea`. The kagent-adk smoke row is copied into the PoC-6a scorecard, criterion 6.
 
 ## Why
 

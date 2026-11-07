@@ -249,3 +249,27 @@ def test_the_cli_sets_up_json_logs_at_start(
     ours = [h for h in logging.getLogger().handlers if isinstance(h.formatter, logs.JsonFormatter)]
     assert [h.formatter.agent for h in ours] == ["echo-x"]  # type: ignore[union-attr]
     assert logging.getLogger().level == logging.INFO
+
+
+def test_configure_logging_pins_the_a2a_loggers_to_warning_at_debug(
+    captured: io.StringIO,
+) -> None:
+    """Security review of contract v8: the a2a-sdk logs the JSON-RPC body at DEBUG, and the body
+    holds `chassis.ctx.run_secret`. At `level="debug"` the `a2a` loggers stay at WARNING, and a
+    DEBUG body line never reaches the stream; the workload's own DEBUG line still does."""
+    a2a_root = logging.getLogger("a2a")
+    saved = a2a_root.level
+    stream = io.StringIO()
+    run_cap = "r" * 43  # a test value standing in for a run's check value
+    try:
+        logs.configure_logging(agent="a", level="debug", stream=stream)
+        handler = logging.getLogger("a2a.server.request_handlers.jsonrpc_handler")
+        handler.debug("Request body: %s", {"metadata": {"chassis.ctx": {"run_secret": run_cap}}})
+        logging.getLogger(BUSINESS).debug("own debug line")
+        effective = handler.getEffectiveLevel()
+    finally:
+        a2a_root.setLevel(saved)
+    assert logging.getLogger().level == logging.DEBUG
+    assert effective == logging.WARNING
+    assert run_cap not in stream.getvalue()
+    assert "own debug line" in stream.getvalue()

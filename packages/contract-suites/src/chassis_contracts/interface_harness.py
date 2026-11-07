@@ -44,8 +44,9 @@ MCP_STREAM_SKIP = (
 
 # --- The suite's own handles: wire form, plain dicts ---
 
-PER_RUN_CTX = ("request_id", "trace_id", "idempotency_key", "traceparent")
-"""The ctx keys that are new on every run; the probe leaves them out of what it echoes."""
+PER_RUN_CTX = ("request_id", "trace_id", "idempotency_key", "traceparent", "run_secret")
+"""The ctx keys that are new on every run; the probe leaves them out of what it echoes. The run
+secret (contract v8) is one of them, so it is never echoed in an answer."""
 HOLD_TEXT = "hold"
 HOLD_S = 0.5
 """How long the probe holds a run whose text is `HOLD_TEXT`, so two calls overlap."""

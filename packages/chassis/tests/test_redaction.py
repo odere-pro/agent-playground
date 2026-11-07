@@ -1,48 +1,49 @@
-"""PoC-7: `chassis.redaction` stays linear on long input and leaves non-PII numbers alone."""
+"""PoC-7: `chassis.redaction` stays linear on long input and leaves non-PII numbers alone
+(review R1-01 and R1-04)."""
 
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
 
 import pytest
 from chassis.redaction import redact
-
-# CPU time, not wall time: backtracking burns this process's CPU, while a busy machine
-# only stretches the wall clock. A wall-clock budget failed under load in the pre-commit hook.
-FAST_SECONDS = 0.1
-"""suggested: the bound for one `redact` call on a 200k-character string."""
+from redaction_timing import assert_linear
 
 
 @pytest.mark.parametrize(
-    "text",
+    ("build", "count"),
     [
-        "a-" * 100_000,
-        "1" * 200_000,
-        "x@" + "a" * 200_000,
-        "x@" + "a." * 100_000,
-        "a@" * 100_000,
+        (lambda n: "a-" * n, 100_000),
+        (lambda n: "1" * n, 200_000),
+        (lambda n: "x@" + "a" * n, 200_000),
+        (lambda n: "x@" + "a." * n, 100_000),
+        (lambda n: "a@" * n, 100_000),
     ],
     ids=["a-dash-run", "digit-run", "long-domain", "long-dotted-domain", "many-at-signs"],
 )
-def test_redact_returns_fast_and_unchanged_when_long_text_holds_no_email(text: str) -> None:
-    """A long run with no full email address comes back unchanged in under 100 ms of CPU time."""
-    start = time.process_time()
+def test_redact_stays_linear_and_unchanged_when_long_text_holds_no_email(
+    build: Callable[[int], str], count: int
+) -> None:
+    """A long run with no full email address comes back unchanged, in linear time (target: under
+    100 ms, `redaction_timing.TARGET_SECONDS`)."""
+    text = build(count)
 
     out = redact(text)
 
-    assert time.process_time() - start < FAST_SECONDS
     assert out == text
+    assert_linear(redact, build, count)
 
 
-def test_redact_masks_an_email_fast_when_its_domain_is_long_and_dotted() -> None:
-    """An email with a 200k-character dotted domain is masked in under 100 ms of CPU time."""
-    text = "x@" + "a." * 100_000 + "com"
-    start = time.process_time()
+def test_redact_masks_an_email_in_linear_time_when_its_domain_is_long_and_dotted() -> None:
+    """An email with a 200k-character dotted domain is masked, in linear time."""
 
-    out = redact(text)
+    def build(n: int) -> str:
+        return "x@" + "a." * n + "com"
 
-    assert time.process_time() - start < FAST_SECONDS
+    out = redact(build(100_000))
+
     assert out == "<EMAIL_ADDRESS>"
+    assert_linear(redact, build, 100_000)
 
 
 @pytest.mark.parametrize(
@@ -81,6 +82,10 @@ def test_redact_masks_two_emails_when_the_second_starts_where_the_first_ends() -
         "version 1.24.3",
         "version 2.0.10",
         "version 12.34.56",
+        "order 1234567890",
+        "order 14155550100",
+        "ref 4111111111111112",
+        "ref 41111111111111123",
     ],
     ids=[
         "iso-date",
@@ -89,18 +94,23 @@ def test_redact_masks_two_emails_when_the_second_starts_where_the_first_ends() -
         "version",
         "version-two-digit-patch",
         "version-two-digit-groups",
+        "ten-digit-order-id",
+        "eleven-digit-order-id",
+        "sixteen-digits-failing-luhn",
+        "seventeen-digits-failing-luhn",
     ],
 )
-def test_redact_leaves_dates_ips_and_versions_alone(text: str) -> None:
-    """An ISO date, an IPv4 address, or a dotted version is not a phone number."""
+def test_redact_leaves_dates_ips_versions_and_order_ids_alone(text: str) -> None:
+    """An ISO date, an IPv4 address, a dotted version, or a bare digit run that fails the Luhn
+    check is not a phone or a card number."""
     out = redact(text)
 
     assert out == text
 
 
 def test_redact_leaves_the_spec_sentence_unchanged_when_it_holds_no_pii() -> None:
-    """A sentence with only a date and an IPv4 address comes back exactly as it went in."""
-    text = "released 2026-10-29 from 10.0.0.12"
+    """A sentence with only a date, an IPv4 address, and an order id comes back as it went in."""
+    text = "released 2026-10-29 from 10.0.0.12, order 1234567890"
 
     out = redact(text)
 
@@ -145,17 +155,34 @@ def test_redact_masks_a_phone_number_when_written_in_a_common_format(phone: str)
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("order 1234567890", "order <PHONE_NUMBER>"),
-        ("call 4155550100", "call <PHONE_NUMBER>"),
-        ("call 14155550100", "call <PHONE_NUMBER>"),
-        ("ref 4111111111111112", "ref <CREDIT_CARD>"),
+        ("ref 4111111111111111", "ref <CREDIT_CARD>"),
+        ("card 4111-1111-1111-1111 ok", "card <CREDIT_CARD> ok"),
+        ("amex 378282246310005", "amex <CREDIT_CARD>"),
     ],
-    ids=["ten-digit-order-id", "ten-digit-phone", "eleven-digit-phone", "sixteen-digits"],
+    ids=["bare-sixteen-digits", "dashed-sixteen-digits", "fifteen-digit-amex"],
 )
-def test_redact_still_masks_a_bare_digit_run_when_it_could_be_a_phone_or_card(
+def test_redact_masks_a_card_number_when_it_passes_the_luhn_check(text: str, expected: str) -> None:
+    """A 13 to 19 digit run that passes the Luhn check is `<CREDIT_CARD>`, with or without
+    separators."""
+    out = redact(text)
+
+    assert out == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("ref 4111 1111 1111 1112 ok", "ref <PHONE_NUMBER> ok"),
+        ("ref 4111-1111-1111-1112 ok", "ref <PHONE_NUMBER> ok"),
+        ("ref +4111111111111112 ok", "ref <PHONE_NUMBER> ok"),
+    ],
+    ids=["spaced", "dashed", "plus-sign"],
+)
+def test_redact_masks_a_luhn_failing_run_as_a_phone_when_it_has_separators_or_a_plus(
     text: str, expected: str
 ) -> None:
-    """A bare digit run cannot be told apart from a phone or card, so it stays masked."""
+    """A run that fails the Luhn check is not a card. It is still a phone when it has a leading
+    `+` or a separator, by the phone rule."""
     out = redact(text)
 
     assert out == expected

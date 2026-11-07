@@ -1498,11 +1498,24 @@ def test_the_workflow_job_shape(workflow: dict[str, Any]) -> None:
     assert workflow.get("permissions", job.get("permissions")) == {"contents": "read"}
 
 
+def _repo_pins() -> dict[str, str]:
+    """action -> `action@sha`: ci.yml's pin, or, for an action ci.yml does not use, the one pin
+    every other workflow agrees on (upload-artifact). Two different pins of one action: none."""
+    seen: dict[str, set[str]] = {}
+    for path in sorted(CI.parent.glob("*.yml")):
+        for step in workflow_steps(load_workflow(path)):
+            if "uses" in step:
+                seen.setdefault(step["uses"].split("@")[0], set()).add(step["uses"])
+    pins = {action: next(iter(refs)) for action, refs in seen.items() if len(refs) == 1}
+    ci_steps = workflow_steps(load_workflow(CI))
+    pins.update({s["uses"].split("@")[0]: s["uses"] for s in ci_steps if "uses" in s})
+    return pins
+
+
 def test_the_workflow_pins_every_action_by_sha_the_same_as_ci(workflow: dict[str, Any]) -> None:
-    """Every action is pinned by a 40-hex SHA, the same one ci.yml pins, with a version comment."""
-    ci_pins = {
-        s["uses"].split("@")[0]: s["uses"] for s in workflow_steps(load_workflow(CI)) if "uses" in s
-    }
+    """Every action is pinned by a 40-hex SHA with a version comment: the SHA ci.yml pins, or,
+    for an action ci.yml does not use, the one SHA every workflow in the repo pins."""
+    ci_pins = _repo_pins()
     lines = WORKFLOW.read_text().splitlines()
 
     uses = [s["uses"] for s in workflow_steps(workflow) if "uses" in s]
@@ -1585,6 +1598,99 @@ def test_the_workflow_steps_are_up_test_logs_delete(workflow: dict[str, Any]) ->
     assert deletes and all(str(s.get("if", "")).strip() == "always()" for s in deletes)
     assert steps.index(deletes[-1]) == len(steps) - 1
     assert not re.search(r"\b(kubectl|kctl)\b.*\slogs\s", "\n".join(runs)), "a bare kubectl logs"
+
+
+FOOTPRINT_SH = "pocs/poc-06b-bake-off-remote-lane/notes/kagent-footprint/measure.sh"
+
+
+def test_the_workflow_measures_the_kagent_footprint_idle_and_after_the_tests(
+    workflow: dict[str, Any],
+) -> None:
+    """kagent-adk's image and RSS (6a scorecard criterion 7): measured after `up` and after the
+    tests, warn-only, and uploaded as `kagent-adk-footprint` before the cluster is deleted."""
+    steps = workflow_steps(workflow)
+    runs = [str(s.get("run", "")) for s in steps]
+
+    up = next(i for i, r in enumerate(runs) if "run.sh up" in r)
+    test = next(i for i, r in enumerate(runs) if "run.sh test" in r)
+    idle = next(i for i, r in enumerate(runs) if f"{FOOTPRINT_SH} idle" in r)
+    after = next(i for i, r in enumerate(runs) if f"{FOOTPRINT_SH} after-tests" in r)
+    uses = [str(s.get("uses", "")) for s in steps]
+    upload = next(i for i, u in enumerate(uses) if u.startswith("actions/upload-artifact@"))
+
+    assert up < idle < test < after < upload < len(steps) - 1
+    assert all(steps[i].get("continue-on-error") is True for i in (idle, after))
+    assert str(steps[after].get("if", "")).strip() == "always()"
+    assert str(steps[upload].get("if", "")).strip() == "always()"
+    assert steps[upload]["with"]["name"] == "kagent-adk-footprint"
+    assert (ROOT / FOOTPRINT_SH).is_file()
+
+
+def _fake_bin(tmp_path: Path, status: str) -> dict[str, str]:
+    """`docker` and `kubectl` stubs on PATH: an image of 471234567 bytes, one pod, `status`."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "docker").write_text("#!/bin/sh\necho 471234567\n")
+    (tmp_path / "status").write_text(status)
+    (bin_dir / "kubectl").write_text(
+        "#!/bin/sh\n"
+        'echo "$*" >>"$CALLS"\n'
+        'case "$*" in *" get pods "*) echo remote-kagent-adk-0 ;;\n'
+        '  *" exec "*) cat "$STATUS" ;;\nesac\n'
+    )
+    for tool in ("docker", "kubectl"):
+        (bin_dir / tool).chmod(0o755)
+    return {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "HOME": str(tmp_path),
+        "CALLS": str(tmp_path / "calls"),
+        "STATUS": str(tmp_path / "status"),
+        "GITHUB_SHA": "a" * 40,
+    }
+
+
+def test_the_footprint_script_sums_rss_and_peak_over_the_container(tmp_path: Path) -> None:
+    """measure.sh: MB from the image bytes, VmRSS and VmHWM summed over the container's
+    processes, one JSON file per phase, and kubectl only on context kind-poc05."""
+    status = "Name:\tpython\nVmHWM:\t 204800 kB\nVmRSS:\t 153600 kB\n"
+    status += "Name:\tsh\nVmHWM:\t 2048 kB\nVmRSS:\t 1024 kB\nName:\tkthread\n"
+    env = _fake_bin(tmp_path, status)
+
+    done = subprocess.run(
+        ["bash", str(ROOT / FOOTPRINT_SH), "idle", str(tmp_path / "out")],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    calls = (tmp_path / "calls").read_text().splitlines()
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    record = json.loads((tmp_path / "out" / "idle.json").read_text())
+    assert record["image_mb"] == 471 and record["processes"] == 2
+    assert (record["rss_kb"], record["hwm_kb"]) == (154624, 206848)
+    assert "rss_mb=151.0 hwm_mb=202.0" in done.stdout
+    assert calls and all(c.startswith("--context kind-poc05 -n poc05-remote ") for c in calls)
+    assert not any(" logs" in c for c in calls)
+
+
+def test_the_footprint_script_refuses_an_unknown_phase_and_an_empty_container(
+    tmp_path: Path,
+) -> None:
+    """A bad phase is a usage error; a container with no VmRSS line writes no file."""
+    env = _fake_bin(tmp_path, "Name:\tkthread\n")
+    script = str(ROOT / FOOTPRINT_SH)
+
+    def run(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", script, *args], env=env, capture_output=True, text=True, timeout=60
+        )
+
+    assert run("warm", str(tmp_path / "out")).returncode == 2
+    empty = run("idle", str(tmp_path / "out"))
+    assert empty.returncode == 2 and "no process with VmRSS" in empty.stderr
+    assert not (tmp_path / "out").exists()
 
 
 def test_the_workflow_text_uses_no_secret_and_leaves_remote_lane_alone() -> None:

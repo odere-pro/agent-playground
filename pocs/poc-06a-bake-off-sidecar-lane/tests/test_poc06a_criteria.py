@@ -28,6 +28,7 @@ from poc_harness.sidecar_lane import (
     sidecar_engines,
     wire_python_engine,
 )
+from test_poc06a_scorecard_records import SCORECARD, scorecard_problems
 
 ROOT = Path(__file__).resolve().parents[3]
 TESTS = Path(__file__).resolve().parent
@@ -121,8 +122,12 @@ def test_criterion_2_the_remote_solution_is_6b() -> None:
 
 
 def test_criterion_3_every_engine_is_scored_on_every_criterion() -> None:
-    """Criterion 3: the scorecard. Skipped: the evidence is checked in its own test file."""
-    pytest.skip("evidence: test_poc06a_scorecard_records.py, notes/2026-10-09-scorecard.md")
+    """Criterion 3: given the scorecard note, when the scorecard check reads it, then all 8
+    engines have a filled cell on each of the 12 bake-off criteria. A cell the run could not
+    fill names where its number comes from ("not measured: <where>", "pending CI run: <where>").
+    The per-criterion detail is in `test_poc06a_scorecard_records.py`."""
+    assert SCORECARD.is_file(), f"missing {SCORECARD}"
+    assert scorecard_problems(SCORECARD.read_text()) == []
 
 
 # --- Criterion 4 ---

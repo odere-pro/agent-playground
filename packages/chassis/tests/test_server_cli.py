@@ -396,3 +396,77 @@ def test_is_loopback_host_tells_a_loopback_host_when_given_a_name_or_address(
     result = is_loopback_host(host)
 
     assert result is expected
+
+
+# --- R2-31: a remote token shorter than 32 characters is refused at start ---------------------
+
+SHORT = "s" * 8  # a test value, not a secret
+
+
+def test_serve_exits_naming_the_variable_when_the_remote_token_is_short(
+    remote_yaml: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R2-31: an 8-character token variable stops the start, naming the variable only."""
+    monkeypatch.setenv("REMOTE_TOKEN", SHORT)
+
+    with pytest.raises(SystemExit) as exc:
+        cli.parse_args(["serve", "--config", remote_yaml, "--remote-proxy-host", "10.0.0.5"])
+
+    err = capsys.readouterr().err
+    assert exc.value.code == 2
+    assert "REMOTE_TOKEN" in err and "shorter than 32 characters" in err
+    assert SHORT not in err
+
+
+# --- R5a-22: --allow-any-proxy-host is refused in profile cloud and for untrusted code ---------
+
+CLOUD_YAML = """\
+profile: cloud
+agent: {name: echo, version: 0.0.1}
+spec:
+  trust: trusted
+  engine: {connector: sidecar, url: "http://127.0.0.1:9000"}
+"""
+
+
+@pytest.fixture
+def cloud_yaml(tmp_path: Path) -> str:
+    path = tmp_path / "cloud.yaml"
+    path.write_text(CLOUD_YAML)
+    return str(path)
+
+
+def test_allow_any_proxy_host_is_refused_in_profile_cloud(
+    cloud_yaml: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """R5a-22: `--proxy-host 0.0.0.0 --allow-any-proxy-host` in profile `cloud` exits 2."""
+    argv = ["serve", "--config", cloud_yaml, "--proxy-host", "0.0.0.0", "--allow-any-proxy-host"]
+
+    with pytest.raises(SystemExit) as exc:
+        cli.parse_args(argv)
+
+    assert exc.value.code == 2
+    assert "profile 'cloud'" in capsys.readouterr().err
+
+
+def test_allow_any_proxy_host_is_refused_for_untrusted_code(
+    remote_yaml: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R5a-22: the flag is refused when `spec.trust` is `untrusted`, in any profile."""
+    monkeypatch.setenv("REMOTE_TOKEN", TOKEN)
+    argv = ["serve", "--config", remote_yaml, "--proxy-host", "0.0.0.0", "--allow-any-proxy-host"]
+
+    with pytest.raises(SystemExit) as exc:
+        cli.parse_args(argv)
+
+    assert exc.value.code == 2
+    assert "spec.trust is 'untrusted'" in capsys.readouterr().err
+
+
+def test_allow_any_proxy_host_still_works_for_trusted_code_in_profile_fake() -> None:
+    """R5a-22: in `fake` and `local` with trusted code, the test flag keeps working."""
+    argv = ["serve", "--config", FAKE_YAML, "--proxy-host", "0.0.0.0", "--allow-any-proxy-host"]
+
+    args = cli.parse_args(argv)
+
+    assert args.proxy_host == "0.0.0.0"

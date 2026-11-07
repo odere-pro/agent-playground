@@ -202,3 +202,27 @@ async def test_server_publishes_nothing_more_when_the_handle_ends_after_a_cancel
 def test_mapping_version_equals_the_server_version_when_an_error_is_built() -> None:
     """`error_event` stamps the mapping's version; it must equal `chassis.core.events`'s."""
     assert mapping.SCHEMA_VERSION == core_events.SCHEMA_VERSION
+
+
+async def test_server_cuts_a_long_exception_text_to_the_error_message_cap() -> None:
+    """An exception text past the cap is cut, so the server's own error event stays valid."""
+
+    async def loud(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[Any]:
+        yield START
+        raise RuntimeError("x" * (core_events.ERROR_MESSAGE_MAX * 2))
+
+    queue = _Queue()
+
+    await HandleExecutor(loud).execute(_context(), queue)
+
+    error = _wire_events(queue)[-1]
+    assert error["code"] == "workload.exception"
+    assert len(error["message"]) == core_events.ERROR_MESSAGE_MAX
+    assert core_events.parse_event(error).type == "error"
+
+
+def test_task_store_message_cap_equals_the_event_schema_cap() -> None:
+    """`task_store` cannot import `chassis.core` (ADR-002), so it keeps its own copy of the cap."""
+    from chassis.adapters.a2a import task_store
+
+    assert task_store.ERROR_MESSAGE_MAX == core_events.ERROR_MESSAGE_MAX

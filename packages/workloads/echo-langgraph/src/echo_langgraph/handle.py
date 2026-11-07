@@ -12,7 +12,8 @@ item 4): `default_headers` on the chat model's openai client, and the headers of
 client every MCP session runs on. PoC-7: when the workload's tracing is on
 (`workload_a2a.telemetry`), the OpenInference LangChain instrumentor runs (`telemetry.py`), and a
 request hook on both clients replaces that header with the current span's `traceparent` and
-`baggage`, so the chassis's spans join this workload's.
+`baggage`, so the chassis's spans join this workload's. `ctx["run_secret"]`, when set, is the
+`x-chassis-run-secret` header next to it on the same calls (contract v8); never logged.
 
 Remote lane: `CHASSIS_API_TOKEN`, when set and not empty, is the chat model's `api_key` (so
 `Authorization: Bearer <token>` on every model call) and an `authorization` header on every MCP
@@ -48,6 +49,8 @@ SYSTEM_PROMPT = "Rewrite in plain words. Short sentences. Keep every fact."
 DEFAULT_ROUTE = "big-default"
 MODEL_URL_VAR = "CHASSIS_MODEL_URL"
 TOKEN_VAR = "CHASSIS_API_TOKEN"
+# The run-scoped capability the chassis checks on its remote listener (contract v8).
+RUN_SECRET_HEADER = "x-chassis-run-secret"  # pragma: allowlist secret (a header name, not a secret)
 DEFAULT_MODEL_URL = "http://127.0.0.1:8090/v1"
 # suggested: 30 s per call when `ctx.budget.timeout_ms` is not set; the epic gives none.
 DEFAULT_TIMEOUT_S = 30.0
@@ -101,6 +104,8 @@ async def handle(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[di
     route = str(ctx.get("model_route") or DEFAULT_ROUTE)
     timeout_s = _timeout(ctx)
     headers = {"traceparent": str(ctx["traceparent"])} if ctx.get("traceparent") else {}
+    if ctx.get("run_secret"):  # the chassis's per-run check; never logged
+        headers[RUN_SECRET_HEADER] = str(ctx["run_secret"])
     token = os.environ.get(TOKEN_VAR) or None
     tool_headers = {**headers, "authorization": f"Bearer {token}"} if token else headers
     mapper = EventMapper(route)

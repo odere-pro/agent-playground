@@ -16,9 +16,10 @@ the OpenAPI spec. Its streamable HTTP app is built inside the public app's lifes
 it, because a session manager runs once; before that lifespan, and after it, `/v1/mcp` answers
 503.
 
-The call path: MCP client -> `/v1/mcp` -> the generated tool -> `httpx2.ASGITransport(app)` ->
-`POST /v1/run` with `x-chassis-interface: mcp` -> `RunPipeline`. One in-process hop, no socket,
-the same in every lane.
+The call path: MCP client -> `/v1/mcp` -> the generated tool -> `httpx2.ASGITransport` over
+`_mark_mcp_hop(app)` -> `POST /v1/run` with the scope flag `MCP_HOP_SCOPE_KEY` -> `RunPipeline`.
+One in-process hop, no socket, the same in every lane. Only this wrapper sets the flag: uvicorn
+never sets a custom scope key, and no header counts (contract v8, item 6; R3-30).
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from chassis.adapters.mcp import build_agent_mcp
 from chassis.adapters.mcp.agent import RUN_PATH
 from chassis.server.config import ChassisConfig
+from chassis.server.interfaces.errors import MCP_HOP_SCOPE_KEY
 
 __all__ = ["MCP_PATH", "MCP_TRANSPORT", "STATE_KEY", "mount_agent_mcp", "run_operation_spec"]
 
@@ -57,6 +59,16 @@ class _AgentEndpoint:
             await response(scope, receive, send)
             return
         await self.inner(scope, receive, send)
+
+
+def _mark_mcp_hop(app: ASGIApp) -> ASGIApp:
+    """`app`, called with a copy of each scope that carries `MCP_HOP_SCOPE_KEY: True`. The
+    caller's scope is never changed."""
+
+    async def marked(scope: Scope, receive: Receive, send: Send) -> None:
+        await app({**scope, MCP_HOP_SCOPE_KEY: True}, receive, send)
+
+    return marked
 
 
 def run_operation_spec(app: FastAPI) -> dict[str, Any]:
@@ -83,7 +95,7 @@ def run_operation_spec(app: FastAPI) -> dict[str, Any]:
 def mount_agent_mcp(app: FastAPI, config: ChassisConfig) -> None:
     """Serve the agent as one MCP tool at `/v1/mcp` on `app`. Call it after `/v1/run` is mounted."""
     server = build_agent_mcp(
-        app, agent_name=config.agent.name, openapi_spec=run_operation_spec(app)
+        _mark_mcp_hop(app), agent_name=config.agent.name, openapi_spec=run_operation_spec(app)
     )
     setattr(app.state, STATE_KEY, server)
     endpoint = _AgentEndpoint()

@@ -64,7 +64,7 @@ Every agent needs the same auth, limits, and PII rules, so the chassis pipeline 
 - [ ] One caller cannot add more new idempotency keys than its cap, so it cannot fill the shared store.
 - [ ] A workload's `guardrails` key never reaches LiteLLM.
 - [ ] The key-leak canary also looks for a refused key's last 4 characters and its hash.
-- [ ] With `spec.guardrails.output` on, a streamed answer's PII does not reach the client: `packages/chassis/tests/test_guard_stages.py` `test_output_stage_masks_pii_when_the_call_is_a_stream` passes with no xfail, or LiteLLM's after-call guardrail is shown on the Mac run (gap review, 2026-11-07).
+- [x] With `spec.guardrails.output` on, a streamed answer's PII does not reach the client (gap review, 2026-11-07). · Delivered by: PR #87, `packages/chassis/tests/test_guard_stages.py::test_output_stage_masks_pii_when_the_call_is_a_stream` (no xfail; 10 stream cases pass)
 
 ## Dependencies
 

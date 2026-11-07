@@ -15,18 +15,18 @@ is the `RunRequest` body schema from the spec, untouched (no `mcp_component_fn`)
 the body's `properties` and `required`, and drops the body's own `title`, `description`, and
 `additionalProperties`.
 
-Each call goes to `/v1/run` in process through `httpx2.ASGITransport(app)`, with the header
-`x-chassis-interface: mcp` (the native route then reads `stream` as false, labels telemetry
-`mcp`, and re-mints a body `trace_id` in use) and no client timeout: httpx2's 5 s default would cut
-a longer run, and the run's own `budget.timeout_ms` bounds it. FastMCP merges the MCP request's
-headers into the call (all but `authorization`, `cookie`, and a few hop headers), and in some paths
-a caller's header wins over the client's own. So a request hook (`_run_headers`) runs last, after
-every merge: it keeps only the transport headers the client sets and `FORWARDED_HEADERS`
-(`traceparent`, `tracestate`, `Idempotency-Key`), copies the MCP caller's `Authorization` from
-the inbound request (PoC-7, `server.security`), drops everything else the caller sent, and sets
-`x-chassis-interface: mcp` itself, so an MCP caller cannot claim another interface. A non-2xx answer
-is an MCP tool error; a run that ends with `status: error` is a 200 envelope, so a tool result
-that is not `isError` (a known gap, section 4).
+Each call goes to `/v1/run` in process through `httpx2.ASGITransport(app)` with no client
+timeout: httpx2's 5 s default would cut a longer run, and the run's own `budget.timeout_ms` bounds
+it. The caller marks the hop: `chassis.server.interfaces.mcp` passes `app` wrapped so each scope
+carries the MCP hop flag (the native route then reads `stream` as false, labels telemetry `mcp`,
+and re-mints a body `trace_id` in use). No header marks it (contract v8, item 6). FastMCP merges
+the MCP request's headers into the call (all but `authorization`, `cookie`, and a few hop
+headers), and in some paths a caller's header wins over the client's own. So a request hook
+(`_run_headers`) runs last, after every merge: it keeps only the transport headers the client sets
+and `FORWARDED_HEADERS` (`traceparent`, `tracestate`, `Idempotency-Key`), copies the MCP caller's
+`Authorization` from the inbound request (PoC-7, `server.security`), and drops everything else
+the caller sent. A non-2xx answer is an MCP tool error; a run that ends with `status: error` is a
+200 envelope, so a tool result that is not `isError` (a known gap, section 4).
 """
 
 from __future__ import annotations
@@ -38,12 +38,10 @@ from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.providers.openapi import MCPType, RouteMap
 
-__all__ = ["FORWARDED_HEADERS", "INTERFACE_HEADER", "RUN_OPERATION", "RUN_PATH", "build_agent_mcp"]
+__all__ = ["FORWARDED_HEADERS", "RUN_OPERATION", "RUN_PATH", "build_agent_mcp"]
 
 RUN_OPERATION = "run"
 RUN_PATH = "/v1/run"
-INTERFACE_HEADER = "x-chassis-interface"
-"""The header the tool's calls carry; suggested (section 7). Same name as the OpenAPI extension."""
 
 FORWARDED_HEADERS = frozenset({"traceparent", "tracestate", "idempotency-key"})
 """The MCP caller's headers the inner `/v1/run` call may carry: correlation only."""
@@ -65,15 +63,13 @@ _TRANSPORT_HEADERS = frozenset(
 async def _run_headers(request: httpx2.Request) -> None:
     """The last word on the inner call's headers: transport and correlation headers only, the
     MCP caller's own `Authorization` (PoC-7: `/v1/run` checks the caller's token again; the
-    in-process hop is never trusted by address), and the interface marker set here, after every
-    merge FastMCP did."""
+    in-process hop is never trusted by address), after every merge FastMCP did."""
     for name in {key.lower() for key in request.headers}:
         if name not in _TRANSPORT_HEADERS and name not in FORWARDED_HEADERS:
             del request.headers[name]
     caller = get_http_headers(include={"authorization"}).get("authorization")
     if caller:
         request.headers["authorization"] = caller
-    request.headers[INTERFACE_HEADER] = "mcp"
 
 
 def build_agent_mcp(
@@ -84,12 +80,11 @@ def build_agent_mcp(
     `openapi_spec`, which must hold the `run` operation; None reads `app.openapi()` now.
     """
     spec = app.openapi() if openapi_spec is None else openapi_spec
-    # The client `FastMCP.from_fastapi` builds, with no 5 s timeout and the interface header;
-    # `_run_headers` enforces both the header and the forwarding rule on every request.
+    # The client `FastMCP.from_fastapi` builds, with no 5 s timeout; `_run_headers` enforces
+    # the forwarding rule on every request.
     client = httpx2.AsyncClient(
         transport=httpx2.ASGITransport(app=app),
         base_url="http://fastapi",
-        headers={INTERFACE_HEADER: "mcp"},
         timeout=None,
         event_hooks={"request": [_run_headers]},
     )

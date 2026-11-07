@@ -252,6 +252,8 @@ PUBLIC_MESSAGES: Mapping[str, str] = {
     "internal_error": "the chassis failed while answering; the run is over",
     "a2a.timeout": "the agent did not answer in time",
     "a2a.transport": "the agent could not be reached",
+    # Contract v8 (R2-11): the lane stream passed its event or byte cap.
+    "a2a.stream_too_large": "the agent sent more than the stream limit",
     "idempotency_conflict": "this Idempotency-Key was already used with a different request",
     "idempotency_in_progress": "a request with this Idempotency-Key is still running; retry later",
     "state_unavailable": "the chassis cannot reach its state store; retry later",

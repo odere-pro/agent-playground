@@ -463,6 +463,35 @@ async def test_handle_sends_each_runs_own_traceparent_when_two_runs_differ(
     assert second.mcp_servers["chassis"]["headers"]["traceparent"] == other
 
 
+async def test_handle_sends_the_run_secret_to_the_cli_and_the_mcp_server_when_ctx_has_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CLI's custom headers get a second line, and the MCP server headers carry it too."""
+    fake = install(monkeypatch, FakeQuery([say("ok"), result()]))
+    run_cap = "run-cap-for-tests"
+
+    await run(ctx={**CTX, "traceparent": TRACEPARENT, "run_secret": run_cap})
+
+    opts: Any = fake.options
+    assert opts.env["ANTHROPIC_CUSTOM_HEADERS"] == (
+        f"traceparent: {TRACEPARENT}\nx-chassis-run-secret: {run_cap}"
+    )
+    assert opts.mcp_servers["chassis"]["headers"]["x-chassis-run-secret"] == run_cap
+
+
+async def test_handle_sends_no_run_secret_when_ctx_has_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No run secret: one header line, and no run-secret header on MCP."""
+    fake = install(monkeypatch, FakeQuery([say("ok"), result()]))
+
+    await run(ctx={**CTX, "traceparent": TRACEPARENT, "run_secret": None})
+
+    opts: Any = fake.options
+    assert opts.env["ANTHROPIC_CUSTOM_HEADERS"] == f"traceparent: {TRACEPARENT}"
+    assert "x-chassis-run-secret" not in opts.mcp_servers["chassis"]["headers"]
+
+
 async def test_handle_gives_each_run_a_fresh_home_and_removes_it_when_the_run_ends(
     monkeypatch: pytest.MonkeyPatch, clean_env: Path
 ) -> None:
@@ -777,3 +806,51 @@ async def test_handle_scrubs_the_token_when_it_is_split_across_delta_chunks(
     assert text_of(events) == full.replace(TOKEN, "[redacted]")
     kinds = [e["type"] for e in events]
     assert kinds.index("metrics") > max(i for i, k in enumerate(kinds) if k == "delta")
+
+
+# --- the run secret scrub (security review of contract v8) --------------------------------
+
+RUN_CAP = "rc-" + "q" * 40  # a test value standing in for `ctx.run_secret`
+
+
+async def test_handle_scrubs_the_run_secret_from_every_event_when_bash_prints_the_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CLI env holds `ctx.run_secret` (in `ANTHROPIC_CUSTOM_HEADERS`): a Bash `env` and the
+    model's echo of it reach no event."""
+    monkeypatch.setenv("CHASSIS_API_TOKEN", TOKEN)
+    header = f"ANTHROPIC_CUSTOM_HEADERS=x-chassis-run-secret: {RUN_CAP}\n"
+    messages = [
+        use("tu_1", "Bash", command="env"),
+        UserMessage(content=[ToolResultBlock("tu_1", header, False)]),
+        say(f"the header is {RUN_CAP}"),
+        result(),
+    ]
+    install(monkeypatch, FakeQuery(messages))
+
+    events = await run(ctx={**CTX, "run_secret": RUN_CAP})
+
+    check_shape(events)
+    assert RUN_CAP not in json.dumps(events)
+    assert "[redacted]" in json.dumps(events)
+
+
+async def test_scrubbed_removes_the_token_and_the_run_secret_across_delta_chunks() -> None:
+    """`_scrubbed` with both values: each is removed, even split across two deltas, and the
+    joined delta text and the event order are kept."""
+
+    async def events() -> AsyncIterator[dict[str, Any]]:
+        yield {"type": "start", "request_id": "r"}
+        yield {"type": "delta", "text": f"a {RUN_CAP[:10]}"}
+        yield {"type": "delta", "text": f"{RUN_CAP[10:]} b {TOKEN} c"}
+        yield {"type": "tool_call", "call_id": "c", "name": "Bash", "result": {"o": RUN_CAP}}
+        yield {"type": "end"}
+
+    out = [e async for e in handle_module._scrubbed(events(), TOKEN, RUN_CAP)]
+
+    assert RUN_CAP not in json.dumps(out) and TOKEN not in json.dumps(out)
+    text = "".join(e["text"] for e in out if e["type"] == "delta")
+    assert text == "a [redacted] b [redacted] c"
+    kinds = [e["type"] for e in out if e["type"] != "delta"]
+    assert kinds == ["start", "tool_call", "end"]
+    assert out[-2]["result"] == {"o": "[redacted]"}

@@ -17,6 +17,9 @@ The guardrails (`litellm/config.yaml` in this package is the matching LiteLLM co
 
 The stub calls the guardrail server over `guardrail_transport` (an ASGI transport offline).
 `StubSettings.fail_status` makes every guardrail-server call fail with that status (an outage).
+`StubSettings.guardrail_token`, when set, is sent to the guardrail server as `x-api-key`, as
+LiteLLM v1.103.0's `generic_guardrail_api` sends its `api_key` param. A refusal (401) fails the
+call closed, like any other non-200 answer.
 """
 
 from __future__ import annotations
@@ -52,10 +55,46 @@ _PII: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 
+# Hand copy of chassis/redaction.py's card and phone rules (R1-04); the import rules forbid
+# sharing them. A card needs the Luhn check; a phone needs a leading `+` or a separator, and an
+# ISO date, an IPv4 address, or an x.y.z version is kept.
+_ISO_DATE = r"\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])"
+_IPV4_GROUP = r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
+_NOT_A_PHONE = re.compile(
+    rf"{_ISO_DATE}|{_IPV4_GROUP}(?:\.{_IPV4_GROUP}){{3}}|\d{{1,2}}(?:\.\d{{1,2}}){{2}}"
+)
+
+
+def _passes_luhn(digits: str) -> bool:
+    """The Luhn checksum every card number carries: double every second digit from the right."""
+    total = 0
+    for index, char in enumerate(reversed(digits)):
+        value = int(char) * (2 if index % 2 else 1)
+        total += value - 9 if value > 9 else value
+    return total % 10 == 0
+
+
+def _card_or_kept(match: re.Match[str]) -> str:
+    text = match.group(0)
+    return "<CREDIT_CARD>" if _passes_luhn(re.sub(r"[ -]", "", text)) else text
+
+
+def _phone_or_kept(match: re.Match[str]) -> str:
+    text = match.group(0)
+    if text.isdigit() or _NOT_A_PHONE.fullmatch(text):
+        return text
+    return "<PHONE_NUMBER>"
+
+
 def mask_pii(text: str) -> str:
-    """The Presidio stand-in: each match as `<ENTITY>`."""
+    """The Presidio stand-in: each match as `<ENTITY>`, with the chassis's card and phone rules."""
     for entity, pattern in _PII:
-        text = pattern.sub(f"<{entity}>", text)
+        if entity == "CREDIT_CARD":
+            text = pattern.sub(_card_or_kept, text)
+        elif entity == "PHONE_NUMBER":
+            text = pattern.sub(_phone_or_kept, text)
+        else:
+            text = pattern.sub(f"<{entity}>", text)
     return text
 
 
@@ -64,6 +103,8 @@ class StubSettings:
     master_key: str
     guardrail_base_url: str = "http://guardrail-server"
     fail_status: int | None = None
+    guardrail_token: str | None = None
+    """Sent to the guardrail server as `x-api-key` (LiteLLM's `api_key` param)."""
     calls: list[dict[str, Any]] = field(default_factory=list)
     """Each apply call: the guardrail name, the input type, and the text."""
 
@@ -109,8 +150,9 @@ def create_stub(
             "request_data": {"metadata": body.metadata or {}},
             "additional_provider_specific_params": {"checks": guardrail["checks"]},
         }
+        headers = {"x-api-key": settings.guardrail_token} if settings.guardrail_token else {}
         async with httpx.AsyncClient(
-            transport=guardrail_transport, base_url=settings.guardrail_base_url
+            transport=guardrail_transport, base_url=settings.guardrail_base_url, headers=headers
         ) as client:
             try:
                 answer = await client.post(GENERIC_PATH, json=payload)
