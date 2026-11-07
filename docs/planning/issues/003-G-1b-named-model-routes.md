@@ -15,26 +15,23 @@ Agents name a route, not a model, so any model is swapped by changing router con
 
 ## What
 
-- Named routes in the LiteLLM config, starting with `big-default` and `simplifier-slm` from C.1.
-- A route for the open-weight teacher and judge: a large open Qwen3 or Gemma 3 model on vLLM (suggested name: `teacher-open`).
-- `simplifier-slm` pointed at a stand-in model until the trained SLM is served (036 S-7).
+- Named routes in the LiteLLM config, starting with `big-default` and `local-small`. Both answer by name on the fake model (`pocs/poc-01-walking-skeleton/demo/2026-09-29-demo-fake-variant.md`). The name `local-small` stays (`pocs/poc-06c-pretrained-slm/notes/backlog-changes.md`).
 - Each route declares whether it supports native tool calls, so the harness can pick the right tool mode later (B.3).
 - Each route has a version, so every response can report the model route version it used (B.2).
-- Swapping a model means editing the route's target in router config and reloading the router. Clients do not change.
+- Swapping a model means editing the route's target in router config and reloading the router. Clients do not change. This is not the PoC-6c route switch (`pocs/poc-06c-pretrained-slm/tests/test_poc06c_route_switch.py::test_only_the_route_changes_and_every_task_passes_both_times`), which changes the chassis's route, not the model behind it.
 - Optional: each service's virtual key lists the routes that service may use, and a call to any other route is refused ([ADR-001](../adr/001-chassis-delivery-model.md) item 6).
 - One table that documents every route: name, current model, owner, tool-call support, and version.
-- Status after PoC-1: `big-default` and `local-small` answer by name. Switching `spec.model.route` is a config change and a restart (`pocs/poc-01-walking-skeleton/demo/2026-09-29-demo-fake-variant.md`). This issue names the second route `simplifier-slm`. Open decision: rename `local-small` to `simplifier-slm`, or keep it as a third route. Not yet: tool-call declaration per route, route versions in config history, and the clear error for an unknown route.
-- Status after PoC-6: PoC-6a and 6b ran on one route name, `big-default`, with the fake model server offline. The hosted route and the `local-small` route to the llama.cpp server are configured for the Mac run (`deploy/compose/litellm/`, `pocs/poc-06c-pretrained-slm/tests/test_poc06c_mac_static.py`); nothing has run on them yet. The name `local-small` stays.
 
 ## Out of scope
 
 - The harness model port that calls routes by name (012 H-3).
 - Retry and fallback between routes in the harness (017 H-4).
-- Serving the trained SLM behind `simplifier-slm` (036 S-7).
+- The SLM routes `simplifier-slm` and `teacher-open`, and serving the trained SLM behind them (036 S-7). Parked with the SLM track.
+- The Mac run that makes the first hosted call on `big-default`. It is tracked in [011-what-is-left.md](../poc/011-what-is-left.md) section 1, with the routes in `deploy/compose/litellm/`. Its result ticks the first box here.
 
 ## Acceptance criteria
 
-- [ ] `big-default` and `simplifier-slm` answer through the router by name.
+- [ ] `big-default` and `local-small` answer through the router by name.
 - [ ] Changing the model behind `big-default` in router config switches the model; a test call shows the new model answers, and no client code changed.
 - [ ] Every route declares native tool-call support, yes or no.
 - [ ] Every route has a version, and the router config history shows each change.

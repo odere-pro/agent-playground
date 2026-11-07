@@ -9,6 +9,8 @@ blocks: ["045 A-4"]
 epic_refs: [F.1, J]
 ---
 
+Parked 2026-11-06 with the SLM track: the short versions come from the SLM simplifier's records; revisit as `later` if a route map and a recorder exist. The LiteLLM pre-call hook suggestion below stands ([ADR-001](../adr/001-chassis-delivery-model.md) item 6).
+
 ## Why
 
 Chat history is sent again on every turn, so long past answers cost tokens again and again. Swapping them for their simplified versions is the second savings lever in the epic's Value section. It comes after the recorder (040 D-0), because the short versions come from stored records, and it stays off until 045 A-4 switches it on.

@@ -20,7 +20,9 @@ A resumed or retried step must never repeat a side effect, such as sending a mes
 - The key goes to the agent in the native envelope, so the agent's idempotency check returns the stored result instead of running again.
 - Agents pass the key on to write tools through the chassis tool proxy (054 H-16).
 - Completed steps are never called again; their results come from the checkpoint.
-- Suggested: the Valkey result cache TTL covers the longest run (`limits.timeout_s`) plus a resume window, so a late resume still hits the cache.
+- The step key follows the chassis rule (contract section 6): a run that ends in `error` frees its key, so a retried errored step runs again. The same key with other input is 422.
+- The fake write tool that counts calls is `fake_mcp_server.FakeMcpState.executions` or `chassis.fakes.tool.WriteModeTools`.
+- The cache TTL is `spec.idempotency.ttl_s` (default 86400). Suggested: it covers the longest run (`limits.timeout_s`) plus a resume window, so a late resume still hits the cache.
 - The step key shows in traces and logs of both the orchestrator and the agent.
 
 ## Out of scope

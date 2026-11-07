@@ -13,15 +13,28 @@ builds `LiteLLMModel` from the environment. Every other adapter that is not buil
 `AdapterNotAvailable` and names the PoC that adds it. suggested: the `cloud` profile refuses a
 `fake` or `memory` adapter (`AdapterNotAllowed`); `local` allows any mix.
 
+The `cloud` profile also refuses, before any adapter is built (so nothing connects), each with
+`AdapterNotAllowed` that names the variable and never its value:
+- `auth: none`, which would run `/v1/run` as the anonymous principal (review R2 note);
+- `CONFIG_S3_SECURE` off when `config` is `s3` or `minio`, and a `VALKEY_URL` that is not
+  `rediss://`, `valkeys://`, or `unix://`, or whose query turns off the certificate or host
+  name check, when `state` is `valkey` (review R4-30, MEDIUM 9), unless
+  `CHASSIS_ALLOW_PLAINTEXT_STORES=1` (suggested: the name and the value), which logs a warning;
+- a URL that is not `https`: `LITELLM_MCP_URL` when `tools` is `mcp` (review R5a-25),
+  `LITELLM_BASE_URL` when `model` or `guardrails` is `litellm` (HIGH 3), and `OIDC_JWKS_URL`
+  when `auth` is `oidc` (MEDIUM 9). No loopback or in-cluster name and no override passes;
+  outside `cloud` the adapters' own checks apply. A URL that does not parse is refused too.
+
 The lanes and the LiteLLM model are lazy too: `inprocess` and `sidecar` are `lazy` entries, and
 `_litellm_from_env` imports `chassis.adapters.litellm` inside the call so its error text stays
 its own. Importing `chassis.profiles` loads no A2A or LiteLLM adapter module.
 
-PoC-4 adapters are lazy (`lazy`): the factory imports its module only when the adapter is named,
-so an unused SDK (valkey, aiokafka, minio) is never loaded. A module that is not there yet names
-PoC-4; an adapter whose `from_env` raises `LookupError` is "not configured".
+Adapters with an SDK are lazy (`lazy`): the factory imports its module only when the adapter is
+named, so an unused SDK (valkey, aiokafka, minio) is never loaded. A missing module or SDK is
+"adapter X is unavailable (no module Y)"; an adapter whose `from_env` raises `LookupError` is
+"not configured".
 
-PoC-5 entries are lazy too and name PoC-5 until their module lands: `engine: remote` is
+`engine: remote` is
 `chassis.adapters.a2a.remote:RemoteConnector` (built with no arguments, set up with
 `spec.engine` like the other lanes), `tools: mcp` is
 `chassis.adapters.mcp.gateway:McpGatewayTools.from_env`.
@@ -29,14 +42,17 @@ PoC-5 entries are lazy too and name PoC-5 until their module lands: `engine: rem
 PoC-7 adds four ports, each with `none` (off, the `fake` and `local` default) and a fake: `auth`
 (`static`, `oidc`), `guardrails` (`fake`, `litellm`), `evaluator` (`fake`, `judge`, `encoder`),
 `feedback` (`memory`, `langfuse`). `telemetry: otel` is `OtelTelemetry.from_env`. The real ones
-are lazy and name PoC-7 until their module lands.
+are lazy.
 """
 
 from __future__ import annotations
 
 import importlib
+import logging
+import os
 from collections.abc import Callable
 from typing import Any, Literal
+from urllib.parse import SplitResult, parse_qsl, urlsplit
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -55,6 +71,8 @@ from chassis.ports.evaluator import NoEvaluator
 from chassis.ports.events import NoEvents
 from chassis.ports.feedback import NoFeedback
 from chassis.ports.guardrail import NoGuardrails
+
+log = logging.getLogger(__name__)
 
 Profile = Literal["fake", "local", "cloud"]
 PROFILES: tuple[Profile, ...] = ("fake", "local", "cloud")
@@ -75,6 +93,29 @@ DEFAULT_LANE: Lane = "sidecar"
 """ADR-001 item 4. `spec.engine.connector` defaults to it too (`chassis.server.config`)."""
 IN_MEMORY = frozenset({"fake", "memory", "static"})
 """suggested: the adapter names the `cloud` profile refuses."""
+
+# The adapters import their SDK (minio, valkey, FastMCP, httpx, pyjwt) at module level, so
+# these names are copies, not imports. `test_profiles_cloud_transport.py` checks they match.
+S3_SECURE_VAR = "CONFIG_S3_SECURE"
+"""Read by `chassis.adapters.s3.config.S3Config.from_env` (`config: s3` and `config: minio`)."""
+VALKEY_URL_VAR = "VALKEY_URL"
+"""`chassis.adapters.valkey.state.URL_VAR`."""
+LITELLM_MCP_URL_VAR = "LITELLM_MCP_URL"
+"""`chassis.adapters.mcp.gateway.URL_VAR`."""
+LITELLM_BASE_URL_VAR = "LITELLM_BASE_URL"
+"""`chassis.adapters.litellm.client.BASE_URL_VAR`, read by the model and guardrails adapters."""
+OIDC_JWKS_URL_VAR = "OIDC_JWKS_URL"
+"""`chassis.adapters.oidc.JWKS_URL_VAR`."""
+ALLOW_PLAINTEXT_STORES_VAR = "CHASSIS_ALLOW_PLAINTEXT_STORES"
+"""suggested: set to `1` to let the `cloud` profile reach S3 and Valkey without TLS."""
+S3_CONFIGS = frozenset({"s3", "minio"})
+"""The `config` adapters that read `CONFIG_S3_SECURE`."""
+_S3_OFF = frozenset({"0", "false", "no", "off"})
+"""The values `S3Config.from_env` reads as `secure=False` (its `_flag`)."""
+VALKEY_TLS_SCHEMES = frozenset({"rediss", "valkeys", "unix"})
+"""TLS, or a local socket that never crosses a network."""
+_VALKEY_FALSE = frozenset({"0", "f", "false", "n", "no"})
+"""The query values valkey-py reads as false (its `to_bool`)."""
 
 
 class AdapterSpec(BaseModel):
@@ -109,8 +150,9 @@ class AdapterSpec(BaseModel):
         return data
 
 
-_POC07_OFF = {"auth": "none", "guardrails": "none", "evaluator": "none", "feedback": "none"}
-"""suggested: the four PoC-7 ports are off in `fake` and `local` until an agent names them."""
+_OPTIONAL_OFF = {"auth": "none", "guardrails": "none", "evaluator": "none", "feedback": "none"}
+"""suggested: the four optional ports (auth, guardrails, evaluator, feedback) are off in `fake`
+and `local` until an agent names them."""
 
 PROFILE_DEFAULTS: dict[Profile, AdapterSpec] = {
     "fake": AdapterSpec(
@@ -120,7 +162,7 @@ PROFILE_DEFAULTS: dict[Profile, AdapterSpec] = {
         tools="fake",
         state="memory",
         events="none",
-        **_POC07_OFF,
+        **_OPTIONAL_OFF,
     ),
     "local": AdapterSpec(
         model="litellm",
@@ -129,7 +171,7 @@ PROFILE_DEFAULTS: dict[Profile, AdapterSpec] = {
         tools="mcp",
         state="valkey",
         events="none",
-        **_POC07_OFF,
+        **_OPTIONAL_OFF,
     ),
     "cloud": AdapterSpec(
         model="litellm",
@@ -177,13 +219,13 @@ def _litellm_from_env(agent: str | None = None) -> object:
         raise AdapterNotAvailable(str(exc)) from exc
 
 
-def lazy(port: str, adapter: str, target: str, poc: str = "PoC-4") -> Factory:
+def lazy(port: str, adapter: str, target: str) -> Factory:
     """A factory that imports `target` (`module:attr`, `attr` may be dotted, as in
     `Class.from_env`) only when called, then calls it with the factory's arguments.
 
     A `ModuleNotFoundError` (the adapter module or its SDK is not there) becomes
-    `AdapterNotAvailable("<port>: adapter '<name>' arrives in <poc>")`. A `LookupError` from the
-    target (a required environment variable is unset) becomes
+    `AdapterNotAvailable("<port>: adapter '<name>' is unavailable (no module '<module>')")`.
+    A `LookupError` from the target (a required environment variable is unset) becomes
     `AdapterNotAvailable("<port>: adapter '<name>' is not configured: <message>")`.
     """
     module_name, _, attr = target.partition(":")
@@ -193,7 +235,7 @@ def lazy(port: str, adapter: str, target: str, poc: str = "PoC-4") -> Factory:
             found: Any = importlib.import_module(module_name)
         except ModuleNotFoundError as exc:
             raise AdapterNotAvailable(
-                f"{port}: adapter {adapter!r} arrives in {poc} (no module {exc.name!r})"
+                f"{port}: adapter {adapter!r} is unavailable (no module {exc.name!r})"
             ) from exc
         for part in attr.split("."):
             found = getattr(found, part)
@@ -218,10 +260,12 @@ REGISTRY: dict[str, dict[str, Factory | str]] = {
     },
     "engine": {
         "inprocess": lazy(
-            "engine", "inprocess", "chassis.adapters.a2a:InProcessConnector", "PoC-1"
+            "engine",
+            "inprocess",
+            "chassis.adapters.a2a:InProcessConnector",
         ),
-        "sidecar": lazy("engine", "sidecar", "chassis.adapters.a2a:SidecarConnector", "PoC-2"),
-        "remote": lazy("engine", "remote", "chassis.adapters.a2a.remote:RemoteConnector", "PoC-5"),
+        "sidecar": lazy("engine", "sidecar", "chassis.adapters.a2a:SidecarConnector"),
+        "remote": lazy("engine", "remote", "chassis.adapters.a2a.remote:RemoteConnector"),
     },
     "config": {
         "memory": InMemoryConfig,
@@ -230,12 +274,14 @@ REGISTRY: dict[str, dict[str, Factory | str]] = {
     },
     "telemetry": {
         "memory": InMemoryTelemetry,
-        "otel": lazy("telemetry", "otel", "chassis.adapters.otel:OtelTelemetry.from_env", "PoC-7"),
+        "otel": lazy("telemetry", "otel", "chassis.adapters.otel:OtelTelemetry.from_env"),
     },
     "tools": {
         "fake": default_tools,
         "mcp": lazy(
-            "tools", "mcp", "chassis.adapters.mcp.gateway:McpGatewayTools.from_env", "PoC-5"
+            "tools",
+            "mcp",
+            "chassis.adapters.mcp.gateway:McpGatewayTools.from_env",
         ),
     },
     "state": {
@@ -250,8 +296,8 @@ REGISTRY: dict[str, dict[str, Factory | str]] = {
     },
     "auth": {
         "none": NoAuth,
-        "static": lazy("auth", "static", "chassis.fakes.auth:StaticTokens.from_env", "PoC-7"),
-        "oidc": lazy("auth", "oidc", "chassis.adapters.oidc:OidcAuth.from_env", "PoC-7"),
+        "static": lazy("auth", "static", "chassis.fakes.auth:StaticTokens.from_env"),
+        "oidc": lazy("auth", "oidc", "chassis.adapters.oidc:OidcAuth.from_env"),
     },
     "guardrails": {
         "none": NoGuardrails,
@@ -260,24 +306,29 @@ REGISTRY: dict[str, dict[str, Factory | str]] = {
             "guardrails",
             "litellm",
             "chassis.adapters.litellm.guardrails:LiteLLMGuardrails.from_env",
-            "PoC-7",
         ),
     },
     "evaluator": {
         "none": NoEvaluator,
         "fake": ScriptedEvaluator,
         "judge": lazy(
-            "evaluator", "judge", "chassis.adapters.evaluators:JudgeEvaluator.from_env", "PoC-7"
+            "evaluator",
+            "judge",
+            "chassis.adapters.evaluators:JudgeEvaluator.from_env",
         ),
         "encoder": lazy(
-            "evaluator", "encoder", "chassis.adapters.evaluators:EncoderEvaluator.from_env", "PoC-7"
+            "evaluator",
+            "encoder",
+            "chassis.adapters.evaluators:EncoderEvaluator.from_env",
         ),
     },
     "feedback": {
         "none": NoFeedback,
         "memory": InMemoryFeedback,
         "langfuse": lazy(
-            "feedback", "langfuse", "chassis.adapters.langfuse:LangfuseFeedback.from_env", "PoC-7"
+            "feedback",
+            "langfuse",
+            "chassis.adapters.langfuse:LangfuseFeedback.from_env",
         ),
     },
 }
@@ -331,6 +382,84 @@ def _check_cloud(profile: Profile, spec: AdapterSpec) -> None:
                 f"{port}: {adapter!r} is an in-memory double; profile 'cloud' runs real "
                 "adapters only (use profile 'local' for a mix)"
             )
+    _check_cloud_auth(spec)
+    _check_store_tls(spec)
+    _check_https("tools", LITELLM_MCP_URL_VAR, spec.tools == "mcp")
+    _check_https("model", LITELLM_BASE_URL_VAR, spec.model == "litellm")
+    _check_https("guardrails", LITELLM_BASE_URL_VAR, spec.guardrails == "litellm")
+    _check_https("auth", OIDC_JWKS_URL_VAR, spec.auth == "oidc")
+
+
+def _check_cloud_auth(spec: AdapterSpec) -> None:
+    if spec.auth == "none":
+        raise AdapterNotAllowed(
+            "auth: 'none' runs every call as the anonymous principal; profile 'cloud' needs a "
+            "real authenticator"
+        )
+
+
+def _url_parts(var: str, url: str) -> SplitResult:
+    """`urlsplit(url)`. Its `ValueError` echoes part of the URL, so it becomes an
+    `AdapterNotAllowed` that names only `var` (review LOW 10)."""
+    try:
+        parts = urlsplit(url)
+        _ = parts.hostname
+    except ValueError:
+        raise AdapterNotAllowed(f"{var} is not a valid URL") from None
+    return parts
+
+
+def _valkey_without_tls(url: str) -> bool:
+    """Not `rediss`, `valkeys`, or `unix`; or a query that turns off the certificate check
+    (`ssl_cert_reqs` other than `required`) or the host name check (`ssl_check_hostname`
+    false, as valkey-py reads it). Names and values are compared case-insensitively."""
+    parts = _url_parts(VALKEY_URL_VAR, url)
+    if parts.scheme not in VALKEY_TLS_SCHEMES:
+        return True
+    query = {k.lower(): v.strip().lower() for k, v in parse_qsl(parts.query)}
+    if query.get("ssl_cert_reqs", "required") != "required":
+        return True
+    return query.get("ssl_check_hostname", "true") in _VALKEY_FALSE
+
+
+def _plaintext_stores(spec: AdapterSpec) -> list[str]:
+    """The variables that send a store's traffic without TLS. Names only, never values."""
+    found: list[str] = []
+    secure = os.environ.get(S3_SECURE_VAR, "true").strip().lower()
+    if spec.config in S3_CONFIGS and secure in _S3_OFF:
+        found.append(S3_SECURE_VAR)
+    url = os.environ.get(VALKEY_URL_VAR)  # unset: the adapter names it as "not configured"
+    if spec.state == "valkey" and url and _valkey_without_tls(url):
+        found.append(VALKEY_URL_VAR)
+    return found
+
+
+def _check_store_tls(spec: AdapterSpec) -> None:
+    """S3 and Valkey without TLS are refused, unless the override is set; then each is logged
+    as a warning (review LOW 12)."""
+    found = _plaintext_stores(spec)
+    if not found:
+        return
+    names = ", ".join(found)
+    if os.environ.get(ALLOW_PLAINTEXT_STORES_VAR) == "1":
+        log.warning(
+            "profile 'cloud': %s=1 lets a store run without TLS (%s)",
+            ALLOW_PLAINTEXT_STORES_VAR,
+            names,
+        )
+        return
+    raise AdapterNotAllowed(
+        f"{names} turns TLS off; profile 'cloud' needs TLS to its stores "
+        f"(set {ALLOW_PLAINTEXT_STORES_VAR}=1 to allow it)"
+    )
+
+
+def _check_https(port: str, var: str, applies: bool) -> None:
+    """`var` carries a credential (the LiteLLM key) or the keys that check one (the JWKS), so
+    `cloud` needs `https` with no loopback, in-cluster, or override exemption."""
+    url = os.environ.get(var)  # unset: the adapter names it as "not configured"
+    if applies and url and _url_parts(var, url).scheme != "https":
+        raise AdapterNotAllowed(f"{port}: profile 'cloud' needs an https {var}")
 
 
 def _named(spec: AdapterSpec, port: str) -> str:

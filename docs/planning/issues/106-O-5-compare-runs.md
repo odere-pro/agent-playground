@@ -11,17 +11,17 @@ epic_refs: [F.7]
 
 ## Why
 
-Compare runs pick the best output when there is more than one candidate, such as a new SLM next to the current one. They also feed the golden set with scored alternatives, which trains better models and evaluators. This issue delivers the Phase 7 done-when part "runs a compare job".
+Compare runs pick the best output when there is more than one candidate, such as two model routes for the same task. They also feed the golden set with scored alternatives, which trains better models and evaluators. This issue delivers the Phase 7 done-when part "runs a compare job".
 
 ## What
 
 - The `compare` pattern: run the same job several times or on several agents, as listed in the workflow steps (suggested: `repeat` on a step for several runs of one agent).
-- Score every candidate with the `evaluate` agent (for example `evaluator-facts`) on the same input.
+- Score every candidate with the `EvaluatorPort` judge on the same input.
 - Keep the best candidate and return it. The response lists every candidate with its agent, score, and cost.
 - A tie rule for equal scores (suggested: an `evaluate.tie_rule` field in `workflow.schema.json`, default `cheapest`, then `fastest`, following the cost rules in J).
 - Candidates below `evaluate.threshold` are never kept. If none pass, `on_failure` applies.
 - All candidate outputs, with scores and a winner flag, go to the golden set through its import API (068 D-3).
-- A `compare-simplifiers` workflow file in the config store as the reference job.
+- A `compare-routes` workflow file in the config store as the reference job, with the echo agent (`packages/workloads/echo-*`) and a fake evaluator. The epic's example stays in the epic.
 
 ## Out of scope
 
@@ -31,7 +31,7 @@ Compare runs pick the best output when there is more than one candidate, such as
 
 ## Acceptance criteria
 
-- [ ] `compare-simplifiers` runs one input on two simplifier candidates (for example the SLM route and the big-model route) and returns the higher-scored output.
+- [ ] `compare-routes` runs one input on two candidates, two routes from the route map (`docs/specs/models.md`), and returns the higher-scored output.
 - [ ] A step with `repeat: 3` runs three times, and each run is scored.
 - [ ] A test with equal scores always picks the same candidate, by the tie rule.
 - [ ] When no candidate passes the threshold, the run follows `on_failure`.

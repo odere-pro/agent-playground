@@ -1,7 +1,8 @@
 """Graceful shutdown (PoC-4 plan, section 6): the chassis handles SIGTERM itself. A real SIGTERM
 to this process mid-stream: `/ready` goes 503 `draining` first, the in-flight stream ends with
-its `end` event, the public server stops, and only then the proxy server. A second signal forces
-both out. Both servers are real uvicorn servers on Unix sockets, in the test's loop.
+its `end` event, the public server stops, and only then the proxy server. A second signal cuts
+every open connection, so both stop at once. Both servers are real uvicorn servers on Unix
+sockets, in the test's loop.
 """
 
 from __future__ import annotations
@@ -185,7 +186,9 @@ async def test_sigterm_drains_the_in_flight_stream_after_ready_goes_false() -> N
 
 
 async def test_a_second_signal_forces_exit() -> None:
-    """The second signal sets `force_exit` on every server while a stream stays open."""
+    """The second signal ends `serve` at once while a stream stays open (F8-01): every open
+    connection is cut, the run sees the disconnect, and the public lifespan still closes the ports.
+    """
     handle = Slow()
     with sockets() as (public_uds, proxy_uds):
         gate = DelayGate()
@@ -204,22 +207,18 @@ async def test_a_second_signal_forces_exit() -> None:
                     await _in_the_delay(gate)
                     await _past_the_delay(drain, gate)
                     assert drain.public.server_state.connections, "the first signal waits for it"
-                    assert not served.done() and not drain.public.force_exit
+                    assert not served.done()
                     os.kill(os.getpid(), signal.SIGINT)
-                    await wait_until(
-                        lambda: drain.public.force_exit, HANG_GUARD_S, "the second signal"
-                    )
-                    assert drain.proxy.force_exit
-                    try:
-                        await asyncio.wait_for(served, FORCED_EXIT_WAIT_S)
-                    except TimeoutError:
-                        assert drain.public.server_state.connections, "only the stream may hold it"
-                        pytest.xfail(
-                            "F8-01: uvicorn's `wait_closed` waits for the open stream, so a "
-                            "forced exit still ends only at `timeout_s`"
-                        )
+                    await asyncio.wait_for(served, FORCED_EXIT_WAIT_S)
+                    with pytest.raises(httpx.HTTPError):  # the server cut the stream
+                        async for _ in frames:
+                            pass
         finally:
             handle.release.set()
+    assert drain.signals == 2
+    assert not drain.public.server_state.connections and not drain.public.server_state.tasks
+    assert drain.state.ports.engine.closed, "the ports still close on a forced exit"
+    assert set(drain.order) == {"draining", "public closing", "public stopped", "proxy stopped"}
 
 
 async def test_the_signal_handlers_are_restored_after_serve() -> None:

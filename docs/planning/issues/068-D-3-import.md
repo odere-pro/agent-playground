@@ -11,7 +11,7 @@ epic_refs: [H]
 
 ## Why
 
-Golden sets also come from outside the recorder: hand-labeled files, other teams, and the S-4 held-out test set. Import in one step, from any of three sources, is part of the Phase 4 done-when. It comes right after the check and dedup step (067 D-5), which every source runs through.
+Golden sets also come from outside the recorder: hand-labeled files, other teams, and the 50-case gate set (037 M-2). Import in one step, from any of three sources, is part of the Phase 4 done-when. It comes right after the check and dedup step (067 D-5), which every source runs through.
 
 ## What
 
@@ -42,7 +42,7 @@ Golden sets also come from outside the recorder: hand-labeled files, other teams
 - [ ] One upload of a file in each of JSONL, CSV, Parquet, and Hugging Face datasets format imports its records and returns an import ID and a report.
 - [ ] The same records sent in one API call give the same result.
 - [ ] A file dropped into the watched prefix is imported once; dropping it again adds no records.
-- [ ] The S-4 held-out test set (≥ 300 records) imports in one step, marked as already reviewed, with split `holdout`.
+- [ ] The 50-case gate set (`cases.yaml` plus `cases-gate.yaml`) imports in one step, marked as already reviewed, with split `holdout`.
 - [ ] A caller without the write scope gets `403`.
 - [ ] A file upload over the size limit is refused with a clear error that points to the bucket watch or a presigned URL.
 - [ ] A 100,000-record file imports through the bucket watch without the service running out of memory (suggested size).

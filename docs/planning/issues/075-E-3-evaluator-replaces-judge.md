@@ -24,6 +24,8 @@ Until now, a big model judges every simplifier call, which eats into the savings
 - The golden set agent (064 D-1) also scores records with the SLM evaluator.
 - One-step rollback: point `evaluator-facts` back to the big-model judge by config.
 - Judge cost and latency, before and after, show on the agent dashboard (046 A-5).
+- Parked with the SLM track (2026-11-06). Box 8 stays ticked. The plan's default is the judge at sample rate 0.1 on `decision-small`.
+- Status after PoC-7 ([backlog changes](../../../pocs/poc-07-cross-cutting-decisions/notes/backlog-changes.md)): the encoder adapter and the gate cost formula (ADR-010 item 9) are where this issue's numbers plug in. It waits on encoder agreement from the Mac run.
 
 ## Out of scope
 
@@ -40,7 +42,7 @@ Until now, a big model judges every simplifier call, which eats into the savings
 - [ ] Evaluator p95 latency is lower than the big-model judge's.
 - [ ] Rolling back to the big-model judge is one config change, with no restart.
 - [ ] Phase 4 done-when: one checklist run shows import and export in one step in every format, immutable versions, PII rules applied, and the evaluator SLM passing E-2, with a link to each test.
-- [ ] The evaluator SLM adapter passes the same `EvaluatorPort` contract suite as the LLM judge and the fake.
+- [x] The `EncoderEvaluator` adapter passes the same `EvaluatorPort` contract suite as the judge and the fake. It is the off-the-shelf NLI stub over TEI, not a trained SLM · Delivered in PoC-7: `packages/contract-suites/src/chassis_contracts/evaluator.py` (`EvaluatorPortContract`, four cases); `packages/chassis/tests/test_evaluators.py::TestEncoderEvaluator` and `packages/chassis/tests/test_evaluators.py::TestJudgeEvaluator`; `packages/chassis/tests/test_contracts_cross_cutting_ports.py::TestScriptedEvaluator`; `pocs/poc-07-cross-cutting-decisions/tests/test_poc07_evals_adapters.py::TestPoc07EvalsEncoderEvaluator`; `docs/planning/adr/010-evals-offline-tool-online-gate.md` item 7
 
 ## Dependencies
 

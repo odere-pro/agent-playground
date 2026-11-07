@@ -327,11 +327,11 @@ async def test_a_stream_is_always_async() -> None:
 
 def test_sampling_is_deterministic_per_request_id() -> None:
     ids = [f"req-{i}" for i in range(2000)]
-    first = [sampled(i, 0.25) for i in ids]
-    assert first == [sampled(i, 0.25) for i in ids]
+    first = [sampled(i, 0.25, b"salt") for i in ids]
+    assert first == [sampled(i, 0.25, b"salt") for i in ids]
     assert 0.2 < sum(first) / len(ids) < 0.3
-    assert not any(sampled(i, 0.0) for i in ids)
-    assert all(sampled(i, 1.0) for i in ids)
+    assert not any(sampled(i, 0.0, b"salt") for i in ids)
+    assert all(sampled(i, 1.0, b"salt") for i in ids)
 
 
 # --- The fallback route through the model proxy -------------------------------------------------

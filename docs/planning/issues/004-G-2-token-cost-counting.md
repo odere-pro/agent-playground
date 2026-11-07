@@ -17,31 +17,29 @@ Token and cost numbers are the core measurement of the epic. The baseline (005 G
 
 - Input tokens, output tokens, and cost counted for every request through the router, using LiteLLM token and cost counting.
 - Each request tagged with user, agent, and route, so spend can be grouped per request, per user, and per agent.
-- The agent is taken from the service's virtual key (002 G-1), so a caller cannot spoof it. suggested: `user` still comes from request metadata.
+- The agent is taken from the service's virtual key (002 G-1), so a caller cannot spoof it. The tag sits in the key's `metadata.tags` (`deploy/kind/poc05/platform/seed.sh`). The proving test is a kind test, suggested: `test_spoofed_agent_tag_counts_under_key_agent` (H31 in `pocs/poc-05-sandboxed/notes/2026-10-02-blind-spots.md`, never run). suggested: `user` still comes from request metadata; see ADR-008 open questions.
 - Calls with no `user` tag counted under `unknown`, never dropped.
 - One usage record per request stored in Postgres, with `request_id` and `trace_id` when the caller sends them.
-- A price table per route in router config. Self-hosted SLM routes have a token price of zero here; GPU hosting cost is added by the cost model (031 G-5).
-- Streaming calls counted the same way as complete calls.
-- Token and cost counters exposed as Prometheus metrics, labeled by agent, user, and route.
-- Status after PoC-1: token counts per call are visible in the router through a custom callback (`deploy/compose/litellm/token_log.py`). It prints one line per call with route, tokens, cost, and `tags=agent:<name>`, because there is no Postgres and `/spend/logs` answers `No connected db.` Streamed calls log real counts, not zero. The agent tag comes from the request metadata, so it is spoofable until a virtual key carries it. The criterion "counted under the agent of its key" stays open and needs the virtual-key work. Cost is `0.000000` for the fake model; a real cost figure is unverified until the `local` override runs. See `pocs/poc-01-walking-skeleton/notes/2026-09-29-compose-key-debt.md`.
-- Status after PoC-5: a model stream inside a run that the client closes early gives its reservation back to the run uncharged (`_Hold.release` in `packages/chassis/src/chassis/server/model_proxy.py`). An uncorrelated stream that started is charged. The agent tag is in the virtual key's `metadata.tags` now, but H31 (a spoofed tag) was not run, so the criterion "counted under the agent of its key" stays open.
+- A price table per route in router config.
+- Streaming calls counted the same way as complete calls. A correlated stream the client abandons is charged on the Anthropic proxy route (`packages/chassis/tests/test_model_proxy_messages_budget.py::test_an_abandoned_stream_is_charged_its_reservation_when_usage_is_unknown`). On the chat route it is charged nothing yet, a known gap of this issue (`packages/chassis/tests/test_model_proxy.py::test_chat_proxy_charges_nothing_when_a_correlated_stream_is_abandoned`).
+- Token and cost counters exposed as Prometheus metrics, labeled by agent and route. `user` is in the usage record only, because a `user` label is unbounded.
 
 ## Out of scope
 
 - The baseline report (005 G-3).
 - The savings dashboard (006 G-6) and the cost dashboard per agent and pool (120 X-7).
 - GPU hosting cost and the break-even point (031 G-5).
+- SLM route prices (a self-hosted SLM route has a token price of zero) and the day collection starts, for the baseline window. Parked with 005 G-3.
 
 ## Acceptance criteria
 
 - [ ] Every call through the router makes one usage record with input tokens, output tokens, cost, route, user, agent, and time.
 - [ ] Token counts match the usage the provider reports, on a sample of calls to each big model.
-- [ ] A streamed call makes a usage record with real token counts, not zero.
+- [x] A streamed call makes a usage record with real token counts, not zero. · Delivered in PoC-1: `pocs/poc-01-walking-skeleton/demo/2026-09-29-demo-fake-variant.md` (streamed runs on both routes, each with a `metrics` event of 42 input and 9 output tokens); `packages/chassis/tests/test_metrics.py::test_model_tokens_and_cost_come_from_the_proxy_usage` (fake model)
 - [ ] One query returns totals per request, per user, and per agent for a date range.
 - [ ] Calls with no `user` tag show under `unknown`.
 - [ ] A call that sends another agent's name in its metadata is still counted under the agent of its key.
-- [ ] Prometheus scrapes the token and cost metrics, labeled by agent, user, and route.
-- [ ] The day collection starts is recorded, so the baseline window can be counted from it.
+- [ ] Prometheus scrapes the token and cost metrics, labeled by agent and route; `user` is in the usage record only.
 
 ## Dependencies
 

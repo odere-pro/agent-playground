@@ -15,13 +15,13 @@ Much useful work sits behind REST APIs that are not agents. OpenAPI import regis
 
 ## What
 
-- Import by spec URL or file, for OpenAPI 3.1 (suggested: also 3.0), checked with an OpenAPI validator.
+- Import by spec URL or file, for OpenAPI 3.1 (suggested: also 3.0). It reuses the OpenAPI validator that 051 H-13 names, so both check specs the same way; the validator choice must also read 3.0.
 - Registers the API as an `api` entry, and each operation as an entry linked to it.
 - Operation name from `operationId`, or a stable name from the method and path when there is none.
 - Description from `summary` and `description`. Input schema from parameters and request body, output schema from the success response, with all `$ref` links resolved.
 - Endpoint from the server URL and path. Auth from `securitySchemes`, with secrets as Vault references only.
 - `GET` and `HEAD` operations are marked read; `POST`, `PUT`, `PATCH`, and `DELETE` are marked write, so a call needs an `idempotency_key` (B.3).
-- External APIs get `trust: external` and wait for approval (080 R-7).
+- External APIs get `trust_level: external` and wait for approval (080 R-7).
 - Import again: a changed description goes back to review (082 R-9), and a removed operation becomes `inactive`.
 
 ## Out of scope

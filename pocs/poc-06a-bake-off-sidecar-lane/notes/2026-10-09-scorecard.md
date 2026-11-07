@@ -10,7 +10,7 @@ What is not measured here, and where it comes from:
 | ---- | ------ |
 | Real tokens per call, real latency, real TTFT, hosted model quality | The Mac run (`make poc06-mac`), hosted model through the chassis |
 | The SLM (vLLM, llama.cpp) behavior of every engine | The Mac run, PoC-6c |
-| kagent-adk numbers (image size, RSS, latency, cold start, streaming, tokens) | kind, from CI (`poc06-kind.yml`). The cells say "not measured: kind, from CI" |
+| kagent-adk numbers (image size, RSS, latency, cold start, streaming, tokens) | kind, from CI (`poc06-kind.yml`). Smoke latency under load is in from two CI runs (criterion 6). Image size and RSS are measured by the `kagent-adk-footprint` step of `poc06-kind.yml`; those cells say "pending CI run" until a run's artifact is copied in. The rest say "not measured: kind, from CI" |
 | kind pod memory of every engine | CI (`poc06-kind.yml`) |
 | Days of mapping effort | Not measured: a person's time is not an offline number. Code lines stand in |
 
@@ -220,12 +220,12 @@ p50 and p95 of the complete `/v1/run` in milliseconds, wall time, 10 repetitions
 | echo-typescript | sidecar | 29.5 / 34.5 | 32.1 / 36.9 | 76.0 / 91.3 | 391 / 394 / 418 |
 | echo-smolagents | remote | 72.5 / 160.9 | 68.0 / 83.9 | 143.6 / 154.8 | 1989 / 2101 / 2200 |
 | echo-claude-agent | remote | 651.5 / 1002.5 | 616.3 / 683.2 | 708.4 / 796.1 | 1352 / 1386 / 1461 |
-| kagent-adk | remote | not measured: kind, from CI. Probe: 0.64 s whole stream with OTel exporters off, 16.8 s with defaults (fake model, local) | same | same | not measured: kind, from CI |
+| kagent-adk | remote | kind, not this setup: p50 5689 / p95 5991 under load (CI run 38064809801), p50 7231 / p95 7517 (CI run 38064813425); see the note below | not measured: kind load runs smoke only | not measured: kind load runs smoke only | not measured: kind, from CI |
 
 - The TypeScript agent is the fastest in every task and starts in about 0.4 s. The Python workloads start in 1.3 to 3.6 s; pydantic-ai is the slowest (2.7 to 3.6 s) and echo-python and the Claude agent the quickest (about 1.4 s).
 - echo-python is slower than the framework engines at the same lane (smoke p50 67 ms vs 43 to 48). I re-ran echo-python alone in the sidecar lane to rule out run order (it ran first): smoke p50 56.0 ms, simplifier 65.6, lookup 131.2 (command: `uv run python -m bakeoff run --engine echo-python --lane sidecar --tasks smoke,simplifier,lookup --repeat 10`, output not committed). Still slower than pydantic-ai's 41.7, 68.2, 105.5 (same kind of rerun). PoC-2 counted 7 MCP HTTP requests per run for echo-python against 3 for PydanticAI (`pocs/poc-02-two-engines-one-contract/notes/2026-10-01-measurements.md`), which is a likely cause, but I did not re-count them here.
 - echo-claude-agent adds about 0.55 s per run: one CLI process per run. smolagents is near the baseline (the model call is scripted; real latency will add the model's time to every engine, and smolagents makes the same number of calls).
-- kagent-adk: not measured: kind, from CI. From the probe: 0.64 s for a whole stream with the OTel exporters off, 16.8 s with the default OTel settings (not root-caused).
+- kagent-adk, from kind (`pocs/poc-06b-bake-off-remote-lane/notes/2026-10-10-remote-load-on-kind.md`, head `978c2ea`): 2 rounds of 8 smoke runs in flight through its chassis under gVisor, fake model, 16 of 16 ok in each run. Each number includes a `kubectl exec` start on a 4-CPU runner that also runs the cluster, so it is not comparable with the offline rows above. In both runs it lands within about 0.5 s of the other remote engines (echo-smolagents p50 5807 and 7394). From the probe: 0.64 s for a whole stream with the OTel exporters off, 16.8 s with the default OTel settings (not root-caused).
 
 ## Criterion 7: footprint
 
@@ -242,11 +242,11 @@ Image size is from CI, not measured here: run 37997346774 on commit `772b9a6` (u
 | echo-typescript | 252 | 93.9 | 96.6 | 115.0 | 115.0 |
 | echo-smolagents | 256 | 118.3 | 123.1 | 128.5 | 128.5 |
 | echo-claude-agent | 434 | 88.6 | 314.9 | 328.0 | 323.1 |
-| kagent-adk | not measured: kind, from CI | not measured: kind, from CI | not measured: kind, from CI | not measured: kind, from CI | not measured: kind, from CI |
+| kagent-adk | pending CI run: `poc06-kind.yml`, artifact `kagent-adk-footprint` (`idle.json`, `image_mb`) | pending CI run: same artifact, `idle.json` (`rss_kb`, in the gVisor sandbox) | not measured: kind runs no separate warm-up | pending CI run: same artifact, `after-tests.json` (`hwm_kb`, the peak) | pending CI run: same artifact, `after-tests.json` (`rss_kb`) |
 
 - Memory per replica (kind): not measured: kind, from CI.
 - The idle RSS of echo-claude-agent is small (the CLI is not started yet); the CLI process adds about 230 MB when a run starts, and that tree stayed at about 323 MB after the runs.
-- kagent-adk: image and RSS not measured: kind, from CI. The probe note lists chart requests (controller 128Mi request, 512Mi limit; UI 256Mi; PostgreSQL and Substrate on top). Those are configuration, not measurements.
+- kagent-adk: image and RSS are measured by `pocs/poc-06b-bake-off-remote-lane/notes/kagent-footprint/measure.sh`, run by `poc06-kind.yml` after `run.sh up` and after `run.sh test`. The RSS is the sum over the workload container's processes as gVisor counts them. It leaves out the gVisor Sentry and Gofer, so it is lower than the node's cost of the pod. The cells stay "pending CI run" until a run's artifact is copied here. The probe note lists chart requests (controller 128Mi request, 512Mi limit; UI 256Mi; PostgreSQL and Substrate on top). Those are configuration, not measurements.
 
 ## Criterion 8: statelessness
 

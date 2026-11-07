@@ -17,13 +17,13 @@ Every model call must go through one LLM router, so models can be swapped by con
 
 - A LiteLLM proxy (with routing) as the one endpoint for all model calls, big models and SLMs.
 - Backends for the big models in use today: Claude, Gemini (through its OpenAI-compatible endpoint), and OpenAI.
-- Both call formats: OpenAI (`/v1/chat/completions`) and Anthropic (`/v1/messages` passthrough) [R3], streaming and complete.
+- Both call formats [R3], streaming and complete. OpenAI (`/v1/chat/completions`) reaches the router directly. In the product, the chassis serves Anthropic's `/v1/messages` and maps it onto `ModelPort`, which posts only to `/chat/completions` ([ADR-003](../adr/003-chat-formats-onto-the-canonical-request.md)). So an Anthropic-format call reaches the router as OpenAI format.
 - Provider API keys as secret references (Vault through External Secrets in the cloud), never written in the router config.
-- Each service calls the router only with its own scoped virtual key ([ADR-001](../adr/001-chassis-delivery-model.md) item 6). The master key never goes to a service. A call with no key is refused.
+- Each service calls the router only with its own scoped virtual key, minted at deploy ([ADR-001](../adr/001-chassis-delivery-model.md) item 6). The master key never goes to a service. A call with no key is refused.
 - The router config as a versioned file, reviewed like code.
-- A container that runs in Docker Compose, and on a host the current services can reach (suggested: the existing infrastructure, until 038 X-1a is up).
-- The existing services that call big models listed and pointed at the router, so the baseline counts real traffic.
-- Status after PoC-1: LiteLLM runs in Compose, pinned by digest, with two routes. It starts with `docker compose up --wait` and a health check. The `fake` variant runs with no master key at all, because an empty `master_key` in LiteLLM 1.103.0 turns auth on and 401s every call. Only the OpenAI format is served today; `/v1/messages`, Claude, and Gemini are untested. See `pocs/poc-01-walking-skeleton/notes/2026-09-29-compose-key-debt.md`.
+- A container that runs in Docker Compose, pinned by digest, with a health check.
+- Offline tests keep provider keys out of the config and the repo. No test reads the router's logs yet. The proving test is a `network` test on the PoC-8 stack that makes a call and greps the LiteLLM container log for the key (suggested: `test_no_provider_key_in_the_router_logs`).
+- The `local` Compose variant still gives the chassis the master key, because it has no database to mint a virtual key. The criterion on the master key stays open until proposal P-3 is decided ([proposals](../../reviews/2026-11-06-backlog-review/proposals.md#p-3-the-master-key-in-the-local-compose-variant)).
 
 ## Reuse
 
@@ -38,16 +38,16 @@ Every model call must go through one LLM router, so models can be swapped by con
 - The routes each key may use (003 G-1b).
 - The chassis model port that calls the router (012 H-3).
 - Serving an SLM behind the router (036 S-7).
-- Debt from PoC-1: in the `local` Compose variant `LITELLM_API_KEY` equals `LITELLM_MASTER_KEY`, which fails the criterion "no service config holds the master key". Deadline: PoC-5 (one scoped key per service). It blocks PoC-7 budgets. See `pocs/poc-01-walking-skeleton/notes/2026-09-29-compose-key-debt.md`.
+- The `fake` Compose variant runs with no master key at all. That fact belongs in `deploy/compose/SECURITY.md`, not in a box.
 
 ## Acceptance criteria
 
-- [x] The router starts with `docker compose up` and passes its health check. Delivered in PoC-1: `pocs/poc-01-walking-skeleton/tests/test_compose.py::test_chassis_waits_for_a_healthy_router`; live run in `pocs/poc-01-walking-skeleton/demo/2026-09-29-demo-fake-variant.md`.
-- [ ] A call in OpenAI format to `/v1/chat/completions` and a call in Anthropic format to `/v1/messages` both reach a big model, streaming and complete.
+- [x] The router starts with `docker compose up` and passes its health check. · Delivered in PoC-1: `pocs/poc-01-walking-skeleton/tests/test_compose.py::test_chassis_waits_for_a_healthy_router`; `pocs/poc-01-walking-skeleton/demo/2026-09-29-demo-fake-variant.md`
+- [ ] An OpenAI-format call through the router reaches a big model, streaming and complete; the Anthropic format reaches the router as OpenAI format through the chassis.
 - [ ] Claude, Gemini, and OpenAI each answer a test call through the router.
 - [ ] No provider API key appears in the router config, the repo, or the logs.
 - [ ] A call with no key is refused, and no service config holds the master key.
-- [ ] Every existing service that calls a big model is listed, and each one sends its calls through the router with its own key.
+- [x] Every service calls the router with its own virtual key, minted at deploy. · Delivered in PoC-5: `pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py::test_litellm_refuses_the_workload_without_the_chassis_key`, run in `pocs/poc-05-sandboxed/demo/2026-10-09-demo-sandboxed.md`; PoC-8: `pocs/poc-08-cross-cutting-build/tests/test_poc08_litellm_static.py::test_the_master_key_reaches_litellm_only_and_the_virtual_key_the_chassis_only`
 - [ ] A short guide shows how to point a client at the router.
 
 ## Dependencies

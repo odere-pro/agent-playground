@@ -22,7 +22,7 @@ Tool agents need a model that picks the right tool and fills its arguments well.
 - Its own eval: correct tool, arguments valid against the tool schema, argument match, and correct "no tool" cases. Native mode and guided JSON mode are both scored.
 - Served on a named route that declares native tool support, with a big-model fallback route.
 - A go or no-go note on whether tool agents should use it.
-- Status after PoC-6: PoC-6c measures what the pre-trained base model does on the bake-off tasks without fine-tuning. This is the baseline this issue improves on. No number exists yet; it waits on the Mac run.
+- Parked on 2026-11-06 (product plan). Baseline from PoC-6c: 135 of 135 on CPU (`pocs/poc-06c-pretrained-slm/notes/backlog-changes.md`). Qwen3-1.7B, not fine-tuned, passed smoke, simplifier, and lookup 5 of 5 on every trusted engine and lane, on a 4-CPU runner. This is the baseline this issue would improve on, and it already passes the bake-off tasks.
 
 ## Out of scope
 
