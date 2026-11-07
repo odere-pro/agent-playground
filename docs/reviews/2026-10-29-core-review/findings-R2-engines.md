@@ -23,7 +23,7 @@ Problem: `RequireRun` accepts any `traceparent` that names any in-flight run, an
 Why it matters: an untrusted remote serving run A can spend run B's token budget, and can send a tool write under run B's key so B's real write is dropped as a duplicate; `correlation.py:16` already names a per-run credential as the missing piece.
 Fix: the chassis mints a per-run secret, sends it with the A2A call, and the remote listener requires it to match the run named by `traceparent`. Keeps behavior: no (a new header on the proxy wire; ask `chassis-architect`).
 Spec: "given runs A and B in flight on one remote, when a proxy call carries the valid bearer, B's `traceparent`, and A's run secret, then it gets 403 `run_required` and B's budget and run key are untouched."
-Status: proposal (#31; decide in [proposals.md](proposals.md))
+Status: fixed (#85)
 
 ### R2-03 [HIGH] [maintainable] [shared] pocs/poc-03-one-interface-every-client/tests/poc03_harness.py:50
 Problem: eight files insert `pocs/poc-02-two-engines-one-contract/tests` into `sys.path` to import `poc02_harness` (PoC-3 `poc03_harness.py:50`, PoC-4 `poc04_conftest.py:27`, PoC-5 `poc05_conftest.py:32`, PoC-6a/6b/6c `tests/conftest.py`, PoC-7 `tests/conftest.py:19` and `demo/demo.py:32`); PoC-6b and 6c insert it but import nothing.
@@ -72,21 +72,21 @@ Problem: the one token named by `engine.auth.token_env` is both the bearer the c
 Why it matters: a plain-A2A third-party agent receives the chassis's token on every call and can replay it against the chassis's model proxy and `/mcp`.
 Fix: read the listener's token from a separate `engine.auth.proxy_token_env`, falling back to `token_env` when unset. Keeps behavior: yes (the fallback keeps today's configs).
 Spec: "given distinct outbound and inbound tokens, when a call to the remote listener presents the outbound token with a valid `traceparent`, then it gets 401 `remote_unauthenticated`."
-Status: proposal (#53; decide in [proposals.md](proposals.md))
+Status: fixed (#97)
 
 ### R2-10 [MEDIUM] [secure] packages/chassis/src/chassis/server/feedback.py:226
 Problem: the feedback lookup stores only `trace_id` and `agent`, and `_lookup` (:346-355) checks only the agent, so any caller with the feedback scope can score any `request_id`.
 Why it matters: with caller auth on, one tenant can write scores onto another tenant's trace and poison the evaluation data.
 Fix: store the caller's subject when the run ends, and answer 404 `unknown_request` when a stored subject differs from the caller's. Keeps behavior: yes with auth off (the subject is `None`); with auth on, only cross-subject calls change.
 Spec: "given a run that ended for subject alice, when bob posts `/v1/feedback` for its `request_id`, then the answer is 404 `unknown_request` and nothing is stored."
-Status: proposal (#31; decide in [proposals.md](proposals.md))
+Status: fixed (#85)
 
 ### R2-11 [MEDIUM] [secure] packages/chassis/src/chassis/adapters/a2a/connector.py:253
 Problem: a lane stream has no cap on event count or bytes; every event is kept in `Run._seen` (`pipeline.py:366`), and the plain translator caps only the artifact count.
 Why it matters: a hostile remote can stream deltas at network speed until `timeout_ms` and grow chassis memory without bound.
 Fix: add a per-run output byte cap in the connector that ends the run with a fixed `Error` and cancels the task (the value is `suggested:`). Keeps behavior: yes for normal sizes.
 Spec: "given a remote that streams deltas past the cap, when the run reads them, then it ends with one error event, the A2A task is cancelled, and `_seen` stays under the cap."
-Status: proposal (#31; decide in [proposals.md](proposals.md))
+Status: fixed (#85)
 
 ### R2-12 [MEDIUM] [maintainable] packages/workloads/echo-typescript/src/schema.ts:53
 Problem: `validateEvent` returns the raw event and never fills schema defaults, while the Python `validate_event` does (`workload_a2a/server.py:112-122`, `:155-157`).
@@ -198,7 +198,7 @@ Problem: each parsed SSE chunk is cast to `Json` unchecked, so `data: null`, a n
 Why it matters: a malformed model answer is retried as if it were a network fault, and the error code is wrong.
 Fix: check the chunk, `choices`, each choice, and each tool piece, and yield `bad_response`, not retryable, otherwise. Keeps behavior: no (the code and `retryable` change for malformed chunks).
 Spec: "given a model stream whose payload is `data: null`, when `handle` runs, then it yields `error` with code `bad_response` and `retryable: false`."
-Status: proposal (#31; decide in [proposals.md](proposals.md))
+Status: fixed (#97)
 
 ### R2-28 [LOW] [tests] pocs/poc-02-two-engines-one-contract/README.md:116
 Problem: the gate line quotes `134 passed, 6 skipped` (140 tests, 2026-10-01), but the folder now collects 148 tests (146 outside `network`); the tests changed on 2026-10-08.

@@ -47,7 +47,7 @@ Problem: The allow rules `Bash(uv *)`, `Bash(make *)`, `Bash(python3 scripts/*)`
 Why it matters: The deny list is the only thing that enforces "no curl, no pip install, never force-push". `Read(.env*)` (`:40`) guards only the Read tool, so a `cat` or a `docker compose … config` can print the generated LiteLLM, Postgres, and Langfuse keys into a session.
 Fix: Narrow the allow rules to the commands the harness uses, for example `uv sync*`, `uv run pytest *`, `uv run ruff *`, and `uv run mypy*`. Drop `cat *`. Add denies for `uv pip *`, `uv run curl*`, `uv run git push*`, `cat *.env*`, `docker compose * config*`, and `Read(**/.env*)`. Keeps behavior: no (more prompts).
 Spec: "given the project settings, when the agent runs `uv run curl https://example.com` or `cat deploy/compose/.env.poc04`, then Claude Code asks or denies."
-Status: proposal (#33; decide in [proposals.md](proposals.md))
+Status: deferred (needs the user: agents may not edit `.claude/settings.json`)
 
 ### R0-02 [HIGH] [maintainable] [shared] pocs/poc-02-two-engines-one-contract/tests/poc02_harness.py:1
 Problem: About 3,000 lines of shared test harness live in PoC test folders. Examples: `poc02_harness.py` (751 lines), `poc04_harness.py` (494), and `poc05_harness.py` (489). Later PoCs reach these files through `sys.path` inserts, 24 lines in 11 files (for example `poc03_harness.py:50`, `poc05_conftest.py:32`, and the 06a/06b/06c/07 `conftest.py`), plus 9 `noqa: E402`.
@@ -96,7 +96,7 @@ Problem: `SNYK_TOKEN` goes to `deploy/agent-scan/scan.sh` on every push and ever
 Why it matters: Anyone who can push a branch can change the scan script or a server and exfiltrate the token.
 Fix: Pass the token only when `github.ref == 'refs/heads/main'` or on `workflow_dispatch`, or use a GitHub environment with a required reviewer. Keeps behavior: no (branch runs do only the inspect pass).
 Spec: "given a push to a non-main branch, when poc07-agent-scan runs, then `SNYK_TOKEN` is empty and only the inspect run happens."
-Status: proposal (#33; decide in [proposals.md](proposals.md))
+Status: fixed (#86)
 
 ### R0-09 [MEDIUM] [secure] .claude/settings.json:32
 Problem: The push denies `git push --force*` and `git push * main*` miss `git push -f …`, `git push origin +HEAD:main` (a force push through `+`), and `git push origin HEAD:main` (no space before `main`).
@@ -138,7 +138,7 @@ Problem: Env gates carry PoC numbers: `POC04_STACK`, `POC04_KIND`, `POC05_KIND`,
 Why it matters: The rubric says there is no PoC number in a pytest marker. The gates are per-PoC special cases that every reader must look up.
 Fix: Name the gates after what they enable, for example `KIND_DRILLS=1` and `COMPOSE_STACK=1`, and keep one `kind` and one `stack` marker. Keeps behavior: no (the env names in CI, notes, and evidence commands change).
 Spec: "given `kind` tests in any PoC, when `KIND_DRILLS=1` is set, then they run, and without it they skip."
-Status: proposal (#33; decide in [proposals.md](proposals.md))
+Status: fixed (#97)
 
 ### R0-15 [MEDIUM] [simple] pocs/poc-02-two-engines-one-contract/tests/poc02_harness.py:570
 Problem: `free_port` is copied 7 times, for example at `bakeoff/procs.py:22` and `test_serve.py:128`. The "start uvicorn in a thread and poll `server.started`" loop appears at `poc02_harness.py:485`, at `:545`, and again in `chassis_contracts.interface.serve_on_unix_sockets` (`:207`).

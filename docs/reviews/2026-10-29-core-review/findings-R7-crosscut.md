@@ -41,7 +41,7 @@ Problem: The `output` guard stage runs only `if not request.stream`, and the cli
 Why it matters: Any caller can send `stream: true` to skip `secret-guard` and `pii-mask` on the answer. LiteLLM's `post_call` guardrails do not see text from the workload or its tools.
 Fix: Add a buffered or tail-window check on `delta` frames, or refuse `stream` while `guardrails.output` is on. Keeps behavior: no (proposal: changes what a streamed client receives).
 Spec: "given `spec.guardrails.output` is on and the engine streams a delta holding `sk-` and 20 characters, when `/v1/run` has `stream: true`, then the secret does not reach the client."
-Status: proposal (#63; decide in [proposals.md](proposals.md))
+Status: fixed (#87)
 
 ### R7-05 [HIGH] [tests] packages/chassis/tests/test_guard_stages.py:182
 Problem: `test_a_stream_is_not_held_back_by_the_output_stage` asserts that `jane@example.com` reaches the client, so it reads as a spec for the leak in R7-04. The outage tests (:189, :200) cover only the input stage, never assert `retryable`, and no test asserts `GUARDRAIL_UNAVAILABLE`.
@@ -104,35 +104,35 @@ Problem: The generic route scans only `texts`. It ignores `tool_calls` and `stru
 Why it matters: A secret in `tool_calls[].function.arguments` returns `{"action": "NONE"}`, and a bad config silently turns the guardrail off.
 Fix: Scan the strings in `tool_calls` and `structured_messages`, and reject an empty `checks` with 422. Keeps behavior: no (proposal: more requests are blocked or refused).
 Spec: "given `texts: []` and `tool_calls` holding `sk-` and 20 characters, when posted to the generic route, then the action is BLOCKED."
-Status: proposal (#30; decide in [proposals.md](proposals.md))
+Status: fixed (#87)
 
 ### R7-14 [MEDIUM] [secure] packages/guardrail-server/src/guardrail_server/secret_scan.py:12
 Problem: `find_secret` returns None for common shapes: `ghp_` tokens, `xoxb-` tokens, JWTs, `ASIA` keys, `glpat-` tokens, `AIza` keys, `password=...`, lowercase `api_key=...`, JSON `"api_key"`, `AWS_SECRET_ACCESS_KEY=...`, `postgres://u:pw@h/db`, and lowercase `bearer`. A zero-width space inside `sk-` also evades it. <!-- pragma: allowlist secret -->
 Why it matters: With R1-07, the chassis has no other secret backstop on this path.
 Fix: Add the vendor prefixes, make `key_assignment` and `bearer` case-insensitive with optional quotes, and apply NFKC and zero-width stripping before the scan. Keeps behavior: no (proposal: blocks more, and the recorded red-team pass rate must be rerun).
 Spec: "given `ghp_` and 36 alphanumerics, `password=hunter2hunter2`, or `sk​-` and 20 alphanumerics, when `find_secret` runs, then it returns a kind."
-Status: proposal (#30; decide in [proposals.md](proposals.md))
+Status: fixed (#87)
 
 ### R7-15 [MEDIUM] [secure] deploy/compose/poc07/otel-collector.yaml:25
 Problem: The OTLP receiver has no authenticator, but the exporter attaches Langfuse Basic auth (:44), and line 4 names the workload as a sender.
 Why it matters: Anyone who reaches :4318 writes into Langfuse under the Collector's key and can forge `trace_id`s that the feedback and eval joins rely on. That goes against ADR-001 hard requirement 1.
 Fix: Add a `bearertokenauth` server authenticator with a token that `stack.sh` generates and only the chassis gets. Keeps behavior: no (proposal: an exporter without the token is refused).
 Spec: "given a POST to :4318/v1/traces without the chassis token, when the Collector receives it, then it answers 401 and Langfuse gets no span."
-Status: proposal (#30; decide in [proposals.md](proposals.md))
+Status: fixed (#87)
 
 ### R7-16 [MEDIUM] [secure] packages/chassis/src/chassis/server/feedback.py:413
 Problem: The route checks that `request_id` has a finished-run lookup, but not that the caller owns the run, and it accepts a client-chosen `feedback_id`. The body `label` (any text, up to 64 characters) also goes straight into `telemetry.counter` as a metric label (:444).
 Why it matters: A caller with `feedback_scope` can rate, or overwrite by id, another caller's score, and can mint label values without bound. Check this against R2-10 (:226) before a fix.
 Fix: Store `subject` in the lookup and answer `unknown_request` on a mismatch when auth is on, and count with a bounded label set (`other` for the rest). Keeps behavior: no (proposal).
 Spec: "given caller A's run `r1` and caller B with `feedback_scope`, when B posts feedback for `r1`, then the answer is 404 `unknown_request` and A's score is unchanged."
-Status: proposal (#30; decide in [proposals.md](proposals.md))
+Status: fixed (#85)
 
 ### R7-17 [MEDIUM] [secure] packages/chassis/src/chassis/server/evaluator_gate.py:106
 Problem: The gate samples with `sha256(request_id)`, and native `/v1/run` accepts any client `request_id`. An `EvaluatorError` fails open (:258, :321).
 Why it matters: At a sample rate of 0.1, a caller can pick ids that are never gated (about 93 of 100 tried), or make the judge fail to skip the gate.
 Fix: Salt the hash with a per-process secret or hash a chassis-minted id, and add a `fail_closed` option like `guardrails.on_unavailable`. Keeps behavior: no (proposal: the sampling decision changes).
 Spec: "given sample rate 0.1 and 100 native requests with ids the caller chose, when they are gated, then about 10 percent are scored, whatever the ids."
-Status: proposal (#30; decide in [proposals.md](proposals.md))
+Status: fixed (#89)
 
 ### R7-18 [MEDIUM] [secure] [shared] packages/bakeoff/src/bakeoff/evaltrial.py:115
 Problem: `poc07-evals.yml:46-49` installs DeepEval with `--with deepeval==4.3.2 --with httpx --with pyyaml`, so `httpx`, `pyyaml`, and every transitive dependency are unpinned and unhashed. promptfoo runs as `npx -y promptfoo@0.125.1` (:95) with no lockfile. The workflow's checkout (`poc07-evals.yml:35`) keeps `persist-credentials: true`, and `setup-uv` caches on `pull_request`, unlike `poc07-stack.yml:37`.
