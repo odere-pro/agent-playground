@@ -1,9 +1,10 @@
 """Time checks for `chassis.redaction` that hold on a loaded machine (baseline B-1).
 
 A wall-clock bound fails when other gates load the Mac: one case took 1.4 s of wall time at a load
-average of 24. So the checks measure CPU time (`time.process_time`), and they check growth, not
-speed. Catastrophic backtracking still fails them: it costs seconds to minutes of CPU on these
-inputs, and it grows much faster than the input.
+average of 24. So the checks measure CPU time, and they check growth, not speed. The clock is
+`time.thread_time`, the calling thread's CPU only: other processes and any other thread in the
+pytest process add nothing to it. Catastrophic backtracking still fails them: it costs seconds
+to minutes of CPU on these inputs, and it grows much faster than the input.
 """
 
 from __future__ import annotations
@@ -27,10 +28,10 @@ GROWTH_FLOOR_SECONDS = 0.05
 
 
 def cpu_seconds(run: Callable[[], object]) -> float:
-    """The CPU time `run` takes in this process."""
-    start = time.process_time()
+    """The CPU time `run` takes on this thread."""
+    start = time.thread_time()
     run()
-    return time.process_time() - start
+    return time.thread_time() - start
 
 
 def assert_linear(redact: Callable[[str], str], build: Callable[[int], str], count: int) -> None:
