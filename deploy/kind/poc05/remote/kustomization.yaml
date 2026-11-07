@@ -1,8 +1,9 @@
 # The PoC-5 remote sandboxes in poc05-remote (plan sections 2.2, 2.10, 2.11; T14): the Sandbox
-# `remote-echo` on gVisor, its Service, and its NetworkPolicy. Apply after the agent-sandbox CRD,
-# admission/, and `seed.sh` (the Secret remote-echo-token is made there, not here); before
-# agents/. The Sandbox's podTemplate carries `app.kubernetes.io/part-of` itself: kustomize does
-# not label a custom resource's pod template.
+# `remote-echo` on gVisor and its Service. Its NetworkPolicy (network-policy.yaml) is not listed:
+# `run.sh` applies it by path as the cluster admin (core review R5a-02). Apply after the
+# agent-sandbox CRD, admission/, and `seed.sh` (the Secret remote-echo-token is made there, not
+# here); before agents/. The Sandbox's podTemplate carries `app.kubernetes.io/part-of` itself:
+# kustomize does not label a custom resource's pod template.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: poc05-remote
@@ -11,4 +12,3 @@ labels:
       app.kubernetes.io/part-of: poc05
 resources:
   - remote-echo.yaml
-  - network-policy.yaml

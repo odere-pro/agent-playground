@@ -48,6 +48,12 @@ mcp_servers:
     url: http://code-runner-dispatch.poc05-platform.svc.cluster.local:8000/mcp
     transport: http
     description: run_python in a fresh gVisor sandbox per call, no egress (packages/code-runner).
+    # The dispatcher's bearer (code review R5a-23): LiteLLM sends `Authorization: Bearer <value>`
+    # to this server only. The value is the env the Deployment fills from the Secret
+    # `code-runner-dispatch-token` (seed.sh base); no credential is in this file. Not yet
+    # verified on the pinned v1.103.0 on kind: a 401 on every run_python means this is not sent.
+    auth_type: bearer_token
+    auth_value: os.environ/CODE_RUNNER_DISPATCH_TOKEN
 
 # Fallback if the per-key tool permission field does not exist in the pinned release (section 2.9):
 # one server entry per allow-list, each with `allowed_tools` and an `access_groups` name, and the

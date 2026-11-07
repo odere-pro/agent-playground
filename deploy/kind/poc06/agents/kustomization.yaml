@@ -1,6 +1,7 @@
 # The PoC-6 chassis pods in poc05-agents: the sidecar pods `agent-openai-agents` and
 # `agent-typescript`, and the chassis of each remote (`chassis-<engine>-remote`), with their
-# configs, Services, and NetworkPolicies. Apply after platform seed (`deploy/kind/poc06/seed.sh`):
+# configs and Services. Their NetworkPolicies are network-policy.yaml, not listed here: run.sh
+# applies that file by path as the cluster admin. Apply after platform seed (`deploy/kind/poc06/seed.sh`):
 # the Secrets chassis-<svc>-litellm and remote-<name>-token come from there, none is here. Apply
 # remote/ first: a remote chassis waits (/ready 503) until its remote answers. Applied by `run.sh`
 # as the platform deployer, never as a tenant.
@@ -17,7 +18,6 @@ resources:
   - chassis-smolagents-remote.yaml
   - chassis-claude-agent-remote.yaml
   - chassis-typescript-remote.yaml
-  - network-policy.yaml
 configMapGenerator:
   - name: chassis-openai-agents-config
     files:

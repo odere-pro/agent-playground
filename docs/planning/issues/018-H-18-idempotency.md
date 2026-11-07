@@ -46,7 +46,9 @@ A repeated call with the same `idempotency_key` must return the same result and 
 - [x] Only the chassis is given the Valkey credential. The workload container has none. · Delivered in PoC-4, PoC-5: `pocs/poc-04-stateless-scalable/tests/test_read_only_compose.py::test_no_key_in_any_workload_env`, `pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py::test_valkey_refuses_the_workload_without_the_chassis_password` (`pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md`)
 - [x] Cache entries expire after the configured time. · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/tests/test_idempotency_replicas.py::test_the_cache_expires_after_ttl`, `packages/chassis/tests/test_idempotency.py::test_a_cached_result_lives_ttl_s`
 - [x] The Valkey adapter and the in-memory fake pass the same `StatePort` contract suite, and are picked by `spec.adapters.state`. · Delivered in PoC-4: `packages/chassis/tests/test_state_contract.py::TestInMemoryState`, `packages/chassis/tests/integration/test_valkey_state_contract.py::TestValkeyState`, `packages/chassis/tests/test_profiles.py::test_overrides_pick_the_adapter_per_port`
-- [ ] With auth on, the store key and the fingerprint include the principal: the same key from two callers runs twice.
+- [x] With auth on, the store key and the fingerprint include the principal: the same key from two callers runs twice. · Delivered by: PR #89, `packages/chassis/tests/test_idempotency_scope.py::test_over_http_caller_b_never_gets_caller_a_stored_response`, `::test_caller_b_never_gets_caller_a_result_for_the_same_key`
+
+No test checks the fingerprint on its own.
 
 ## Dependencies
 

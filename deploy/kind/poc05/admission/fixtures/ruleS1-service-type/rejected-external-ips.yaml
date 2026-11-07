@@ -1,0 +1,23 @@
+# Rule S1, service type: externalIPs on a ClusterIP Service lets its writer take any address
+# in the cluster (CVE-2020-8554).
+# expect: rejected
+# rule: S1
+# message: service rule S1: a Service must be type ClusterIP and set no externalIPs, loadBalancerIP, or externalName
+# differs: .spec.externalIPs
+apiVersion: v1
+kind: Service
+metadata:
+  name: admission-rules1-external-ips
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/name: admission-rules1-external-ips
+spec:
+  type: ClusterIP
+  externalIPs:
+    - 203.0.113.10
+  selector:
+    app.kubernetes.io/name: agent-echo
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

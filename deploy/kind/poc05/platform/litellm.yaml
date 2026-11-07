@@ -1,7 +1,8 @@
 # LiteLLM (models and the MCP gateway), auth on (plan section 2.12, H05 to H08). Only chassis pods
 # reach port 4000 (network-policy.yaml); the master key and the database password come from the
-# Secrets `litellm-master` and `litellm-db`, which seed.sh makes. The config is the ConfigMap
-# `litellm-config` (litellm/config.yaml).
+# Secrets `litellm-master` and `litellm-db`, which seed.sh makes. The dispatcher's bearer comes
+# from `code-runner-dispatch-token` (also seed.sh), sent to `code_runner` only (code review
+# R5a-23). The config is the ConfigMap `litellm-config` (litellm/config.yaml).
 # Image: the one Compose pins (deploy/compose/docker-compose.yaml), LiteLLM 1.103.0 by digest.
 # Verified on kind (T19): the image's user is root, and it runs as uid 10010 with a read-only root;
 # its start (Prisma migrations against DATABASE_URL, 184 on an empty database) writes only under
@@ -50,6 +51,12 @@ spec:
                 secretKeyRef:
                   name: litellm-db
                   key: password
+            # The bearer LiteLLM sends to the dispatcher (config.yaml: code_runner.auth_value).
+            - name: CODE_RUNNER_DISPATCH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: code-runner-dispatch-token
+                  key: token
             # Kubernetes expands $(LITELLM_DB_PASSWORD) into the env value; it is never in argv.
             - name: DATABASE_URL
               value: postgresql://litellm:$(LITELLM_DB_PASSWORD)@postgres.poc05-platform.svc.cluster.local:5432/litellm

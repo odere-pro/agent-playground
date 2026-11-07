@@ -61,7 +61,7 @@ Verbs: `up`, `build`, `load`, `seed`, `apply`, `test`, `pods`, `logs`, `redact`,
 `up` runs the PoC-5 `up`, builds and loads the images, then applies:
 
 - `admission/params.yaml`: PoC-5's list plus `echo-openai-agents` as a trusted repository;
-- `platform/`: the fake model server runs the bake-off script, not the example script;
+- `platform/`: the fake model server runs the bake-off script, not the example script, and the remote-run front door `remote-run-dispatch` starts;
 - `seed.sh keys`: the PoC-6 keys and tokens;
 - `remote/` and `agents/`, and `kagent/`, each waited for.
 
@@ -69,12 +69,20 @@ Verbs: `up`, `build`, `load`, `seed`, `apply`, `test`, `pods`, `logs`, `redact`,
 | ------ | ---- | --- |
 | echo-openai-agents | sidecar | `agent-openai-agents` (runc), chassis as native sidecar |
 | echo-typescript | sidecar | `agent-typescript` (runc) |
-| echo-smolagents | remote | Sandbox `remote-smolagents` (gVisor), chassis `chassis-smolagents-remote` |
-| echo-claude-agent | remote | Sandbox `remote-claude-agent` (gVisor), chassis `chassis-claude-agent-remote` |
-| echo-typescript | remote | Sandbox `remote-typescript` (gVisor), chassis `chassis-typescript-remote` |
-| kagent-adk | remote, plain A2A | Sandbox `remote-kagent-adk` (gVisor), chassis `chassis-kagent-adk-remote` |
+| echo-smolagents | remote | warm pool `remote-smolagents` (gVisor), port 9002, chassis `chassis-smolagents-remote` |
+| echo-claude-agent | remote | warm pool `remote-claude-agent` (gVisor), port 9001, chassis `chassis-claude-agent-remote` |
+| echo-typescript | remote | warm pool `remote-typescript` (gVisor), port 9003, chassis `chassis-typescript-remote` |
+| kagent-adk | remote, plain A2A | warm pool `remote-kagent-adk` (gVisor), port 9004, chassis `chassis-kagent-adk-remote` |
 
 Chassis pods run in `poc05-agents` and remotes in `poc05-remote`.
+
+**One fresh remote pod per run.** Each remote engine is a `SandboxTemplate` and a `SandboxWarmPool`, not a long-lived Sandbox. So no two runs share a uid, `/tmp`, or process tree. The front door is `remote-run-dispatch` in `poc05-platform`. It runs the code-runner image as `code-runner a2a-dispatch` (`packages/code-runner/src/code_runner/a2a_dispatch.py`). For each streaming A2A run it makes one `SandboxClaim` on the engine's pool, streams the run to the claimed pod on 9000, and deletes the claim after. The pod goes with the claim. A card fetch never claims a pod.
+
+- The door serves each engine on its own port, 9001 to 9004 (suggested), as in the table. Each chassis remote URL is `http://remote-run-dispatch.poc05-platform.svc.cluster.local:<port>/<engine>`.
+- Its NetworkPolicy, `platform/remote-run-dispatch-network-policy.yaml`, lets each chassis reach only its own engine's port. kagent-adk checks no bearer, so this is its only inbound control.
+- The door may create, get, and delete claims in `poc05-remote` only (`admission/remote-run-rbac.yaml`), under a ResourceQuota. Claim rule C3 lets `poc05-remote` claim only from the `remote-<engine>` pools.
+- Its egress to the API server is the second `ipBlock` on the cluster, after the PoC-5 code-runner dispatcher's. `run.sh` fills it from the same sentinel.
+- NetworkPolicy files go in by path, as the cluster admin, through `deploy/kind/policies.sh`. The deployer has no rights on NetworkPolicies.
 
 **kagent-adk is built from pinned source.** `build_kagent` clones `kagent-dev/kagent`, checks out the commit in `kagent/source.commit`, stops unless `git rev-parse HEAD` equals it, and builds `python/Dockerfile` as `kind.local/agent-platform/kagent-adk:kind`. That Dockerfile names its base images by tag. `run.sh` pins both by digest at build time: `KAGENT_UV_VERSION` through a build arg, and `KAGENT_DEBIAN` through a BuildKit `--build-context`. The [lanes-b-kind note](../../pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-lanes-b-kind.md) records the gap as it was when the kind runs passed. The image runs as uid 65532, the uid its upstream Dockerfile sets. `packages/chassis/tests/test_image_uids.py` has an `UPSTREAM_UIDS` table for images like this one.
 

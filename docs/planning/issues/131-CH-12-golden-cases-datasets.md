@@ -32,6 +32,7 @@ epic_refs: [E.5, principles]
 - [ ] A stack test covers the Langfuse dataset and its runs (`eval_kit.langfuse_datasets`).
 - [ ] A workflow or a Makefile target calls the upload.
 - [ ] The dataset name comes from config, as in 037 M-2 box 6.
+- [ ] The YAML in `packages/eval-kit/src/eval_kit/golden/` stays the only source of cases, and each environment writes results to one store, named in config (gap review, 2026-11-07).
 
 ## Dependencies
 

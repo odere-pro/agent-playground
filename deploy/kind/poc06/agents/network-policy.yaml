@@ -1,18 +1,30 @@
 # poc05-agents: what each PoC-6 chassis pod may send and receive. The namespace's `default-deny`
 # refuses everything else, both ways. Peers are pod labels plus the namespace name; no ipBlock.
-# The 8080 rule matters for in-cluster callers only; a policy cannot tell the two containers of a
+# The 8080 rule takes only the gateway peer, as in PoC-5 (core review R5a-07; suggested: a pod in
+# agent-platform-system labeled agents.platform/role: gateway, whose egress is
+# ../../poc05/agents/gateway-network-policy.yaml). A policy cannot tell the two containers of a
 # sidecar pod apart (shared network namespace), so the sidecar workload rides the chassis's egress.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: agent-openai-agents
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/part-of: poc06
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: agent-openai-agents
   policyTypes: [Ingress, Egress]
   ingress:
-    - ports:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agent-platform-system
+          podSelector:
+            matchLabels:
+              agents.platform/role: gateway
+      ports:
         - port: 8080
           protocol: TCP
   egress:
@@ -54,13 +66,23 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: agent-typescript
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/part-of: poc06
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: agent-typescript
   policyTypes: [Ingress, Egress]
   ingress:
-    - ports:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agent-platform-system
+          podSelector:
+            matchLabels:
+              agents.platform/role: gateway
+      ports:
         - port: 8080
           protocol: TCP
   egress:
@@ -102,13 +124,23 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: chassis-smolagents-remote
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/part-of: poc06
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: chassis-smolagents-remote
   policyTypes: [Ingress, Egress]
   ingress:
-    - ports:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agent-platform-system
+          podSelector:
+            matchLabels:
+              agents.platform/role: gateway
+      ports:
         - port: 8080
           protocol: TCP
     - from:
@@ -157,12 +189,12 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: poc05-remote
+              kubernetes.io/metadata.name: poc05-platform
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: remote-smolagents
+              app.kubernetes.io/name: remote-run-dispatch
       ports:
-        - port: 9000
+        - port: 9002
           protocol: TCP
 ---
 # 8091 only from its own remote's pod label.
@@ -170,13 +202,23 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: chassis-claude-agent-remote
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/part-of: poc06
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: chassis-claude-agent-remote
   policyTypes: [Ingress, Egress]
   ingress:
-    - ports:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agent-platform-system
+          podSelector:
+            matchLabels:
+              agents.platform/role: gateway
+      ports:
         - port: 8080
           protocol: TCP
     - from:
@@ -225,12 +267,12 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: poc05-remote
+              kubernetes.io/metadata.name: poc05-platform
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: remote-claude-agent
+              app.kubernetes.io/name: remote-run-dispatch
       ports:
-        - port: 9000
+        - port: 9001
           protocol: TCP
 ---
 # 8091 only from its own remote's pod label.
@@ -238,13 +280,23 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: chassis-typescript-remote
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/part-of: poc06
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: chassis-typescript-remote
   policyTypes: [Ingress, Egress]
   ingress:
-    - ports:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agent-platform-system
+          podSelector:
+            matchLabels:
+              agents.platform/role: gateway
+      ports:
         - port: 8080
           protocol: TCP
     - from:
@@ -293,10 +345,10 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: poc05-remote
+              kubernetes.io/metadata.name: poc05-platform
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: remote-typescript
+              app.kubernetes.io/name: remote-run-dispatch
       ports:
-        - port: 9000
+        - port: 9003
           protocol: TCP

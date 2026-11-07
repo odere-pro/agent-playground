@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import zlib
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
@@ -19,18 +20,22 @@ import httpx2
 import pytest
 from chassis.adapters.mcp.gateway import (
     API_KEY_VAR,
+    MAX_RESPONSE_BYTES,
+    MAX_RESULT_BYTES,
     MAX_TOOL_NAME,
     URL_VAR,
     McpGatewayTools,
     _failure,
+    serialized_size,
 )
 from chassis.fakes import tool as chassis_fake_tools
 from chassis.ports.tool import ToolError
-from chassis_contracts.tool import KnownCall, ToolPortContract
+from chassis_contracts.tool import NESTED_PARAMETERS, NESTED_TOOL, KnownCall, ToolPortContract
 from fake_mcp_server import PROBE_MARKER, FakeMcpState, create_app
 from fake_mcp_server import server as fake_server
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError as FastMcpToolError
+from fastmcp.tools import Tool
 from mcp.shared.exceptions import MCPError
 from starlette.applications import Starlette
 
@@ -53,6 +58,8 @@ class Gateway:
         self.requests = 0
         self.lists = 0
         self.client_kwargs: list[dict[str, Any]] = []
+        self.most_read = 0
+        """The most body bytes the client pulled from one response."""
 
     def factory(self, **kwargs: Any) -> httpx2.AsyncClient:
         self.client_kwargs.append(kwargs)
@@ -80,7 +87,31 @@ class _Transport(httpx2.AsyncBaseTransport):
             return httpx2.Response(fail, text=f"upstream said no to {KEY}", request=request)
         if fail is not None:
             raise fail("injected")
-        return await self.gate.inner.handle_async_request(request)
+        response = await self.gate.inner.handle_async_request(request)
+        response.stream = _Counted(response.stream, self.gate)
+        return response
+
+
+class _Counted(httpx2.AsyncByteStream):
+    """Hands the body on in 64 KiB pieces and records how much of it the client pulled."""
+
+    PIECE = 64 * 1024
+
+    def __init__(self, inner: Any, gate: Gateway) -> None:
+        self.inner = inner
+        self.gate = gate
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        read = 0
+        async for chunk in self.inner:
+            for start in range(0, len(chunk), self.PIECE):
+                piece = chunk[start : start + self.PIECE]
+                read += len(piece)
+                self.gate.most_read = max(self.gate.most_read, read)
+                yield piece
+
+    async def aclose(self) -> None:
+        await self.inner.aclose()
 
 
 async def _open(
@@ -123,6 +154,33 @@ async def gateway_tools(gate: Gateway) -> AsyncIterator[McpGatewayTools]:
         yield port
 
 
+def _nested_server() -> FastMCP:
+    """A server whose one read-only tool lists the contract's `NESTED_PARAMETERS` as its schema."""
+
+    def nested_lookup(term: str, filter: dict[str, Any]) -> dict[str, str]:
+        return {"term": term}
+
+    tool = Tool.from_function(
+        nested_lookup,
+        name=NESTED_TOOL,
+        annotations={"readOnlyHint": True},  # type: ignore[arg-type]
+    )
+    mcp = FastMCP("nested")
+    mcp.add_tool(tool.model_copy(update={"parameters": NESTED_PARAMETERS}))
+    return mcp
+
+
+@pytest.fixture
+def nested_gate() -> Gateway:
+    return Gateway(_nested_server().http_app(path="/mcp/"))
+
+
+@pytest.fixture
+async def nested_gateway_tools(nested_gate: Gateway) -> AsyncIterator[McpGatewayTools]:
+    async for port in _open(nested_gate):
+        yield port
+
+
 class TestMcpGatewayTools(ToolPortContract):
     @pytest.fixture
     def tool_port(self, gateway_tools: McpGatewayTools) -> McpGatewayTools:
@@ -154,6 +212,10 @@ class TestMcpGatewayTools(ToolPortContract):
             gate.fail_with = 503
 
         return fail
+
+    @pytest.fixture
+    def nested_port(self, nested_gateway_tools: McpGatewayTools) -> McpGatewayTools:
+        return nested_gateway_tools
 
 
 # The adapter's own cases.
@@ -340,6 +402,268 @@ async def test_a_tool_error_the_tool_reports_is_a_result_not_an_exception() -> N
     async for port in _open(gate):
         result = await port.call("flaky", {"term": "a"})
     assert result.is_error is True
+
+
+FIFTY_MB = 50 * 1024 * 1024
+MAX_DECODE_CHUNK = 64 * 1024
+"""The gateway's own decoder hands data on in pieces of at most 64 KiB (`_DECODE_PIECE`)."""
+
+
+async def test_a_50_mb_result_is_tool_unavailable_and_never_read_whole() -> None:
+    """R5a-24: the chassis stops reading the response past `MAX_RESPONSE_BYTES`."""
+    mcp = FastMCP("huge")
+
+    @mcp.tool(annotations={"readOnlyHint": True})
+    def huge() -> str:
+        """Returns 50 MB."""
+        return "x" * FIFTY_MB
+
+    gate = Gateway(mcp.http_app(path="/mcp/"))
+    async for port in _open(gate):
+        with pytest.raises(ToolError) as info:
+            await port.call("huge", {})
+    assert info.value.code == "tool_unavailable"
+    assert info.value.retryable is False
+    assert "xxxx" not in info.value.message
+    assert str(MAX_RESULT_BYTES) in info.value.message
+    assert gate.most_read <= MAX_RESPONSE_BYTES + _Counted.PIECE
+
+
+async def test_a_result_over_the_cap_inside_the_wire_limit_is_tool_unavailable() -> None:
+    """A text-only result between `MAX_RESULT_BYTES` and `MAX_RESPONSE_BYTES` is read, then
+    refused before it is relayed."""
+    mcp = FastMCP("large")
+
+    @mcp.tool(annotations={"readOnlyHint": True}, output_schema=None)
+    def large() -> str:
+        """Returns a little over the cap, as text only."""
+        return "y" * (MAX_RESULT_BYTES + 1024)
+
+    gate = Gateway(mcp.http_app(path="/mcp/"))
+    async for port in _open(gate):
+        with pytest.raises(ToolError) as info:
+            await port.call("large", {})
+    assert info.value.code == "tool_unavailable"
+    assert "yyyy" not in info.value.message
+
+
+def _text_server(name: str, size: int) -> FastMCP:
+    """A server with one read-only tool `name` that returns `size` bytes of text, as text only."""
+    mcp = FastMCP(name)
+
+    @mcp.tool(name=name, annotations={"readOnlyHint": True}, output_schema=None)
+    def text() -> str:
+        """Returns `size` bytes of text."""
+        return "z" * size
+
+    return mcp
+
+
+async def test_a_result_of_exactly_the_cap_is_relayed() -> None:
+    gate = Gateway(_text_server("fits", MAX_RESULT_BYTES).http_app(path="/mcp/"))
+    async for port in _open(gate):
+        result = await port.call("fits", {})
+    assert serialized_size(result.content) == MAX_RESULT_BYTES
+    assert result.content == "z" * MAX_RESULT_BYTES
+
+
+async def test_a_result_one_byte_over_the_cap_is_refused() -> None:
+    gate = Gateway(_text_server("over", MAX_RESULT_BYTES + 1).http_app(path="/mcp/"))
+    async for port in _open(gate):
+        with pytest.raises(ToolError) as info:
+            await port.call("over", {})
+    assert info.value.code == "tool_unavailable"
+    assert info.value.retryable is False
+    assert "zzzz" not in info.value.message
+
+
+class _Gzipped(httpx2.AsyncByteStream):
+    """Gzips the body piece by piece and counts the plain bytes the client made it compress,
+    which bounds the decoded bytes the client can have read."""
+
+    def __init__(self, inner: Any, gate: Gateway) -> None:
+        self.inner = inner
+        self.gate = gate
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        packer = zlib.compressobj(wbits=zlib.MAX_WBITS | 16)
+        plain = 0
+        async for chunk in self.inner:
+            plain += len(chunk)
+            self.gate.most_read = max(self.gate.most_read, plain)
+            yield packer.compress(chunk) + packer.flush(zlib.Z_SYNC_FLUSH)
+        yield packer.flush()
+
+    async def aclose(self) -> None:
+        await self.inner.aclose()
+
+
+class _GzipTransport(_Transport):
+    """A gateway that gzips every answer, whatever `Accept-Encoding` the client sent."""
+
+    encoding = "gzip"
+
+    def __init__(self, gate: Gateway) -> None:
+        super().__init__(gate)
+        self.accept_encodings: list[str | None] = []
+
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+        self.accept_encodings.append(request.headers.get("accept-encoding"))
+        response = await super().handle_async_request(request)
+        headers = [(k, v) for k, v in response.headers.items() if k.lower() != "content-length"]
+        return httpx2.Response(
+            response.status_code,
+            headers=[*headers, ("content-encoding", self.encoding)],
+            stream=_Gzipped(response.stream, self.gate),
+            request=request,
+        )
+
+
+async def test_a_gzip_answer_over_the_cap_is_refused_on_its_decoded_size() -> None:
+    """R5a-24: the cap counts decoded bytes, so a 50 MB answer that gzips to a few KiB is still
+    cut off near `MAX_RESPONSE_BYTES`; and the client asks for no encoding at all."""
+    mcp = FastMCP("zipped")
+
+    @mcp.tool(annotations={"readOnlyHint": True})
+    def huge() -> str:
+        """Returns 50 MB."""
+        return "x" * FIFTY_MB
+
+    gate = Gateway(mcp.http_app(path="/mcp/"))
+    transport = _GzipTransport(gate)
+
+    def factory(**kwargs: Any) -> httpx2.AsyncClient:
+        gate.client_kwargs.append(kwargs)
+        return httpx2.AsyncClient(transport=transport, **kwargs)
+
+    gate.factory = factory  # type: ignore[method-assign]
+    async for port in _open(gate):
+        with pytest.raises(ToolError) as info:
+            await port.call("huge", {})
+    assert info.value.code == "tool_unavailable"
+    assert info.value.retryable is False
+    assert "xxxx" not in info.value.message
+    assert transport.accept_encodings
+    assert set(transport.accept_encodings) == {"identity"}
+    assert gate.most_read <= MAX_RESPONSE_BYTES + _Counted.PIECE + MAX_DECODE_CHUNK
+
+
+class _Trailing(_Gzipped):
+    """A gzip body followed by 2 MiB of bytes after the end of the compressed stream."""
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        async for piece in super().__aiter__():
+            yield piece
+        for _ in range(32):
+            yield b"\0" * (64 * 1024)
+
+
+class _TrailingTransport(_GzipTransport):
+    """A gateway that sends a tiny gzip answer and then raw bytes zlib would keep, uncounted."""
+
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+        response = await super().handle_async_request(request)
+        inner = response.stream
+        assert isinstance(inner, _Gzipped)
+        return httpx2.Response(
+            response.status_code,
+            headers=response.headers,
+            stream=_Trailing(inner.inner, self.gate),
+            request=request,
+        )
+
+
+async def test_bytes_after_the_end_of_a_gzip_body_are_refused() -> None:
+    """R5a-24 (security review): bytes after the end of the gzip stream would sit in zlib's
+    `unused_data`, never decoded and never counted; the adapter refuses them instead."""
+    mcp = FastMCP("trailing")
+
+    @mcp.tool(annotations={"readOnlyHint": True})
+    def small() -> str:
+        """Returns two bytes."""
+        return "ok"
+
+    gate = Gateway(mcp.http_app(path="/mcp/"))
+    transport = _TrailingTransport(gate)
+
+    def factory(**kwargs: Any) -> httpx2.AsyncClient:
+        gate.client_kwargs.append(kwargs)
+        return httpx2.AsyncClient(transport=transport, **kwargs)
+
+    gate.factory = factory  # type: ignore[method-assign]
+    async for port in _open(gate):
+        with pytest.raises(ToolError) as info:
+            await port.call("small", {})
+    assert info.value.code == "tool_unavailable"
+    assert info.value.retryable is False
+
+
+class _BrotliLabelTransport(_GzipTransport):
+    """A gateway that labels its answers `br`, an encoding the adapter does not decode."""
+
+    encoding = "br"
+
+
+async def test_an_answer_in_an_encoding_the_adapter_cannot_bound_is_refused() -> None:
+    """R5a-24: the decoded size of a `br` body cannot be bounded with the stdlib, so the adapter
+    fails closed with the over-cap error instead of letting httpx decode it whole."""
+    mcp = FastMCP("brotli")
+
+    @mcp.tool(annotations={"readOnlyHint": True})
+    def small() -> str:
+        """Returns two bytes."""
+        return "ok"
+
+    gate = Gateway(mcp.http_app(path="/mcp/"))
+    transport = _BrotliLabelTransport(gate)
+
+    def factory(**kwargs: Any) -> httpx2.AsyncClient:
+        gate.client_kwargs.append(kwargs)
+        return httpx2.AsyncClient(transport=transport, **kwargs)
+
+    gate.factory = factory  # type: ignore[method-assign]
+    async for port in _open(gate):
+        with pytest.raises(ToolError) as info:
+            await port.call("small", {})
+    assert info.value.code == "tool_unavailable"
+    assert info.value.retryable is False
+
+
+async def test_enum_and_nested_arguments_are_refused_before_any_request() -> None:
+    """R5b-08: the gateway now checks `enum` and nested properties too, like the fake."""
+    mcp = FastMCP("strict")
+
+    def pick(mode: str, filter: dict[str, Any]) -> str:
+        return mode
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "mode": {"enum": ["fast", "slow"]},
+            "filter": {
+                "type": "object",
+                "properties": {"limit": {"type": "integer"}},
+                "additionalProperties": False,
+            },
+        },
+        "required": ["mode"],
+    }
+    tool = Tool.from_function(pick, annotations={"readOnlyHint": True})  # type: ignore[arg-type]
+    mcp.add_tool(tool.model_copy(update={"parameters": schema}))
+    gate = Gateway(mcp.http_app(path="/mcp/"))
+    async for port in _open(gate):
+        before = gate.requests
+        for arguments in (
+            {"mode": "medium-secret"},
+            {"mode": "fast", "filter": {"limit": True}},
+            {"mode": "fast", "filter": {"other": "medium-secret"}},
+        ):
+            with pytest.raises(ToolError) as info:
+                await port.call("pick", arguments)
+            assert info.value.code == "bad_arguments"
+            assert "medium-secret" not in info.value.message
+        assert gate.requests == before
+        assert (await port.call("pick", {"mode": "fast", "filter": {"limit": 1}})).content
 
 
 # LiteLLM v1.103.0's own texts, from the kind cluster (bring-up note, items 3 and "Requests").

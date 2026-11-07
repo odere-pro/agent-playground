@@ -177,6 +177,31 @@ Not yet run as a recipe: a watch on claims and pods while the failing call runs.
 
 **Fix.** Retry the call; both codes are safe to retry. If `sandbox_unavailable` repeats, see "The code-runner pool is not settled" and "A claim is stuck". If `sandbox_lost` repeats, read the claimed pod's `lastState.terminated.reason` before it is gone. One `sandbox_lost` after a 31-child burst, at load 4.7 (remote suite, 2026-10-09), led to `0399a04`, a retry of a connect timeout; it did not recur in 10 runs (close runs, section 5). The retry was not seen firing on kind; a `connect_retry` log line is being added. Do not loosen the test.
 
+## `agent-echo` does not start after a MinIO restart
+
+**Symptom.** `agent-echo`'s chassis container restarts, and `/ready` never turns 200. Its log ends with `startup failed after N attempt(s)`. Or `run.sh apply` stops at `wait_rollout poc05-agents agent-echo`.
+
+**Check.** Is MinIO newer than the last `minio-init`, and does the Secret exist (names only)?
+
+```
+$ kubectl --context kind-poc05 -n poc05-platform get pods -l app.kubernetes.io/name=minio
+$ kubectl --context kind-poc05 -n poc05-platform get job minio-init
+$ deploy/kind/poc05/platform/seed.sh status
+```
+
+**Cause.** `agent-echo` reads its config from MinIO (`config: minio`): the document `agents/echo.yaml`, as the user `chassis-echo`. MinIO keeps its data in an `emptyDir`, so a MinIO restart loses the bucket, the document, and the user. The chassis cannot start without its document. The same happens after `seed.sh rotate chassis-echo-minio` until MinIO has the new secret key.
+
+**Fix.** Rerun `minio-init` first, then restart the chassis:
+
+```
+$ kubectl --context kind-poc05 -n poc05-platform delete job minio-init --ignore-not-found
+$ deploy/kind/poc05/run.sh apply
+```
+
+`apply` makes the Job again and waits for it to finish before it applies `agents/`. If `agent-echo` was already crash-looping, delete its pod after the Job is done. While the chassis is down, its workload keeps running and could bind the chassis's ports first (the restart window, F6, in `agents/agent-echo.yaml`), so do not leave it in that state.
+
+**Verify.** `run.sh test-remote` runs `test_poc05_kind_hardreq1.py::test_minio_refuses_the_workload_without_the_chassis_key`: a run through the chassis reports the store document's version.
+
 ## Rotating the remote token
 
 **Symptom.** The remote token must change: it leaked, or it is due.
@@ -247,7 +272,9 @@ trust rule 2: an untrusted workload may not run in the sidecar lane; use the rem
 trust rule 3: outside the remote lane every image must come from the platform registry prefix: <image>
 ```
 
-The rules are listed at the top of `deploy/kind/poc05/admission/policy.yaml`. Apply as the deployer, as `up` does (`--as=system:serviceaccount:agent-platform-system:deployer`).
+The rules are listed at the top of `deploy/kind/poc05/admission/policy.yaml`. Apply as the deployer, as `up` does (`--as=system:serviceaccount:agent-platform-system:deployer`). A NetworkPolicy is the exception: the deployer has no rights on it. Apply a policy file by path as the cluster admin, as `up` does through `deploy/kind/policies.sh`.
+
+A Service is checked by `agent-service-rule` (`admission/service-policy.yaml`), with messages that start `service rule S1:`. A Service must be type ClusterIP and set no `externalIPs`, `loadBalancerIP`, or `externalName`.
 
 **Cause, by rule:**
 
@@ -258,6 +285,8 @@ The rules are listed at the top of `deploy/kind/poc05/admission/policy.yaml`. Ap
 - 4: a trusted sidecar image whose repository is not in `trustedRepositories`.
 - 5: a remote pod without `gvisor`, with a service account token, or with a Secret other than its own token.
 - 6a to 6c, 7a to 7c, 8: chassis shape, namespace shape, and pull policy. Read the message.
+- 7d: a tool pod without `gvisor`, or with a service account token, automounted or projected.
+- 7e to 7g: a chassis pod with a pod-wide token, or a projected token outside the chassis container (7e); a sidecar pod that shares its process namespace, or a workload uid that is missing or equal to the chassis uid (7f); an ephemeral container that targets the chassis (7g).
 
 **Fix.** Change the pod, not the policy. A pod that is untrusted goes to the remote lane. Only `agents.platform:platform-admins` may change `agent-trust-params` (`admission/rbac.yaml`); the submitter and the deployer cannot. The admission kind suite shows every rule refusing its fixture with its own message, next to an admitted twin (`test_poc05_kind_admission.py`, 51 passed).
 

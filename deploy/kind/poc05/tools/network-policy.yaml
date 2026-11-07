@@ -6,6 +6,9 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: code-runner
+  namespace: poc05-tools
+  labels:
+    app.kubernetes.io/part-of: poc05
 spec:
   podSelector:
     matchLabels:

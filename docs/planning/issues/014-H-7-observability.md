@@ -5,7 +5,7 @@ milestone: "W2 Chassis MVP"
 index: 14
 epic_id: H-7
 depends_on: ["007 H-1", "009 CH-1"]
-blocks: ["046 A-5", "056 CH-7", "086 R-10", "117 X-3", "129 CH-10"]
+blocks: ["046 A-5", "056 CH-7", "086 R-10", "117 X-3", "129 CH-10", "135 CH-15"]
 epic_refs: [G.2]
 ---
 
@@ -22,7 +22,7 @@ Every call must be traced, and the Phase 0 done-when says the echo agent appears
 - User and session ids travel as W3C `baggage` over A2A (`user.id`, the authenticated subject, and `session.id`), never as `Context` fields. Caller baggage is never forwarded.
 - Every process exports over OTLP to one OpenTelemetry Collector, which fans out to Langfuse v4 and a trace backend: Jaeger in CI, Tempo in production. Switching a backend is the Collector's exporter list only.
 - Sampling is a Collector policy (ADR-007 item 8). Today the chassis marks every run sampled. The epic's `trace_sample_rate` maps to that policy.
-- Workload logs do not pass through the chassis, so the chassis cannot redact them. Built in PoC-8: regex masking in the Collector log pipeline (emails, IBANs, cards, SSNs, phones).
+- Workload logs do not pass through the chassis, so the chassis cannot redact them. Built in PoC-8: regex masking in the Collector log pipeline (emails, IBANs, cards, SSNs, phones). Since PR #87 the Collector also masks secrets first, as `SECRET`: PEM private keys, Bearer and Basic values, vendor key shapes, URL userinfo, and `password=`-style assignments (`deploy/compose/poc07/otel-collector.yaml`).
 - `GET /metrics` in Prometheus format: requests, latency, errors, tokens, cost, and fallback rate, with every sample labelled `agent`.
 - LLM tracing in Langfuse: prompt, tokens, cost, and latency for each model call.
 - A `TelemetryPort` adapter, so the core never calls OpenTelemetry directly.
@@ -62,7 +62,7 @@ Every call must be traced, and the Phase 0 done-when says the echo agent appears
 ## Dependencies
 
 - Depends on: [007 H-1](007-H-1-harness-library-ports-envelope.md), [009 CH-1](009-CH-1-engine-connectors-a2a.md)
-- Blocks: [046 A-5](046-A-5-agent-dashboard.md), [056 CH-7](056-CH-7-chassis-release-rings.md), [086 R-10](086-R-10-health-checks.md), [117 X-3](117-X-3-slos-alerts.md), [129 CH-10](129-CH-10-langsmith-trace-backend.md)
+- Blocks: [046 A-5](046-A-5-agent-dashboard.md), [056 CH-7](056-CH-7-chassis-release-rings.md), [086 R-10](086-R-10-health-checks.md), [117 X-3](117-X-3-slos-alerts.md), [129 CH-10](129-CH-10-langsmith-trace-backend.md), [135 CH-15](135-CH-15-backpressure.md)
 
 ## References
 

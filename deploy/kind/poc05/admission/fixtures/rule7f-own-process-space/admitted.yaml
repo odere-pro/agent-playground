@@ -1,0 +1,41 @@
+# Rule 7f, the workload outside the chassis's processes (core review R5a-05): the admitted
+# twin, no shared PID namespace, the workload as uid 10002 and the chassis as 10001.
+# expect: admitted
+# rule: 7f
+apiVersion: v1
+kind: Pod
+metadata:
+  name: admission-rule7f
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/name: admission-rule7f
+    agents.platform/trust: trusted
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  initContainers:
+  - name: chassis
+    image: kind.local/agent-platform/chassis:poc05
+    imagePullPolicy: Never
+    restartPolicy: Always
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: &id001
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 10001
+      runAsGroup: 10001
+  containers:
+  - name: workload
+    image: kind.local/agent-platform/echo-python:poc05
+    imagePullPolicy: Never
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: *id001
+      readOnlyRootFilesystem: true
+      runAsUser: 10002
+      runAsGroup: 10002

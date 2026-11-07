@@ -14,8 +14,10 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastmcp import FastMCP
-from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import ToolError, ValidationError
 from fastmcp.server.dependencies import get_context
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from mcp import types as mt
 from mcp.types import ToolAnnotations
 from pydantic import Field
 from starlette.requests import Request
@@ -147,6 +149,24 @@ def resolve_key(argument: str | None) -> str:
 ToolCall = Callable[[str, int, str], Awaitable[RunResult]]
 
 
+SCHEMA_REFUSAL = RunnerError("bad_arguments", "the arguments do not match the tool schema")
+
+
+class _FixedSchemaRefusal(Middleware):
+    """A schema refusal is `bad_arguments` with a fixed text. Pydantic's own text quotes the
+    input (`input_value=...`), which would put part of the code into the error."""
+
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext[mt.CallToolRequestParams],
+        call_next: CallNext[mt.CallToolRequestParams, Any],
+    ) -> Any:
+        try:
+            return await call_next(context)
+        except ValidationError:
+            raise ToolError(str(SCHEMA_REFUSAL)) from None
+
+
 def new_mcp() -> FastMCP:
     """The FastMCP app both servers use. Masked: an unexpected error never shows its text."""
     return FastMCP(
@@ -156,6 +176,7 @@ def new_mcp() -> FastMCP:
             "Print what you need: the result has stdout, stderr, exit_code, timed_out, truncated."
         ),
         mask_error_details=True,
+        middleware=[_FixedSchemaRefusal()],
     )
 
 
@@ -173,7 +194,11 @@ def register_run_python(mcp: FastMCP, limits: Limits, call: ToolCall) -> None:
         ),
     )
     async def run_python_tool(
-        code: Annotated[str, Field(description="Python source, run as __main__.")],
+        # max_length counts characters, so it is a first cut; the byte check below stays.
+        code: Annotated[
+            str,
+            Field(max_length=limits.max_code_bytes, description="Python source, run as __main__."),
+        ],
         timeout_s: Annotated[
             int,
             Field(ge=MIN_TIMEOUT_S, le=max_timeout, description="Wall-clock limit in seconds."),

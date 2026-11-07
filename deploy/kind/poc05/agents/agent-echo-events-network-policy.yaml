@@ -1,0 +1,50 @@
+# agent-echo-events: what the H11 pod may send and receive (T25; agent-echo-events.yaml says why).
+# Ingress: the chassis port 8080 from the gateway peer only (core review R5a-07). Egress: DNS and
+# Kafka 9092 only. `run.sh kafka` applies this file by path as the cluster admin; the deployer has
+# no NetworkPolicy rights (core review R5a-02).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agent-echo-events
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/part-of: poc05
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: agent-echo-events
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agent-platform-system
+          podSelector:
+            matchLabels:
+              agents.platform/role: gateway
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-platform
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kafka
+      ports:
+        - port: 9092
+          protocol: TCP

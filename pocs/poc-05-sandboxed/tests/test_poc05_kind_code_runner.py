@@ -27,6 +27,8 @@ standard-library code. Each refusal sits next to its allowed control in the same
 - Nothing crosses calls (B12): files call A leaves in `/tmp` and `/dev/shm` are not in call B.
 - `/dev/shm` is an 8Mi memory `emptyDir`: a write past it fails with ENOSPC.
 - The claim for a call is gone, with its pod, within 10 s (`suggested:`) of the call's end.
+- The dispatcher's bearer (R5a-23): /mcp without it is 401 from LiteLLM's pod, /health is open,
+  a call through LiteLLM works, and LiteLLM's MCP server listing returns no `auth_value`.
 
 A kind test: marked `network`, skipped unless `KIND_DRILLS=1` (`poc_harness.drills`). It needs the
 gateway URL and the chassis's key in the environment. Run:
@@ -44,6 +46,7 @@ import uuid
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
+import httpx
 import pytest
 from chassis.adapters.mcp.gateway import McpGatewayTools
 from poc_harness.drills import KIND_SANDBOX, required_env
@@ -601,3 +604,73 @@ async def test_claim_is_gone_after_the_call(tools: McpGatewayTools) -> None:
     ):
         assert time.monotonic() - ended < GONE_WITHIN_S, f"left after {GONE_WITHIN_S} s: {left}"
         await asyncio.sleep(0.5)
+
+
+# --- R5a-23: the dispatcher's bearer, through LiteLLM and without it ---------------------------
+
+# suggested: LiteLLM's MCP server listing route on v1.103.0 (`/v1/mcp/server`).
+MCP_SERVER_LISTING = "/v1/mcp/server"
+INITIALIZE = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {},
+        "clientInfo": {"name": "poc05-kind-test", "version": "0"},
+    },
+}
+
+
+def _auth_values(node: Any) -> list[Any]:
+    """Every value under a key named `auth_value`, at any depth."""
+    if isinstance(node, dict):
+        found = [v for k, v in node.items() if k == "auth_value"]
+        return found + [x for v in node.values() for x in _auth_values(v)]
+    if isinstance(node, list):
+        return [x for v in node for x in _auth_values(v)]
+    return []
+
+
+async def test_dispatcher_needs_its_bearer_and_litellm_sends_it(tools: McpGatewayTools) -> None:
+    """Criterion 8: "The hostile suites pass in both lanes."
+
+    Core review R5a-23 on the cluster: from LiteLLM's pod, the one peer the dispatcher's
+    NetworkPolicy admits, an MCP `initialize` to the dispatcher's /mcp with no bearer is 401
+    `unauthorized`. The allowed controls: `/health` from the same pod answers 200, and
+    `run_python` through LiteLLM succeeds, which proves LiteLLM v1.103.0 sends the bearer from
+    `auth_type: bearer_token` with `auth_value: os.environ/CODE_RUNNER_DISPATCH_TOKEN`."""
+    dispatch = pod(PLATFORM_NS, DISPATCH)["status"]["podIP"]
+    bare, health = in_platform(
+        "litellm",
+        [
+            {"kind": "http", "url": f"http://{dispatch}:8000/mcp", "body": INITIALIZE},
+            {"kind": "http", "url": f"http://{dispatch}:8000/health"},
+        ],
+    )
+
+    assert bare.get("status") == 401, bare
+    assert "unauthorized" in bare.get("head", ""), bare
+    assert health.get("status") == 200, health
+    assert (await run_python(tools, HOST))["host"]
+
+
+def test_litellm_mcp_server_listing_never_returns_the_dispatcher_bearer() -> None:
+    """Criterion 4: "No provider key or internal credential is visible in any workload container or
+    remote pod, and neither holds a service account token."
+
+    Core review R5a-23: LiteLLM's MCP server listing, called with the chassis's virtual key, holds
+    no `auth_value` but an empty one or the `os.environ/` reference (never the resolved token).
+    A refusal (401 or 403) also returns nothing. The paired control: the same key on the MCP
+    gateway lists `code_runner-run_python` (the tests above), so the key is live."""
+    url, key = required_env(URL_VAR, KEY_VAR)
+    base = url.split("/mcp", 1)[0]
+    response = httpx.get(
+        base + MCP_SERVER_LISTING, headers={"Authorization": f"Bearer {key}"}, timeout=15
+    )
+
+    assert response.status_code in {200, 401, 403}, response.status_code
+    if response.status_code == 200:
+        values = _auth_values(response.json())
+        leaked = [v for v in values if v and not str(v).startswith("os.environ/")]
+        assert not leaked, f"{len(leaked)} auth_value(s) returned"

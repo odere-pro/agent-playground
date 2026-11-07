@@ -25,7 +25,7 @@ Every agent must answer through native, OpenAI-compatible, and Anthropic-compati
 - Request limits in `spec.limits` (suggested: `max_tokens_max: 8000`, `timeout_ms_max: 120000`, `body_bytes_max: 1048576`, `messages_max: 256`), refused as 400 `limit_exceeded` or 413.
 - A client that leaves a complete call stops the run ([contract v3](../../contracts/contract-v3.md#a-client-that-leaves-a-complete-call)).
 - `GET /health` (process alive) and `GET /ready`, from a fixed list of checks: the lifespan is done, the config is loaded, the chassis is not draining, and, in the `sidecar` lane, the workload's localhost A2A endpoint answers ([contract v3](../../contracts/contract-v3.md#ready-and-health)).
-- Graceful shutdown on SIGTERM, as [contract v3](../../contracts/contract-v3.md#shutdown) says: `/ready` goes 503 first, new calls are still served with `Connection: close`, in-flight runs finish, then the chassis exits. The workload stops after the chassis has drained. That order is a deploy rule (a native sidecar, or preStop sleeps).
+- Graceful shutdown on SIGTERM, as [contract v3](../../contracts/contract-v3.md#shutdown) says: `/ready` goes 503 first, new calls are still served with `Connection: close`, in-flight runs finish, then the chassis exits. The workload stops after the chassis has drained. That order is a deploy rule (a native sidecar, or preStop sleeps). The drain tick rests on the PoC-4 tests; the chart's container order is 024 CH-3's open box.
 
 ## Reuse
 

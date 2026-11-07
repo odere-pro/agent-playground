@@ -5,7 +5,7 @@ milestone: "W2 Chassis MVP"
 index: 22
 epic_id: H-6
 depends_on: ["011 H-2", "018 H-18"]
-blocks: ["040 D-0", "054 H-16", "065 D-2", "072 C-3", "076 R-1", "132 CH-13"]
+blocks: ["040 D-0", "054 H-16", "065 D-2", "072 C-3", "076 R-1", "132 CH-13", "134 CH-14"]
 epic_refs: [G.3]
 ---
 
@@ -22,10 +22,10 @@ Every agent needs the same auth, limits, and PII rules, so the chassis pipeline 
 - Scopes from `spec.security.scopes` (for example `simplify:run`), with separate read and write scopes.
 - Rate limits per agent and per caller in `StatePort`, kept in Valkey in the stack profiles, so limits hold across pods and the process stays stateless: 429 `rate_limited` with `Retry-After` ([contract v7](../../contracts/contract-v7.md#c-rate-limits) C). A store outage lets calls through unlimited, decided 2026-11-06 (P-2). The limit is a rate, not a cap, so new idempotency keys per caller get their own cap.
 - Input size limits: `spec.limits` bounds each call on every public interface, with 400 `limit_exceeded`, or 413 for the body (suggested: `max_tokens_max: 8000`, `timeout_ms_max: 120000`, `body_bytes_max: 1048576`, `messages_max: 256`).
-- PII redaction before logging or storage. In the chassis it is regex only (emails, phone numbers, IDs). Named-entity redaction runs in LiteLLM's guardrails and in the OpenTelemetry Collector log pipeline, never in the chassis: a named-entity model would add about 0.5–1 GiB per replica and break ADR-001's estimate:
+- PII redaction before logging or storage. In the chassis it is regex only (emails, phone numbers, IDs). Since PR #89 it also masks secrets as `SECRET`, first, and its phone and card rules are stricter: a card needs the Luhn check, and a phone needs a `+` or a separator (`packages/chassis/src/chassis/redaction.py`). Named-entity redaction runs in LiteLLM's guardrails and in the OpenTelemetry Collector log pipeline, never in the chassis: a named-entity model would add about 0.5–1 GiB per replica and break ADR-001's estimate:
   - the chassis redacts the events it publishes and its own logs;
   - workload logs do not pass the chassis, so they are redacted in the OpenTelemetry Collector log pipeline from 014 H-7 (gap (f) in the [backlog plan](000-plan.md#adr-001-follow-ups)).
-- Prompt-injection checks on user input and tool outputs, as LiteLLM guardrails. The workload cannot skip them, so they are the hard control. Decided in ADR-008: Presidio and Llama Prompt Guard 2 as LiteLLM guardrails on every model call, set per route, because guardrails per key are Enterprise-only (gap (d) in the backlog plan). The chassis guard stages `input`, `tool_output`, and `output` run through `GuardrailPort` as defense in depth. The chassis's virtual key needs `/guardrails/apply_guardrail` in `allowed_routes`, or the guard stages fail closed with `guardrail_unavailable`.
+- Prompt-injection checks on user input and tool outputs, as LiteLLM guardrails. The workload cannot skip them, so they are the hard control. Decided in ADR-008: Presidio and Llama Prompt Guard 2 as LiteLLM guardrails on every model call, set per route, because guardrails per key are Enterprise-only (gap (d) in the backlog plan). The chassis guard stages `input`, `tool_output`, and `output` run through `GuardrailPort` as defense in depth. Since PR #87 the `output` stage also runs on streams, one sentence window at a time (ADR-008 item 5). The chassis's virtual key needs `/guardrails/apply_guardrail` in `allowed_routes`, or the guard stages fail closed with `guardrail_unavailable`.
 - Two checks on the answer, built in PoC-8 ([contract v7](../../contracts/contract-v7.md#d-two-checks-on-the-answer) D): the stream secret check (`guardrail_blocked` at `output_stream`) and the output URL allow-list `spec.guardrails.output_url_allow`.
 - Two defaults are 001 DEC-1's: the URL allow-list (default deny, or default allow with a per-agent opt-in), and rate limits when caller auth is off.
 - Secrets read from Vault through External Secrets, never from code or config values. They are mounted only into the chassis container.
@@ -64,11 +64,12 @@ Every agent needs the same auth, limits, and PII rules, so the chassis pipeline 
 - [ ] One caller cannot add more new idempotency keys than its cap, so it cannot fill the shared store.
 - [ ] A workload's `guardrails` key never reaches LiteLLM.
 - [ ] The key-leak canary also looks for a refused key's last 4 characters and its hash.
+- [x] With `spec.guardrails.output` on, a streamed answer's PII does not reach the client (gap review, 2026-11-07). · Delivered by: PR #87, `packages/chassis/tests/test_guard_stages.py::test_output_stage_masks_pii_when_the_call_is_a_stream` (no xfail; 10 stream cases pass)
 
 ## Dependencies
 
 - Depends on: [011 H-2](011-H-2-inbound-adapters.md), [018 H-18](018-H-18-idempotency.md)
-- Blocks: [040 D-0](040-D-0-recorder-agent.md), [054 H-16](054-H-16-tool-port.md), [065 D-2](065-D-2-review-ui.md), [072 C-3](072-C-3-audit-log-agent.md), [076 R-1](076-R-1-registry-data-model-api.md), [132 CH-13](132-CH-13-owasp-agentic-map.md)
+- Blocks: [040 D-0](040-D-0-recorder-agent.md), [054 H-16](054-H-16-tool-port.md), [065 D-2](065-D-2-review-ui.md), [072 C-3](072-C-3-audit-log-agent.md), [076 R-1](076-R-1-registry-data-model-api.md), [132 CH-13](132-CH-13-owasp-agentic-map.md), [134 CH-14](134-CH-14-cloud-security-defaults.md)
 
 ## References
 

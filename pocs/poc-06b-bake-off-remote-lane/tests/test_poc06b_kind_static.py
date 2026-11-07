@@ -70,9 +70,22 @@ RUN_SH = POC06 / "run.sh"
 SEED_SH = POC06 / "seed.sh"
 LIB_SH = ROOT / "deploy/kind/lib.sh"
 FOLDERS = ("remote", "agents", "kagent")
+# The NetworkPolicy files of each folder, with the namespace run.sh applies each in. No
+# kustomization lists them: run.sh applies each by path as the cluster admin (core review R5a-02).
+POLICY_FILES = {
+    "remote": {"network-policy.yaml": "poc05-remote"},
+    "agents": {"network-policy.yaml": "poc05-agents"},
+    "kagent": {
+        "network-policy-remote.yaml": "poc05-remote",
+        "network-policy-chassis.yaml": "poc05-agents",
+    },
+}
+# The front door's port per engine (deploy/kind/poc06/platform/remote-run-dispatch.yaml).
+DOOR_PORTS = {"claude-agent": 9001, "smolagents": 9002, "typescript": 9003, "kagent-adk": 9004}
 
 CHASSIS_REPO = "kind.local/agent-platform/chassis"
-POD_KINDS = {"Deployment", "Sandbox"}
+POD_KINDS = {"Deployment", "SandboxTemplate"}
+REMOTE_KIND = "SandboxTemplate"  # one fresh pod per run from a warm pool (core review R6-11)
 TRUST = "agents.platform/trust"
 LANE = "agents.platform/lane"
 NAME = "app.kubernetes.io/name"
@@ -109,10 +122,10 @@ class Obj:
 
 def _objects(folder: str) -> list[Obj]:
     """The folder's resources as written (not rendered), each with the kustomization's namespace
-    or, in `kagent/`, its own."""
+    or, in `kagent/`, its own; plus the folder's policy files, which run.sh applies by path."""
     kust = yaml.safe_load((POC06 / folder / "kustomization.yaml").read_text())
     out: list[Obj] = []
-    for resource in kust["resources"]:
+    for resource in [*kust["resources"], *POLICY_FILES[folder]]:
         for doc in _load_all(POC06 / folder / resource):
             ns = doc.get("metadata", {}).get("namespace", kust.get("namespace"))
             assert ns, (
@@ -148,7 +161,7 @@ class Pod:
 
     @property
     def template(self) -> Doc:
-        if self.obj.kind == "Sandbox":
+        if self.obj.kind == REMOTE_KIND:
             return dict(self.doc["spec"]["podTemplate"])
         return dict(self.doc["spec"]["template"])
 
@@ -249,7 +262,15 @@ def test_pod_containers_are_the_tables_when_the_pod_has_a_row(pod: Pod) -> None:
 def test_nothing_but_pods_services_policies_accounts_and_configs() -> None:
     """No role or binding, no SandboxTemplate or SandboxClaim (so the extension rules T1 to T5
     and C1 to C5 have nothing to read)."""
-    allowed = {"Deployment", "Sandbox", "Service", "ServiceAccount", "NetworkPolicy", "ConfigMap"}
+    allowed = {
+        "Deployment",
+        "SandboxTemplate",
+        "SandboxWarmPool",
+        "Service",
+        "ServiceAccount",
+        "NetworkPolicy",
+        "ConfigMap",
+    }
 
     assert {o.kind for o in ALL_OBJECTS} <= allowed
 
@@ -447,7 +468,7 @@ def test_a_remote_workload_gets_only_its_own_token_secret(pod: Pod, c: Doc) -> N
     assert refs == ({want} if want else set()), f"{pod.id}/{c['name']}: {sorted(refs)}"
 
 
-REMOTE_PODS = [p for p in PODS if p.obj.kind == "Sandbox"]
+REMOTE_PODS = [p for p in PODS if p.obj.kind == REMOTE_KIND]
 REMOTE_PIDS = [p.id for p in REMOTE_PODS]
 REMOTE_REFS = [
     (p, r)
@@ -595,7 +616,8 @@ def test_chassis_calls_its_remote_with_its_token_when_the_lane_is_remote(
     ref = env[auth.token_env]["valueFrom"]["secretKeyRef"]
     assert TOKEN_SECRET.fullmatch(ref["name"]), pod.id
     assert ref["name"] == f"remote-{remote}-token", pod.id
-    assert config.spec.engine.url == f"http://remote-{remote}.poc05-remote.svc.cluster.local:9000"
+    front_door = "http://remote-run-dispatch.poc05-platform.svc.cluster.local"
+    assert config.spec.engine.url == f"{front_door}:{DOOR_PORTS[remote]}/{remote}"
     assert (config.spec.engine.protocol == "a2a") is (remote == "kagent-adk"), pod.id
 
 
@@ -650,12 +672,13 @@ TOKEN_REMOTES = [n for n in REMOTES if n != "remote-kagent-adk"]
 
 @pytest.mark.parametrize("name", REMOTES)
 def test_every_remote_is_a_sandbox_on_gvisor_with_tcp_probes(name: str) -> None:
-    """A remote is a Sandbox on gVisor, untrusted, in poc05-remote, with one workload container."""
+    """A remote is a SandboxTemplate (one fresh pod per run, core review R6-11) on gVisor,
+    untrusted, in poc05-remote, with one workload container."""
     pod = _pod(name)
 
     containers = [c["name"] for c in pod.containers()]
 
-    assert pod.doc["apiVersion"] == "agents.x-k8s.io/v1beta1"
+    assert pod.doc["apiVersion"] == "extensions.agents.x-k8s.io/v1beta1"
     assert pod.spec.get("runtimeClassName") == "gvisor"
     assert pod.doc["spec"]["service"] is False
     assert pod.labels[LANE] == "remote" and pod.labels[TRUST] == "untrusted"
@@ -866,11 +889,11 @@ def _mutations(pod: Pod) -> list[tuple[str, str, Doc]]:
 
     def template(doc: Doc) -> Doc:
         return dict(
-            doc["spec"]["podTemplate"] if doc["kind"] == "Sandbox" else doc["spec"]["template"]
+            doc["spec"]["podTemplate"] if doc["kind"] == REMOTE_KIND else doc["spec"]["template"]
         )
 
     base = pod.doc
-    if base["kind"] == "Sandbox":
+    if base["kind"] == REMOTE_KIND:
         d = copy.deepcopy(base)
         del template(d)["spec"]["runtimeClassName"]
         out.append(("5", "no gVisor", d))
@@ -927,7 +950,7 @@ def _namespace_labels() -> dict[str, dict[str, str]]:
 @pytest.mark.parametrize("pod", PODS, ids=PIDS)
 def test_namespaces_are_poc05s_with_the_right_shapes(pod: Pod) -> None:
     """The pod's namespace is PoC-5's, enforcing, with the pod shape its kind needs."""
-    want = "remote" if pod.obj.kind == "Sandbox" else "chassis"
+    want = "remote" if pod.obj.kind == REMOTE_KIND else "chassis"
 
     labels = _namespace_labels()[pod.namespace]
 
@@ -988,8 +1011,8 @@ def fixture_edges() -> tuple[set[Edge], set[Edge]]:
             dst = _sel(e["dst"]["ns"], e["dst"]["labels"])
             egress.update((own, dst, port) for port in e["ports"])
         for e in EDGES["chassis_ingress"]:
-            assert e["src"] == "any"
-            ingress.update(("any", own, port) for port in e["ports"])
+            src = _sel(e["src"]["ns"], e["src"]["labels"])
+            ingress.update((src, own, port) for port in e["ports"])
     for pair in EDGES["remote_pairs"]:
         side = {
             "remote": _sel("poc05-remote", {NAME: pair["remote"]}),
@@ -999,6 +1022,10 @@ def fixture_edges() -> tuple[set[Edge], set[Edge]]:
             for port in e["ports"]:
                 egress.add((side[e["from"]], side[e["to"]], port))
                 ingress.add((side[e["from"]], side[e["to"]], port))
+        door = _sel(EDGES["front_door"]["ns"], EDGES["front_door"]["labels"])
+        egress.add((side["chassis"], door, pair["door_port"]))
+        for port in EDGES["remote_ports"]:
+            ingress.add((door, side["remote"], port))
     return egress, ingress
 
 
@@ -1033,6 +1060,11 @@ OPEN_INGRESS = [
     if "from" not in rule
 ]
 REMOTE_POLICIES = [pol for pol in POLICIES if pol.namespace == "poc05-remote"]
+# suggested: PoC-5's gateway peer (deploy/kind/poc05/agents/gateway-network-policy.yaml).
+GATEWAY_PEER = {
+    "namespaceSelector": {"matchLabels": {NS_LABEL: "agent-platform-system"}},
+    "podSelector": {"matchLabels": {"agents.platform/role": "gateway"}},
+}
 
 
 @pytest.mark.parametrize("pol", POLICIES, ids=_pol_id)
@@ -1069,16 +1101,20 @@ def test_an_egress_peer_selects_pods_by_label(pol: Obj, peer: Doc) -> None:
     assert labels, f"{pol.name}: all pods"
 
 
-@pytest.mark.parametrize(
-    ("pol", "rule"),
-    OPEN_INGRESS,
-    ids=[f"{_pol_id(p)}-{i}" for i, (p, _) in enumerate(OPEN_INGRESS)],
-)
-def test_an_ingress_rule_without_a_source_opens_only_8080(pol: Obj, rule: Doc) -> None:
-    """An ingress rule open to any source opens only the public port 8080."""
-    ports = [p["port"] for p in rule["ports"]]
+def test_no_ingress_rule_is_open_to_any_source() -> None:
+    """Core review R5a-07: the public port 8080 takes only the gateway peer, so no ingress rule
+    is peerless. The control: every chassis policy still has an 8080 rule, from that peer."""
+    gated = [
+        pol.name
+        for pol in POLICIES
+        for rule in pol.doc["spec"].get("ingress", [])
+        if [p["port"] for p in rule["ports"]] == [8080] and rule.get("from") == [GATEWAY_PEER]
+    ]
 
-    assert ports == [8080], pol.name
+    assert OPEN_INGRESS == [], [_pol_id(p) for p, _ in OPEN_INGRESS]
+    assert sorted(gated) == sorted(
+        [*EDGES["sidecar_pods"], *(p["chassis"] for p in EDGES["remote_pairs"])]
+    )
 
 
 def test_every_pod_has_a_policy_and_poc05_denies_the_rest() -> None:
@@ -1098,15 +1134,17 @@ def test_every_pod_has_a_policy_and_poc05_denies_the_rest() -> None:
 
 @pytest.mark.parametrize("pol", REMOTE_POLICIES, ids=_pol_id)
 def test_a_remote_has_no_dns_and_only_its_chassis_in_and_out(pol: Obj) -> None:
-    """A remote's egress is port 8091 only (no DNS), and its only peer is its chassis."""
+    """A remote's egress is port 8091 only (no DNS) to its chassis; its only ingress is the
+    front door on 9000 (core review R6-11)."""
     spec = pol.doc["spec"]
 
     ports = [p["port"] for rule in spec["egress"] for p in rule["ports"]]
-    peers = {
-        peer["podSelector"]["matchLabels"][NAME]
-        for rule in [*spec["egress"], *spec["ingress"]]
-        for peer in rule.get("to", rule.get("from", []))
+    sources = {
+        peer["podSelector"]["matchLabels"][NAME] for r in spec["ingress"] for peer in r["from"]
     }
+    peers = {peer["podSelector"]["matchLabels"][NAME] for r in spec["egress"] for peer in r["to"]}
+
+    assert sources == {"remote-run-dispatch"}, pol.name
 
     assert ports == [8091], pol.name
     assert len(peers) == 1 and next(iter(peers)).startswith("chassis-"), pol.name
@@ -1341,10 +1379,10 @@ def test_the_run_sh_text_reuses_poc05_and_pins_the_context() -> None:
     assert text.index("CONTEXT=kind-$CLUSTER") < text.index('source "$HERE/../lib.sh"')
     assert KCTL in _code_lines(LIB_SH.read_text())
     assert logs and all(re.search(r'\|\s*"\$P5" redact', ln) for ln in logs), logs
-    assert (
-        '--as="$DEPLOYER"' in text
-        and "DEPLOYER=system:serviceaccount:agent-platform-system:deployer" in text
-    )
+    assert "DEPLOYER=system:serviceaccount:agent-platform-system:deployer" in text
+    assert text.index("DEPLOYER=") < text.index('source "$HERE/../policies.sh"')
+    assert '--as="$DEPLOYER"' in (POC06.parent / "policies.sh").read_text()
+    assert "| apply_deployer" in text
 
 
 def test_the_run_sh_text_selects_the_kind_files_by_path_and_names_missing_ones() -> None:
@@ -1360,6 +1398,7 @@ def test_the_run_sh_text_selects_the_kind_files_by_path_and_names_missing_ones()
         "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_engines.py",
         "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_load.py",
         "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_remote_controls.py",
+        "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_run_isolation.py",
         "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_sidecar_controls.py",
     ]
     assert not missing, missing
@@ -1760,7 +1799,7 @@ def test_only_the_four_gvisor_pods_reference_the_profile(path: Path, doc: Doc) -
     assert "deploy/kind/poc06/" in path.as_posix(), where
     assert doc.get("kind") in POD_KINDS, where
     assert str(doc["metadata"]["name"]) in PROFILE_PODS, where
-    template = doc["spec"]["podTemplate"] if doc["kind"] == "Sandbox" else doc["spec"]["template"]
+    template = doc["spec"]["podTemplate"] if doc["kind"] == REMOTE_KIND else doc["spec"]["template"]
     assert template["spec"].get("runtimeClassName") == "gvisor", where
 
 
@@ -1891,3 +1930,54 @@ def test_a_poc06_image_ends_in_the_kind_or_poc05_tag(pod: Pod, c: Doc) -> None:
     image = c["image"]
 
     assert image.endswith((":kind", ":poc05")), image
+
+
+# --- who applies the policies (core review R5a-02, ported from PoC-5) -------------------------
+
+
+@pytest.mark.parametrize("folder", FOLDERS)
+def test_no_kustomization_lists_a_policy_file_or_a_network_policy(folder: str) -> None:
+    """Exit criterion 4 (offline): the deployer renders no NetworkPolicy, so nothing is cut out of
+    rendered text. The paired control: each policy file holds only NetworkPolicies, each naming
+    the namespace run.sh passes as `-n`, with the poc06 label kustomize no longer adds."""
+    kust = yaml.safe_load((POC06 / folder / "kustomization.yaml").read_text())
+    listed = [d for r in kust["resources"] for d in _load_all(POC06 / folder / r)]
+    assert not set(POLICY_FILES[folder]) & set(kust["resources"])
+    assert listed and not [d for d in listed if d["kind"].endswith("NetworkPolicy")]
+    for name, ns in POLICY_FILES[folder].items():
+        docs = _load_all(POC06 / folder / name)
+        assert docs and {d["kind"] for d in docs} == {"NetworkPolicy"}, name
+        assert {d["metadata"]["namespace"] for d in docs} == {ns}, name
+        assert all(d["metadata"]["labels"]["app.kubernetes.io/part-of"] == "poc06" for d in docs), (
+            name
+        )
+
+
+def test_every_policy_file_in_the_folders_is_one_run_sh_applies() -> None:
+    """A NetworkPolicy file added to a folder but not to POLICY_FILES would never be applied."""
+    for folder in FOLDERS:
+        on_disk = {
+            p.name
+            for p in (POC06 / folder).glob("*.yaml")
+            if any(d.get("kind") == "NetworkPolicy" for d in _load_all(p))
+        }
+        assert on_disk == set(POLICY_FILES[folder]), folder
+
+
+def test_run_sh_applies_each_policy_file_by_path_in_its_namespace() -> None:
+    """No awk split: apply_folder applies each policy file through PoC-5's apply_policies (by
+    path, `--dry-run=client -o name -n NS` first), then the folder through apply_deployer."""
+    text = RUN_SH.read_text()
+    ns_var = {"poc05-remote": "$REMOTE_NS", "poc05-agents": "$AGENTS_NS"}
+    assert "docs_of" not in text and "apply_split" not in text
+    assert 'apply_policies "${pair%%=*}" "$HERE/$folder/${pair#*=}"' in text
+    assert 'kctl kustomize "$HERE/$folder" | apply_deployer' in text
+    for folder, files in POLICY_FILES.items():
+        joined = text.replace("\\\n", " ")  # one logical line per call
+        call = joined.split(f"apply_folder {folder} ", 1)[1].split("\n", 1)[0]
+        for name, ns in files.items():
+            assert f'"{ns_var[ns]}={name}"' in call, (folder, name)
+    gateway = (
+        'apply_policies agent-platform-system "$HERE/../poc05/agents/gateway-network-policy.yaml"'
+    )
+    assert gateway in text

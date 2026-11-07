@@ -5,7 +5,7 @@ milestone: "W2 Chassis MVP"
 index: 20
 epic_id: X-8
 depends_on: ["001 DEC-1", "016 H-9"]
-blocks: ["021 H-20", "040 D-0", "072 C-3"]
+blocks: ["021 H-20", "040 D-0", "072 C-3", "139 CH-19"]
 epic_refs: [D.1, H]
 ---
 
@@ -54,7 +54,7 @@ Pulled forward from Phase 8: the event port, the recorder (040 D-0), and the aud
 ## Dependencies
 
 - Depends on: [001 DEC-1](001-DEC-1-resolve-open-decisions.md), [016 H-9](016-H-9-local-debug-profile.md)
-- Blocks: [021 H-20](021-H-20-event-consumer-adapter.md), [040 D-0](040-D-0-recorder-agent.md), [072 C-3](072-C-3-audit-log-agent.md)
+- Blocks: [021 H-20](021-H-20-event-consumer-adapter.md), [040 D-0](040-D-0-recorder-agent.md), [072 C-3](072-C-3-audit-log-agent.md), [139 CH-19](139-CH-19-reference-stack.md)
 
 ## References
 

@@ -5,7 +5,7 @@ milestone: "W2 Chassis MVP"
 index: 13
 epic_id: CH-2
 depends_on: ["012 H-3", "009 CH-1"]
-blocks: ["017 H-4", "041 A-1", "044 G-4", "047 M-3", "062 H-11"]
+blocks: ["017 H-4", "041 A-1", "044 G-4", "047 M-3", "062 H-11", "134 CH-14", "136 CH-16"]
 epic_refs: [F.1, R3, J]
 ---
 
@@ -43,7 +43,7 @@ In the `sidecar` lane the workload holds no key ([ADR-001](../adr/001-chassis-de
 - The scripted fake model server (015 H-8). This issue uses the fake `ModelPort` adapter from 007 H-1.
 - The `remote`-lane credential for the proxies (055 CH-6).
 - A finish reason on `ModelPort`: `stop_reason: max_tokens` cannot be sent, because stop reasons are always `stop` and `end_turn` ([ADR-003](../adr/003-chat-formats-onto-the-canonical-request.md) item 8).
-- Debt from PoC-2: the trace id that keys a call to its run is not a credential. `/v1/run` refuses a second in-flight run on one trace id (409 `trace_id_in_use`, suggested), but any caller in the namespace can name any trace id. A chassis-minted per-run credential replaces it in 026 CH-4.
+- Debt from PoC-2: the trace id that keys a call to its run is not a credential. `/v1/run` refuses a second in-flight run on one trace id (409 `trace_id_in_use`, suggested), but any caller in the namespace can name any trace id. A chassis-minted per-run credential replaces it in 026 CH-4. It is built for the `remote` listener (contract v8 D, [ADR-011](../adr/011-per-run-secret-and-v0-wire-bounds.md), PR #85). The loopback proxy still keys calls by trace id alone.
 - Debt from PoC-2: a scoped key per service. The proxy still adds the PoC-1 key. It moves to 026 CH-4.
 
 ## Acceptance criteria
@@ -61,7 +61,7 @@ In the `sidecar` lane the workload holds no key ([ADR-001](../adr/001-chassis-de
 ## Dependencies
 
 - Depends on: [012 H-3](012-H-3-model-port.md), [009 CH-1](009-CH-1-engine-connectors-a2a.md)
-- Blocks: [017 H-4](017-H-4-harness-features.md), [041 A-1](041-A-1-simplifier-core.md), [044 G-4](044-G-4-history-swap.md), [047 M-3](047-M-3-shadow-mode.md), [062 H-11](062-H-11-adapter-package.md)
+- Blocks: [017 H-4](017-H-4-harness-features.md), [041 A-1](041-A-1-simplifier-core.md), [044 G-4](044-G-4-history-swap.md), [047 M-3](047-M-3-shadow-mode.md), [062 H-11](062-H-11-adapter-package.md), [134 CH-14](134-CH-14-cloud-security-defaults.md), [136 CH-16](136-CH-16-model-proxy-failures.md)
 
 ## References
 

@@ -1,9 +1,11 @@
 # The chassis config for `agent-echo`: the sidecar lane, a trusted workload (echo-python) on
 # loopback. Mounted read-only at /etc/chassis/config.yaml (configMapGenerator in
-# kustomization.yaml). `config: memory`: this file is the config, there is no store document, so
-# the chassis needs no MinIO key (suggested, as PoC-4 on kind). LITELLM_BASE_URL, LITELLM_API_KEY,
-# LITELLM_MCP_URL, VALKEY_URL, VALKEY_USERNAME, and VALKEY_PASSWORD come from the chassis
-# container's env (agent-echo.yaml). Loaded by test_poc05_hardening_static.py with the real model.
+# kustomization.yaml). `config: minio`: this file is the bootstrap; the config the chassis runs
+# with is the store document agents/echo.yaml in MinIO (platform/agent-configs/echo.yaml), read at
+# start with the chassis's own MinIO user. A change here needs the same change there.
+# LITELLM_BASE_URL, LITELLM_API_KEY, LITELLM_MCP_URL, VALKEY_URL, VALKEY_USERNAME,
+# VALKEY_PASSWORD, and CONFIG_S3_* come from the chassis container's env (agent-echo.yaml).
+# Loaded by test_poc05_hardening_static.py with the real model, next to the store document.
 profile: local
 agent:
   name: echo
@@ -12,7 +14,7 @@ spec:
   trust: trusted
   adapters:
     model: litellm
-    config: memory
+    config: minio
     state: valkey
     telemetry: memory
     tools: mcp

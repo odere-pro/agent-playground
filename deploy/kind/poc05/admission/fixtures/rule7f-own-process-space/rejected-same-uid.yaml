@@ -1,0 +1,42 @@
+# Rule 7f (core review R5a-05): the workload runs as the chassis's uid 10001.
+# expect: rejected
+# rule: 7f
+# message: trust rule 7f: a sidecar-lane pod may not share its process namespace, and every other container must set a runAsUser that differs from the chassis container's
+# differs: .spec.containers[0].securityContext.runAsUser
+apiVersion: v1
+kind: Pod
+metadata:
+  name: admission-rule7f
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/name: admission-rule7f
+    agents.platform/trust: trusted
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  initContainers:
+  - name: chassis
+    image: kind.local/agent-platform/chassis:poc05
+    imagePullPolicy: Never
+    restartPolicy: Always
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: &id001
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 10001
+      runAsGroup: 10001
+  containers:
+  - name: workload
+    image: kind.local/agent-platform/echo-python:poc05
+    imagePullPolicy: Never
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: *id001
+      readOnlyRootFilesystem: true
+      runAsUser: 10001
+      runAsGroup: 10002

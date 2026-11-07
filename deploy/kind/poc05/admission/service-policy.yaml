@@ -1,0 +1,36 @@
+# The Service rule (platform-security review of the core-review fixes, HIGH). The platform
+# deployer may write Services (rbac.yaml), and a NodePort or LoadBalancer Service on a chassis's
+# 8080 is reached from the node: the packet arrives with the node as its source, past the
+# gateway-only ingress of agents/network-policy.yaml (core review R5a-07). `externalIPs` lets a
+# Service writer take traffic for any address (CVE-2020-8554).
+#   S1. spec.type is ClusterIP (absent counts as ClusterIP; the API server defaults it before
+#       admission), and spec.externalIPs, spec.loadBalancerIP, and spec.externalName are not set.
+#       A headless Service (clusterIP: None) is type ClusterIP and admitted.
+#
+# One message for the four fields: a Service that breaks S1 is refused for one reason, an exposure
+# outside the cluster network. No params: the rule is a literal. Checked offline by
+# pocs/poc-05-sandboxed/tests/test_poc05_service_rule_static.py, on kind by
+# test_poc05_kind_admission.py (fixtures/ruleS1-service-type/). Apply this before
+# service-binding.yaml (`run.sh admission`).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agent-service-rule
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["services"]
+  validations:
+    - expression: >-
+        (!has(object.spec.type) || object.spec.type == 'ClusterIP') &&
+        (!has(object.spec.externalIPs) || size(object.spec.externalIPs) == 0) &&
+        (!has(object.spec.loadBalancerIP) || object.spec.loadBalancerIP == '') &&
+        (!has(object.spec.externalName) || object.spec.externalName == '')
+      message: >-
+        service rule S1: a Service must be type ClusterIP and set no externalIPs, loadBalancerIP,
+        or externalName
+      reason: Forbidden

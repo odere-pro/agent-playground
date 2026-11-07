@@ -1,7 +1,7 @@
 # A SandboxTemplate, rule 7d (the trust rule reads its podTemplate): the template's pod has no runtimeClassName.
 # expect: rejected
 # rule: 7d
-# message: trust rule 7d: a tool pod must set runtimeClassName gvisor and automountServiceAccountToken false
+# message: trust rule 7d: a tool pod must set runtimeClassName gvisor and automountServiceAccountToken false, and mount no projected service account token
 # differs: .spec.podTemplate.spec.runtimeClassName
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate

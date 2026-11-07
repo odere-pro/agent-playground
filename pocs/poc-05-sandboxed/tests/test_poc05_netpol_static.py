@@ -416,3 +416,78 @@ def test_poc05_run_sh_applies_platform_only_through_the_fill() -> None:
     assert "fill_api_server_ip" in text
     assert not re.search(r"apply_folder\s+platform\b", text), "platform applied unfilled"
     assert "if [[ $1 == api-ip-fill ]]; then" in text, "run.sh has no api-ip-fill verb"
+
+
+# ---- who applies the policies (security review of the core-review fixes, MEDIUM) ---------------
+
+DEPLOYER_FOLDERS = ("agents", "remote", "tools")
+
+
+POLICIES_SH = KIND_POC05.parent / "policies.sh"
+
+
+def _run_sh_function(name: str) -> str:
+    """The body of `name()` in run.sh or in policies.sh, which run.sh sources (shared with
+    PoC-6's run.sh)."""
+    for path in (RUN_SH, POLICIES_SH):
+        match = re.search(rf"(?ms)^{name}\(\) \{{\n(.*?)^\}}", path.read_text())
+        if match:
+            return match.group(1)
+    raise AssertionError(f"run.sh and policies.sh have no {name}()")
+
+
+@pytest.mark.parametrize("folder", DEPLOYER_FOLDERS)
+def test_poc05_deployer_kustomization_lists_no_network_policy(folder: str) -> None:
+    """Criterion 5: "an agent pod has no route to the internal services except through the
+    chassis."
+
+    Exit criterion 5 (offline part): the folder the deployer applies holds no NetworkPolicy, so
+    nothing has to be cut out of rendered text. The paired control: the folder's
+    network-policy.yaml holds only NetworkPolicies, each naming the kustomization's namespace,
+    which `run.sh` passes as `-n`."""
+    kust = yaml.safe_load((KIND_POC05 / folder / "kustomization.yaml").read_text())
+    listed = [d for r in kust["resources"] for d in load_manifests(KIND_POC05 / folder / r)]
+    policies = load_manifests(KIND_POC05 / folder / "network-policy.yaml")
+
+    assert "network-policy.yaml" not in kust["resources"]
+    assert listed and not [d for d in listed if d["kind"].endswith("NetworkPolicy")]
+    assert policies and {d["kind"] for d in policies} == {"NetworkPolicy"}
+    assert {d["metadata"]["namespace"] for d in policies} == {kust["namespace"]}
+
+
+def test_poc05_run_sh_applies_policies_by_path_after_a_client_dry_run() -> None:
+    """Criterion 5: the admin applies each policy file by path, after `--dry-run=client -o name`
+    lists only `networkpolicy.networking.k8s.io/*`, with `-n` so kubectl refuses another
+    namespace. The deployer's manifest is refused if it holds a NetworkPolicy. No awk split."""
+    text = RUN_SH.read_text() + POLICIES_SH.read_text()
+    policies = _run_sh_function("apply_policies")
+    deployer = _run_sh_function("apply_deployer")
+    folder = _run_sh_function("apply_folder")
+
+    assert "docs_of" not in text and "apply_split" not in text
+    assert 'kctl apply --dry-run=client -o name -n "$ns" -f "$file"' in policies
+    assert 'grep -qvE "$NETPOL_NAME"' in policies
+    assert 'kctl apply -n "$ns" -f "$file"' in policies
+    assert "NETPOL_NAME='^networkpolicy\\.networking\\.k8s\\.io/[a-z0-9.-]+$'" in text
+    assert "--dry-run=client -o name" in deployer and "^networkpolicy\\." in deployer
+    assert '--as="$DEPLOYER"' in deployer and '--as="$DEPLOYER"' not in policies
+    assert 'apply_policies "$ns" "$HERE/$1/network-policy.yaml"' in folder
+    assert "| apply_deployer" in folder
+    assert 'source "$HERE/../policies.sh"' in RUN_SH.read_text()
+
+
+@pytest.mark.parametrize("function", ["workloads", "apply_agents"])
+def test_poc05_run_sh_applies_the_gateway_policy_with_agents(function: str) -> None:
+    """Criterion 5: `workloads` and `apply_agents` both apply the gateway peer's egress policy, so
+    the gateway reaches the chassis port after either verb (security review LOW)."""
+    body = _run_sh_function(function)
+    assert 'apply_policies agent-platform-system "$HERE/agents/gateway-network-policy.yaml"' in body
+    assert body.index("apply_folder agents") < body.index("gateway-network-policy.yaml")
+
+
+def test_poc05_run_sh_kafka_applies_the_events_policy_as_admin() -> None:
+    """Criterion 5: the events pod's policy goes in by path; its workload file as the deployer."""
+    body = _run_sh_function("kafka")
+    policy = '"$HERE/agents/agent-echo-events-network-policy.yaml"'
+    assert f"apply_policies poc05-agents {policy}" in body
+    assert 'apply_deployer <"$HERE/agents/agent-echo-events.yaml"' in body

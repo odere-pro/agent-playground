@@ -57,6 +57,7 @@ Every new agent should start from the same template, with only the parts its cla
 - [ ] The generated `governance` block holds the fields the chassis schema has (`risk_class`, `ai_generated_marking`), with a placeholder for each; 077 C-1 adds the rest of E.4.
 - [ ] `agentctl` refuses a generated route that the service's key does not list.
 - [ ] A person new to the code goes from `agentctl new` to a demo in under a day, recorded in a dated note.
+- [ ] `agentctl new` renders `evals/cases.yaml` in the `eval_kit` schema with at least one judged case, and `make eval` in the generated repo runs the judge on the per-case fake model (gap review, 2026-11-07).
 
 ## Dependencies
 

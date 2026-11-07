@@ -102,7 +102,7 @@ Waves are GitHub milestones. Each one ends in something that can be shown. The w
 | W2 Chassis MVP | {{R:W2}} | An echo workload runs behind the chassis: in the `sidecar` lane from the shared library chart, locally and in Kubernetes, and over A2A in memory in the chassis's tests. It answers through native, OpenAI, and Anthropic APIs (streaming and complete), is started by events and emits result events, is traced, holds no key, and passes the contract tests over both transports. Feeds phases A, B, E, and F |
 | W3 Simplifier SLM | {{R:W3}} | Break-even is known; the SLM meets its targets on the held-out set, is served on vLLM, and ships only through the eval gate; the first cloud is up. Mostly parked; feeds phase B |
 | W4 Simplifier agent live | {{R:W4}} | **First measured savings** (Phase 3 done-when): the agent is called through any API, recorded by the recorder, falls back when needed, and shows on the dashboards. Mostly parked; feeds phases B and E |
-| W5 Chassis completion | {{R:W5}} | Phase 0 done-when fully met (MCP tools from OpenAPI, AsyncAPI, reliable events); service operations, the `remote` lane and trust rule, ring rollouts, framework event mappings, and one non-Python workload; tool port and agent factory ready for the registry and orchestrator. Feeds phases A, C, D, E, and F |
+| W5 Chassis completion | {{R:W5}} | Phase 0 done-when fully met (MCP tools from OpenAPI, AsyncAPI, reliable events); service operations, the `remote` lane and trust rule, ring rollouts, framework event mappings, and one non-Python workload; tool port and agent factory ready for the registry and orchestrator. Feeds phases A, C, D, E, F, and G |
 | W6 Golden set and evaluator SLM | {{R:W6}} | Phase 4 done-when; the evaluator SLM replaces the big-model judge; the audit log runs. Feeds phase D; the evaluator SLM is parked |
 | W7 Registry and governance gate | {{R:W7}} | Phase 5 done-when; no agent goes live without a governance block. `later`: no phase |
 | W8 Platform MCP server | {{R:W8}} | Phase 6 done-when: an MCP client searches the registry, runs an agent, and exports a golden set version. `later`: no phase |
@@ -196,7 +196,7 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 
 - **Open:** about {{TOTAL_DAYS}} engineer-days ({{TOTAL_WEEKS}} weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
 - **Done** (wave `WD`): {{DONE_DAYS}} days over {{N_DONE}} of the issues. **Parked** (wave `WP`): {{PARKED_DAYS}} days over {{N_PARKED}}. Neither is in the open total.
-- **Phases A to F:** 86.5 days against the product plan's 10–12 weeks (suggested: 50–60 engineer-days), from [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md#totals). Phases A, B, and E are each about twice the plan's size. The rest of the open total is `later`: no phase needs it.
+- **Phases A to F:** 86.5 days against the 8–10 weeks the product plan has left (suggested: 50–60 engineer-days), from [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md#totals). Phases A, B, and E are each about twice the plan's size. The rest of the open total is `later`: no phase needs it.
 - **The epic** says 29–33 weeks for one engineer. Either the epic assumes a lot of reuse, or the phase estimates need a second look with the team. The sizes here are first guesses; re-size in planning.
 
 ## Backlog

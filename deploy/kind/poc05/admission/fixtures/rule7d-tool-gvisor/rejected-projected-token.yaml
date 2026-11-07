@@ -1,0 +1,44 @@
+# Rule 7d, tool pods on gVisor with no token (review F3, F15, core review R5a-06): a tool pod
+# on gVisor with automount off that still carries a projected service account token volume.
+# expect: rejected
+# rule: 7d
+# message: trust rule 7d: a tool pod must set runtimeClassName gvisor and automountServiceAccountToken false, and mount no projected service account token
+# differs: .spec.volumes
+apiVersion: v1
+kind: Pod
+metadata:
+  name: admission-rule7d
+  namespace: poc05-tools
+  labels:
+    app.kubernetes.io/name: admission-rule7d
+    agents.platform/trust: trusted
+spec:
+  runtimeClassName: gvisor
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: code-runner
+    image: kind.local/agent-platform/code-runner:poc05
+    imagePullPolicy: Never
+    resources:
+      limits:
+        memory: 256Mi
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 10003
+      runAsGroup: 10003
+  volumes:
+  - name: sa-token
+    projected:
+      sources:
+      - serviceAccountToken:
+          audience: poc05-fixture
+          expirationSeconds: 3600
+          path: token

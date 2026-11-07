@@ -13,10 +13,11 @@
 #   deploy/kind/poc06/run.sh seed     seed.sh keys (needs LiteLLM Ready)
 #   deploy/kind/poc06/run.sh seccomp  derive the gVisor seccomp profile from PoC-5's running remote-echo
 #                                     pod and write it to every kind node (`up` and `apply` run it first)
-#   deploy/kind/poc06/run.sh apply    admission params, fake model script, seed, remote/, agents/,
-#                                     kagent/ (no build, no PoC-5 bring-up)
+#   deploy/kind/poc06/run.sh apply    admission params and the front door's RBAC, fake model script,
+#                                     seed, remote/, the front door, agents/, kagent/ (no build,
+#                                     no PoC-5 bring-up)
 #   deploy/kind/poc06/run.sh test     the kind tests: KIND_DRILLS=1 pytest -m network (PoC-6b tests)
-#   deploy/kind/poc06/run.sh pods     every pod and Sandbox in the PoC-5 namespaces
+#   deploy/kind/poc06/run.sh pods     every pod, Sandbox, warm pool, and claim in the PoC-5 namespaces
 #   deploy/kind/poc06/run.sh logs     every pod's last log lines, through PoC-5's redact_logs
 #   deploy/kind/poc06/run.sh redact   PoC-5's redact_logs as a filter: stdin to stdout
 #   deploy/kind/poc06/run.sh delete   delete the cluster (`down` is the same)
@@ -47,8 +48,19 @@
 # (debian:bookworm-slim, and the uv image as ghcr.io/astral-sh/uv:${UV_VERSION}). `build_kagent`
 # pins both by multi-arch index digest without editing it: the build arg UV_VERSION=<tag>@<digest>,
 # and a BuildKit named context that replaces debian:bookworm-slim (KAGENT_UV_VERSION, KAGENT_DEBIAN
-# below). To add another plain-A2A remote, copy kagent/ (a Sandbox, a
-# chassis with `spec.engine.protocol: a2a`, a ConfigMap) and add it below.
+# below). To add another plain-A2A remote, copy kagent/ (a SandboxTemplate and warm pool, a
+# chassis with `spec.engine.protocol: a2a`, a ConfigMap), add its card to
+# platform/remote-run-dispatch.yaml and its pool to claim rule C3, and add it below.
+#
+# One fresh pod per run (core review R6-11): each remote is a SandboxTemplate and SandboxWarmPool,
+# not a long-lived Sandbox. The front door platform/remote-run-dispatch.yaml (the code-runner image,
+# `code-runner a2a-dispatch`, built and loaded by PoC-5's `up`) claims a pod per A2A run and deletes
+# the claim after. Its Role and quota (admission/remote-run-rbac.yaml) and the whole platform file
+# go in as the cluster admin; its NetworkPolicy (platform/remote-run-dispatch-network-policy.yaml)
+# goes in by path after PoC-5's `api-ip-fill` fills its API server ipBlock from the sentinel, the
+# same check as the code-runner dispatcher's. Each engine has its own port on the door, and each
+# chassis may reach only its own (9001 claude-agent, 9002 smolagents, 9003 typescript, 9004
+# kagent-adk).
 set -euo pipefail
 
 CLUSTER=poc05
@@ -69,6 +81,8 @@ KAGENT_REPO=https://github.com/kagent-dev/kagent
 # commit in source.commit means checking its Dockerfile's FROM lines and these again.
 KAGENT_UV_VERSION=0.12.3@sha256:2d890623d310b57771ce840f0da5eed5fc6d657da05ffaa45d82797b53fa3abc
 KAGENT_DEBIAN=debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
+FRONT_DOOR=$HERE/platform/remote-run-dispatch.yaml
+FRONT_DOOR_POLICY=$HERE/platform/remote-run-dispatch-network-policy.yaml
 SECCOMP_DERIVE=$HERE/seccomp/derive_profile.py
 SECCOMP_DIR=/var/lib/kubelet/seccomp/profiles
 SECCOMP_FILE=poc06-runsc-clone3.json
@@ -87,8 +101,8 @@ IMAGES=(
   "$REGISTRY/echo-claude-agent:$TAG|packages/workloads/echo-claude-agent/Dockerfile|."
 )
 
-# What `apply` waits for.
-SANDBOXES=(remote-smolagents remote-claude-agent remote-typescript)
+# What `apply` waits for: the remote warm pools, then the deployments.
+POOLS=(remote-smolagents remote-claude-agent remote-typescript)
 DEPLOYMENTS=(
   agent-openai-agents
   agent-typescript
@@ -101,11 +115,15 @@ KIND_TESTS=(
   pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_engines.py
   pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_load.py
   pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_remote_controls.py
+  pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_run_isolation.py
   pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_sidecar_controls.py
 )
 
 # shellcheck source=deploy/kind/lib.sh
 source "$HERE/../lib.sh"
+# apply_policies NS FILE and apply_deployer, shared with PoC-5 (core review R5a-02).
+# shellcheck source=deploy/kind/policies.sh
+source "$HERE/../policies.sh"
 
 # kagent_commit: the pinned commit, the first 40-hex line of kagent/source.commit.
 kagent_commit() {
@@ -188,15 +206,48 @@ wait_rollout() {
     { explain "$ns" "app.kubernetes.io/name=$name"; die "deployment $ns/$name not ready"; }
 }
 
-wait_sandbox() {
-  local ns=$1 name=$2
-  kctl -n "$ns" wait --for=condition=Ready "sandbox/$name" --timeout=240s ||
-    { explain "$ns" "app.kubernetes.io/name=$name"; die "sandbox $ns/$name not ready"; }
+# wait_pool NS NAME: the SandboxWarmPool's readyReplicas reaches its spec.replicas (as PoC-5's).
+wait_pool() {
+  local ns=$1 name=$2 want
+  want=$(kctl -n "$ns" get sandboxwarmpool "$name" -o jsonpath='{.spec.replicas}')
+  [[ $want =~ ^[1-9][0-9]*$ ]] || die "warm pool $ns/$name: spec.replicas is '$want'"
+  kctl -n "$ns" wait --for=jsonpath='{.status.readyReplicas}'="$want" \
+    "sandboxwarmpool/$name" --timeout=240s ||
+    { explain "$ns" "app.kubernetes.io/name=$name"; die "warm pool $ns/$name not ready"; }
 }
 
 # Rule 4's list, extended by one repository (admission/params.yaml). Cluster admin, like PoC-5.
 apply_params() {
   kctl apply -f "$HERE/admission/params.yaml"
+  kctl apply -f "$HERE/admission/remote-run-rbac.yaml"
+}
+
+# api_server_ip: the one address of the `kubernetes` EndpointSlice, port 6443 (as PoC-5's).
+api_server_ip() {
+  local slices ip port
+  slices=$(kctl -n default get endpointslices -l kubernetes.io/service-name=kubernetes -o json)
+  ip=$(jq -r '[.items[].endpoints[]?.addresses[]] | if length == 1 then .[0] else "" end' \
+    <<<"$slices")
+  port=$(jq -r '[.items[].ports[]?.port] | unique | map(tostring) | join(",")' <<<"$slices")
+  [[ -n $ip ]] || die "api server: want exactly one address in the kubernetes EndpointSlice"
+  [[ $port == 6443 ]] || die "api server: the kubernetes EndpointSlice port is '$port', want 6443"
+  printf '%s\n' "$ip"
+}
+
+# The front door, as the cluster admin (poc05-platform is not the deployer's). Its policy file
+# goes in by path through apply_policies, after PoC-5's api-ip-fill fills and checks the sentinel
+# (it refuses a bad address) into a private temp file; the rest of the file holds no policy.
+apply_front_door() {
+  local ip dir
+  ip=$(api_server_ip)
+  dir=$(mktemp -d)
+  # shellcheck disable=SC2064 # expand now: the trap runs after the locals are gone
+  trap "rm -rf '$dir'" RETURN
+  "$P5" api-ip-fill "$ip" <"$FRONT_DOOR_POLICY" >"$dir/policy.yaml" ||
+    die "front door: api-ip-fill refused"
+  apply_policies "$PLATFORM_NS" "$dir/policy.yaml"
+  kctl apply -n "$PLATFORM_NS" -f "$FRONT_DOOR"
+  wait_rollout "$PLATFORM_NS" remote-run-dispatch
 }
 
 # The fake model's script: a ConfigMap, then the patch that mounts it and points the server at it.
@@ -214,28 +265,42 @@ apply_fake_model() {
   wait_rollout "$PLATFORM_NS" fake-model-server
 }
 
-# apply_folder FOLDER: remote/ and agents/ go in as the platform deployer only (PoC-5 review F2).
-apply_folder() { kctl apply -k "$HERE/$1" --as="$DEPLOYER"; }
+# apply_folder FOLDER NS=FILE...: each FILE (a NetworkPolicy file in FOLDER) by path as the
+# cluster admin in NS, after apply_policies' `--dry-run=client -o name -n NS` check; then the
+# rendered folder as the platform deployer, which refuses any NetworkPolicy. No kustomization
+# here lists a policy file (core review R5a-02).
+apply_folder() {
+  local folder=$1 pair
+  shift
+  for pair in "$@"; do
+    apply_policies "${pair%%=*}" "$HERE/$folder/${pair#*=}"
+  done
+  kctl kustomize "$HERE/$folder" | apply_deployer
+}
 
 apply_remote() {
   local name
-  apply_folder remote
-  for name in "${SANDBOXES[@]}"; do
-    wait_sandbox "$REMOTE_NS" "$name"
+  apply_folder remote "$REMOTE_NS=network-policy.yaml"
+  for name in "${POOLS[@]}"; do
+    wait_pool "$REMOTE_NS" "$name"
   done
 }
 
 apply_agents() {
   local name
-  apply_folder agents
+  apply_folder agents "$AGENTS_NS=network-policy.yaml"
+  # The gateway peer's egress to every chassis's 8080 (PoC-5's file; PoC-6 chassis carry
+  # agents.platform/role: chassis too). By path, as the cluster admin.
+  apply_policies agent-platform-system "$HERE/../poc05/agents/gateway-network-policy.yaml"
   for name in "${DEPLOYMENTS[@]}"; do
     wait_rollout "$AGENTS_NS" "$name"
   done
 }
 
 apply_kagent() {
-  apply_folder kagent
-  wait_sandbox "$REMOTE_NS" remote-kagent-adk
+  apply_folder kagent "$REMOTE_NS=network-policy-remote.yaml" \
+    "$AGENTS_NS=network-policy-chassis.yaml"
+  wait_pool "$REMOTE_NS" remote-kagent-adk
   wait_rollout "$AGENTS_NS" chassis-kagent-adk-remote
 }
 
@@ -303,6 +368,7 @@ apply_all() {
   apply_fake_model
   "$SEED" keys
   apply_remote
+  apply_front_door
   apply_agents
   apply_kagent
 }
@@ -312,7 +378,7 @@ pods() {
   for ns in "$PLATFORM_NS" "$AGENTS_NS" "$REMOTE_NS"; do
     kctl get pods -n "$ns" -o wide
   done
-  kctl get sandbox -A
+  kctl get sandbox,sandboxwarmpool,sandboxclaim -A
 }
 
 up() {
@@ -337,7 +403,7 @@ run_tests() {
   (cd "$ROOT" && env KIND_DRILLS=1 uv run pytest -m network "${KIND_TESTS[@]}" -q -rsx)
 }
 
-usage() { sed -n '2,26p' "$0"; }
+usage() { sed -n '2,28p' "$0"; }
 
 (($# > 0)) || { usage; exit 0; }
 for cmd in "$@"; do

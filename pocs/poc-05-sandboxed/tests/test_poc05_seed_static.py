@@ -12,6 +12,7 @@ or puts one in argv. Also the offline part of criterion 1 (the seed's static che
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import subprocess
 from collections.abc import Iterator
@@ -47,7 +48,15 @@ SERVICES = (
 )
 DISPATCHER = "code-runner-dispatch"
 CODE_RUNNER_URL = "http://code-runner-dispatch.poc05-platform.svc.cluster.local:8000/mcp"
+# R5a-23: the bearer LiteLLM sends to the dispatcher. One Secret, made by seed.sh, mounted as a
+# file into the dispatcher and read from env by LiteLLM.
+DISPATCH_TOKEN = "code-runner-dispatch-token"
+DISPATCH_TOKEN_ENV = "CODE_RUNNER_DISPATCH_TOKEN"
+CODE_RUNNER_AUTH = {"auth_type": "bearer_token", "auth_value": f"os.environ/{DISPATCH_TOKEN_ENV}"}
 CHASSIS = {"agents.platform/role": "chassis"}
+AGENT_ECHO = KIND / "agents/agent-echo.yaml"
+MINIO_USER = "chassis-echo"  # a name, not a secret, like Valkey's user `chassis`
+ECHO_DOCUMENT = "arn:aws:s3:::agent-configs/agents/echo.yaml"
 SECRET_SOURCES = re.compile(r"\b(new_secret|new_id|read_secret|openssl|curl)\b")
 
 
@@ -179,8 +188,9 @@ def test_kind_litellm_keeps_keys_in_postgres_and_reaches_only_platform_tools() -
     assert config["general_settings"]["database_url"] == "os.environ/DATABASE_URL"
     servers = config["mcp_servers"]
     assert set(servers) == {"fake_tools", "code_runner"}, sorted(servers)
-    for entry in servers.values():
-        assert set(entry) <= {"url", "transport", "description"}, sorted(entry)
+    for name, entry in servers.items():
+        extra = set(CODE_RUNNER_AUTH) if name == "code_runner" else set()
+        assert set(entry) <= {"url", "transport", "description", *extra}, sorted(entry)
     assert config["litellm_settings"]["turn_off_message_logging"] is True
 
 
@@ -197,6 +207,43 @@ def test_kind_litellm_reaches_the_code_runner_only_through_the_dispatcher() -> N
     ]
     assert svc["spec"]["selector"] == {"app.kubernetes.io/name": DISPATCHER}
     assert [(p["port"], p["targetPort"]) for p in svc["spec"]["ports"]] == [(8000, 8000)]
+
+
+def test_kind_litellm_sends_the_dispatcher_its_bearer_from_the_environment() -> None:
+    """R5a-23: LiteLLM sends `Authorization: Bearer <token>` to the dispatcher only. The token is
+    an env reference, never a literal; `fake_tools` gets no credential."""
+    servers = yaml.safe_load(KIND_LITELLM.read_text())["mcp_servers"]
+    code_runner = servers["code_runner"]
+    assert {k: code_runner.get(k) for k in CODE_RUNNER_AUTH} == CODE_RUNNER_AUTH
+    assert not set(CODE_RUNNER_AUTH) & set(servers["fake_tools"])
+
+
+def test_litellm_reads_the_dispatcher_token_from_its_secret() -> None:
+    """R5a-23: the env variable the config names comes from the Secret seed.sh makes."""
+    (c,) = _pod_spec(_workloads()["litellm"])["containers"]
+    env = {e["name"]: e for e in c.get("env", [])}
+    assert env[DISPATCH_TOKEN_ENV] == {
+        "name": DISPATCH_TOKEN_ENV,
+        "valueFrom": {"secretKeyRef": {"name": DISPATCH_TOKEN, "key": "token"}},
+    }
+
+
+def test_seed_makes_the_dispatcher_token_through_a_pipe_in_the_first_pass() -> None:
+    """R5a-23: a random value, piped into one Secret in poc05-platform before the platform
+    starts; `rotate` knows the name."""
+    base = _seed_function("seed_base")
+    assert re.search(
+        rf"printf '%s' \"\$value\" \| put_secret \"\$PLATFORM\" {DISPATCH_TOKEN} token", base
+    ), base
+    assert f'secret_exists "$PLATFORM" {DISPATCH_TOKEN}' in base
+    rotate = _seed_function("rotate")
+    assert re.search(rf"(?m)^\s*[\w| -]*\b{DISPATCH_TOKEN}\b[\w| -]*\)", rotate), rotate
+
+
+def _seed_function(name: str) -> str:
+    match = re.search(rf"(?ms)^{name}\(\) \{{\n(.*?)^\}}", SEED.read_text())
+    assert match, f"seed.sh has no {name}()"
+    return match.group(1)
 
 
 # --- Platform workloads: credentials and hardening -------------------------------------------
@@ -272,14 +319,14 @@ def test_valkey_reads_its_password_from_a_mounted_file_never_argv() -> None:
 def test_only_the_platform_services_get_the_platform_secrets() -> None:
     """Section 2.12: each service gets its own credentials only."""
     allowed = {
-        "litellm": {"litellm-master", "litellm-db"},
+        "litellm": {"litellm-master", "litellm-db", DISPATCH_TOKEN},
         "postgres": {"litellm-db"},
         "valkey": {"valkey-auth"},
         "minio": {"minio-root"},
-        "minio-init": {"minio-root", "minio-chassis"},
+        "minio-init": {"minio-root", "chassis-echo-minio"},
         "fake-model-server": set(),
         "fake-mcp-server": set(),
-        DISPATCHER: set(),
+        DISPATCHER: {DISPATCH_TOKEN},
         "kafka": {"kafka-sasl"},
     }
     for name, doc in _workloads().items():
@@ -298,9 +345,10 @@ def _secret_refs(doc: dict[str, Any]) -> str:
 
 def test_platform_policies_select_chassis_pods_by_role() -> None:
     """Section 2.10: LiteLLM and Valkey admit `agents.platform/role: chassis` pods from
-    `poc05-agents`; MinIO admits no chassis while no chassis reads S3 (security review F10);
-    Postgres and the fake servers admit LiteLLM only; no rule uses an `ipBlock` but the
-    dispatcher's one block to the API server (test_poc05_netpol_static.py pins it down).
+    `poc05-agents`; MinIO admits `agent-echo` by name only, the one chassis that reads its config
+    from the store, and no rule by role (security review F10, 2026-11-07); Postgres and the fake
+    servers admit LiteLLM only; no rule uses an `ipBlock` but the dispatcher's one block to the
+    API server (test_poc05_netpol_static.py pins it down).
     """
     policies = _platform("NetworkPolicy")
     for path, doc in _manifests(PLATFORM):
@@ -310,12 +358,35 @@ def test_platform_policies_select_chassis_pods_by_role() -> None:
     for name in ("litellm", "valkey"):
         (rule,) = [r for r in policies[name]["spec"]["ingress"] if _from_chassis(r)]
         assert rule["ports"], name
-    assert not [r for r in policies["minio"]["spec"]["ingress"] if _from_chassis(r)]
+    minio_in = policies["minio"]["spec"]["ingress"]
+    assert not [r for r in minio_in if _from_chassis(r)], "MinIO admits no chassis by role"
+    agents = [r for r in minio_in if _from_agents(r)]
+    assert agents == [
+        {
+            "from": [
+                {
+                    "namespaceSelector": {
+                        "matchLabels": {"kubernetes.io/metadata.name": "poc05-agents"}
+                    },
+                    "podSelector": {"matchLabels": {"app.kubernetes.io/name": "agent-echo"}},
+                }
+            ],
+            "ports": [{"port": 9000, "protocol": "TCP"}],
+        }
+    ], agents
     for name in ("postgres", "fake-model-server", "fake-mcp-server"):
         (rule,) = policies[name]["spec"]["ingress"]
         (peer,) = rule["from"]
         assert peer == {"podSelector": {"matchLabels": {"app.kubernetes.io/name": "litellm"}}}
         assert "egress" not in policies[name]["spec"], f"{name}: no egress at all"
+
+
+def _from_agents(rule: dict[str, Any]) -> bool:
+    return any(
+        peer.get("namespaceSelector", {}).get("matchLabels")
+        == {"kubernetes.io/metadata.name": "poc05-agents"}
+        for peer in rule.get("from", [])
+    )
 
 
 def _from_chassis(rule: dict[str, Any]) -> bool:
@@ -405,7 +476,14 @@ def test_seed_is_idempotent_and_rotates_on_request() -> None:
     text = SEED.read_text()
     assert re.search(r"(?m)^\s*rotate\)", text)
     assert re.search(r"(?m)^secret_exists\(\)", text)
-    for name in ("litellm-master", "litellm-db", "valkey-auth", "minio-root", "minio-chassis"):
+    for name in (
+        "litellm-master",
+        "litellm-db",
+        "valkey-auth",
+        "minio-root",
+        "chassis-echo-minio",
+        DISPATCH_TOKEN,
+    ):
         assert name in text, name
     for svc in ("echo", "echo-remote"):
         assert f'"{svc}|' in text, svc
@@ -428,11 +506,92 @@ def test_seed_mints_no_probe_credentials() -> None:
 
 
 def test_seed_review_fixes_hold() -> None:
-    """Security review F9 and F10: the Valkey ACL drops dangerous commands, and the MinIO chassis
-    pair stays in the platform namespace while no chassis reads S3."""
+    """Security review F9 and F10: the Valkey ACL drops dangerous commands. F10 as amended on
+    2026-11-07: the bucket-wide `minio-chassis` pair had no consumer, so the seed no longer makes
+    it and drops a copy left by an older run; the one MinIO secret a chassis gets is its own."""
     text = SEED.read_text()
+    code = "\n".join(_seed_lines())
     assert "-@admin -@dangerous" in text
-    assert not re.search(r'put_env_secret "\$AGENTS" minio-chassis', text)
+    assert not re.search(r"put_(env_)?secret \S+ minio-chassis", code), "minio-chassis is made"
+    assert re.search(r'drop_secret "\$PLATFORM" minio-chassis', code), "a stale copy is kept"
+    assert not re.search(r"(?m)^\s*minio-chassis\)", code), "rotate still names minio-chassis"
+
+
+def test_seed_makes_the_echo_minio_secret_in_both_namespaces_from_one_value() -> None:
+    """Criterion 3 (offline part): the agent-echo chassis's MinIO secret key is made once, piped
+    into `chassis-echo-minio` in poc05-agents (the chassis) and poc05-platform (minio-init), then
+    unset. The access key is a name, `chassis-echo`, never in a Secret (security review,
+    2026-11-07)."""
+    lines = _seed_lines()
+    assert "STORE_READER_SECRET=chassis-echo-minio" in lines
+    puts = [
+        i for i, line in enumerate(lines) if '"$STORE_READER_SECRET" CONFIG_S3_SECRET_KEY' in line
+    ]
+    assert [lines[i].split("put_secret ")[1].split()[0] for i in puts] == [
+        '"$AGENTS"',
+        '"$PLATFORM"',
+    ], [lines[i] for i in puts]
+    for i in puts:
+        assert lines[i].strip().startswith("printf '%s' \"$value\" | put_secret "), lines[i]
+    made = max(i for i in range(puts[0]) if re.search(r"\bvalue=\$\(new_secret 24\)", lines[i]))
+    assert not [line for line in lines[made + 1 : puts[-1]] if re.search(r"\bvalue=", line)]
+    assert re.search(r"^\s*unset value\b", lines[puts[-1] + 1]), lines[puts[-1] + 1]
+    assert "CONFIG_S3_ACCESS_KEY" not in "\n".join(lines), "the access key name is in a Secret"
+    assert re.search(r"(?m)^\s*chassis-echo-minio\)", "\n".join(lines)), "rotate cannot name it"
+
+
+def _env(container: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {e["name"]: e for e in container.get("env", [])}
+
+
+def _echo_chassis() -> dict[str, Any]:
+    (deploy,) = [d for d in load_manifests(AGENT_ECHO) if d.get("kind") == "Deployment"]
+    (chassis,) = [c for c in _pod_spec(deploy)["initContainers"] if c["name"] == "chassis"]
+    return dict(chassis)
+
+
+def test_the_echo_minio_user_reads_its_own_document_only() -> None:
+    """Criterion 3 (offline part): minio-init gives the user `chassis-echo` one policy,
+    `chassis-echo-read`: `s3:GetObject` on `agents/echo.yaml` and nothing else (no list, no put,
+    no wildcard, no version reads). The bucket-wide `chassis-read` is gone. The attach is checked,
+    not hidden behind `|| true`. The user name is the same literal in minio-init and in the
+    agent-echo chassis's env, and neither reads it from a Secret (security review, 2026-11-07)."""
+    job = _pod_spec(_workloads()["minio-init"])
+    (mc,) = job["containers"]
+    script = str(mc["command"][-1])
+    found = re.search(r"<<'POLICY'\n(.*?)\n\s*POLICY\n", script, re.S)
+    assert found, "no policy heredoc in minio-init"
+    assert "*" not in found.group(1), found.group(1)
+    assert json.loads(found.group(1))["Statement"] == [
+        {"Effect": "Allow", "Action": ["s3:GetObject"], "Resource": [ECHO_DOCUMENT]}
+    ]
+    assert "chassis-read " not in script and "chassis-read." not in script
+    assert re.search(r"mc admin policy create local chassis-echo-read /tmp/\S+\.json", script)
+    assert 'mc admin user add local "$ECHO_S3_USER" "$ECHO_S3_SECRET_KEY"' in script
+    attach = [line for line in script.splitlines() if "mc admin policy attach" in line]
+    assert len(attach) == 1 and "|| true" not in attach[0], attach
+    assert '--user "$ECHO_S3_USER"' in attach[0], attach
+
+    job_env, chassis_env = _env(mc), _env(_echo_chassis())
+    assert job_env["ECHO_S3_USER"] == {"name": "ECHO_S3_USER", "value": MINIO_USER}
+    assert chassis_env["CONFIG_S3_ACCESS_KEY"] == {
+        "name": "CONFIG_S3_ACCESS_KEY",
+        "value": MINIO_USER,
+    }
+    for env, name in ((job_env, "ECHO_S3_SECRET_KEY"), (chassis_env, "CONFIG_S3_SECRET_KEY")):
+        ref = env[name]["valueFrom"]["secretKeyRef"]
+        assert ref == {"name": "chassis-echo-minio", "key": "CONFIG_S3_SECRET_KEY"}, ref
+
+
+def test_minio_init_seeds_the_echo_document_from_a_required_config_map() -> None:
+    """Criterion 3 (offline part): the store document comes from the platform's
+    `agent-configs-seed` ConfigMap, which is no longer optional, so a missing document fails the
+    Job instead of a chassis start."""
+    (volume,) = [v for v in _pod_spec(_workloads()["minio-init"])["volumes"] if v["name"] == "seed"]
+    assert volume["configMap"] == {"name": "agent-configs-seed"}, volume
+    kustomization = yaml.safe_load((PLATFORM / "kustomization.yaml").read_text())
+    generators = {g["name"]: g for g in kustomization["configMapGenerator"]}
+    assert generators["agent-configs-seed"]["files"] == ["echo.yaml=agent-configs/echo.yaml"]
 
 
 # Stubs for the rotate run below: no cluster, no LiteLLM, no network. Made-up values only.
