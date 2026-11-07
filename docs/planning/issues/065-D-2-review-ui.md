@@ -23,6 +23,7 @@ Uncertain records need a person to decide, and those decisions become the human 
 - An append-only review history (who, when, what changed) that the UI and API cannot edit or delete.
 - Records are shown as stored, already redacted.
 - Suggested: when two reviewers act on the same record, the first decision wins and the second sees a conflict.
+- Offline test seam: an annotation-queue route in `fake-langfuse` (`packages/fake-langfuse`). It has no queue route today; this issue adds it.
 
 ## Reuse
 
@@ -46,6 +47,7 @@ Uncertain records need a person to decide, and those decisions become the human 
 - [ ] Review history entries cannot be changed or deleted through the UI or the API.
 - [ ] An edited record keeps both the original and the edited output.
 - [ ] Two reviewers deciding the same record at once produce one decision.
+- [ ] Each label a reviewer sets records the reviewer, the date, and the reason.
 
 ## Dependencies
 

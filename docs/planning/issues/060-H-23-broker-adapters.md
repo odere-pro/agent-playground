@@ -18,11 +18,12 @@ The broker sits behind a port, so the platform can run with any broker and on an
 - Broker client adapters ([ADR-004](../adr/004-events-through-a-broker-client.md), see Reuse) behind the event port and the event consumer adapter, for the brokers not chosen in DEC-1, from this list: NATS JetStream, Kafka (Strimzi, Redpanda, or managed), AWS (SNS/SQS, EventBridge), and GCP Pub/Sub.
 - The same CloudEvents mapping and extensions on every broker.
 - The broker is picked by config only (suggested key: `events.broker`), with no change to agent code.
-- The `run_id` partition key maps to each broker's ordering feature, for example the Kafka message key or the Pub/Sub ordering key.
-- Retries and dead-letter topics (053 H-22) keep the same behavior, using the broker's own dead-letter feature where it has one.
+- The partition key (`partitionkey`, contract v3) maps to each broker's ordering feature, for example the Kafka message key or the Pub/Sub ordering key.
+- Retries and dead-letter topics (053 H-22) keep the same behavior. The adapter publishes the dead letter itself, not through a broker's own dead-letter feature (ADR-004, item 8).
 - One shared contract test suite runs against every adapter.
 - Suggested: local emulators in CI (Redpanda for Kafka, LocalStack for AWS, the Pub/Sub emulator for GCP).
-- Status after PoC-5: a broker added here must pass the whole `EventPortContract` against a real broker, with no xfail ([ADR-004](../adr/004-events-through-a-broker-client.md), item 8). `chassis.core` and `chassis.ports.events` import no broker client (`pocs/poc-05-sandboxed/tests/test_poc05_events_agnostic.py`).
+- The bar for each adapter: it passes the whole `EventPortContract` against a real broker, with no xfail ([ADR-004](../adr/004-events-through-a-broker-client.md), item 8). Today only `kafka` does. `chassis.core` and `chassis.ports.events` import no broker client (`pocs/poc-05-sandboxed/tests/test_poc05_events_agnostic.py`).
+- The first broker is picked in the DEC-1 pack. Until then `events: none` stays the default in every profile (ADR-004, item 5).
 
 ## Reuse
 
@@ -36,10 +37,11 @@ The broker sits behind a port, so the platform can run with any broker and on an
 - Running the chosen broker in Docker Compose and Kubernetes (020 X-8).
 - Managed broker setup in Terraform (038 X-1a, 116 X-1b).
 - New event types.
+- Dapr: parked on 2026-11-06 (product plan).
 
 ## Acceptance criteria
 
-- [ ] Each new broker adapter passes the same contract suite as the first one: publish, consume, duplicate drop, retry, dead-letter, and `run_id` ordering.
+- [ ] Each new broker adapter passes the same contract suite as the first one: publish, consume, duplicate drop, retry, dead-letter, and partition-key ordering.
 - [ ] The echo agent switches broker by config only and passes its event tests on each broker.
 - [ ] CloudEvents attributes and extensions survive a round trip on every broker.
 - [ ] The contract suite runs in CI for every adapter.

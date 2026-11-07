@@ -22,6 +22,8 @@ An evaluator is only safe to use if it agrees with people. This test compares th
 - Results per slice (source model, text length, and tag), so weak spots show.
 - The test runs in CI as a gate: a new evaluator version is promoted only if it passes.
 - The report is logged in MLflow against the evaluator model version.
+- Parked with the SLM track (2026-11-06). The design (kappa, fail-class recall, a bar fixed before the first run, per-slice results) stays for a future encoder. The judge's agreement is measured in 028 S-3 box 5.
+- Status after PoC-7 ([backlog changes](../../../pocs/poc-07-cross-cutting-decisions/notes/backlog-changes.md)): the encoder adapter and the gate cost formula (ADR-010 item 9) are where this issue's numbers plug in. It waits on encoder agreement from the Mac run.
 
 ## Out of scope
 

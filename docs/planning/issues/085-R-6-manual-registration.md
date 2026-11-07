@@ -15,7 +15,7 @@ Not everything can register itself. External tools, SaaS APIs, and older service
 
 ## What
 
-- The register call for hand-made entries (the API behind `registry_register` in F.4). Entries get `trust: manual` and `status: pending`.
+- The register call for hand-made entries (the API behind `registry_register` in F.4). Entries get `trust_level: manual` and `status: pending`.
 - YAML import of one or many entries in one file, checked against the entry JSON Schema, with the file position of each error.
 - Suggested: YAML import is all or nothing, with a dry-run mode that shows what would change.
 - A simple UI: a form to register an entry, and a queue page to approve or reject pending entries through the 080 R-7 API. Suggested: the same stack and login as the review UI (065 D-2).

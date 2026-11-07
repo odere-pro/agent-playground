@@ -15,7 +15,9 @@ Phase 10 is "plan now, build when scaling". Today each orchestrator run loads lo
 
 ## What
 
-- A design note for the four memory layers: execution state in Temporal, session context (recent turns, in simplified form) in Valkey, long-term memory in Postgres with pgvector, and golden sets in object storage.
+- The note starts from the phase C checkpointer ADR (CH-9). Layer 1 is that ADR's choice until the orchestrator exists.
+- A design note for the four memory layers: execution state (Temporal once the orchestrator exists), session context (recent turns, in simplified form) in Valkey, long-term memory in Postgres with pgvector, and golden sets in object storage.
+- `context_ref` already exists in the envelope (`packages/chassis/src/chassis/core/envelope.py`), accepted and passed through, unused. So the `context_ref` box is met by the design note only.
 - The `context_ref` format, and how an agent fetches only what it needs through it (suggested: a URI per layer and key). The chassis resolves `context_ref` and passes the content in `ctx`. The workload never reads the stores.
 - The rules kept: agents stay stateless, and the orchestrator owns writes to memory.
 - Access control per layer, PII and retention rules (in line with 071 D-8), and cache expiry.

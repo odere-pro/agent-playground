@@ -15,8 +15,10 @@ Poisoned tool descriptions are a top risk in the epic [R5]. Trust levels decide 
 
 ## What
 
-- A `trust` level on every entry, in a fixed order. Suggested values: `internal-signed`, `internal`, `external`, `manual`.
-- `internal-signed` means the entry's image signature checks out with cosign against the organization's key (image signing from 025 H-10).
+- A `trust_level` on every entry, in a fixed order. Suggested values: `internal-signed`, `internal`, `external`, `manual`.
+- `internal-signed` means the entry's image is signed by the platform's CI workflow identity, checked with cosign (certificate identity and issuer from a registry setting; image signing from 025 H-10).
+- Today nothing verifies a signature at admission or deploy. Only the template CI runs `cosign verify` on its own image (`pocs/poc-09-agent-mvp-template/notes/2026-10-29-template-ops.md`).
+- Decided in ADR-005 items 4 and 5: admission already refuses an image outside the registry prefix and a `trusted` image outside the platform list. This check reads the same list, or the signature once it lands. Landing it reopens ADR-005 decisions 4 and 5.
 - Only `internal-signed` entries that also pass the governance gate (077 C-1) go live on their own. All others stay `pending`.
 - A written mapping from these levels to [ADR-001](../adr/001-chassis-delivery-model.md)'s `spec.trust`, because the two use the word "trust" differently. `external` and `manual` entries are third-party, so they are `untrusted` and run in the `remote` lane. `internal-signed` is evidence for the ADR's source test only, not for its behavior test. suggested: an unsigned `internal` entry counts as failing the source test.
 - A pod runs two images. The workload image's signature sets the trust level. The chassis image is tracked on its own (`chassis_version`, 076 R-1) and does not change the entry's trust.
@@ -34,8 +36,8 @@ Poisoned tool descriptions are a top risk in the epic [R5]. Trust levels decide 
 
 ## Acceptance criteria
 
-- [ ] An agent entry with a valid cosign signature from the organization's key, and a passing governance check, becomes `internal-signed` and `active` with no human step.
-- [ ] An unsigned image, or one signed with another key, is not `internal-signed` and stays `pending`.
+- [ ] An agent entry signed by the platform's CI workflow identity (certificate identity and issuer from a registry setting), with a passing governance check, becomes `internal-signed` and `active` with no human step.
+- [ ] An unsigned image, or one signed by another identity, is not `internal-signed` and stays `pending`.
 - [ ] External and manual entries stay `pending` until approved, and do not appear in list results.
 - [ ] Approve and reject record approver, time, and reason, and publish `registry.entry.changed.v1`.
 - [ ] A caller without the approve scope, or the entry's own registrant, gets a 403.

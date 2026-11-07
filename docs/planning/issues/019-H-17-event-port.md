@@ -19,13 +19,12 @@ Stateless agents never store records: they send a one-way result event, and a da
 - The workload emits events in the chassis JSON event schema over A2A (009 CH-1). The chassis builds the CloudEvent and publishes it. The workload is given no broker credential and no Dapr API token.
 - CloudEvents 1.0 events with the extensions `traceparent`, `idempotencykey`, `configversion`, and `modelroute`.
 - Topic names in the form `<domain>.<entity>.<event>.v<major>`. The agent produces what `spec.events.produces` lists, such as `agents.task.completed.v1` and `agents.task.failed.v1`.
-- A result payload with input, output, metrics, versions, and `idempotency_key` (B.4), plus an optional `source` field (which model produced the original).
-- Payload JSON Schema files kept in the config store.
-- `run_id` as the partition key when present, so events for one run keep their order.
-- Switched on by the `result_events` module. Publishing never changes the response; a failed publish is retried and counted in metrics.
-- The broker client adapter for the broker chosen in DEC-1 (see Reuse), plus an in-memory fake for tests.
-- Dapr or a broker client in the chassis (gap (c) in the [backlog plan](000-plan.md#adr-001-follow-ups)): the broker client, decided in [ADR-004](../adr/004-events-through-a-broker-client.md), accepted 2026-10-08. Dapr would be a third container in every pod, with its own localhost API to close and its own release train. If Dapr is ever deployed, its API needs a token mounted into the chassis container only (ADR-004, item 4).
-- Status after PoC-4: built ahead of this issue. `EventPort` (`ports/events.py`: `publish`, `subscribe` with a group and `max_attempts`, `aclose`), the in-memory bus, a `kafka` adapter on aiokafka 0.14.0, a `dapr` adapter, and the `EventPortContract` suite (8 cases) bound to all three, Dapr with two strict xfails. Result events (`server/results.py`) publish `TaskResult` v1 with the key's sha256 hex in place of the key, in the background, never in the request's path ([contract v3](../../contracts/contract-v3.md#result-events)). Accepted in [ADR-004](../adr/004-events-through-a-broker-client.md) on 2026-10-08: this issue's adapter is the broker client, not Dapr; the Dapr adapter stays as a tested alternative, the default in no profile. The contract criterion now names the broker client adapter, and the Dapr token check was dropped (measurements in 001 DEC-1). Open: a failed dead-letter publish ends that subscription's consumer task (`adapters/kafka/events.py`); result events carry the run's `input` and `output`, readable by any container on a PLAINTEXT broker, so `input` should be opt-in (`deploy/compose/SECURITY.md`, section 7); `spec.events.consume` is refused until event-triggered runs exist.
+- A result payload with input, output, metrics, versions, and the key's hash (B.4), plus a model-source field (which model produced the original).
+- Decided in [contract v3](../../contracts/contract-v3.md#result-events): the key's sha256 hex, `key_hash`, is both the `idempotencykey` extension and the partition key, so events for one key keep their order. The payload schema is generated into `packages/chassis/schemas/task-result.v1.json`.
+- `input` goes into a result event only when `spec.events.include_input` (suggested name) is true. Until topic ACLs per service are in (020 X-8), caller data must not go on a shared broker.
+- Switched on by the `result_events` module. Publishing never changes the response; a failed publish is retried and counted in metrics. Result events publish in the background, never in the request's path.
+- The broker client adapter for the broker chosen in DEC-1 (see Reuse), plus an in-memory fake for tests. Built in PoC-4: `EventPort` (`packages/chassis/src/chassis/ports/events.py`), the in-memory bus, and a `kafka` adapter on aiokafka, bound to `EventPortContract`.
+- Dapr or a broker client in the chassis (gap (c) in the [backlog plan](000-plan.md#adr-001-follow-ups)): the broker client, decided in [ADR-004](../adr/004-events-through-a-broker-client.md), accepted 2026-10-08. Dapr would be a third container in every pod, with its own localhost API to close and its own release train. The `dapr` adapter stays as a tested alternative, the default in no profile. If Dapr is ever deployed, its API needs a token mounted into the chassis container only (ADR-004, item 4).
 
 ## Reuse
 
@@ -37,22 +36,27 @@ Stateless agents never store records: they send a one-way result event, and a da
 ## Out of scope
 
 - Running the broker (020 X-8).
-- Consuming events (021 H-20), and consumer retries and dead-letter topics (053 H-22).
-- Filling `source` for the simplifier (043 A-3).
+- Consuming events (021 H-20), and consumer retries and dead-letter topics (053 H-22). `spec.events.consume` is refused at load until event-triggered runs exist.
+- A failed dead-letter publish that ends the subscription's consumer task: P-12 in the [backlog review proposals](../../reviews/2026-11-06-backlog-review/proposals.md), with its box in 053 H-22.
+- Filling the model-source field for the simplifier (043 A-3, parked).
 - The AsyncAPI spec (052 H-21) and other broker adapters (060 H-23).
 - Broker credentials and topic ACLs per service (020 X-8), and the negative tests from the workload container with default-deny egress (026 CH-4).
 
 ## Acceptance criteria
 
-- [ ] With `result_events` on, one echo call publishes one `agents.task.completed.v1` event, and a failed call publishes `agents.task.failed.v1`.
+- [x] With `result_events` on, one echo call publishes one `agents.task.completed.v1` event, and a failed call publishes `agents.task.failed.v1`. · Delivered in PoC-4: `packages/chassis/tests/test_result_events.py::test_a_completed_run_publishes_one_valid_cloudevent`, `::test_a_failed_run_publishes_the_failed_type`
 - [ ] Every event passes CloudEvents 1.0 validation and its payload schema, and carries all four extensions.
-- [ ] The event's `idempotencykey` matches the call's key, and `traceparent` continues the call's trace.
-- [ ] A broker outage does not fail the agent's response, and the failed publish shows in a metric.
-- [ ] The core has no broker client import; switching to the in-memory fake needs config only.
+- [ ] The event's `idempotencykey` matches `key_hash` of the call's key ([contract v3](../../contracts/contract-v3.md#result-events)), and `traceparent` continues the call's trace.
+- [x] A broker outage does not fail the agent's response, and the failed publish shows in a metric. · Delivered in PoC-4: `packages/chassis/tests/test_result_events.py::test_a_failing_broker_does_not_fail_the_run` (`chassis.events.publish_failed`)
+- [x] The core has no broker client import; switching to the in-memory fake needs config only. · Delivered in PoC-4, PoC-5: `pocs/poc-05-sandboxed/tests/test_poc05_events_agnostic.py::test_the_events_port_and_core_import_no_broker_client_in_source`, `pocs/poc-04-stateless-scalable/tests/test_swap_drill.py::test_event_port_swaps_by_config_only`
 - [ ] The DEC-1 adapter passes a publish test against a real broker started by the test.
-- [ ] The broker client adapter and the in-memory bus pass the same `EventPort` contract suite, and are picked by `spec.adapters.events`.
-- [ ] The workload container is given no broker credential and no Dapr API token: neither is in its environment or file system.
+- [x] The broker client adapter and the in-memory bus pass the same `EventPort` contract suite, and are picked by `spec.adapters.events`. · Delivered in PoC-4: `packages/chassis/tests/test_events_contract.py::TestInMemoryBus`, `packages/chassis/tests/integration/test_kafka_events_contract.py::TestKafkaEvents`, `pocs/poc-04-stateless-scalable/tests/test_swap_drill.py::test_event_port_swaps_by_config_only`
+- [x] The workload container is given no broker credential and no Dapr API token: neither is in its environment or file system. · Delivered in PoC-4, PoC-5: `pocs/poc-05-sandboxed/tests/test_poc05_kafka_static.py::test_the_secret_reaches_only_the_chassis_container_of_the_events_agent`, `pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py::test_kafka_refuses_the_workload_without_the_chassis_credential` (`pocs/poc-05-sandboxed/notes/2026-10-09-close-runs.md`); no Dapr in any profile (ADR-004)
 - [ ] A workload's events reach the broker only through the chassis, with the same payload in the `inprocess` and `sidecar` lanes.
+- [ ] A real result event carries `traceparent` and `modelroute`, checked on the published event.
+- [ ] `input` is left out of a result event unless `spec.events.include_input` is true (suggested name).
+- [ ] One result event per call on the native, OpenAI, and Anthropic interfaces, and none for a replayed idempotent call. Open: `packages/chassis/tests/test_result_events.py::test_a_completed_run_publishes_one_valid_cloudevent` covers native only; `::test_a_replayed_idempotent_call_publishes_nothing_new` covers the replay.
+- [ ] The model-source field of a result event is named once and documented (suggested: `original_model`).
 
 ## Dependencies
 

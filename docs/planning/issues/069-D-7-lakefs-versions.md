@@ -20,7 +20,6 @@ A model is only reproducible if the exact data it trained on can be read back la
 - The golden set agent creates versions through the lakeFS API, with metadata: record count, split counts, schema version, `source` counts, and creator.
 - The main branch is protected, so a committed version cannot be changed.
 - An API to list versions, read a version's metadata, and diff two versions.
-- The training pipeline (033 S-5) reads a dataset by version ID, and MLflow records that ID.
 - Suggested: a readable tag per version, for example `simplifier-golden-v3`.
 
 ## Reuse
@@ -33,6 +32,7 @@ A model is only reproducible if the exact data it trained on can be read back la
 - Export formats (070 D-4).
 - Retention and deletion on request (071 D-8).
 - Backups and restore tests (121 X-4).
+- Parked with the SLM track: the training pipeline (033 S-5) reads a dataset by version ID, and a training run shows that ID in MLflow.
 
 ## Acceptance criteria
 
@@ -41,7 +41,6 @@ A model is only reproducible if the exact data it trained on can be read back la
 - [ ] A write to a committed version, or a direct push to the main branch, fails.
 - [ ] The version list shows ID, time, record count, split counts, and creator.
 - [ ] A diff of two versions lists added, removed, and changed records.
-- [ ] A training run reads data by version ID, and MLflow shows that ID on the run.
 
 ## Dependencies
 

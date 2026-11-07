@@ -18,25 +18,22 @@ The epic goal is to cut token use and cost, and this dashboard is where that sho
 - A Grafana dashboard fed by the Prometheus metrics from 004 G-2.
 - Panels for live token spend and cost, per agent, per user, and per route.
 - Requests and cost per 1,000 requests over time.
-- Big-model routes and SLM routes shown apart, as tokens and as share of requests, so savings show once the SLM ships.
-- A baseline line and a −30% target line, both set from one config value that is filled in from the 005 G-3 report.
-- The dashboard stored as code (suggested: Grafana provisioning files), so it loads the same way locally and in the cloud.
-- Prometheus and Grafana in Docker Compose next to the router.
+- The dashboard stored as code, so it loads the same way locally and in the cloud. PoC-8 does this: `python -m chassis.dashboards` writes `deploy/dashboards/` (`packages/chassis/tests/test_dashboards.py::test_the_generated_files_are_up_to_date`).
+- Prometheus and Grafana next to the router, in the PoC-8 stack (`deploy/compose/poc08/stack.sh`). An offline check holds the provisioning (`pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_static.py::test_grafana_provisions_every_file_of_deploy_dashboards`). The live checks (`pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_metrics.py`, `test_grafana_loaded_every_dashboard_file` and `test_every_panel_query_has_data`) are `network` tests with no dated record yet. One dated stack record closes the first box and the last.
 
 ## Out of scope
 
-- The simplifier agent dashboard (046 A-5).
+- The container dashboard: the north star, its inputs, and the counters (046 A-5). This issue is its token and cost input.
 - The `metrics_get` MCP tool (096 P-2a).
 - The cost dashboard per agent and pool, with GPU cost (120 X-7).
+- Big-model and SLM routes shown apart, and the baseline and −30% target lines set from 005 G-3. Parked with the SLM track.
 
 ## Acceptance criteria
 
 - [ ] The dashboard shows token spend and cost from live router traffic.
 - [ ] A test call through the router shows on the dashboard within one minute.
 - [ ] Spend can be filtered by agent, user, and route.
-- [ ] Big-model and SLM routes are shown apart.
-- [ ] The baseline and target lines come from one config value, set from 005 G-3.
-- [ ] `docker compose up` loads the dashboard with no manual steps.
+- [ ] The PoC-8 stack loads every dashboard with no manual steps.
 
 ## Dependencies
 

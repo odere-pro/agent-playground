@@ -11,19 +11,19 @@ epic_refs: [F.1, I, R3]
 
 ## Why
 
-Agents call models only through the LLM router, so any model is swapped by router config only. The port calls a named route (003 G-1b), which is why it comes after the routes. Direct vLLM and llama.cpp adapters let a developer test an agent locally without running the router. Under [ADR-001](../adr/001-chassis-delivery-model.md), each service calls LiteLLM with its own scoped virtual key, and the key, not the request, decides whose spend it is.
+Agents call models only through the LLM router, so any model is swapped by router config only. The port calls a named route (003 G-1b), which is why it comes after the routes. A route map per task lets one config send each task to its own model with no agent change, which the product's phase B needs. Under [ADR-001](../adr/001-chassis-delivery-model.md), each service calls LiteLLM with its own scoped virtual key, and the key, not the request, decides whose spend it is.
 
 ## What
 
-- A `ModelPort` adapter that calls the LiteLLM router with the route named in `spec.model.route`.
+- A `ModelPort` adapter that calls the LiteLLM router with the route named in `spec.model.route`. Built in PoC-1: `LiteLLMModel` (`chassis.adapters.litellm`), picked by `spec.adapters.model: litellm`. Offline it runs against the fake model server over an ASGI transport.
+- A route map per task, as `docs/specs/models.md` ("The route map per task") says. `spec.model.routes` names a route per task, and `spec.model.judge_route` names the judge's route. The pipeline resolves `routes[input.data.task]`, else `route`, into `ctx.model_route`. The model proxy holds every call of a run to the run's route; the gate's fallback route still replaces it. The map and `judge_route` reload with no restart. Built in PR #78.
 - Model output mapped to internal `delta` and `metrics` events: input and output tokens, latency, and route.
-- Direct adapters for a local vLLM server and a local llama.cpp server (CPU), picked by config. They are allowed only in the `local` and `fake` profiles. In the cluster, egress allows only LiteLLM.
+- A small model stays reachable as a LiteLLM route (`local-small`), not as a direct adapter.
 - `temperature` and `max_tokens` from config. Temperature defaults to 0, so calls are deterministic by default.
 - Spend is attributed by the service's own LiteLLM virtual key, not by request metadata, so router counting (004 G-2) puts the spend on the right service. A workload cannot move spend to another agent.
 - Request metadata carries the trace and request IDs only.
 - The route version reported in the response `versions` field.
 - The route's native tool-call flag read and kept on `Context`, for the tool port later.
-- Status after PoC-1: `LiteLLMModel` (`chassis.adapters.litellm`) exists, is picked by `spec.adapters.model: litellm`, and binds `ModelPortContract` next to the fake (`packages/chassis/tests/test_contracts.py::TestLiteLLMModel`). Offline it runs against the fake model server over an ASGI transport. Delivered: route switch by config, tokens in the `metrics` event, route in `versions`. Open: direct vLLM and llama.cpp adapters, `latency_ms` in the `metrics` event, the virtual-key spend test, the temperature default, and the `cloud` profile refusal.
 
 ## Reuse
 
@@ -37,19 +37,22 @@ Agents call models only through the LLM router, so any model is swapped by route
 - Tool calls and JSON with guided decoding (054 H-16).
 - The workload-facing model proxy (013 CH-2). It uses this port.
 - Provisioning the scoped per-service keys, and the default-deny egress policy (026 CH-4).
+- Direct vLLM and llama.cpp adapters, and their refusal in the `cloud` profile. Parked on 2026-11-06 (product plan; models spec, What is parked).
+- `agentctl` refusing a route the service's key lacks: 059 H-15.
 
 ## Acceptance criteria
 
 - [ ] The echo agent with a model step gets a streamed answer from `big-default` through the router.
 - [x] Changing `spec.model.route` in config changes the model with no code change. Delivered in PoC-1: `pocs/poc-01-walking-skeleton/tests/test_model_adapter.py::test_switching_the_model_adapter_is_a_config_change`; the route switch in `pocs/poc-01-walking-skeleton/demo/2026-09-29-demo-fake-variant.md`.
-- [ ] The same agent runs against a local vLLM server and a local llama.cpp server with only a config change.
 - [ ] Token counts and latency arrive as a `metrics` event. PoC-1 delivered the token counts (the `metrics` frame in `pocs/poc-01-walking-skeleton/demo/2026-09-29-demo-fake-variant.md`); `latency_ms` is still `null` there, so this stays open.
 - [ ] The router's usage records put the spend on the calling service's virtual key, even when the request metadata names another agent (tested with two virtual keys created by the test).
 - [ ] Request metadata carries the trace and request IDs, and nothing that picks whose spend it is.
-- [ ] The direct vLLM and llama.cpp adapters fail at start in the `cloud` profile.
 - [x] The route version appears in the response `versions` field. Delivered in PoC-1: `pocs/poc-01-walking-skeleton/tests/test_serve.py::test_stream_and_complete_carry_the_same_output`.
 - [ ] Temperature is 0 when the config does not set it.
-- [ ] Each model adapter (router, direct vLLM, llama.cpp) sits behind `ModelPort`, is picked by `spec.adapters.model`, and passes the same contract suite as the fake.
+- [x] The router adapter and the fake sit behind `ModelPort`, are picked by `spec.adapters.model`, and pass the same contract suite. · Delivered in PoC-1: `packages/chassis/tests/test_contracts.py::TestLiteLLMModel`, `::TestScriptedModel`.
+- [x] `ChassisConfig` holds a route map per task (`ModelSpec.routes`) and a `judge_route`, checked by the schema. · Delivered by: PR #78, `packages/chassis/tests/test_model_routes.py::test_the_published_config_schema_has_the_map_and_the_judge_route`, `::test_model_spec_resolves_a_task_through_the_map_else_the_route`, `::test_model_spec_refuses_an_empty_task_or_route_name`.
+- [ ] Admission enforces the resolved route and refuses another with 403 `model_route_denied`.
+- [x] The route map reloads with no restart. · Delivered by: PR #78, `packages/chassis/tests/test_model_routes.py::test_a_reload_changes_the_map_with_no_restart`; `packages/chassis/tests/test_config_loader.py::test_a_reload_changes_the_route_map_and_the_judge_route`.
 
 ## Dependencies
 

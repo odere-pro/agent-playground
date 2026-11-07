@@ -20,7 +20,6 @@ Records and golden sets hold real text, so they must follow data rules: no PII i
 - Retention periods per store in config (suggested key: `retention_days`), with a daily job that deletes records past their period.
 - Deletion on request by record ID or subject identifier, across the records tables, the golden set tables, and the current lakeFS version.
 - Suggested: past lakeFS versions that held deleted data are marked withdrawn, and their objects are removed by lakeFS garbage collection.
-- Suggested: MLflow models trained on a withdrawn version are flagged.
 - Each deletion writes a deletion report: who asked, what scope, when, and which stores changed, without the deleted content.
 
 ## Out of scope
@@ -28,6 +27,7 @@ Records and golden sets hold real text, so they must follow data rules: no PII i
 - Backups and their retention (121 X-4).
 - Audit log retention per risk class (072 C-3).
 - Setting the retention periods. Legal decides them; the platform applies them.
+- Parked with the SLM track: flagging MLflow models trained on a withdrawn version.
 
 ## Acceptance criteria
 

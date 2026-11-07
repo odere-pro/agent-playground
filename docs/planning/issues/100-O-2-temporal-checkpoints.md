@@ -16,9 +16,10 @@ Run state must live outside the orchestrator process, so any pod can resume any 
 ## What
 
 - Temporal in Docker Compose and on Kubernetes (suggested: the Temporal Helm chart, with persistence on the CloudNativePG Postgres). No epic story owns Temporal itself, so it is set up here.
-- The Temporal worker runs in the orchestrator's chassis, which alone holds the Temporal credential. It calls the workload once per step through the connector (suggested; gap (b) in [the gaps in the backlog plan](000-plan.md#adr-001-follow-ups)). Each run is a Temporal workflow with `run_id` as its workflow ID.
+- The Temporal worker runs in the orchestrator's chassis, which alone holds the Temporal credential. It calls the workload once per step through the connector (suggested; gap (b) in [the gaps in the backlog plan](000-plan.md#adr-001-follow-ups)). The ADR that 099 O-1 asks for decides this first. Each run is a Temporal workflow with `run_id` as its workflow ID.
 - A run takes an ordered list of steps (agent plus input). Each step is a Temporal activity, with a timeout and a retry policy, that calls the agent through the agent port.
-- A checkpoint after every step, stored by Temporal. Minimal run state: `run_id`, steps, and step status.
+- A checkpoint after every step, stored by Temporal. Run state: `run_id`, plan, steps, step status, and references to inputs and outputs, not the full text (suggested: object storage references).
+- Run state is read from a Temporal query through the run API. It moved here from 113 O-9 on 2026-11-06.
 - Workflow code does no I/O. All calls happen in activities, so replays are deterministic.
 - Resume: a failed run continues from the last checkpoint on any pod (suggested: Temporal reset to the last completed step).
 - A run API to start, read, and resume runs (suggested: `POST /v1/runs`, `GET /v1/runs/{run_id}`, `POST /v1/runs/{run_id}/resume`). These are declared operations (050 CH-5).
@@ -34,7 +35,7 @@ Run state must live outside the orchestrator process, so any pod can resume any 
 
 - Stable step keys, so a resume never repeats a side effect (102 O-7).
 - Workflow files and the `chain`, `fan_out`, and `compare` patterns (103 O-11).
-- The full execution state with plan and input and output references (113 O-9).
+- Long-term memory (113 O-9).
 - Cancel (109 O-8).
 
 ## Acceptance criteria
@@ -44,6 +45,7 @@ Run state must live outside the orchestrator process, so any pod can resume any 
 - [ ] A run that fails at step 2 is resumed after the fault is fixed, and only steps 2 and 3 run.
 - [ ] A replay test in CI runs recorded workflow histories against the current code and fails on a non-deterministic change.
 - [ ] The run status API returns each step and its status.
+- [ ] The run status shows plan, steps, step status, and input and output references, for a running and a finished run.
 - [ ] `POST /v1/runs` returns a `run_id` at once, before the first step ends.
 - [ ] Injected failures (pod kill, agent timeout, transient error) resume 100% of runs from a checkpoint, and a run recovery metric shows on `/metrics`.
 - [ ] Workflows are tested offline with Temporal's time-skipping test environment.
