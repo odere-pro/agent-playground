@@ -5,7 +5,7 @@ milestone: "W2 Chassis MVP"
 index: 26
 epic_id: CH-4
 depends_on: ["002 G-1", "024 CH-3"]
-blocks: ["038 X-1a", "041 A-1", "055 CH-6", "132 CH-13"]
+blocks: ["038 X-1a", "041 A-1", "055 CH-6", "132 CH-13", "139 CH-19"]
 epic_refs: [G.3, G.4]
 ---
 
@@ -64,11 +64,12 @@ This is hard requirement 1 of [ADR-001](../adr/001-chassis-delivery-model.md). T
 - [x] The negative suite runs on the local kind cluster in `remote-lane.yml` on every push: the sidecar controls, hard requirement 1, the tool gateway, and the admission suites. · Delivered by: PR #79, `pocs/poc-05-sandboxed/tests/test_poc05_ci_wiring.py::test_poc05_test_remote_runs_the_whole_sidecar_hostile_suite`, `.github/workflows/remote-lane.yml` run 42318146945 on `main` at 273b6e0 (175 passed, 2 skipped, 2 xfailed, the broker pass included)
 - [x] `agent-lib` carries the admission rules (untrusted must use `remote`; a minimum chassis version), and a render test plus a kind run refuse a pod that breaks them. · Delivered by: PR #79, `pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_boundary.py::test_an_untrusted_sidecar_pod_is_refused_at_render_and_by_rule_2`, `::test_a_chassis_below_the_minimum_version_is_refused_at_render_and_by_rule_9`, `::test_the_admission_chart_renders_the_poc05_trust_rule_unchanged` (the chart's policy spec equals the kind file's); on kind, `pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py::test_rejected_fixture_is_refused_with_its_rule_message` with `deploy/kind/poc05/admission/fixtures/rule2-untrusted-sidecar` and `deploy/kind/poc05/admission/fixtures/rule9-chassis-version`, remote-lane run 42318146945
 - [ ] The chart's defaults pass every PoC-5 admission rule, rule 8 (image by digest) included. Open: only `deploy/helm/example-agent/values-kind.yaml` passes today (`pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_boundary.py::test_every_pod_the_chart_renders_passes_the_chart_admission_rules`).
+- [ ] The LiteLLM service key has a `duration`, and a `seed.sh rekey` mints a new key and revokes the old one while the service keeps answering, on kind (gap review, 2026-11-07).
 
 ## Dependencies
 
 - Depends on: [002 G-1](002-G-1-litellm-router.md), [024 CH-3](024-CH-3-helm-library-chart.md)
-- Blocks: [038 X-1a](038-X-1a-terraform-first-cloud.md), [041 A-1](041-A-1-simplifier-core.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [132 CH-13](132-CH-13-owasp-agentic-map.md)
+- Blocks: [038 X-1a](038-X-1a-terraform-first-cloud.md), [041 A-1](041-A-1-simplifier-core.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [132 CH-13](132-CH-13-owasp-agentic-map.md), [139 CH-19](139-CH-19-reference-stack.md)
 
 ## References
 

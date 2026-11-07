@@ -5,7 +5,7 @@ milestone: "W2 Chassis MVP"
 index: 17
 epic_id: H-4
 depends_on: ["010 H-12", "012 H-3", "009 CH-1", "013 CH-2"]
-blocks: ["041 A-1", "042 A-2", "054 H-16", "064 D-1"]
+blocks: ["041 A-1", "042 A-2", "054 H-16", "064 D-1", "135 CH-15", "136 CH-16"]
 epic_refs: [B.2, G.1]
 ---
 
@@ -41,6 +41,7 @@ The gate's cost, a second model call per gated request, is decided in [ADR-010](
 - The output schema check, and `harness.timeout_ms` and `harness.budget.max_tokens` in agent config. `HarnessSpec` has none of them, and no product phase needs them. The envelope's budget is the limit.
 - The budget error code: P-11 in the [backlog review proposals](../../reviews/2026-11-06-backlog-review/proposals.md). A Python workload reports the proxy's `budget_exhausted` as `http_429`, so a client cannot tell a spent budget from a rate limit by its code.
 - The TypeScript echo's budget refusal. It has no tool loop, so the case is a strict xfail.
+- Retries and fallbacks LiteLLM can make per route (136 CH-16, gap review of 2026-11-07). This issue's retry stage covers only the errors LiteLLM cannot see.
 
 ## Acceptance criteria
 
@@ -57,7 +58,7 @@ The gate's cost, a second model call per gated request, is decided in [ADR-010](
 ## Dependencies
 
 - Depends on: [010 H-12](010-H-12-config-loader.md), [012 H-3](012-H-3-model-port.md), [009 CH-1](009-CH-1-engine-connectors-a2a.md), [013 CH-2](013-CH-2-outbound-model-proxy.md)
-- Blocks: [041 A-1](041-A-1-simplifier-core.md), [042 A-2](042-A-2-evaluator-gate-fallback.md), [054 H-16](054-H-16-tool-port.md), [064 D-1](064-D-1-golden-set-agent.md)
+- Blocks: [041 A-1](041-A-1-simplifier-core.md), [042 A-2](042-A-2-evaluator-gate-fallback.md), [054 H-16](054-H-16-tool-port.md), [064 D-1](064-D-1-golden-set-agent.md), [135 CH-15](135-CH-15-backpressure.md), [136 CH-16](136-CH-16-model-proxy-failures.md)
 
 ## References
 

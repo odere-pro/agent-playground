@@ -5,7 +5,7 @@ milestone: "W3 Simplifier SLM"
 index: 28
 epic_id: S-3
 depends_on: []
-blocks: ["029 S-2", "037 M-2", "042 A-2", "064 D-1"]
+blocks: ["029 S-2", "037 M-2", "042 A-2", "064 D-1", "137 CH-17"]
 epic_refs: [I, success-metrics]
 ---
 
@@ -41,7 +41,7 @@ The score decides what "good" means for an answer. The SLM data track that used 
 ## Dependencies
 
 - Depends on: none
-- Blocks: [029 S-2](029-S-2-training-data-generation.md), [037 M-2](037-M-2-eval-gate-ci.md), [042 A-2](042-A-2-evaluator-gate-fallback.md), [064 D-1](064-D-1-golden-set-agent.md)
+- Blocks: [029 S-2](029-S-2-training-data-generation.md), [037 M-2](037-M-2-eval-gate-ci.md), [042 A-2](042-A-2-evaluator-gate-fallback.md), [064 D-1](064-D-1-golden-set-agent.md), [137 CH-17](137-CH-17-judge-calibration.md)
 
 ## References
 

@@ -41,6 +41,7 @@ Tool agents answer by calling tools. Small models call tools less reliably than 
 - Tool calls from the orchestrator (099 O-1).
 - Workloads that run code themselves. They fail the trust rule and run in the `remote` lane (055 CH-6).
 - Parked on 2026-11-06 (product plan): native tool calls or JSON forced to the tool's schema by guided decoding, and the box "a test tool agent gets the same result from an allow-listed read tool on a route with native tool calls and on a route that uses guided JSON". `ChatCompletionRequest` drops `response_format`, and nothing passes guided-decoding parameters. It returns with the SLM track.
+- The registry's review of a changed description (082 R-9). The box on description hashes is the chassis side only.
 
 ## Acceptance criteria
 
@@ -56,6 +57,7 @@ Tool agents answer by calling tools. Small models call tools less reliably than 
 - [x] Code sent to the code-execution tool runs in its sandbox, not in the workload or chassis container. · Delivered in PoC-5: `pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py::test_code_runs_on_gvisor_with_no_egress`, `pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py::test_files_do_not_cross_calls` (kind, `remote-lane.yml`).
 - [x] The MCP adapter and the fake tools pass the same `ToolPort` contract suite, and are picked by `spec.adapters.tools`. · Delivered in PoC-5: `packages/chassis/tests/test_contracts.py::TestInMemoryTools`, `packages/chassis/tests/test_tool_gateway_contract.py::TestMcpGatewayTools`, `packages/chassis/tests/test_tool_endpoint.py::test_fake_profile_builds_the_fake_tools`.
 - [ ] The tool proxy passes the `ToolPortContract` bound through `/mcp` in the `inprocess` and `sidecar` lanes.
+- [ ] A tool description that changes between refreshes is caught: the chassis hashes each description, counts a change in `chassis_tool_description_changed_total{tool}`, and logs which tool changed (gap review, 2026-11-07).
 
 ## Dependencies
 

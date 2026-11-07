@@ -34,6 +34,7 @@ The epic's goal is lower cost, so cost must be visible where it is spent: per ag
 - [ ] The container dashboard shows cost per agent and per good task for the last day, week, and month.
 - [ ] API cost totals match the model proxy's counts for the same period.
 - [ ] Cost per 1,000 requests per agent shows next to the first week's number.
+- [ ] Model cost carries a `task` label next to `route` and `agent`, so the route map's per-task decisions can read cost per task (gap review, 2026-11-07).
 
 ## Dependencies
 

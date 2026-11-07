@@ -42,6 +42,7 @@ When an alert fires at night, the person on call needs steps, not a design doc. 
 - [ ] Every alert rule links to a runbook, and the CI check passes.
 - [ ] At least three runbooks (suggested: router outage, bad chassis release, bad config) are tried in a drill on staging, and the gaps found are fixed.
 - [ ] In a drill, a person who did not write the runbook follows it without help.
+- [ ] Runbooks also cover reading one trace end to end and a kill switch for one agent, and the kill switch is tried once on the local cluster (the vault's control 10) (gap review, 2026-11-07).
 
 ## Dependencies
 

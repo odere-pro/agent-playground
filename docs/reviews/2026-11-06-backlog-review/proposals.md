@@ -31,6 +31,15 @@ Each finding id is assigned here once, in bold. P-24 has no id: it carries two i
 | P-23 | The gate set's size in the models spec | W6-24 | `eval-expert` |
 | P-24 | Two PoC-6b review leftovers | (from body edits) | `platform-security` |
 | P-25 | A call that names another route: refuse or force | (from the W2a apply, 2026-11-07) | `chassis-architect` |
+| P-26 | A rate-limit store outage in `cloud` | (gap review) | `platform-security` |
+| P-27 | The user id in baggage | (gap review) | `platform-security` |
+| P-28 | Write tools, and a person on writes with outside effect | (gap review) | `platform-security` |
+| P-29 | The drain order on rollout | (gap review) | `chassis-architect` |
+| P-30 | The event schema versions on the agent card | (gap review) | `chassis-architect` |
+| P-31 | The judge rubric's verdict | (gap review) | `eval-expert` |
+| P-32 | Agents calling agents | (gap review) | `chassis-architect` |
+| P-33 | The end user behind an app's token | (gap review) | `platform-security` |
+| P-34 | The epic's six success metrics in the metrics spec | (gap review) | `observability-expert` |
 
 ## Decided by the user, 2026-11-06
 
@@ -39,7 +48,7 @@ Each finding id is assigned here once, in bold. P-24 has no id: it carries two i
 - **P-6:** option 1. The 011 H-2 box is rewritten to the contract; 011 H-2 retires.
 - Not a proposal, decided the same day: the 023 C-5 client guide joins phase A, before 2026-12-02.
 
-The other proposals, P-3 to P-5 and P-7 to P-24, stay open. Each one's owner agent advises; a pick that changes code is its own PR after PR-R.
+The other proposals, P-3 to P-5 and P-7 to P-34, stay open. Each one's owner agent advises; a pick that changes code is its own PR after PR-R.
 
 ## P-1: An evaluator outage: fail open or fail closed
 
@@ -362,3 +371,123 @@ The other proposals, P-3 to P-5 and P-7 to P-24, stay open. Each one's owner age
 - suggested: option 1. Forcing keeps a framework that hard-codes a model name working, the count makes it visible, and LiteLLM's key is still the hard limit.
 - Owner: `chassis-architect`.
 - In the backlog: 012 H-3's admission box stays open until P-25 is decided.
+
+## From the product plan's gap review, 2026-11-07
+
+P-26 to P-34 come from the section "If phases A to F are all built: what is still missing" in the [product plan](../../plans/2026-11-06-agent-container-product.md#if-phases-a-to-f-are-all-built-what-is-still-missing). Each is a code or contract decision; the plan's "smallest change" is the suggested option. They have no finding id.
+
+## P-26: A rate-limit store outage in `cloud`
+
+- Findings: none (gap review, security defaults).
+- Issues: 134 CH-14, 022 H-6.
+- Where: `packages/chassis/src/chassis/server/config.py` (`rate_limit_on_unavailable`, default `fail_open`); `packages/chassis/src/chassis/profiles.py`.
+- Conflict: P-2 was decided on 2026-11-06: fail open everywhere, as built. The gap review asks for `fail_closed` in the `cloud` profile, because a store outage then removes the limit a hijacked agent would hit.
+- Options:
+  1. Reopen P-2 for `cloud` only: `fail_closed` there (503 `state_unavailable` on counted calls), `fail_open` in `local` and `fake`.
+  2. Keep P-2 as decided, with the 117 X-3 alert on the store's availability.
+- suggested: option 1.
+- Owner: `platform-security`.
+- In the backlog: 134 CH-14's rate-limit box follows the pick.
+
+## P-27: The user id in baggage
+
+- Findings: none (gap review, security defaults).
+- Issues: 134 CH-14, 014 H-7.
+- Where: `packages/chassis/src/chassis/server/pipeline.py` (`user.id` into baggage); ADR-007 open question 1; ADR-008 open question 1.
+- Conflict: `user.id` goes into baggage raw, so the IdP subject reaches the workload, which may be an untrusted pod.
+- Options:
+  1. Hash it with the `sha256[:32]` the rate limit already uses, in every lane.
+  2. Hash it, and send no `user.id` at all to an `untrusted` remote (ADR-008's variant).
+  3. Keep the raw subject.
+- suggested: option 1. It closes both ADR open questions with one rule; option 2 can follow.
+- Owner: `platform-security`.
+- In the backlog: 134 CH-14's `user.id` box follows the pick.
+
+## P-28: Write tools, and a person on writes with outside effect
+
+- Findings: none (gap review, security defaults). Related: P-17, P-21.
+- Issues: 054 H-16, 095 P-4, 110 C-6.
+- Where: `packages/chassis/src/chassis/adapters/mcp/gateway.py` (a tool is "write" only when `readOnlyHint` is absent).
+- Conflict: No person approves a write with an outside effect. The vault's lethal trifecta (`wiki/patterns/Guardrails.md`) meets in any agent loop whose key grants a write tool; the Rule of Two (`wiki/security/Agent security strategy.md`) is not met.
+- Options:
+  1. Write tools are off unless named in the key's `mcp_tool_permissions`, and an ADR decides an approval checkpoint on writes with outside effect (A2A `input-required`, or a refusal).
+  2. Write tools off unless named; no approval checkpoint until the orchestrator's approval steps (109 O-8).
+  3. Keep it as built.
+- suggested: option 1. The ADR can share its mapping with 128 CH-9's interrupt ADR.
+- Owner: `platform-security`.
+- In the backlog: none until the pick; then a box on 054 H-16 and an ADR.
+
+## P-29: The drain order on rollout
+
+- Findings: none (gap review, phase G).
+- Issues: 024 CH-3.
+- Where: `deploy/helm/agent-lib/templates/_deployment.tpl` (the chassis is the native sidecar); 024 CH-3 left the pick open.
+- Conflict: Kubernetes stops the main container first. The workload is the main container, so it stops while the chassis still answers `/ready` 200. Every rollout drains in the wrong order.
+- Options:
+  1. An ADR: the chassis is the main container and the workload the native sidecar, so the chassis drains first.
+  2. Keep the order, and have the chassis go not-ready on the workload's SIGTERM.
+- suggested: option 1.
+- Owner: `chassis-architect`.
+- In the backlog: 024 CH-3's "rolling restart under load fails no request" box ticks only after the pick.
+
+## P-30: The event schema versions on the agent card
+
+- Findings: none (gap review, phase G).
+- Issues: 056 CH-7.
+- Where: the A2A agent card the chassis reads at `setup`; the "previous major stays accepted" rule.
+- Conflict: The rule has no second version to test. A chassis ahead of a workload learns of a mismatch on the first run.
+- Options:
+  1. A card extension `chassis.event_schema_versions`, read at `setup`, with a test against a fake `"1"`.
+  2. Leave it to 056 CH-7's contract suite against a pinned old workload image.
+- suggested: option 1. It is a contract addition; the next contract version records it.
+- Owner: `chassis-architect`.
+- In the backlog: 056 CH-7's previous-schema box can tick with the option 1 test.
+
+## P-31: The judge rubric's verdict
+
+- Findings: none (gap review, the judge).
+- Issues: 042 A-2, 137 CH-17.
+- Where: `packages/chassis/src/chassis/adapters/evaluators.py` (the rubric returns a 0–1 score, score before reason); ADR-010 open question 1.
+- Conflict: A reply the judge cannot parse fails open. The vault (`wiki/evals/Eval graders.md`) wants pass, fail, or unknown, reasoning first, and a reply that does not parse is never a pass.
+- Options:
+  1. `judge-facts-v2` with `{reasoning, verdict}`; `unknown` and `bad_reply` count as a failed attempt in `sync` mode.
+  2. Keep the score, and count a reply that does not parse as a failed attempt.
+- suggested: option 1.
+- Owner: `eval-expert`.
+- In the backlog: none until the pick; then a box on 042 A-2.
+
+## P-32: Agents calling agents
+
+- Findings: none (gap review, composition).
+- Issues: 001 DEC-1 (the public A2A endpoint), 061 H-5, 099 O-1.
+- Where: the chassis is an A2A client only; a workload may call only the model and tool proxies.
+- Conflict: The epic's orchestrator (figure 3) and the public A2A endpoint have no counterpart in the chassis.
+- Options:
+  1. ADR-011: agents call agents as MCP tools through the gateway. The callee's `/v1/mcp` exists; the gateway holds the `agent:run` token, allow-listed per key; complete only; the callee's budget is its own; `traceparent` passes the gateway.
+  2. Wait for the orchestrator (099 O-1).
+- suggested: option 1.
+- Owner: `chassis-architect`.
+- In the backlog: none until the ADR; it shapes 061 H-5 and 099 O-1.
+
+## P-33: The end user behind an app's token
+
+- Findings: none (gap review, composition).
+- Issues: 022 H-6.
+- Where: ADR-009 open question 4; budgets and rate limits are per service and per subject only.
+- Conflict: The subject is the app. The end user's id is unchecked, so one end user can spend an app's whole budget.
+- Options:
+  1. An ADR on an end-user header, and a per-subject daily token cap in `StatePort`.
+  2. Leave tenancy to the app.
+- suggested: option 1.
+- Owner: `platform-security`.
+- In the backlog: none until the ADR; then a box on 022 H-6.
+
+## P-34: The epic's six success metrics in the metrics spec
+
+- Findings: none (gap review, operating it).
+- Where: `docs/specs/metrics.md`.
+- Conflict: Three of the epic's six success metrics (token spend, fallback rate, run recovery) belong to the parked SLM track and the orchestrator. The spec replaces them without saying so.
+- Options:
+  1. One line each in the spec: which track owns it, and that it is parked or `later`.
+- suggested: that text. A spec edit, outside `docs/planning`.
+- Owner: `observability-expert`.
