@@ -7,7 +7,9 @@ For: Oleksandr (epic owner) and the delivery team. Date: 2026-09-28.
 
 - **Start with the Agent MVP PoC track** in [../poc/000-plan.md](../poc/000-plan.md). It proves the chassis first, in 9 short iterations. This backlog is the long-term reference. Its chassis waves (W2 and W5) follow [ADR-001](../adr/001-chassis-delivery-model.md), and get updated with the PoC results.
 - **Reuse first.** The mature tech picks are in [../poc/010-reuse-analysis.md](../poc/010-reuse-analysis.md). Each affected issue has a `## Reuse` section: what to use, what is left to build, and any scope change.
-- One file per issue. The number prefix (`001`–`119`) is the **global execution order**: work top to bottom.
+- **The build order is the product plan's phases A to F.** Since 2026-11-06, [the agent container plan](../../plans/2026-11-06-agent-container-product.md) leads, and [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md) places every live issue in one phase, or in `later`. Work a phase's issues in number order.
+- One file per issue. The number prefix (`001`–`133`) is stable: issues are not renumbered. New issues go after the last number.
+- Done and parked issues keep their numbers and sizes. Done is wave `WD`; parked (the SLM track) is wave `WP`. Neither counts in the open total or the critical path.
 - Each issue keeps its epic story ID (`H-1`, `G-2`, ...), so every issue traces back to the epic.
 - Frontmatter is shaped for GitHub Issues: `title`, `labels`, `milestone`. `depends_on` and `blocks` use `NNN ID` until the issues get real numbers.
 - A dependency always points to a lower number. Nothing in the list waits on something below it.
@@ -90,29 +92,31 @@ Sizes: `S` is up to 1 day, `M` is 2–3 days, `L` is 4–5 days. Nothing is bigg
 
 ## Waves
 
-Waves are GitHub milestones. Each one ends in something that can be shown.
+Waves are GitHub milestones. Each one ends in something that can be shown. The waves keep the epic's phase order; the product phases cut across them. The last column says which product phase each wave feeds, from [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md).
 
 | Wave | Issues | Ends with |
 | ---- | ------ | --------- |
 | Done: delivered by the PoC track | {{R:WD}} | {{N_DONE}} issues, {{DONE_DAYS}} days of the first estimate, not counted below |
-| W0 Decisions | {{R:W0}} | Broker, first cloud, public A2A endpoint, banned words, and metric targets decided |
-| W1 Router and baseline | {{R:W1}} | Every model call goes through the router; token spend is counted and on a dashboard; the baseline clock is running |
-| W2 Chassis MVP | {{R:W2}} | An echo workload runs behind the chassis: in the `sidecar` lane from the shared library chart, locally and in Kubernetes, and over A2A in memory in the chassis's tests. It answers through native, OpenAI, and Anthropic APIs (streaming and complete), is started by events and emits result events, is traced, holds no key, and passes the contract tests over both transports |
-| W3 Simplifier SLM | {{R:W3}} | Break-even is known; the SLM meets its targets on the held-out set, is served on vLLM, and ships only through the eval gate; the first cloud is up |
-| W4 Simplifier agent live | {{R:W4}} | **First measured savings** (Phase 3 done-when): the agent is called through any API, recorded by the recorder, falls back when needed, and shows on the dashboards |
-| W5 Chassis completion | {{R:W5}} | Phase 0 done-when fully met (MCP tools from OpenAPI, AsyncAPI, reliable events); service operations, the `remote` lane and trust rule, ring rollouts, framework event mappings, and one non-Python workload; tool port and agent factory ready for the registry and orchestrator |
-| W6 Golden set and evaluator SLM | {{R:W6}} | Phase 4 done-when; the evaluator SLM replaces the big-model judge; the audit log runs |
-| W7 Registry and governance gate | {{R:W7}} | Phase 5 done-when; no agent goes live without a governance block |
-| W8 Platform MCP server | {{R:W8}} | Phase 6 done-when: an MCP client searches the registry, runs an agent, and exports a golden set version |
-| W9 Orchestrator | {{R:W9}} | Phase 7 done-when |
-| W10 Production readiness | {{R:W10}} | Phase 8 done-when: both clouds from Terraform, restore test passes, SLO alerts fire |
-| W11 Compliance evidence | {{R:W11}} | Phase 9 done-when: documentation pack and control mapping for any agent version |
-| W12 Later | {{R:W12}} | Plans for Phases 10 and 11 |
+| W0 Decisions | {{R:W0}} | Broker, first cloud, public A2A endpoint, banned words, and metric targets decided. Feeds phases D and E: the primary trace view and the north star |
+| W1 Router and baseline | {{R:W1}} | Every model call goes through the router; token spend is counted and on a dashboard; the baseline clock is running. Feeds phases B and E; the baseline is parked |
+| W2 Chassis MVP | {{R:W2}} | An echo workload runs behind the chassis: in the `sidecar` lane from the shared library chart, locally and in Kubernetes, and over A2A in memory in the chassis's tests. It answers through native, OpenAI, and Anthropic APIs (streaming and complete), is started by events and emits result events, is traced, holds no key, and passes the contract tests over both transports. Feeds phases A, B, E, and F |
+| W3 Simplifier SLM | {{R:W3}} | Break-even is known; the SLM meets its targets on the held-out set, is served on vLLM, and ships only through the eval gate; the first cloud is up. Mostly parked; feeds phase B |
+| W4 Simplifier agent live | {{R:W4}} | **First measured savings** (Phase 3 done-when): the agent is called through any API, recorded by the recorder, falls back when needed, and shows on the dashboards. Mostly parked; feeds phases B and E |
+| W5 Chassis completion | {{R:W5}} | Phase 0 done-when fully met (MCP tools from OpenAPI, AsyncAPI, reliable events); service operations, the `remote` lane and trust rule, ring rollouts, framework event mappings, and one non-Python workload; tool port and agent factory ready for the registry and orchestrator. Feeds phases A, C, D, E, and F |
+| W6 Golden set and evaluator SLM | {{R:W6}} | Phase 4 done-when; the evaluator SLM replaces the big-model judge; the audit log runs. Feeds phase D; the evaluator SLM is parked |
+| W7 Registry and governance gate | {{R:W7}} | Phase 5 done-when; no agent goes live without a governance block. `later`: no phase |
+| W8 Platform MCP server | {{R:W8}} | Phase 6 done-when: an MCP client searches the registry, runs an agent, and exports a golden set version. `later`: no phase |
+| W9 Orchestrator | {{R:W9}} | Phase 7 done-when. `later`: no phase |
+| W10 Production readiness | {{R:W10}} | Phase 8 done-when: both clouds from Terraform, restore test passes, SLO alerts fire. Feeds phases A and E |
+| W11 Compliance evidence | {{R:W11}} | Phase 9 done-when: documentation pack and control mapping for any agent version. Feeds phase E |
+| W12 Later | {{R:W12}} | Plans for Phases 10 and 11. `later`: no phase |
 | Parked: the SLM track (2026-11-06) | {{R:WP}} | {{N_PARKED}} issues, {{PARKED_DAYS}} days, not counted above |
 
-With one engineer, the waves run one after another in index order. With more people, W1 runs next to W2, and the W3 data work (S-1 to S-4) starts during W2, as the epic says.
+Since 2026-11-06 the product phases set the order, not the waves. Phases A and B can run in parallel, C needs B's route map, E can start after A, and F is last (the product plan's "The order of work").
 
 ## Why the order differs from the phase order
+
+Since 2026-11-06 the [product plan](../../plans/2026-11-06-agent-container-product.md) leads: the build order is its phases A to F, and the SLM track is parked (wave `WP`). The items below explain the wave order, which the parked rows still keep.
 
 1. **Start the baseline clock first.** The baseline (G-3) needs at least two weeks of data, so the router and token counting come first ({{R:W1}}).
 2. **Break-even before GPU spend.** The cost model ({{L:G-5}}) sits right before training, so the top risk is checked before money goes into GPUs.
@@ -125,19 +129,23 @@ With one engineer, the waves run one after another in index order. With more peo
 
 ## Critical path
 
-- **To template GA (H-15):** {{MVP_PATH}}. About {{MVP_DAYS}} working days, plus the two weeks of baseline data that G-5 needs before S-6. The chassis MVP ({{R:W2}}) must finish before A-1.
+- **To template GA (H-15):** {{MVP_PATH}}. About {{MVP_DAYS}} working days. Template GA is phase F. The baseline ({{L:G-3}}) and the SLM steps are parked, so no baseline wait sits on this path.
 - **Longest chain overall:** {{ALL_PATH}}. The registry search and the orchestrator engine are the long pole.
 
 ## Open decisions and what they block
 
-Tracked in {{L:DEC-1}}.
+Tracked in {{L:DEC-1}}. What each one unblocks in phases A to F, with a `suggested:` value, is in [the decision pack](../../reviews/2026-11-06-backlog-review/decision-pack-DEC-1.md).
 
 | Decision | Blocks |
 | -------- | ------ |
 | Event broker: NATS JetStream or the company's Kafka | {{L:H-17}}, {{L:X-8}}, {{L:H-23}} |
 | First cloud: AWS or GCP | {{L:X-1a}}, then {{L:X-2}} and {{L:X-1b}} |
 | Whether the public A2A endpoint ships in version 1. A2A to workloads ships per ADR-001 | {{L:H-5}} |
-| Banned-word list and final success-metric targets | {{L:S-1}}, {{L:S-3}}, {{L:G-3}} |
+| Banned-word list and final success-metric targets. Parked with the SLM track, except the `facts_kept` floor for a hosted model | {{L:S-1}}, {{L:S-3}}, {{L:G-3}} |
+| The north star: "good tasks per week" or "agents in production on the chassis" (phase E) | {{L:A-5}}, {{L:X-3}}, {{L:X-7}} |
+| The primary trace view per environment, LangSmith or Langfuse, and where the score goes when both run (phase D; ADR-007 open question 4, ADR-009 open question 5) | {{L:CH-10}}, {{L:CH-11}}, {{L:A-5}} |
+| The router's home before a cloud exists. Parked with the SLM track: only the baseline needed it. For the product, the router runs in each deploy stack | {{L:G-3}} (parked) |
+| Decided 2026-11-06: an evaluator outage and a rate-limit store outage both fail open everywhere, as built (P-1, P-2 in the review's [fix plan](../../reviews/2026-11-06-backlog-review/fix-plan.md#user-decisions-2026-11-06)) | Nothing now. {{L:X-3}} adds an alert for each |
 
 ## Changes from the epic
 
@@ -182,11 +190,14 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 - **(g) Shutdown order with two containers:** Kubernetes stops native sidecars after the main container. Suggested: the workload is the native sidecar and the chassis the main container, so the chassis gets SIGTERM first and drains; the workload finishes its in-flight `handle` calls before it exits, and a rolling-restart test proves no request fails. PoC-4 tries this against a preStop delay ({{L:H-2}}, {{L:CH-3}}).
 - **(h) Outbound calls keyed to the inbound request:** the model and tool proxies can apply a request's budget and route only if the workload's HTTP client propagates `traceparent`. Suggested: OpenTelemetry httpx instrumentation, switched on by the service template; a call without a trace id counts against a per-replica budget ({{L:CH-2}}, {{L:H-4}}).
 - **(i) The `remote` lane's path to models and tools:** the proxies also listen on the pod IP for that lane, with a per-remote credential. A managed runtime that cannot be pointed at them holds its own scoped key, the one relaxation of hard requirement 1 ({{L:CH-2}}, {{L:CH-6}}).
-- **Two meanings of "trust":** the registry's trust levels ({{L:R-7}}) are not `spec.trust`. `external` and `manual` entries are third-party, so they are `untrusted` and go to the `remote` lane. `internal-signed` is evidence for the ADR's source test, but not for its behavior test.
+- **Two meanings of "trust":** the registry's trust levels ({{L:R-7}}) are not `spec.trust`. `external` and `manual` entries are third-party, so they are `untrusted` and go to the `remote` lane. `internal-signed` is evidence for the ADR's source test, but not for its behavior test. A third surface: `agent.trust` in `/manifest` is `spec.trust`, shown to callers and not a security control by itself. The registry entry names its level `trust_level` and keeps `runtime_trust` for `spec.trust`, so neither is read as the other.
 
 ## Estimate check
 
-The sizes add up to about {{TOTAL_DAYS}} engineer-days ({{TOTAL_WEEKS}} weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks). The epic says 29–33 weeks for one engineer. Either the epic assumes a lot of reuse, or the phase estimates need a second look with the team. The sizes here are first guesses; re-size in planning.
+- **Open:** about {{TOTAL_DAYS}} engineer-days ({{TOTAL_WEEKS}} weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
+- **Done** (wave `WD`): {{DONE_DAYS}} days over {{N_DONE}} of the issues. **Parked** (wave `WP`): {{PARKED_DAYS}} days over {{N_PARKED}}. Neither is in the open total.
+- **Phases A to F:** 86.5 days against the product plan's 10–12 weeks (suggested: 50–60 engineer-days), from [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md#totals). Phases A, B, and E are each about twice the plan's size. The rest of the open total is `later`: no phase needs it.
+- **The epic** says 29–33 weeks for one engineer. Either the epic assumes a lot of reuse, or the phase estimates need a second look with the team. The sizes here are first guesses; re-size in planning.
 
 ## Backlog
 

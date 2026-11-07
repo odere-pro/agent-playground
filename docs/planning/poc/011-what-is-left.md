@@ -1,7 +1,7 @@
 # What is left in the PoC track
 
 Every open item from PoC-1 to PoC-9, in one list, grouped by who can do it.
-For: Oleksandr (epic owner) and the delivery team. As of 2026-11-06, at `58bbd65` on `main`.
+For: Oleksandr (epic owner) and the delivery team. As of 2026-11-07, at `d271063` on `main`.
 Sources: the "What is left" section of each PoC doc in this folder, each PoC README in `pocs/`, and each PoC's `notes/backlog-changes.md`. This file replaces none of them; they keep the evidence.
 
 ## Where each PoC stands
@@ -49,7 +49,7 @@ Each one is carried as "open, user decision" in the issue it belongs to.
   - Q6: Presidio in the Collector log pipeline, or accept the regex-only gap for workload logs?
   - Q7: rate limits with auth off: fine for local and test only, or an anonymous bucket?
 - [ ] **PoC-4 items for the owner** ([backlog changes](../../../pocs/poc-04-stateless-scalable/notes/backlog-changes.md#not-applied-for-the-owner)): the full `EventPortContract` bar for 060 H-23; the PoC-4 result and drain rule in 024 CH-3; the chassis CPU at 10 RPS as an input to ADR-001's Revisit rule; the OpenAPI limits fixed at start (051 H-13); the idempotency key in `deploy/compose/SECURITY.md` against contract v3; the vendored CloudEvents schema diff.
-- [ ] **PoC-5 items for the owner** ([backlog changes](../../../pocs/poc-05-sandboxed/notes/backlog-changes.md#not-applied-for-the-owner)): new issues for the TypeScript inbound token and CNI flow logs; the hand-kept `trustedRepositories` (025 H-10); H31, which waits on 004 G-2.
+- [ ] **PoC-5 items for the owner** ([backlog changes](../../../pocs/poc-05-sandboxed/notes/backlog-changes.md#not-applied-for-the-owner)): new issues for the TypeScript inbound token and CNI flow logs; the hand-kept `trustedRepositories` (025 H-10). H31 is no longer an owner item: PR #88 put it in 004 G-2, as the spoofed agent tag test.
 
 ## 4. Engineering work
 
@@ -69,8 +69,8 @@ Code an engineer or an agent can do now. Each item names the PoC criterion it mo
 
 Done with the `planning-sync` skill, then `make planning-sync planning-check`.
 
-- [ ] **Apply the PoC-7 backlog changes.** [The file](../../../pocs/poc-07-cross-cutting-decisions/notes/backlog-changes.md) is still a draft from 2026-10-28. No issue has a "Status after PoC-7" bullet yet. ADR-007 to ADR-010 are accepted, so it can be applied now.
-- [ ] **Apply the PoC-6c lessons.** The "to apply" list in [the 6c backlog changes](../../../pocs/poc-06c-pretrained-slm/notes/backlog-changes.md#what-the-ci-run-teaches-to-apply) (063 S-8, 036 S-7, 013 CH-2) has no "Status after PoC-6c" bullet in any issue.
+- [x] **Apply the PoC-7 backlog changes.** Done in PR #88 (`d271063`), 2026-11-07: the facts of [the draft](../../../pocs/poc-07-cross-cutting-decisions/notes/backlog-changes.md) are folded into the issue bodies as bullets and open boxes (for example 014 H-7, 017 H-4, 022 H-6, 023 C-5), not as "Status after PoC-7" bullets.
+- [x] **Apply the PoC-6c lessons.** Done in PR #88 (`d271063`), 2026-11-07: the "to apply" list in [the 6c backlog changes](../../../pocs/poc-06c-pretrained-slm/notes/backlog-changes.md#what-the-ci-run-teaches-to-apply) is folded into 063 S-8, 036 S-7, and 013 CH-2. 063 and 036 are parked with the SLM track.
 - [ ] **Close 6a, 6b, 6c, and 7** after the Mac run: tick the boxes with evidence, set `Status: done`, and trim their planning docs to "What is left: nothing".
 - [ ] **Optional: a trial by someone new to the code (PoC-9 criterion 6).** [The steps](../../../pocs/poc-09-agent-mvp-template/notes/2026-10-30-new-user-trial.md).
 
@@ -86,4 +86,4 @@ Not PoC work any more. Each is in its issue.
 
 ## After the PoC track
 
-From [000-plan.md](000-plan.md#after-the-mvp): update the chassis waves W2 and W5 and issues CH-1 to CH-8 with the PoC results, then continue the backlog from the router and SLM waves.
+From [000-plan.md](000-plan.md#after-the-mvp): the build order is the product plan's phases A to F, mapped in [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md). The SLM track is parked.
