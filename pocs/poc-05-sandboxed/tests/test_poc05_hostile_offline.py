@@ -372,7 +372,8 @@ async def test_h29_a_route_outside_the_key_is_refused_and_an_in_scope_call_is_20
     call is 200, and the run ends `ok`. Second: the run's own route is outside the key
     (`spec.model.route` reloaded to it, no restart). The key's refusal reaches the remote as the
     fixed `model_route_denied` text, not retryable, with no completion, and the run ends in
-    `error`: a 403 on a plain call, an error frame on the stream the workload opens.
+    `error`. The workload streams, so it sees the stream's error frame; the 403 of a plain call
+    is pinned in `packages/chassis/tests/test_model_proxy.py`.
 
     Stand-in: the route scope is LiteLLM's virtual key (`models: [<route>]`, seed script), and
     the chassis has no route check of its own; `KeyScopedModel` refuses the way the LiteLLM

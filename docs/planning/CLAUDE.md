@@ -23,6 +23,7 @@ From the repo root: `make planning-sync` and `make planning-check`. Or from this
 python3 tools/sync.py          # regenerate the generated parts of issues/ (see below)
 python3 tools/check.py         # epic unchanged, numbering, dependency order, story coverage, sections, links and anchors
 python3 tools/check.py 37 67   # body checks for issues 037–067 only; every other check still runs
+python3 tools/check.py --strict  # plus the evidence rules below; `make planning-check-strict`
 ```
 
 Run `sync.py` and then `check.py` after any change to `issues/`, `poc/`, or `adr/`. `make check` at the repo root runs `check.py` too.
@@ -37,13 +38,24 @@ Run `sync.py` and then `check.py` after any change to `issues/`, `poc/`, or `adr
 - **Issue IDs** are epic story IDs (`H-1`, `G-2`, ...). Issues that are not epic stories use a prefix that `check.py` skips in the coverage check: `DEC-` (decisions), `L-` (later phases), and `CH-` (chassis work from ADR-001).
 - **`build()` asserts every dependency has a lower index.** Order must respect dependencies.
 
+## Retire or park an issue
+
+Numbers are stable. A done or parked issue keeps its number and its size.
+
+- **Wave `WD`** (Done: delivered by the PoC track) and **wave `WP`** (Parked: the SLM track). Neither counts in the open total or the critical path. `sync.py` prints both totals.
+- **Evidence form** for a ticked box: `- [x] <criterion> · Delivered in PoC-N: <evidence>`, or `Delivered by:`, with each path in backticks or a link.
+- **To retire:** every box is ticked. Add a `Delivered by:` line under `## Acceptance criteria`. In `ROWS`, set the wave to `WD` and the note to `Was Wn. Retired <date>: ...`. Run sync, then check.
+- **To park:** in `ROWS`, set the wave to `WP` and the note to `Was Wn. Parked <date> ...`. First drop the row from the deps of every live issue: a live issue on a `WP` row fails `check.py`.
+- **`--strict`** adds: a ticked line has the evidence form; a cited path under `pocs/`, `packages/`, `deploy/`, `docs/`, or `.github/` exists; a `WD` issue has no open box and a `Delivered by:` line; a live issue with no open box fails ("retire it"). Not in `make check` yet.
+- `make harness-lint` fails when a ticked box cites a `::test_name` no test file defines.
+
 ## Conventions
 
 - **File names** are `NNN-<ID>-<slug>.md`. The 3-digit prefix sets the order on disk and the execution order.
 - **Issue references** are written as `NNN ID` (for example `015 H-4`), so `sync.py` can rewrite them when issues are renumbered.
 - **Issue body order:** Why, What, Reuse (optional), Out of scope, Acceptance criteria (a `- [ ]` list), Dependencies, References.
 - **Acceptance criteria** must not depend on a higher-numbered issue. If a later issue extends the scope, say so under Out of scope.
-- **Labels:** `story` / `decision` / `later`; `priority:P0`–`P3`; `phase:*`; `area:*`; `size:S|M|L` (S ≤ 1 day, M 2–3 days, L 4–5 days); `layer:chassis`, `agent-profile`, or `platform`. The milestone is the wave (W0–W12).
+- **Labels:** `story` / `decision` / `later`; `priority:P0`–`P3`; `phase:*`; `area:*`; `size:S|M|L` (S ≤ 1 day, M 2–3 days, L 4–5 days); `layer:chassis`, `agent-profile`, or `platform`. The milestone is the wave (W0–W12, `WD` done, `WP` parked).
 - **Epic citations** are relative links with anchors that exist in the epic: `<a id>` anchors such as `#f1`, `#b2`, `#r13`, `#fig2`, `#app-h`, or heading slugs such as `#phase-0-agent-harness`.
 - **Values the epic does not give** are marked `suggested:`.
 - **Style:** plain words, short sentences, one idea per sentence, US spelling. Match the existing docs.

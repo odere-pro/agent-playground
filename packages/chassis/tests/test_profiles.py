@@ -26,8 +26,8 @@ from chassis.profiles import (
 )
 from pydantic import ValidationError
 
-NOT_HERE = "arrives in PoC|is not configured"
-"""What a named adapter says offline: not built yet (its PoC), or built but missing its env."""
+NOT_HERE = "is unavailable|is not configured"
+"""What a named adapter says offline: its module or SDK is missing, or it is missing its env."""
 STORE_ENV = ("VALKEY_URL", "KAFKA_BOOTSTRAP_SERVERS", "CONFIG_S3_ENDPOINT", "DAPR_API_TOKEN")
 
 
@@ -241,10 +241,15 @@ def test_a_poc04_adapter_offline_is_not_available(
         assert (field, value) == ("events", "memory"), ports
 
 
-def test_a_lazy_adapter_whose_module_is_missing_names_poc_4() -> None:
+def test_a_lazy_adapter_whose_module_is_missing_names_the_adapter_and_module() -> None:
+    """R1-28: the error names the port, the adapter, and the missing module, and no PoC."""
     factory = lazy("state", "nope", "chassis.adapters.nope.state:Nope.from_env")
-    with pytest.raises(AdapterNotAvailable, match="state: adapter 'nope' arrives in PoC-4"):
+    with pytest.raises(AdapterNotAvailable) as caught:
         factory()
+    assert str(caught.value) == (
+        "state: adapter 'nope' is unavailable (no module 'chassis.adapters.nope')"
+    )
+    assert "PoC" not in str(caught.value)
 
 
 def test_a_lazy_adapter_missing_its_env_is_not_configured() -> None:

@@ -7,6 +7,8 @@ import time
 import pytest
 from chassis.redaction import redact
 
+# CPU time, not wall time: backtracking burns this process's CPU, while a busy machine
+# only stretches the wall clock. A wall-clock budget failed under load in the pre-commit hook.
 FAST_SECONDS = 0.1
 """suggested: the bound for one `redact` call on a 200k-character string."""
 
@@ -23,23 +25,23 @@ FAST_SECONDS = 0.1
     ids=["a-dash-run", "digit-run", "long-domain", "long-dotted-domain", "many-at-signs"],
 )
 def test_redact_returns_fast_and_unchanged_when_long_text_holds_no_email(text: str) -> None:
-    """A long run with no full email address comes back unchanged in under 100 ms."""
-    start = time.perf_counter()
+    """A long run with no full email address comes back unchanged in under 100 ms of CPU time."""
+    start = time.process_time()
 
     out = redact(text)
 
-    assert time.perf_counter() - start < FAST_SECONDS
+    assert time.process_time() - start < FAST_SECONDS
     assert out == text
 
 
 def test_redact_masks_an_email_fast_when_its_domain_is_long_and_dotted() -> None:
-    """An email with a 200k-character dotted domain is masked in under 100 ms."""
+    """An email with a 200k-character dotted domain is masked in under 100 ms of CPU time."""
     text = "x@" + "a." * 100_000 + "com"
-    start = time.perf_counter()
+    start = time.process_time()
 
     out = redact(text)
 
-    assert time.perf_counter() - start < FAST_SECONDS
+    assert time.process_time() - start < FAST_SECONDS
     assert out == "<EMAIL_ADDRESS>"
 
 

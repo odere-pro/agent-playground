@@ -9,6 +9,7 @@ from pathlib import Path
 HERE = Path(__file__).parent
 
 WAVES = {
+    "WD": "Done: delivered by the PoC track",
     "W0": "W0 Decisions",
     "W1": "W1 Router and baseline",
     "W2": "W2 Chassis MVP",
@@ -22,6 +23,7 @@ WAVES = {
     "W10": "W10 Production readiness",
     "W11": "W11 Compliance evidence",
     "W12": "W12 Later",
+    "WP": "Parked: the SLM track (2026-11-06)",
 }
 
 PHASES = {
@@ -176,7 +178,7 @@ ROWS = [
 # Layer per issue: chassis (standard for every service), agent-profile (agent-only modules), platform (built on the chassis).
 CHASSIS = {"H-1", "H-14", "H-12", "H-2", "H-7", "H-8", "H-9", "H-4", "H-18", "H-17", "H-20", "H-6", "H-10",
            "H-13", "H-21", "H-22", "H-19", "H-15", "H-23", "H-11",
-           "CH-1", "CH-2", "CH-3", "CH-4", "CH-5", "CH-6", "CH-7", "CH-8"}
+           "CH-1", "CH-2", "CH-3", "CH-4", "CH-5", "CH-6", "CH-7", "CH-8", "CH-9", "CH-10", "CH-11"}
 AGENT_PROFILE = {"H-2", "H-3", "H-4", "H-6", "H-5", "H-16", "C-5", "G-4", "CH-2"}
 
 
