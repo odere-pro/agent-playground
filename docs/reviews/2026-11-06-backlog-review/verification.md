@@ -51,5 +51,5 @@ Not backlog edits; each has an owner.
 - **096 P-2a's done-when box and 116 X-1b's smoke box** still name the simplifier, which is parked. Reword when either leaves `later`.
 - **ADR-006 decision 1** has a sentence the 2026-11-06 amendment left stale (finding W5's note). For the `adr` skill.
 - **A Kyverno install note** in 038 X-1a, from the W5 findings: ADR-005 picked ValidatingAdmissionPolicy, so check 038 when the first cloud is picked.
-- **Open proposals:** P-3 to P-5, P-7 to P-24, and P-25, in [proposals.md](proposals.md). Each names its owner agent.
-- **New gaps from #81.** The product plan's section "If phases A to F are all built: what is still missing" (merged after this review's findings) lists security defaults, a phase G for runtime behavior under load, the judge's calibration, and composition. None has a backlog issue yet. That is the next planning step, outside this review.
+- **Open proposals:** P-3 to P-5, P-7 to P-15, and P-17 to P-34, in [proposals.md](proposals.md). Each names its owner agent. P-16 was done by PR #79 (rule 9 in `agent-lib`). P-26 to P-34 came from the #81 gap review, in PR #95.
+- **New gaps from #81: done after the close.** PR #95 mapped every gap in the product plan's section "If phases A to F are all built: what is still missing" to the backlog: issues 134 CH-14 to 139 CH-19, new boxes on nine issues, proposals P-26 to P-34, and the phase G row in the product plan. PR #96 then brought the backlog in line with PRs #83 to #92.
