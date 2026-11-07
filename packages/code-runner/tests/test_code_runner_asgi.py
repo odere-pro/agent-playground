@@ -8,7 +8,7 @@ request, so "no claim is created" is a list that stays empty.
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, MutableMapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -375,8 +375,8 @@ def _messages(*messages: dict[str, Any]) -> tuple[Any, list[dict[str, Any]]]:
     async def receive() -> dict[str, Any]:
         return queue.pop(0)
 
-    async def send(message: dict[str, Any]) -> None:
-        sent.append(message)
+    async def send(message: MutableMapping[str, Any]) -> None:
+        sent.append(dict(message))
 
     return receive, sent
 
@@ -386,7 +386,10 @@ async def test_code_runner_bearer_passes_lifespan_through() -> None:
     inner = _Recorder()
     receive, sent = _messages()
 
-    await asgi.BearerAuth(inner, TOKEN.encode())({"type": "lifespan"}, receive, sent.append)
+    async def send(message: MutableMapping[str, Any]) -> None:
+        sent.append(dict(message))
+
+    await asgi.BearerAuth(inner, TOKEN.encode())({"type": "lifespan"}, receive, send)
 
     assert inner.calls == ["lifespan"]
 
@@ -401,15 +404,15 @@ async def test_code_runner_bearer_refuses_a_websocket_before_the_app(authorized:
     ws = {"type": "websocket", "path": "/mcp", "headers": headers}
     receive, sent = _messages({"type": "websocket.connect"})
 
-    async def send(message: dict[str, Any]) -> None:
-        sent.append(message)
+    async def send(message: MutableMapping[str, Any]) -> None:
+        sent.append(dict(message))
 
     await asgi.BearerAuth(inner, TOKEN.encode())(ws, receive, send)
     http = {"type": "http", "path": "/mcp", "headers": headers, "method": "POST"}
     http_receive, http_sent = _messages({"type": "http.request", "body": b"", "more_body": False})
 
-    async def http_send(message: dict[str, Any]) -> None:
-        http_sent.append(message)
+    async def http_send(message: MutableMapping[str, Any]) -> None:
+        http_sent.append(dict(message))
 
     await asgi.BearerAuth(inner, TOKEN.encode())(http, http_receive, http_send)
 
@@ -427,16 +430,16 @@ async def test_code_runner_body_cap_drops_a_request_whose_client_left_mid_body()
     scope = {"type": "http", "path": "/mcp", "headers": [], "method": "POST"}
     receive, sent = _messages(chunk, {"type": "http.disconnect"})
 
-    async def send(message: dict[str, Any]) -> None:
-        sent.append(message)
+    async def send(message: MutableMapping[str, Any]) -> None:
+        sent.append(dict(message))
 
     await asgi.BodyCap(inner, CAP)(scope, receive, send)
     whole_receive, whole_sent = _messages(
         chunk, {"type": "http.request", "body": b'"id": 1}', "more_body": False}
     )
 
-    async def whole_send(message: dict[str, Any]) -> None:
-        whole_sent.append(message)
+    async def whole_send(message: MutableMapping[str, Any]) -> None:
+        whole_sent.append(dict(message))
 
     await asgi.BodyCap(inner, CAP)(scope, whole_receive, whole_send)
 

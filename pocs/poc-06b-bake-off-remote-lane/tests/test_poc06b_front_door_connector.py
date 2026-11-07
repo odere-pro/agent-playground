@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -132,21 +132,23 @@ async def _connector(
     )
     engines = {ENGINE: Engine(ENGINE, f"remote-{ENGINE}", _pinned_card())}
     door = RunDispatcher(
-        claims, sandbox_client(transport=httpx.ASGITransport(app=pod)), config, engines
+        claims, sandbox_client(transport=httpx.ASGITransport(app=cast(Any, pod))), config, engines
     )
     app = create_front_doors(door)[PORT]
 
     def client_for(
         self: RemoteConnector, token: str, uds: str | None, timeout: float | None
     ) -> httpx.AsyncClient:
-        return httpx.AsyncClient(
+        client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
             base_url=self.url or "",
             headers={"Authorization": f"Bearer {token}"},
             trust_env=False,
             follow_redirects=False,
-            **({} if timeout is None else {"timeout": timeout}),
         )
+        if timeout is not None:
+            client.timeout = httpx.Timeout(timeout)
+        return client
 
     monkeypatch.setattr(RemoteConnector, "_client_for", client_for)
     connector = RemoteConnector()

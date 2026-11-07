@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -338,8 +338,8 @@ async def test_code_runner_a2a_dispatch_client_disconnect_deletes_the_claim(
         await started.wait()
         return {"type": "http.disconnect"}
 
-    async def send(message: dict[str, Any]) -> None:
-        sent.append(message)
+    async def send(message: MutableMapping[str, Any]) -> None:
+        sent.append(dict(message))
         if message["type"] == "http.response.body" and message.get("body"):
             started.set()
 

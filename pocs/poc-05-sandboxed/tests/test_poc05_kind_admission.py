@@ -93,9 +93,12 @@ class Fixture:
     kind: str
 
     @property
-    def identity(self) -> str:
+    def identity(self) -> str | None:
+        """Who sends the fixture. None is the cluster admin: a claim in poc05-remote is the PoC-6
+        front door's, whose Role only `deploy/kind/poc06/run.sh` applies. The admission binding
+        holds every identity, so the admin's dry run still meets the claim rule."""
         if self.kind == "SandboxClaim":
-            return DISPATCHER
+            return DISPATCHER if self.namespace == "poc05-tools" else None
         return DEPLOYER if self.namespace in DEPLOYER_NAMESPACES else SUBMITTER
 
     @property

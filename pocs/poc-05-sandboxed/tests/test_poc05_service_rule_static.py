@@ -136,7 +136,7 @@ def test_poc05_service_rule_rejected_fixture_differs_from_its_twin_only_there(pa
 
 
 def _shipped_services() -> list[tuple[str, dict[str, Any]]]:
-    out = []
+    out: list[tuple[str, dict[str, Any]]] = []
     for root in (POC05, POC06):
         for path in sorted(root.rglob("*.yaml")):
             if "fixtures" in path.parts or "agent-sandbox" in path.parts:
