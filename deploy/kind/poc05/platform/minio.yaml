@@ -182,7 +182,7 @@ spec:
               # Recorded exception (security review F11, accepted): `mc admin user add` takes the
               # pair as arguments. That argv lives in this one-shot pod only, which holds the root
               # key anyway, for a user that reads one document of fake data; the Job is deleted
-              # after 600 s. Listed in deploy/compose/SECURITY.md section 7. Revisit: create the
+              # after 600 s. Listed in deploy/compose/SECURITY.md section 8. Revisit: create the
               # user through the admin API from a script that reads the pair from env.
               mc admin user add local "$ECHO_S3_USER" "$ECHO_S3_SECRET_KEY" >/dev/null
               # A rerun finds the policy attached already, and attach then fails: that is fine

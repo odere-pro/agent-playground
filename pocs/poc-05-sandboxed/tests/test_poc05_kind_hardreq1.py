@@ -199,13 +199,15 @@ DOCUMENT = f"agents/{AGENT}.yaml"
 OTHER_DOCUMENT = "agents/echo-remote.yaml"  # outside the user's one path
 EVENTS_DEPLOYMENT = "agent-echo-events"
 
-# Run in the workload container with argv: host, port, bucket, object key, user name. Standard
-# library only: a GET of the object with no signature, then signed (SigV4) with a made-up key
-# pair, and with the chassis's user name and a guessed secret. Prints one JSON line: each answer's
+# Run with argv: host, port, bucket, object key, user name, and a mode. Standard library only. Mode
+# `refused`, in the workload container: a GET of the object with no signature, then signed (SigV4)
+# with a made-up key pair, and with the chassis's user name and a guessed secret. Mode `own`, in
+# the chassis container: the same signed GET with the chassis's own pair from its env, which shows
+# the signer is right, so `guessed` fails on the secret alone. Prints one JSON line: each answer's
 # HTTP status and S3 error code, nothing else.
-S3_REFUSALS = r"""
-import datetime, hashlib, hmac, http.client, json, re, sys
-host, port, bucket, key, user = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+S3_GET = r"""
+import datetime, hashlib, hmac, http.client, json, os, re, sys
+host, port, bucket, key, user, mode = sys.argv[1], int(sys.argv[2]), *sys.argv[3:7]
 path = "/%s/%s" % (bucket, key)
 EMPTY = hashlib.sha256(b"").hexdigest()
 SIGNED = "host;x-amz-content-sha256;x-amz-date"
@@ -239,9 +241,13 @@ def get(headers):
     except Exception as e:
         return {"error": type(e).__name__}
 
-print(json.dumps({"unsigned": get({}),
-                  "stranger": get(signed("poc05-nobody", "not-the-secret-0000")),
-                  "guessed": get(signed(user, "not-the-secret-0000"))}))
+if mode == "own":
+    pair = os.environ["CONFIG_S3_ACCESS_KEY"], os.environ["CONFIG_S3_SECRET_KEY"]
+    print(json.dumps({"own": get(signed(*pair))}))
+else:
+    print(json.dumps({"unsigned": get({}),
+                      "stranger": get(signed("poc05-nobody", "not-the-secret-0000")),
+                      "guessed": get(signed(user, "not-the-secret-0000"))}))
 """
 
 # Run in the chassis container with argv: bucket, agent name, object key, another object key. The
@@ -252,14 +258,16 @@ print(json.dumps({"unsigned": get({}),
 # of S3 error codes, versions, and the run's status, never a credential.
 CHASSIS_READ = r"""
 import asyncio, io, json, os, sys, urllib.error, urllib.request
+import urllib3
 from minio import Minio
 from minio.error import S3Error
 from chassis.adapters.s3.config import S3Config
 from chassis.server.config_loader import parse_document
 bucket, agent, own, other = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+http = urllib3.PoolManager(timeout=urllib3.Timeout(connect=5, read=10), retries=urllib3.Retry(1))
 client = Minio(os.environ["CONFIG_S3_ENDPOINT"], access_key=os.environ["CONFIG_S3_ACCESS_KEY"],
                secret_key=os.environ["CONFIG_S3_SECRET_KEY"], secure=False,
-               region=os.environ["CONFIG_S3_REGION"])
+               region=os.environ["CONFIG_S3_REGION"], http_client=http)
 body = {}
 
 def outcome(fn):
@@ -315,19 +323,21 @@ def test_minio_refuses_the_workload_without_the_chassis_key(sidecar: str) -> Non
     Criterion 3, MinIO (H12): from the workload container of `agent-echo`, which rides its
     chassis's edge to MinIO, a GET of the chassis's config document gets MinIO's own 403 with no
     signature (AccessDenied), signed with a made-up key pair (InvalidAccessKeyId), and signed
-    with the chassis's user and a guessed secret (SignatureDoesNotMatch). The paired control: a
+    with the chassis's user and a guessed secret (SignatureDoesNotMatch). The paired control: the
+    same signed GET with the chassis's own pair, inside the chassis container, is 200; a
     run through the chassis is 200 and reports the version of that document as read from MinIO
     (`versions.config`, named `minio-...`), and the chassis's own key reads the document while a
     document outside its path, a write, and a listing are AccessDenied. The drop control: the pods
     without the edge (`chassis-echo-remote`, and `agent-echo-events` after the Kafka pass) still
     time out on MinIO while their LiteLLM edge connects in the same probe."""
     minio = service_ip(PLATFORM_NS, "minio")
-    refused = exec_json(
-        sidecar, WORKLOAD, S3_REFUSALS, minio, str(MINIO_PORT), BUCKET, DOCUMENT, MINIO_USER
-    )
+    call = (minio, str(MINIO_PORT), BUCKET, DOCUMENT, MINIO_USER)
+    refused = exec_json(sidecar, WORKLOAD, S3_GET, *call, "refused")
     assert refused["unsigned"] == {"status": 403, "code": "AccessDenied"}, refused
     assert refused["stranger"] == {"status": 403, "code": "InvalidAccessKeyId"}, refused
     assert refused["guessed"] == {"status": 403, "code": "SignatureDoesNotMatch"}, refused
+    signed = exec_json(sidecar, CHASSIS, S3_GET, *call, "own")
+    assert signed == {"own": {"status": 200, "code": None}}, signed
 
     own = exec_json(sidecar, CHASSIS, CHASSIS_READ, BUCKET, AGENT, DOCUMENT, OTHER_DOCUMENT)
     assert own["own"] == "ok", own

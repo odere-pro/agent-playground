@@ -287,7 +287,7 @@ rotate() {
     *) die "rotate: unknown Secret '$name'" ;;
   esac
   log "rotated $name; restart the pods that mount it (litellm-db: Postgres too, then rekey;" \
-    "chassis-echo-minio: rerun minio-init first)"
+    "chassis-echo-minio: first delete job/minio-init and run run.sh apply)"
 }
 
 rekey() {
