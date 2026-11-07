@@ -15,13 +15,14 @@ Orchestration is config, not code: routing, workflows, limits, and approvals all
 
 ## What
 
-- `schemas/orchestrator-config.schema.json` and `schemas/workflow.schema.json` in the config store, for `kind: OrchestratorConfig` and `kind: Workflow` under `apiVersion: agents/v1`, with `metadata.name` and `metadata.version` required.
+- `orchestrator-config.schema.json` and `workflow.schema.json`, for `kind: OrchestratorConfig` and `kind: Workflow` under `apiVersion: agents/v1`, with `metadata.name` and `metadata.version` required. They sit next to the chassis schemas in `packages/chassis/schemas/`, in git, not in the config store.
+- `apiVersion`, `kind`, and `metadata` are new fields. Today the loader reads one `ChassisConfig` (`profile`, `agent`, `spec`, `version`) by agent name, and reloads only the `RELOADABLE` paths (`packages/chassis/src/chassis/server/config.py`).
 - The orchestrator config schema reuses the shared agent config blocks by `$ref` (`interface`, `security`, `governance`, and the rest), so every class still has one config schema.
 - It adds `planner` (`mode`: `fixed | planned | hybrid`, `model_route`), `routing` (`match`, `workflow`, `default`), `registry` (`top_k`, `min_trust`), `limits` (`max_steps`, `max_tokens`, `max_cost_usd`, `timeout_s`), `memory` (`short_term`, `long_term`, `load`), and `approvals` (`require_for`).
 - The workflow schema covers `pattern` (`chain | fan_out | compare`), `split`, `steps` (`id`, `agent` as `{ task }` or `{ name }`, `parallel`, `pool`, `input`), `evaluate`, `on_failure` (`retries`, `then`: `fallback_route | skip | stop`), and `budget`. Suggested: a `repeat` count per step for `compare`.
 - Unknown fields are rejected, so a typo fails at load, not at run time.
-- The config loader (H-12) picks the schema by `kind`.
-- Example files: `agents/orchestrator.yaml`, `workflows/simplify-long-doc.yaml`, `workflows/compare-simplifiers.yaml`.
+- The config loader (H-12) picks the schema by `kind`. 010 H-12 built no `kind` dispatch, so this issue adds it, with a reloadable set per kind.
+- Example files: `agents/orchestrator.yaml`, `workflows/echo-long-doc.yaml`, `workflows/compare-routes.yaml`. They use the echo agent (`packages/workloads/echo-*`), not the parked simplifier. The epic's example files stay in the epic.
 - A CI check that validates every file under `agents/` and `workflows/`.
 
 ## Out of scope
@@ -32,11 +33,12 @@ Orchestration is config, not code: routing, workflows, limits, and approvals all
 
 ## Acceptance criteria
 
-- [ ] Both schemas are in the config store under `schemas/`, versioned like any other file.
+- [ ] Both schemas are in `packages/chassis/schemas/`, versioned like the chassis schemas.
 - [ ] The orchestrator config and `simplify-long-doc` examples from C.2 validate as written.
 - [ ] Invalid files are rejected with the path of the bad field: an unknown `planner.mode`, an unknown `pattern`, a step without `id`, an unknown `on_failure.then`, a negative limit, and an unknown field.
 - [ ] A step `agent` must have exactly one of `task` or `name`.
 - [ ] The loader validates an `OrchestratorConfig` and a `Workflow` by `kind`, and a changed file is reloaded without a restart.
+- [ ] The loader dispatches on `kind` to `ChassisConfig`, `OrchestratorConfig`, or `Workflow`. Each kind names its reloadable set, as `RELOADABLE` does for `ChassisConfig`, and a change outside that set needs a restart.
 - [ ] CI fails when any config file does not match its schema.
 
 ## Dependencies

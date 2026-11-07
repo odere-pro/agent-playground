@@ -16,7 +16,7 @@ The platform MCP server must let any MCP client manage runs, not only search and
 ## What
 
 - Runs: `run_start`, `run_status`, `run_resume`, `run_cancel`, on the orchestrator run API.
-- Memory: `settings_get`, `settings_set`, `gotcha_add`, `feedback_add`, on the memory API.
+- Memory: `settings_get`, `settings_set`, `gotcha_add`, on the memory API. `feedback_add` wraps `POST /v1/feedback` (ADR-009), not the memory store.
 - Config: `config_get`, `config_set`, `config_validate`, `config_versions`, `config_rollback`, for files under `agents/` in the config store. `config_set` checks the file against its schema before it writes.
 - Workflows: `workflow_list`, `workflow_get`, `workflow_set`, `workflow_validate`, `workflow_dry_run`, on the workflow validation API. `workflow_set` writes a new version but does not make it active.
 - Tools generated from the orchestrator's OpenAPI spec where possible.

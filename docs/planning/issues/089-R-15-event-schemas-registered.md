@@ -20,6 +20,7 @@ Agents are started by events and publish events, so other systems need to find e
 - Event schemas (JSON Schema files in the config store) are registered by event type and version.
 - Every event type in the D.3 catalog has a registered schema.
 - Event type names must follow `<domain>.<entity>.<event>.v<major>` (D.2).
+- The first schema set comes from `packages/chassis/schemas/`. The name pattern check lives in the registry, not the chassis.
 - Lookup by event type: its schema, and the entries that produce and consume it.
 - Suggested: a compatibility check, so a schema change within the same major version cannot remove a required field.
 

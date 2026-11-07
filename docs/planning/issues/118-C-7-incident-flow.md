@@ -31,7 +31,7 @@ A serious incident with an AI system brings legal duties under AI Act Art. 73, a
 ## Acceptance criteria
 
 - [ ] An SLO alert on staging produces an `incidents.incident.detected.v1` event.
-- [ ] An agent raises an incident by emitting an `incident` event, and the published event carries its `trace_id` and agent version. The test runs over A2A on localhost and in memory.
+- [ ] An agent raises an incident by emitting an `incident` event, and the published event carries its `trace_id` and agent version. The test runs over A2A on localhost and in memory. The new `incident` type in `packages/chassis/schemas/events.v0.json` is a contract change: it needs a `chassis-architect` pass and a schema version note.
 - [ ] A possible serious incident reaches both on-call and the compliance team.
 - [ ] Every incident shows in the audit log export for its time range.
 - [ ] The compliance owner reviews the serious-incident runbook, and it is tried once in a tabletop drill.

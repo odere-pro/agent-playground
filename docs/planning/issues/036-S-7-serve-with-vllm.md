@@ -23,7 +23,7 @@ The trained SLM must answer through the router like any other model, so agents c
 - Runs in the Docker Compose GPU profile, and on a rented GPU host for the first version.
 - vLLM metrics scraped by Prometheus, and SLM calls counted in router usage.
 - A latency and throughput test with typical inputs.
-- Status after PoC-6: PoC-6c serves Qwen3-1.7B with llama.cpp on the host behind LiteLLM's `local-small` route, not vLLM. Configured and tested offline only; the SLM numbers wait on the Mac run. vLLM on a GPU stays here.
+- Status after PoC-6c (`pocs/poc-06c-pretrained-slm/notes/2026-10-28-scale-run.md`, `pocs/poc-06c-pretrained-slm/notes/2026-10-28-slm-run.md`): the model server, not the agent pods, is the scale limit: with 4 slots on CPU, throughput stops growing at 2 pairs, about 2.3 to 2.4 ok requests per second. A request that waits for a slot needs a bound: at 1 pair, 16 users on 4 slots failed 13 of 124 requests at p95 30000 ms. Every number is CPU only, on a shared 4-CPU runner; do not size from them.
 
 ## Reuse
 
@@ -37,6 +37,7 @@ The trained SLM must answer through the router like any other model, so agents c
 - The simplifier agent core (041 A-1).
 - Shadow mode, canary, and rollback (047 M-3, 048 M-4).
 - Quantized variants (049 M-5).
+- PoC-6c serves a base Qwen3-1.7B with llama.cpp behind LiteLLM's `local-small` route, not vLLM. It is not this issue's served SLM; the SLM numbers wait on the Mac run (`pocs/poc-06c-pretrained-slm/notes/2026-10-09-mac-command-debt.md`).
 
 ## Acceptance criteria
 
