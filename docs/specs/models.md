@@ -13,7 +13,7 @@ A workload never names a provider model. It sends a **route**, and LiteLLM resol
 
 ## How a request gets its route
 
-- `spec.model.route` is the agent's route, `spec.model.fallback_route` its fallback, and `spec.model.routes` its route per task (`chassis/server/config.py`, `ModelSpec`; schema `packages/chassis/schemas/chassis-config.v0.json`). Every `spec.model` field reloads without a restart.
+- `spec.model.route` is the agent's route, `spec.model.fallback_route` its fallback, and `spec.model.routes` its route per task (`chassis/server/config.py`, `ModelSpec`; schema `packages/chassis/schemas/chassis-config.v0.json`). `route`, `routes`, and `judge_route` reload without a restart; `fallback_route` is restart-only.
 - The pipeline resolves the run's route into `ctx.model_route` (`context.v0.json`): the task's route from the map, else `route` (the next section). The workload sends it as the OpenAI `model` field to the chassis model proxy. `versions.model_route` on the response stays `route`, the agent's configured route.
 - The proxy (`chassis/server/model_proxy.py`, `model_admission.py`) adds the service's key, forwards only the keys it allows, caps `max_tokens` at what the run has left, prices the call from `spec.observability.prices`, and keys the call to its request by `traceparent`. A call with no trace id counts against a per-replica cap and is logged.
 - The proxy sends every model call of a run to the run's route, whatever `model` the workload named (counter `chassis.model_route_forced{route}`): the resolved route, or `fallback_route` for the evaluator gate's last attempt, which replaces it.
