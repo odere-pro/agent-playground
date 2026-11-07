@@ -104,6 +104,7 @@ Count: 3 High, 5 Medium, 8 Low, plus 5 bring-up blockers that are not security f
 - Where: `seed.sh:112-121` seeds `minio-chassis` into `poc05-agents`, and `platform/network-policy.yaml:164-173` admits chassis pods to MinIO. No chassis uses MinIO (`config: memory`, `agents/network-policy.yaml:6`).
 - Consequence: an extra credential that F2 can steal, and an ingress edge no pod needs.
 - Fix: seed `minio-chassis` into `poc05-platform` only, and drop the chassis ingress rule until a chassis reads its config from S3.
+- Amended 2026-11-07: `agent-echo`'s chassis now reads its config from MinIO. It has its own user, `chassis-echo`, and Secret `chassis-echo-minio` in both namespaces, and MinIO admits that pod by name only. `minio-chassis` is gone. The remaining exposure is recorded in the blind-spots note, section 2, H12.
 
 ### F11 (Low): `mc admin user add` puts the chassis key pair in argv. Accept as a recorded exception.
 
@@ -167,7 +168,7 @@ Count: 3 High, 5 Medium, 8 Low, plus 5 bring-up blockers that are not security f
   - Nothing is wider than the table except the unused MinIO edge. The real widening is label forgery (F3), not an edge.
 - Missing edges that would fail bring-up: none found. This assumes the policy sees the pod after the Service rewrite, as the spike showed, for the remote's ClusterIP path to 8091 and the chassis's path to `remote-echo:9000`. The spike did not test a gVisor pod as an ingress target (spike line 105). remote-echo is one.
 - DNS only where needed: the agent pods, LiteLLM, and minio-init. No DNS for remote-echo, code-runner, Postgres, Valkey, MinIO, or the fake servers. The sidecar workload inherits the chassis's DNS (H20, a recorded blind spot).
-- The sidecar's shared network namespace: the workload reaches the proxies at 127.0.0.1:8090 (by design), the chassis's public port at `POD_IP:8080` (F12), LiteLLM and Valkey (by key or ACL, B1), and kube-dns. It does not reach the metadata service, the API, Postgres, the fake servers, MinIO, the code runner, or the remote. That is as designed.
+- The sidecar's shared network namespace: the workload reaches the proxies at 127.0.0.1:8090 (by design), the chassis's public port at `POD_IP:8080` (F12), LiteLLM and Valkey (by key or ACL, B1), and kube-dns. It does not reach the metadata service, the API, Postgres, the fake servers, MinIO, the code runner, or the remote. That is as designed. (Amended 2026-11-07: `agent-echo` now reads its config from MinIO, so its workload reaches MinIO 9000 too, refused by SigV4; F10 is amended the same way. See the blind-spots note, section 2, H12.)
 - Kubelet probes: kube-network-policies on kindnet filters traffic forwarded between pods. The kubelet probes from the node's own network namespace, which PoC-4's default deny on the same CNI did not block. The proof is every pod reaching Ready: the TCP probe on gVisor remote-echo, httpGet on the code runner, exec on the sidecar workload.
 
 ### Q3. Admission

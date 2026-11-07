@@ -52,7 +52,7 @@ flowchart LR
         valkey[("Valkey :6379: ACL user chassis")]
         fms["fake-model-server :8081"]
         fmcp["fake-mcp-server :8082"]
-        minio[("MinIO :9000: no chassis reads it in PoC-5")]
+        minio[("MinIO :9000: agent-echo's config document")]
     end
     caller --> chS
     caller --> chR
@@ -64,6 +64,7 @@ flowchart LR
     chR --> litellm
     chS --> valkey
     chR --> valkey
+    chS -- "its own user, read-only" --> minio
     litellm --> pg
     litellm --> fms
     litellm --> fmcp
@@ -260,6 +261,7 @@ flowchart LR
     agentEcho -->|"UDP and TCP 53"| dns
     agentEcho -->|"TCP 4000"| litellm
     agentEcho -->|"TCP 6379"| valkey
+    agentEcho -->|"TCP 9000"| minio
     chassisRemote -->|"UDP and TCP 53"| dns
     chassisRemote -->|"TCP 4000"| litellm
     chassisRemote -->|"TCP 6379"| valkey
@@ -280,7 +282,7 @@ flowchart LR
     agentEcho -.->|"API Service 10.96.0.1:443"| deny
     agentEcho -.->|"node addresses :6443"| deny
     agentEcho -.->|"fake-model-server :8081, H09"| deny
-    agentEcho -.->|"minio :9000"| deny
+    chassisRemote -.->|"minio :9000"| deny
     remoteEcho -.->|"metadata 169.254.169.254"| deny
     remoteEcho -.->|"API Service 10.96.0.1:443"| deny
     remoteEcho -.->|"node addresses :6443"| deny
@@ -293,11 +295,11 @@ What the map says, in words:
 
 - **The remote sandbox** has exactly one egress edge: its chassis on 8091. It has no DNS. Its 9000 takes only its own chassis pod.
 - **8091** takes only the pod labeled `app.kubernetes.io/name: remote-echo` in `poc05-remote`. Its bearer token is the second lock (section 5).
-- **The sidecar pod** has the chassis's egress, and so does its workload, because they share one network namespace. So `agent-echo` can reach LiteLLM and Valkey at the network level. Each must refuse it without the chassis's credential (section 6). DNS stays open in this lane: a recorded blind spot (H20).
+- **The sidecar pod** has the chassis's egress, and so does its workload, because they share one network namespace. So `agent-echo` can reach LiteLLM, Valkey, and MinIO at the network level. Each must refuse it without the chassis's credential (section 6). DNS stays open in this lane: a recorded blind spot (H20).
 - **The fake servers and Postgres** take LiteLLM only and have no egress. No agent pod has a route to the model server (the H09 fix).
 - **The code-runner pods** take 8000 from the dispatcher only, and have no egress at all, not even DNS. A sandbox cannot reach another sandbox, the dispatcher, LiteLLM, or the API.
 - **The dispatcher** takes 8000 from LiteLLM. It reaches the sandboxes on 8000 and the API server endpoint on 6443. It has no DNS. `run.sh` fills the endpoint address from the `kubernetes` EndpointSlice and refuses a sentinel, link-local, pod, or service address.
-- **MinIO** takes only `minio-init`. No chassis uses `config: s3` in PoC-5 (security review F10), so no chassis edge.
+- **MinIO** takes `minio-init` and `agent-echo`, by name. `agent-echo`'s chassis reads its config document from MinIO (`config: minio`, since 2026-11-07); the other chassis pods keep `config: memory` and have no edge, so the network still drops them. `agent-echo`'s workload rides its chassis's edge, and MinIO's SigV4 check refuses it (H12): a recorded sidecar-lane risk ([the blind-spots note](../../pocs/poc-05-sandboxed/notes/2026-10-02-blind-spots.md), section 2).
 - **Not in the map:** the probe pods (T10, a recorded exception, [the T10 note](../../pocs/poc-05-sandboxed/notes/2026-10-09-t10-probe-exception.md)). Kafka and `agent-echo-events`, added at the close by `run.sh kafka` (`platform/kafka.yaml`, `agents/agent-echo-events.yaml`). Their edges are in `netpol_edges.yaml` but not drawn here: Kafka takes `agent-echo-events` only, on its SASL port.
 - **What this does not prove:** that kindnet drops the packets. The kind suites test that (H01, H03, H04, H18, H19, H20, H30), each with a paired allowed control, and they ran on 2026-10-08 and 2026-10-09. kindnet does not log a drop.
 
@@ -383,7 +385,8 @@ Every Secret is made at run time by `deploy/kind/poc05/platform/seed.sh`, run as
 | `valkey-auth` | `poc05-platform` | Valkey, `auth.conf` mounted (the ACL user `chassis` by the SHA-256 of its password; the `default` user is off) | Valkey: `NOAUTH` with no login, `WRONGPASS` with a guessed one (H10) |
 | `valkey-auth` | `poc05-agents` | The chassis container of `agent-echo` and of `chassis-echo-remote`, env `VALKEY_PASSWORD` | as above |
 | `minio-root` | `poc05-platform` | MinIO and `minio-init`, `envFrom` | MinIO (H12) |
-| `minio-chassis` | `poc05-platform` | `minio-init` only, to make the read-only chassis user. No chassis holds it in PoC-5 (`config: memory`) | MinIO |
+| `chassis-echo-minio` | `poc05-platform` | `minio-init` only, env `ECHO_S3_SECRET_KEY`, to make the user `chassis-echo` | MinIO |
+| `chassis-echo-minio` | `poc05-agents` | The chassis container of `agent-echo`, env `CONFIG_S3_SECRET_KEY`; the user name `chassis-echo` is plain env | MinIO: 403 with no signature (`AccessDenied`), an unknown key (`InvalidAccessKeyId`), or a guessed secret (`SignatureDoesNotMatch`) (H12). The user may read `agents/echo.yaml` and nothing else |
 | `chassis-echo-litellm` | `poc05-agents` | The chassis container of `agent-echo`, env `LITELLM_API_KEY` | LiteLLM models and the MCP gateway: 401 with no key or an unknown key (H05, H06, H07). The key has only its own route, its own tool allow-list, and no management routes |
 | `chassis-echo-remote-litellm` | `poc05-agents` | The chassis container of `chassis-echo-remote`, env `LITELLM_API_KEY` | as above |
 | `remote-echo-token` | `poc05-agents` | The chassis container of `chassis-echo-remote`, env `REMOTE_TOKEN` | The chassis's remote listener on 8091: 401 `remote_unauthenticated` (H17). Without it the chassis refuses `--remote-proxy-host` and does not start |
@@ -407,12 +410,13 @@ flowchart LR
         sDb["litellm-db"]
         sValkeyAcl["valkey-auth: ACL file"]
         sMinioRoot["minio-root"]
-        sMinioChassis["minio-chassis"]
+        sMinioEchoP["chassis-echo-minio"]
     end
     subgraph agentSecrets["Secrets in poc05-agents"]
         sValkeyPw["valkey-auth: password"]
         sKeyEcho["chassis-echo-litellm"]
         sKeyRemote["chassis-echo-remote-litellm"]
+        sMinioEchoA["chassis-echo-minio"]
         sTokA["remote-echo-token"]
     end
     subgraph remoteSecrets["Secrets in poc05-remote"]
@@ -446,7 +450,8 @@ flowchart LR
     sDb --> cPg
     sValkeyAcl --> cValkey
     sMinioRoot --> cMinio
-    sMinioChassis --> cMinio
+    sMinioEchoP --> cMinio
+    sMinioEchoA --> cChS
     sValkeyPw --> cChS
     sValkeyPw --> cChR
     sKeyEcho --> cChS
@@ -459,6 +464,7 @@ flowchart LR
     cChR -->|"VALKEY_PASSWORD"| vValkey
     cLitellm -->|"DATABASE_URL"| vPg
     cMinio -->|"root keys"| vMinio
+    cChS -->|"user chassis-echo"| vMinio
     cWR -->|"its own token"| vListener
     cChR -->|"the same token"| vA2A
 ```

@@ -31,7 +31,9 @@ from typing import Any
 
 import pytest
 import yaml
+from chassis.profiles import merge_adapters
 from chassis.server.config import ChassisConfig, load_config
+from chassis.server.config_loader import parse_document, restart_required
 from poc_harness.admission_model import AdmissionParams, broken_rules
 from poc_harness.manifests import container_secret_names, load_manifests
 
@@ -50,6 +52,18 @@ POD_KINDS = {"Deployment", "StatefulSet", "DaemonSet", "Job", "Pod", "Sandbox", 
 POD_TEMPLATE_KINDS = {"Sandbox", "SandboxTemplate"}  # the pod template is `spec.podTemplate`
 DISPATCHER = "code-runner-dispatch"
 EXTENSIONS = "extensions.agents.x-k8s.io/v1beta1"
+STORE_DOCUMENTS = POC05 / "platform/agent-configs"
+STORE_ENV = {
+    "CONFIG_S3_ENDPOINT": "minio.poc05-platform.svc.cluster.local:9000",
+    # kind only: plain HTTP inside the cluster, fake data (a recorded exception, blind-spots note).
+    "CONFIG_S3_SECURE": "false",
+    # Set, so the SDK never asks for the bucket location: the user's policy has no bucket action.
+    "CONFIG_S3_REGION": "us-east-1",
+}
+STORE_READER = (
+    "agent-echo"  # the one chassis with `config: minio`; the netpol fixture holds its edge
+)
+SIDECAR_WORKLOAD_ENV = {"HOST", "PORT", "CHASSIS_MODEL_URL", "CHASSIS_TOOL_URL"}
 
 Doc = dict[str, Any]
 
@@ -476,6 +490,56 @@ def test_chassis_config_loads_and_matches_the_pod(pod: Pod, chassis: Doc) -> Non
         assert TOKEN_SECRET.fullmatch(ref["name"]), pod.id
     else:
         assert _flag(args, "--remote-proxy-host") is None, pod.id
+
+
+@pytest.mark.parametrize(("pod", "chassis"), CHASSIS, ids=CHASSIS_IDS)
+def test_a_store_config_chassis_has_its_own_minio_key_and_document(pod: Pod, chassis: Doc) -> None:
+    """Criterion 3 (offline part): a chassis whose config adapter is not `memory` reads its
+    document from MinIO with its own user. Only `agent-echo` does. Its env names the endpoint,
+    plain HTTP (kind only), and the region; the access key is the plain name `chassis-<agent>`
+    and the one Secret-sourced `CONFIG_S3_*` variable is the secret key, from
+    `chassis-<agent>-minio`. The store document loads with the real model, is named for its
+    agent, names its own `version`, and differs from the bootstrap in no restart-only path, so the
+    chassis starts with it. Every other chassis has no `CONFIG_S3_*` variable at all."""
+    config = _chassis_config(pod, chassis)
+    env = _env(chassis)
+    s3 = {name for name in env if name.startswith("CONFIG_S3_")}
+    if merge_adapters(config.profile, config.spec.adapters).config == "memory":
+        assert pod.name != STORE_READER, pod.id
+        assert not s3, f"{pod.id}: {sorted(s3)}"
+        return
+    assert pod.name == STORE_READER, pod.id
+    name = config.agent.name
+    assert s3 == {*STORE_ENV, "CONFIG_S3_ACCESS_KEY", "CONFIG_S3_SECRET_KEY"}, sorted(s3)
+    for key, value in STORE_ENV.items():
+        assert env[key] == {"name": key, "value": value}, env[key]
+    assert env["CONFIG_S3_ACCESS_KEY"] == {
+        "name": "CONFIG_S3_ACCESS_KEY",
+        "value": f"chassis-{name}",
+    }
+    secret_sourced = {n for n in s3 if "valueFrom" in env[n]}
+    assert secret_sourced == {"CONFIG_S3_SECRET_KEY"}, sorted(secret_sourced)
+    ref = env["CONFIG_S3_SECRET_KEY"]["valueFrom"]["secretKeyRef"]
+    assert ref == {"name": f"chassis-{name}-minio", "key": "CONFIG_S3_SECRET_KEY"}, ref
+
+    document = STORE_DOCUMENTS / f"{name}.yaml"
+    raw = yaml.safe_load(document.read_text())
+    stored = parse_document(raw)
+    assert stored.agent.name == document.stem == name
+    assert raw.get("version"), "the store document names its own version"
+    assert str(stored.version).startswith(f"{raw['version']}+"), stored.version
+    assert restart_required(config, stored) == [], "the chassis would refuse its document"
+
+
+def test_the_sidecar_workload_env_is_its_four_variables() -> None:
+    """Criterion 4 (offline part): the agent-echo workload gets exactly its four plain variables,
+    with or without the chassis's MinIO key next door."""
+    (pod,) = [p for p in WORKLOAD_PODS if p.name == "agent-echo"]
+    (workload,) = [c for c in pod.containers() if c["name"] == "workload"]
+    env = _env(workload)
+    assert set(env) == SIDECAR_WORKLOAD_ENV, sorted(env)
+    assert all("valueFrom" not in e for e in env.values()), env
+    assert "envFrom" not in workload
 
 
 # --- the remote lane and the Sandboxes ---------------------------------------------------------

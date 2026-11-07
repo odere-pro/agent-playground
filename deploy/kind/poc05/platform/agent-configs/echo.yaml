@@ -1,0 +1,26 @@
+# The store document for `agent-echo`: minio-init copies it to agents/echo.yaml in the bucket
+# `agent-configs` (ConfigMap `agent-configs-seed`, kustomization.yaml). agent-echo's chassis loads
+# it at start with its own MinIO user and polls it every 5 s (`config: minio`). It is the bootstrap
+# (agents/chassis/echo.yaml) with its own `version`, so a run reports `versions.config` as
+# `minio-1+<content hash>`: proof the config came from the store. It must differ from the
+# bootstrap only in reloadable paths, or the chassis refuses to start; and reloads only take a
+# change to a reloadable path (test_poc05_hardening_static.py holds both). No secret here.
+version: minio-1
+profile: local
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  trust: trusted
+  adapters:
+    model: litellm
+    config: minio
+    state: valkey
+    telemetry: memory
+    tools: mcp
+    events: none
+  engine:
+    connector: sidecar
+    url: http://127.0.0.1:9000
+  model:
+    route: fake-chat
