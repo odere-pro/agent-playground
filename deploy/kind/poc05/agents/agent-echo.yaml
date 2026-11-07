@@ -11,8 +11,11 @@
 # Hardening (section 2.11): chassis uid 10001, workload uid 10002, so neither can read the other's
 # files; read-only root, drop ALL, no privilege escalation, seccomp RuntimeDefault; cpu and memory
 # limits; one memory-backed, size-capped /tmp per container. Secrets go to the chassis container
-# only: its LiteLLM virtual key and the Valkey password. The workload gets four plain variables.
-# No MinIO key: the config is the mounted file (`config: memory`, chassis/echo.yaml).
+# only: its LiteLLM virtual key, the Valkey password, and its MinIO secret key. The workload gets
+# four plain variables. The chassis reads its config document from MinIO (`config: minio`,
+# chassis/echo.yaml) as the user `chassis-echo`, which may read `agents/echo.yaml` only
+# (platform/minio.yaml). It does not start without that document: after a MinIO restart, rerun
+# minio-init before this pod restarts.
 #
 # Accepted risks of the sidecar lane (trusted code only; security review F6, F12; to be recorded in
 # ADR-005 and the blind-spots note by T29 and T30):
@@ -110,6 +113,23 @@ spec:
                 secretKeyRef:
                   name: valkey-auth
                   key: VALKEY_PASSWORD
+            # The config store. Plain HTTP inside the kind cluster, fake data only (a recorded
+            # kind-only exception). The region is set, so the SDK never asks for the bucket's
+            # location: the user's policy has no bucket action.
+            - name: CONFIG_S3_ENDPOINT
+              value: minio.poc05-platform.svc.cluster.local:9000
+            - name: CONFIG_S3_SECURE
+              value: "false"
+            - name: CONFIG_S3_REGION
+              value: us-east-1
+            # A name, not a secret (like VALKEY_USERNAME); minio-init makes the same user.
+            - name: CONFIG_S3_ACCESS_KEY
+              value: chassis-echo
+            - name: CONFIG_S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: chassis-echo-minio
+                  key: CONFIG_S3_SECRET_KEY
           ports:
             - name: http
               containerPort: 8080

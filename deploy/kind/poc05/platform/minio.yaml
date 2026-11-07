@@ -1,7 +1,8 @@
 # MinIO, the agent config store (plan sections 2.11, 2.12, H12). Root credentials from the Secret
-# `minio-root` (seed.sh). The chassis gets a separate key pair, `minio-chassis`, read-only on the
-# bucket `agent-configs` (minio-init below). Data is an emptyDir: after a MinIO restart, rerun the
-# Job (delete it and apply again).
+# `minio-root` (seed.sh). agent-echo's chassis reads its config document as its own user,
+# `chassis-echo`, which may read `agents/echo.yaml` and nothing else (minio-init below). Data is an
+# emptyDir: a MinIO restart loses the document and the user. Rerun the Job (delete it, then
+# `run.sh apply`) before agent-echo restarts, or its chassis does not start (runbooks).
 # Image: the one the PoC-4 scale stack pins by digest (deploy/compose/docker-compose.scale.yaml).
 # Exception, owner platform-security: a community build, fake data only; build from source and
 # sign before any real data (deploy/compose/SECURITY.md, section 7).
@@ -102,11 +103,13 @@ spec:
       port: 9000
       targetPort: 9000
 ---
-# One shot, as in the PoC-4 scale stack: the bucket `agent-configs` with versioning, the policy
-# `chassis-read` (get and list on that bucket only), and the chassis's user with that policy.
-# Agent config documents: every file in the optional ConfigMap `agent-configs-seed` (T13 owns it)
-# is copied to agents/<file>. Credentials reach mc only through MC_HOST_local, built inside the
-# shell from env, never in argv.
+# One shot, as in the PoC-4 scale stack: the bucket `agent-configs` with versioning; every file in
+# the ConfigMap `agent-configs-seed` (platform/agent-configs/, kustomization.yaml) copied to
+# agents/<file>; and per store-reading chassis one user and one policy. Today that is agent-echo:
+# the user `chassis-echo` (a name, not a secret) with `chassis-echo-read`, `s3:GetObject` on
+# `agents/echo.yaml` only (no list, no write, no bucket action; the chassis sets its region, so
+# the SDK never asks for the bucket location). The root pair reaches mc only through MC_HOST_local,
+# built inside the shell from env, never in argv.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -141,11 +144,17 @@ spec:
           envFrom:
             - secretRef:
                 name: minio-root
-            - secretRef:
-                name: minio-chassis
           env:
             - name: MC_CONFIG_DIR
               value: /tmp/mc
+            # agent-echo's user: CONFIG_S3_ACCESS_KEY in agents/agent-echo.yaml is the same name.
+            - name: ECHO_S3_USER
+              value: chassis-echo
+            - name: ECHO_S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: chassis-echo-minio
+                  key: CONFIG_S3_SECRET_KEY
           command:
             - sh
             - -c
@@ -164,23 +173,24 @@ spec:
                 [ -f "$f" ] || continue
                 mc cp "$f" "local/agent-configs/agents/$(basename "$f")"
               done
-              cat > /tmp/chassis-read.json <<'POLICY'
+              cat > /tmp/chassis-echo-read.json <<'POLICY'
               {"Version": "2012-10-17", "Statement": [
-                {"Effect": "Allow", "Action": ["s3:GetObject", "s3:GetObjectVersion"],
-                 "Resource": ["arn:aws:s3:::agent-configs/*"]},
-                {"Effect": "Allow",
-                 "Action": ["s3:ListBucket", "s3:ListBucketVersions", "s3:GetBucketLocation"],
-                 "Resource": ["arn:aws:s3:::agent-configs"]}]}
+                {"Effect": "Allow", "Action": ["s3:GetObject"],
+                 "Resource": ["arn:aws:s3:::agent-configs/agents/echo.yaml"]}]}
               POLICY
-              mc admin policy create local chassis-read /tmp/chassis-read.json
+              mc admin policy create local chassis-echo-read /tmp/chassis-echo-read.json
               # Recorded exception (security review F11, accepted): `mc admin user add` takes the
               # pair as arguments. That argv lives in this one-shot pod only, which holds the root
-              # key anyway, for a read-only user on one bucket of fake data; the Job is deleted
-              # after 600 s. To be listed in deploy/compose/SECURITY.md section 7 (T30). Revisit:
-              # create the user through the admin API from a script that reads the pair from env.
-              mc admin user add local "$CONFIG_S3_ACCESS_KEY" "$CONFIG_S3_SECRET_KEY" >/dev/null
-              mc admin policy attach local chassis-read --user "$CONFIG_S3_ACCESS_KEY" >/dev/null 2>&1 || true
-              echo "minio-init: bucket, policy, and the chassis user are ready"
+              # key anyway, for a user that reads one document of fake data; the Job is deleted
+              # after 600 s. Listed in deploy/compose/SECURITY.md section 7. Revisit: create the
+              # user through the admin API from a script that reads the pair from env.
+              mc admin user add local "$ECHO_S3_USER" "$ECHO_S3_SECRET_KEY" >/dev/null
+              # A rerun finds the policy attached already, and attach then fails: that is fine
+              # only when the user's own record names the policy.
+              mc admin policy attach local chassis-echo-read --user "$ECHO_S3_USER" >/dev/null 2>&1 ||
+                mc admin user info local "$ECHO_S3_USER" --json | grep -q '"chassis-echo-read"' ||
+                { echo "minio-init: chassis-echo-read is not attached to $ECHO_S3_USER" >&2; exit 1; }
+              echo "minio-init: bucket, documents, and the chassis-echo user are ready"
           # 64Mi was OOM-killed at `mc admin user add` on kind (T19); 128Mi once more within one
           # second of start, on the 10-CPU VM (2026-10-08). One shot, so the peak is brief.
           resources:
@@ -205,10 +215,10 @@ spec:
             - name: tmp
               mountPath: /tmp
       volumes:
+        # Required: without its document agent-echo's chassis does not start, so fail here.
         - name: seed
           configMap:
             name: agent-configs-seed
-            optional: true
         - name: tmp
           emptyDir:
             medium: Memory

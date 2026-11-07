@@ -39,8 +39,10 @@ WORKLOAD = "workload"
 CHASSIS = "chassis"
 PROXY = "http://127.0.0.1:8090"
 TIMEOUT_S = 90
-# The chassis's Secret-sourced variables in agent-echo.yaml (names only).
+# The Secret-sourced variables every sidecar chassis on kind has (names only).
 CHASSIS_SECRET_ENV = frozenset({"LITELLM_API_KEY", "VALKEY_PASSWORD"})
+# The one more that a chassis reading its config from MinIO has (`agent-echo`, `config: minio`).
+CONFIG_STORE_SECRET_ENV = frozenset({"CONFIG_S3_SECRET_KEY"})
 NOT_A_KEY = "sk-poc05-not-a-real-key-0000"
 METADATA_IP = ipaddress.ip_address("169.254.169.254")
 # kindnet drops a policy-refused packet: the connect times out. ConnectionRefusedError means no

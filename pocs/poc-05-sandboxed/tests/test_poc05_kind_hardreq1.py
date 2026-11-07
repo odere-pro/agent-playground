@@ -9,9 +9,13 @@ paired allowed control in the same test: the same call through the chassis's pro
 its env inside the container and never returned. H07 (no valid key, no model and no tool) is the
 gateway half; `test_poc05_kind_tool_gateway.py` holds H07/H08 from the host.
 
-MinIO differs: no chassis holds a MinIO key in PoC-5 (`config: memory`, security review F10), so
-the network refuses the workload before MinIO's own auth does. Its control is the platform's own
-credential inside the MinIO pod, and an allowed edge from the workload in the same test.
+MinIO, the config store (H12): `agent-echo`'s chassis reads its config document from MinIO
+(`config: minio`) with its own user, `chassis-echo`, whose one policy is `s3:GetObject` on
+`agents/echo.yaml`. The workload rides the same edge, so MinIO's SigV4 check is the control: a
+GET of that document with no signature, with a made-up key pair, and with the chassis's user and a
+guessed secret each get MinIO's own 403. The allowed half: a run through the chassis reports the
+document's version (`versions.config`), and the chassis's own key reads the document and nothing
+else. Every pod without the edge is still dropped by the network.
 
 H11, the broker (T25; `notes/2026-10-02-h11-queue-exception.md`, "How it closes", steps 1 and 2),
 runs from `agent-echo-events`, the one pod with `events: kafka`, after `run.sh kafka`. It skips
@@ -49,9 +53,9 @@ from poc_harness.kind import (
     SIDECAR_POD,
     WORKLOAD,
     chat,
-    get_json,
     kubectl,
     pod,
+    pods,
     probe,
     service_ip,
 )
@@ -74,6 +78,15 @@ def in_workload(pod_name: str, checks: list[dict[str, Any]]) -> list[dict[str, A
 
 def in_chassis(pod_name: str, checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return probe(AGENTS_NS, pod_name, CHASSIS, checks)
+
+
+def exec_json(pod_name: str, container: str, script: str, *args: str) -> dict[str, Any]:
+    got = kubectl(
+        "exec", "-n", AGENTS_NS, pod_name, "-c", container, "--", "python", "-c", script, *args
+    )
+    assert got.returncode == 0, f"exec in {pod_name}/{container} failed: {got.stderr[-400:]}"
+    seen: dict[str, Any] = json.loads(got.stdout.strip().splitlines()[-1])
+    return seen
 
 
 def test_litellm_refuses_the_workload_without_the_chassis_key(sidecar: str) -> None:
@@ -176,52 +189,172 @@ def test_valkey_refuses_the_workload_without_the_chassis_password(sidecar: str) 
     assert own.get("replies") == ["+OK", "+PONG"], own.get("replies", own.get("error"))
 
 
-def test_minio_refuses_the_workload_and_any_unsigned_call(sidecar: str) -> None:
+# --- H12: the config store -------------------------------------------------------------------
+
+MINIO_PORT = 9000
+MINIO_USER = "chassis-echo"  # CONFIG_S3_ACCESS_KEY in agent-echo.yaml (a name, not a secret)
+BUCKET = "agent-configs"
+AGENT = "echo"
+DOCUMENT = f"agents/{AGENT}.yaml"
+OTHER_DOCUMENT = "agents/echo-remote.yaml"  # outside the user's one path
+EVENTS_DEPLOYMENT = "agent-echo-events"
+
+# Run in the workload container with argv: host, port, bucket, object key, user name. Standard
+# library only: a GET of the object with no signature, then signed (SigV4) with a made-up key
+# pair, and with the chassis's user name and a guessed secret. Prints one JSON line: each answer's
+# HTTP status and S3 error code, nothing else.
+S3_REFUSALS = r"""
+import datetime, hashlib, hmac, http.client, json, re, sys
+host, port, bucket, key, user = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
+path = "/%s/%s" % (bucket, key)
+EMPTY = hashlib.sha256(b"").hexdigest()
+SIGNED = "host;x-amz-content-sha256;x-amz-date"
+
+def mac(k, msg):
+    return hmac.new(k, msg.encode(), hashlib.sha256).digest()
+
+def signed(access, secret):
+    now = datetime.datetime.now(datetime.timezone.utc)
+    amz, day = now.strftime("%Y%m%dT%H%M%SZ"), now.strftime("%Y%m%d")
+    canonical = "\n".join(["GET", path, "", "host:%s:%d" % (host, port),
+                           "x-amz-content-sha256:" + EMPTY, "x-amz-date:" + amz, "", SIGNED, EMPTY])
+    scope = day + "/us-east-1/s3/aws4_request"
+    text = "\n".join(["AWS4-HMAC-SHA256", amz, scope,
+                      hashlib.sha256(canonical.encode()).hexdigest()])
+    k = mac(("AWS4" + secret).encode(), day)
+    for part in ("us-east-1", "s3", "aws4_request"):
+        k = mac(k, part)
+    sig = hmac.new(k, text.encode(), hashlib.sha256).hexdigest()
+    auth = "AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s" % (
+        access, scope, SIGNED, sig)
+    return {"x-amz-date": amz, "x-amz-content-sha256": EMPTY, "Authorization": auth}
+
+def get(headers):
+    try:
+        conn = http.client.HTTPConnection(host, port, timeout=10)
+        conn.request("GET", path, headers=headers)
+        r = conn.getresponse()
+        code = re.search(r"<Code>([A-Za-z]+)</Code>", r.read(4096).decode(errors="replace"))
+        return {"status": r.status, "code": code.group(1) if code else None}
+    except Exception as e:
+        return {"error": type(e).__name__}
+
+print(json.dumps({"unsigned": get({}),
+                  "stranger": get(signed("poc05-nobody", "not-the-secret-0000")),
+                  "guessed": get(signed(user, "not-the-secret-0000"))}))
+"""
+
+# Run in the chassis container with argv: bucket, agent name, object key, another object key. The
+# key pair comes from the container's env and never leaves it. Reads its own document, tries one
+# outside its path, a write of its own document's exact bytes (harmless if it were allowed), and
+# a listing; computes the version the chassis reports for the document (`parse_document`, the
+# chassis's own code); then POSTs one run through the chassis's public port. Prints one JSON line
+# of S3 error codes, versions, and the run's status, never a credential.
+CHASSIS_READ = r"""
+import asyncio, io, json, os, sys, urllib.error, urllib.request
+from minio import Minio
+from minio.error import S3Error
+from chassis.adapters.s3.config import S3Config
+from chassis.server.config_loader import parse_document
+bucket, agent, own, other = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+client = Minio(os.environ["CONFIG_S3_ENDPOINT"], access_key=os.environ["CONFIG_S3_ACCESS_KEY"],
+               secret_key=os.environ["CONFIG_S3_SECRET_KEY"], secure=False,
+               region=os.environ["CONFIG_S3_REGION"])
+body = {}
+
+def outcome(fn):
+    try:
+        fn()
+        return "ok"
+    except S3Error as e:
+        return e.code
+    except Exception as e:
+        return type(e).__name__
+
+def get(key):
+    r = client.get_object(bucket, key)
+    try:
+        body[key] = r.read()
+    finally:
+        r.close()
+        r.release_conn()
+
+def put():
+    data = body.get(own, b"")
+    client.put_object(bucket, own, io.BytesIO(data), len(data))
+
+async def reported():
+    store = S3Config.from_env()
+    try:
+        return parse_document((await store.load(agent)).data).version
+    finally:
+        await store.aclose()
+
+def run():
+    req = urllib.request.Request("http://%s:8080/v1/run" % os.environ["POD_IP"],
+                                 json.dumps({"input": {"text": "poc05-h12"}}).encode(),
+                                 {"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.status, json.loads(r.read())["versions"]["config"]
+    except urllib.error.HTTPError as e:
+        return e.code, None
+
+out = {"own": outcome(lambda: get(own)), "other": outcome(lambda: get(other)),
+       "put": outcome(put), "list": outcome(lambda: list(client.list_objects(bucket, "agents/")))}
+out["expected"] = asyncio.run(reported())
+out["run_status"], out["served"] = run()
+print(json.dumps(out))
+"""
+
+
+def test_minio_refuses_the_workload_without_the_chassis_key(sidecar: str) -> None:
     """Criterion 3: "From the workload container, every internal service refuses a call without the
     chassis's credential. Through the chassis, the same calls succeed."
 
-    Criterion 3, MinIO: the control refuses the workload at the network (no edge from any
-    chassis pod, review F10: the connection to the Service and to the pod IP never opens), while
-    the workload's allowed edge to LiteLLM connects in the same test. Both drops are timeouts.
-    MinIO is up on the address the workload tried: inside its pod, an unsigned call to its own
-    pod IP gets MinIO's 403, and the Service's endpoints hold that pod IP (its one allowed peer,
-    the `minio-init` Job, has finished). MinIO itself refuses an
-    unsigned ListBuckets (403) and answers the same call signed with the platform's credential,
-    inside its own pod. No chassis holds a MinIO key in PoC-5 (`config: memory`), so there is no
-    "through the chassis" call to make; that half returns with the first `config: s3` chassis."""
-    minio = pod(PLATFORM_NS, "minio")
-    svc, pod_ip, allowed = in_workload(
-        sidecar,
-        [
-            {"kind": "tcp", "host": service_ip(PLATFORM_NS, "minio"), "port": 9000},
-            {"kind": "tcp", "host": minio["status"]["podIP"], "port": 9000},
-            {"kind": "tcp", "host": service_ip(PLATFORM_NS, "litellm"), "port": 4000},
-        ],
+    Criterion 3, MinIO (H12): from the workload container of `agent-echo`, which rides its
+    chassis's edge to MinIO, a GET of the chassis's config document gets MinIO's own 403 with no
+    signature (AccessDenied), signed with a made-up key pair (InvalidAccessKeyId), and signed
+    with the chassis's user and a guessed secret (SignatureDoesNotMatch). The paired control: a
+    run through the chassis is 200 and reports the version of that document as read from MinIO
+    (`versions.config`, named `minio-...`), and the chassis's own key reads the document while a
+    document outside its path, a write, and a listing are AccessDenied. The drop control: the pods
+    without the edge (`chassis-echo-remote`, and `agent-echo-events` after the Kafka pass) still
+    time out on MinIO while their LiteLLM edge connects in the same probe."""
+    minio = service_ip(PLATFORM_NS, "minio")
+    refused = exec_json(
+        sidecar, WORKLOAD, S3_REFUSALS, minio, str(MINIO_PORT), BUCKET, DOCUMENT, MINIO_USER
     )
-    assert svc.get("error") == POLICY_DROPPED, svc
-    assert pod_ip.get("error") == POLICY_DROPPED, pod_ip
-    assert allowed.get("connected") is True, allowed
+    assert refused["unsigned"] == {"status": 403, "code": "AccessDenied"}, refused
+    assert refused["stranger"] == {"status": 403, "code": "InvalidAccessKeyId"}, refused
+    assert refused["guessed"] == {"status": 403, "code": "SignatureDoesNotMatch"}, refused
 
-    # Inside MinIO's pod: unsigned, then signed. The pair is expanded from the container's env by
-    # its shell, so it is never in kubectl's argv; mc's output is dropped, only the code is kept.
-    script = (
-        'curl -s -o /dev/null -w "%{http_code}\\n" http://127.0.0.1:9000/; '
-        f'curl -s -o /dev/null -w "%{{http_code}}\\n" http://{minio["status"]["podIP"]}:9000/; '
-        "HOME=/tmp MC_CONFIG_DIR=/tmp/.mc "
-        'MC_HOST_local="http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@127.0.0.1:9000" '
-        "mc ls local/agent-configs >/dev/null 2>&1; echo $?"
-    )
-    got = kubectl("exec", "-n", PLATFORM_NS, minio["metadata"]["name"], "--", "sh", "-c", script)
-    assert got.returncode == 0, got.stderr[-300:]
-    unsigned, on_pod_ip, signed_rc = got.stdout.split()
-    assert unsigned == "403", got.stdout
-    assert on_pod_ip == "403", got.stdout
-    slices = get_json(
-        "endpointslices", "-n", PLATFORM_NS, "-l", "kubernetes.io/service-name=minio"
-    )["items"]
-    addresses = {a for sl in slices for e in sl.get("endpoints", []) for a in e["addresses"]}
-    assert minio["status"]["podIP"] in addresses, addresses
-    assert signed_rc == "0", got.stdout
+    own = exec_json(sidecar, CHASSIS, CHASSIS_READ, BUCKET, AGENT, DOCUMENT, OTHER_DOCUMENT)
+    assert own["own"] == "ok", own
+    assert own["other"] == "AccessDenied", own
+    assert own["put"] == "AccessDenied", own
+    assert own["list"] == "AccessDenied", own
+    assert own["run_status"] == 200, own
+    assert own["served"] == own["expected"], own
+    assert str(own["served"]).startswith("minio-"), own
+
+    litellm = service_ip(PLATFORM_NS, "litellm")
+    dropped = [("chassis-echo-remote", CHASSIS)]
+    if pods(AGENTS_NS, EVENTS_DEPLOYMENT):
+        dropped.append((EVENTS_DEPLOYMENT, WORKLOAD))
+    for app, container in dropped:
+        name = pod(AGENTS_NS, app)["metadata"]["name"]
+        to_minio, to_litellm = probe(
+            AGENTS_NS,
+            name,
+            container,
+            [
+                {"kind": "tcp", "host": minio, "port": MINIO_PORT},
+                {"kind": "tcp", "host": litellm, "port": 4000},
+            ],
+        )
+        assert to_minio.get("error") == POLICY_DROPPED, (app, to_minio)
+        assert to_litellm.get("connected") is True, (app, to_litellm)
 
 
 # --- H11: the broker ------------------------------------------------------------------------
@@ -408,15 +541,6 @@ def events_pod() -> str:
     assert all(found.values()), f"the Kafka pass ran but deployments are missing: {found}"
     name: str = pod(AGENTS_NS, EVENTS_POD)["metadata"]["name"]
     return name
-
-
-def exec_json(pod_name: str, container: str, script: str, *args: str) -> dict[str, Any]:
-    got = kubectl(
-        "exec", "-n", AGENTS_NS, pod_name, "-c", container, "--", "python", "-c", script, *args
-    )
-    assert got.returncode == 0, f"exec in {pod_name}/{container} failed: {got.stderr[-400:]}"
-    seen: dict[str, Any] = json.loads(got.stdout.strip().splitlines()[-1])
-    return seen
 
 
 def test_kafka_refuses_the_workload_without_the_chassis_credential(events_pod: str) -> None:

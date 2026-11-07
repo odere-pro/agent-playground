@@ -3,7 +3,7 @@
 # docs/plans/2026-10-02-poc-05-sandboxed.md, section 2.9; bring-up order in section 8).
 #
 #   seed.sh base          first pass, before the platform starts: litellm-master, litellm-db,
-#                         valkey-auth, minio-root, minio-chassis (poc05-platform only)
+#                         valkey-auth, minio-root, chassis-echo-minio (both namespaces)
 #   seed.sh keys          second pass, once LiteLLM is Ready: one virtual key per chassis
 #                         (chassis-<svc>-litellm) and one token per remote (remote-<name>-token)
 #   seed.sh rotate NAME   replace one Secret (and its LiteLLM key); then restart what mounts it
@@ -41,12 +41,14 @@ SERVICES=(
 # One token per remote (section 2.2), in poc05-agents (the chassis) and poc05-remote (T14).
 # No probe entries: T10 is dropped (2026-10-02), so no pod would mount them (security review, 8).
 REMOTES=(echo)
+# The MinIO secret key of the one chassis that reads its config from the store (agent-echo,
+# `config: minio`). Its user name, `chassis-echo`, is plain text in agent-echo.yaml and minio.yaml.
+STORE_READER_SECRET=chassis-echo-minio
 
 # shellcheck source=deploy/kind/lib.sh
 source "$HERE/../../lib.sh"
 
 new_secret() { openssl rand -hex "${1:-32}"; }
-new_id() { printf 'chassis%s' "$(openssl rand -hex 8)"; }
 
 secret_exists() { kctl -n "$1" get secret "$2" >/dev/null 2>&1; }
 drop_secret() { kctl -n "$1" delete secret "$2" --ignore-not-found >/dev/null; }
@@ -78,7 +80,7 @@ preflight() {
 # --- first pass -------------------------------------------------------------------------------
 
 seed_base() {
-  local value hash access
+  local value hash
   if ! secret_exists "$PLATFORM" litellm-master; then
     value=$(new_secret)
     printf '%s' "$value" | put_secret "$PLATFORM" litellm-master LITELLM_MASTER_KEY
@@ -111,15 +113,18 @@ seed_base() {
     unset value
     log "made $PLATFORM/minio-root"
   fi
-  # Only in $PLATFORM, for minio-init: no chassis reads S3 in PoC-5, so a copy in $AGENTS would
-  # be a credential with no consumer (review F10). Copy it there with the first `config: s3` chassis.
-  if ! secret_exists "$PLATFORM" minio-chassis; then
-    access=$(new_id)
+  # The bucket-wide reader of older runs had no consumer (review F10): drop a copy left behind.
+  drop_secret "$PLATFORM" minio-chassis
+  # agent-echo's chassis reads its config document from MinIO (`config: minio`) as the user
+  # `chassis-echo`, a plain name in agent-echo.yaml and minio.yaml, never in a Secret. Its secret
+  # key: the chassis container in $AGENTS, minio-init in $PLATFORM (it makes the user).
+  if ! { secret_exists "$PLATFORM" "$STORE_READER_SECRET" &&
+    secret_exists "$AGENTS" "$STORE_READER_SECRET"; }; then
     value=$(new_secret 24)
-    printf 'CONFIG_S3_ACCESS_KEY=%s\nCONFIG_S3_SECRET_KEY=%s\n' "$access" "$value" |
-      put_env_secret "$PLATFORM" minio-chassis
-    unset value access
-    log "made minio-chassis in $PLATFORM (for minio-init)"
+    printf '%s' "$value" | put_secret "$AGENTS" "$STORE_READER_SECRET" CONFIG_S3_SECRET_KEY
+    printf '%s' "$value" | put_secret "$PLATFORM" "$STORE_READER_SECRET" CONFIG_S3_SECRET_KEY
+    unset value
+    log "made $STORE_READER_SECRET in $AGENTS (the chassis) and $PLATFORM (for minio-init)"
   fi
 }
 
@@ -263,8 +268,9 @@ rotate() {
       drop_secret "$AGENTS" "$name"
       seed_base
       ;;
-    minio-chassis)
+    chassis-echo-minio)
       drop_secret "$PLATFORM" "$name"
+      drop_secret "$AGENTS" "$name"
       seed_base
       ;;
     chassis-*-litellm)
@@ -280,7 +286,8 @@ rotate() {
       ;;
     *) die "rotate: unknown Secret '$name'" ;;
   esac
-  log "rotated $name; restart the pods that mount it (litellm-db: Postgres too, then rekey)"
+  log "rotated $name; restart the pods that mount it (litellm-db: Postgres too, then rekey;" \
+    "chassis-echo-minio: rerun minio-init first)"
 }
 
 rekey() {
