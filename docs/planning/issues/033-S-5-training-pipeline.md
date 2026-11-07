@@ -1,7 +1,7 @@
 ---
 title: "S-5: Reproducible training pipeline (config, data version, seed) with Unsloth or TRL"
 labels: ["story", "priority:P0", "phase:2-simplifier-slm", "area:slm", "size:M", "layer:platform"]
-milestone: "W3 Simplifier SLM"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 33
 epic_id: S-5
 depends_on: ["030 S-4", "032 M-1"]

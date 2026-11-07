@@ -1,11 +1,11 @@
 ---
 title: "CH-7: Chassis release in rings, with a per-service pin and a minimum-version admission rule"
-labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
+labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:L", "layer:chassis"]
 milestone: "W5 Chassis completion"
 index: 56
 epic_id: CH-7
-depends_on: ["024 CH-3", "055 CH-6", "014 H-7"]
-blocks: ["077 C-1", "083 R-2", "117 X-3"]
+depends_on: ["024 CH-3", "055 CH-6", "014 H-7", "051 H-13", "038 X-1a"]
+blocks: ["077 C-1", "083 R-2"]
 epic_refs: [G.4]
 ---
 
@@ -28,7 +28,7 @@ epic_refs: [G.4]
 
 ## Reuse
 
-- **Use:** Argo CD, as planned. suggested: Argo CD sync waves or Argo Rollouts for the rings. Kyverno or ValidatingAdmissionPolicy for the minimum-version rule, in the same policy set as 055 CH-6.
+- **Use:** Argo CD, as planned. suggested: Argo CD sync waves or Argo Rollouts for the rings. The minimum-version rule moved to 026 CH-4: a ValidatingAdmissionPolicy, in the `agent-trust-rule` set (ADR-005 decision 4).
 - **Build:** the ring order, the promotion checks, and the pin and rollback steps.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
 
@@ -51,8 +51,8 @@ epic_refs: [G.4]
 
 ## Dependencies
 
-- Depends on: [024 CH-3](024-CH-3-helm-library-chart.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [014 H-7](014-H-7-observability.md)
-- Blocks: [077 C-1](077-C-1-governance-enforcement.md), [083 R-2](083-R-2-kubernetes-controller.md), [117 X-3](117-X-3-slos-alerts.md)
+- Depends on: [024 CH-3](024-CH-3-helm-library-chart.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [014 H-7](014-H-7-observability.md), [051 H-13](051-H-13-openapi-mcp-tools.md), [038 X-1a](038-X-1a-terraform-first-cloud.md)
+- Blocks: [077 C-1](077-C-1-governance-enforcement.md), [083 R-2](083-R-2-kubernetes-controller.md)
 
 ## References
 

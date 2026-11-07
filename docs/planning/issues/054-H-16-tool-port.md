@@ -1,10 +1,10 @@
 ---
 title: "H-16: Tool port: native tool calls or JSON via guided decoding; read and write modes"
-labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:M", "layer:agent-profile"]
+labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:L", "layer:agent-profile"]
 milestone: "W5 Chassis completion"
 index: 54
 epic_id: H-16
-depends_on: ["012 H-3", "018 H-18", "013 CH-2"]
+depends_on: ["018 H-18", "017 H-4", "022 H-6"]
 blocks: ["063 S-8"]
 epic_refs: [B.3, R2]
 ---
@@ -30,7 +30,7 @@ Tool agents answer by calling tools. Small models call tools less reliably than 
 
 ## Reuse
 
-- **Use:** vLLM tool parsers and guided decoding (already in the stack), and the LiteLLM MCP gateway (`/mcp`) for per-key tool allow-lists. The gateway's allow-list is the hard limit; the chassis config allow-list is a second check.
+- **Use:** the LiteLLM MCP gateway (`/mcp`) for per-key tool allow-lists. The gateway's allow-list is the limit; the chassis has no allow-list of its own. Guided decoding for tool JSON is parked (2026-11-06, product plan).
 - **Build:** the tool port, the MCP tool proxy that workloads point their MCP client at, the JSON fallback mode, and passing `idempotency_key` to write tools.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
 
@@ -59,7 +59,7 @@ Tool agents answer by calling tools. Small models call tools less reliably than 
 
 ## Dependencies
 
-- Depends on: [012 H-3](012-H-3-model-port.md), [018 H-18](018-H-18-idempotency.md), [013 CH-2](013-CH-2-outbound-model-proxy.md)
+- Depends on: [018 H-18](018-H-18-idempotency.md), [017 H-4](017-H-4-harness-features.md), [022 H-6](022-H-6-security-middleware.md)
 - Blocks: [063 S-8](063-S-8-tool-call-finetune.md)
 
 ## References

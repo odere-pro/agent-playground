@@ -1,6 +1,6 @@
 ---
 title: "O-8: Cancel and human approval steps"
-labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:S", "layer:platform"]
+labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:M", "layer:platform"]
 milestone: "W9 Orchestrator"
 index: 109
 epic_id: O-8

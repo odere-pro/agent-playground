@@ -1,11 +1,11 @@
 ---
 title: "S-7: Serve the simplifier SLM with vLLM, with guided decoding for JSON"
 labels: ["story", "priority:P0", "phase:2-simplifier-slm", "area:slm", "size:S", "layer:platform"]
-milestone: "W3 Simplifier SLM"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 36
 epic_id: S-7
 depends_on: ["003 G-1b", "035 S-6"]
-blocks: ["039 X-2", "041 A-1", "091 R-11"]
+blocks: ["039 X-2", "041 A-1"]
 epic_refs: [I, R2]
 ---
 
@@ -51,7 +51,7 @@ The trained SLM must answer through the router like any other model, so agents c
 ## Dependencies
 
 - Depends on: [003 G-1b](003-G-1b-named-model-routes.md), [035 S-6](035-S-6-train-candidates.md)
-- Blocks: [039 X-2](039-X-2-gpu-setup.md), [041 A-1](041-A-1-simplifier-core.md), [091 R-11](091-R-11-hybrid-search.md)
+- Blocks: [039 X-2](039-X-2-gpu-setup.md), [041 A-1](041-A-1-simplifier-core.md)
 
 ## References
 

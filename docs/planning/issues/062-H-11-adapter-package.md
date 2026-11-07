@@ -4,7 +4,7 @@ labels: ["story", "priority:P2", "phase:0-harness", "area:harness", "size:S", "l
 milestone: "W5 Chassis completion"
 index: 62
 epic_id: H-11
-depends_on: ["011 H-2", "012 H-3", "058 CH-8"]
+depends_on: ["011 H-2", "013 CH-2", "058 CH-8", "025 H-10"]
 blocks: []
 epic_refs: [F.1]
 ---
@@ -44,7 +44,7 @@ Other projects face the same problem the chassis solves: exposing their code thr
 
 ## Dependencies
 
-- Depends on: [011 H-2](011-H-2-inbound-adapters.md), [012 H-3](012-H-3-model-port.md), [058 CH-8](058-CH-8-framework-event-mappings.md)
+- Depends on: [011 H-2](011-H-2-inbound-adapters.md), [013 CH-2](013-CH-2-outbound-model-proxy.md), [058 CH-8](058-CH-8-framework-event-mappings.md), [025 H-10](025-H-10-template-repo.md)
 - Blocks: none
 
 ## References

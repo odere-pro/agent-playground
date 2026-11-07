@@ -1,6 +1,6 @@
 ---
 title: "O-6: Budgets per run: max tokens, cost, steps, and time"
-labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:S", "layer:platform"]
+labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:M", "layer:platform"]
 milestone: "W9 Orchestrator"
 index: 107
 epic_id: O-6

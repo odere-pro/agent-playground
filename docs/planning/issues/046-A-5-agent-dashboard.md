@@ -1,10 +1,10 @@
 ---
-title: "A-5: Simplifier agent dashboard: pass rate, fallback rate, tokens saved, latency"
-labels: ["story", "priority:P1", "phase:3-simplifier-agent", "area:agent", "size:S", "layer:platform"]
+title: "A-5: Container dashboard and per-agent gate panels"
+labels: ["story", "priority:P1", "phase:3-simplifier-agent", "area:agent", "size:M", "layer:platform"]
 milestone: "W4 Simplifier agent live"
 index: 46
 epic_id: A-5
-depends_on: ["014 H-7", "042 A-2"]
+depends_on: ["001 DEC-1", "014 H-7", "042 A-2"]
 blocks: ["048 M-4", "075 E-3", "096 P-2a"]
 epic_refs: [G.2, success-metrics]
 ---
@@ -42,7 +42,7 @@ Phase E needs one container dashboard: the north star, its inputs, and the count
 
 ## Dependencies
 
-- Depends on: [014 H-7](014-H-7-observability.md), [042 A-2](042-A-2-evaluator-gate-fallback.md)
+- Depends on: [001 DEC-1](001-DEC-1-resolve-open-decisions.md), [014 H-7](014-H-7-observability.md), [042 A-2](042-A-2-evaluator-gate-fallback.md)
 - Blocks: [048 M-4](048-M-4-canary-rollback.md), [075 E-3](075-E-3-evaluator-replaces-judge.md), [096 P-2a](096-P-2a-mcp-golden-set-metrics-tools.md)
 
 ## References

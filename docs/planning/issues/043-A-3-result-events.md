@@ -1,7 +1,7 @@
 ---
 title: "A-3: Result events with source, stored by the recorder"
 labels: ["story", "priority:P0", "phase:3-simplifier-agent", "area:agent", "size:S", "layer:platform"]
-milestone: "W4 Simplifier agent live"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 43
 epic_id: A-3
 depends_on: ["019 H-17", "040 D-0", "041 A-1"]

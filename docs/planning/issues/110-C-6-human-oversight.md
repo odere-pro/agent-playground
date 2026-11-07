@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:9-governance", "area:governance", "size:
 milestone: "W9 Orchestrator"
 index: 110
 epic_id: C-6
-depends_on: ["065 D-2", "072 C-3", "109 O-8"]
+depends_on: ["065 D-2", "072 C-3", "109 O-8", "077 C-1"]
 blocks: ["115 O-15"]
 epic_refs: [E.5, Fig.3]
 ---
@@ -41,7 +41,7 @@ Human oversight must be a set of real controls with a record: AI Act Art. 14 and
 
 ## Dependencies
 
-- Depends on: [065 D-2](065-D-2-review-ui.md), [072 C-3](072-C-3-audit-log-agent.md), [109 O-8](109-O-8-cancel-approval.md)
+- Depends on: [065 D-2](065-D-2-review-ui.md), [072 C-3](072-C-3-audit-log-agent.md), [109 O-8](109-O-8-cancel-approval.md), [077 C-1](077-C-1-governance-enforcement.md)
 - Blocks: [115 O-15](115-O-15-save-planned-run.md)
 
 ## References

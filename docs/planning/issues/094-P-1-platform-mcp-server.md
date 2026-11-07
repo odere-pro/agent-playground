@@ -1,6 +1,6 @@
 ---
 title: "P-1: Platform MCP server built from the harness, with registry and agent tools"
-labels: ["story", "priority:P1", "phase:6-mcp-server", "area:mcp", "size:S", "layer:platform"]
+labels: ["story", "priority:P1", "phase:6-mcp-server", "area:mcp", "size:M", "layer:platform"]
 milestone: "W8 Platform MCP server"
 index: 94
 epic_id: P-1

@@ -23,6 +23,7 @@ PARKED = "Parked: the SLM track (2026-11-06)"
 OPEN = "- [ ] an open criterion"
 EVIDENCE = "pocs/poc-01-x/tests/test_a.py"
 TICK = f"- [x] a met criterion · Delivered in PoC-1: `{EVIDENCE}::test_it`"
+NOTE = "docs/notes/n.md"
 STORIES = ("H-1", "H-2", "H-15", "X-5")
 
 Row = dict[str, Any]
@@ -204,6 +205,8 @@ def tree(tmp_path: Path) -> Callable[..., Path]:
             (root / "issues" / name).write_text(text)
         (tmp_path / EVIDENCE).parent.mkdir(parents=True)
         (tmp_path / EVIDENCE).write_text("def test_it():\n    pass\n")
+        (tmp_path / NOTE).parent.mkdir(parents=True)
+        (tmp_path / NOTE).write_text('# Note\n\n<a id="r1"></a>\n\n## A result\n')
         return root
 
     return make
@@ -321,6 +324,16 @@ STRICT_FAILS = {
         LIVE,
         "001-H-1-x.md: ticked line cites pocs/gone/test_b.py, which does not exist",
     ),
+    "missing anchor": (
+        (f"- [x] met · Delivered in PoC-1: `{NOTE}#gone`", OPEN, OPEN),
+        LIVE,
+        f"001-H-1-x.md: ticked line cites {NOTE}#gone, which has no such anchor",
+    ),
+    "missing path with an anchor": (
+        ("- [x] met · Delivered in PoC-1: `docs/gone.md#a-result`", OPEN, OPEN),
+        LIVE,
+        "001-H-1-x.md: ticked line cites docs/gone.md, which does not exist",
+    ),
     "done with an open box": (
         (TICK, TICK, OPEN, "Delivered by: PoC-1"),
         DONE,
@@ -360,6 +373,8 @@ STRICT_PASSES = {
         ("- [x] met · Delivered by: [the demo](https://example.com/demo)", OPEN, OPEN),
         LIVE,
     ),
+    "a heading anchor": ((f"- [x] met · Delivered in PoC-1: `{NOTE}#a-result`", OPEN, OPEN), LIVE),
+    "an a-id anchor": ((f"- [x] met · Delivered in PoC-1: `{NOTE}#r1`", OPEN, OPEN), LIVE),
     "a done issue": ((TICK, TICK, TICK, "Delivered by: PoC-1 and PoC-5"), DONE),
     "a parked issue with every box open": ((OPEN, OPEN, OPEN), PARKED),
 }

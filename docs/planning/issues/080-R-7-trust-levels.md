@@ -4,8 +4,8 @@ labels: ["story", "priority:P1", "phase:5-registry", "area:registry", "size:M", 
 milestone: "W7 Registry and governance gate"
 index: 80
 epic_id: R-7
-depends_on: ["076 R-1"]
-blocks: ["081 R-8", "082 R-9", "083 R-2", "084 R-3", "085 R-6"]
+depends_on: ["076 R-1", "025 H-10"]
+blocks: ["081 R-8", "082 R-9", "083 R-2", "084 R-3", "085 R-6", "093 R-14"]
 epic_refs: [F.3, E.5, R5]
 ---
 
@@ -48,8 +48,8 @@ Poisoned tool descriptions are a top risk in the epic [R5]. Trust levels decide 
 
 ## Dependencies
 
-- Depends on: [076 R-1](076-R-1-registry-data-model-api.md)
-- Blocks: [081 R-8](081-R-8-description-scanning.md), [082 R-9](082-R-9-description-hash-pinning.md), [083 R-2](083-R-2-kubernetes-controller.md), [084 R-3](084-R-3-docker-watcher.md), [085 R-6](085-R-6-manual-registration.md)
+- Depends on: [076 R-1](076-R-1-registry-data-model-api.md), [025 H-10](025-H-10-template-repo.md)
+- Blocks: [081 R-8](081-R-8-description-scanning.md), [082 R-9](082-R-9-description-hash-pinning.md), [083 R-2](083-R-2-kubernetes-controller.md), [084 R-3](084-R-3-docker-watcher.md), [085 R-6](085-R-6-manual-registration.md), [093 R-14](093-R-14-registry-mcp-server.md)
 
 ## References
 

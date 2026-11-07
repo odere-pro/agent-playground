@@ -1,6 +1,6 @@
 ---
 title: "H-1: Chassis package and image: ports, `handle` contract, JSON event schema, envelope"
-labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:L", "layer:chassis"]
+labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:S", "layer:chassis"]
 milestone: "W2 Chassis MVP"
 index: 7
 epic_id: H-1

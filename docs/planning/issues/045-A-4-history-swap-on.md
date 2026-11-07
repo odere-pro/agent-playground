@@ -1,7 +1,7 @@
 ---
 title: "A-4: History swap switched on for the simplifier"
 labels: ["story", "priority:P1", "phase:3-simplifier-agent", "area:agent", "size:S", "layer:platform"]
-milestone: "W4 Simplifier agent live"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 45
 epic_id: A-4
 depends_on: ["043 A-3", "044 G-4"]

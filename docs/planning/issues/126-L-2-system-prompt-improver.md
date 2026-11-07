@@ -1,10 +1,10 @@
 ---
 title: "L-2: System prompt improver"
-labels: ["later", "priority:P3", "phase:11-later", "area:slm", "size:L", "layer:platform"]
+labels: ["later", "priority:P3", "phase:11-later", "area:slm", "size:M", "layer:platform"]
 milestone: "W12 Later"
 index: 126
 epic_id: L-2
-depends_on: ["070 D-4", "075 E-3"]
+depends_on: ["070 D-4", "042 A-2"]
 blocks: []
 epic_refs: [phase-11-later-ideas]
 ---
@@ -39,7 +39,7 @@ Prompts drift and have blind spots that nobody sees one record at a time. A syst
 
 ## Dependencies
 
-- Depends on: [070 D-4](070-D-4-export-formats.md), [075 E-3](075-E-3-evaluator-replaces-judge.md)
+- Depends on: [070 D-4](070-D-4-export-formats.md), [042 A-2](042-A-2-evaluator-gate-fallback.md)
 - Blocks: none
 
 ## References

@@ -1,11 +1,11 @@
 ---
 title: "X-8: Event broker in Docker Compose and Kubernetes, with retention and consumer-lag alerts"
-labels: ["story", "priority:P0", "phase:8-production", "area:infra", "size:M", "layer:platform"]
+labels: ["story", "priority:P0", "phase:8-production", "area:infra", "size:L", "layer:platform"]
 milestone: "W2 Chassis MVP"
 index: 20
 epic_id: X-8
 depends_on: ["001 DEC-1", "016 H-9"]
-blocks: ["021 H-20", "026 CH-4", "037 M-2", "040 D-0", "072 C-3"]
+blocks: ["021 H-20", "040 D-0", "072 C-3"]
 epic_refs: [D.1, H]
 ---
 
@@ -54,7 +54,7 @@ Pulled forward from Phase 8: the event port, the recorder (040 D-0), and the aud
 ## Dependencies
 
 - Depends on: [001 DEC-1](001-DEC-1-resolve-open-decisions.md), [016 H-9](016-H-9-local-debug-profile.md)
-- Blocks: [021 H-20](021-H-20-event-consumer-adapter.md), [026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [037 M-2](037-M-2-eval-gate-ci.md), [040 D-0](040-D-0-recorder-agent.md), [072 C-3](072-C-3-audit-log-agent.md)
+- Blocks: [021 H-20](021-H-20-event-consumer-adapter.md), [040 D-0](040-D-0-recorder-agent.md), [072 C-3](072-C-3-audit-log-agent.md)
 
 ## References
 

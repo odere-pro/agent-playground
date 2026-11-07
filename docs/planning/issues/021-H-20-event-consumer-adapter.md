@@ -1,6 +1,6 @@
 ---
 title: "H-20: Event consumer adapter: agents started by CloudEvents, same core as REST"
-labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:S", "layer:chassis"]
+labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
 milestone: "W2 Chassis MVP"
 index: 21
 epic_id: H-20

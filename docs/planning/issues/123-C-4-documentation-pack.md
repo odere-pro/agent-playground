@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:9-governance", "area:governance", "size:
 milestone: "W11 Compliance evidence"
 index: 123
 epic_id: C-4
-depends_on: ["032 M-1", "051 H-13", "052 H-21", "078 R-16"]
+depends_on: ["051 H-13", "052 H-21", "078 R-16"]
 blocks: ["124 C-9"]
 epic_refs: [E.5, R12]
 ---
@@ -26,8 +26,8 @@ AI Act Art. 11 and Art. 13 and ISO 42001 A.8 ask for technical documentation and
 
 ## Reuse
 
-- **Use:** the HF model card template, CycloneDX 1.7 ML-BOM for model and dataset bills of materials, and MLflow model registry metadata.
-- **Build:** the generator that fills them from config, OpenAPI, AsyncAPI, and MLflow.
+- **Use:** the HF model card template.
+- **Build:** the generator that fills it from config, OpenAPI, AsyncAPI, the manifest, and the response `Versions`.
 - **Watch:** Google Model Card Toolkit is archived.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
 
@@ -48,7 +48,7 @@ AI Act Art. 11 and Art. 13 and ISO 42001 A.8 ask for technical documentation and
 
 ## Dependencies
 
-- Depends on: [032 M-1](032-M-1-mlflow.md), [051 H-13](051-H-13-openapi-mcp-tools.md), [052 H-21](052-H-21-asyncapi-spec.md), [078 R-16](078-R-16-ai-system-inventory.md)
+- Depends on: [051 H-13](051-H-13-openapi-mcp-tools.md), [052 H-21](052-H-21-asyncapi-spec.md), [078 R-16](078-R-16-ai-system-inventory.md)
 - Blocks: [124 C-9](124-C-9-control-mapping-report.md)
 
 ## References

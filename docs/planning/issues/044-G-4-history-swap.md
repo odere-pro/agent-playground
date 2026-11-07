@@ -1,7 +1,7 @@
 ---
 title: "G-4: History swap in the chassis: long past answers replaced by simplified versions"
 labels: ["story", "priority:P1", "phase:1-router", "area:router", "size:M", "layer:agent-profile"]
-milestone: "W4 Simplifier agent live"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 44
 epic_id: G-4
 depends_on: ["012 H-3", "040 D-0", "013 CH-2"]

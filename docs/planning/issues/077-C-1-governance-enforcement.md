@@ -1,11 +1,11 @@
 ---
 title: "C-1: Governance block enforced by the registry on activation"
-labels: ["story", "priority:P1", "phase:9-governance", "area:governance", "size:S", "layer:platform"]
+labels: ["story", "priority:P1", "phase:9-governance", "area:governance", "size:M", "layer:platform"]
 milestone: "W7 Registry and governance gate"
 index: 77
 epic_id: C-1
 depends_on: ["010 H-12", "076 R-1", "055 CH-6", "056 CH-7"]
-blocks: ["078 R-16", "079 C-2"]
+blocks: ["078 R-16", "079 C-2", "110 C-6"]
 epic_refs: [E.4]
 ---
 
@@ -53,7 +53,7 @@ No agent may go live without a governance block: purpose, risk class, owner, and
 ## Dependencies
 
 - Depends on: [010 H-12](010-H-12-config-loader.md), [076 R-1](076-R-1-registry-data-model-api.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [056 CH-7](056-CH-7-chassis-release-rings.md)
-- Blocks: [078 R-16](078-R-16-ai-system-inventory.md), [079 C-2](079-C-2-prohibited-practice-checklist.md)
+- Blocks: [078 R-16](078-R-16-ai-system-inventory.md), [079 C-2](079-C-2-prohibited-practice-checklist.md), [110 C-6](110-C-6-human-oversight.md)
 
 ## References
 

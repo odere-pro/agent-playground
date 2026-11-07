@@ -1,7 +1,7 @@
 ---
 title: "S-2: Training data generation: 2,000 to 5,000 pairs with an open-weight teacher"
 labels: ["story", "priority:P0", "phase:2-simplifier-slm", "area:slm", "size:M", "layer:platform"]
-milestone: "W3 Simplifier SLM"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 29
 epic_id: S-2
 depends_on: ["003 G-1b", "027 S-1", "028 S-3"]

@@ -40,12 +40,12 @@ R = {
         '**Build:** the operation declarations in config, the router, and the refusals for what the chassis cannot carry.',
     ],
     'CH-6': [
-        '**Use:** the a2a-sdk client from 009 CH-1; `kubernetes-sigs/agent-sandbox` and a gVisor RuntimeClass for sandboxed pods; AWS SigV4 or OAuth 2.0 for AgentCore and Google auth for Vertex AI Agent Engine, per the first cloud; Kyverno or ValidatingAdmissionPolicy for the admission check.',
-        '**Build:** the `remote` connector, one cloud auth adapter, the admission policy, and the CI job with a fake remote workload.',
+        '**Use:** the a2a-sdk client from 009 CH-1; `kubernetes-sigs/agent-sandbox` and a gVisor RuntimeClass for sandboxed pods. Decided in ADR-005: a bearer token for the remote auth, and the `agent-trust-rule` ValidatingAdmissionPolicy for the admission check (decision 4). Managed runtimes are out of scope (ADR-006).',
+        '**Build:** the `remote` connector, the admission policy, and the CI job with a fake remote workload.',
         '**Watch:** agent-sandbox reached v1.0 in 2026, so pin it. On EKS, gVisor or Kata must be installed on the nodes.',
     ],
     'CH-7': [
-        '**Use:** Argo CD, as planned. suggested: Argo CD sync waves or Argo Rollouts for the rings. Kyverno or ValidatingAdmissionPolicy for the minimum-version rule, in the same policy set as 055 CH-6.',
+        '**Use:** Argo CD, as planned. suggested: Argo CD sync waves or Argo Rollouts for the rings. The minimum-version rule moved to 026 CH-4: a ValidatingAdmissionPolicy, in the `agent-trust-rule` set (ADR-005 decision 4).',
         '**Build:** the ring order, the promotion checks, and the pin and rollback steps.',
     ],
     'CH-8': [
@@ -53,7 +53,7 @@ R = {
         '**Build:** one event mapping per supported framework, a contract test per mapping, and the non-Python example.',
     ],
     'H-19': [
-        '**Use:** Kyverno, in the same policy set as the trust and minimum-version rules (055 CH-6, 056 CH-7).',
+        '**Use:** ValidatingAdmissionPolicy, in the `agent-trust-rule` set (ADR-005 decision 4), next to the trust rule (055 CH-6) and the minimum-version rule (026 CH-4).',
     ],
     'H-11': [
         '**Scope change:** superseded in its first form by ADR-001: one codebase, one image, one version, and no SDK. Other projects reuse the stock chassis image in front of their own A2A workload.',
@@ -91,7 +91,7 @@ R = {
         '**Build:** `agentctl new` on top of the template.',
     ],
     'H-16': [
-        '**Use:** vLLM tool parsers and guided decoding (already in the stack), and the LiteLLM MCP gateway (`/mcp`) for per-key tool allow-lists. The gateway\'s allow-list is the hard limit; the chassis config allow-list is a second check.',
+        '**Use:** the LiteLLM MCP gateway (`/mcp`) for per-key tool allow-lists. The gateway\'s allow-list is the limit; the chassis has no allow-list of its own. Guided decoding for tool JSON is parked (2026-11-06, product plan).',
         '**Build:** the tool port, the MCP tool proxy that workloads point their MCP client at, the JSON fallback mode, and passing `idempotency_key` to write tools.',
     ],
     'H-17': [
@@ -104,17 +104,17 @@ R = {
         '**Build:** the mapping from event to `TaskInput` and `Context`, and the reply events.',
     ],
     'H-21': [
-        '**Use:** AsyncAPI 3.1, with the AsyncAPI generator (Node) for docs and validation.',
+        '**Use:** AsyncAPI 3.0, as the epic says, with the AsyncAPI generator (Node) for docs and validation.',
         '**Build:** the AsyncAPI file, generated from `spec.events` in config. Dapr does not generate it.',
         '**Watch:** FastStream generates AsyncAPI, but it supports neither SQS, Pub/Sub, nor CloudEvents, so it is not used.',
     ],
     'H-22': [
-        '**Use:** the `EventPort` adapter\'s own retries with backoff, `max_attempts`, and a dead-letter topic per subscription (ADR-004); the broker\'s own dead-letter feature where it has one.',
+        '**Use:** the `EventPort` adapter\'s own retries with backoff, `max_attempts`, and a dead-letter topic per subscription (ADR-004). The broker\'s own dead-letter feature is not used (ADR-004 item 8).',
         '**Build:** the duplicate drop (through 018 H-18), the replay command, and metrics.',
         '**Watch:** retry behavior differs slightly per broker. Test each one.',
     ],
     'H-23': [
-        '**Use:** one broker client per broker behind `EventPort` (ADR-004): aiokafka for Kafka; suggested: nats-py for NATS JetStream, and the cloud SDKs for SNS/SQS and Pub/Sub. The `dapr` adapter stays as a tested alternative that reaches other brokers through Dapr components, the default in no profile.',
+        '**Use:** one broker client per broker behind `EventPort` (ADR-004): aiokafka for Kafka; suggested: nats-py for NATS JetStream, and the cloud SDKs for SNS/SQS and Pub/Sub. Dapr: parked on 2026-11-06 (product plan).',
         '**Build:** one adapter per broker, each bound to `EventPortContract`, and the shared contract suite with local emulators.',
         '**Watch:** each adapter must pass the whole suite against a real broker with no xfail (ADR-004, item 8). Broker auth (SASL or the cloud\'s IAM) is the adapter\'s, with 020 X-8.',
     ],
@@ -144,7 +144,6 @@ R = {
     'D-1': [
         '**Use:** Langfuse datasets (versioned), LLM-as-judge evaluators, and annotation queues. All three are in the MIT self-hosted edition.',
         '**Build:** the glue: copy recorder records into Langfuse, send uncertain scores to a queue, and publish the review events.',
-        '**Decision:** confirm Langfuse as the golden set workspace at the start of this issue. If not, keep the design in What.',
     ],
     'D-2': [
         '**Use:** Langfuse annotation queues as the review UI. Label Studio (Apache 2.0) if richer edit screens or stricter roles are needed.',
@@ -160,11 +159,17 @@ R = {
         '**Use:** HF datasets (JSONL, Parquet, `push_to_hub`) and pandas for CSV.',
         '**Build:** the export job by version ID.',
     ],
+    'D-6': [
+        '**Decision:** decide with the dataset store (ADR-010 item 2): splits and tags may be dataset fields, not tables.',
+    ],
     'D-7': [
-        '**Decision:** lakeFS moved to the Business Source License 1.1 from v1.87.0 (2026-09-22). Unmodified internal use is allowed. Options: keep lakeFS and accept the license, use DVC (Apache 2.0, Git-based), or use Langfuse dataset versions if 064 D-1 moves to Langfuse. Record the choice in DEC-1.',
+        '**Decision:** lakeFS moved to the Business Source License 1.1 from v1.87.0 (2026-09-22). Unmodified internal use is allowed. Options: keep lakeFS and accept the license, use DVC (Apache 2.0, Git-based), or use Langfuse dataset versions if 064 D-1 moves to Langfuse. Decided in ADR-010 item 2: default Langfuse dataset versions; lakeFS only if exports must be byte-identical objects.',
+    ],
+    'D-8': [
+        '**Use:** the chassis redaction, so the rule is not rebuilt: `packages/chassis/tests/test_redaction_and_chunks.py::test_redact_masks_emails_phones_and_ids` and `packages/chassis/tests/test_collector_log_redaction.py::test_the_log_pipeline_masks_each_entity`. Names stay a gap until the Presidio question (011 section 3, Q6) is answered.',
     ],
     'C-3': [
-        '**Use:** S3 Object Lock (or GCS retention lock) for append-only storage, and a Dapr subscription on the chassis port for the events.',
+        '**Use:** S3 Object Lock (or GCS retention lock) for append-only storage. Decided in ADR-004: a broker client in the chassis; the `dapr` adapter stays a tested alternative. The chassis consumes the events through its broker client and hands them to the audit workload.',
         '**Build:** the data agent and the export API.',
     ],
     'R-1': [
@@ -183,7 +188,7 @@ R = {
         '**Watch:** Snyk Agent Scan sends component data to Snyk and runs the servers it scans, so run it in a sandbox and keep the in-house check as the gate.',
     ],
     'R-11': [
-        "**Use:** pgvector (dense vectors plus BGE-M3 sparse vectors), and Qwen3-Embedding and Qwen3-Reranker served by vLLM, all per the epic. ToolHive's `find_tool` search is a reference.",
+        "**Use:** pgvector (dense vectors plus BGE-M3 sparse vectors), per the epic. The embedding and reranker models are called through named routes (`registry-embed`, `registry-rerank`) on whatever server the route map names, hosted or self-hosted; the Appendix I comparison (box 3) decides. ToolHive's `find_tool` search is a reference.",
         '**Build:** reciprocal rank fusion and the reranking step.',
     ],
     'R-14': [
@@ -217,8 +222,8 @@ R = {
         '**Build:** the thin interpreter from our workflow YAML to Temporal workflows.',
     ],
     'C-4': [
-        '**Use:** the HF model card template, CycloneDX 1.7 ML-BOM for model and dataset bills of materials, and MLflow model registry metadata.',
-        '**Build:** the generator that fills them from config, OpenAPI, AsyncAPI, and MLflow.',
+        '**Use:** the HF model card template.',
+        '**Build:** the generator that fills it from config, OpenAPI, AsyncAPI, the manifest, and the response `Versions`.',
         '**Watch:** Google Model Card Toolkit is archived.',
     ],
     'C-9': [

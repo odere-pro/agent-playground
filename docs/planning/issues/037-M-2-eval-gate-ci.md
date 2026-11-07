@@ -1,11 +1,11 @@
 ---
-title: "M-2: Eval gate in CI: a new model ships only if it beats the current one"
-labels: ["story", "priority:P0", "phase:2-simplifier-slm", "area:lifecycle", "size:M", "layer:platform"]
+title: "M-2: Eval gate in CI: a change ships only if it passes the golden set against the baseline"
+labels: ["story", "priority:P0", "phase:2-simplifier-slm", "area:lifecycle", "size:S", "layer:platform"]
 milestone: "W3 Simplifier SLM"
 index: 37
 epic_id: M-2
-depends_on: ["028 S-3", "030 S-4", "032 M-1", "020 X-8"]
-blocks: ["047 M-3", "049 M-5"]
+depends_on: ["028 S-3"]
+blocks: ["047 M-3", "049 M-5", "068 D-3", "131 CH-12"]
 epic_refs: [E.5, principles]
 ---
 
@@ -44,8 +44,8 @@ This is P0 because of the epic principle: nothing ships without an eval. The gat
 
 ## Dependencies
 
-- Depends on: [028 S-3](028-S-3-simplifier-metrics.md), [030 S-4](030-S-4-hand-review-test-set.md), [032 M-1](032-M-1-mlflow.md), [020 X-8](020-X-8-event-broker.md)
-- Blocks: [047 M-3](047-M-3-shadow-mode.md), [049 M-5](049-M-5-quantized-variants.md)
+- Depends on: [028 S-3](028-S-3-simplifier-metrics.md)
+- Blocks: [047 M-3](047-M-3-shadow-mode.md), [049 M-5](049-M-5-quantized-variants.md), [068 D-3](068-D-3-import.md), [131 CH-12](131-CH-12-golden-cases-datasets.md)
 
 ## References
 

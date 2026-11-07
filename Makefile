@@ -118,12 +118,10 @@ check: ## Boundary gate: what the CI `check` job runs (not lint-extra, ts-check,
 planning-sync: ## Regenerate the generated parts of the backlog
 	cd docs/planning && python3 tools/sync.py
 
-planning-check: ## Verify the backlog and the planning docs
-	cd docs/planning && python3 tools/check.py
-
-# Not in `check` yet: PR-R of the 2026-11-06 backlog review turns it on.
-planning-check-strict: ## planning-check plus the evidence rules on ticked boxes and done (WD) issues
+planning-check: ## Verify the backlog and the planning docs, with the evidence rules (--strict)
 	cd docs/planning && python3 tools/check.py --strict
+
+planning-check-strict: planning-check ## Alias of planning-check, which is strict since 2026-11-07
 
 schemas: ## Regenerate the JSON Schemas in packages/chassis/schemas from the models
 	$(PY) -m chassis.schemas --write

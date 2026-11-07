@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:5-registry", "area:registry", "size:S", 
 milestone: "W7 Registry and governance gate"
 index: 93
 epic_id: R-14
-depends_on: ["051 H-13", "092 R-12"]
+depends_on: ["051 H-13", "092 R-12", "080 R-7"]
 blocks: ["094 P-1"]
 epic_refs: [F.4]
 ---
@@ -46,7 +46,7 @@ MCP clients, not only REST callers, need to use the registry, and it feeds the p
 
 ## Dependencies
 
-- Depends on: [051 H-13](051-H-13-openapi-mcp-tools.md), [092 R-12](092-R-12-main-pick-fallbacks.md)
+- Depends on: [051 H-13](051-H-13-openapi-mcp-tools.md), [092 R-12](092-R-12-main-pick-fallbacks.md), [080 R-7](080-R-7-trust-levels.md)
 - Blocks: [094 P-1](094-P-1-platform-mcp-server.md)
 
 ## References

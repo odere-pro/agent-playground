@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:4-golden-set", "area:data", "size:M", "l
 milestone: "W6 Golden set and evaluator SLM"
 index: 64
 epic_id: D-1
-depends_on: ["017 H-4", "040 D-0", "042 A-2"]
+depends_on: ["017 H-4", "040 D-0", "042 A-2", "028 S-3"]
 blocks: ["065 D-2", "066 D-6", "067 D-5", "069 D-7"]
 epic_refs: [B.1, B.4]
 ---
@@ -33,7 +33,6 @@ Records alone are not a golden set. The golden set agent turns recorded calls in
 
 - **Use:** Langfuse datasets (versioned), LLM-as-judge evaluators, and annotation queues. All three are in the MIT self-hosted edition.
 - **Build:** the glue: copy recorder records into Langfuse, send uncertain scores to a queue, and publish the review events.
-- **Decision:** confirm Langfuse as the golden set workspace at the start of this issue. If not, keep the design in What.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
 
 ## Out of scope
@@ -41,7 +40,7 @@ Records alone are not a golden set. The golden set agent turns recorded calls in
 - The review UI (065 D-2).
 - Tags and splits (066 D-6), import (067 D-5, 068 D-3), and versions and export (069 D-7, 070 D-4).
 - The evaluator SLM (073 E-1, 075 E-3).
-- Datasets in Langfuse and LangSmith for the gate set: phase D, in the new issue CH-12.
+- Datasets in Langfuse and LangSmith for the gate set: phase D, in 131 CH-12.
 
 ## Acceptance criteria
 
@@ -56,7 +55,7 @@ Records alone are not a golden set. The golden set agent turns recorded calls in
 
 ## Dependencies
 
-- Depends on: [017 H-4](017-H-4-harness-features.md), [040 D-0](040-D-0-recorder-agent.md), [042 A-2](042-A-2-evaluator-gate-fallback.md)
+- Depends on: [017 H-4](017-H-4-harness-features.md), [040 D-0](040-D-0-recorder-agent.md), [042 A-2](042-A-2-evaluator-gate-fallback.md), [028 S-3](028-S-3-simplifier-metrics.md)
 - Blocks: [065 D-2](065-D-2-review-ui.md), [066 D-6](066-D-6-tags-splits.md), [067 D-5](067-D-5-import-schema-dedup.md), [069 D-7](069-D-7-lakefs-versions.md)
 
 ## References

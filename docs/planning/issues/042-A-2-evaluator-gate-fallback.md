@@ -1,11 +1,11 @@
 ---
 title: "A-2: Evaluator gate on facts_kept, one retry, then fallback to a big model"
-labels: ["story", "priority:P0", "phase:3-simplifier-agent", "area:agent", "size:S", "layer:platform"]
+labels: ["story", "priority:P0", "phase:3-simplifier-agent", "area:agent", "size:M", "layer:platform"]
 milestone: "W4 Simplifier agent live"
 index: 42
 epic_id: A-2
-depends_on: ["017 H-4", "028 S-3", "041 A-1"]
-blocks: ["046 A-5", "047 M-3", "064 D-1", "075 E-3"]
+depends_on: ["017 H-4", "028 S-3"]
+blocks: ["046 A-5", "047 M-3", "064 D-1", "075 E-3", "126 L-2"]
 epic_refs: [B.2]
 ---
 
@@ -48,8 +48,8 @@ The top quality risk is that an agent drops facts. This issue guards answers wit
 
 ## Dependencies
 
-- Depends on: [017 H-4](017-H-4-harness-features.md), [028 S-3](028-S-3-simplifier-metrics.md), [041 A-1](041-A-1-simplifier-core.md)
-- Blocks: [046 A-5](046-A-5-agent-dashboard.md), [047 M-3](047-M-3-shadow-mode.md), [064 D-1](064-D-1-golden-set-agent.md), [075 E-3](075-E-3-evaluator-replaces-judge.md)
+- Depends on: [017 H-4](017-H-4-harness-features.md), [028 S-3](028-S-3-simplifier-metrics.md)
+- Blocks: [046 A-5](046-A-5-agent-dashboard.md), [047 M-3](047-M-3-shadow-mode.md), [064 D-1](064-D-1-golden-set-agent.md), [075 E-3](075-E-3-evaluator-replaces-judge.md), [126 L-2](126-L-2-system-prompt-improver.md)
 
 ## References
 

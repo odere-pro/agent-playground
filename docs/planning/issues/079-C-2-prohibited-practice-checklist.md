@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:9-governance", "area:governance", "size:
 milestone: "W7 Registry and governance gate"
 index: 79
 epic_id: C-2
-depends_on: ["077 C-1"]
+depends_on: ["077 C-1", "078 R-16"]
 blocks: []
 epic_refs: [E.4, R10]
 ---
@@ -39,7 +39,7 @@ The EU AI Act bans some AI practices outright, and the platform must catch them 
 
 ## Dependencies
 
-- Depends on: [077 C-1](077-C-1-governance-enforcement.md)
+- Depends on: [077 C-1](077-C-1-governance-enforcement.md), [078 R-16](078-R-16-ai-system-inventory.md)
 - Blocks: none
 
 ## References

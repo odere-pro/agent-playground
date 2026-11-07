@@ -1,6 +1,6 @@
 ---
 title: "CH-1: Engine connectors `inprocess` and `sidecar` over A2A, plus the template A2A server that wraps `handle`"
-labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
+labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:S", "layer:chassis"]
 milestone: "W2 Chassis MVP"
 index: 9
 epic_id: CH-1

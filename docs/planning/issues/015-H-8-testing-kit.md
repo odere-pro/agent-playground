@@ -1,11 +1,11 @@
 ---
 title: "H-8: Testing kit: fake adapters, contract tests per API, record and replay"
-labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:L", "layer:chassis"]
+labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
 milestone: "W2 Chassis MVP"
 index: 15
 epic_id: H-8
 depends_on: ["011 H-2", "012 H-3", "009 CH-1"]
-blocks: ["025 H-10", "058 CH-8"]
+blocks: ["025 H-10", "057 H-19", "058 CH-8"]
 epic_refs: [F.1]
 ---
 
@@ -58,7 +58,7 @@ Contract tests are part of the Phase 0 done-when, and every agent needs the same
 ## Dependencies
 
 - Depends on: [011 H-2](011-H-2-inbound-adapters.md), [012 H-3](012-H-3-model-port.md), [009 CH-1](009-CH-1-engine-connectors-a2a.md)
-- Blocks: [025 H-10](025-H-10-template-repo.md), [058 CH-8](058-CH-8-framework-event-mappings.md)
+- Blocks: [025 H-10](025-H-10-template-repo.md), [057 H-19](057-H-19-stateless-check-ci.md), [058 CH-8](058-CH-8-framework-event-mappings.md)
 
 ## References
 

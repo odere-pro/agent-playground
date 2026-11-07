@@ -1,11 +1,11 @@
 ---
 title: "H-13: OpenAPI 3.1 spec per agent, with MCP tools generated from it"
-labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:S", "layer:chassis"]
+labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
 milestone: "W5 Chassis completion"
 index: 51
 epic_id: H-13
 depends_on: ["011 H-2", "050 CH-5"]
-blocks: ["052 H-21", "059 H-15", "076 R-1", "088 R-5", "093 R-14", "094 P-1", "123 C-4"]
+blocks: ["052 H-21", "056 CH-7", "076 R-1", "088 R-5", "093 R-14", "094 P-1", "123 C-4"]
 epic_refs: [G.1]
 ---
 
@@ -59,7 +59,7 @@ The epic requires an OpenAPI 3.1 spec for every API, with MCP tools generated fr
 ## Dependencies
 
 - Depends on: [011 H-2](011-H-2-inbound-adapters.md), [050 CH-5](050-CH-5-service-operations.md)
-- Blocks: [052 H-21](052-H-21-asyncapi-spec.md), [059 H-15](059-H-15-agent-factory-cli.md), [076 R-1](076-R-1-registry-data-model-api.md), [088 R-5](088-R-5-openapi-import.md), [093 R-14](093-R-14-registry-mcp-server.md), [094 P-1](094-P-1-platform-mcp-server.md), [123 C-4](123-C-4-documentation-pack.md)
+- Blocks: [052 H-21](052-H-21-asyncapi-spec.md), [056 CH-7](056-CH-7-chassis-release-rings.md), [076 R-1](076-R-1-registry-data-model-api.md), [088 R-5](088-R-5-openapi-import.md), [093 R-14](093-R-14-registry-mcp-server.md), [094 P-1](094-P-1-platform-mcp-server.md), [123 C-4](123-C-4-documentation-pack.md)
 
 ## References
 

@@ -1,10 +1,10 @@
 ---
 title: "H-19: Stateless check in CI: fail the build on local disk writes or kept data"
-labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:S", "layer:chassis"]
+labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
 milestone: "W5 Chassis completion"
 index: 57
 epic_id: H-19
-depends_on: ["025 H-10"]
+depends_on: ["025 H-10", "015 H-8"]
 blocks: ["059 H-15"]
 epic_refs: [B.2]
 ---
@@ -31,7 +31,7 @@ Agents scale by adding pods, so no agent may keep data on disk or in memory betw
 
 ## Reuse
 
-- **Use:** Kyverno, in the same policy set as the trust and minimum-version rules (055 CH-6, 056 CH-7).
+- **Use:** ValidatingAdmissionPolicy, in the `agent-trust-rule` set (ADR-005 decision 4), next to the trust rule (055 CH-6) and the minimum-version rule (026 CH-4).
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
 
 ## Out of scope
@@ -53,7 +53,7 @@ Agents scale by adding pods, so no agent may keep data on disk or in memory betw
 
 ## Dependencies
 
-- Depends on: [025 H-10](025-H-10-template-repo.md)
+- Depends on: [025 H-10](025-H-10-template-repo.md), [015 H-8](015-H-8-testing-kit.md)
 - Blocks: [059 H-15](059-H-15-agent-factory-cli.md)
 
 ## References

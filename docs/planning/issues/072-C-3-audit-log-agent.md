@@ -30,7 +30,7 @@ The AI Act asks for automatic records of every call and run (Art. 12), and an au
 
 ## Reuse
 
-- **Use:** S3 Object Lock (or GCS retention lock) for append-only storage, and a Dapr subscription on the chassis port for the events.
+- **Use:** S3 Object Lock (or GCS retention lock) for append-only storage. Decided in ADR-004: a broker client in the chassis; the `dapr` adapter stays a tested alternative. The chassis consumes the events through its broker client and hands them to the audit workload.
 - **Build:** the data agent and the export API.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
 
