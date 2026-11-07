@@ -1,7 +1,7 @@
 # What is left in the PoC track
 
 Every open item from PoC-1 to PoC-9, in one list, grouped by who can do it.
-For: Oleksandr (epic owner) and the delivery team. As of 2026-11-07, at `d271063` on `main`.
+For: Oleksandr (epic owner) and the delivery team. As of 2026-11-07, at `87b294e` on `main`.
 Sources: the "What is left" section of each PoC doc in this folder, each PoC README in `pocs/`, and each PoC's `notes/backlog-changes.md`. This file replaces none of them; they keep the evidence.
 
 ## Where each PoC stands
@@ -12,7 +12,7 @@ No PoC is left to build. All nine have code, tests, and CI. Four are still `in p
 | --- | ------ | ------------------ |
 | [1](001-PoC-1-walking-skeleton.md), [2](002-PoC-2-two-engines-one-contract.md), [3](003-PoC-3-one-interface-every-client.md) | Done | Nothing |
 | [4](004-PoC-4-stateless-scalable.md) | Done, criterion 4 flagged | Throughput at 4 pairs, moved to [122 X-5](../issues/122-X-5-load-tests.md) |
-| [5](005-PoC-5-sandboxed.md) | Done, criteria 3 and 8 flagged | MinIO through the chassis; the T10 probe workload. Criterion 1 closed on 2026-11-06: the sidecar hostile suite runs in CI |
+| [5](005-PoC-5-sandboxed.md) | Done, criteria 3 and 8 flagged | MinIO through the chassis (built in #92; waits on its CI run); the T10 probe workload. Criterion 1 closed on 2026-11-06: the sidecar hostile suite runs in CI |
 | [6a and 6b](006-PoC-6-framework-bake-off.md) | In progress | The hosted big-model run on the Mac (criterion 5) |
 | [6c](006c-PoC-6c-pretrained-slm.md) | In progress | The big-model half of the side-by-side numbers, from the same Mac run |
 | [7](007-PoC-7-cross-cutting-decisions.md) | In progress | The Mac run, a `SNYK_TOKEN` secret, a look at the Langfuse UI, and applying its backlog changes |
@@ -35,7 +35,7 @@ The provider key and Hugging Face access stay on the Mac, so only the user can d
 The user's call, on GitHub.
 
 - [ ] **Add the `SNYK_TOKEN` repo secret (PoC-7).** Then `poc07-agent-scan` runs a real Snyk Agent Scan, not only the inspect step.
-- [ ] **Make `poc08-evals` a required check on `main` (PoC-8).** `main` has no branch protection today (`gh api .../branches/main/protection/required_status_checks` answers 404 `Branch not protected`). Until then the offline eval gate reports but does not block a merge.
+- [ ] **Make `poc08-evals` a required check on `main` (PoC-8).** `main` is protected now, and `check` is the one required check (`gh api .../branches/main/protection/required_status_checks` lists `["check"]`). Add `poc08-evals` to that list. Until then the offline eval gate reports but does not block a merge.
 
 ## 3. Decisions for the user
 
@@ -50,13 +50,18 @@ Each one is carried as "open, user decision" in the issue it belongs to.
   - Q7: rate limits with auth off: fine for local and test only, or an anonymous bucket?
 - [ ] **PoC-4 items for the owner** ([backlog changes](../../../pocs/poc-04-stateless-scalable/notes/backlog-changes.md#not-applied-for-the-owner)): the full `EventPortContract` bar for 060 H-23; the PoC-4 result and drain rule in 024 CH-3; the chassis CPU at 10 RPS as an input to ADR-001's Revisit rule; the OpenAPI limits fixed at start (051 H-13); the idempotency key in `deploy/compose/SECURITY.md` against contract v3; the vendored CloudEvents schema diff.
 - [ ] **PoC-5 items for the owner** ([backlog changes](../../../pocs/poc-05-sandboxed/notes/backlog-changes.md#not-applied-for-the-owner)): new issues for the TypeScript inbound token and CNI flow logs; the hand-kept `trustedRepositories` (025 H-10). H31 is no longer an owner item: PR #88 put it in 004 G-2, as the spoofed agent tag test.
+- [ ] **The open proposals** in [the backlog review's proposals](../../reviews/2026-11-06-backlog-review/proposals.md): P-3 to P-5, P-7 to P-15, and P-17 to P-34, each with an owner agent. The ones that block a product phase first:
+  - P-29, the drain order on rollout: the chart stops the workload before the chassis drains. One ADR (`chassis-architect`); 024 CH-3 holds the box.
+  - P-26, a rate-limit store outage in `cloud`: it reopens P-2 (fail open everywhere) for `cloud` only. 134 CH-14 holds the box.
+  - P-25, a call that names another route: the code forces it onto the run's route, and 012 H-3's box still says 403.
+  - P-31, the judge rubric's verdict (phase B, second step); P-27, P-28, and P-33 (the security defaults in 134 CH-14).
 
 ## 4. Engineering work
 
 Code an engineer or an agent can do now. Each item names the PoC criterion it moves.
 
 - [x] **A CI job for the sidecar hostile suite (PoC-5 criterion 1).** Done 2026-11-06: `run.sh test-remote` in `remote-lane.yml` runs `test_poc05_kind_sidecar_controls.py`, `test_poc05_kind_hardreq1.py` (with the broker, after a `run.sh kafka` step), `test_poc05_kind_tool_gateway.py`, and `test_poc05_kind_admission.py`; the run is named in [the PoC-5 README](../../../pocs/poc-05-sandboxed/README.md), criterion 1.
-- [ ] **MinIO through the chassis (PoC-5 criterion 3).** Give a chassis a scoped MinIO key, then show the allowed call through it. MinIO already refuses the workload.
+- [ ] **MinIO through the chassis (PoC-5 criterion 3).** Built in #92: `agent-echo` reads its config from MinIO with its own key, and MinIO refuses the workload (`pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py::test_minio_refuses_the_workload_without_the_chassis_key`). Tick this, 026 CH-4's MinIO box, and the PoC-5 row when remote-lane run 42363804786 on `4543f2a` is green.
 - [ ] **The T10 probe workload (PoC-5 criterion 8).** Owned by the user. It closes when [the T10 runbook](../../guides/poc-05-runbooks.md#testing-the-probe-workload-t10-after-it-is-built) passes.
 - [ ] **The `kagent-adk` scorecard cells (6b exit criterion 3).** The image, RSS, latency, cold start, streaming, and token cells still say "not measured: kind, from CI". `poc06-kind.yml` passes its contract and hostile checks. Since PR #86 it has a footprint step (`pocs/poc-06b-bake-off-remote-lane/notes/kagent-footprint/measure.sh`) and uploads its artifact, `kagent-adk-footprint`. The image and RSS cells wait on a CI run of that step. Cold start, streaming, and tokens are still not measured. Kind latency under load is already in [the load note](../../../pocs/poc-06b-bake-off-remote-lane/notes/2026-10-10-remote-load-on-kind.md).
 - [ ] **One command for the PoC-7 Mac run.** suggested: a `poc07` step in `scripts/poc06_mac.sh`, or its own script, that starts `guardrail-server --classifier prompt-guard`, the real LiteLLM `presidio` hook, and the judge and encoder comparison.
