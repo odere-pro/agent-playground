@@ -35,6 +35,11 @@ MCP limit) is `unknown_tool` before any request, so it never reaches the gateway
 
 A `ToolError.message` is fixed text, never an upstream body.
 
+`from_env` refuses a `LITELLM_MCP_URL` that is not `https` unless its host is loopback or an
+in-cluster name (`check_gateway_url`), so the key never crosses an outside network in plain
+http (review R5a-25). The `ValueError` names the variable, never the URL or the key. Profile
+`cloud` requires `https` always; `chassis.profiles` checks that before this adapter is built.
+
 Result size (R5a-24): a result whose serialized form is over `MAX_RESULT_BYTES` (1 MiB, suggested)
 is `tool_unavailable` (not retryable) with a fixed message that names the cap, never the content.
 The MCP client library reads a whole response, then parses it, before the adapter sees the
@@ -42,7 +47,8 @@ result; so the adapter also wraps each response body as it streams in and stops 
 `MAX_RESPONSE_BYTES` (twice the cap plus framing: FastMCP sends a result as text and again as
 structured content). The count is of decoded bytes: the client asks for `Accept-Encoding:
 identity`, and a body the gateway encodes anyway (gzip, deflate) is decoded in the wrapper, in
-pieces of at most 1 MiB, so a small compressed body cannot grow past the cap. The chassis
+pieces of at most 64 KiB, so a small compressed body cannot grow past the cap; any other encoding,
+and bytes after the end of a compressed body, are refused as over the cap. The chassis
 therefore holds at most about `MAX_RESPONSE_BYTES` plus one decoded piece of one response, and
 relays at most `MAX_RESULT_BYTES`.
 
@@ -64,6 +70,7 @@ import time
 import zlib
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx2
 from fastmcp import Client
@@ -71,6 +78,7 @@ from fastmcp.client.transports import StreamableHttpTransport
 from mcp.shared.exceptions import MCPError
 from mcp_types import CallToolResult, TextContent, Tool
 
+from chassis.adapters.loopback import is_loopback_host
 from chassis.ports.tool import ToolDefinition, ToolError, ToolResult
 from chassis.ports.tool_arguments import check_arguments
 
@@ -96,7 +104,39 @@ MAX_RESPONSE_BYTES = 2 * MAX_RESULT_BYTES + 64 * 1024
 """The most body bytes the adapter reads from one gateway response: a result travels as text and
 again as structured content, plus JSON-RPC and SSE framing."""
 
+IN_CLUSTER_SUFFIXES = (".svc", ".svc.cluster.local")
+"""suggested: a host ending in one of these is a Kubernetes service name, reached in-cluster."""
+_SERVICE_NAME = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
+"""suggested: a single-label host (no dot) is an in-cluster service name when it is a DNS-1035
+label, so it starts with a letter and is never an IP address in any form."""
+
 log = logging.getLogger(__name__)
+
+
+def _in_cluster_host(host: str) -> bool:
+    return host.endswith(IN_CLUSTER_SUFFIXES) or _SERVICE_NAME.fullmatch(host) is not None
+
+
+def check_gateway_url(url: str) -> None:
+    """Refuse a gateway URL that would send the key in cleartext off the host or the cluster.
+
+    `https` passes. `http` passes only to a loopback host (`is_loopback_host`) or an in-cluster
+    name (`IN_CLUSTER_SUFFIXES`, or a single-label service name). Anything else is a
+    `ValueError` that names `LITELLM_MCP_URL`, never the URL.
+    """
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").rstrip(".")
+    except ValueError:  # its message echoes part of the URL (review LOW 10)
+        raise ValueError(f"tools: {URL_VAR} is not a valid URL") from None
+    if parts.scheme == "https":
+        return
+    if parts.scheme == "http" and host and (is_loopback_host(host) or _in_cluster_host(host)):
+        return
+    raise ValueError(
+        f"tools: {URL_VAR} must be https unless its host is loopback or an in-cluster name"
+    )
+
 
 ClientFactory = Callable[..., httpx2.AsyncClient]
 
@@ -379,10 +419,12 @@ class McpGatewayTools:
     @classmethod
     def from_env(cls) -> McpGatewayTools:
         """Build from `LITELLM_MCP_URL` and `LITELLM_API_KEY` (both required) and the optional
-        `LITELLM_MCP_AUTH_HEADER`. An unset variable is a `LookupError` that names it."""
+        `LITELLM_MCP_AUTH_HEADER`. An unset variable is a `LookupError` that names it. A URL
+        `check_gateway_url` refuses is a `ValueError` that names it."""
         url = os.environ.get(URL_VAR)
         if not url:
             raise LookupError(f"tools: mcp needs {URL_VAR}")
+        check_gateway_url(url)
         api_key = os.environ.get(API_KEY_VAR)
         if not api_key:
             raise LookupError(f"tools: mcp needs {API_KEY_VAR}")

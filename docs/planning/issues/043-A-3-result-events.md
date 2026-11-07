@@ -9,6 +9,8 @@ blocks: ["045 A-4"]
 epic_refs: [B.4, D.3]
 ---
 
+Parked 2026-11-06 with the SLM track. The live result-event boxes moved to 019 H-17.
+
 ## Why
 
 Every simplifier call must become a record, so the golden set can grow. The `source` field says which model produced the original text, which matters because provider terms can restrict training data. This is the last P0 story: with it, the Phase 3 done-when is met and the first savings are measured. It comes after the recorder (040 D-0), which stores the events.
@@ -32,7 +34,7 @@ Every simplifier call must become a record, so the golden set can grow. The `sou
 
 ## Acceptance criteria
 
-- [ ] Each call through the native, OpenAI, or Anthropic API, or through an event, sends exactly one result event with all listed fields.
+- [ ] ~~Each call through the native, OpenAI, or Anthropic API, or through an event, sends exactly one result event with all listed fields.~~ Moved to 019 H-17 on 2026-11-06: one event per call on every interface, the extensions, and the model-source field name.
 - [ ] The recorder stores one record per call, with `source` set.
 - [ ] A repeated call with the same `idempotency_key` returns the same result and leaves one record.
 - [ ] The simplifier's workload container holds no credential at all. Only the chassis holds the broker credential.

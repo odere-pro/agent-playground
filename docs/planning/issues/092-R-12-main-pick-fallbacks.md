@@ -30,7 +30,7 @@ The orchestrator needs more than a ranked list. It needs one main pick and a cle
 
 ## Acceptance criteria
 
-- [ ] A search for `simplify_text` returns `simplifier` as the main pick and `simplifier-big-model` as a fallback with its differences note, as in the F.3 example.
+- [ ] On a fixture pair shaped like the F.3 example, a search returns the fixture's main entry (suggested: `fixture-main`) as the main pick and its fallback (suggested: `fixture-fallback`) with its differences note.
 - [ ] Fallbacks are in rank order, and their count follows `top_k`.
 - [ ] Cost and speed differences match the live metrics of both entries.
 - [ ] When the main entry is inactive, the first active fallback is returned as the main pick.

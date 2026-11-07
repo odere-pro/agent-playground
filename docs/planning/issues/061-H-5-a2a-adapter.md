@@ -20,7 +20,7 @@ A2A lets agents from other systems call platform agents as agents, with task sta
 - Streaming through A2A, mapped from `delta` events.
 - `GET /.well-known/agent-card.json`: an agent card generated from the agent config (name, description, task, endpoint, auth, version).
 - The card is signed. Suggested: the signing key comes from Vault through External Secrets, mounted into the chassis container only.
-- `interface.a2a` in config switches only the public endpoint and its card, for any agent class. The chassis's A2A calls to its workload do not depend on it.
+- `spec.interfaces.a2a` in config switches only the public endpoint and its card, for any agent class. The chassis's A2A calls to its workload do not depend on it.
 - The same auth, scopes, limits, idempotency, and telemetry as the other adapters.
 - Contract tests for the public A2A endpoint in the testing kit (015 H-8).
 
@@ -40,11 +40,11 @@ A2A lets agents from other systems call platform agents as agents, with task sta
 
 ## Acceptance criteria
 
-- [ ] With `interface.a2a: true`, an outside A2A client sends a task to the echo agent and to the simplifier through the chassis's public endpoint, and gets the same output as `POST /v1/run`.
+- [ ] With `spec.interfaces.a2a: true`, an outside A2A client sends a task to the echo agent and to the simplifier through the chassis's public endpoint, and gets the same output as `POST /v1/run`.
 - [ ] Task states go from submitted to working to completed on success, and to failed on error.
 - [ ] Streaming over A2A returns the same deltas as the native stream.
 - [ ] The agent card is built from config and its signature verifies; a changed card fails verification.
-- [ ] With `interface.a2a: false`, only the public A2A endpoints return 404. A2A between the chassis and its workload is unaffected, and the agent still answers on its other APIs.
+- [ ] With `spec.interfaces.a2a: false`, only the public A2A endpoints return 404. A2A between the chassis and its workload is unaffected, and the agent still answers on its other APIs.
 - [ ] Public A2A calls enforce scopes, appear in traces, and pass the contract tests.
 
 ## Dependencies

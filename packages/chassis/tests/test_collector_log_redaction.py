@@ -63,7 +63,8 @@ def _redact(text: str, target: str) -> str:
     return text
 
 
-ENTITIES = sorted(entity for entity, _ in PATTERNS)
+# The PII set only: the Collector has no `SECRET` rule yet (review R1-07 added it to the chassis).
+ENTITIES = sorted(entity for entity, _ in PATTERNS if entity != "SECRET")
 SAMPLES = [
     ("write to ann.lee@example.com today", "write to <EMAIL_ADDRESS> today"),
     ("call +1 415 555 0100 now", "call <PHONE_NUMBER> now"),

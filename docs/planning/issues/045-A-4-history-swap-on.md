@@ -9,6 +9,8 @@ blocks: []
 epic_refs: [J]
 ---
 
+Parked 2026-11-06 with the SLM track: the short versions come from the SLM simplifier's records; revisit as `later` if a route map and a recorder exist.
+
 ## Why
 
 This turns the history swap (044 G-4) on for real traffic, so the savings from short chat history become real and measurable. It comes after result events (043 A-3), because the short versions it uses are recorded simplifier results. It is P1: the first savings come from the simplifier itself, and this adds a second lever.

@@ -363,6 +363,11 @@ class HarnessSpec(BaseModel):
     - `evaluator_sample_rate: 1.0`: the share of calls that are gated. Reloadable.
     - `evaluator_mode: sync`: `sync` scores before the answer leaves, then retries or falls back;
       `async` scores after, never changes the answer, and records the score. A stream is async.
+    - `evaluator_on_error: fail_open` (finding R7-17): what a sync-mode evaluator outage does.
+      `fail_open` sends the attempt as it is and counts it; `fail_closed` ends the run with one
+      `error {code: evaluator_gate_failed}` (not retryable, as in contract v6) and sends none of
+      the attempt's events.
+      Async mode ignores it. Reloadable.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -371,6 +376,7 @@ class HarnessSpec(BaseModel):
     retries: int = Field(default=1, ge=0, le=5)
     evaluator_sample_rate: float = Field(default=1.0, ge=0, le=1)
     evaluator_mode: Literal["sync", "async"] = "sync"
+    evaluator_on_error: Literal["fail_open", "fail_closed"] = "fail_open"
 
 
 class FeedbackSpec(BaseModel):
@@ -514,6 +520,7 @@ RELOADABLE: tuple[str, ...] = (
     "spec.prompt",
     "spec.idempotency.ttl_s",
     "spec.harness.evaluator_sample_rate",
+    "spec.harness.evaluator_on_error",
 )
 """The field paths a config reload may change (PoC-4 plan, section 3). A change anywhere else is
 refused with `restart_required` and the last good config stays: every other path is restart-only.

@@ -15,12 +15,12 @@ Every agent can be started by events and publishes events, so its event contract
 
 ## What
 
-- An AsyncAPI 3.0 spec generated per agent from `events.consumes` and `events.produces` in its config, in the same build step as the OpenAPI spec (051 H-13).
+- An AsyncAPI 3.0 spec, the version the epic names, generated per agent from `spec.events.result_events` and `spec.events.consume` in its config, in the same build step as the OpenAPI spec (051 H-13).
 - Channels follow the topic naming rule `<domain>.<entity>.<event>.v<major>`.
-- Messages are CloudEvents 1.0, with the `traceparent`, `idempotencykey`, `configversion`, and `modelroute` extensions.
+- Messages are CloudEvents 1.0, with the extensions [contract v3](../../contracts/contract-v3.md#eventport-new-portseventspy) defines: `traceparent`, `idempotencykey`, `configversion`, `modelroute`, and `partitionkey`, plus `deadletterreason` and `deadletterattempts` on a dead-letter topic.
 - Payload schemas come from the same Pydantic models as the envelope, so REST and events share schemas.
 - Payload schemas are also written as JSON Schema files to the config store under `schemas/`.
-- Broker bindings for the broker chosen per DEC-1.
+- Broker bindings for the broker chosen per DEC-1. They wait on that pick: until then `events: none` is the default in every profile ([ADR-004](../adr/004-events-through-a-broker-client.md), item 5).
 - The agent serves the spec (suggested: `GET /asyncapi.json`), and `/manifest` links to it.
 - A CI check fails when a payload change breaks consumers and the topic's major version did not change.
 

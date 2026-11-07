@@ -25,6 +25,10 @@ other non-`http` scope (a websocket is closed with 1008 before accept):
    remote spends tokens and calls tools only inside a run the chassis opened, under that run's
    budget.
 
+`remote_tokens(auth)` reads the tokens at start. A token shorter than `MIN_TOKEN_LENGTH`
+(suggested: 32 characters), current or a set previous one, is refused; the error names the
+variable, never the value (R2-31).
+
 `chassis serve --remote-proxy-host <pod IP>` runs this app on `--remote-proxy-port` (suggested
 8091), only in the `remote` lane (`chassis.server.cli`). The loopback proxy app is unchanged.
 """
@@ -52,6 +56,9 @@ log = logging.getLogger("chassis.remote_auth")
 
 AUTH_FAILED = "chassis.remote.auth_failed"  # suggested
 DEFAULT_REMOTE_PROXY_PORT = 8091  # suggested
+MIN_TOKEN_LENGTH = 32
+"""suggested: the shortest remote token accepted at start (R2-31); the listener is on the pod IP,
+so a short token could be guessed online."""
 
 _UNAUTHENTICATED = json.dumps(
     {
@@ -98,8 +105,9 @@ def _refusal(
 def remote_tokens(auth: Mapping[str, Any] | None) -> tuple[str, ...]:
     """The tokens the remote listener accepts, from `spec.engine.auth` (its mapping form): the
     current one from `token_env` (required, not empty), then the previous one from
-    `previous_token_env` when it is set and not empty. Raises `LookupError` naming the variable,
-    never a value.
+    `previous_token_env` when it is set and not empty. Raises `LookupError` when the current
+    variable is unset or empty, and `ValueError` when a set token is shorter than
+    `MIN_TOKEN_LENGTH` (R2-31). Each error names the variable, never a value.
     """
     if not auth:
         raise LookupError("the remote proxy needs spec.engine.auth (a bearer token variable)")
@@ -107,13 +115,23 @@ def remote_tokens(auth: Mapping[str, Any] | None) -> tuple[str, ...]:
     current = os.environ.get(name, "") if name else ""
     if not current:
         raise LookupError(f"the remote proxy token variable {name or '(none)'} is not set")
+    _check_length(name, current)
     tokens = [current]
     previous_name = auth.get("previous_token_env")
     if previous_name:
         previous = os.environ.get(str(previous_name), "")
         if previous:
+            _check_length(str(previous_name), previous)
             tokens.append(previous)
     return tuple(tokens)
+
+
+def _check_length(name: str, token: str) -> None:
+    """Refuse a token a caller could guess online: the error names the variable only."""
+    if len(token) < MIN_TOKEN_LENGTH:
+        raise ValueError(
+            f"the remote proxy token variable {name} is shorter than {MIN_TOKEN_LENGTH} characters"
+        )
 
 
 async def _refuse_non_http(scope: Scope, send: Send) -> None:

@@ -11,13 +11,12 @@ epic_refs: [F.5]
 
 ## Why
 
-Tools let an MCP client act; resources and prompts help it understand the system. Resources give read-only access to manifests, dataset versions, and logs, and prompts walk a user through common tasks (F.5). This is P2 because the Phase 6 done-when does not need it.
+Tools let an MCP client act; resources and prompts help it understand the system. Resources give read-only access to manifests and logs, and prompts walk a user through common tasks (F.5). This is P2 because the Phase 6 done-when does not need it.
 
 ## What
 
 - Resource: agent manifests from the registry, the same as each agent's `/manifest` (suggested URI template: `registry://agents/{name}/{version}/manifest`).
-- Resource: dataset version metadata from lakeFS (069 D-7): version ID, record count, splits, and date.
-- Resource: call logs by `request_id` from Loki (014 H-7), with PII already redacted.
+- Resource: call logs by `request_id` from the log backend chosen in 014 H-7, with PII already redacted.
 - Prompt: how to add a new agent, from `agentctl new <name> --kind ...` (059 H-15) to self-registration.
 - Prompt: how to build a golden set, with `golden_import`, `review_list`, `review_decide`, and `golden_export`.
 - Prompt: how to debug a failed run. For now a run is one agent call, followed from its `request_id` to logs, trace, and manifest.
@@ -28,12 +27,12 @@ Tools let an MCP client act; resources and prompts help it understand the system
 
 - Orchestrator run logs by `run_id`, and the run tools (114 P-2b).
 - Changes through resources. Changes go through tools, such as the golden set tools (096 P-2a).
+- A dataset version resource (version ID, record count, splits, and date). It waits on lakeFS (069 D-7) and joins this issue when 069 lands.
 
 ## Acceptance criteria
 
-- [ ] `resources/list` and the resource templates show all three resource kinds.
-- [ ] Reading the echo agent's manifest resource returns the same content as its `/manifest`.
-- [ ] Reading a dataset version resource returns its ID, record count, and splits, and no write is possible through resources.
+- [ ] `resources/list` and the resource templates show both resource kinds.
+- [ ] Reading the echo agent's manifest resource returns the same content as its `/manifest`, and no write is possible through resources.
 - [ ] Reading a call log that holds a PII fixture returns redacted lines only.
 - [ ] `prompts/list` returns the three prompts; each takes its arguments and names only tools and commands that exist.
 - [ ] A resource read without the read scope is refused and audited.

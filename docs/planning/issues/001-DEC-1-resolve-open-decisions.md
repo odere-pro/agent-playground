@@ -19,35 +19,37 @@ The epic lists four open decisions. Each one blocks work in the first waves: the
 
 Decide and write down, with an owner and a date for each:
 
-- **Event broker:** NATS JetStream (the epic's recommendation) or the company's existing Kafka. Note retention needs and who runs the broker.
-- **First cloud:** AWS or GCP, for staging and prod. The first cloud also picks the `remote`-lane auth adapter (SigV4 or OAuth 2.0 for AWS Bedrock AgentCore, Google auth for Vertex AI Agent Engine) and the sandbox runtime for `remote` pods.
+- **Event broker:** NATS JetStream (the epic's recommendation) or the company's existing Kafka. Note retention needs and who runs the broker. Dapr is decided: [ADR-004](../adr/004-events-through-a-broker-client.md), accepted 2026-10-08, puts a broker client in the chassis behind `EventPort` (see [the Dapr note](../../../pocs/poc-04-stateless-scalable/notes/2026-10-01-dapr-vs-broker.md)). The broker product stays open: ADR-004 does not pick between NATS JetStream and Kafka. A NATS adapter must pass the bar in ADR-004 item 8.
+- **First cloud:** AWS or GCP, for staging and prod. It must give the cluster needs PoC-5 proved: a gVisor RuntimeClass, a CNI that enforces NetworkPolicy, ValidatingAdmissionPolicy, and Kubernetes 1.33 or later. The `remote`-lane auth no longer depends on the cloud. Decided in [ADR-005](../adr/005-remote-lane-auth-and-trust-admission.md): one bearer token per remote.
 - **A2A:** A2A to workloads is decided by ADR-001: A2A is the one contract between the chassis and every workload. Still open: whether the public A2A endpoint ([061 H-5](061-H-5-a2a-adapter.md)) ships in version 1.
-- **Banned-word list and success-metric targets:** a first version of the list, and draft targets for the success metrics (big-model token spend −30%, `facts_kept` ≥ 0.95, fallback rate < 10%, registry top-3 ≥ 90%, run recovery 100%).
-- **Reuse stack:** accept or replace the picks in the [reuse analysis](../poc/010-reuse-analysis.md). The main calls: Langfuse as the golden set workspace, lakeFS under its new license or DVC, and our own registry on Postgres or ToolHive as the base. Dapr or a broker client in the chassis for events: PoC-4 tried both behind `EventPort`, and [ADR-004](../adr/004-events-through-a-broker-client.md), accepted 2026-10-08, picks the broker client. See gap (c) in the [backlog plan](000-plan.md#adr-001-follow-ups).
-- **Where the router runs** before the cloud exists, so the baseline (005 G-3) counts real traffic.
-- **Choices ADR-001 leaves to planning:** Kyverno or ValidatingAdmissionPolicy for the admission rules; gVisor or Kata for `remote` pods; which managed runtime and which non-Python workload the MVP fronts; agent-sandbox or E2B for the code-execution tool; and whether per-key guardrails need LiteLLM Enterprise (gap (d) in the backlog plan).
-- **Owners for the epic's dependencies:** GPU access, cloud account, real outputs for training data, golden set reviewer, legal and compliance owner.
-- Status after PoC-4: the Dapr decision is made in [ADR-004](../adr/004-events-through-a-broker-client.md): result events go through a broker client in the chassis behind `EventPort`, not through Dapr pub/sub. Measured on one Docker Desktop pair, `echo-python`, 3 runs of 60 s at 10 RPS per path: both paths delivered every event (Kafka 2,134 of 2,134, Dapr 2,137 of 2,137); the chassis's CPU at 10 RPS showed no resolved difference (none 0.116 to 0.141 vCPU, Kafka 0.120 to 0.174, Dapr 0.132 to 0.181; the spread between runs of one path is as large as the gap between paths); daprd used 0.0024 to 0.0037 vCPU and 34 to 151 MiB at 10 RPS, a 4x swing between runs with no known cause. Dapr fails two `EventPortContract` cases, kept as strict xfails: the dead-lettered event lacks `deadletterreason` and `deadletterattempts` and follows daprd's own retry count, not `max_attempts`; and there is one consumer group per app id. It also reads its subscriptions once at start, overwrites `traceparent`, saved no code (101 lines against 78 in the marked sections, plus 46 lines of component YAML), and after 9 settings and two tokens still leaves its metrics port and an internal gRPC port open on every interface. The broker product stays open here: ADR-004 does not pick between NATS JetStream and Kafka. PoC-4 used Kafka only because Dapr's Kafka component let both paths share one broker; a NATS adapter must pass the same `EventPortContract`. The owner accepted ADR-004 on 2026-10-08. The box stays unticked until the other reuse picks are accepted or replaced. Evidence: [the Dapr note](../../../pocs/poc-04-stateless-scalable/notes/2026-10-01-dapr-vs-broker.md).
+- **The north star:** "good tasks per week" or "agents in production on the chassis", with draft targets for its inputs ([product plan](../../plans/2026-11-06-agent-container-product.md), open item 1).
+- **The primary trace view per environment:** LangSmith or Langfuse, and where the score goes when both run (product plan open item 2; ADR-007 open question 4; ADR-009 open question 5).
+- **Reuse stack:** accept or replace the picks in the [reuse analysis](../poc/010-reuse-analysis.md). The main calls: Langfuse as the golden set workspace, lakeFS under its new license or DVC, and our own registry on Postgres or ToolHive as the base. suggested: accept Langfuse (ADR-010 item 2), defer lakeFS or DVC to 069 D-7, and defer the registry base to 076 R-1. See gap (c) in the [backlog plan](000-plan.md#adr-001-follow-ups).
+- **Choices ADR-001 leaves to planning:** Kyverno or ValidatingAdmissionPolicy for the admission rules; gVisor or Kata for `remote` pods; which managed runtime and which non-Python workload the MVP fronts; agent-sandbox or E2B for the code-execution tool; and whether per-key guardrails need LiteLLM Enterprise (gap (d) in the backlog plan). Decided in ADR-005 (items 4, 6), ADR-006, and ADR-008 (item 4, S10).
+- **Owners for the epic's live dependencies:** cloud account, golden set reviewer, legal and compliance owner.
 
 ## Out of scope
 
 - Building anything. This issue only records decisions.
 - Legal classification of use cases. Legal makes that decision; the platform records it.
-- Final metric targets. They are confirmed after the baseline (005 G-3).
+- The epic's savings targets (big-model token spend −30%, `facts_kept` ≥ 0.95, fallback rate < 10%, registry top-3 ≥ 90%, run recovery 100%). They stay drafts, parked with the SLM track and 005 G-3.
+- The first banned-word list for 027 S-1. Parked with the SLM track.
+- Where the router runs before the cloud exists, so the baseline counts real traffic. Parked with the SLM track. For the product, the router runs in every deploy stack (`deploy/compose/poc08-litellm/`, `deploy/kind/poc05/platform/`).
+- Owners for GPU access and for real outputs for training data. Parked with the SLM track.
 - The chassis delivery model. ADR-001 settles it.
 
 ## Acceptance criteria
 
 - [ ] Each of the four decisions is recorded with an owner, a date, and a short reason (a short ADR or a comment on this issue). ADR-001 is accepted and linked from here.
 - [ ] The broker choice is written into 019 H-17, 020 X-8, and 060 H-23.
-- [ ] The first cloud is written into 038 X-1a, with the `remote`-lane auth adapter and sandbox runtime it picks.
+- [ ] The first cloud is written into 038 X-1a, with the cluster needs PoC-5 proved (gVisor RuntimeClass, a CNI that enforces NetworkPolicy, ValidatingAdmissionPolicy, Kubernetes 1.33 or later).
 - [ ] The priority of the public A2A endpoint (061 H-5) is confirmed: P1 if it ships in version 1, P2 if not.
-- [ ] A first banned-word list exists and is linked from 027 S-1.
-- [ ] Success-metric targets are marked "draft", with a note that 005 G-3 makes them final.
-- [ ] Each epic dependency has a named owner.
-- [ ] Each reuse pick is accepted or replaced, and the affected issues are updated. The Dapr decision from PoC-4 is recorded: a broker client in the chassis, or Dapr with its localhost API closed to the workload.
-- [ ] The choices ADR-001 leaves to planning are recorded: Kyverno or ValidatingAdmissionPolicy; gVisor or Kata; which managed runtime and which non-Python workload the MVP fronts; agent-sandbox or E2B for the code-execution tool; and whether per-key guardrails need LiteLLM Enterprise.
-- [ ] The router's first home is decided.
+- [ ] The north star is chosen, with draft targets for its inputs (product plan, open item 1).
+- [ ] The primary trace view per environment is chosen, LangSmith or Langfuse, with where the score goes when both run (product plan open item 2, ADR-007 open question 4, ADR-009 open question 5).
+- [ ] Each live epic dependency has a named owner: cloud account, golden set reviewer, legal and compliance.
+- [x] The Dapr decision from PoC-4 is recorded: a broker client in the chassis, or Dapr with its localhost API closed to the workload. · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/notes/2026-10-01-dapr-vs-broker.md`; [ADR-004](../adr/004-events-through-a-broker-client.md) Decision 1, accepted 2026-10-08 (a broker client in the chassis behind `EventPort`).
+- [ ] Each other reuse pick is accepted or replaced, and the affected issues are updated: Langfuse as the golden set store, lakeFS or DVC, and the registry base.
+- [x] The choices ADR-001 leaves to planning are recorded: Kyverno or ValidatingAdmissionPolicy; gVisor or Kata; which managed runtime and which non-Python workload the MVP fronts; agent-sandbox or E2B for the code-execution tool; and whether per-key guardrails need LiteLLM Enterprise. · Delivered in PoC-2, PoC-5, PoC-6b: ValidatingAdmissionPolicy, no Kyverno (ADR-005 item 4; `pocs/poc-05-sandboxed/demo/2026-10-09-demo-sandboxed.md` section 5); gVisor (`pocs/poc-05-sandboxed/notes/2026-10-09-gvisor-overhead.md`); no managed runtime, kagent-adk in plain-A2A mode (`pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-kagent-probe.md`; ADR-006, AgentCore and Vertex out of scope on 2026-10-09); echo-typescript in the sidecar lane (`pocs/poc-02-two-engines-one-contract/tests/test_lanes.py::test_typescript_echo_gives_the_same_stream_as_echo_python`); agent-sandbox, one sandbox per call (ADR-005 item 6; `pocs/poc-05-sandboxed/notes/2026-10-09-close-runs.md`); guardrails per route in open-source LiteLLM, no Enterprise now (ADR-008 item 4 and S10).
 
 ## Dependencies
 

@@ -15,16 +15,17 @@ A repeated call with the same `idempotency_key` must return the same result and 
 
 ## What
 
-- A key check on every call. Native calls carry `idempotency_key` in the envelope; OpenAI and Anthropic calls use a header (suggested: `Idempotency-Key`).
+- A key check on every call. Native calls carry `idempotency_key` in the envelope; OpenAI and Anthropic calls use the `Idempotency-Key` header. A key the chassis minted is never checked.
 - A call with no key gets one from the chassis, returned in the envelope.
-- An optional result cache in Valkey, switched on by config, holding the complete result per key for a set time (suggested config key: `harness.idempotency.ttl_s`).
+- An optional result cache in Valkey, switched on by config, holding the complete result per key for a set time (`spec.idempotency.ttl_s`). Its ceiling is built: `TTL_S_MAX`, 30 days (`packages/chassis/src/chassis/server/config.py`).
 - The Valkey credential is held only by the chassis. The workload cannot reach Valkey ([ADR-001](../adr/001-chassis-delivery-model.md) hard requirement 1).
-- The same key with a different input refused as a conflict.
+- The same key with a different input refused as a conflict (422).
 - Two calls with the same key at the same time run the core once; the second waits for the first result.
-- A cached result replayed as a stream when the second call asks for streaming.
+- A cached result replayed as a stream when the second call asks for streaming. A replay carries `Idempotent-Replayed: true`.
 - The key kept on `Context`, so the event port and write tools can pass it on (B.3). It reaches the workload in `ctx` over A2A. The chassis tool proxy adds it to write-tool calls later (054 H-16).
 - Valkey added to Docker Compose.
-- Status after PoC-4: built ([contract v3](../../contracts/contract-v3.md#idempotency)). `StatePort` with the in-memory fake and a Valkey adapter, both bound to `StatePortContract`; the key check on all four interfaces (`Idempotency-Key` header or the native body; a minted key is never checked); a lease with renew and takeover, and a fence that drops the claim when no renew got through for `0.8 * lease_s` (suggested), before another replica can take the key; replay in any interface and mode with `Idempotent-Replayed: true`; 422 for the same key with another input. The config key is `spec.idempotency.ttl_s`. Tests: `pocs/poc-04-stateless-scalable/tests/test_idempotency_replicas.py`, `test_killed_replica.py`, `test_idempotency_valkey.py` (`network`), and the Compose kill drill (section 2 of [the drills note](../../../pocs/poc-04-stateless-scalable/notes/2026-10-01-drills.md)). Not ticked here: the gate run goes in the PoC-4 README. Open before production: the scope is per agent, not per caller, until auth arrives (PoC-8), so the store key and the fingerprint must then include the principal; no per-caller quota, so any caller can fill Valkey (256 MB with `noeviction` filled at 186,218 entries of about 1.5 KB, then every keyed call is 503, with a message that says unreachable when the store is full); no ceiling on `ttl_s` (default 86400 s, reloadable) and no retention decision for the request, events, and response cached in the clear; no TLS to Valkey (`valkey://`). suggested: defaults `ttl_s` 3600 and `max_entry_bytes` 65536, and a memory alert.
+- Decided in [contract v3](../../contracts/contract-v3.md#idempotency): `StatePort` with an in-memory fake and a Valkey adapter; a lease with renew and takeover, and a fence that drops the claim before another replica can take the key.
+- The default `ttl_s` and `max_entry_bytes` are 001 DEC-1's. They are built as 86400 s and 1 MiB. suggested: 3600 s and 65536 bytes.
 
 ## Out of scope
 
@@ -32,17 +33,20 @@ A repeated call with the same `idempotency_key` must return the same result and 
 - Adding the key to write-tool calls in the chassis tool proxy (054 H-16).
 - The per-service Valkey user, and the rule that blocks the workload from Valkey (026 CH-4).
 - Idempotent orchestrator steps on resume (102 O-7).
+- A cap on new keys per caller, so one caller cannot fill Valkey (022 H-6).
+- TLS to Valkey (038 X-1a), and the Valkey memory alert (117 X-3).
 
 ## Acceptance criteria
 
-- [ ] Two calls with the same key and input return the same result, and with the cache on, the second makes no model call.
-- [ ] The same key with a different input returns a conflict error.
-- [ ] Two concurrent calls with the same key make one model call.
-- [ ] A cached result is returned as a stream when the second call sets `stream: true`.
-- [ ] The key is on `Context` for later use by events and write tools, and reaches the workload in `ctx` in the `sidecar` lane.
-- [ ] Only the chassis is given the Valkey credential. The workload container has none.
-- [ ] Cache entries expire after the configured time.
-- [ ] The Valkey adapter and the in-memory fake pass the same `StatePort` contract suite, and are picked by `spec.adapters.state`.
+- [x] Two calls with the same key and input return the same result, and with the cache on, the second makes no model call. · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/tests/test_idempotency_replicas.py::test_a_repeated_key_returns_the_same_result_on_any_replica`, `::test_a_repeated_key_makes_no_second_model_call`
+- [x] The same key with a different input returns a conflict error. · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/tests/test_idempotency_replicas.py::test_same_key_other_input_is_a_conflict` (422)
+- [x] Two concurrent calls with the same key make one model call. · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/tests/test_idempotency_replicas.py::test_concurrent_duplicates_run_once`, `pocs/poc-04-stateless-scalable/tests/test_idempotency_valkey.py::test_concurrent_duplicates_run_once_through_valkey`
+- [x] A cached result is returned as a stream when the second call sets `stream: true`. · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/tests/test_idempotency_replicas.py::test_a_cached_result_replays_as_a_stream`
+- [ ] The key is on `Context` for later use by events and write tools, and reaches the workload in `ctx` in the `sidecar` lane. Open until a `sidecar`-lane test sends `Idempotency-Key` and asserts that the echo workload returns it from `ctx`.
+- [x] Only the chassis is given the Valkey credential. The workload container has none. · Delivered in PoC-4, PoC-5: `pocs/poc-04-stateless-scalable/tests/test_read_only_compose.py::test_no_key_in_any_workload_env`, `pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py::test_valkey_refuses_the_workload_without_the_chassis_password` (`pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md`)
+- [x] Cache entries expire after the configured time. · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/tests/test_idempotency_replicas.py::test_the_cache_expires_after_ttl`, `packages/chassis/tests/test_idempotency.py::test_a_cached_result_lives_ttl_s`
+- [x] The Valkey adapter and the in-memory fake pass the same `StatePort` contract suite, and are picked by `spec.adapters.state`. · Delivered in PoC-4: `packages/chassis/tests/test_state_contract.py::TestInMemoryState`, `packages/chassis/tests/integration/test_valkey_state_contract.py::TestValkeyState`, `packages/chassis/tests/test_profiles.py::test_overrides_pick_the_adapter_per_port`
+- [ ] With auth on, the store key and the fingerprint include the principal: the same key from two callers runs twice.
 
 ## Dependencies
 

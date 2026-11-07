@@ -16,10 +16,10 @@ The registry is how agents and the orchestrator find agents, tools, APIs, and MC
 ## What
 
 - A registry service built on the chassis, from the service template (025 H-10), with its own OpenAPI 3.1 spec, on Postgres 17 with pgvector (CloudNativePG). Suggested: class `data`, since it alone writes its store.
-- Only the registry's chassis holds the store credential. suggested: the chassis exposes the store to its workload as MCP tools through the tool proxy (054 H-16). This is gap (a) in [the gaps in the backlog plan](000-plan.md#adr-001-follow-ups).
-- Entry fields from F.3: `name`, `type` (`agent`, `tool`, `api`, `mcp`), `task`, `description`, input and output schema, `endpoint`, `version`, `auth`, `owner`, `tags`, `trust`, `status`.
+- Only the registry's chassis holds the store credential. suggested: the chassis exposes the store to its workload as MCP tools through the tool proxy (054 H-16). This is gap (a) in [the gaps in the backlog plan](000-plan.md#adr-001-follow-ups). It is an open decision, needed before W7, not before phases A to F.
+- Entry fields from F.3: `name`, `type` (`agent`, `tool`, `api`, `mcp`), `task`, `description`, input and output schema, `endpoint`, `version`, `auth`, `owner`, `tags`, `trust_level` (the epic's `trust`), `status`.
 - `endpoint` is the chassis's public address, never the workload's. The workload listens only on localhost, or on a private address in the `remote` lane ([ADR-001](../adr/001-chassis-delivery-model.md) item 3).
-- Fields from ADR-001: `chassis_version`, `engine_connector` (the lane: `sidecar`, `remote`, or `inprocess`), and the runtime trust value from `spec.trust` (suggested field name: `runtime_trust`). It is not the registry's `trust` level; 080 R-7 maps one to the other.
+- Fields from ADR-001, mapped from `/manifest`: `versions.chassis` to `chassis_version`, `lane` to `engine_connector` (`sidecar`, `remote`, or `inprocess`), and `agent.trust` (the agent's `spec.trust`) to `runtime_trust` (suggested field name). It is not the registry's `trust_level`; 080 R-7 maps one to the other.
 - `description_hash` (`sha256:...`), computed by the registry over the `description` and the schema field descriptions, where tool poisoning can also hide [R5].
 - `fallback_of` links with difference metadata: cost, speed, quality, limits, notes.
 - Slots that later issues fill: live metrics (`p95_latency_ms`, `error_rate`, cost), and vectors with their embedding model name.
@@ -49,7 +49,7 @@ The registry is how agents and the orchestrator find agents, tools, APIs, and MC
 - [ ] `description_hash` changes when the description or a schema field description changes, and only then.
 - [ ] A `fallback_of` link and its metadata come back with the main entry.
 - [ ] The echo agent's `/manifest` maps to a valid entry with no hand edits, with `chassis_version`, `engine_connector`, and `runtime_trust` set, and the chassis's public address as `endpoint`.
-- [ ] Each SQL filter (type, task, status, owner, tags, trust) returns only matching entries on a fixture of at least 50 entries.
+- [ ] Each SQL filter (type, task, status, owner, tags, `trust_level`) returns only matching entries on a fixture of at least 50 entries.
 - [ ] Every create, update, and status change publishes one `registry.entry.changed.v1` event.
 - [ ] Reads need a read scope and writes need a write scope (022 H-6).
 

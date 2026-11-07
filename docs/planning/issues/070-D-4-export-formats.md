@@ -11,14 +11,14 @@ epic_refs: [H]
 
 ## Why
 
-Golden sets are only useful if training jobs and other teams can take them out in the format they use. Export in every listed format, in one step, completes the import and export part of the Phase 4 done-when. It needs splits (066 D-6) and versions (069 D-7), and it feeds the evaluator SLM (073 E-1) and the MCP golden set tools (096 P-2a).
+Golden sets are only useful if training jobs and other teams can take them out in the format they use. Export in every listed format, in one step, completes the import and export part of the Phase 4 done-when. It needs splits (066 D-6) and versions (069 D-7), and it feeds the MCP golden set tools (096 P-2a).
 
 ## What
 
 - Export in JSONL, CSV, Parquet, and Hugging Face datasets format.
 - The Hugging Face export is a dataset with `train`, `test`, and `holdout` splits taken from D-6.
 - Filters: task, tags, splits, and state. Only approved records by default.
-- Each export is tied to an immutable lakeFS version and returns its version ID.
+- Each export is tied to an immutable dataset version ID (the store decided with 069 D-7) and returns it.
 - One step: one API call returns the version ID and a download link for the chosen format.
 - Every export includes a metadata file: version ID, schema version, counts per split, and `source` counts.
 - The same record schema in every format, so an export imports back with no loss.
@@ -38,7 +38,7 @@ Golden sets are only useful if training jobs and other teams can take them out i
 
 ## Acceptance criteria
 
-- [ ] One API call exports approved records in each of the four formats and returns a version ID.
+- [ ] One API call exports approved records in each of the four formats and returns a dataset version ID (the store decided with 069 D-7).
 - [ ] Exporting the same version ID twice gives the same records in the same order.
 - [ ] The Hugging Face export loads with the `datasets` library and has `train`, `test`, and `holdout` splits that match D-6.
 - [ ] Filters by tag and split work, and records that are not approved are left out by default.
