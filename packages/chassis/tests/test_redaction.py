@@ -7,8 +7,15 @@ import time
 import pytest
 from chassis.redaction import redact
 
-FAST_SECONDS = 0.1
-"""suggested: the bound for one `redact` call on a 200k-character string."""
+FAST_CPU_SECONDS = 0.5
+"""suggested: the CPU-time bound for one `redact` call on a 200k-character string.
+
+Measured with `time.thread_time`, the CPU this thread used, not the wall clock. On a loaded machine
+the thread waits for a core, which adds wall time but no CPU time. The bound leaves room for the one
+load effect CPU time still feels, a move to a slower core: on an Apple M-series Mac the call costs
+8 to 18 ms on a performance core and up to 72 ms on an efficiency core. The backtracking pattern
+this guards against costs about 30 s of CPU on the same input, 60 times the bound (2026-11-07).
+"""
 
 
 @pytest.mark.parametrize(
@@ -23,23 +30,29 @@ FAST_SECONDS = 0.1
     ids=["a-dash-run", "digit-run", "long-domain", "long-dotted-domain", "many-at-signs"],
 )
 def test_redact_returns_fast_and_unchanged_when_long_text_holds_no_email(text: str) -> None:
-    """A long run with no full email address comes back unchanged in under 100 ms."""
-    start = time.perf_counter()
+    """A long run with no full email address comes back unchanged in under 0.5 s of CPU.
+
+    CPU time, not wall time: waiting for a core on a loaded machine adds none of it.
+    """
+    start = time.thread_time()
 
     out = redact(text)
 
-    assert time.perf_counter() - start < FAST_SECONDS
+    assert time.thread_time() - start < FAST_CPU_SECONDS
     assert out == text
 
 
 def test_redact_masks_an_email_fast_when_its_domain_is_long_and_dotted() -> None:
-    """An email with a 200k-character dotted domain is masked in under 100 ms."""
+    """An email with a 200k-character dotted domain is masked in under 0.5 s of CPU.
+
+    CPU time, not wall time: waiting for a core on a loaded machine adds none of it.
+    """
     text = "x@" + "a." * 100_000 + "com"
-    start = time.perf_counter()
+    start = time.thread_time()
 
     out = redact(text)
 
-    assert time.perf_counter() - start < FAST_SECONDS
+    assert time.thread_time() - start < FAST_CPU_SECONDS
     assert out == "<EMAIL_ADDRESS>"
 
 
