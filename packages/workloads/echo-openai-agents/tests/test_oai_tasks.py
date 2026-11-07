@@ -128,6 +128,22 @@ async def test_every_model_and_mcp_request_carries_the_traceparent(stubs: s.Stub
         assert request.headers.get("traceparent") == s.TRACEPARENT, request.url
 
 
+async def test_every_model_and_mcp_request_carries_the_run_secret_when_set(
+    stubs: s.Stubs,
+) -> None:
+    run_cap = "run-cap-for-tests"
+    await s.run(s.LOOKUP, {**s.CTX, "run_secret": run_cap})
+    assert stubs.model.requests and stubs.tools.requests
+    for request in stubs.all_requests():
+        assert request.headers.get("x-chassis-run-secret") == run_cap, request.url
+
+
+async def test_no_run_secret_header_when_ctx_has_none(stubs: s.Stubs) -> None:
+    await s.run(s.LOOKUP, {**s.CTX, "run_secret": None})
+    assert stubs.all_requests()
+    assert all("x-chassis-run-secret" not in r.headers for r in stubs.all_requests())
+
+
 async def test_no_traceparent_header_when_ctx_has_none(stubs: s.Stubs) -> None:
     await s.run(s.LOOKUP, {k: v for k, v in s.CTX.items() if k != "traceparent"})
     assert stubs.all_requests()

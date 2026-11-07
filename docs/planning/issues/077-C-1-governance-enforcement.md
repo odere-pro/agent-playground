@@ -1,17 +1,17 @@
 ---
 title: "C-1: Governance block enforced by the registry on activation"
-labels: ["story", "priority:P1", "phase:9-governance", "area:governance", "size:S", "layer:platform"]
+labels: ["story", "priority:P1", "phase:9-governance", "area:governance", "size:M", "layer:platform"]
 milestone: "W7 Registry and governance gate"
 index: 77
 epic_id: C-1
 depends_on: ["010 H-12", "076 R-1", "055 CH-6", "056 CH-7"]
-blocks: ["078 R-16", "079 C-2"]
+blocks: ["078 R-16", "079 C-2", "110 C-6"]
 epic_refs: [E.4]
 ---
 
 ## Why
 
-No agent may go live without a governance block: purpose, risk class, owner, and oversight. This issue is pulled forward from Phase 9, because the gate must exist before agents register automatically (083 R-2, 084 R-3). The config loader (010 H-12) already puts the governance fields in the config JSON Schema; this issue makes the registry enforce them on activation.
+No agent may go live without a governance block: purpose, risk class, owner, and oversight. This issue is pulled forward from Phase 9, because the gate must exist before agents register automatically (083 R-2, 084 R-3). The config loader (010 H-12) holds two governance fields today, `risk_class` and `ai_generated_marking`. This issue adds the rest of E.4 to the config schema and makes the registry enforce them on activation.
 
 ## What
 
@@ -27,6 +27,8 @@ No agent may go live without a governance block: purpose, risk class, owner, and
 - A failed check leaves the entry `pending` and returns every failed rule, not only the first.
 - Each decision is published in `registry.entry.changed.v1` with the rules checked, so the audit log (072 C-3) keeps it.
 - A new config version of an active agent is checked again before it goes live.
+- The chassis already refuses two cases at load: a `limited` or `high` agent with marking off (`spec.governance`, PoC-7), and an `untrusted` agent outside the `remote` lane. The registry boxes below cover what the registry alone guards: an entry registered by hand.
+- Decided in ADR-005 items 4 and 5: admission already refuses an image outside the registry prefix and a `trusted` image outside the platform list. This check reads the same list, or the signature once it lands. Landing it reopens ADR-005 decisions 4 and 5.
 
 ## Out of scope
 
@@ -39,17 +41,19 @@ No agent may go live without a governance block: purpose, risk class, owner, and
 - [ ] An agent with no `governance` block stays `pending`, and the error names the missing block.
 - [ ] A `high` agent missing `impact_assessment_ref`, or with `human_oversight: none`, or with `log_retention_days` below the minimum, is not activated; each case has a test.
 - [ ] A `high` agent that meets all three rules is activated.
-- [ ] A `limited` agent with `ai_generated_marking: false` is not activated.
+- [ ] A manually registered agent entry that declares `risk_class: limited` with `ai_generated_marking: false` is not activated.
 - [ ] An agent with `risk_class: prohibited_check_failed` is never activated, even by a direct status change call.
-- [ ] An `untrusted` agent in the `sidecar` lane is not activated.
+- [ ] A manually registered agent entry that declares `spec.trust: untrusted` in the `sidecar` lane is not activated.
+- [ ] The registry validates the entry's config with the chassis config model, so the loader's refusals hold.
 - [ ] An agent whose chassis version is below the minimum is not activated.
 - [ ] Each decision is published as `registry.entry.changed.v1` with the result and the failed rules.
 - [ ] Agent config cannot switch the gate off or lower the retention minimum.
+- [ ] The chassis config schema carries the nine E.4 governance fields, required when `risk_class` is `limited` or `high`, with allowed values.
 
 ## Dependencies
 
 - Depends on: [010 H-12](010-H-12-config-loader.md), [076 R-1](076-R-1-registry-data-model-api.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [056 CH-7](056-CH-7-chassis-release-rings.md)
-- Blocks: [078 R-16](078-R-16-ai-system-inventory.md), [079 C-2](079-C-2-prohibited-practice-checklist.md)
+- Blocks: [078 R-16](078-R-16-ai-system-inventory.md), [079 C-2](079-C-2-prohibited-practice-checklist.md), [110 C-6](110-C-6-human-oversight.md)
 
 ## References
 

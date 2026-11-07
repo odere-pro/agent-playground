@@ -1,6 +1,6 @@
 ---
 title: "P-1: Platform MCP server built from the harness, with registry and agent tools"
-labels: ["story", "priority:P1", "phase:6-mcp-server", "area:mcp", "size:S", "layer:platform"]
+labels: ["story", "priority:P1", "phase:6-mcp-server", "area:mcp", "size:M", "layer:platform"]
 milestone: "W8 Platform MCP server"
 index: 94
 epic_id: P-1
@@ -18,9 +18,11 @@ One MCP server lets Claude, or any MCP client, work with the whole system. It is
 - A new agent built on the chassis, from the service template (suggested: kind `tool`), with MCP tools generated from its OpenAPI spec (051 H-13).
 - Registry tools (`registry_search`, `registry_get`, `registry_register`, `registry_approve`), forwarded to the registry MCP server (093 R-14), so their schemas stay the same.
 - `agent_list`: active agents from the registry, with name, task, version, and description.
-- `agent_run`: calls an active agent through `POST /v1/run`, stream or complete. The call goes out through the chassis's outbound agent call, which holds the credentials. The workload holds none. Suggested: streaming sends `delta` events as MCP progress notifications.
-- `agent_run` sets an `idempotency_key` when the caller gives none, and passes on the trace context.
-- The chassis passes the caller's identity to the target agent on that outbound call, so that agent's own scopes apply (suggested: token exchange).
+- `agent_run`: calls an active agent through `POST /v1/run`, complete only. The call goes out through the chassis's outbound agent call, which holds the credentials. The workload holds none.
+- This issue builds that outbound agent call. It is a chassis feature, with a fake and a contract case. The agent port in 099 O-1 reuses it.
+- MCP is complete only, generated from the OpenAPI spec. Decided in ADR-003 item 6. Streaming waits until FastMCP can stream an OpenAPI tool.
+- `agent_run` sets an `idempotency_key` when the caller gives none, and passes on the trace context. No MCP case exists in the idempotency tests today; the replay box needs one (suggested: `test_an_mcp_call_replays_on_the_same_idempotency_key`).
+- The chassis passes the caller's identity to the target agent on that outbound call, so that agent's own scopes apply (suggested: token exchange). This needs an ADR-008 note. ADR-008 item 2 says the token is never forwarded to the workload; this hop is chassis to agent, not chassis to workload.
 - The write tools stay off by config until 095 P-4 adds scopes, confirmation, and audit.
 - Registers itself on deploy with its governance block, like any agent.
 
@@ -34,12 +36,13 @@ One MCP server lets Claude, or any MCP client, work with the whole system. It is
 - Read and write scopes, confirmation, and the audit log on every call (095 P-4).
 - Golden set and metrics tools (096 P-2a), and run, memory, config, and workflow tools (114 P-2b).
 - Resources and prompts (097 P-3).
+- A streamed `agent_run`, until FastMCP can stream an OpenAPI tool (ADR-003 item 6).
 
 ## Acceptance criteria
 
 - [ ] An MCP client connects and lists `registry_search`, `registry_get`, `agent_list`, and `agent_run`; the write tools are not listed while they are off.
-- [ ] `registry_search` for `simplify_text` returns the simplifier as the main pick with its fallbacks.
-- [ ] `agent_run` on the simplifier returns a complete result, and with streaming on the client gets partial output before the end.
+- [ ] `registry_search` for the echo agent's task returns the echo agent (`packages/workloads/echo-*`) as the main pick with its fallbacks.
+- [ ] `agent_run` on the echo agent returns a complete result.
 - [ ] `agent_run` on a `pending` or `inactive` entry is refused.
 - [ ] Two `agent_run` calls with the same `idempotency_key` return the same result.
 - [ ] One trace links the MCP call to the agent call.

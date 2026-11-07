@@ -1,7 +1,7 @@
 ---
 title: "L-3: Router SLM: classifier that replaces part of the orchestrator's routing"
 labels: ["later", "priority:P3", "phase:11-later", "area:orchestrator", "size:L", "layer:platform"]
-milestone: "W12 Later"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 127
 epic_id: L-3
 depends_on: ["040 D-0", "108 O-12"]
@@ -11,7 +11,7 @@ epic_refs: [phase-11-later-ideas]
 
 ## Why
 
-Every run that no routing rule matches calls the big planner, which costs money and time. A router SLM trained on logged runs could handle the common cases, with a confidence threshold and a fallback to the planner. It is a Phase 11 idea, so this P3 issue is a plan. It needs the recorder's logged runs (040 D-0) and the routing and planner modes (108 O-12) first.
+Every run that no routing rule matches calls the big planner, which costs money and time. A router SLM trained on logged runs could handle the common cases, with a confidence threshold and a fallback to the planner. It is a Phase 11 idea, so this P3 issue is a plan. It needs the recorder's logged runs (040 D-0) and the routing and planner modes (108 O-12) first. Parked 2026-11-06 with the SLM track (product plan).
 
 ## What
 

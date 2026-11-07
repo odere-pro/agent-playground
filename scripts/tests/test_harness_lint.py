@@ -124,3 +124,61 @@ def test_a_stale_class_citation_fails(lint: ModuleType, capsys: pytest.CaptureFi
     readme.write_text(readme.read_text() + "see `::TestGone`\n")
     assert lint.main() == 1
     assert "README.md:2: cites test 'TestGone'" in capsys.readouterr().out
+
+
+def _write_issue(lint: ModuleType, lines: str) -> None:
+    _write(
+        lint.ROOT / "docs" / "planning" / "issues" / "001-H-1-x.md",
+        "## Acceptance criteria\n\n" + lines,
+    )
+
+
+def test_a_ticked_issue_line_citing_an_undefined_test_is_a_finding(
+    lint: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ticked backlog line citing a test no file defines fails and names the line."""
+    monkeypatch.setattr(lint, "SCAN_ISSUE_TICKS", True)
+    _write_issue(lint, "- [ ] open\n- [x] met · Delivered in PoC-1: `tests/test_a.py::test_gone`\n")
+
+    assert lint.main() == 1
+
+    out = capsys.readouterr().out
+    assert (
+        "docs/planning/issues/001-H-1-x.md:4: cites test 'test_gone', which no test file defines"
+        in out
+    )
+
+
+def test_an_open_issue_line_citing_an_undefined_test_is_not_a_finding(
+    lint: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An open box may name a test that does not exist yet."""
+    monkeypatch.setattr(lint, "SCAN_ISSUE_TICKS", True)
+    _write_issue(lint, "- [ ] add `tests/test_a.py::test_not_yet`\n")
+
+    assert lint.main() == 0, capsys.readouterr().out
+
+
+def test_a_ticked_issue_line_citing_a_defined_test_is_clean(
+    lint: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A ticked backlog line citing a defined test gives no finding."""
+    monkeypatch.setattr(lint, "SCAN_ISSUE_TICKS", True)
+    _write_issue(lint, "- [x] met · Delivered in PoC-1: `tests/test_a.py::test_it_works`\n")
+
+    assert lint.main() == 0, capsys.readouterr().out
+
+
+def test_a_ticked_issue_line_citing_a_test_under_scripts_tests_is_clean(
+    lint: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The planning tools' tests live in scripts/tests/, so a box may cite them as evidence."""
+    monkeypatch.setattr(lint, "SCAN_ISSUE_TICKS", True)
+    _write(
+        lint.ROOT / "scripts" / "tests" / "test_tool.py", "def test_the_tool_works():\n    pass\n"
+    )
+    _write_issue(
+        lint, "- [x] met · Delivered by: `scripts/tests/test_tool.py::test_the_tool_works`\n"
+    )
+
+    assert lint.main() == 0, capsys.readouterr().out

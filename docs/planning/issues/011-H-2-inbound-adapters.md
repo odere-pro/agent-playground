@@ -1,7 +1,7 @@
 ---
 title: "H-2: Inbound adapters: native, OpenAI-compatible, Anthropic-compatible, with streaming"
 labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:L", "layer:chassis", "layer:agent-profile"]
-milestone: "W2 Chassis MVP"
+milestone: "Done: delivered by the PoC track"
 index: 11
 epic_id: H-2
 depends_on: ["007 H-1", "008 H-14", "009 CH-1"]
@@ -18,14 +18,14 @@ Every agent must answer through native, OpenAI-compatible, and Anthropic-compati
 - Inbound adapters in the chassis: `POST /v1/run` (native envelope), `POST /v1/chat/completions` (OpenAI format), and `POST /v1/messages` (Anthropic format), each mapping to one canonical request.
 - The canonical request goes through the engine connector, always over A2A: in memory in `inprocess`, on localhost in `sidecar` (009 CH-1), and over the network in `remote` (055 CH-6). The workload never knows which API was used.
 - The chassis owns the public port. The workload port binds to localhost and is never in the Service.
-- Streaming: internal events mapped to server-sent events in each format. Complete: the collector returns one response.
-- Envelope fields taken from each format. For OpenAI and Anthropic calls, `idempotency_key` and the trace come from headers (suggested: `Idempotency-Key` and `traceparent`).
+- Streaming: internal events mapped to server-sent events in each format. Complete: the collector returns one response. The native stream sends one `event: <type>` / `data: <json>` frame per chassis event, then a final `response` frame carrying the collected envelope.
+- Envelope fields taken from each format. For OpenAI and Anthropic calls, `idempotency_key` and the trace come from headers (suggested: `Idempotency-Key` and `traceparent`). How each format maps onto the canonical request is written in [contract v2](../../contracts/contract-v2.md) and proposed in [ADR-003](../adr/003-chat-formats-onto-the-canonical-request.md).
 - Token counts from the `metrics` event returned in each format's `usage` field.
-- `error` events mapped to each format's error shape.
-- `GET /health` (process alive) and `GET /ready` (every registered readiness check passes, such as config loaded and model ready). One check is the connector: in the `sidecar` lane, the workload's localhost A2A endpoint must answer.
-- Status after PoC-1: the native endpoint exists. `POST /v1/run` with `stream: false` returns one envelope; with `stream: true` it returns server-sent events. The frame format: one `event: <type>` / `data: <json>` frame per chassis event, then a final `response` frame carrying the collected envelope. The OpenAI and Anthropic adapters map from this format. `/health` and `/ready` exist; `/ready` is 503 until the app's lifespan has built the ports. Evidence: `pocs/poc-01-walking-skeleton/tests/test_serve.py::test_stream_and_complete_carry_the_same_output`, `::test_chassis_serve_starts_from_config`. Still open: the readiness-check registry, SIGTERM drain, and the sidecar cases.
-- Status after PoC-3: the OpenAI and Anthropic adapters exist, streaming and complete, over one call flow with the native endpoint. How each format maps onto the canonical request (carry, refuse, ignore; `input.data.system` and `input.data.history`; `model` as the agent's name; the id rule from `traceparent` and `Idempotency-Key`, with a re-minted trace id instead of 409; errors as HTTP with `x-should-retry`) is proposed in [ADR-003](../adr/003-chat-formats-onto-the-canonical-request.md) and written in [contract v2](../../contracts/contract-v2.md). The PoC-3 fix round added `spec.limits` (suggested: `max_tokens_max: 8000`, `timeout_ms_max: 120000`, `body_bytes_max: 1048576`, `messages_max: 256`), refused as 400 `limit_exceeded` or 413; `internal_error` (500, `x-should-retry: false`); a fixed client-facing error text on OpenAI and Anthropic; and strict JSON types on `/v1/run` (422). Evidence: `packages/chassis/tests/test_inbound_contract.py`, `test_limits.py`, `test_serve_failures.py`. Still open: the readiness-check registry, SIGTERM drain, and Kubernetes; complete-mode calls do not stop when the client disconnects (PoC-4); `stop`, `stop_sequences`, the OpenAI message `name`, and unknown Anthropic message keys need a decision in ADR-003. See [the PoC-3 debt note](../../../pocs/poc-03-one-interface-every-client/notes/2026-10-01-debt.md).
-- Graceful shutdown on SIGTERM: stop taking new requests, finish in-flight ones, then exit. With two containers, no in-flight request may fail during a rolling restart. suggested: on SIGTERM, the workload finishes its in-flight `handle` calls before it exits, and both containers get a short preStop delay (gap (g) in the [backlog plan](000-plan.md#adr-001-follow-ups)).
+- `error` events mapped to each format's error shape, as HTTP with `x-should-retry`.
+- Request limits in `spec.limits` (suggested: `max_tokens_max: 8000`, `timeout_ms_max: 120000`, `body_bytes_max: 1048576`, `messages_max: 256`), refused as 400 `limit_exceeded` or 413.
+- A client that leaves a complete call stops the run ([contract v3](../../contracts/contract-v3.md#a-client-that-leaves-a-complete-call)).
+- `GET /health` (process alive) and `GET /ready`, from a fixed list of checks: the lifespan is done, the config is loaded, the chassis is not draining, and, in the `sidecar` lane, the workload's localhost A2A endpoint answers ([contract v3](../../contracts/contract-v3.md#ready-and-health)).
+- Graceful shutdown on SIGTERM, as [contract v3](../../contracts/contract-v3.md#shutdown) says: `/ready` goes 503 first, new calls are still served with `Connection: close`, in-flight runs finish, then the chassis exits. The workload stops after the chassis has drained. That order is a deploy rule (a native sidecar, or preStop sleeps).
 
 ## Reuse
 
@@ -42,17 +42,21 @@ Every agent must answer through native, OpenAI-compatible, and Anthropic-compati
 - The service's own declared operations (050 CH-5).
 - The Docker Compose file, which does not publish the workload port (016 H-9).
 - The preStop delay and the rolling-restart test in Kubernetes (024 CH-3).
+- A call to the workload port from outside the pod fails, and only the chassis port answers: moved to 024 CH-3 on 2026-11-06.
+- A client that leaves an MCP call.
+- ADR-003's acceptance, with four items it still has to decide: `stop`, `stop_sequences`, the OpenAI message `name`, and unknown Anthropic message keys. They are on the owner list, not here: the behavior is in the contract ([the PoC-3 debt note](../../../pocs/poc-03-one-interface-every-client/notes/2026-10-01-debt.md)).
 
 ## Acceptance criteria
 
-- [ ] The echo agent gives the same output through all three endpoints, streaming and complete, in both the `inprocess` and the `sidecar` lanes.
-- [ ] Stock OpenAI and Anthropic client libraries read both streaming and complete responses with no changes.
-- [ ] An `error` event returns the right error shape in each format.
-- [ ] Token counts appear in the `usage` field of OpenAI and Anthropic responses.
-- [ ] `/ready` reports not ready until every registered readiness check passes (tested with a fake check); `/health` answers while the process runs.
-- [ ] In the `sidecar` lane, `/ready` reports not ready while the workload's A2A endpoint does not answer.
-- [ ] On SIGTERM, in-flight requests finish and new requests are refused. In the `sidecar` lane, this holds when both containers get SIGTERM at the same time.
-- [ ] A call to the workload port from outside the pod fails. Only the chassis port answers.
+Delivered by: PoC-3, PoC-4 (2026-11-06)
+
+- [x] The echo agent gives the same output through all three endpoints, streaming and complete, in both the `inprocess` and the `sidecar` lanes. · Delivered in PoC-3: `pocs/poc-03-one-interface-every-client/tests/test_interface_contract.py::TestInterfaces::test_every_interface_gives_the_same_answer`, `::TestInterfaces::test_stream_and_complete_agree`; `pocs/poc-03-one-interface-every-client/tests/test_exit_criteria.py::test_exit_2_only_the_two_legitimate_groups_of_cells_skip` (49 of 64 cells run; the 15 skips are MCP stream and `echo-typescript` in `inprocess`).
+- [x] Stock OpenAI and Anthropic client libraries read both streaming and complete responses with no changes. · Delivered in PoC-3: `pocs/poc-03-one-interface-every-client/tests/test_exit_criteria.py::test_exit_3_the_sdks_work_with_only_a_base_url_change`.
+- [x] An `error` event returns the right error shape in each format. · Delivered in PoC-3: `pocs/poc-03-one-interface-every-client/tests/test_interface_contract.py::TestInterfaces::test_an_error_event_is_the_formats_error`; [contract v2](../../contracts/contract-v2.md#status-table).
+- [x] Token counts appear in the `usage` field of OpenAI and Anthropic responses. · Delivered in PoC-3: `pocs/poc-03-one-interface-every-client/tests/test_interface_contract.py::TestInterfaces::test_every_cell_answers`.
+- [x] `/ready` reports not ready until its fixed checks pass (lifespan done, config loaded, not draining, and the workload probe in `sidecar`); `/health` answers while the process runs. · Delivered in PoC-4: `packages/chassis/tests/test_readiness.py::test_ready_goes_false_after_failed_probes_and_health_stays_ok`, `::test_ready_says_starting_then_ready_then_draining`; [contract v3](../../contracts/contract-v3.md#ready-and-health).
+- [x] In the `sidecar` lane, `/ready` reports not ready while the workload's A2A endpoint does not answer. · Delivered in PoC-4: `packages/chassis/tests/test_readiness.py::test_the_sidecar_probe_is_false_on_a_bad_status_or_a_dead_workload`; `pocs/poc-04-stateless-scalable/tests/test_liveness.py::test_ready_goes_false_when_the_workload_hangs_and_health_stays_ok`.
+- [x] `/ready` goes 503 first; in-flight runs finish; the workload stops after the chassis has drained. · Delivered in PoC-4: `packages/chassis/tests/test_shutdown.py::test_sigterm_drains_the_in_flight_stream_after_ready_goes_false`; `pocs/poc-04-stateless-scalable/tests/test_graceful_shutdown.py::test_the_chassis_drains_in_flight_runs_and_ready_goes_false_first`; `pocs/poc-04-stateless-scalable/tests/test_workload_drain.py::test_workload_a2a_finishes_in_flight_handle_on_sigterm`; [contract v3](../../contracts/contract-v3.md#shutdown).
 
 ## Dependencies
 

@@ -4,8 +4,8 @@ labels: ["story", "priority:P1", "phase:5-registry", "area:registry", "size:L", 
 milestone: "W7 Registry and governance gate"
 index: 91
 epic_id: R-11
-depends_on: ["076 R-1", "090 R-13", "003 G-1b", "036 S-7"]
-blocks: ["092 R-12", "122 X-5"]
+depends_on: ["076 R-1", "090 R-13", "003 G-1b"]
+blocks: ["092 R-12", "133 X-5b"]
 epic_refs: [H, I, R6, R9]
 ---
 
@@ -15,18 +15,18 @@ With thousands of entries, the orchestrator must find the right tool from a shor
 
 ## What
 
-- SQL filters first: `status: active`, minimum trust, type, task, tags, owner, and risk class.
+- SQL filters first: `status: active`, minimum `trust_level`, type, task, tags, owner, and risk class.
 - Keyword search with BGE-M3 sparse vectors in pgvector (no extra extension).
 - Vector search with dense embeddings in pgvector. Default model Qwen3-Embedding-0.6B; the final pick is tested on the registry's own queries [R9].
 - Reciprocal rank fusion of the keyword and vector lists [R6], then Qwen3-Reranker-0.6B on the top results.
-- Embedding and reranker models served on vLLM and called through named routes in the LLM router (suggested: `registry-embed`, `registry-rerank`).
+- Embedding and reranker models are called through named routes in the LLM router (suggested: `registry-embed`, `registry-rerank`), on whatever server the route map names, hosted or self-hosted. The Appendix I comparison (box 3) decides.
 - Embedded text (suggested): name, task, description, and schema field names, embedded again when any of them change.
 - The embedding model name is stored with every vector. A model change triggers a full re-index, and search never mixes vectors from two models.
 - A search endpoint with query, filters, and `top_k`; each stage can be switched off by config.
 
 ## Reuse
 
-- **Use:** pgvector (dense vectors plus BGE-M3 sparse vectors), and Qwen3-Embedding and Qwen3-Reranker served by vLLM, all per the epic. ToolHive's `find_tool` search is a reference.
+- **Use:** pgvector (dense vectors plus BGE-M3 sparse vectors), per the epic. The embedding and reranker models are called through named routes (`registry-embed`, `registry-rerank`) on whatever server the route map names, hosted or self-hosted; the Appendix I comparison (box 3) decides. ToolHive's `find_tool` search is a reference.
 - **Build:** reciprocal rank fusion and the reranking step.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
 
@@ -48,8 +48,8 @@ With thousands of entries, the orchestrator must find the right tool from a shor
 
 ## Dependencies
 
-- Depends on: [076 R-1](076-R-1-registry-data-model-api.md), [090 R-13](090-R-13-search-test-set.md), [003 G-1b](003-G-1b-named-model-routes.md), [036 S-7](036-S-7-serve-with-vllm.md)
-- Blocks: [092 R-12](092-R-12-main-pick-fallbacks.md), [122 X-5](122-X-5-load-tests.md)
+- Depends on: [076 R-1](076-R-1-registry-data-model-api.md), [090 R-13](090-R-13-search-test-set.md), [003 G-1b](003-G-1b-named-model-routes.md)
+- Blocks: [092 R-12](092-R-12-main-pick-fallbacks.md), [133 X-5b](133-X-5b-load-tests-pools-registry.md)
 
 ## References
 

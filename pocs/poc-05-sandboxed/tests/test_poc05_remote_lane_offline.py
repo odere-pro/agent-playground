@@ -37,7 +37,7 @@ def _chat_body() -> dict[str, Any]:
 
 async def _chat(lane: RemoteLane, token: str | None, trace: str | None) -> tuple[int, Any]:
     """One model call to the remote listener, as a remote pod makes it."""
-    headers = {} if trace is None else {"traceparent": trace}
+    headers = lane.run_headers(trace)
     async with lane.remote_proxy_client(token) as client:
         response = await client.post(CHAT, json=_chat_body(), headers=headers)
     return response.status_code, response.json()

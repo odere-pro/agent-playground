@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:4-golden-set", "area:data", "size:M", "l
 milestone: "W6 Golden set and evaluator SLM"
 index: 64
 epic_id: D-1
-depends_on: ["017 H-4", "040 D-0", "042 A-2"]
+depends_on: ["017 H-4", "040 D-0", "042 A-2", "028 S-3"]
 blocks: ["065 D-2", "066 D-6", "067 D-5", "069 D-7"]
 epic_refs: [B.1, B.4]
 ---
@@ -17,19 +17,22 @@ Records alone are not a golden set. The golden set agent turns recorded calls in
 
 - A data agent (class `data`, kind `data`) built from the template. It owns its golden set tables in Postgres, and only it writes them.
 - It reads new records written by the recorder, with read-only access to the records tables.
-- It scores each record with the judge through `EvaluatorPort` (the `evaluator-facts` agent, a big-model judge until 075 E-3), plus the S-3 metrics (028 S-3).
+- It scores each record through `EvaluatorPort` on the judge route (`spec.model.judge_route`), plus the S-3 metrics (028 S-3).
 - Suggested: thresholds in config split scores into confident pass, confident fail, and an uncertain band in between.
 - Uncertain records publish `oversight.review.required.v1`, written through a transactional outbox.
 - It consumes `oversight.review.decided.v1` and sets the record to approved or rejected.
 - Suggested record states: `new`, `scored`, `in_review`, `approved`, `rejected`.
 - Records whose `source` is not cleared for training are flagged, so they never reach a training set.
 - Metrics: records scored, share sent to review, and judge cost per record.
+- Decided in ADR-010 items 2 and 11: the golden cases and results live in Langfuse datasets and experiments. LangSmith datasets are a second store once the phase D trial passes.
+- Blocked on follow-up (a) in the backlog plan (a service that writes its own store): decide before the first box.
+- Status after PoC-7 ([backlog changes](../../../pocs/poc-07-cross-cutting-decisions/notes/backlog-changes.md)): this agent may consume `agents.feedback.received.v1`. The open Langfuse question is answered by ADR-010 item 2: Langfuse datasets, with LangSmith a candidate.
+- Status after PoC-8: the golden set is about 50 cases for one agent, the simplifier (`packages/eval-kit/src/eval_kit/golden/`). Every other agent needs its own set, and that is this issue's work.
 
 ## Reuse
 
 - **Use:** Langfuse datasets (versioned), LLM-as-judge evaluators, and annotation queues. All three are in the MIT self-hosted edition.
 - **Build:** the glue: copy recorder records into Langfuse, send uncertain scores to a queue, and publish the review events.
-- **Decision:** confirm Langfuse as the golden set workspace at the start of this issue. If not, keep the design in What.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
 
 ## Out of scope
@@ -37,6 +40,7 @@ Records alone are not a golden set. The golden set agent turns recorded calls in
 - The review UI (065 D-2).
 - Tags and splits (066 D-6), import (067 D-5, 068 D-3), and versions and export (069 D-7, 070 D-4).
 - The evaluator SLM (073 E-1, 075 E-3).
+- Datasets in Langfuse and LangSmith for the gate set: phase D, in 131 CH-12.
 
 ## Acceptance criteria
 
@@ -47,10 +51,11 @@ Records alone are not a golden set. The golden set agent turns recorded calls in
 - [ ] Only the golden set agent can write the golden set tables, and it cannot write the records tables.
 - [ ] A record's state change and its review event are written together: a crash between them loses neither.
 - [ ] The share sent to review and the judge cost per record show as metrics.
+- [ ] Each golden set entry keeps the reviewer, the date, and the reason for its label.
 
 ## Dependencies
 
-- Depends on: [017 H-4](017-H-4-harness-features.md), [040 D-0](040-D-0-recorder-agent.md), [042 A-2](042-A-2-evaluator-gate-fallback.md)
+- Depends on: [017 H-4](017-H-4-harness-features.md), [040 D-0](040-D-0-recorder-agent.md), [042 A-2](042-A-2-evaluator-gate-fallback.md), [028 S-3](028-S-3-simplifier-metrics.md)
 - Blocks: [065 D-2](065-D-2-review-ui.md), [066 D-6](066-D-6-tags-splits.md), [067 D-5](067-D-5-import-schema-dedup.md), [069 D-7](069-D-7-lakefs-versions.md)
 
 ## References

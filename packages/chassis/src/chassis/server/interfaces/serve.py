@@ -3,6 +3,8 @@
 A router validates the body (FastAPI does), resolves the ids (`ids.resolve_ids`), and calls
 `serve`. In order:
 
+0. An id outside the envelope's pattern (`ids.id_problem`: a header's, or a native body's) is
+   `adapter.error("invalid_body", ...)`, 400 in the format's shape (contract v8, item 3).
 1. Not ready: `adapter.error("not_ready", ...)`, 503 in the format's shape.
 2. `adapter.to_request`, then `limits.enforce_limits` (`spec.limits`); a `Refused` from either
    is answered as it is.
@@ -85,7 +87,7 @@ from chassis.core.inbound import (
 from chassis.server.correlation import TraceIdInUse
 from chassis.server.idempotency import Claim, Refusal, Replay
 from chassis.server.interfaces.hold import hold
-from chassis.server.interfaces.ids import ResolvedIds, may_remint, open_run
+from chassis.server.interfaces.ids import ResolvedIds, id_problem, may_remint, open_run
 from chassis.server.interfaces.limits import enforce_limits
 from chassis.server.pipeline import Run, RunPipeline, RunStream
 from chassis.server.security import current_user_id
@@ -217,8 +219,11 @@ def _request_or_refuse[BodyT](
     pipeline: RunPipeline,
     ids: ResolvedIds,
 ) -> Request | HTTPResponse:
-    """Steps 1 and 2 of the module docstring: the canonical request within `spec.limits`, or the
-    answer when the chassis is not ready or the body is refused."""
+    """Steps 0 to 2 of the module docstring: the canonical request within `spec.limits`, or the
+    answer when an id is malformed, the chassis is not ready, or the body is refused."""
+    problem = id_problem(ids.ids)
+    if problem is not None:
+        return to_response(adapter.error("invalid_body", problem, False, meta))
     if not pipeline.ready:
         return to_response(adapter.error("not_ready", NOT_READY_MESSAGE, True, meta))
     try:
@@ -241,7 +246,9 @@ async def _begin_idempotency[BodyT](
     idempotency = pipeline.idempotency
     if not idempotency.applies(ids.key_from):
         return request, None
-    outcome = await idempotency.begin(request, wait_ms=request.budget.timeout_ms)
+    outcome = await idempotency.begin(
+        request, wait_ms=request.budget.timeout_ms, subject=current_user_id()
+    )
     if isinstance(outcome, Refusal):
         return to_response(
             adapter.error(

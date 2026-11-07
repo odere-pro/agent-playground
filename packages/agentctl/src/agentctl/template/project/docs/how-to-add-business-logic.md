@@ -65,6 +65,7 @@ async def handle(input: dict, ctx: dict) -> AsyncIterator[dict]: ...
 - `budget`: `max_tokens` and `timeout_ms`.
 - `model_route`: the route to name in every model call.
 - `traceparent`: the W3C header to forward.
+- `run_secret`: set on a remote run only; send it back as the `x-chassis-run-secret` header (contract v8).
 
 Rules for reading them:
 
@@ -124,7 +125,7 @@ The workload holds no key. Only the chassis holds credentials ([ADR-001](https:/
 - **Tools.** Connect an MCP client to `CHASSIS_TOOL_URL`, the chassis's tool proxy (suggested: `http://127.0.0.1:8090/mcp`). The model is offered what the chassis serves. Behind the proxy is the MCP gateway, with a tool allow-list per key ([ADR-001](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/001-chassis-delivery-model.md), item 6).
 - **Write tools** take the run's `idempotency_key`, because the gate may run `handle` twice for one request ([ADR-010](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/010-evals-offline-tool-online-gate.md), item 12).
 - **Code from a model** runs in the `code-runner` tool, never in the workload. It does not make the agent untrusted ([ADR-005](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/005-remote-lane-auth-and-trust-admission.md), item 6).
-- **Trace headers.** Forward `ctx["traceparent"]` on every model and MCP call. Forward `baggage` too ([ADR-007](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/007-observability-otel-collector-langfuse.md), item 5). Without the header the proxy cannot tie the call to its run, and the call counts against a per-replica budget.
+- **Trace headers.** Forward `ctx["traceparent"]` on every model and MCP call, and `ctx["run_secret"]` (when set) as the `x-chassis-run-secret` header; never log it (contract v8). Forward `baggage` too ([ADR-007](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/007-observability-otel-collector-langfuse.md), item 5). Without the header the proxy cannot tie the call to its run, and the call counts against a per-replica budget.
 - **Spans.** `telemetry.py` runs the framework's OpenInference instrumentor or native OpenTelemetry and exports OTLP to the Collector ([ADR-007](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/007-observability-otel-collector-langfuse.md), item 5).
 
 To reach a new MCP server or service, add a connector to the chassis, not a client to the workload.

@@ -16,10 +16,10 @@ The MCP server gives an AI client access to the whole platform, so its tools nee
 ## What
 
 - Every tool is tagged read or write, and also destructive when it changes something that is hard to undo. The MCP tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`) are set from these tags.
-- OAuth scopes for callers (suggested: `mcp:read`, `mcp:write`), checked by the security middleware (022 H-6).
+- OAuth scopes for callers, checked by the security middleware (022 H-6). ADR-008 item 2 defines `agent:run`, `agent:feedback`, and `agent:read`, and puts `/v1/mcp` under `agent:run`. A read and a write scope per tool are not in ADR-008. This issue amends ADR-008 with them first, or uses its names (suggested: `agent:read` for read tools, plus one new write scope).
+- Two layers filter tools. The gateway's per-key tool allow-list (ADR-008, `deploy/kind/poc05/platform/seed.sh`) is the hard limit. The chassis's per-caller filter by scope is a second layer on top of it.
 - A caller only sees the tools its scopes allow, and a call without the right scope is refused.
 - Destructive tools need the user's confirmation before they act. Suggested: MCP elicitation, with a two-step confirm token for clients that do not support it.
-- Suggested: the workload's A2A `input-required` state maps to MCP elicitation in the chassis.
 - Every call, allowed or refused, sends an audit event (suggested: `mcp.tool.called.v1`) with caller, tool, redacted arguments, result status, and `trace_id`, stored by the audit log agent (072 C-3).
 - PII is removed from arguments before the event is sent.
 - Switches on `registry_register` and `registry_approve` from 094 P-1; `registry_approve` needs confirmation.
@@ -35,6 +35,7 @@ The MCP server gives an AI client access to the whole platform, so its tools nee
 
 - Golden set and metrics tools (096 P-2a), and run, memory, config, and workflow tools (114 P-2b), which reuse these guards.
 - Human oversight controls in the orchestrator (110 C-6).
+- Mapping the workload's A2A `input-required` state to MCP elicitation. Today it is the error `a2a.unsupported_state`; it waits on the interrupt ADR (128 CH-9).
 
 ## Acceptance criteria
 

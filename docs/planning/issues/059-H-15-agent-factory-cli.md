@@ -1,11 +1,11 @@
 ---
 title: "H-15: Agent factory CLI: scaffold an agent by class and kind, modules by config"
-labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
+labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:L", "layer:chassis"]
 milestone: "W5 Chassis completion"
 index: 59
 epic_id: H-15
-depends_on: ["008 H-14", "025 H-10", "051 H-13", "057 H-19", "058 CH-8", "055 CH-6"]
-blocks: []
+depends_on: ["025 H-10", "057 H-19", "058 CH-8", "055 CH-6", "024 CH-3"]
+blocks: ["076 R-1", "099 O-1"]
 epic_refs: [B.5]
 ---
 
@@ -15,25 +15,22 @@ Every new agent should start from the same template, with only the parts its cla
 
 ## What
 
-- `agentctl new <name> --kind transformer|evaluator|tool|orchestrator|data`.
-- The class follows from the kind: transformer, evaluator, and tool agents are `stateless`; `orchestrator` and `data` are their own classes.
+- `agentctl new <name> --kind transformer|evaluator|tool`, built in PoC-9 in `packages/agentctl` ([scaffold test](../../../pocs/poc-09-agent-mvp-template/tests/test_poc09_scaffold.py)), with `--framework`, `--connector`, `--dest`, `--platform-path`, and `--no-lock`. It pins the agent to the platform's `uv.lock` and commits a `uv.lock`. `kind` is recorded and does not change the generated code yet.
+- The `orchestrator` and `data` kinds, the class each kind implies, and the modules per kind (the B.5 table, `spec.modules`) are 008 H-14's, re-scoped on 2026-11-06. This issue renders what 008 H-14 defines.
 - It creates the workload repo from the template:
   - the workload skeleton, with `handle`;
   - the template A2A server that wraps `handle` (009 CH-1);
   - the event mapping for the chosen framework (058 CH-8);
   - a Dockerfile for the workload image;
-  - a Helm chart that includes the shared library chart (024 CH-3);
+  - a Helm chart that includes the shared library chart (024 CH-3), from the chart template and the platform pin in 025 H-10. Not built yet: the generated repo has no chart;
   - the CI that runs the contract suite over both transports.
 - The inbound adapters, the pipeline, and the ports live in the chassis image, not in the generated repo.
-- `--connector sidecar|remote`, default `sidecar`. The generated tests run the chassis in the `fake` profile as a separate process and drive the workload over A2A; `inprocess` is for the chassis's own tests and is never deployed.
-- `--trust trusted|untrusted`, default `trusted`. `--trust untrusted` produces a `remote` chart (055 CH-6): the workload in its own pod, with gVisor and default-deny egress. Asking for `--trust untrusted` with `--connector sidecar` is refused.
+- `--connector sidecar|remote`, default `sidecar`. The generated tests run the chassis in the `fake` profile as a separate process and drive the workload over A2A; `inprocess` is for the chassis's own tests and is never deployed. A `remote` agent gets no Compose file, because Compose is the sidecar shape.
+- Trust follows the framework (`rules.trust_of`, ADR-006 decision 2); there is no `--trust` flag. An untrusted framework with `--connector sidecar` is refused. Boxes 6 and 7 still ask for `--trust trusted|untrusted`; proposal P-15 decides whether they follow the framework rule or a new flag.
 - `--framework` picks one of the supported frameworks from 058 CH-8, and its event mapping.
-- It writes a starter `AgentConfig` with `class`, `kind`, `modules`, `spec.engine.connector`, `spec.trust`, interface flags, and a `governance` block to fill in.
-- Modules follow the B.5 table and are switched on by `spec.modules`. For example, a tool agent gets the tool port (054 H-16); a data agent gets its own store and no tool port.
-- The CLI refuses a module that the B.5 table does not allow for the kind.
-- `--kind orchestrator` creates the skeleton with placeholders for the routing, planner, and workflow modules.
+- It writes a starter `AgentConfig` with `spec.engine.connector`, `spec.trust`, interface flags, and a `governance` block to fill in.
+- It checks each generated model route against the routes the service's key lists (the route map, 012 H-3).
 - Installed with uv; `--help` documents every option.
-- Status after PoC-9 ([scaffold test](../../../pocs/poc-09-agent-mvp-template/tests/test_poc09_scaffold.py)): `agentctl new` is built in `packages/agentctl` with `--kind transformer|evaluator|tool`, `--framework`, `--connector`, `--dest`, `--platform-path`, and `--no-lock`. It pins the agent to the platform's `uv.lock` and commits a `uv.lock`. Trust follows the framework; there is no `--trust` flag. Not built: the `orchestrator` and `data` kinds, `spec.modules`, the `governance` block, and a chart in the generated repo. `kind` is recorded and does not change the generated code yet. A `remote` agent gets no Compose file, because Compose is the sidecar shape.
 
 ## Reuse
 
@@ -44,26 +41,27 @@ Every new agent should start from the same template, with only the parts its cla
 ## Out of scope
 
 - The orchestrator modules themselves (099 O-1 and later).
+- The five kinds, the `class` and `kind` in each generated config, and the module rules per kind: 008 H-14, re-scoped on 2026-11-06.
+- The chart in the generated repo and the published platform pin: 025 H-10.
 - The stateless check (057 H-19), which the generated repo runs.
 - Registry registration on deploy (083 R-2).
+- The rest of the E.4 governance fields: 077 C-1.
 
 ## Acceptance criteria
 
-- [ ] `agentctl new demo --kind <kind>` works for all five kinds, and each result builds and passes the template CI, including the stateless check, with no hand edits.
-- [ ] Each generated config has the right `class` and `kind` and passes the agent config JSON Schema.
-- [ ] The generated modules match the B.5 table for each kind.
-- [ ] Asking for a module the kind does not allow fails with a clear error.
-- [ ] A generated transformer runs in Docker Compose in the `sidecar` lane, as two containers, and answers through the native, OpenAI, Anthropic, and MCP APIs.
+- [ ] A generated transformer runs in Docker Compose in the `sidecar` lane, as two containers, and answers through the native, OpenAI, Anthropic, and MCP APIs. The proof is a `demo.sh --live` rerun on the LangGraph default that calls `/v1/messages`, recorded as a dated note. The PoC-9 run showed native, OpenAI, and MCP only, with `pydanticai` (`pocs/poc-09-agent-mvp-template/notes/2026-11-05-machine-checks.md`, section 1).
 - [ ] `--trust untrusted` produces a `remote` chart: the workload runs in its own pod with the gVisor RuntimeClass and default-deny egress, and the chassis pod stays outside the sandbox.
 - [ ] `--trust untrusted --connector sidecar` fails with a clear error.
 - [ ] Each `--framework` choice gives a repo whose event mapping passes its contract test.
 - [ ] The generated repo holds no chassis code. The chassis image and tag come from the library chart.
-- [ ] The generated `governance` block lists every field from E.4, with a placeholder to fill in.
+- [ ] The generated `governance` block holds the fields the chassis schema has (`risk_class`, `ai_generated_marking`), with a placeholder for each; 077 C-1 adds the rest of E.4.
+- [ ] `agentctl` refuses a generated route that the service's key does not list.
+- [ ] A person new to the code goes from `agentctl new` to a demo in under a day, recorded in a dated note.
 
 ## Dependencies
 
-- Depends on: [008 H-14](008-H-14-one-agent-interface.md), [025 H-10](025-H-10-template-repo.md), [051 H-13](051-H-13-openapi-mcp-tools.md), [057 H-19](057-H-19-stateless-check-ci.md), [058 CH-8](058-CH-8-framework-event-mappings.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md)
-- Blocks: none
+- Depends on: [025 H-10](025-H-10-template-repo.md), [057 H-19](057-H-19-stateless-check-ci.md), [058 CH-8](058-CH-8-framework-event-mappings.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [024 CH-3](024-CH-3-helm-library-chart.md)
+- Blocks: [076 R-1](076-R-1-registry-data-model-api.md), [099 O-1](099-O-1-orchestrator-agent.md)
 
 ## References
 

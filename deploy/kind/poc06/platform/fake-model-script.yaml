@@ -51,7 +51,7 @@ rules:
       <code>
       final_answer("Acme put out the SLM in 2026. It cut costs by 30 percent.")
       </code>
-  - match: "RAG stand for? [code]"
+  - match: "expand RAG. [code]"
     reply: |
       Thought: Look the term up first.
       <code>
@@ -62,7 +62,7 @@ rules:
     reply: "Hello."
   - match: "30 percent. [text]"
     reply: "Acme put out the SLM in 2026. It cut costs by 30 percent."
-  - match: "RAG stand for? [text]"
+  - match: "expand RAG. [text]"
     reply: "SLM means a small language model. RAG stands for retrieval-augmented generation."
   # --- every other engine: OpenAI chat, tool calls by the gateway's names ---------------------
   - match: "simplify: Hello."

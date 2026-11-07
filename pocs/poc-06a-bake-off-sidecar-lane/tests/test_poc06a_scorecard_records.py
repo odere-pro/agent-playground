@@ -90,6 +90,49 @@ def _data_rows(section: str) -> list[list[str]]:
     return rows
 
 
+def criterion_problems(sections: dict[str, str], number: int, name: str) -> list[str]:
+    """What is wrong with one criterion's section: a missing engine row, an empty cell, a bare
+    dash, a "not measured" with no source, or a TBD. Empty when the section is complete."""
+    matches = [
+        body
+        for head, body in sections.items()
+        if head.lower() == f"criterion {number}: {name}".lower()
+    ]
+    if len(matches) != 1:
+        return [f"no single section '## Criterion {number}: {name}'"]
+    rows = _data_rows(matches[0])
+    if not rows:
+        return [f"criterion {number} has no table"]
+    where = f"criterion {number} ({name})"
+    problems = [
+        f"{where}: no row for {engine}"
+        for engine in ENGINE_NAMES
+        if not any(row[0].startswith(engine) or engine in row[0] for row in rows)
+    ]
+    for row in rows:
+        for cell in row:
+            if not cell:
+                problems.append(f"{where}: empty cell in {row[0]!r}")
+            elif cell == "-":
+                problems.append(f"{where}: bare dash in {row[0]!r}")
+            elif cell.lower().startswith("not measured") and not NOT_MEASURED.match(cell):
+                problems.append(f"{where}: 'not measured' needs a source: {cell[:60]!r}")
+            if "TBD" in cell or "TODO" in cell:
+                problems.append(f"{where}: TBD or TODO in {row[0]!r}")
+    return problems
+
+
+def scorecard_problems(text: str) -> list[str]:
+    """Every engine scored on every one of the 12 criteria (exit criterion 3). Empty when the
+    scorecard is complete. `test_criterion_3_*` in `test_poc06a_criteria.py` calls it."""
+    sections = _sections(text)
+    return [
+        problem
+        for number, name in enumerate(CRITERIA, start=1)
+        for problem in criterion_problems(sections, number, name)
+    ]
+
+
 @pytest.fixture(scope="module")
 def text() -> str:
     assert SCORECARD.is_file(), f"missing {SCORECARD}"
@@ -106,22 +149,22 @@ def test_every_criterion_covers_every_engine_with_no_empty_cell(
     sections: dict[str, str], number: int, name: str
 ) -> None:
     """Scorecard: each of the 12 criteria has a table with all 8 engines and no empty cell."""
-    body = _criterion_section(sections, number, name)
-    rows = _data_rows(body)
-    assert rows, f"criterion {number} has no table"
-    for engine in ENGINE_NAMES:
-        assert any(row[0].startswith(engine) or engine in row[0] for row in rows), (
-            f"criterion {number} ({name}): no row for {engine}"
-        )
-    for row in rows:
-        for cell in row:
-            assert cell, f"criterion {number} ({name}): empty cell in {row[0]!r}"
-            assert cell != "-", f"criterion {number} ({name}): bare dash in {row[0]!r}"
-            if cell.lower().startswith("not measured"):
-                assert NOT_MEASURED.match(cell), (
-                    f"criterion {number} ({name}): 'not measured' needs a source: {cell[:60]!r}"
-                )
-            assert "TBD" not in cell and "TODO" not in cell
+    assert criterion_problems(sections, number, name) == []
+
+
+def test_the_scorecard_check_names_a_gap() -> None:
+    """Control: an empty cell and a "not measured" with no source are each reported."""
+    broken = (
+        "## Criterion 1: event mapping effort\n\n| Engine | Lines |\n| --- | --- |\n"
+        + "".join(f"| {engine} | 1 |\n" for engine in ENGINE_NAMES[:-1])
+        + f"| {ENGINE_NAMES[-1]} |  |\n"
+        + "\n## Criterion 2: streaming fidelity\n\n| Engine | Deltas |\n| --- | --- |\n"
+        + "".join(f"| {engine} | not measured |\n" for engine in ENGINE_NAMES)
+    )
+    problems = scorecard_problems(broken)
+    assert any("empty cell in 'kagent-adk'" in p for p in problems)
+    assert any("'not measured' needs a source" in p for p in problems)
+    assert any("no single section '## Criterion 3: tool support'" in p for p in problems)
 
 
 def test_image_sizes_cite_the_ci_run(sections: dict[str, str]) -> None:
@@ -133,7 +176,7 @@ def test_image_sizes_cite_the_ci_run(sections: dict[str, str]) -> None:
     rows = {row[0]: row for row in _data_rows(body)}
     for engine, megabytes in IMAGE_MB.items():
         assert rows[engine][1] == str(megabytes), f"{engine}: image size is not {megabytes}"
-    assert rows["kagent-adk"][1].startswith("not measured: kind")
+    assert rows["kagent-adk"][1].startswith("pending CI run: `poc06-kind.yml`")
 
 
 def test_router_table_has_every_engine(sections: dict[str, str]) -> None:

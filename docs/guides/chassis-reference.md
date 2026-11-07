@@ -16,6 +16,12 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
 - PoC-7 adds security, observability, feedback, and the evaluator gate. Spec: [contract v6](../contracts/contract-v6.md). See [PoC-7 modules](#poc-7-modules).
 - PoC-8 adds `/metrics`, JSON logs, the router span, dashboards, rate limits, the stream secret check, the output URL allow-list, and the rest of the marking. Spec: [contract v7](../contracts/contract-v7.md). See [PoC-8 modules](#poc-8-modules).
 - The product plan's phase B adds the route map per task and the judge route (`spec.model.routes`, `spec.model.judge_route`). Spec: [models](../specs/models.md). The modules are under [config.py](#configpy), [pipeline.py](#pipelinepy), [model_proxy.py](#model_proxypy), [correlation.py](#correlationpy), and [PoC-7 modules](#poc-7-modules). Tests: `tests/test_model_routes.py` (the demo is its last test), plus one each in `test_config_loader.py` and `test_evaluators.py`. The Collector's span rules (`deploy/compose/poc07/otel-collector.yaml`) save `task` around the masks like every other id key.
+- The core review (2026-10-29) adds:
+  - the run secret on the remote listener;
+  - bounds on the v0 ids and events;
+  - the fixed error text on native and MCP;
+  - the stream cap, the MCP hop flag, the feedback owner, the waiter cap, and the uncorrelated route pin.
+  - Spec: [contract v8](../contracts/contract-v8.md). Decision: [ADR-011](../planning/adr/011-per-run-secret-and-v0-wire-bounds.md).
 - The contract in force is named once, on the `Spec:` line of [packages/chassis/CLAUDE.md](../../packages/chassis/CLAUDE.md). Each version names only its changes; read the earlier ones for the rest.
 
 ## core
@@ -25,8 +31,11 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
 - `trace.py` is stdlib only.
   - `trace_id_hex` and `traceparent_for` build the W3C `traceparent` from `ctx.trace_id` and the run span.
   - `parse_traceparent` reads the trace id from the inbound header. The model proxy and the MCP adapter share it.
-- The envelope: `Request`, `Response`, `Context` (with the optional `traceparent`), `TaskInput`, `Versions`.
+- The envelope: `Request`, `Response`, `Context` (with the optional `traceparent` and `run_secret`), `TaskInput`, `Versions`.
+  - The ids are the types `Id` (`ID_PATTERN`, 1 to 128 of `[A-Za-z0-9._:-]`) and `IdempotencyKey` (`KEY_PATTERN`, 1 to 255 visible ASCII). suggested (contract v8, C.1).
+  - `Context.run_secret` is set per run by the chassis and hidden from `repr`. `handle` sends it back as `x-chassis-run-secret` (contract v8, D).
 - The events: `Start`, `Delta`, `ToolCall`, `Metrics`, `End`, `Error`.
+  - Each field has a bound, for example `ERROR_MESSAGE_MAX` 8192 and `COUNT_MAX` 2^53. suggested. `schema_version` stays `"0"` (contract v8, C.2 and C.3).
 - `collect()`, the `Handle` type, and `echo`.
 - `inbound.py` is the inbound adapter seam.
   - Types: `Ids`, `Served`, `ReplyMeta` (with `for_request` and `collect`), `Reply`, `StreamReply`, `Refused`.
@@ -34,7 +43,7 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
   - `Interface`.
   - `status_for(code, retryable)` holds the PoC-3 status table. It maps `engine_error` and `internal_error` to 500.
   - PoC-4 adds 422 `idempotency_conflict`, 409 `idempotency_in_progress`, and 503 `state_unavailable`.
-  - `PUBLIC_MESSAGES` and `public_message(code)` are the fixed client-facing error text. suggested: the text.
+  - `PUBLIC_MESSAGES` and `public_message(code)` are the fixed client-facing error text, on every interface since contract v8. suggested: the text. It includes `a2a.stream_too_large`.
   - `answer_text` is the answer a chat format shows. `rest_of_answer` is what a stream sends after its deltas.
 - `manifest.py` is `Manifest` v0: `ManifestAgent`, `HttpInterface`, `McpInterface`, `OpenAPIRef`. suggested: the whole shape.
 - `results.py` is `TaskResult`, the result-event payload.
@@ -136,6 +145,11 @@ Each is built by `from_env()` and loaded lazily.
 - `connector.py` is `A2AConnector`, the client side every lane shares.
   - It maps back to events.
   - It sends one `traceparent` per run. It goes as the header on every request and in `ctx.traceparent`.
+  - `ctx.run_secret` travels inside `chassis.ctx` (contract v8, D). The connector does not read it.
+  - One run's stream may send at most `STREAM_EVENTS_MAX` 10,000 events and `STREAM_BYTES_MAX` 4 MiB, by each item's `ByteSize()`, counted before it is parsed. suggested.
+    - Past either cap, the run ends with `a2a.stream_too_large` (not retryable) and the task is cancelled.
+    - It counts `chassis.a2a.stream_capped{lane}` and sets the span attribute `a2a.stream_capped` (contract v8, E).
+  - A timeout or transport `Error` keeps the exception text, cut to `ERROR_MESSAGE_MAX`.
   - `budget.timeout_ms` is both the per-read timeout and a whole-run deadline, in every lane. Running out is `a2a.timeout`, retryable.
   - A transport failure is `a2a.transport`. So is a stream with no `end` or `error`.
   - It cancels even when closing the stream raises.
@@ -161,7 +175,7 @@ Each is built by `from_env()` and loaded lazily.
   - `INPUT_REQUIRED` and `AUTH_REQUIRED` are `error {code: "a2a.unsupported_state"}`. The task stays open on the remote, so the connector sends `CancelTask`. The task id is read from a `task`, a `status_update`, or an `artifact_update`.
   - Usage is read from `spec.engine.a2a.usage_key` only, on the task, status, artifact, and artifact-event metadata. The last value wins; values are never summed. Only non-negative integers count. A float with no fractional part counts as an integer. A boolean, a negative, a fraction, a string, or a value above 2^53 (suggested) counts as zero and is logged once per run. Zeros mean unknown. The run's span says `a2a.usage_known`.
   - `plain_message` sends a text part, a data part only when `input.data` is not empty, and no metadata. `chassis.ctx` is not sent. `context_id: omit` (the default) sends no `context_id`. `trace_id` sends the run's trace id.
-  - In plain mode a timeout or a transport failure has fixed text (`the remote timed out`, `the remote failed`). The SDK puts the remote's own payload in its exception text. That text goes to the log, redacted and capped, and nowhere else. A stream the SDK cannot parse is `a2a.transport` too. In chassis mode the exception text is still the message (not changed).
+  - In plain mode a timeout or a transport failure has fixed text (`the remote timed out`, `the remote failed`). The SDK puts the remote's own payload in its exception text. That text goes to the log, redacted and capped, and nowhere else. A stream the SDK cannot parse is `a2a.transport` too. In chassis mode the exception text is still the event's message, cut to `ERROR_MESSAGE_MAX`. Since contract v8, no interface sends it to the caller.
   - A failure before the first stream item (a connect error, a timeout) is a lone `error` with no `start`, the same as the rule for a failure before `handle`. The translator emits `start` only when the first item arrives.
   - The span attribute `a2a.task_id` keeps at most 128 characters (suggested) of the remote's task id. At most 64 artifact snapshots are kept (suggested), and none once a delta went out.
   - Not visible: `tool_call`, and the `retry` and `fallback` statuses.
@@ -182,7 +196,8 @@ Each is built by `from_env()` and loaded lazily.
   - Route maps keep only `POST /v1/run`.
   - The tool is named after the agent.
   - The inner call goes over `httpx2.ASGITransport(app)`.
-  - `_run_headers` keeps only `FORWARDED_HEADERS` (`traceparent`, `tracestate`, `Idempotency-Key`). It sets `x-chassis-interface: mcp`.
+  - `_run_headers` keeps only `FORWARDED_HEADERS` (`traceparent`, `tracestate`, `Idempotency-Key`), plus the caller's `Authorization`. It sets no interface header.
+  - The hop is marked by the scope flag `chassis.mcp_hop`, which `interfaces/mcp.py` sets (contract v8, F).
 
 ### openai_compat and anthropic_compat
 
@@ -193,6 +208,9 @@ Each is built by `from_env()` and loaded lazily.
 - `anthropic_compat/` is the Anthropic Messages format.
   - `types.py` holds the anthropic 1.11 types.
   - `inbound.py` is `AnthropicInbound`.
+- `chat_common.py` holds what both formats share.
+  - `materialize(value, path)` reads lazy iterators once. Its `InvalidBody` is 400 `invalid_body` on both chat interfaces, and so is a body nested too deep.
+  - It has one location format, `messages[1].content`, and at most `INVALID_PARTS_MAX` 3 parts (suggested; contract v8, B).
 
 ## server
 
@@ -209,7 +227,7 @@ Each is built by `from_env()` and loaded lazily.
 - `spec.idempotency` is `IdempotencySpec`: `enabled`, `ttl_s`, `lease_s`, `wait_poll_ms`, `max_entry_bytes`.
 - `spec.events` is `EventsSpec` with `result_events`. A non-null `consume` is refused at load until event-triggered runs exist.
 - `spec.engine.protocol` is `chassis` (the default) or `a2a`. `a2a` is for `connector: remote` only. `spec.engine.a2a` is `{usage_key: null, context_id: omit | trace_id}`. It needs `protocol: a2a`. Both are restart-only. `as_mapping()` leaves them out for `sidecar` and `inprocess`. suggested: the names and defaults.
-- `spec.model` is `ModelSpec`: `route`, `fallback_route`, `routes` (the route per task, `{}`), `judge_route` (null: `CHASSIS_JUDGE_ROUTE`). `route_for(task)` is `routes[task]`, else `route`. A task name matches `TASK_NAME` (printable, no space, at most 64 characters; suggested); an empty route name is refused. A route outside the service's key is not checked at load (suggested, needs the key). All reloadable.
+- `spec.model` is `ModelSpec`: `route`, `fallback_route`, `routes` (the route per task, `{}`), `judge_route` (null: `CHASSIS_JUDGE_ROUTE`). `route_for(task)` is `routes[task]`, else `route`. A task name matches `TASK_NAME` (printable, no space, at most 64 characters; suggested); an empty route name is refused. A route outside the service's key is not checked at load (suggested, needs the key). `route`, `routes`, and `judge_route` reload; `fallback_route` is restart-only.
 - `RELOADABLE` lists the field paths a reload may change. Every other path is restart-only.
 - `spec.idempotency.ttl_s` is at most `TTL_S_MAX` (30 days) and `lease_s` at most `LEASE_S_MAX` (one hour). Neither may be `.inf` or `.nan`. suggested: both caps.
 - suggested: every default.
@@ -238,7 +256,13 @@ Each is built by `from_env()` and loaded lazily.
   - Otherwise it frees the key.
 - An entry of another version is a final 409. So is a `too_large` marker.
 - `store_key` is `chassis:idem:v1:<agent>:<sha256>`.
+  - With auth off, the digest is the sha256 of the key, as before.
+  - With auth on, it is the sha256 of the canonical JSON `[subject, key]`. `serve` passes `subject=current_user_id()`, so one caller never replays another's result.
+- A `done` entry holds the sha256 hex of the key in `request` and `response`, never the raw key. A replay puts the caller's own key back.
 - `fingerprint` covers `{agent, input, context_ref}`.
+- At most `MAX_WAITERS_PER_KEY` 16 duplicates wait on one in-flight key per replica (suggested).
+  - The next one is 409 `idempotency_in_progress` at once: retryable, no `Retry-After`, no poll.
+  - It counts `chassis.idempotency.waiters_full`. This is load shedding, not state (contract v8, H).
 
 ### readiness.py
 
@@ -256,7 +280,8 @@ Each is built by `from_env()` and loaded lazily.
   - SIGTERM sets `draining`.
   - It sleeps the delay, then closes the public listener.
   - It waits for in-flight runs, then closes the proxy listener last.
-  - A second signal forces exit.
+  - A second signal exits at once, even with a stream open. It cuts every open connection, so each run is cancelled.
+  - The public lifespan still runs then: the bounded wait for result events, then the ports close.
 
 ### results.py
 
@@ -286,7 +311,8 @@ Each is built by `from_env()` and loaded lazily.
 - `served` and `to_request`.
 - `task_of(request)` is the caller's `input.data.task` when it is a non-empty string (`TASK_KEY`). `context_for(request, config)` puts `spec.model.route_for(task)` in `ctx.model_route`; `versions.model_route` stays `spec.model.route`. `mapped_task` is the task only when `spec.model.routes` names it.
 - `open(request, *, interface="native")` raises `TraceIdInUse`, which is counted and logged. The run's `RunRecord.model_route` is `ctx.model_route` from here on.
-- `Run.events()` runs in one `chassis.run` span with `route` (the resolved route) and `task` (when the map named it). An engine exception becomes one `engine_error` event.
+- `context_for` mints `ctx.run_secret` per run, `secrets.token_urlsafe(RUN_SECRET_BYTES)` with 32 bytes (suggested). Plain mode (`spec.engine.protocol: a2a`) gets None (contract v8, D).
+- `Run.events()` runs in one `chassis.run` span with `route` (the resolved route) and `task` (when the map named it). An engine exception becomes one `engine_error` event, its text cut to `ERROR_MESSAGE_MAX`.
 - `chassis.requests` and the span are labeled `interface`.
 - `Run.response()`, `Run.complete()`, and an idempotent `Run.close()`.
 - `RunStream` takes optional `headers` and `on_close`. It frees the trace id even when the body is never iterated.
@@ -306,9 +332,11 @@ The public interfaces over the pipeline.
   - `may_remint`.
   - `open_run` re-mints a trace id in use once and counts `chassis.trace_id_reminted{interface}`.
   - The exception is a native body `trace_id`. It keeps its 409.
+  - `id_problem(ids)` checks the resolved ids with `re.fullmatch` against the envelope patterns. It names the field, never the value. `resolve_ids` never raises (contract v8, C.1).
 - `hold.py` has `hold` and `Held`, the hold rule.
   - The run is read in a task of its own, so its span stays in one context.
 - `serve.py` has `serve`, one call over an `InboundAdapter`.
+  - First, an id outside its pattern, such as an `Idempotency-Key` header, is 400 `invalid_body` in the format's shape.
   - `enforce_limits` runs after `to_request`.
   - Then `Idempotency.begin` runs before `open_run`.
   - A refusal goes through `adapter.error`.
@@ -319,12 +347,16 @@ The public interfaces over the pipeline.
   - A chassis failure after the run opened closes the run and logs it. It answers 500 `internal_error` with `x-should-retry: false`.
   - `SSE_EVENT_SCHEMA`.
 - `errors.py`
-  - `INTERFACE_KEY` is `x-chassis-interface`.
+  - `INTERFACE_KEY` is `x-chassis-interface`, the OpenAPI extension the manifest reads. It is never read as a request header (contract v8, F).
+  - `MCP_HOP_SCOPE_KEY` is `chassis.mcp_hop`, the ASGI scope flag of the MCP tool's in-process call.
   - `register_validation_format`: a `RequestValidationError` is 400 in the route's format. Native keeps 422.
 - `limits.py`
   - `enforce_limits` answers 400 `limit_exceeded` over a `spec.limits` ceiling. It refuses, never clamps.
   - `BodyLimit` is a pure ASGI middleware. It answers 413 over the live `body_bytes_max` before parsing.
-- `native.py` has the strict `RunRequest`, `NativeInbound`, and `describe_run`.
+- `native.py` has the strict `RunRequest`, `NativeInbound`, `public_error`, and `describe_run`.
+  - A run error's `output.error.message`, the `error` frame, and the last `response` frame carry `public_message(code)`. The raw text stays in the collected `Response`, the cache, the result events, the span, and the log (contract v8, A).
+  - The body ids use `Id` and `IdempotencyKey`, so a bad one is a 422.
+  - Only the scope flag `MCP_HOP_SCOPE_KEY` marks the MCP call. Then `stream` is read as false, there is no disconnect watch, telemetry is labeled `mcp`, and a body trace id is re-minted. A direct caller's `x-chassis-interface` header is ignored.
   - `POST /v1/run` has `operation_id` `run`. It declares 400, 409, 413, and 503.
 - `openai.py` is the OpenAI interface (public port).
   - `operation_id` is `chat_completions`.
@@ -332,6 +364,7 @@ The public interfaces over the pipeline.
 - `anthropic.py` is `POST /v1/messages`, `operation_id` `messages`.
 - `mcp.py` is `/v1/mcp` on the public port, the agent as a tool.
   - `run_operation_spec` and `mount_agent_mcp`.
+  - `_mark_mcp_hop(app)` wraps the app the tool calls, so each inner scope carries `MCP_HOP_SCOPE_KEY`.
   - Streamable HTTP is built in the public app's lifespan. It answers 503 before and after.
 
 ### proxy_app.py
@@ -353,6 +386,8 @@ The model proxy (proxy port) is the OpenAI-compatible pass-through a workload ca
 - The tokens are reserved at start and settled on usage.
 - When nothing is left, it answers 429 `budget_exhausted`. That is `retryable` only when in-flight reservations hold the rest.
 - Uncorrelated calls are served with their own `max_tokens` and counted.
+  - They always go to `spec.model.route`, whatever `model` they name. When the name differs, `chassis.model_route_pinned{route}` is counted (suggested) and the span has `route.forced`.
+  - The rule is in `admit`, so both routes follow it (contract v8, I).
 - `admit(...)` is the one admission step both routes use: count the call, find the run, refuse with 429, else reserve.
 - A correlated call whose `model` is not the run's `RunRecord.model_route` (the task's route through `spec.model.routes`, else `spec.model.route`; the gate's fallback route for its fallback attempt) is sent to the run's route and counted `chassis.model_route_forced{route}`. The `chassis.model.route` span records the choice.
 - An upstream 401 or 403 answers 403 `model_route_denied` on both routes (it was 500 `http_401`). It counts `chassis.model_upstream_denied{route}` and logs once. A chat stream keeps its 200 and its error frame.
@@ -379,6 +414,7 @@ The Anthropic proxy route (`POST /v1/messages` on the proxy port; contract v5, p
 
 - `RunRegistry` holds at most one in-flight run per trace id. A second gets `TraceIdInUse`.
 - `RunRecord` has `reserve`, `settle`, and `release`. Its `model_route` is the run's route, set at `open` from `ctx.model_route` and replaced by the evaluator gate for its fallback attempt.
+- `RunRecord.run_secret` is copied from `ctx.run_secret` by `open`. It is held for the life of the run on this replica, and never in `repr` (contract v8, D).
 - It re-exports `parse_traceparent`.
 
 ### cli.py
@@ -387,7 +423,7 @@ The Anthropic proxy route (`POST /v1/messages` on the proxy port; contract v5, p
 
 - The public listener is on `--port` 8080. suggested.
 - The proxy is on `--proxy-host 127.0.0.1 --proxy-port 8090`. suggested.
-- A non-loopback proxy host is refused unless `--allow-any-proxy-host`. That flag is for tests; it is not the `remote` lane.
+- A non-loopback proxy host is refused unless `--allow-any-proxy-host`. That flag is for tests; it is not the `remote` lane. After the config loads, the flag itself is refused with status 2 in profile `cloud` and when `spec.trust` is `untrusted` (R5a-22).
 - The `remote` lane adds a third listener: `--remote-proxy-host <pod IP>` and `--remote-proxy-port` (8091, suggested). See [remote_auth.py](#remote_authpy).
 - The proxy listeners bind first. A taken proxy port exits with status 3 before the public listener binds.
 - `--drain-delay-s` 5 and `--drain-timeout-s` 30. suggested.
@@ -410,8 +446,13 @@ Spec: [contract v4](../contracts/contract-v4.md). How it works: [the PoC-5 guide
 - It shares `public_app.state` and has no lifespan of its own. Build it before the public app starts.
 - Two ASGI middlewares wrap it, outermost first. Both refuse every non-`http` scope except `lifespan`.
   - `BearerAuth(tokens)`: `Authorization: Bearer <t>` must equal the current or the previous token. It compares with `hmac.compare_digest`. Else 401 `remote_unauthenticated`, one fixed body (the Anthropic shape on `/v1/messages`). It counts `chassis.remote.auth_failed{reason}` and removes the header before the route sees it.
-  - `RequireRun`: the `traceparent` must name a run in flight. Else 403 `run_required`. So a remote spends tokens and calls tools only inside a run, under its budget.
-- `remote_tokens(auth)` reads the tokens from `spec.engine.auth.token_env` and `previous_token_env`. A missing variable is a `LookupError` that names it.
+  - `RequireRun`: the `traceparent` must name a run in flight. Since contract v8 (D) the call must also carry that run's secret.
+    - The secret comes in exactly one `x-chassis-run-secret` header (`RUN_SECRET`), at most `RUN_SECRET_MAX` 128 bytes (suggested). It is compared with `hmac.compare_digest`.
+    - Else 403 `run_required`, with the same body bytes for every reason. It counts `chassis.remote.run_required{reason}`, where `reason` is `traceparent_count`, `no_run`, `secret_missing`, or `secret_wrong`.
+    - The header is removed before the route.
+    - Plain mode has no secret. Its calls pass on the traceparent alone and count `chassis.remote.run_secret_skipped{reason="lane_without_secret"}`.
+    - So a remote spends tokens and calls tools only inside the run it serves, under its budget.
+- `remote_tokens(auth)` reads the tokens from `spec.engine.auth.token_env` and `previous_token_env`. A missing variable is a `LookupError` that names it. A set token shorter than `MIN_TOKEN_LENGTH` (suggested: 32 characters), current or previous, is a `ValueError` that names the variable, never the value (R2-31); `chassis serve` exits with status 2.
 - `chassis serve` runs it only when `spec.engine.connector` is `remote` (see [cli.py](#clipy)).
 - Tests: `tests/test_remote_auth.py`, `tests/test_server_cli.py`. Scenarios: `pocs/poc-05-sandboxed/tests/test_poc05_remote_lane_offline.py`; on kind, `test_poc05_kind_remote_controls.py` (`POC05_KIND=1`).
 
@@ -421,6 +462,7 @@ Spec: [contract v4](../contracts/contract-v4.md). How it works: [the PoC-5 guide
 
 - It authenticates with the service's own LiteLLM virtual key. The gateway's per-key allow-list is the hard limit; the adapter adds none of its own.
 - The httpx client ignores the environment (`trust_env=False`) and never follows a redirect. The key is never logged, never in an error, and never in `repr`.
+- `from_env` refuses a `LITELLM_MCP_URL` that is not `https`, unless the host is loopback or an in-cluster name: one label with no dot, or a name ending in `.svc` or `.svc.cluster.local` (suggested). The `ValueError` names the variable, never the URL. Profile `cloud` requires `https` always. Tests: `tests/test_tool_gateway_url.py`.
 - `list_tools()` is sync, so the adapter keeps a cached list. `await refresh()` fills it. `start()` refreshes it in the background. A failed refresh keeps the last list.
 - The tool endpoint's lifespan calls `refresh()`, then `start()`, and `aclose()` on shutdown.
 - `call()` checks before any request: a write tool with no key raises `idempotency_key_required`; arguments that fail the schema raise `bad_arguments`.
@@ -439,6 +481,7 @@ Spec: [contract v4](../contracts/contract-v4.md). How it works: [the PoC-5 guide
 - A model call that names no run in flight is served, but a replica spends at most `spec.limits.uncorrelated_tokens_per_minute` tokens (20000, suggested) of them per fixed one-minute window.
 - Past the cap, 429 `budget_exhausted`. `0` refuses every such call. It is reloadable. A correlated call never touches it.
 - It lives in `server/model_proxy.py` (`UncorrelatedCap`) and covers both model proxy routes.
+- Since contract v8, such a call is also pinned to `spec.model.route` (see [model_proxy.py](#model_proxypy)).
 - Tests: `tests/test_uncorrelated_cap.py`.
 
 ### spec.trust
@@ -475,7 +518,7 @@ Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 
 | `chassis/ports/{auth,guardrail,evaluator,feedback}.py` | The four new ports, each with a no-op default in `PortBundle` | A.1 to A.4 |
 | `chassis/fakes/{auth,guardrail,evaluator,feedback}.py` | `StaticTokens`, `KeywordGuardrails`, `ScriptedEvaluator`, `InMemoryFeedback` | A.1 to A.4 |
 | `chassis/adapters/otel` | `OtelTelemetry`: OTLP over HTTP, the run span on the request's W3C trace id, `user.id` and `session.id` as baggage | A.5, F |
-| `chassis/adapters/oidc` | `OidcAuth`: a JWT checked against the IdP's JWKS (pyjwt) | A.1, D.1 |
+| `chassis/adapters/oidc` | `OidcAuth`: a JWT checked against the IdP's JWKS (pyjwt). `OIDC_JWKS_URL` must be `https` unless its host is loopback; else a `ValueError` at construction (R5a-12) | A.1, D.1 |
 | `chassis/adapters/litellm/guardrails.py` | `LiteLLMGuardrails`: LiteLLM's `POST /guardrails/apply_guardrail`, guardrail names per stage | A.2, D.3 |
 | `chassis/adapters/langfuse` | `LangfuseFeedback`: Langfuse `POST /api/public/scores`, plain httpx | A.4 |
 | `chassis/adapters/evaluators.py` | `JudgeEvaluator` (an LLM judge through `ModelPort`; its route is `spec.model.judge_route` through `bind_route`, else `CHASSIS_JUDGE_ROUTE`) and `EncoderEvaluator` (a TEI classifier) | A.3 |
@@ -483,11 +526,14 @@ Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 
 | `chassis/server/guard.py` | The `input`, `tool_output`, and `output` guard stages | D.2 |
 | `chassis/server/marking.py` | `MarkOutputs`: `X-AI-Generated` and `X-AI-Disclosure-Required` on every run interface | E |
 | `chassis/server/feedback.py` | `POST /v1/feedback`, the request-to-trace lookup in `StatePort`, the event `agents.feedback.received.v1` | B, C |
-| `chassis/server/evaluator_gate.py` | `GatedEngine`: sync and async gating, retry, fallback, sample rate | G |
-| `chassis/redaction.py` | Regex redaction of the chassis's logs and events. Never a named-entity model | B.6, ADR-008 item 6 |
+| `chassis/server/evaluator_gate.py` | `GatedEngine`: sync and async gating, retry, fallback, sample rate (salted per process, R7-17), `evaluator_on_error` (`fail_open` or `fail_closed`) | G |
+| `chassis/redaction.py` | Regex redaction of the chassis's logs and events: `<SECRET>` first (`SECRET_PREFIXES`, assignments), then emails, Luhn-valid cards, and phones with a `+` or a separator. Never a named-entity model | B.6, ADR-008 item 6 |
 | `chassis/core/trace.py` (`continued`, `parent_span_id`) | A checked inbound `traceparent` for the model proxy and the tool endpoint to continue | A.5 |
 
 - The model proxy also sends every call of the gate's fallback attempt to the fallback route (`chassis.model_route_forced`), the same rule that holds every call of a run to the run's route (see [model_proxy.py](#model_proxypy)). `with_gate` binds the judge's route to the live `spec.model.judge_route`, so a reload changes it.
+- Feedback (contract v8, G):
+  - The lookup holds `subject_sha256`, a hash of the run's caller subject, null with auth off. A caller whose subject hashes otherwise gets 404 `unknown_request`. A null lookup, or one written before the field, is open to any caller.
+  - `chassis.feedback{label}` counts a label by name only from `FEEDBACK_LABELS` (`good`, `bad`, `wrong`, `unsafe`, `slow`; suggested), else `none` or `other`.
 - Tests: the fake bindings are in `tests/test_contracts_cross_cutting_ports.py`; each real adapter binds the same suite in its own file (`test_oidc_adapter.py`, `test_litellm_guardrails.py`, `test_evaluators.py`, `test_langfuse_feedback.py`, `test_otel_telemetry.py`), offline against a stub. The scenarios are in `pocs/poc-07-cross-cutting-decisions/tests/`.
 
 ## PoC-8 modules
@@ -520,6 +566,10 @@ Spec: [contract v7](../contracts/contract-v7.md). Decisions: ADR-007 and ADR-008
 - `connector: remote` builds `RemoteConnector`. It adds `spec.engine.auth`, and `spec.engine.protocol: a2a` for a third-party agent.
 - `spec.adapters` (`model`, `config`, `telemetry`, `tools`, `state`, `events`) merges over the profile defaults per field.
 - `cloud` refuses `fake` and `memory` adapters. suggested.
+- `cloud` refuses `auth: none`. A call would run as the anonymous principal.
+- `cloud` refuses `CONFIG_S3_SECURE` off (`config: s3` or `minio`). It refuses a `VALKEY_URL` that is not `rediss://`, `valkeys://`, or `unix://`, or that sets `ssl_cert_reqs` other than `required` or `ssl_check_hostname` false (`state: valkey`). `CHASSIS_ALLOW_PLAINTEXT_STORES=1` allows both and logs a warning. suggested.
+- `cloud` requires `https` for `LITELLM_MCP_URL` (`tools: mcp`), `LITELLM_BASE_URL` (`model` or `guardrails: litellm`), and `OIDC_JWKS_URL` (`auth: oidc`). No exemption or override applies.
+- Each `cloud` refusal is `AdapterNotAllowed`. It runs before any adapter is built, and it names the variable, never its value. Tests: `test_profiles_cloud_transport.py`.
 - `state` is `memory` or `valkey`. The default is `memory` in `fake`, and `valkey` in `local` and `cloud`.
 - `events` is `none`, `memory`, `kafka`, or `dapr`. The default is `none` everywhere.
 - `config` adds `minio` and `s3`.

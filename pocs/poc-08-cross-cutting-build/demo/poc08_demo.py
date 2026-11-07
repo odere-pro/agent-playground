@@ -128,7 +128,7 @@ def _print_call(run: LiveRun, engine: str, lane: str) -> None:
 
 
 def _print_feedback(run: LiveRun) -> None:
-    print(f"POST /v1/feedback request_id={run.body['request_id']} score=0 label=thumbs-down")
+    print(f"POST /v1/feedback request_id={run.body['request_id']} score=0 label=bad")
     print(f"  http {run.feedback.status_code}  trace_id={run.feedback.json().get('trace_id')}")
     record = run.record
     if record is not None:
@@ -190,7 +190,7 @@ def _checks(run: LiveRun) -> dict[str, bool]:
             for line in shown_metrics
         ),
         "/metrics shows the thumbs-down": any(
-            line.startswith("chassis_feedback_total") and 'label="thumbs-down"' in line
+            line.startswith("chassis_feedback_total") and 'label="bad"' in line
             for line in shown_metrics
         ),
     }

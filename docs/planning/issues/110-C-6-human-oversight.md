@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:9-governance", "area:governance", "size:
 milestone: "W9 Orchestrator"
 index: 110
 epic_id: C-6
-depends_on: ["065 D-2", "072 C-3", "109 O-8"]
+depends_on: ["065 D-2", "072 C-3", "109 O-8", "077 C-1"]
 blocks: ["115 O-15"]
 epic_refs: [E.5, Fig.3]
 ---
@@ -21,6 +21,7 @@ Human oversight must be a set of real controls with a record: AI Act Art. 14 and
 - The `governance.human_oversight` value is enforced: `approve_every_run` adds an approval before a run that uses the agent returns its result; `review_on_low_score` sends results below the evaluator threshold to the review queue; `none` adds nothing.
 - Every request, decision, and stop is recorded in the audit log, with reviewer, time, `run_id`, and reason.
 - Only users with the reviewer scope can decide or stop.
+- `governance.human_oversight` is built nowhere today: `GovernanceSpec` has `risk_class` and `ai_generated_marking` only. 077 C-1 owns the field. The reviewer role is an open question in ADR-009, and ADR-008 defines no reviewer or write scope; DEC-1 and the owner list decide both.
 
 ## Out of scope
 
@@ -40,7 +41,7 @@ Human oversight must be a set of real controls with a record: AI Act Art. 14 and
 
 ## Dependencies
 
-- Depends on: [065 D-2](065-D-2-review-ui.md), [072 C-3](072-C-3-audit-log-agent.md), [109 O-8](109-O-8-cancel-approval.md)
+- Depends on: [065 D-2](065-D-2-review-ui.md), [072 C-3](072-C-3-audit-log-agent.md), [109 O-8](109-O-8-cancel-approval.md), [077 C-1](077-C-1-governance-enforcement.md)
 - Blocks: [115 O-15](115-O-15-save-planned-run.md)
 
 ## References

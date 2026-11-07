@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:5-registry", "area:registry", "size:M", 
 milestone: "W7 Registry and governance gate"
 index: 92
 epic_id: R-12
-depends_on: ["091 R-11"]
+depends_on: ["091 R-11", "086 R-10"]
 blocks: ["093 R-14", "099 O-1"]
 epic_refs: [F.3]
 ---
@@ -30,7 +30,7 @@ The orchestrator needs more than a ranked list. It needs one main pick and a cle
 
 ## Acceptance criteria
 
-- [ ] A search for `simplify_text` returns `simplifier` as the main pick and `simplifier-big-model` as a fallback with its differences note, as in the F.3 example.
+- [ ] On a fixture pair shaped like the F.3 example, a search returns the fixture's main entry (suggested: `fixture-main`) as the main pick and its fallback (suggested: `fixture-fallback`) with its differences note.
 - [ ] Fallbacks are in rank order, and their count follows `top_k`.
 - [ ] Cost and speed differences match the live metrics of both entries.
 - [ ] When the main entry is inactive, the first active fallback is returned as the main pick.
@@ -40,7 +40,7 @@ The orchestrator needs more than a ranked list. It needs one main pick and a cle
 
 ## Dependencies
 
-- Depends on: [091 R-11](091-R-11-hybrid-search.md)
+- Depends on: [091 R-11](091-R-11-hybrid-search.md), [086 R-10](086-R-10-health-checks.md)
 - Blocks: [093 R-14](093-R-14-registry-mcp-server.md), [099 O-1](099-O-1-orchestrator-agent.md)
 
 ## References

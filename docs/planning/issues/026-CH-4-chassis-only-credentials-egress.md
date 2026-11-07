@@ -1,11 +1,11 @@
 ---
 title: "CH-4: Chassis-only credentials for every internal service, and default-deny egress per workload pod"
-labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
+labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:L", "layer:chassis"]
 milestone: "W2 Chassis MVP"
 index: 26
 epic_id: CH-4
-depends_on: ["002 G-1", "020 X-8", "022 H-6", "025 H-10"]
-blocks: ["038 X-1a", "041 A-1", "055 CH-6"]
+depends_on: ["002 G-1", "024 CH-3"]
+blocks: ["038 X-1a", "041 A-1", "055 CH-6", "132 CH-13"]
 epic_refs: [G.3, G.4]
 ---
 
@@ -16,27 +16,22 @@ This is hard requirement 1 of [ADR-001](../adr/001-chassis-delivery-model.md). T
 ## What
 
 - One set of credentials per service, never shared:
-  - a LiteLLM virtual key (models, budget, rate limit);
+  - a LiteLLM virtual key (models, budget, rate limit). The 002 G-1 part this issue needs, a virtual key per service minted at deploy, is met on kind (PoC-5);
   - MCP gateway tool grants on that key;
-  - a broker credential, with ACLs for the topics in its `spec.events`;
+  - a broker credential (its topic ACLs are 020 X-8's);
   - a Valkey user, limited to its own key prefix;
   - read access to its own path in the config store.
-- LiteLLM, the MCP gateway, the broker, Valkey, and the config store refuse calls that carry no credential. The LiteLLM master key never leaves LiteLLM.
+- LiteLLM, the MCP gateway, the broker, Valkey, and the config store refuse calls that carry no credential. The LiteLLM master key never leaves LiteLLM. The PoC-8 LiteLLM drill mints the chassis a virtual key, and the master key stays in LiteLLM (`deploy/compose/poc08-litellm/stack.sh`).
 - All credentials are mounted only in the chassis container: from Vault through External Secrets in the cluster, and from `.env` locally.
-- A NetworkPolicy per service pod. It denies all egress by default, and allows only what the chassis needs: LiteLLM, the MCP gateway, the broker, Valkey, the config store, the OpenTelemetry Collector, and DNS. The cloud metadata service (169.254.169.254) and the Kubernetes API are named in the deny list, so they stay closed even if an allow rule is widened later.
-- The chassis's public port binds to the pod IP, never to localhost. Localhost carries only the model and tool proxies, so the workload cannot call the service's own API under the chassis's credentials.
+- A NetworkPolicy per service pod. It denies all egress by default, and allows only what the chassis needs: LiteLLM, the MCP gateway, the broker, Valkey, the config store, the OpenTelemetry Collector, and DNS.
+- Decided in the chart (`deploy/helm/agent-lib`, `_networkpolicy.tpl` and `_validate.tpl`): no `ipBlock`, only named peers, so the metadata service and the API server are never reachable. Every pod the chart renders is default deny both ways, every egress rule names a peer by namespace and pod labels and a port, and each namespace the chart renders pods into gets `<name>-default-deny`. The static check `pocs/poc-05-sandboxed/tests/test_poc05_netpol_static.py::test_poc05_netpol_no_rule_can_reach_metadata_or_api` is the evidence once it runs against `agent-lib`.
+- The admission rules in the chart: `agent-lib.admission` renders the PoC-5 trust rule, with the same policy spec as `deploy/kind/poc05/admission/policy.yaml`, plus rule 9, the minimum chassis version from the library's tag list. `deploy/helm/agent-admission` installs it once per cluster. The chart's image defaults (`pullPolicy: IfNotPresent`, an empty digest) still fail rule 8.
+- The chassis's public port binds to the pod IP, never to localhost. Localhost carries only the model and tool proxies, so the workload cannot call the service's own API under the chassis's credentials. The manifests and the chart's argument allow-list hold the bind (`pocs/poc-02-two-engines-one-contract/tests/test_compose_sidecar.py::test_chassis_public_port_leaves_localhost_to_the_proxies`).
 - Network labels per service.
-- A negative test suite run from inside the workload container.
+- A negative suite run from inside the workload container. It also probes the public interfaces: `/v1/mcp`, `/v1/chat/completions` and `/v1/messages` on the public port (not the model proxy), and `/v1/run`.
 - A revoke step: revoking one service's key, tool grants, and network label cuts that service off alone.
+- The trace id keys proxy calls to a run, but it comes from an inbound `traceparent`, so it is not a credential. A chassis-minted per-run credential is 001 DEC-1's (suggested).
 - If the pod has a Dapr sidecar, its API needs a token that only the chassis holds (gap (c) in the backlog plan).
-- Status after PoC-1: the workload rides in the chassis image, PoC-1 only, because the lane is `inprocess`. The chassis container is the only one with `LITELLM_API_KEY`; the fake model server has no `LITELLM_*` variable (checked live). Evidence: `pocs/poc-01-walking-skeleton/tests/test_compose.py::test_keys_stay_in_env_and_reach_one_service_each`. The negative suite for the workload container starts in PoC-2, when the sidecar arrives.
-- Status after PoC-2: the negative suite for workload containers exists offline. No workload service, image, or source holds or reads a key, and the Compose overlay gives no workload an `env_file` or a port (`pocs/poc-02-two-engines-one-contract/tests/test_boundaries.py`, `tests/test_compose_sidecar.py`). The live check ran on 2026-10-01: `deploy/compose/demo-sidecar.sh` found no key-like variable in any of the four workload containers and could not reach the workload port from the host ([demo](../../../pocs/poc-02-two-engines-one-contract/demo/2026-10-01-demo-sidecar.md); `tests/test_compose_sidecar.py::test_demo_runs_every_workload_with_no_key`). The chassis's public port binds the container address and leaves localhost to the proxies (`tests/test_compose_sidecar.py::test_chassis_public_port_leaves_localhost_to_the_proxies`). Open, all due by PoC-5: `llama-cpp` serves the `local` variant with no key, so a sidecar workload can call a model directly (`deploy/compose/SECURITY.md`, section 6); the trace id that keys proxy calls to a run is not a credential (suggested: a chassis-minted per-run credential); uncorrelated model calls are served with no cap; the router key is not yet scoped per service. Two more cases for the PoC-5 hostile suite: the workload cannot reach a model server directly, and the workload cannot bind the chassis's ports. See [the PoC-2 debt note](../../../pocs/poc-02-two-engines-one-contract/notes/2026-10-01-debt.md).
-- Status after PoC-3: the trace id now comes from an inbound `traceparent` on every public interface and is echoed in `x-trace-id`, so the per-run credential must not derive from it. The hostile suite must also probe the public interfaces from inside a workload: `/v1/mcp`, `POST /v1/chat/completions` on the public port (the OpenAI interface, not the model proxy), `/v1/messages`, and `/v1/run`. LiteLLM's MCP gateway runs in front of `/v1/mcp` in the PoC-3 demo with `allow_all_keys: true` (fake variant, no keys); the per-key or per-team tool grant, and the sign-off of that setting, are this issue's. See [the PoC-3 debt note](../../../pocs/poc-03-one-interface-every-client/notes/2026-10-01-debt.md).
-- Status after PoC-4: the scale stack keeps every secret on the chassis (the Valkey password, its own read-only MinIO user, and in the Dapr variant the two Dapr tokens), generated per run into a git-ignored file; no workload env holds one (`pocs/poc-04-stateless-scalable/tests/test_read_only_compose.py`). Open for this issue: Kafka is PLAINTEXT with no credential (with 020 X-8); Valkey has one password, not a per-service user limited to its key prefix, and no TLS; the Valkey password shows on `valkey-server`'s command line; Compose egress is open (PoC-5 checks it in kind). If Dapr is ever kept ([ADR-004](../adr/004-events-through-a-broker-client.md) proposes not), its metrics port 9090 and its internal gRPC port bind every interface with no auth and mTLS off: Sentry mTLS, or both bound to 127.0.0.1, and metrics off.
-- Status after PoC-5, on kind ([sidecar suite](../../../pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md), [close runs](../../../pocs/poc-05-sandboxed/notes/2026-10-09-close-runs.md)): hard requirement 1 holds. From the sidecar workload, each service refuses a call without the chassis's credential, and the same call through the chassis works: LiteLLM with a master key and one virtual key per service (`allowed_routes` limited to `openai_routes` and `mcp_inference_routes`, no `allow_all_keys` in kind or Compose), Valkey with its `default` user off and an ACL user, MinIO key pairs, and Kafka with SASL/SCRAM and no PLAINTEXT listener. H11 passed: a login with no credential, an unknown user, and a guessed password each get the broker's error 58, and the chassis's publish lands on its topic (`test_poc05_kind_hardreq1.py::test_kafka_refuses_the_workload_without_the_chassis_credential`). The fake servers and the code runner are closed by NetworkPolicy only. H01 is refused against a listener at 169.254.169.254 on the node; a real cloud metadata service needs a cloud rerun (038 X-1a). Open: DNS in the sidecar lane (H20); `chassis serve --host 0.0.0.0` has no CLI rule, so the pod-IP bind is held by the manifests and their static test (B6); PoC-3's live MCP demo lists 0 tools now that `allow_all_keys` is gone (suggested: rerun it with a minted key). Fixed in PoC-5: LiteLLM's 401 body and its INFO log echo a refused key's last 4 characters and hash; the chassis's `_redact` now strips both, and the `kubectl logs` dumps in CI and `run.sh` are filtered.
-- Status after PoC-6: the Mac command (`make poc06-mac`) generates one random key per run, which LiteLLM takes as its master key and the host chassis processes use. This is accepted debt: a chassis should hold a scoped virtual key (`POST /key/generate` with `models`, `duration`, `max_budget`). Mitigations: loopback only, random per run, never written to a file, two fixed routes, workloads get no key ([debt note](../../../pocs/poc-06c-pretrained-slm/notes/2026-10-09-mac-command-debt.md), `deploy/compose/SECURITY.md` section 1). The fix needs a database behind LiteLLM, as in the kind stack. Why: one scoped key per service is this issue's.
-- Status after PoC-8: `exfil-04-markdown-image` is no longer this issue's: the chassis output URL allow-list stops it (022 H-6). This issue keeps the static check that no workload holds a credential and the negative network tests. The PoC-8 LiteLLM drill (`deploy/compose/poc08-litellm/stack.sh`) mints the chassis a virtual key with `allowed_routes: ["openai_routes", "/guardrails/apply_guardrail"]`; the master key stays in LiteLLM.
-- Status after the product plan, phase A (2026-11-06): default-deny egress is a rule of the library chart (`deploy/helm/agent-lib`, `_networkpolicy.tpl` and `_validate.tpl`): every pod the chart renders is selected by a policy with both policy types, every egress rule names a peer by namespace and pod labels and a port (no `ipBlock`, no empty selector), and each namespace the chart renders pods into gets `<name>-default-deny`. The deny of the metadata service and the API server by name stays impossible in a NetworkPolicy; neither is a pod, so no named-peer rule reaches them. Test: `pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_boundary.py`. The negative suite now runs on the kind cluster in CI on every push (`remote-lane.yml`, `run.sh test-remote` with `test_poc05_kind_hardreq1.py` and the broker), which meets the last acceptance criterion's "on every merge"; "before every chassis release" waits on a release process (056 CH-7).
 
 ## Reuse
 
@@ -51,20 +46,29 @@ This is hard requirement 1 of [ADR-001](../adr/001-chassis-delivery-model.md). T
 - mTLS between services (038 X-1a).
 - The playbook for a compromised agent (119 X-6).
 - Guardrails per key. LiteLLM makes them Enterprise-only (gap (d) in the backlog plan).
+- The admission rules for the `remote` lane and for release rings. 055 CH-6 and 056 CH-7 extend the rules this issue puts in the chart.
+- Running the negative suite before every chassis release (056 CH-7).
+- The cloud metadata service on a real cloud (038 X-1a). On kind, PoC-5 refused a listener at 169.254.169.254 on the node.
+- Egress on Compose: kind is the check. The Dapr ports: Dapr is in no profile ([ADR-004](../adr/004-events-through-a-broker-client.md)).
+- The Mac command's random master key (`make poc06-mac`), a test-only stack ([debt note](../../../pocs/poc-06c-pretrained-slm/notes/2026-10-09-mac-command-debt.md)).
+- `exfil-04-markdown-image`: the chassis output URL allow-list stops it (022 H-6).
+- The CLI bind rule: P-13 in the [backlog review proposals](../../reviews/2026-11-06-backlog-review/proposals.md). `chassis serve --host 0.0.0.0` has no CLI rule today.
 
 ## Acceptance criteria
 
-- [ ] From the workload container, calls to LiteLLM, the MCP gateway, the broker, Valkey, and the config store all fail.
-- [ ] Through the chassis, the same calls succeed with the service's own credentials.
-- [ ] One service's credentials cannot use another service's models, tools, topics, or cache keys.
-- [ ] From the workload container, these all fail: any public address, any other service's pod, the cloud metadata service, the Kubernetes API, and the chassis's public port on localhost.
+- [x] From the workload container, calls to LiteLLM, the MCP gateway, the broker, Valkey, and the config store all fail. · Delivered in PoC-5: `pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py::test_litellm_refuses_the_workload_without_the_chassis_key`, `::test_mcp_gateway_refuses_the_workload_without_the_chassis_key`, `::test_valkey_refuses_the_workload_without_the_chassis_password`, `::test_minio_refuses_the_workload_and_any_unsigned_call`, `::test_kafka_refuses_the_workload_without_the_chassis_credential` (`pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md` "4 passed", `pocs/poc-05-sandboxed/notes/2026-10-09-close-runs.md` "1 passed")
+- [ ] Through the chassis, the same calls succeed with the service's own credentials, MinIO included.
+- [ ] One service's credentials cannot use another service's models, tools, or cache keys.
+- [ ] With `agent-lib`'s NetworkPolicy on a CNI that enforces it, these all fail from the workload container: any public address, any other service's pod, the cloud metadata service, the Kubernetes API, a DNS lookup used to leave the cluster (H20), and the chassis's public port on localhost.
 - [ ] Revoking one service's key, grants, and label cuts it off, and the other services keep working.
-- [ ] The negative suite runs on the local cluster on every merge and before every chassis release.
+- [x] The negative suite runs on the local kind cluster in `remote-lane.yml` on every push: the sidecar controls, hard requirement 1, the tool gateway, and the admission suites. · Delivered by: PR #79, `pocs/poc-05-sandboxed/tests/test_poc05_ci_wiring.py::test_poc05_test_remote_runs_the_whole_sidecar_hostile_suite`, `.github/workflows/remote-lane.yml` run 42318146945 on `main` at 273b6e0 (175 passed, 2 skipped, 2 xfailed, the broker pass included)
+- [x] `agent-lib` carries the admission rules (untrusted must use `remote`; a minimum chassis version), and a render test plus a kind run refuse a pod that breaks them. · Delivered by: PR #79, `pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_boundary.py::test_an_untrusted_sidecar_pod_is_refused_at_render_and_by_rule_2`, `::test_a_chassis_below_the_minimum_version_is_refused_at_render_and_by_rule_9`, `::test_the_admission_chart_renders_the_poc05_trust_rule_unchanged` (the chart's policy spec equals the kind file's); on kind, `pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py::test_rejected_fixture_is_refused_with_its_rule_message` with `deploy/kind/poc05/admission/fixtures/rule2-untrusted-sidecar` and `deploy/kind/poc05/admission/fixtures/rule9-chassis-version`, remote-lane run 42318146945
+- [ ] The chart's defaults pass every PoC-5 admission rule, rule 8 (image by digest) included. Open: only `deploy/helm/example-agent/values-kind.yaml` passes today (`pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_boundary.py::test_every_pod_the_chart_renders_passes_the_chart_admission_rules`).
 
 ## Dependencies
 
-- Depends on: [002 G-1](002-G-1-litellm-router.md), [020 X-8](020-X-8-event-broker.md), [022 H-6](022-H-6-security-middleware.md), [025 H-10](025-H-10-template-repo.md)
-- Blocks: [038 X-1a](038-X-1a-terraform-first-cloud.md), [041 A-1](041-A-1-simplifier-core.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md)
+- Depends on: [002 G-1](002-G-1-litellm-router.md), [024 CH-3](024-CH-3-helm-library-chart.md)
+- Blocks: [038 X-1a](038-X-1a-terraform-first-cloud.md), [041 A-1](041-A-1-simplifier-core.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [132 CH-13](132-CH-13-owasp-agentic-map.md)
 
 ## References
 

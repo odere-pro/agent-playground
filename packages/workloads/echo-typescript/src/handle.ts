@@ -5,7 +5,8 @@
 // CHASSIS_TOOL_URL. No model key lives here. In the remote lane CHASSIS_API_TOKEN, when set and
 // not empty, goes out as `Authorization: Bearer <token>` on every model and MCP call (read from
 // the environment on each run, never logged or put in an event); unset, no Authorization header.
-// `ctx.traceparent`, when set, goes out as the `traceparent` header on every model and MCP call.
+// `ctx.traceparent`, when set, goes out as the `traceparent` header on every model and MCP call;
+// `ctx.run_secret`, when set, goes out next to it as `x-chassis-run-secret` (never logged).
 // The input text is its own user message, never merged into the system prompt. With
 // CHASSIS_MODEL_UDS set, the model call goes over that Unix socket instead of TCP (the URL then
 // only fills the path and the Host header).
@@ -22,12 +23,14 @@ export const SYSTEM_PROMPT = "Rewrite in plain words. Short sentences. Keep ever
 const DEFAULT_ROUTE = "big-default";
 const DEFAULT_MODEL_URL = "http://127.0.0.1:8090/v1";
 const DEFAULT_TIMEOUT_MS = 30_000;
+const RUN_SECRET_HEADER = "x-chassis-run-secret"; // pragma: allowlist secret (a header name)
 // suggested: at most 3 rounds of tool calls per run; a 4th ask is `tool_loop_exceeded`.
 export const MAX_TOOL_ROUNDS = 3;
 
 export type ChassisEvent = Json & { schema_version: string; type: string };
-/** `context.v0.json` as plain JSON; `traceparent` is the run's W3C value, optional. */
-export type Context = Json & { traceparent?: string | null };
+/** `context.v0.json` as plain JSON; `traceparent` is the run's W3C value, optional.
+ * `run_secret` is the chassis's per-run capability for its remote listener, optional. */
+export type Context = Json & { traceparent?: string | null; run_secret?: string | null };
 export type Handle = (input: Json, ctx: Context, deps?: Deps) => AsyncIterable<ChassisEvent>;
 
 /** What `handle` takes besides the contract's two arguments; never data, never on the wire. */
@@ -174,12 +177,17 @@ interface Run {
   mcp: tools.McpOptions;
 }
 
-/** The run's route, endpoints, headers (`traceparent`, `Authorization`), and timeout. */
+/** The run's route, endpoints, headers (`traceparent`, `x-chassis-run-secret`, `Authorization`),
+ * and timeout. */
 function prepare(ctx: Context, deps: Deps): Run {
   const base = (deps.modelUrl ?? process.env["CHASSIS_MODEL_URL"] ?? DEFAULT_MODEL_URL).replace(/\/+$/, "");
   const headers: Record<string, string> = {};
   const traceparent = ctx["traceparent"];
   if (typeof traceparent === "string" && traceparent) headers["traceparent"] = traceparent;
+  const perRun = ctx["run_secret"];
+  if (typeof perRun === "string" && perRun) {
+    headers[RUN_SECRET_HEADER] = perRun;
+  }
   const token = process.env["CHASSIS_API_TOKEN"];
   if (token) headers["authorization"] = `Bearer ${token}`;
   const timeout = timeoutMs(ctx);

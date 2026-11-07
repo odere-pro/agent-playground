@@ -1,7 +1,7 @@
 ---
 title: "G-5: Cost model: GPU hosting cost vs API savings, with the break-even point"
 labels: ["story", "priority:P0", "phase:1-router", "area:router", "size:S", "layer:platform"]
-milestone: "W3 Simplifier SLM"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 31
 epic_id: G-5
 depends_on: ["005 G-3"]
@@ -12,8 +12,6 @@ epic_refs: [J, risks]
 ## Why
 
 The top risk in the epic is that GPU costs more than the tokens saved. This cost model is the mitigation for that risk, placed right before the first GPU spend on training and serving. It also completes the Phase 1 done-when: the baseline is measured, the break-even point is known, and the dashboard shows live token spend.
-
-**Open concern (review 2026-09-29), to explore until we align:** the break-even must count the evaluator gate. Until 075 E-3, every gated call adds a big-model judge call. Show the break-even three ways: without the gate, with the big-model judge, and with the encoder SLM's CPU cost.
 
 ## What
 
@@ -31,6 +29,7 @@ The top risk in the epic is that GPU costs more than the tokens saved. This cost
 - The baseline itself (005 G-3).
 - GPU setup on Kubernetes (039 X-2).
 - The cost dashboard per agent and pool (120 X-7).
+- The evaluator gate's cost in the break-even (open concern, review 2026-09-29): out of scope while this issue is parked. The product's cost question is the judge at sample rate 0.1, priced by the formula in [ADR-010](../adr/010-evals-offline-tool-online-gate.md) item 9 at about $5 per million requests (`docs/specs/models.md`).
 
 ## Acceptance criteria
 

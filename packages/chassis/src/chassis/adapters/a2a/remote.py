@@ -19,7 +19,8 @@ and the probe. The httpx clients ignore the proxy and TLS environment (`trust_en
 never follow a redirect, so the token goes to the configured host only. For the same reason the
 card's interface URL is never followed: `_check_card` keeps only the JSON-RPC interface and sets
 its URL to the configured `url` (a card with none is refused). The token is never kept as an
-attribute, logged, put in a span or an error, or shown in `repr`.
+attribute, logged, put in a span or an error, or shown in `repr`. The token and the run's
+`ctx.run_secret` (contract v8) are scrubbed from every event `run` yields.
 
 - `protocol` (default `chassis`): `a2a` reads a third-party agent's own A2A stream (no
   `chassis.event` metadata) through `chassis.adapters.a2a.plain`; `a2a` (optional) holds its
@@ -128,29 +129,39 @@ class RemoteConnector(A2AConnector):
     def __repr__(self) -> str:
         return f"RemoteConnector(url={self.url!r})"
 
-    def _scrub(self, value: Any) -> Any:
-        """`value` with the token replaced by `[redacted]` in every string, key, and list item."""
-        if self._token is None:
+    def _secrets(self, ctx: Context) -> tuple[str, ...]:
+        """What is scrubbed from this run's events: the bearer token and `ctx.run_secret`
+        (contract v8; a shell that runs `env` can echo either). Longest first, so one never
+        leaves part of the other. Per run, never kept on the connector."""
+        found = [self._token.value if self._token else "", ctx.run_secret or ""]
+        return tuple(sorted({v for v in found if v}, key=len, reverse=True))
+
+    def _scrub(self, value: Any, hidden: tuple[str, ...]) -> Any:
+        """`value` with each of `hidden` replaced by `[redacted]` in every string, key, and list
+        item."""
+        if not hidden:
             return value
-        token = self._token.value
         if isinstance(value, str):
-            return value.replace(token, REDACTED)
+            for item in hidden:
+                value = value.replace(item, REDACTED)
+            return value
         if isinstance(value, dict):
-            return {self._scrub(k): self._scrub(v) for k, v in value.items()}
+            return {self._scrub(k, hidden): self._scrub(v, hidden) for k, v in value.items()}
         if isinstance(value, list | tuple):
-            return [self._scrub(v) for v in value]
+            return [self._scrub(v, hidden) for v in value]
         return value
 
-    def _scrub_event(self, event: Event) -> Event:
-        """The same event when the token is not in it; else a copy with the token removed."""
+    def _scrub_event(self, event: Event, hidden: tuple[str, ...]) -> Event:
+        """The same event when none of `hidden` is in it; else a copy with them removed."""
         dumped = event.model_dump(mode="json")
-        clean = self._scrub(dumped)
+        clean = self._scrub(dumped, hidden)
         return event if clean == dumped else parse_event(clean)
 
     async def run(self, request: Request, ctx: Context) -> AsyncIterator[Event]:
+        hidden = self._secrets(ctx)
         async with aclosing(cast(AsyncGenerator[Event], super().run(request, ctx))) as events:
             async for event in events:
-                yield self._scrub_event(event)
+                yield self._scrub_event(event, hidden)
 
     def _check_card(self, card: AgentCard) -> None:
         """Keep the JSON-RPC interface only, at the configured URL. The card's own URL, which

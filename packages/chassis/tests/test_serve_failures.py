@@ -360,7 +360,8 @@ async def test_a_connector_error_message_is_replaced_by_the_fixed_text(interface
     assert not _leaks(response.text), response.text
 
 
-async def test_native_keeps_the_engine_message_contract_v1() -> None:
+async def test_native_sends_the_public_text_for_an_engine_error_contract_v8() -> None:
+    """Contract v8, item 1, superseding v1: the native envelope carries `public_message(code)`."""
     engine = _Engine(raises=RuntimeError("boom"))
     app = _app(engine)
     transport = httpx.ASGITransport(app=app)
@@ -369,4 +370,5 @@ async def test_native_keeps_the_engine_message_contract_v1() -> None:
         httpx.AsyncClient(transport=transport, base_url="http://c") as client,
     ):
         response = await client.post("/v1/run", json={"input": {"text": "x"}})
-    assert response.json()["output"]["error"]["message"] == "RuntimeError: boom"
+    assert response.json()["output"]["error"]["message"] == public_message("engine_error")
+    assert "boom" not in response.text

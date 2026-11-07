@@ -1,11 +1,11 @@
 ---
 title: "A-1: Simplifier business logic as a workload behind the chassis"
 labels: ["story", "priority:P0", "phase:3-simplifier-agent", "area:agent", "size:M", "layer:platform"]
-milestone: "W4 Simplifier agent live"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 41
 epic_id: A-1
 depends_on: ["017 H-4", "025 H-10", "036 S-7", "013 CH-2", "026 CH-4"]
-blocks: ["042 A-2", "043 A-3", "047 M-3"]
+blocks: ["043 A-3", "047 M-3"]
 epic_refs: [Fig.2, B.1]
 ---
 
@@ -30,6 +30,7 @@ The simplifier is the first real agent and the source of the first measured savi
 - Result events and records (043 A-3).
 - MCP tools (051 H-13) and A2A (061 H-5).
 - History swap (044 G-4, 045 A-4).
+- Decided 2026-11-06 (W4): this issue is parked with the SLM track and keeps its text. If it returns, it calls a named route from the route map, not `simplifier-slm`, and its rewrite rules are the golden set's `banned:` and `contains:` fields, not 027 S-1.
 
 ## Acceptance criteria
 
@@ -43,7 +44,7 @@ The simplifier is the first real agent and the source of the first measured savi
 ## Dependencies
 
 - Depends on: [017 H-4](017-H-4-harness-features.md), [025 H-10](025-H-10-template-repo.md), [036 S-7](036-S-7-serve-with-vllm.md), [013 CH-2](013-CH-2-outbound-model-proxy.md), [026 CH-4](026-CH-4-chassis-only-credentials-egress.md)
-- Blocks: [042 A-2](042-A-2-evaluator-gate-fallback.md), [043 A-3](043-A-3-result-events.md), [047 M-3](047-M-3-shadow-mode.md)
+- Blocks: [043 A-3](043-A-3-result-events.md), [047 M-3](047-M-3-shadow-mode.md)
 
 ## References
 

@@ -7,7 +7,9 @@ For: Oleksandr (epic owner) and the delivery team. Date: 2026-09-28.
 
 - **Start with the Agent MVP PoC track** in [../poc/000-plan.md](../poc/000-plan.md). It proves the chassis first, in 9 short iterations. This backlog is the long-term reference. Its chassis waves (W2 and W5) follow [ADR-001](../adr/001-chassis-delivery-model.md), and get updated with the PoC results.
 - **Reuse first.** The mature tech picks are in [../poc/010-reuse-analysis.md](../poc/010-reuse-analysis.md). Each affected issue has a `## Reuse` section: what to use, what is left to build, and any scope change.
-- One file per issue. The number prefix (`001`–`119`) is the **global execution order**: work top to bottom.
+- **The build order is the product plan's phases A to F.** Since 2026-11-06, [the agent container plan](../../plans/2026-11-06-agent-container-product.md) leads, and [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md) places every live issue in one phase, or in `later`. Work a phase's issues in number order.
+- One file per issue. The number prefix (`001`–`133`) is stable: issues are not renumbered. New issues go after the last number.
+- Done and parked issues keep their numbers and sizes. Done is wave `WD`; parked (the SLM track) is wave `WP`. Neither counts in the open total or the critical path.
 - Each issue keeps its epic story ID (`H-1`, `G-2`, ...), so every issue traces back to the epic.
 - Frontmatter is shaped for GitHub Issues: `title`, `labels`, `milestone`. `depends_on` and `blocks` use `NNN ID` until the issues get real numbers.
 - A dependency always points to a lower number. Nothing in the list waits on something below it.
@@ -19,9 +21,9 @@ The agent server is now a **service chassis**: the standard every microservice i
 
 | Layer | Meaning | Issues |
 | ----- | ------- | ------ |
-| `chassis` | The standard for every service, whatever runs inside | 28 |
+| `chassis` | The standard for every service, whatever runs inside | 31 |
 | `agent-profile` | Modules only agent workloads need (model and tool proxies, LLM guardrails, evaluator gate, AI marking, A2A) | 9 |
-| `platform` | Services and infrastructure built on the chassis (router, SLMs, data agents, registry, orchestrator, production, governance) | 94 |
+| `platform` | Services and infrastructure built on the chassis (router, SLMs, data agents, registry, orchestrator, production, governance) | 97 |
 
 Some issues are both `chassis` and `agent-profile`. For example, H-2 has the native REST adapter (chassis) and the OpenAI and Anthropic adapters (agent profile). Split them when the work starts.
 
@@ -82,35 +84,39 @@ The ports, fakes, and test layers are described in the PoC plan: [../poc/000-pla
 | Priority | Meaning | Count |
 | -------- | ------- | ----- |
 | P0 | Critical path to the first measured savings: router and baseline, harness MVP, simplifier SLM, simplifier agent live with the recorder | 40 |
-| P1 | Needed to meet the epic acceptance criteria | 77 |
-| P2 | Optional; can slip without breaking an acceptance criterion | 7 |
+| P1 | Needed to meet the epic acceptance criteria | 82 |
+| P2 | Optional; can slip without breaking an acceptance criterion | 8 |
 | P3 | Later phases (10 and 11): plan only | 3 |
 
 Sizes: `S` is up to 1 day, `M` is 2–3 days, `L` is 4–5 days. Nothing is bigger than a week; split it if it grows.
 
 ## Waves
 
-Waves are GitHub milestones. Each one ends in something that can be shown.
+Waves are GitHub milestones. Each one ends in something that can be shown. The waves keep the epic's phase order; the product phases cut across them. The last column says which product phase each wave feeds, from [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md).
 
 | Wave | Issues | Ends with |
 | ---- | ------ | --------- |
-| W0 Decisions | 001 | Broker, first cloud, public A2A endpoint, banned words, and metric targets decided |
-| W1 Router and baseline | 002–006 | Every model call goes through the router; token spend is counted and on a dashboard; the baseline clock is running |
-| W2 Chassis MVP | 007–026 | An echo workload runs behind the chassis: in the `sidecar` lane from the shared library chart, locally and in Kubernetes, and over A2A in memory in the chassis's tests. It answers through native, OpenAI, and Anthropic APIs (streaming and complete), is started by events and emits result events, is traced, holds no key, and passes the contract tests over both transports |
-| W3 Simplifier SLM | 027–039 | Break-even is known; the SLM meets its targets on the held-out set, is served on vLLM, and ships only through the eval gate; the first cloud is up |
-| W4 Simplifier agent live | 040–049 | **First measured savings** (Phase 3 done-when): the agent is called through any API, recorded by the recorder, falls back when needed, and shows on the dashboards |
-| W5 Chassis completion | 050–063 | Phase 0 done-when fully met (MCP tools from OpenAPI, AsyncAPI, reliable events); service operations, the `remote` lane and trust rule, ring rollouts, framework event mappings, and one non-Python workload; tool port and agent factory ready for the registry and orchestrator |
-| W6 Golden set and evaluator SLM | 064–075 | Phase 4 done-when; the evaluator SLM replaces the big-model judge; the audit log runs |
-| W7 Registry and governance gate | 076–093 | Phase 5 done-when; no agent goes live without a governance block |
-| W8 Platform MCP server | 094–097 | Phase 6 done-when: an MCP client searches the registry, runs an agent, and exports a golden set version |
-| W9 Orchestrator | 098–115 | Phase 7 done-when |
-| W10 Production readiness | 116–122 | Phase 8 done-when: both clouds from Terraform, restore test passes, SLO alerts fire |
-| W11 Compliance evidence | 123–124 | Phase 9 done-when: documentation pack and control mapping for any agent version |
-| W12 Later | 125–127 | Plans for Phases 10 and 11 |
+| Done: delivered by the PoC track | 011 | 1 issues, 5 days of the first estimate, not counted below |
+| W0 Decisions | 001 | Broker, first cloud, public A2A endpoint, banned words, and metric targets decided. Feeds phases D and E: the primary trace view and the north star |
+| W1 Router and baseline | 002–006 | Every model call goes through the router; token spend is counted and on a dashboard; the baseline clock is running. Feeds phases B and E; the baseline is parked |
+| W2 Chassis MVP | 007–026 | An echo workload runs behind the chassis: in the `sidecar` lane from the shared library chart, locally and in Kubernetes, and over A2A in memory in the chassis's tests. It answers through native, OpenAI, and Anthropic APIs (streaming and complete), is started by events and emits result events, is traced, holds no key, and passes the contract tests over both transports. Feeds phases A, B, E, and F |
+| W3 Simplifier SLM | 028–038 | Break-even is known; the SLM meets its targets on the held-out set, is served on vLLM, and ships only through the eval gate; the first cloud is up. Mostly parked; feeds phase B |
+| W4 Simplifier agent live | 040–046 | **First measured savings** (Phase 3 done-when): the agent is called through any API, recorded by the recorder, falls back when needed, and shows on the dashboards. Mostly parked; feeds phases B and E |
+| W5 Chassis completion | 050–130 | Phase 0 done-when fully met (MCP tools from OpenAPI, AsyncAPI, reliable events); service operations, the `remote` lane and trust rule, ring rollouts, framework event mappings, and one non-Python workload; tool port and agent factory ready for the registry and orchestrator. Feeds phases A, C, D, E, and F |
+| W6 Golden set and evaluator SLM | 064–131 | Phase 4 done-when; the evaluator SLM replaces the big-model judge; the audit log runs. Feeds phase D; the evaluator SLM is parked |
+| W7 Registry and governance gate | 076–093 | Phase 5 done-when; no agent goes live without a governance block. `later`: no phase |
+| W8 Platform MCP server | 094–097 | Phase 6 done-when: an MCP client searches the registry, runs an agent, and exports a golden set version. `later`: no phase |
+| W9 Orchestrator | 098–115 | Phase 7 done-when. `later`: no phase |
+| W10 Production readiness | 116–133 | Phase 8 done-when: both clouds from Terraform, restore test passes, SLO alerts fire. Feeds phases A and E |
+| W11 Compliance evidence | 123–132 | Phase 9 done-when: documentation pack and control mapping for any agent version. Feeds phase E |
+| W12 Later | 125–126 | Plans for Phases 10 and 11. `later`: no phase |
+| Parked: the SLM track (2026-11-06) | 005–127 | 23 issues, 52.5 days, not counted above |
 
-With one engineer, the waves run one after another in index order. With more people, W1 runs next to W2, and the W3 data work (S-1 to S-4) starts during W2, as the epic says.
+Since 2026-11-06 the product phases set the order, not the waves. Phases A and B can run in parallel, C needs B's route map, E can start after A, and F is last (the product plan's "The order of work").
 
 ## Why the order differs from the phase order
+
+Since 2026-11-06 the [product plan](../../plans/2026-11-06-agent-container-product.md) leads: the build order is its phases A to F, and the SLM track is parked (wave `WP`). The items below explain the wave order, which the parked rows still keep.
 
 1. **Start the baseline clock first.** The baseline (G-3) needs at least two weeks of data, so the router and token counting come first (002–006).
 2. **Break-even before GPU spend.** The cost model ([031 G-5](031-G-5-cost-model-break-even.md)) sits right before training, so the top risk is checked before money goes into GPUs.
@@ -123,19 +129,23 @@ With one engineer, the waves run one after another in index order. With more peo
 
 ## Critical path
 
-- **To first savings (A-3):** 007 H-1 → 008 H-14 → 009 CH-1 → 011 H-2 → 015 H-8 → 025 H-10 → 026 CH-4 → 041 A-1 → 043 A-3. About 31 working days, plus the two weeks of baseline data that G-5 needs before S-6. The chassis MVP (007–026) must finish before A-1.
-- **Longest chain overall:** 007 H-1 → 008 H-14 → 009 CH-1 → 011 H-2 → 016 H-9 → 018 H-18 → 022 H-6 → 076 R-1 → 090 R-13 → 091 R-11 → 092 R-12 → 099 O-1 → 100 O-2 → 103 O-11 → 108 O-12 → 112 O-16. The registry search and the orchestrator engine are the long pole.
+- **To template GA (H-15):** 007 H-1 → 008 H-14 → 009 CH-1 → 016 H-9 → 024 CH-3 → 026 CH-4 → 055 CH-6 → 059 H-15. About 24 working days. Template GA is phase F. The baseline ([005 G-3](005-G-3-baseline-report.md)) and the SLM steps are parked, so no baseline wait sits on this path.
+- **Longest chain overall:** 007 H-1 → 008 H-14 → 009 CH-1 → 016 H-9 → 024 CH-3 → 026 CH-4 → 055 CH-6 → 059 H-15 → 076 R-1 → 090 R-13 → 091 R-11 → 092 R-12 → 099 O-1 → 100 O-2 → 103 O-11 → 107 O-6 → 109 O-8 → 110 C-6 → 115 O-15. The registry search and the orchestrator engine are the long pole.
 
 ## Open decisions and what they block
 
-Tracked in [001 DEC-1](001-DEC-1-resolve-open-decisions.md).
+Tracked in [001 DEC-1](001-DEC-1-resolve-open-decisions.md). What each one unblocks in phases A to F, with a `suggested:` value, is in [the decision pack](../../reviews/2026-11-06-backlog-review/decision-pack-DEC-1.md).
 
 | Decision | Blocks |
 | -------- | ------ |
 | Event broker: NATS JetStream or the company's Kafka | [019 H-17](019-H-17-event-port.md), [020 X-8](020-X-8-event-broker.md), [060 H-23](060-H-23-broker-adapters.md) |
 | First cloud: AWS or GCP | [038 X-1a](038-X-1a-terraform-first-cloud.md), then [039 X-2](039-X-2-gpu-setup.md) and [116 X-1b](116-X-1b-terraform-second-cloud.md) |
 | Whether the public A2A endpoint ships in version 1. A2A to workloads ships per ADR-001 | [061 H-5](061-H-5-a2a-adapter.md) |
-| Banned-word list and final success-metric targets | [027 S-1](027-S-1-rewrite-rules.md), [028 S-3](028-S-3-simplifier-metrics.md), [005 G-3](005-G-3-baseline-report.md) |
+| Banned-word list and final success-metric targets. Parked with the SLM track, except the `facts_kept` floor for a hosted model | [027 S-1](027-S-1-rewrite-rules.md), [028 S-3](028-S-3-simplifier-metrics.md), [005 G-3](005-G-3-baseline-report.md) |
+| The north star: "good tasks per week" or "agents in production on the chassis" (phase E) | [046 A-5](046-A-5-agent-dashboard.md), [117 X-3](117-X-3-slos-alerts.md), [120 X-7](120-X-7-cost-dashboard.md) |
+| The primary trace view per environment, LangSmith or Langfuse, and where the score goes when both run (phase D; ADR-007 open question 4, ADR-009 open question 5) | [129 CH-10](129-CH-10-langsmith-trace-backend.md), [130 CH-11](130-CH-11-langsmith-feedback-adapter.md), [046 A-5](046-A-5-agent-dashboard.md) |
+| The router's home before a cloud exists. Parked with the SLM track: only the baseline needed it. For the product, the router runs in each deploy stack | [005 G-3](005-G-3-baseline-report.md) (parked) |
+| Decided 2026-11-06: an evaluator outage and a rate-limit store outage both fail open everywhere, as built (P-1, P-2 in the review's [fix plan](../../reviews/2026-11-06-backlog-review/fix-plan.md#user-decisions-2026-11-06)) | Nothing now. [117 X-3](117-X-3-slos-alerts.md) adds an alert for each |
 
 ## Changes from the epic
 
@@ -180,13 +190,22 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 - **(g) Shutdown order with two containers:** Kubernetes stops native sidecars after the main container. Suggested: the workload is the native sidecar and the chassis the main container, so the chassis gets SIGTERM first and drains; the workload finishes its in-flight `handle` calls before it exits, and a rolling-restart test proves no request fails. PoC-4 tries this against a preStop delay ([011 H-2](011-H-2-inbound-adapters.md), [024 CH-3](024-CH-3-helm-library-chart.md)).
 - **(h) Outbound calls keyed to the inbound request:** the model and tool proxies can apply a request's budget and route only if the workload's HTTP client propagates `traceparent`. Suggested: OpenTelemetry httpx instrumentation, switched on by the service template; a call without a trace id counts against a per-replica budget ([013 CH-2](013-CH-2-outbound-model-proxy.md), [017 H-4](017-H-4-harness-features.md)).
 - **(i) The `remote` lane's path to models and tools:** the proxies also listen on the pod IP for that lane, with a per-remote credential. A managed runtime that cannot be pointed at them holds its own scoped key, the one relaxation of hard requirement 1 ([013 CH-2](013-CH-2-outbound-model-proxy.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md)).
-- **Two meanings of "trust":** the registry's trust levels ([080 R-7](080-R-7-trust-levels.md)) are not `spec.trust`. `external` and `manual` entries are third-party, so they are `untrusted` and go to the `remote` lane. `internal-signed` is evidence for the ADR's source test, but not for its behavior test.
+- **Two meanings of "trust":** the registry's trust levels ([080 R-7](080-R-7-trust-levels.md)) are not `spec.trust`. `external` and `manual` entries are third-party, so they are `untrusted` and go to the `remote` lane. `internal-signed` is evidence for the ADR's source test, but not for its behavior test. A third surface: `agent.trust` in `/manifest` is `spec.trust`, shown to callers and not a security control by itself. The registry entry names its level `trust_level` and keeps `runtime_trust` for `spec.trust`, so neither is read as the other.
 
 ## Estimate check
 
-The sizes add up to about 283.5 engineer-days (57 weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks). The epic says 29–33 weeks for one engineer. Either the epic assumes a lot of reuse, or the phase estimates need a second look with the team. The sizes here are first guesses; re-size in planning.
+- **Open:** about 272 engineer-days (54 weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
+- **Done** (wave `WD`): 5 days over 1 of the issues. **Parked** (wave `WP`): 52.5 days over 23. Neither is in the open total.
+- **Phases A to F:** 86.5 days against the product plan's 10–12 weeks (suggested: 50–60 engineer-days), from [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md#totals). Phases A, B, and E are each about twice the plan's size. The rest of the open total is `later`: no phase needs it.
+- **The epic** says 29–33 weeks for one engineer. Either the epic assumes a lot of reuse, or the phase estimates need a second look with the team. The sizes here are first guesses; re-size in planning.
 
 ## Backlog
+
+### Done: delivered by the PoC track
+
+| # | ID | Issue | Layer | Priority | Size | Depends on |
+| - | -- | ----- | ----- | -------- | ---- | ---------- |
+| 011 | H-2 | [Inbound adapters: native, OpenAI-compatible, Anthropic-compatible, with streaming](011-H-2-inbound-adapters.md) | chassis, agent-profile | P0 | L | [007](007-H-1-harness-library-ports-envelope.md), [008](008-H-14-one-agent-interface.md), [009](009-CH-1-engine-connectors-a2a.md) |
 
 ### W0 Decisions
 
@@ -199,133 +218,114 @@ The sizes add up to about 283.5 engineer-days (57 weeks) for W0–W11, after the
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
 | 002 | G-1 | [LiteLLM router in front of all model calls](002-G-1-litellm-router.md) | platform | P0 | M | — |
-| 003 | G-1b | [Named model routes, swapped in router config only](003-G-1b-named-model-routes.md) | platform | P0 | S | [002](002-G-1-litellm-router.md) |
+| 003 | G-1b | [Named model routes, swapped in router config only](003-G-1b-named-model-routes.md) | platform | P0 | M | [002](002-G-1-litellm-router.md) |
 | 004 | G-2 | [Token and cost counting per request, user, and agent](004-G-2-token-cost-counting.md) | platform | P0 | M | [002](002-G-1-litellm-router.md) |
-| 005 | G-3 | [Baseline report: token spend and cost over at least two weeks](005-G-3-baseline-report.md) | platform | P0 | M | [004](004-G-2-token-cost-counting.md) |
-| 006 | G-6 | [Savings dashboard with live token spend](006-G-6-savings-dashboard.md) | platform | P0 | M | [004](004-G-2-token-cost-counting.md) |
+| 006 | G-6 | [Token and cost dashboard with live spend](006-G-6-savings-dashboard.md) | platform | P0 | S | [004](004-G-2-token-cost-counting.md) |
 
 ### W2 Chassis MVP
 
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
-| 007 | H-1 | [Chassis package and image: ports, `handle` contract, JSON event schema, envelope](007-H-1-harness-library-ports-envelope.md) | chassis | P0 | L | — |
-| 008 | H-14 | [One agent interface for all classes (stateless, orchestrator, data)](008-H-14-one-agent-interface.md) | chassis | P0 | M | [007](007-H-1-harness-library-ports-envelope.md) |
-| 009 | CH-1 | [Engine connectors `inprocess` and `sidecar` over A2A, plus the template A2A server that wraps `handle`](009-CH-1-engine-connectors-a2a.md) | chassis | P0 | M | [007](007-H-1-harness-library-ports-envelope.md), [008](008-H-14-one-agent-interface.md) |
+| 007 | H-1 | [Chassis package and image: ports, `handle` contract, JSON event schema, envelope](007-H-1-harness-library-ports-envelope.md) | chassis | P0 | S | — |
+| 008 | H-14 | [One agent interface for all classes (stateless, orchestrator, data)](008-H-14-one-agent-interface.md) | chassis | P0 | L | [007](007-H-1-harness-library-ports-envelope.md) |
+| 009 | CH-1 | [Engine connectors `inprocess` and `sidecar` over A2A, plus the template A2A server that wraps `handle`](009-CH-1-engine-connectors-a2a.md) | chassis | P0 | S | [007](007-H-1-harness-library-ports-envelope.md), [008](008-H-14-one-agent-interface.md) |
 | 010 | H-12 | [Config loader: object storage, JSON Schema check, reload on change](010-H-12-config-loader.md) | chassis | P0 | M | [007](007-H-1-harness-library-ports-envelope.md) |
-| 011 | H-2 | [Inbound adapters: native, OpenAI-compatible, Anthropic-compatible, with streaming](011-H-2-inbound-adapters.md) | chassis, agent-profile | P0 | L | [007](007-H-1-harness-library-ports-envelope.md), [008](008-H-14-one-agent-interface.md), [009](009-CH-1-engine-connectors-a2a.md) |
-| 012 | H-3 | [Model port to the LLM router, plus direct vLLM and llama.cpp adapters](012-H-3-model-port.md) | agent-profile | P0 | M | [003](003-G-1b-named-model-routes.md), [007](007-H-1-harness-library-ports-envelope.md), [004](004-G-2-token-cost-counting.md) |
+| 012 | H-3 | [Model port to the LLM router, with a route map per task](012-H-3-model-port.md) | agent-profile | P0 | L | [003](003-G-1b-named-model-routes.md), [007](007-H-1-harness-library-ports-envelope.md), [004](004-G-2-token-cost-counting.md) |
 | 013 | CH-2 | [Outbound model proxy: an OpenAI- and Anthropic-compatible URL for workloads, forwarded with the service's scoped key](013-CH-2-outbound-model-proxy.md) | chassis, agent-profile | P0 | M | [012](012-H-3-model-port.md), [009](009-CH-1-engine-connectors-a2a.md) |
-| 014 | H-7 | [Observability: logs, traces, metrics, Langfuse](014-H-7-observability.md) | chassis | P0 | S | [007](007-H-1-harness-library-ports-envelope.md), [012](012-H-3-model-port.md), [009](009-CH-1-engine-connectors-a2a.md) |
-| 015 | H-8 | [Testing kit: fake adapters, contract tests per API, record and replay](015-H-8-testing-kit.md) | chassis | P0 | L | [011](011-H-2-inbound-adapters.md), [012](012-H-3-model-port.md), [009](009-CH-1-engine-connectors-a2a.md) |
-| 016 | H-9 | [Local debug profile: Docker Compose, hot reload, debugger port](016-H-9-local-debug-profile.md) | chassis | P0 | S | [010](010-H-12-config-loader.md), [011](011-H-2-inbound-adapters.md), [014](014-H-7-observability.md), [009](009-CH-1-engine-connectors-a2a.md) |
-| 017 | H-4 | [Harness features: schema check, evaluator gate, retry, fallback, timeout, budget](017-H-4-harness-features.md) | chassis, agent-profile | P0 | L | [010](010-H-12-config-loader.md), [012](012-H-3-model-port.md), [009](009-CH-1-engine-connectors-a2a.md), [013](013-CH-2-outbound-model-proxy.md) |
+| 014 | H-7 | [Observability: logs, traces, metrics, Langfuse](014-H-7-observability.md) | chassis | P0 | M | [007](007-H-1-harness-library-ports-envelope.md), [009](009-CH-1-engine-connectors-a2a.md) |
+| 015 | H-8 | [Testing kit: fake adapters, contract tests per API, record and replay](015-H-8-testing-kit.md) | chassis | P0 | M | [011](011-H-2-inbound-adapters.md), [012](012-H-3-model-port.md), [009](009-CH-1-engine-connectors-a2a.md) |
+| 016 | H-9 | [Local debug profile: Docker Compose, hot reload, debugger port](016-H-9-local-debug-profile.md) | chassis | P0 | S | [011](011-H-2-inbound-adapters.md), [009](009-CH-1-engine-connectors-a2a.md) |
+| 017 | H-4 | [Harness features: schema check, evaluator gate, retry, fallback, timeout, budget](017-H-4-harness-features.md) | chassis, agent-profile | P0 | M | [010](010-H-12-config-loader.md), [012](012-H-3-model-port.md), [009](009-CH-1-engine-connectors-a2a.md), [013](013-CH-2-outbound-model-proxy.md) |
 | 018 | H-18 | [Idempotency: key check, optional Valkey result cache, key passed to write tools](018-H-18-idempotency.md) | chassis | P0 | M | [007](007-H-1-harness-library-ports-envelope.md), [016](016-H-9-local-debug-profile.md), [009](009-CH-1-engine-connectors-a2a.md) |
 | 019 | H-17 | [Event port: one-way CloudEvents result events to the broker](019-H-17-event-port.md) | chassis | P0 | M | [001](001-DEC-1-resolve-open-decisions.md), [007](007-H-1-harness-library-ports-envelope.md), [009](009-CH-1-engine-connectors-a2a.md) |
-| 020 | X-8 | [Event broker in Docker Compose and Kubernetes, with retention and consumer-lag alerts](020-X-8-event-broker.md) | platform | P0 | M | [001](001-DEC-1-resolve-open-decisions.md), [016](016-H-9-local-debug-profile.md) |
-| 021 | H-20 | [Event consumer adapter: agents started by CloudEvents, same core as REST](021-H-20-event-consumer-adapter.md) | chassis | P0 | S | [011](011-H-2-inbound-adapters.md), [019](019-H-17-event-port.md), [020](020-X-8-event-broker.md) |
+| 020 | X-8 | [Event broker in Docker Compose and Kubernetes, with retention and consumer-lag alerts](020-X-8-event-broker.md) | platform | P0 | L | [001](001-DEC-1-resolve-open-decisions.md), [016](016-H-9-local-debug-profile.md) |
+| 021 | H-20 | [Event consumer adapter: agents started by CloudEvents, same core as REST](021-H-20-event-consumer-adapter.md) | chassis | P0 | M | [011](011-H-2-inbound-adapters.md), [019](019-H-17-event-port.md), [020](020-X-8-event-broker.md) |
 | 022 | H-6 | [Security middleware: auth, scopes, rate limits, PII redaction](022-H-6-security-middleware.md) | chassis, agent-profile | P0 | M | [011](011-H-2-inbound-adapters.md), [018](018-H-18-idempotency.md) |
 | 023 | C-5 | [AI-generated marking on outputs and a disclosure flag for client apps](023-C-5-ai-generated-marking.md) | agent-profile | P1 | S | [010](010-H-12-config-loader.md), [011](011-H-2-inbound-adapters.md), [019](019-H-17-event-port.md) |
-| 024 | CH-3 | [Shared Helm library chart: chassis sidecar with a pinned tag, secrets on the chassis only, Service on the chassis port](024-CH-3-helm-library-chart.md) | chassis | P0 | M | [009](009-CH-1-engine-connectors-a2a.md), [016](016-H-9-local-debug-profile.md) |
-| 025 | H-10 | [Service template: workload Dockerfile, Helm chart on the chassis library chart, CI (tests, signing, deploy, registration)](025-H-10-template-repo.md) | chassis | P0 | L | [015](015-H-8-testing-kit.md), [016](016-H-9-local-debug-profile.md), [024](024-CH-3-helm-library-chart.md) |
-| 026 | CH-4 | [Chassis-only credentials for every internal service, and default-deny egress per workload pod](026-CH-4-chassis-only-credentials-egress.md) | chassis | P0 | M | [002](002-G-1-litellm-router.md), [020](020-X-8-event-broker.md), [022](022-H-6-security-middleware.md), [025](025-H-10-template-repo.md) |
+| 024 | CH-3 | [Shared Helm library chart: chassis sidecar with a pinned tag, secrets on the chassis only, Service on the chassis port](024-CH-3-helm-library-chart.md) | chassis | P0 | L | [009](009-CH-1-engine-connectors-a2a.md), [016](016-H-9-local-debug-profile.md) |
+| 025 | H-10 | [Service template: workload Dockerfile, Helm chart on the chassis library chart, CI (tests, signing, deploy, registration)](025-H-10-template-repo.md) | chassis | P0 | M | [015](015-H-8-testing-kit.md), [016](016-H-9-local-debug-profile.md), [024](024-CH-3-helm-library-chart.md) |
+| 026 | CH-4 | [Chassis-only credentials for every internal service, and default-deny egress per workload pod](026-CH-4-chassis-only-credentials-egress.md) | chassis | P0 | L | [002](002-G-1-litellm-router.md), [024](024-CH-3-helm-library-chart.md) |
 
 ### W3 Simplifier SLM
 
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
-| 027 | S-1 | [Rewrite rules and banned-word list](027-S-1-rewrite-rules.md) | platform | P0 | S | [001](001-DEC-1-resolve-open-decisions.md) |
-| 028 | S-3 | [Simplifier metrics: tokens, readability, semantic similarity, facts_kept, banned words](028-S-3-simplifier-metrics.md) | platform | P0 | M | [027](027-S-1-rewrite-rules.md) |
-| 029 | S-2 | [Training data generation: 2,000 to 5,000 pairs with an open-weight teacher](029-S-2-training-data-generation.md) | platform | P0 | M | [003](003-G-1b-named-model-routes.md), [027](027-S-1-rewrite-rules.md), [028](028-S-3-simplifier-metrics.md) |
-| 030 | S-4 | [Hand review of a sample and a held-out test set of at least 300 records](030-S-4-hand-review-test-set.md) | platform | P0 | M | [029](029-S-2-training-data-generation.md) |
-| 031 | G-5 | [Cost model: GPU hosting cost vs API savings, with the break-even point](031-G-5-cost-model-break-even.md) | platform | P0 | S | [005](005-G-3-baseline-report.md) |
-| 032 | M-1 | [MLflow: experiments, model registry, links to data version and scores](032-M-1-mlflow.md) | platform | P0 | S | — |
-| 033 | S-5 | [Reproducible training pipeline (config, data version, seed) with Unsloth or TRL](033-S-5-training-pipeline.md) | platform | P0 | M | [030](030-S-4-hand-review-test-set.md), [032](032-M-1-mlflow.md) |
-| 034 | C-8 | [Training compute logged per fine-tune run, checked against the GPAI threshold](034-C-8-training-compute-log.md) | platform | P1 | S | [033](033-S-5-training-pipeline.md) |
-| 035 | S-6 | [Train candidates on Qwen3, Gemma 3, and Llama 3.2, and pick the best](035-S-6-train-candidates.md) | platform | P0 | L | [031](031-G-5-cost-model-break-even.md), [033](033-S-5-training-pipeline.md) |
-| 036 | S-7 | [Serve the simplifier SLM with vLLM, with guided decoding for JSON](036-S-7-serve-with-vllm.md) | platform | P0 | S | [003](003-G-1b-named-model-routes.md), [035](035-S-6-train-candidates.md) |
-| 037 | M-2 | [Eval gate in CI: a new model ships only if it beats the current one](037-M-2-eval-gate-ci.md) | platform | P0 | M | [028](028-S-3-simplifier-metrics.md), [030](030-S-4-hand-review-test-set.md), [032](032-M-1-mlflow.md), [020](020-X-8-event-broker.md) |
+| 028 | S-3 | [`facts_kept` and banned-word scoring for the eval gate and the judge](028-S-3-simplifier-metrics.md) | platform | P0 | S | — |
+| 037 | M-2 | [Eval gate in CI: a change ships only if it passes the golden set against the baseline](037-M-2-eval-gate-ci.md) | platform | P0 | S | [028](028-S-3-simplifier-metrics.md) |
 | 038 | X-1a | [Terraform module for the first cloud (AWS or GCP)](038-X-1a-terraform-first-cloud.md) | platform | P0 | L | [001](001-DEC-1-resolve-open-decisions.md), [025](025-H-10-template-repo.md), [026](026-CH-4-chassis-only-credentials-egress.md) |
-| 039 | X-2 | [GPU setup on Kubernetes (NVIDIA GPU Operator) and model weight storage with fast cold start](039-X-2-gpu-setup.md) | platform | P1 | M | [036](036-S-7-serve-with-vllm.md), [038](038-X-1a-terraform-first-cloud.md) |
 
 ### W4 Simplifier agent live
 
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
-| 040 | D-0 | [Recorder agent: reads result events, removes PII, drops duplicates, writes records to Postgres](040-D-0-recorder-agent.md) | platform | P0 | M | [008](008-H-14-one-agent-interface.md), [019](019-H-17-event-port.md), [020](020-X-8-event-broker.md), [021](021-H-20-event-consumer-adapter.md), [022](022-H-6-security-middleware.md) |
-| 041 | A-1 | [Simplifier business logic as a workload behind the chassis](041-A-1-simplifier-core.md) | platform | P0 | M | [017](017-H-4-harness-features.md), [025](025-H-10-template-repo.md), [036](036-S-7-serve-with-vllm.md), [013](013-CH-2-outbound-model-proxy.md), [026](026-CH-4-chassis-only-credentials-egress.md) |
-| 042 | A-2 | [Evaluator gate on facts_kept, one retry, then fallback to a big model](042-A-2-evaluator-gate-fallback.md) | platform | P0 | S | [017](017-H-4-harness-features.md), [028](028-S-3-simplifier-metrics.md), [041](041-A-1-simplifier-core.md) |
-| 043 | A-3 | [Result events with source, stored by the recorder](043-A-3-result-events.md) | platform | P0 | S | [019](019-H-17-event-port.md), [040](040-D-0-recorder-agent.md), [041](041-A-1-simplifier-core.md) |
-| 044 | G-4 | [History swap in the chassis: long past answers replaced by simplified versions](044-G-4-history-swap.md) | agent-profile | P1 | M | [012](012-H-3-model-port.md), [040](040-D-0-recorder-agent.md), [013](013-CH-2-outbound-model-proxy.md) |
-| 045 | A-4 | [History swap switched on for the simplifier](045-A-4-history-swap-on.md) | platform | P1 | S | [043](043-A-3-result-events.md), [044](044-G-4-history-swap.md) |
-| 046 | A-5 | [Simplifier agent dashboard: pass rate, fallback rate, tokens saved, latency](046-A-5-agent-dashboard.md) | platform | P1 | S | [014](014-H-7-observability.md), [042](042-A-2-evaluator-gate-fallback.md) |
-| 047 | M-3 | [Shadow mode: new model runs next to the current one without serving users](047-M-3-shadow-mode.md) | platform | P1 | M | [037](037-M-2-eval-gate-ci.md), [041](041-A-1-simplifier-core.md), [042](042-A-2-evaluator-gate-fallback.md), [013](013-CH-2-outbound-model-proxy.md) |
-| 048 | M-4 | [Canary rollout and one-step rollback](048-M-4-canary-rollback.md) | platform | P1 | S | [047](047-M-3-shadow-mode.md), [046](046-A-5-agent-dashboard.md) |
-| 049 | M-5 | [Quantized 4-bit variants for CPU and edge, each with its own eval](049-M-5-quantized-variants.md) | platform | P2 | M | [037](037-M-2-eval-gate-ci.md) |
+| 040 | D-0 | [Recorder agent: reads result events, removes PII, drops duplicates, writes records to Postgres](040-D-0-recorder-agent.md) | platform | P0 | L | [008](008-H-14-one-agent-interface.md), [019](019-H-17-event-port.md), [020](020-X-8-event-broker.md), [021](021-H-20-event-consumer-adapter.md), [022](022-H-6-security-middleware.md) |
+| 042 | A-2 | [Evaluator gate on facts_kept, one retry, then fallback to a big model](042-A-2-evaluator-gate-fallback.md) | platform | P0 | M | [017](017-H-4-harness-features.md), [028](028-S-3-simplifier-metrics.md) |
+| 046 | A-5 | [Container dashboard and per-agent gate panels](046-A-5-agent-dashboard.md) | platform | P1 | M | [001](001-DEC-1-resolve-open-decisions.md), [014](014-H-7-observability.md), [042](042-A-2-evaluator-gate-fallback.md) |
 
 ### W5 Chassis completion
 
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
 | 050 | CH-5 | [Service operations: declared in config, routed by the chassis through the pipeline](050-CH-5-service-operations.md) | chassis | P1 | M | [011](011-H-2-inbound-adapters.md), [010](010-H-12-config-loader.md) |
-| 051 | H-13 | [OpenAPI 3.1 spec per agent, with MCP tools generated from it](051-H-13-openapi-mcp-tools.md) | chassis | P1 | S | [011](011-H-2-inbound-adapters.md), [050](050-CH-5-service-operations.md) |
+| 051 | H-13 | [OpenAPI 3.1 spec per agent, with MCP tools generated from it](051-H-13-openapi-mcp-tools.md) | chassis | P1 | M | [011](011-H-2-inbound-adapters.md), [050](050-CH-5-service-operations.md) |
 | 052 | H-21 | [AsyncAPI 3.0 spec per agent, generated next to the OpenAPI spec](052-H-21-asyncapi-spec.md) | chassis | P1 | S | [019](019-H-17-event-port.md), [051](051-H-13-openapi-mcp-tools.md) |
-| 053 | H-22 | [Event reliability: idempotent consumers, retries with backoff, dead-letter topic](053-H-22-event-reliability.md) | chassis | P1 | S | [018](018-H-18-idempotency.md), [021](021-H-20-event-consumer-adapter.md) |
-| 054 | H-16 | [Tool port: native tool calls or JSON via guided decoding; read and write modes](054-H-16-tool-port.md) | agent-profile | P1 | M | [012](012-H-3-model-port.md), [018](018-H-18-idempotency.md), [013](013-CH-2-outbound-model-proxy.md) |
-| 055 | CH-6 | [Remote lane and the trust rule: sandboxed pod or managed runtime over A2A, cloud auth adapter, admission check](055-CH-6-remote-lane-trust-rule.md) | chassis | P1 | L | [009](009-CH-1-engine-connectors-a2a.md), [026](026-CH-4-chassis-only-credentials-egress.md), [010](010-H-12-config-loader.md), [038](038-X-1a-terraform-first-cloud.md) |
-| 056 | CH-7 | [Chassis release in rings, with a per-service pin and a minimum-version admission rule](056-CH-7-chassis-release-rings.md) | chassis | P1 | M | [024](024-CH-3-helm-library-chart.md), [055](055-CH-6-remote-lane-trust-rule.md), [014](014-H-7-observability.md) |
-| 057 | H-19 | [Stateless check in CI: fail the build on local disk writes or kept data](057-H-19-stateless-check-ci.md) | chassis | P1 | S | [025](025-H-10-template-repo.md) |
-| 058 | CH-8 | [Framework event mappings and one non-Python workload in the service template](058-CH-8-framework-event-mappings.md) | chassis | P1 | M | [015](015-H-8-testing-kit.md), [025](025-H-10-template-repo.md) |
-| 059 | H-15 | [Agent factory CLI: scaffold an agent by class and kind, modules by config](059-H-15-agent-factory-cli.md) | chassis | P1 | M | [008](008-H-14-one-agent-interface.md), [025](025-H-10-template-repo.md), [051](051-H-13-openapi-mcp-tools.md), [057](057-H-19-stateless-check-ci.md), [058](058-CH-8-framework-event-mappings.md), [055](055-CH-6-remote-lane-trust-rule.md) |
-| 060 | H-23 | [More broker adapters behind the event port: Kafka, AWS, GCP](060-H-23-broker-adapters.md) | chassis | P2 | S | [021](021-H-20-event-consumer-adapter.md) |
+| 053 | H-22 | [Event reliability: idempotent consumers, retries with backoff, dead-letter topic](053-H-22-event-reliability.md) | chassis | P1 | M | [018](018-H-18-idempotency.md), [021](021-H-20-event-consumer-adapter.md), [040](040-D-0-recorder-agent.md) |
+| 054 | H-16 | [Tool port: native tool calls or JSON via guided decoding; read and write modes](054-H-16-tool-port.md) | agent-profile | P1 | L | [018](018-H-18-idempotency.md), [017](017-H-4-harness-features.md), [022](022-H-6-security-middleware.md) |
+| 055 | CH-6 | [Remote lane and the trust rule: sandboxed pod or managed runtime over A2A, cloud auth adapter, admission check](055-CH-6-remote-lane-trust-rule.md) | chassis | P1 | S | [009](009-CH-1-engine-connectors-a2a.md), [026](026-CH-4-chassis-only-credentials-egress.md), [010](010-H-12-config-loader.md), [024](024-CH-3-helm-library-chart.md) |
+| 056 | CH-7 | [Chassis release in rings, with a per-service pin and a minimum-version admission rule](056-CH-7-chassis-release-rings.md) | chassis | P1 | L | [024](024-CH-3-helm-library-chart.md), [055](055-CH-6-remote-lane-trust-rule.md), [014](014-H-7-observability.md), [051](051-H-13-openapi-mcp-tools.md), [038](038-X-1a-terraform-first-cloud.md) |
+| 057 | H-19 | [Stateless check in CI: fail the build on local disk writes or kept data](057-H-19-stateless-check-ci.md) | chassis | P1 | M | [025](025-H-10-template-repo.md), [015](015-H-8-testing-kit.md) |
+| 058 | CH-8 | [Framework event mappings and one non-Python workload in the service template](058-CH-8-framework-event-mappings.md) | chassis | P1 | L | [015](015-H-8-testing-kit.md) |
+| 059 | H-15 | [Agent factory CLI: scaffold an agent by class and kind, modules by config](059-H-15-agent-factory-cli.md) | chassis | P1 | L | [025](025-H-10-template-repo.md), [057](057-H-19-stateless-check-ci.md), [058](058-CH-8-framework-event-mappings.md), [055](055-CH-6-remote-lane-trust-rule.md), [024](024-CH-3-helm-library-chart.md) |
+| 060 | H-23 | [More broker adapters behind the event port: Kafka, AWS, GCP](060-H-23-broker-adapters.md) | chassis | P2 | S | [021](021-H-20-event-consumer-adapter.md), [053](053-H-22-event-reliability.md) |
 | 061 | H-5 | [A2A adapter: JSON-RPC endpoint, task states, signed agent card](061-H-5-a2a-adapter.md) | agent-profile | P2 | S | [001](001-DEC-1-resolve-open-decisions.md), [011](011-H-2-inbound-adapters.md) |
-| 062 | H-11 | [Chassis reuse in other projects: the stock image in front of any A2A workload](062-H-11-adapter-package.md) | chassis | P2 | S | [011](011-H-2-inbound-adapters.md), [012](012-H-3-model-port.md), [058](058-CH-8-framework-event-mappings.md) |
-| 063 | S-8 | [Optional: fine-tune an SLM on tool-call examples for tool agents](063-S-8-tool-call-finetune.md) | platform | P2 | L | [033](033-S-5-training-pipeline.md), [054](054-H-16-tool-port.md) |
+| 062 | H-11 | [Chassis reuse in other projects: the stock image in front of any A2A workload](062-H-11-adapter-package.md) | chassis | P2 | S | [011](011-H-2-inbound-adapters.md), [013](013-CH-2-outbound-model-proxy.md), [058](058-CH-8-framework-event-mappings.md), [025](025-H-10-template-repo.md) |
+| 128 | CH-9 | [LangGraph checkpointer and interrupts: one ADR each](128-CH-9-langgraph-checkpointer-interrupts.md) | chassis | P2 | S | [058](058-CH-8-framework-event-mappings.md) |
+| 129 | CH-10 | [LangSmith as a trace backend: Collector exporter, fake-langsmith, stack tests](129-CH-10-langsmith-trace-backend.md) | chassis | P1 | M | [014](014-H-7-observability.md) |
+| 130 | CH-11 | [LangSmith feedback adapter behind FeedbackPort](130-CH-11-langsmith-feedback-adapter.md) | chassis | P1 | S | [129](129-CH-10-langsmith-trace-backend.md) |
 
 ### W6 Golden set and evaluator SLM
 
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
-| 064 | D-1 | [Golden set agent: reads records, scores them with a judge, sends uncertain ones to review](064-D-1-golden-set-agent.md) | platform | P1 | M | [017](017-H-4-harness-features.md), [040](040-D-0-recorder-agent.md), [042](042-A-2-evaluator-gate-fallback.md) |
+| 064 | D-1 | [Golden set agent: reads records, scores them with a judge, sends uncertain ones to review](064-D-1-golden-set-agent.md) | platform | P1 | M | [017](017-H-4-harness-features.md), [040](040-D-0-recorder-agent.md), [042](042-A-2-evaluator-gate-fallback.md), [028](028-S-3-simplifier-metrics.md) |
 | 065 | D-2 | [Review UI: approve, reject, edit, with access control and an audit log](065-D-2-review-ui.md) | platform | P1 | M | [022](022-H-6-security-middleware.md), [064](064-D-1-golden-set-agent.md) |
 | 066 | D-6 | [Tags and splits (train, test, holdout) per record](066-D-6-tags-splits.md) | platform | P1 | S | [064](064-D-1-golden-set-agent.md) |
 | 067 | D-5 | [Schema check and deduplication on import](067-D-5-import-schema-dedup.md) | platform | P1 | S | [064](064-D-1-golden-set-agent.md) |
-| 068 | D-3 | [Import from file upload, API call, or bucket watch](068-D-3-import.md) | platform | P1 | S | [067](067-D-5-import-schema-dedup.md), [030](030-S-4-hand-review-test-set.md) |
+| 068 | D-3 | [Import from file upload, API call, or bucket watch](068-D-3-import.md) | platform | P1 | S | [067](067-D-5-import-schema-dedup.md), [037](037-M-2-eval-gate-ci.md) |
 | 069 | D-7 | [Versioned datasets with lakeFS; each export is an immutable version with an ID](069-D-7-lakefs-versions.md) | platform | P1 | M | [064](064-D-1-golden-set-agent.md) |
 | 070 | D-4 | [Export in JSONL, CSV, Parquet, and Hugging Face datasets format](070-D-4-export-formats.md) | platform | P1 | S | [066](066-D-6-tags-splits.md), [069](069-D-7-lakefs-versions.md), [068](068-D-3-import.md) |
 | 071 | D-8 | [Data rules: PII removal before storage, retention period, deletion on request](071-D-8-data-rules.md) | platform | P1 | M | [040](040-D-0-recorder-agent.md), [069](069-D-7-lakefs-versions.md), [065](065-D-2-review-ui.md), [068](068-D-3-import.md) |
 | 072 | C-3 | [Audit log data agent: append-only, object lock, retention per risk class, export API](072-C-3-audit-log-agent.md) | platform | P1 | L | [008](008-H-14-one-agent-interface.md), [019](019-H-17-event-port.md), [020](020-X-8-event-broker.md), [021](021-H-20-event-consumer-adapter.md), [053](053-H-22-event-reliability.md), [022](022-H-6-security-middleware.md) |
-| 073 | E-1 | [First evaluator SLM (ModernBERT or DeBERTa) trained on approved records](073-E-1-evaluator-slm.md) | platform | P1 | L | [033](033-S-5-training-pipeline.md), [065](065-D-2-review-ui.md), [070](070-D-4-export-formats.md) |
-| 074 | E-2 | [Evaluator agreement test against human labels](074-E-2-evaluator-agreement-test.md) | platform | P1 | S | [073](073-E-1-evaluator-slm.md), [030](030-S-4-hand-review-test-set.md) |
-| 075 | E-3 | [Evaluator SLM replaces the big-model judge in the harness](075-E-3-evaluator-replaces-judge.md) | platform | P1 | S | [042](042-A-2-evaluator-gate-fallback.md), [074](074-E-2-evaluator-agreement-test.md), [047](047-M-3-shadow-mode.md), [046](046-A-5-agent-dashboard.md) |
+| 131 | CH-12 | [Golden cases in Langfuse and LangSmith datasets](131-CH-12-golden-cases-datasets.md) | platform | P1 | S | [037](037-M-2-eval-gate-ci.md), [129](129-CH-10-langsmith-trace-backend.md) |
 
 ### W7 Registry and governance gate
 
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
-| 076 | R-1 | [Registry data model and API](076-R-1-registry-data-model-api.md) | platform | P1 | L | [008](008-H-14-one-agent-interface.md), [051](051-H-13-openapi-mcp-tools.md), [019](019-H-17-event-port.md), [022](022-H-6-security-middleware.md) |
-| 077 | C-1 | [Governance block enforced by the registry on activation](077-C-1-governance-enforcement.md) | platform | P1 | S | [010](010-H-12-config-loader.md), [076](076-R-1-registry-data-model-api.md), [055](055-CH-6-remote-lane-trust-rule.md), [056](056-CH-7-chassis-release-rings.md) |
+| 076 | R-1 | [Registry data model and API](076-R-1-registry-data-model-api.md) | platform | P1 | L | [008](008-H-14-one-agent-interface.md), [051](051-H-13-openapi-mcp-tools.md), [019](019-H-17-event-port.md), [022](022-H-6-security-middleware.md), [059](059-H-15-agent-factory-cli.md) |
+| 077 | C-1 | [Governance block enforced by the registry on activation](077-C-1-governance-enforcement.md) | platform | P1 | M | [010](010-H-12-config-loader.md), [076](076-R-1-registry-data-model-api.md), [055](055-CH-6-remote-lane-trust-rule.md), [056](056-CH-7-chassis-release-rings.md) |
 | 078 | R-16 | [Registry entries carry the governance block and serve as the AI system inventory](078-R-16-ai-system-inventory.md) | platform | P1 | S | [077](077-C-1-governance-enforcement.md) |
-| 079 | C-2 | [Prohibited-practice checklist at registration](079-C-2-prohibited-practice-checklist.md) | platform | P1 | S | [077](077-C-1-governance-enforcement.md) |
-| 080 | R-7 | [Trust levels: internal signed entries go live, external and manual need approval](080-R-7-trust-levels.md) | platform | P1 | M | [076](076-R-1-registry-data-model-api.md) |
+| 079 | C-2 | [Prohibited-practice checklist at registration](079-C-2-prohibited-practice-checklist.md) | platform | P1 | S | [077](077-C-1-governance-enforcement.md), [078](078-R-16-ai-system-inventory.md) |
+| 080 | R-7 | [Trust levels: internal signed entries go live, external and manual need approval](080-R-7-trust-levels.md) | platform | P1 | M | [076](076-R-1-registry-data-model-api.md), [025](025-H-10-template-repo.md) |
 | 081 | R-8 | [Description scanning for hidden instructions on registration](081-R-8-description-scanning.md) | platform | P1 | M | [080](080-R-7-trust-levels.md) |
 | 082 | R-9 | [Description hash pinning: a changed description goes back to review](082-R-9-description-hash-pinning.md) | platform | P1 | S | [080](080-R-7-trust-levels.md) |
 | 083 | R-2 | [Kubernetes controller (kopf): watches labeled deployments and reads /manifest](083-R-2-kubernetes-controller.md) | platform | P1 | M | [025](025-H-10-template-repo.md), [076](076-R-1-registry-data-model-api.md), [080](080-R-7-trust-levels.md), [056](056-CH-7-chassis-release-rings.md) |
 | 084 | R-3 | [Docker watcher for local runs](084-R-3-docker-watcher.md) | platform | P1 | S | [016](016-H-9-local-debug-profile.md), [076](076-R-1-registry-data-model-api.md), [080](080-R-7-trust-levels.md) |
 | 085 | R-6 | [Manual registration: API, UI, and YAML import](085-R-6-manual-registration.md) | platform | P1 | M | [080](080-R-7-trust-levels.md) |
-| 086 | R-10 | [Health checks: dead entries marked inactive, never deleted](086-R-10-health-checks.md) | platform | P1 | S | [076](076-R-1-registry-data-model-api.md), [083](083-R-2-kubernetes-controller.md), [014](014-H-7-observability.md) |
+| 086 | R-10 | [Health checks: dead entries marked inactive, never deleted](086-R-10-health-checks.md) | platform | P1 | M | [076](076-R-1-registry-data-model-api.md), [083](083-R-2-kubernetes-controller.md), [014](014-H-7-observability.md) |
 | 087 | R-4 | [MCP import: call tools/list and register each tool](087-R-4-mcp-import.md) | platform | P1 | S | [081](081-R-8-description-scanning.md), [082](082-R-9-description-hash-pinning.md) |
 | 088 | R-5 | [OpenAPI import: register each operation of a REST API](088-R-5-openapi-import.md) | platform | P1 | M | [051](051-H-13-openapi-mcp-tools.md), [081](081-R-8-description-scanning.md) |
 | 089 | R-15 | [Event schemas (AsyncAPI) registered next to OpenAPI specs](089-R-15-event-schemas-registered.md) | platform | P1 | S | [052](052-H-21-asyncapi-spec.md), [076](076-R-1-registry-data-model-api.md) |
 | 090 | R-13 | [Registry search test set of at least 200 queries with expected results](090-R-13-search-test-set.md) | platform | P1 | M | [076](076-R-1-registry-data-model-api.md) |
-| 091 | R-11 | [Hybrid search: SQL filters, keyword, vector, reciprocal rank fusion, reranker](091-R-11-hybrid-search.md) | platform | P1 | L | [076](076-R-1-registry-data-model-api.md), [090](090-R-13-search-test-set.md), [003](003-G-1b-named-model-routes.md), [036](036-S-7-serve-with-vllm.md) |
-| 092 | R-12 | [Search results return the main pick plus ranked fallbacks with difference metadata](092-R-12-main-pick-fallbacks.md) | platform | P1 | M | [091](091-R-11-hybrid-search.md) |
-| 093 | R-14 | [Registry exposed as an MCP server](093-R-14-registry-mcp-server.md) | platform | P1 | S | [051](051-H-13-openapi-mcp-tools.md), [092](092-R-12-main-pick-fallbacks.md) |
+| 091 | R-11 | [Hybrid search: SQL filters, keyword, vector, reciprocal rank fusion, reranker](091-R-11-hybrid-search.md) | platform | P1 | L | [076](076-R-1-registry-data-model-api.md), [090](090-R-13-search-test-set.md), [003](003-G-1b-named-model-routes.md) |
+| 092 | R-12 | [Search results return the main pick plus ranked fallbacks with difference metadata](092-R-12-main-pick-fallbacks.md) | platform | P1 | M | [091](091-R-11-hybrid-search.md), [086](086-R-10-health-checks.md) |
+| 093 | R-14 | [Registry exposed as an MCP server](093-R-14-registry-mcp-server.md) | platform | P1 | S | [051](051-H-13-openapi-mcp-tools.md), [092](092-R-12-main-pick-fallbacks.md), [080](080-R-7-trust-levels.md) |
 
 ### W8 Platform MCP server
 
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
-| 094 | P-1 | [Platform MCP server built from the harness, with registry and agent tools](094-P-1-platform-mcp-server.md) | platform | P1 | S | [051](051-H-13-openapi-mcp-tools.md), [093](093-R-14-registry-mcp-server.md) |
+| 094 | P-1 | [Platform MCP server built from the harness, with registry and agent tools](094-P-1-platform-mcp-server.md) | platform | P1 | M | [051](051-H-13-openapi-mcp-tools.md), [093](093-R-14-registry-mcp-server.md) |
 | 095 | P-4 | [MCP read and write scopes, confirmation on destructive tools, audit log on every call](095-P-4-mcp-scopes-audit.md) | platform | P1 | M | [072](072-C-3-audit-log-agent.md), [094](094-P-1-platform-mcp-server.md) |
 | 096 | P-2a | [MCP golden set and metrics tools](096-P-2a-mcp-golden-set-metrics-tools.md) | platform | P1 | M | [006](006-G-6-savings-dashboard.md), [070](070-D-4-export-formats.md), [095](095-P-4-mcp-scopes-audit.md), [046](046-A-5-agent-dashboard.md) |
 | 097 | P-3 | [MCP resources and prompts](097-P-3-mcp-resources-prompts.md) | platform | P2 | S | [094](094-P-1-platform-mcp-server.md) |
@@ -335,21 +335,21 @@ The sizes add up to about 283.5 engineer-days (57 weeks) for W0–W11, after the
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
 | 098 | O-10 | [Orchestrator config and workflow schemas (JSON Schema) in the config store](098-O-10-orchestrator-schemas.md) | platform | P1 | M | [010](010-H-12-config-loader.md) |
-| 099 | O-1 | [Orchestrator agent built from the harness, using registry search](099-O-1-orchestrator-agent.md) | platform | P1 | M | [008](008-H-14-one-agent-interface.md), [092](092-R-12-main-pick-fallbacks.md), [098](098-O-10-orchestrator-schemas.md) |
-| 100 | O-2 | [Temporal workflows with a checkpoint per step](100-O-2-temporal-checkpoints.md) | platform | P1 | M | [099](099-O-1-orchestrator-agent.md), [050](050-CH-5-service-operations.md) |
-| 101 | O-13 | [Version pinning per run](101-O-13-version-pinning.md) | platform | P1 | S | [100](100-O-2-temporal-checkpoints.md) |
+| 099 | O-1 | [Orchestrator agent built from the harness, using registry search](099-O-1-orchestrator-agent.md) | platform | P1 | M | [008](008-H-14-one-agent-interface.md), [092](092-R-12-main-pick-fallbacks.md), [098](098-O-10-orchestrator-schemas.md), [059](059-H-15-agent-factory-cli.md) |
+| 100 | O-2 | [Temporal workflows with a checkpoint per step](100-O-2-temporal-checkpoints.md) | platform | P1 | L | [099](099-O-1-orchestrator-agent.md), [050](050-CH-5-service-operations.md) |
+| 101 | O-13 | [Version pinning per run](101-O-13-version-pinning.md) | platform | P1 | M | [100](100-O-2-temporal-checkpoints.md) |
 | 102 | O-7 | [Idempotent steps, so a resume never repeats a side effect](102-O-7-idempotent-steps.md) | platform | P1 | M | [018](018-H-18-idempotency.md), [100](100-O-2-temporal-checkpoints.md) |
 | 103 | O-11 | [Workflow engine that runs chain, fan_out, and compare patterns from workflow files](103-O-11-workflow-engine.md) | platform | P1 | L | [098](098-O-10-orchestrator-schemas.md), [100](100-O-2-temporal-checkpoints.md) |
-| 104 | O-3 | [Agent pools on task queues with KEDA autoscaling](104-O-3-agent-pools-keda.md) | platform | P1 | M | [025](025-H-10-template-repo.md), [100](100-O-2-temporal-checkpoints.md) |
+| 104 | O-3 | [Agent pools on task queues with KEDA autoscaling](104-O-3-agent-pools-keda.md) | platform | P1 | L | [025](025-H-10-template-repo.md), [100](100-O-2-temporal-checkpoints.md) |
 | 105 | O-4 | [Fan-out and fan-in with overlap and a consistency pass](105-O-4-fan-out-fan-in.md) | platform | P1 | M | [103](103-O-11-workflow-engine.md), [104](104-O-3-agent-pools-keda.md) |
 | 106 | O-5 | [Compare runs with an evaluator and a tie rule](106-O-5-compare-runs.md) | platform | P1 | M | [103](103-O-11-workflow-engine.md), [068](068-D-3-import.md) |
-| 107 | O-6 | [Budgets per run: max tokens, cost, steps, and time](107-O-6-run-budgets.md) | platform | P1 | S | [100](100-O-2-temporal-checkpoints.md), [103](103-O-11-workflow-engine.md) |
+| 107 | O-6 | [Budgets per run: max tokens, cost, steps, and time](107-O-6-run-budgets.md) | platform | P1 | M | [100](100-O-2-temporal-checkpoints.md), [103](103-O-11-workflow-engine.md) |
 | 108 | O-12 | [Routing rules and planner modes (fixed, planned, hybrid)](108-O-12-routing-planner-modes.md) | platform | P1 | L | [103](103-O-11-workflow-engine.md) |
-| 109 | O-8 | [Cancel and human approval steps](109-O-8-cancel-approval.md) | platform | P1 | S | [100](100-O-2-temporal-checkpoints.md), [107](107-O-6-run-budgets.md) |
-| 110 | C-6 | [Human oversight controls: review queue, approval steps, stop control, all audited](110-C-6-human-oversight.md) | platform | P1 | M | [065](065-D-2-review-ui.md), [072](072-C-3-audit-log-agent.md), [109](109-O-8-cancel-approval.md) |
-| 111 | O-14 | [Workflow validation and dry run before activation, and rollback](111-O-14-workflow-validation-rollback.md) | platform | P1 | M | [103](103-O-11-workflow-engine.md) |
+| 109 | O-8 | [Cancel and human approval steps](109-O-8-cancel-approval.md) | platform | P1 | M | [100](100-O-2-temporal-checkpoints.md), [107](107-O-6-run-budgets.md) |
+| 110 | C-6 | [Human oversight controls: review queue, approval steps, stop control, all audited](110-C-6-human-oversight.md) | platform | P1 | M | [065](065-D-2-review-ui.md), [072](072-C-3-audit-log-agent.md), [109](109-O-8-cancel-approval.md), [077](077-C-1-governance-enforcement.md) |
+| 111 | O-14 | [Workflow validation and dry run before activation, and rollback](111-O-14-workflow-validation-rollback.md) | platform | P1 | L | [103](103-O-11-workflow-engine.md) |
 | 112 | O-16 | [Event triggers: workflows started by events, run and step events at each stage](112-O-16-event-triggers.md) | platform | P1 | M | [021](021-H-20-event-consumer-adapter.md), [100](100-O-2-temporal-checkpoints.md), [108](108-O-12-routing-planner-modes.md), [103](103-O-11-workflow-engine.md) |
-| 113 | O-9 | [Short-term memory (execution state) and long-term memory (settings, gotchas, feedback)](113-O-9-orchestrator-memory.md) | platform | P1 | L | [100](100-O-2-temporal-checkpoints.md), [068](068-D-3-import.md) |
+| 113 | O-9 | [Short-term memory (execution state) and long-term memory (settings, gotchas, feedback)](113-O-9-orchestrator-memory.md) | platform | P1 | L | [100](100-O-2-temporal-checkpoints.md) |
 | 114 | P-2b | [MCP run, memory, config, and workflow tools](114-P-2b-mcp-run-memory-config-tools.md) | platform | P1 | M | [095](095-P-4-mcp-scopes-audit.md), [109](109-O-8-cancel-approval.md), [111](111-O-14-workflow-validation-rollback.md), [113](113-O-9-orchestrator-memory.md) |
 | 115 | O-15 | [Save a reviewed planned run as a new workflow file](115-O-15-save-planned-run.md) | platform | P2 | S | [108](108-O-12-routing-planner-modes.md), [111](111-O-14-workflow-validation-rollback.md), [110](110-C-6-human-oversight.md) |
 
@@ -358,26 +358,55 @@ The sizes add up to about 283.5 engineer-days (57 weeks) for W0–W11, after the
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
 | 116 | X-1b | [Terraform module for the second cloud, with the same inputs and outputs](116-X-1b-terraform-second-cloud.md) | platform | P1 | L | [038](038-X-1a-terraform-first-cloud.md), [055](055-CH-6-remote-lane-trust-rule.md) |
-| 117 | X-3 | [SLOs and alerts for every agent](117-X-3-slos-alerts.md) | platform | P1 | M | [014](014-H-7-observability.md), [038](038-X-1a-terraform-first-cloud.md), [056](056-CH-7-chassis-release-rings.md) |
+| 117 | X-3 | [SLOs and alerts for every agent](117-X-3-slos-alerts.md) | platform | P1 | M | [014](014-H-7-observability.md) |
 | 118 | C-7 | [Incident flow: incident events, alert routing, runbook for serious incidents](118-C-7-incident-flow.md) | platform | P1 | M | [072](072-C-3-audit-log-agent.md), [117](117-X-3-slos-alerts.md) |
 | 119 | X-6 | [Runbooks for common failures](119-X-6-runbooks.md) | platform | P1 | M | [117](117-X-3-slos-alerts.md) |
-| 120 | X-7 | [Cost dashboard per agent and per pool](120-X-7-cost-dashboard.md) | platform | P1 | S | [004](004-G-2-token-cost-counting.md), [104](104-O-3-agent-pools-keda.md) |
-| 121 | X-4 | [Backups and a tested restore for Postgres, object storage, and golden sets](121-X-4-backups-restore.md) | platform | P1 | M | [038](038-X-1a-terraform-first-cloud.md), [069](069-D-7-lakefs-versions.md) |
-| 122 | X-5 | [Load tests for agent pools and the registry](122-X-5-load-tests.md) | platform | P1 | M | [091](091-R-11-hybrid-search.md), [104](104-O-3-agent-pools-keda.md) |
+| 120 | X-7 | [Cost dashboard per agent and per pool](120-X-7-cost-dashboard.md) | platform | P1 | S | [004](004-G-2-token-cost-counting.md) |
+| 121 | X-4 | [Backups and a tested restore for Postgres, object storage, and golden sets](121-X-4-backups-restore.md) | platform | P1 | M | [038](038-X-1a-terraform-first-cloud.md) |
+| 122 | X-5 | [Load tests: throughput and sidecar overhead on a Linux host](122-X-5-load-tests.md) | platform | P1 | M | — |
+| 133 | X-5b | [Load tests for agent pools, the registry, and event bursts](133-X-5b-load-tests-pools-registry.md) | platform | P1 | M | [091](091-R-11-hybrid-search.md), [104](104-O-3-agent-pools-keda.md), [117](117-X-3-slos-alerts.md) |
 
 ### W11 Compliance evidence
 
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
-| 123 | C-4 | [Documentation pack generator: technical docs, instructions for use, model card per agent version](123-C-4-documentation-pack.md) | platform | P1 | M | [032](032-M-1-mlflow.md), [051](051-H-13-openapi-mcp-tools.md), [052](052-H-21-asyncapi-spec.md), [078](078-R-16-ai-system-inventory.md) |
+| 123 | C-4 | [Documentation pack generator: technical docs, instructions for use, model card per agent version](123-C-4-documentation-pack.md) | platform | P1 | M | [051](051-H-13-openapi-mcp-tools.md), [052](052-H-21-asyncapi-spec.md), [078](078-R-16-ai-system-inventory.md) |
 | 124 | C-9 | [Control mapping report: ISO 42001 Annex A and AI Act articles to platform evidence](124-C-9-control-mapping-report.md) | platform | P1 | S | [072](072-C-3-audit-log-agent.md), [123](123-C-4-documentation-pack.md) |
+| 132 | CH-13 | [OWASP agentic threat list (ASI01 to ASI10) mapped to the controls](132-CH-13-owasp-agentic-map.md) | platform | P1 | S | [026](026-CH-4-chassis-only-credentials-egress.md), [022](022-H-6-security-middleware.md) |
 
 ### W12 Later
 
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
-| 125 | L-1 | [Shared memory at scale: session context, long-term memory, context_ref](125-L-1-shared-memory-at-scale.md) | platform | P3 | L | [113](113-O-9-orchestrator-memory.md) |
-| 126 | L-2 | [System prompt improver](126-L-2-system-prompt-improver.md) | platform | P3 | L | [070](070-D-4-export-formats.md), [075](075-E-3-evaluator-replaces-judge.md) |
+| 125 | L-1 | [Shared memory at scale: session context, long-term memory, context_ref](125-L-1-shared-memory-at-scale.md) | platform | P3 | M | [113](113-O-9-orchestrator-memory.md) |
+| 126 | L-2 | [System prompt improver](126-L-2-system-prompt-improver.md) | platform | P3 | M | [070](070-D-4-export-formats.md), [042](042-A-2-evaluator-gate-fallback.md) |
+
+### Parked: the SLM track (2026-11-06)
+
+| # | ID | Issue | Layer | Priority | Size | Depends on |
+| - | -- | ----- | ----- | -------- | ---- | ---------- |
+| 005 | G-3 | [Baseline report: token spend and cost over at least two weeks](005-G-3-baseline-report.md) | platform | P0 | M | [004](004-G-2-token-cost-counting.md) |
+| 027 | S-1 | [Rewrite rules and banned-word list](027-S-1-rewrite-rules.md) | platform | P0 | S | [001](001-DEC-1-resolve-open-decisions.md) |
+| 029 | S-2 | [Training data generation: 2,000 to 5,000 pairs with an open-weight teacher](029-S-2-training-data-generation.md) | platform | P0 | M | [003](003-G-1b-named-model-routes.md), [027](027-S-1-rewrite-rules.md), [028](028-S-3-simplifier-metrics.md) |
+| 030 | S-4 | [Hand review of a sample and a held-out test set of at least 300 records](030-S-4-hand-review-test-set.md) | platform | P0 | M | [029](029-S-2-training-data-generation.md) |
+| 031 | G-5 | [Cost model: GPU hosting cost vs API savings, with the break-even point](031-G-5-cost-model-break-even.md) | platform | P0 | S | [005](005-G-3-baseline-report.md) |
+| 032 | M-1 | [MLflow: experiments, model registry, links to data version and scores](032-M-1-mlflow.md) | platform | P0 | S | — |
+| 033 | S-5 | [Reproducible training pipeline (config, data version, seed) with Unsloth or TRL](033-S-5-training-pipeline.md) | platform | P0 | M | [030](030-S-4-hand-review-test-set.md), [032](032-M-1-mlflow.md) |
+| 034 | C-8 | [Training compute logged per fine-tune run, checked against the GPAI threshold](034-C-8-training-compute-log.md) | platform | P1 | S | [033](033-S-5-training-pipeline.md) |
+| 035 | S-6 | [Train candidates on Qwen3, Gemma 3, and Llama 3.2, and pick the best](035-S-6-train-candidates.md) | platform | P0 | L | [031](031-G-5-cost-model-break-even.md), [033](033-S-5-training-pipeline.md) |
+| 036 | S-7 | [Serve the simplifier SLM with vLLM, with guided decoding for JSON](036-S-7-serve-with-vllm.md) | platform | P0 | S | [003](003-G-1b-named-model-routes.md), [035](035-S-6-train-candidates.md) |
+| 039 | X-2 | [GPU setup on Kubernetes (NVIDIA GPU Operator) and model weight storage with fast cold start](039-X-2-gpu-setup.md) | platform | P1 | M | [036](036-S-7-serve-with-vllm.md), [038](038-X-1a-terraform-first-cloud.md) |
+| 041 | A-1 | [Simplifier business logic as a workload behind the chassis](041-A-1-simplifier-core.md) | platform | P0 | M | [017](017-H-4-harness-features.md), [025](025-H-10-template-repo.md), [036](036-S-7-serve-with-vllm.md), [013](013-CH-2-outbound-model-proxy.md), [026](026-CH-4-chassis-only-credentials-egress.md) |
+| 043 | A-3 | [Result events with source, stored by the recorder](043-A-3-result-events.md) | platform | P0 | S | [019](019-H-17-event-port.md), [040](040-D-0-recorder-agent.md), [041](041-A-1-simplifier-core.md) |
+| 044 | G-4 | [History swap in the chassis: long past answers replaced by simplified versions](044-G-4-history-swap.md) | agent-profile | P1 | M | [012](012-H-3-model-port.md), [040](040-D-0-recorder-agent.md), [013](013-CH-2-outbound-model-proxy.md) |
+| 045 | A-4 | [History swap switched on for the simplifier](045-A-4-history-swap-on.md) | platform | P1 | S | [043](043-A-3-result-events.md), [044](044-G-4-history-swap.md) |
+| 047 | M-3 | [Shadow mode: new model runs next to the current one without serving users](047-M-3-shadow-mode.md) | platform | P1 | M | [037](037-M-2-eval-gate-ci.md), [041](041-A-1-simplifier-core.md), [042](042-A-2-evaluator-gate-fallback.md), [013](013-CH-2-outbound-model-proxy.md) |
+| 048 | M-4 | [Canary rollout and one-step rollback](048-M-4-canary-rollback.md) | platform | P1 | S | [047](047-M-3-shadow-mode.md), [046](046-A-5-agent-dashboard.md) |
+| 049 | M-5 | [Quantized 4-bit variants for CPU and edge, each with its own eval](049-M-5-quantized-variants.md) | platform | P2 | M | [037](037-M-2-eval-gate-ci.md) |
+| 063 | S-8 | [Optional: fine-tune an SLM on tool-call examples for tool agents](063-S-8-tool-call-finetune.md) | platform | P2 | L | [033](033-S-5-training-pipeline.md), [054](054-H-16-tool-port.md) |
+| 073 | E-1 | [First evaluator SLM (ModernBERT or DeBERTa) trained on approved records](073-E-1-evaluator-slm.md) | platform | P1 | L | [033](033-S-5-training-pipeline.md), [065](065-D-2-review-ui.md), [070](070-D-4-export-formats.md) |
+| 074 | E-2 | [Evaluator agreement test against human labels](074-E-2-evaluator-agreement-test.md) | platform | P1 | S | [073](073-E-1-evaluator-slm.md), [030](030-S-4-hand-review-test-set.md) |
+| 075 | E-3 | [Evaluator SLM replaces the big-model judge in the harness](075-E-3-evaluator-replaces-judge.md) | platform | P1 | S | [042](042-A-2-evaluator-gate-fallback.md), [074](074-E-2-evaluator-agreement-test.md), [047](047-M-3-shadow-mode.md), [046](046-A-5-agent-dashboard.md) |
 | 127 | L-3 | [Router SLM: classifier that replaces part of the orchestrator's routing](127-L-3-router-slm.md) | platform | P3 | L | [040](040-D-0-recorder-agent.md), [108](108-O-12-routing-planner-modes.md) |
 
 ## Coverage by epic phase
@@ -385,16 +414,16 @@ The sizes add up to about 283.5 engineer-days (57 weeks) for W0–W11, after the
 | Epic phase | Issues |
 | ---------- | ------ |
 | [Open decisions](../slm-agent-platform-epic-v3.md#open-decisions) | [001 DEC-1](001-DEC-1-resolve-open-decisions.md) |
-| [Phase 0](../slm-agent-platform-epic-v3.md#phase-0-agent-harness) | [007 H-1](007-H-1-harness-library-ports-envelope.md), [008 H-14](008-H-14-one-agent-interface.md), [009 CH-1](009-CH-1-engine-connectors-a2a.md), [010 H-12](010-H-12-config-loader.md), [011 H-2](011-H-2-inbound-adapters.md), [012 H-3](012-H-3-model-port.md), [013 CH-2](013-CH-2-outbound-model-proxy.md), [014 H-7](014-H-7-observability.md), [015 H-8](015-H-8-testing-kit.md), [016 H-9](016-H-9-local-debug-profile.md), [017 H-4](017-H-4-harness-features.md), [018 H-18](018-H-18-idempotency.md), [019 H-17](019-H-17-event-port.md), [021 H-20](021-H-20-event-consumer-adapter.md), [022 H-6](022-H-6-security-middleware.md), [024 CH-3](024-CH-3-helm-library-chart.md), [025 H-10](025-H-10-template-repo.md), [026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [050 CH-5](050-CH-5-service-operations.md), [051 H-13](051-H-13-openapi-mcp-tools.md), [052 H-21](052-H-21-asyncapi-spec.md), [053 H-22](053-H-22-event-reliability.md), [054 H-16](054-H-16-tool-port.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [056 CH-7](056-CH-7-chassis-release-rings.md), [057 H-19](057-H-19-stateless-check-ci.md), [058 CH-8](058-CH-8-framework-event-mappings.md), [059 H-15](059-H-15-agent-factory-cli.md), [060 H-23](060-H-23-broker-adapters.md), [061 H-5](061-H-5-a2a-adapter.md), [062 H-11](062-H-11-adapter-package.md) |
+| [Phase 0](../slm-agent-platform-epic-v3.md#phase-0-agent-harness) | [007 H-1](007-H-1-harness-library-ports-envelope.md), [008 H-14](008-H-14-one-agent-interface.md), [009 CH-1](009-CH-1-engine-connectors-a2a.md), [010 H-12](010-H-12-config-loader.md), [011 H-2](011-H-2-inbound-adapters.md), [012 H-3](012-H-3-model-port.md), [013 CH-2](013-CH-2-outbound-model-proxy.md), [014 H-7](014-H-7-observability.md), [015 H-8](015-H-8-testing-kit.md), [016 H-9](016-H-9-local-debug-profile.md), [017 H-4](017-H-4-harness-features.md), [018 H-18](018-H-18-idempotency.md), [019 H-17](019-H-17-event-port.md), [021 H-20](021-H-20-event-consumer-adapter.md), [022 H-6](022-H-6-security-middleware.md), [024 CH-3](024-CH-3-helm-library-chart.md), [025 H-10](025-H-10-template-repo.md), [026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [050 CH-5](050-CH-5-service-operations.md), [051 H-13](051-H-13-openapi-mcp-tools.md), [052 H-21](052-H-21-asyncapi-spec.md), [053 H-22](053-H-22-event-reliability.md), [054 H-16](054-H-16-tool-port.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [056 CH-7](056-CH-7-chassis-release-rings.md), [057 H-19](057-H-19-stateless-check-ci.md), [058 CH-8](058-CH-8-framework-event-mappings.md), [059 H-15](059-H-15-agent-factory-cli.md), [060 H-23](060-H-23-broker-adapters.md), [061 H-5](061-H-5-a2a-adapter.md), [062 H-11](062-H-11-adapter-package.md), [128 CH-9](128-CH-9-langgraph-checkpointer-interrupts.md), [129 CH-10](129-CH-10-langsmith-trace-backend.md), [130 CH-11](130-CH-11-langsmith-feedback-adapter.md) |
 | [Phase 1](../slm-agent-platform-epic-v3.md#phase-1-baseline-and-llm-router) | [002 G-1](002-G-1-litellm-router.md), [003 G-1b](003-G-1b-named-model-routes.md), [004 G-2](004-G-2-token-cost-counting.md), [005 G-3](005-G-3-baseline-report.md), [006 G-6](006-G-6-savings-dashboard.md), [031 G-5](031-G-5-cost-model-break-even.md), [044 G-4](044-G-4-history-swap.md) |
-| [Phase 2](../slm-agent-platform-epic-v3.md#phase-2-simplifier-slm-and-model-lifecycle) | [027 S-1](027-S-1-rewrite-rules.md), [028 S-3](028-S-3-simplifier-metrics.md), [029 S-2](029-S-2-training-data-generation.md), [030 S-4](030-S-4-hand-review-test-set.md), [032 M-1](032-M-1-mlflow.md), [033 S-5](033-S-5-training-pipeline.md), [035 S-6](035-S-6-train-candidates.md), [036 S-7](036-S-7-serve-with-vllm.md), [037 M-2](037-M-2-eval-gate-ci.md), [047 M-3](047-M-3-shadow-mode.md), [048 M-4](048-M-4-canary-rollback.md), [049 M-5](049-M-5-quantized-variants.md), [063 S-8](063-S-8-tool-call-finetune.md) |
+| [Phase 2](../slm-agent-platform-epic-v3.md#phase-2-simplifier-slm-and-model-lifecycle) | [027 S-1](027-S-1-rewrite-rules.md), [028 S-3](028-S-3-simplifier-metrics.md), [029 S-2](029-S-2-training-data-generation.md), [030 S-4](030-S-4-hand-review-test-set.md), [032 M-1](032-M-1-mlflow.md), [033 S-5](033-S-5-training-pipeline.md), [035 S-6](035-S-6-train-candidates.md), [036 S-7](036-S-7-serve-with-vllm.md), [037 M-2](037-M-2-eval-gate-ci.md), [047 M-3](047-M-3-shadow-mode.md), [048 M-4](048-M-4-canary-rollback.md), [049 M-5](049-M-5-quantized-variants.md), [063 S-8](063-S-8-tool-call-finetune.md), [131 CH-12](131-CH-12-golden-cases-datasets.md) |
 | [Phase 3](../slm-agent-platform-epic-v3.md#phase-3-simplifier-agent) | [041 A-1](041-A-1-simplifier-core.md), [042 A-2](042-A-2-evaluator-gate-fallback.md), [043 A-3](043-A-3-result-events.md), [045 A-4](045-A-4-history-swap-on.md), [046 A-5](046-A-5-agent-dashboard.md) |
 | [Phase 4](../slm-agent-platform-epic-v3.md#phase-4-golden-set-agent-and-evaluator-slm) | [040 D-0](040-D-0-recorder-agent.md), [064 D-1](064-D-1-golden-set-agent.md), [065 D-2](065-D-2-review-ui.md), [066 D-6](066-D-6-tags-splits.md), [067 D-5](067-D-5-import-schema-dedup.md), [068 D-3](068-D-3-import.md), [069 D-7](069-D-7-lakefs-versions.md), [070 D-4](070-D-4-export-formats.md), [071 D-8](071-D-8-data-rules.md), [073 E-1](073-E-1-evaluator-slm.md), [074 E-2](074-E-2-evaluator-agreement-test.md), [075 E-3](075-E-3-evaluator-replaces-judge.md) |
 | [Phase 5](../slm-agent-platform-epic-v3.md#phase-5-service-registry) | [076 R-1](076-R-1-registry-data-model-api.md), [078 R-16](078-R-16-ai-system-inventory.md), [080 R-7](080-R-7-trust-levels.md), [081 R-8](081-R-8-description-scanning.md), [082 R-9](082-R-9-description-hash-pinning.md), [083 R-2](083-R-2-kubernetes-controller.md), [084 R-3](084-R-3-docker-watcher.md), [085 R-6](085-R-6-manual-registration.md), [086 R-10](086-R-10-health-checks.md), [087 R-4](087-R-4-mcp-import.md), [088 R-5](088-R-5-openapi-import.md), [089 R-15](089-R-15-event-schemas-registered.md), [090 R-13](090-R-13-search-test-set.md), [091 R-11](091-R-11-hybrid-search.md), [092 R-12](092-R-12-main-pick-fallbacks.md), [093 R-14](093-R-14-registry-mcp-server.md) |
 | [Phase 6](../slm-agent-platform-epic-v3.md#phase-6-platform-mcp-server) | [094 P-1](094-P-1-platform-mcp-server.md), [095 P-4](095-P-4-mcp-scopes-audit.md), [096 P-2a](096-P-2a-mcp-golden-set-metrics-tools.md), [097 P-3](097-P-3-mcp-resources-prompts.md), [114 P-2b](114-P-2b-mcp-run-memory-config-tools.md) |
 | [Phase 7](../slm-agent-platform-epic-v3.md#phase-7-orchestrator) | [098 O-10](098-O-10-orchestrator-schemas.md), [099 O-1](099-O-1-orchestrator-agent.md), [100 O-2](100-O-2-temporal-checkpoints.md), [101 O-13](101-O-13-version-pinning.md), [102 O-7](102-O-7-idempotent-steps.md), [103 O-11](103-O-11-workflow-engine.md), [104 O-3](104-O-3-agent-pools-keda.md), [105 O-4](105-O-4-fan-out-fan-in.md), [106 O-5](106-O-5-compare-runs.md), [107 O-6](107-O-6-run-budgets.md), [108 O-12](108-O-12-routing-planner-modes.md), [109 O-8](109-O-8-cancel-approval.md), [111 O-14](111-O-14-workflow-validation-rollback.md), [112 O-16](112-O-16-event-triggers.md), [113 O-9](113-O-9-orchestrator-memory.md), [115 O-15](115-O-15-save-planned-run.md) |
-| [Phase 8](../slm-agent-platform-epic-v3.md#phase-8-production-readiness) | [020 X-8](020-X-8-event-broker.md), [038 X-1a](038-X-1a-terraform-first-cloud.md), [039 X-2](039-X-2-gpu-setup.md), [116 X-1b](116-X-1b-terraform-second-cloud.md), [117 X-3](117-X-3-slos-alerts.md), [119 X-6](119-X-6-runbooks.md), [120 X-7](120-X-7-cost-dashboard.md), [121 X-4](121-X-4-backups-restore.md), [122 X-5](122-X-5-load-tests.md) |
-| [Phase 9](../slm-agent-platform-epic-v3.md#phase-9-governance-and-compliance) | [023 C-5](023-C-5-ai-generated-marking.md), [034 C-8](034-C-8-training-compute-log.md), [072 C-3](072-C-3-audit-log-agent.md), [077 C-1](077-C-1-governance-enforcement.md), [079 C-2](079-C-2-prohibited-practice-checklist.md), [110 C-6](110-C-6-human-oversight.md), [118 C-7](118-C-7-incident-flow.md), [123 C-4](123-C-4-documentation-pack.md), [124 C-9](124-C-9-control-mapping-report.md) |
+| [Phase 8](../slm-agent-platform-epic-v3.md#phase-8-production-readiness) | [020 X-8](020-X-8-event-broker.md), [038 X-1a](038-X-1a-terraform-first-cloud.md), [039 X-2](039-X-2-gpu-setup.md), [116 X-1b](116-X-1b-terraform-second-cloud.md), [117 X-3](117-X-3-slos-alerts.md), [119 X-6](119-X-6-runbooks.md), [120 X-7](120-X-7-cost-dashboard.md), [121 X-4](121-X-4-backups-restore.md), [122 X-5](122-X-5-load-tests.md), [133 X-5b](133-X-5b-load-tests-pools-registry.md) |
+| [Phase 9](../slm-agent-platform-epic-v3.md#phase-9-governance-and-compliance) | [023 C-5](023-C-5-ai-generated-marking.md), [034 C-8](034-C-8-training-compute-log.md), [072 C-3](072-C-3-audit-log-agent.md), [077 C-1](077-C-1-governance-enforcement.md), [079 C-2](079-C-2-prohibited-practice-checklist.md), [110 C-6](110-C-6-human-oversight.md), [118 C-7](118-C-7-incident-flow.md), [123 C-4](123-C-4-documentation-pack.md), [124 C-9](124-C-9-control-mapping-report.md), [132 CH-13](132-CH-13-owasp-agentic-map.md) |
 | [Phase 10](../slm-agent-platform-epic-v3.md#phase-10-shared-memory-at-scale) | [125 L-1](125-L-1-shared-memory-at-scale.md) |
 | [Phase 11](../slm-agent-platform-epic-v3.md#phase-11-later-ideas) | [126 L-2](126-L-2-system-prompt-improver.md), [127 L-3](127-L-3-router-slm.md) |
 

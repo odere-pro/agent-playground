@@ -47,18 +47,19 @@ FROZEN = (
     "Revert it, or write the bump and the new contract."
 )
 
-# sha256 of the schema files at the freeze (contract v5, C.4 lists the first 16 hex).
+# sha256 of the schema files at the freeze (contract v5, C.4 lists the first 16 hex). Re-pinned by
+# contract v8 for the v0 bounds (R1-09), which need no bump (v8 C.3 rule).
 SCHEMA_SHA256 = {
     # pragma: allowlist nextline secret (a schema sha256, not a secret)
-    "events.v0.json": "60de41563a1d0582336a67ffac6a2f1891036b690e8c20373194d0bb05108521",
+    "events.v0.json": "292eff45d36fcf3688fe8b315276d941541ff7c77d92cc246ac4ff72c4cd8338",
     # pragma: allowlist nextline secret (a schema sha256, not a secret)
     "task_input.v0.json": "6d8aa949b462c77e637de4ea61de13aefca7819248c7ee607c184b2465b68d89",
     # pragma: allowlist nextline secret (a schema sha256, not a secret)
-    "context.v0.json": "d2db0e94a50379f1e01b3441e1c6d0f5afbfe599a72b8905086bb5f447db99d6",
+    "context.v0.json": "6561efc893ab0e3e79aea5728afbc106bf35e7191179d95e610762f24c216e1b",
     # pragma: allowlist nextline secret (a schema sha256, not a secret)
-    "request.v0.json": "4ff8a4324a90e8c035f7186e5d242f5ef25e80d100a6bdb8bb141bc978894ce5",
+    "request.v0.json": "b8221967f78247cd5d4245ff0684d253c676385bd3db603d52c4921cf5b19ea4",
     # pragma: allowlist nextline secret (a schema sha256, not a secret)
-    "response.v0.json": "63acf4f16dae59f952a92d9057dc85d7524148dc9dd842f06d476c9c87167aca",
+    "response.v0.json": "d643e58e24891029e2429352fcd033572aa7eb0306d03735a6b60029bc2093ca",
 }
 
 

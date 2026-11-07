@@ -32,7 +32,9 @@ tokens are spent and `true` when in-flight calls only hold them; for `stream: tr
 frame, then `[DONE]`. A call with no `traceparent`, or one that names no in-flight run, is still
 served with its own `max_tokens`: it is counted as `chassis.model_calls_uncorrelated` and logged
 at `warning`, so PoC-2 can list the engines whose client drops the header (refusing it is PoC-5
-egress work).
+egress work). It is always sent to `spec.model.route`, whatever `model` it names (R6): a call
+with no run cannot pick a route. A pinned call counts `chassis.model_route_pinned{route}`
+(suggested). The remote listener never sees one: it refuses a call that names no run.
 
 The uncorrelated cap (PoC-5, plan section 2.12, H16). Those uncorrelated calls are served, but a
 replica spends at most `spec.limits.uncorrelated_tokens_per_minute` (L) of them per fixed one-minute
@@ -87,7 +89,8 @@ its error frame. The call is counted as `chassis.model_upstream_denied{route}` a
 
 The router span and usage (PoC-8, 014 H-7). Every admitted call opens `chassis.model.route` with
 the call's span attributes plus `route.requested` (the `model` the workload named), `route` (the
-one called), and `route.forced` (the run's fallback route won). It is the chassis's routing
+one called), and `route.forced` (the run's fallback route won, or an uncorrelated call was pinned
+to `spec.model.route`). It is the chassis's routing
 choice; the provider call itself is LiteLLM's own span. A call that reported usage counts
 `chassis.model_tokens{route, direction}` and, with a price in `spec.observability.prices`,
 `chassis.model_cost_microusd{route}` (`chassis.server.observability.count_usage`). A charge with

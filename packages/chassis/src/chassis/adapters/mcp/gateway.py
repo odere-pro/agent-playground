@@ -33,6 +33,11 @@ MCP limit) is `unknown_tool` before any request, so it never reaches the gateway
 
 A `ToolError.message` is fixed text, never an upstream body.
 
+`from_env` refuses a `LITELLM_MCP_URL` that is not `https` unless its host is loopback or an
+in-cluster name (`check_gateway_url`), so the key never crosses an outside network in plain
+http (review R5a-25). The `ValueError` names the variable, never the URL or the key. Profile
+`cloud` requires `https` always; `chassis.profiles` checks that before this adapter is built.
+
 Known limit: the refusal texts are matched on any tool's error text, not only the gateway's, so an
 upstream tool whose error starts with one picks its own code (`unknown_tool`, `tool_denied`,
 `idempotency_key_required`, `bad_arguments`). It cannot pick the message, which stays fixed text,
@@ -49,6 +54,7 @@ import re
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx2
 from fastmcp import Client
@@ -56,6 +62,7 @@ from fastmcp.client.transports import StreamableHttpTransport
 from mcp.shared.exceptions import MCPError
 from mcp_types import CallToolResult, TextContent, Tool
 
+from chassis.adapters.loopback import is_loopback_host
 from chassis.ports.tool import ToolDefinition, ToolError, ToolResult
 
 URL_VAR = "LITELLM_MCP_URL"
@@ -74,7 +81,39 @@ does for an unknown `kid`, so a flood of made-up names cannot multiply the gatew
 MAX_TOOL_NAME = 128
 """The longest tool name `call()` accepts (the MCP spec's limit for tool names)."""
 
+IN_CLUSTER_SUFFIXES = (".svc", ".svc.cluster.local")
+"""suggested: a host ending in one of these is a Kubernetes service name, reached in-cluster."""
+_SERVICE_NAME = re.compile(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
+"""suggested: a single-label host (no dot) is an in-cluster service name when it is a DNS-1035
+label, so it starts with a letter and is never an IP address in any form."""
+
 log = logging.getLogger(__name__)
+
+
+def _in_cluster_host(host: str) -> bool:
+    return host.endswith(IN_CLUSTER_SUFFIXES) or _SERVICE_NAME.fullmatch(host) is not None
+
+
+def check_gateway_url(url: str) -> None:
+    """Refuse a gateway URL that would send the key in cleartext off the host or the cluster.
+
+    `https` passes. `http` passes only to a loopback host (`is_loopback_host`) or an in-cluster
+    name (`IN_CLUSTER_SUFFIXES`, or a single-label service name). Anything else is a
+    `ValueError` that names `LITELLM_MCP_URL`, never the URL.
+    """
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").rstrip(".")
+    except ValueError:  # its message echoes part of the URL (review LOW 10)
+        raise ValueError(f"tools: {URL_VAR} is not a valid URL") from None
+    if parts.scheme == "https":
+        return
+    if parts.scheme == "http" and host and (is_loopback_host(host) or _in_cluster_host(host)):
+        return
+    raise ValueError(
+        f"tools: {URL_VAR} must be https unless its host is loopback or an in-cluster name"
+    )
+
 
 ClientFactory = Callable[..., httpx2.AsyncClient]
 
@@ -259,10 +298,12 @@ class McpGatewayTools:
     @classmethod
     def from_env(cls) -> McpGatewayTools:
         """Build from `LITELLM_MCP_URL` and `LITELLM_API_KEY` (both required) and the optional
-        `LITELLM_MCP_AUTH_HEADER`. An unset variable is a `LookupError` that names it."""
+        `LITELLM_MCP_AUTH_HEADER`. An unset variable is a `LookupError` that names it. A URL
+        `check_gateway_url` refuses is a `ValueError` that names it."""
         url = os.environ.get(URL_VAR)
         if not url:
             raise LookupError(f"tools: mcp needs {URL_VAR}")
+        check_gateway_url(url)
         api_key = os.environ.get(API_KEY_VAR)
         if not api_key:
             raise LookupError(f"tools: mcp needs {API_KEY_VAR}")

@@ -1,7 +1,7 @@
 ---
 title: "G-3: Baseline report: token spend and cost over at least two weeks"
 labels: ["story", "priority:P0", "phase:1-router", "area:router", "size:M", "layer:platform"]
-milestone: "W1 Router and baseline"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 5
 epic_id: G-3
 depends_on: ["004 G-2"]

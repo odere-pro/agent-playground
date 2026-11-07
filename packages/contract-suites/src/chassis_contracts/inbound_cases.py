@@ -41,7 +41,8 @@ OTHER_IDS = Ids(
 )
 CREATED = 1_759_276_800
 """`ReplyMeta.created`: a fixed Unix time, so a reply never depends on the clock."""
-MASK = "<masked>"
+MASK = "masked"
+"""Stands in for the three ids; it fits `ID_PATTERN` and `KEY_PATTERN`, so the model accepts it."""
 
 Role = Literal["user", "assistant"]
 

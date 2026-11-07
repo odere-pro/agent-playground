@@ -1,13 +1,15 @@
 ---
 title: "G-4: History swap in the chassis: long past answers replaced by simplified versions"
 labels: ["story", "priority:P1", "phase:1-router", "area:router", "size:M", "layer:agent-profile"]
-milestone: "W4 Simplifier agent live"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 44
 epic_id: G-4
 depends_on: ["012 H-3", "040 D-0", "013 CH-2"]
 blocks: ["045 A-4"]
 epic_refs: [F.1, J]
 ---
+
+Parked 2026-11-06 with the SLM track: the short versions come from the SLM simplifier's records; revisit as `later` if a route map and a recorder exist. The LiteLLM pre-call hook suggestion below stands ([ADR-001](../adr/001-chassis-delivery-model.md) item 6).
 
 ## Why
 

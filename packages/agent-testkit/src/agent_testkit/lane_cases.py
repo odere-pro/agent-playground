@@ -4,7 +4,8 @@
 `chassis_contracts` depends on `chassis`, which the workload's environment never holds, so the
 kit cannot import the suite. These are its wire-form handles, copied: plain dicts, standard
 library only. `tests/test_agent_testkit_vendored.py` checks in the monorepo that each one yields
-exactly what the original yields, and that `ENVELOPES` is what the chassis's `collect` builds.
+exactly what the original yields, and that `ENVELOPES` is what the chassis's `collect` builds
+(with the native interface's public error text).
 
 Vendored: `deltas`, `tool_call`, `error`, `end_output`, `bad_event`, `no_schema_version`,
 `json_values` (with the traceparent check), and `stalled` (the run deadline). Not vendored: `echo`
@@ -187,6 +188,11 @@ VERBATIM: frozenset[str] = frozenset(
 """Cases whose A2A stream must equal what the handle yields when called directly, once the
 schema's defaults are filled in. Not `bad_event`: the server stops it on purpose."""
 
+RUN_FAILED = "the agent run failed"
+"""Contract v8 (A): the native interface sends the fixed text `chassis.core.inbound.RUN_FAILED`
+for a workload's own error code, never the run's message. A copy: the kit never imports
+`chassis`. The A2A event (`error_handle`) still carries the raw text."""
+
 ENVELOPES: dict[str, tuple[str, dict[str, Any] | None]] = {
     "deltas": ("ok", {"text": "".join(DELTAS)}),
     "tool_call": (
@@ -205,7 +211,7 @@ ENVELOPES: dict[str, tuple[str, dict[str, Any] | None]] = {
     ),
     "error": (
         "error",
-        {"text": "partial", "error": {"code": "model.overloaded", "message": "try again later"}},
+        {"text": "partial", "error": {"code": "model.overloaded", "message": RUN_FAILED}},
     ),
     "end_output": ("fallback", END_OUTPUT),
     "no_schema_version": ("ok", {"text": "no version"}),

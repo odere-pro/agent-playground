@@ -1,6 +1,6 @@
 ---
 title: "O-14: Workflow validation and dry run before activation, and rollback"
-labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:M", "layer:platform"]
+labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:L", "layer:platform"]
 milestone: "W9 Orchestrator"
 index: 111
 epic_id: O-14
@@ -16,7 +16,8 @@ A bad workflow file must not reach live traffic. Validation and a dry run catch 
 ## What
 
 - Checks beyond the schema: unique step `id`s, `input` references point to earlier steps, each `{ name }` agent exists and each `{ task }` resolves in the registry at or above `min_trust`, each `pool` exists, and each routing rule names an existing workflow.
-- Dry run: run the workflow with fake agents or recorded responses (H-8 record and replay), with write tools off and no records written.
+- Dry run: run the workflow with fake agents or recorded responses (H-8 record and replay), with no records written. Write tools are off because the dry run uses a key whose gateway allow-list holds no write tools; there is no run-level switch (ADR-001 item 6).
+- A port change first: `ConfigPort` has `load` and `subscribe` only. Activation, rollback, and `config.config.changed.v1` need a writer, an active pointer, and an emitter, with a fake, the MinIO and S3 adapters, and the contract suite. 114 P-2b's `config_set` and `config_rollback` use the same writer.
 - Activation: a workflow version becomes active only after its checks and dry run pass (suggested: an active-version pointer per workflow in the config store).
 - Rollback: point the active version back to the previous one in the config store, in one call, with no restart.
 - The same activation and rollback for the orchestrator config.
@@ -32,7 +33,7 @@ A bad workflow file must not reach live traffic. Validation and a dry run catch 
 ## Acceptance criteria
 
 - [ ] A workflow with an `input` reference to a later step, or an unknown agent, fails the checks with a list of errors and never becomes active.
-- [ ] A dry run of `simplify-long-doc` completes with fake agents, calls no write tool, and writes no record.
+- [ ] A dry run of `echo-long-doc` completes with fake agents, calls no write tool, and writes no record.
 - [ ] A version that failed its dry run cannot be activated.
 - [ ] Rollback from 2.1.0 to 2.0.0 is one call. The next run uses 2.0.0, and a run already in progress stays on 2.1.0.
 - [ ] Each activation and rollback shows as a `config.config.changed.v1` event with who and when.

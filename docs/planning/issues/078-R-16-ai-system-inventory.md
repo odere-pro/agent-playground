@@ -5,7 +5,7 @@ milestone: "W7 Registry and governance gate"
 index: 78
 epic_id: R-16
 depends_on: ["077 C-1"]
-blocks: ["123 C-4"]
+blocks: ["079 C-2", "123 C-4"]
 epic_refs: [E.4, E.5]
 ---
 
@@ -42,7 +42,7 @@ The registry doubles as the AI system inventory that ISO/IEC 42001 asks for (A.3
 ## Dependencies
 
 - Depends on: [077 C-1](077-C-1-governance-enforcement.md)
-- Blocks: [123 C-4](123-C-4-documentation-pack.md)
+- Blocks: [079 C-2](079-C-2-prohibited-practice-checklist.md), [123 C-4](123-C-4-documentation-pack.md)
 
 ## References
 

@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "s
 milestone: "W9 Orchestrator"
 index: 99
 epic_id: O-1
-depends_on: ["008 H-14", "092 R-12", "098 O-10"]
+depends_on: ["008 H-14", "092 R-12", "098 O-10", "059 H-15"]
 blocks: ["100 O-2"]
 epic_refs: [Fig.3, F.6]
 ---
@@ -22,6 +22,7 @@ The orchestrator is the second agent class, and it must use the same interface a
 - Agent port: calls any agent through the native envelope (`POST /v1/run`), passing `trace_id`, `idempotency_key`, and `budget`. Only the chassis holds the service credentials and the mTLS identity.
 - A first single-step flow: take a task, find the main pick by `task`, call it, and on failure call the next ranked fallback.
 - Temporal: suggested: the Temporal worker runs in the chassis and calls the workload once per step through the connector. Framework Temporal integrations are not used in the `sidecar` lane. This is gap (b) in [the gaps in the backlog plan](000-plan.md#adr-001-follow-ups).
+- An ADR (`chassis-architect`) decides gap (b) before this issue starts: where the Temporal worker runs, who holds the Temporal credential, and the task-queue adapter. ADR-001 item 1 keeps business logic out of the chassis image, and hard requirement 1 lists no Temporal credential. When the ADR lands, this issue and 100 O-2 say "Decided in ADR-0NN" and drop the `suggested:` marks on these points.
 - The process keeps no state. It registers its manifest and `governance` block in the registry on deploy, like any agent.
 
 ## Reuse
@@ -38,7 +39,7 @@ The orchestrator is the second agent class, and it must use the same interface a
 
 ## Acceptance criteria
 
-- [ ] `POST /v1/run` with `task: simplify_text` finds the simplifier through registry search and returns its output in the native envelope, streaming and complete.
+- [ ] `POST /v1/run` with the echo agent's task finds the echo agent (`packages/workloads/echo-*`) through registry search and returns its output in the native envelope, streaming and complete.
 - [ ] Entries below `min_trust` are never called, and the registry port never passes on more than `top_k` entries.
 - [ ] When the main pick fails, the first ranked fallback is called, and the response `status` is `fallback`.
 - [ ] One `trace_id` spans the orchestrator call and the agent call in the traces.
@@ -48,7 +49,7 @@ The orchestrator is the second agent class, and it must use the same interface a
 
 ## Dependencies
 
-- Depends on: [008 H-14](008-H-14-one-agent-interface.md), [092 R-12](092-R-12-main-pick-fallbacks.md), [098 O-10](098-O-10-orchestrator-schemas.md)
+- Depends on: [008 H-14](008-H-14-one-agent-interface.md), [092 R-12](092-R-12-main-pick-fallbacks.md), [098 O-10](098-O-10-orchestrator-schemas.md), [059 H-15](059-H-15-agent-factory-cli.md)
 - Blocks: [100 O-2](100-O-2-temporal-checkpoints.md)
 
 ## References

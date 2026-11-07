@@ -8,7 +8,7 @@ PYTEST := scripts/check_offline.sh
 .PHONY: help setup evals evals-regression redteam fmt fmt-check lint lint-extra type \
 	test test-poc test-integration load-test \
 	kind-poc04 kind-poc05 kind-poc06 bakeoff poc06-mac record-cassettes \
-	quick check planning-sync planning-check schemas harness-lint \
+	quick check planning-sync planning-check planning-check-strict schemas harness-lint \
 	fake-model-server ts-check clean
 
 help: ## Show this help
@@ -118,8 +118,10 @@ check: ## Boundary gate: what the CI `check` job runs (not lint-extra, ts-check,
 planning-sync: ## Regenerate the generated parts of the backlog
 	cd docs/planning && python3 tools/sync.py
 
-planning-check: ## Verify the backlog and the planning docs
-	cd docs/planning && python3 tools/check.py
+planning-check: ## Verify the backlog and the planning docs, with the evidence rules (--strict)
+	cd docs/planning && python3 tools/check.py --strict
+
+planning-check-strict: planning-check ## Alias of planning-check, which is strict since 2026-11-07
 
 schemas: ## Regenerate the JSON Schemas in packages/chassis/schemas from the models
 	$(PY) -m chassis.schemas --write

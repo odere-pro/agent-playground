@@ -5,7 +5,9 @@ the agent card included, needs `Authorization: Bearer <token>`. A missing or wro
 fixed 401 and the app is not called. During a rotation a second, previous token is also accepted
 (`--previous-token-env`), so either side can swap first without a 401. After a good check the
 `authorization` header is removed from the scope, because a2a-sdk logs request headers at
-DEBUG. No token is ever logged or put in an error.
+DEBUG. A token shorter than `MIN_TOKEN_LENGTH` (suggested: 32 characters) once stripped,
+current or a set previous one, is refused at start (R2-31). No token is ever logged or put in
+an error, nor its length.
 """
 
 from __future__ import annotations
@@ -13,6 +15,10 @@ from __future__ import annotations
 import hmac
 import os
 from typing import Any
+
+MIN_TOKEN_LENGTH = 32
+"""suggested: the shortest token accepted at start (R2-31), so a token cannot be guessed online.
+The chassis has the same rule (`chassis.server.remote_auth.MIN_TOKEN_LENGTH`)."""
 
 UNAUTHORIZED_BODY = b'{"error":"unauthorized"}'
 """One body for every refusal, so a caller learns nothing about why."""
@@ -25,19 +31,31 @@ _HEADERS = [
 
 
 def read_token(env_name: str) -> str:
-    """The token in `env_name`. A missing or blank variable raises `ValueError` naming the
-    variable, never a value."""
+    """The token in `env_name`. A missing or blank variable, or a token shorter than
+    `MIN_TOKEN_LENGTH`, raises `ValueError` naming the variable, never a value."""
     value = os.environ.get(env_name, "")
     if not value.strip():
         raise ValueError(f"--require-token-env: environment variable {env_name} is unset or empty")
+    _check_length("--require-token-env", env_name, value)
     return value
 
 
 def read_previous_token(env_name: str) -> str | None:
     """The previous token in `env_name`, or `None` when the variable is unset or blank. That is
-    not an error: the same manifest runs before, during, and after a rotation."""
+    not an error: the same manifest runs before, during, and after a rotation. A set token
+    shorter than `MIN_TOKEN_LENGTH` raises `ValueError` naming the variable."""
     value = os.environ.get(env_name, "")
-    return value if value.strip() else None
+    if not value.strip():
+        return None
+    _check_length("--previous-token-env", env_name, value)
+    return value
+
+
+def _check_length(flag: str, env_name: str, value: str) -> None:
+    if len(value.strip()) < MIN_TOKEN_LENGTH:  # padding is not token (review LOW 11)
+        raise ValueError(
+            f"{flag}: environment variable {env_name} is shorter than {MIN_TOKEN_LENGTH} characters"
+        )
 
 
 class BearerTokenMiddleware:

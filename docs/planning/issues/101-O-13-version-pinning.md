@@ -1,6 +1,6 @@
 ---
 title: "O-13: Version pinning per run"
-labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:S", "layer:platform"]
+labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:M", "layer:platform"]
 milestone: "W9 Orchestrator"
 index: 101
 epic_id: O-13
@@ -21,6 +21,7 @@ A config change must never break a run in progress or change what a resumed run 
 - Each step records the `versions` (config, prompt, model route) that the called agent reports in its response.
 - The run status and the final run response show all pinned versions.
 - Suggested: pins use the config store's object version IDs, plus `metadata.version` for people to read.
+- `ConfigPort.load(name)` has no version argument today, so the helper needs a port change, with its fake and contract case. Today's tests show only that the next request sees the new config. Boxes 1 and 3 need a proving test (suggested: `test_a_request_keeps_the_config_it_opened_with_across_a_reload`).
 
 ## Out of scope
 

@@ -19,5 +19,10 @@ async def test_poc08_stops_the_two_cases_poc07_missed(config: str) -> None:
     cases = [c for c in load_cases() if c.id in CLOSED_IN_POC08]
     before = await run_all(config, cases)
     after = await run_all(config, cases, controls="poc08")
-    assert [o.stopped for o in before] == [False, False]
+    # R7-04 (2026-11-06): the `output` stage now checks a stream per sentence window, so the
+    # streamed key is stopped under the PoC-7 controls too; the markdown image is still not.
+    assert {o.case: o.stopped for o in before} == {
+        "secret-04-streamed-answer-has-key": True,
+        "exfil-04-markdown-image": False,
+    }
     assert [o.stopped for o in after] == [True, True]

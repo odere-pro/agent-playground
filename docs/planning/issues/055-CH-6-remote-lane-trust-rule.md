@@ -1,10 +1,10 @@
 ---
 title: "CH-6: Remote lane and the trust rule: sandboxed pod or managed runtime over A2A, cloud auth adapter, admission check"
-labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:L", "layer:chassis"]
+labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:S", "layer:chassis"]
 milestone: "W5 Chassis completion"
 index: 55
 epic_id: CH-6
-depends_on: ["009 CH-1", "026 CH-4", "010 H-12", "038 X-1a"]
+depends_on: ["009 CH-1", "026 CH-4", "010 H-12", "024 CH-3"]
 blocks: ["056 CH-7", "059 H-15", "077 C-1", "116 X-1b"]
 epic_refs: [G.3, G.4, H]
 ---
@@ -15,54 +15,55 @@ epic_refs: [G.3, G.4, H]
 
 ## What
 
-- The `remote` connector: the same A2A client as 009 CH-1, with its URL from `spec.engine.url` and an auth adapter from `spec.engine.auth`.
+- The `remote` connector: the same A2A client as 009 CH-1, with its URL from `spec.engine.url` and an auth adapter from `spec.engine.auth`. It never follows the agent card's URL ([ADR-005](../adr/005-remote-lane-auth-and-trust-admission.md), decision 3).
 - A sandboxed workload pod:
-  - its own Deployment, with a gVisor RuntimeClass through agent-sandbox;
-  - no secrets mounted;
-  - default-deny egress: it reaches only the chassis's model and tool proxies;
+  - its own pod, on gVisor through agent-sandbox (Decided in ADR-005);
+  - no secrets mounted, except its own token;
+  - default-deny egress: it reaches only the chassis's model and tool proxies, with no DNS;
   - only the chassis pod may call it.
 
   The chassis pod stays outside the sandbox.
-- The proxies' `remote`-lane listener: the chassis's model and tool proxies (013 CH-2, 054 H-16) also listen on the pod IP for this lane, and each remote authenticates. suggested: mTLS through cert-manager, or a per-remote token set in the chassis config and mounted into the remote pod as its only secret. Only the remote pod's label may reach the listener.
-- One auth adapter for the first cloud's managed runtime, as decided in 001 DEC-1: SigV4 or OAuth 2.0 for AWS Bedrock AgentCore, or Google auth for Vertex AI Agent Engine.
-- Managed runtimes are reached, not hosted. Their model and tool URLs point at the chassis's proxies, with the remote credential above. A managed runtime that cannot be pointed at the proxies holds its own scoped LiteLLM key and MCP gateway grant instead: the one relaxation of ADR-001 hard requirement 1, recorded in `spec.engine` and scoped like the chassis's own key.
+- The proxies' `remote`-lane listener: the chassis's model and tool proxies (013 CH-2, 054 H-16) also listen on the pod IP for this lane, and each remote authenticates. Decided in ADR-005, decisions 1 and 2: one random bearer token per remote, used both ways, and a listener that requires a run (401 `remote_unauthenticated`, 403 `run_required`). mTLS is only ADR-005's Revisit trigger. Only the remote pod's label may reach the listener.
+- Plain-A2A mode: `spec.engine.protocol: a2a` reads a third-party agent's own A2A stream (opt-in, `remote` only, fixed error text, strict usage; [contract v5](../../contracts/contract-v5.md#b-plain-a2a-mode-in-the-remote-connector), part B). Four remotes run on gVisor: smolagents, the Claude Agent SDK, the TypeScript agent, and `kagent-adk` ([engines on kind](../../../pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-lanes-b-kind.md)).
 - `spec.trust: trusted | untrusted`. A workload is trusted only if it passes both tests:
   - **Source:** the owning team wrote and reviewed it, and its image is built in our registry.
   - **Behavior:** it does not run code, shell commands, or file writes itself.
-- An admission policy, in Kyverno or ValidatingAdmissionPolicy. It stops a workload marked `untrusted`, or an image not from our registry, from deploying in the `sidecar` lane.
+- The admission check. Decided in ADR-005, decision 4: the `agent-trust-rule` ValidatingAdmissionPolicy, no Kyverno. It stops a workload marked `untrusted`, or an image not from our registry, from deploying in the `sidecar` lane. Rules for `SandboxTemplate` (T1 to T5) and `SandboxClaim` (C1 to C5) join it. Since PR #79 the library chart renders the same policy (`agent-lib.admission`), and `deploy/helm/agent-admission` installs it once per cluster.
+- The submitter has no pod create in the agent and tool namespaces, because pod create reads Secrets. The deployer stays inside the credential boundary, held by admission rules 6a to 6c (ADR-005, Consequences).
 - Generated code run through the code-execution tool behind `ToolPort` (054 H-16) does not make an agent untrusted.
-- A list, per kind of remote, of what the chassis cannot see or control: the remote's own internal calls.
-- A CI job that runs a fake workload through the `remote` lane on every commit.
-- Status after PoC-5, on kind ([remote suite](../../../pocs/poc-05-sandboxed/notes/2026-10-08-remote-suite.md), [close runs](../../../pocs/poc-05-sandboxed/notes/2026-10-09-close-runs.md)): the first build. The `remote` connector with one bearer token per remote, used both ways (mTLS is the next step, [ADR-005](../adr/005-remote-lane-auth-and-trust-admission.md), accepted 2026-10-09). The remote listener on the pod IP answers 401 `remote_unauthenticated` and 403 `run_required`. The remote pod runs on gVisor through agent-sandbox, with no DNS and one egress edge, to 8091. `spec.trust` and the `agent-trust-rule` ValidatingAdmissionPolicy, rules 0 to 8, run on the API server (`test_poc05_kind_admission.py`, each rejected fixture next to its admitted twin), plus rules for `SandboxTemplate` (T1 to T5) and `SandboxClaim` (C1 to C5). Criterion 1's kind half runs in CI: `.github/workflows/remote-lane.yml` runs `up test-remote` on push and pull request, with the gVisor, kind, and kubectl sums pinned; it passed on GitHub with gVisor `release-20260928.0` on x86_64 ([run 37942450871](https://github.com/odere-pro/agent-playground/actions/runs/37942450871)). The code runner is a dispatcher that claims a fresh gVisor sandbox per call from a warm pool and deletes the claim after; 10 of 10 runs of its kind file passed. gVisor's cost: start about 1 to 2 s slower, a request 0.3 to 0.5 ms, a `run_python` call about 74 ms, and 33 to 38 MiB per pod ([gVisor overhead](../../../pocs/poc-05-sandboxed/notes/2026-10-09-gvisor-overhead.md)). Recorded, not fixed: the dispatcher holds a Kubernetes token and the one `ipBlock`, to the API server on 6443 (a B4 exception); a stolen dispatcher token can delete other callers' claims (a denial of service); runsc ignores the pod's `/dev/shm` size cap, bounded by the pod's memory limit (accepted, this issue owns it; a runsc mount option is a lead). Any principal that may create pods in a namespace can read its Secrets, so the submitter lost pod create in `poc05-agents` and `poc05-tools`; the deployer stays inside the credential boundary, held by admission rules 6a to 6c (ADR-005, Consequences). The probe workload that would run a hostile workload inside the pod (T10) is a recorded exception, work in progress, owned by Oleksandr ([the T10 note](../../../pocs/poc-05-sandboxed/notes/2026-10-09-t10-probe-exception.md)); the criterion "a hostile workload in the sandboxed pod cannot ..." stays open until it runs. Open: the managed-runtime auth adapter and its CI job. What the chassis cannot see or control in the remote lane is in [the blind-spots note](../../../pocs/poc-05-sandboxed/notes/2026-10-02-blind-spots.md).
-- Status after PoC-6 ([engines on kind](../../../pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-lanes-b-kind.md), [kagent probe](../../../pocs/poc-06b-bake-off-remote-lane/notes/2026-10-09-kagent-probe.md), [contract v5](../../contracts/contract-v5.md)): `spec.engine.protocol: a2a` reads a third-party agent's own A2A stream in the `remote` connector (opt-in, `remote` only, fixed error text, strict usage). Remotes on gVisor: smolagents, the Claude Agent SDK, the TypeScript agent, and `kagent-adk` (kagent's Python runtime, built from a pinned commit; full kagent on Kubernetes is a no-go). Admission: `trustedRepositories` gained `echo-openai-agents`; no other rule changed. What the chassis cannot see for `kagent-adk`: tool calls, state, and whether the runtime checks the bearer (it does not). The kind results wait on the first `poc06-kind.yml` run; no acceptance box is ticked from it yet.
+- A list, per kind of remote, of what the chassis cannot see or control: the remote's own internal calls ([the blind-spots note](../../../pocs/poc-05-sandboxed/notes/2026-10-02-blind-spots.md); for `kagent-adk`, its tool calls, its state, and whether it checks the bearer, which it does not).
+- A CI job that runs a fake workload through the `remote` lane on every commit: `.github/workflows/remote-lane.yml`.
 
 ## Reuse
 
-- **Use:** the a2a-sdk client from 009 CH-1; `kubernetes-sigs/agent-sandbox` and a gVisor RuntimeClass for sandboxed pods; AWS SigV4 or OAuth 2.0 for AgentCore and Google auth for Vertex AI Agent Engine, per the first cloud; Kyverno or ValidatingAdmissionPolicy for the admission check.
-- **Build:** the `remote` connector, one cloud auth adapter, the admission policy, and the CI job with a fake remote workload.
+- **Use:** the a2a-sdk client from 009 CH-1; `kubernetes-sigs/agent-sandbox` and a gVisor RuntimeClass for sandboxed pods. Decided in ADR-005: a bearer token for the remote auth, and the `agent-trust-rule` ValidatingAdmissionPolicy for the admission check (decision 4). Managed runtimes are out of scope (ADR-006).
+- **Build:** the `remote` connector, the admission policy, and the CI job with a fake remote workload.
 - **Watch:** agent-sandbox reached v1.0 in 2026, so pin it. On EKS, gVisor or Kata must be installed on the nodes.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
 
 ## Out of scope
 
+- Decided in [ADR-006](../adr/006-agent-engines-default-supported-lanes.md): managed runtimes (AgentCore, Vertex) are out of scope since 2026-10-09. The first cloud, 038 X-1a, reopens it. This takes with it the managed-runtime auth adapter (SigV4, OAuth 2.0, or Google auth) and its CI job, the managed-runtime rows of the blind-spots list, and the one relaxation of ADR-001 hard requirement 1 (a managed runtime that holds its own scoped key).
 - The second cloud's auth adapter (116 X-1b).
+- Accepted in ADR-005, Consequences, not fixed here: the dispatcher's Kubernetes token and its one `ipBlock`, to the API server on 6443 (a B4 exception); a stolen dispatcher token can delete other callers' claims (a denial of service); runsc ignores the pod's `/dev/shm` size cap, which the pod's memory limit bounds.
 - An OpenAI-compatible connector for workloads that cannot speak A2A. It is added only when such a workload exists.
-- The minimum-version rule (056 CH-7), which joins the same policy set.
+- The minimum-version rule. It is 026 CH-4's, and since PR #79 it is rule 9 of the same policy set.
 - The registry's trust levels (080 R-7). The backlog plan's gaps list says how they map to `spec.trust`.
 
 ## Acceptance criteria
 
-- [ ] A fake workload runs through the `remote` lane in CI on every commit, and passes the same contract suite as the `sidecar` lane.
-- [ ] A hostile workload in the sandboxed pod cannot read secrets, reach the internet, write outside its scratch space, or call a tool that is not allow-listed.
-- [ ] A remote pod without its credential is refused by the proxies, and a remote pod with it still cannot reach LiteLLM or the MCP gateway directly.
-- [ ] The admission check refuses an `untrusted` workload, and a third-party image, in the `sidecar` lane.
-- [ ] One agent on the first cloud's managed runtime is called through the `remote` lane with its auth adapter, streaming and complete.
-- [ ] Every pipeline stage runs on remote calls. What the chassis cannot control is listed per kind of remote.
-- [ ] gVisor's latency and memory overhead are measured and recorded.
+- [x] A fake workload runs through the `remote` lane in CI on every commit, and passes the same contract suite as the `sidecar` lane. · Delivered in PoC-5: `pocs/poc-05-sandboxed/tests/test_poc05_remote_lane_contract.py::TestPoc05ThreeLanes` (offline, the same `LaneContract` as `packages/chassis/tests/test_lane_contract.py::TestChassisLanes`); `pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_lane.py::test_remote_gives_the_sidecar_events_for_the_same_request` (kind, `remote-lane.yml`, [run 37942450871](https://github.com/odere-pro/agent-playground/actions/runs/37942450871)).
+- [ ] A hostile workload in the sandboxed pod cannot read secrets, reach the internet, write outside its scratch space, or call a tool that is not allow-listed. It closes when the T10 probe workload runs, owned by the user ([the T10 note](../../../pocs/poc-05-sandboxed/notes/2026-10-09-t10-probe-exception.md)). The secret, egress, and write halves already pass from outside the pod in `remote-lane.yml`: `test_poc05_kind_remote_controls.py::test_remote_holds_one_secret_its_own_token`, `::test_h19_remote_reaches_no_outside_address`, `::test_h21_root_is_read_only_and_tmp_is_writable`.
+- [x] `test_poc05_kind_tool_gateway.py` runs in `remote-lane.yml` on every push and pull request. · Delivered by: PR #79, `deploy/kind/poc05/run.sh` `REMOTE_TESTS`, `pocs/poc-05-sandboxed/tests/test_poc05_ci_wiring.py::test_poc05_test_remote_runs_the_whole_sidecar_hostile_suite`, [run 42299094368](https://github.com/odere-pro/agent-playground/actions/runs/42299094368) (`175 passed, 2 skipped, 2 xfailed`).
+- [x] A remote pod without its credential is refused by the proxies, and a remote pod with it still cannot reach LiteLLM or the MCP gateway directly. · Delivered in PoC-5: `packages/chassis/tests/test_remote_auth.py::test_no_token_and_a_wrong_token_are_401_with_one_body`; `pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py::test_h17_listener_answers_only_the_remote_token_inside_a_run`, `pocs/poc-05-sandboxed/tests/test_poc05_kind_remote_controls.py::test_h30_remote_reaches_no_other_pod` (kind, `remote-lane.yml`; LiteLLM and its MCP gateway share port 4000).
+- [x] The admission check refuses an `untrusted` workload, and a third-party image, in the `sidecar` lane. · Delivered in PoC-5: `pocs/poc-05-sandboxed/tests/test_poc05_admission_static.py::test_policy_has_every_rule_and_the_params_check`; `pocs/poc-05-sandboxed/tests/test_poc05_kind_admission.py::test_rejected_fixture_is_refused_with_its_rule_message` (kind, in `REMOTE_TESTS`); `pocs/poc-05-sandboxed/notes/2026-10-09-close-runs.md` section 6.
+- [x] Every pipeline stage runs on remote calls. What the chassis cannot control is listed per kind of remote. · Delivered in PoC-5, PoC-8: `pocs/poc-08-cross-cutting-build/tests/test_poc08_c7_stages_redteam.py::test_every_stage_runs_in_every_lane`; `pocs/poc-05-sandboxed/notes/2026-10-02-blind-spots.md` section 1; `docs/contracts/contract-v5.md` part B.8.
+- [x] gVisor's latency and memory overhead are measured and recorded. · Delivered in PoC-5: `pocs/poc-05-sandboxed/notes/2026-10-09-gvisor-overhead.md` "Result".
+- [ ] A remote's output over `spec.limits` ends the run with a fixed error (`pocs/poc-06b-bake-off-remote-lane/notes/backlog-changes.md`, line 20).
 
 ## Dependencies
 
-- Depends on: [009 CH-1](009-CH-1-engine-connectors-a2a.md), [026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [010 H-12](010-H-12-config-loader.md), [038 X-1a](038-X-1a-terraform-first-cloud.md)
+- Depends on: [009 CH-1](009-CH-1-engine-connectors-a2a.md), [026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [010 H-12](010-H-12-config-loader.md), [024 CH-3](024-CH-3-helm-library-chart.md)
 - Blocks: [056 CH-7](056-CH-7-chassis-release-rings.md), [059 H-15](059-H-15-agent-factory-cli.md), [077 C-1](077-C-1-governance-enforcement.md), [116 X-1b](116-X-1b-terraform-second-cloud.md)
 
 ## References

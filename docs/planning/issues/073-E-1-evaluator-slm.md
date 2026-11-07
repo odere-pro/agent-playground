@@ -1,7 +1,7 @@
 ---
 title: "E-1: First evaluator SLM (ModernBERT or DeBERTa) trained on approved records"
 labels: ["story", "priority:P1", "phase:4-golden-set", "area:evaluator", "size:L", "layer:platform"]
-milestone: "W6 Golden set and evaluator SLM"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 73
 epic_id: E-1
 depends_on: ["033 S-5", "065 D-2", "070 D-4"]
@@ -13,7 +13,7 @@ epic_refs: [I]
 
 Judging every simplifier call with a big model costs money on every request. A small encoder trained on approved records can do the same job on CPU. It needs approved, human-labeled records from the review UI (065 D-2), versioned exports (070 D-4), and the training pipeline (033 S-5).
 
-**Open concern (review 2026-09-29), to explore until we align:** this issue is what makes the evaluator gate affordable. Until it lands, the gate's cost and latency stay visible on the savings dashboard. The agreement bar in 074 E-2 decides how much of the judge's cost can go. Explore whether one encoder can serve several transformers, or each task needs its own.
+**Open concern (review 2026-09-29), to explore until we align:** this issue is what makes the evaluator gate affordable. Until it lands, the gate's cost and latency stay visible on the savings dashboard. The agreement bar in 074 E-2 decides how much of the judge's cost can go. Explore whether one encoder can serve several transformers, or each task needs its own. Answered 2026-11-06 for the gate's cost: the judge at sample rate 0.1 costs about $5 per million requests (ADR-010 item 9, `docs/specs/models.md`).
 
 ## What
 
@@ -25,6 +25,8 @@ Judging every simplifier call with a big model costs money on every request. A s
 - Training runs through the S-5 pipeline (config, data version, seed), logged in MLflow, with compute logged (034 C-8).
 - Suggested: score calibration, so the 0.95 threshold means the same as it does for the judge.
 - The chosen model is registered in the MLflow model registry as a candidate and packaged to run on CPU.
+- Parked with the SLM track (2026-11-06). Unpark 034 C-8 first. The code that exists is the NLI cross-encoder behind TEI (`EncoderEvaluator`); the Hugging Face model was never run (403 in PoC-7).
+- Status after PoC-7 ([backlog changes](../../../pocs/poc-07-cross-cutting-decisions/notes/backlog-changes.md)): the encoder adapter and the gate cost formula (ADR-010 item 9) are where this issue's numbers plug in. It waits on encoder agreement from the Mac run.
 
 ## Out of scope
 

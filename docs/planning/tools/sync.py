@@ -19,6 +19,10 @@ TOOLS = Path(__file__).resolve().parent
 ROOT = TOOLS.parent
 ISS = ROOT / "issues"
 DAYS = {"S": 1, "M": 2.5, "L": 5}
+DONE = "WD"  # retired: delivered by the PoC track; the row keeps its number
+PARKED = "WP"  # parked with the SLM track; the row keeps its number
+OFF_PLAN = {DONE, PARKED}
+MVP_ANCHOR = "H-15"  # template GA; was A-3, which is parked
 MARKER = "<!-- BODY: replace this line with ## Why, ## What, ## Out of scope, ## Acceptance criteria -->"
 
 
@@ -84,15 +88,40 @@ def renumber_refs(by_idx):
 
 
 def critical_paths(m):
+    """Longest chain of days to each row. A done or parked row adds 0 days and no step, and a
+    chain through it starts again: what it waited on no longer blocks anything after it."""
     best = {}
     for i in sorted(m):
+        if m[i]["wave"] in OFF_PLAN:
+            best[i] = (0, [])
+            continue
         prev = max(m[i]["deps"], key=lambda d: best[d][0], default=None)
         best[i] = ((best[prev][0] if prev else 0) + DAYS[m[i]["size"]], (best[prev][1] if prev else []) + [i])
     return best
 
 
-def build_plan(m):
-    lab = lambda i: f'{i:03d} {m[i]["epic_id"]}'
+def wave_range(m, w):
+    """A wave's index range: `007–026`, `001` for one row, `—` for none."""
+    ix = [i for i in m if m[i]["wave"] == w]
+    if not ix:
+        return "—"
+    return f"{min(ix):03d}" if len(ix) == 1 else f"{min(ix):03d}–{max(ix):03d}"
+
+
+def wave_days(m, w):
+    """How many rows a wave has, and their days."""
+    ix = [i for i in m if m[i]["wave"] == w]
+    return len(ix), sum(DAYS[m[i]["size"]] for i in ix)
+
+
+def open_rows(m):
+    """The rows the totals and the longest chain count: not done, not parked, not W12."""
+    return [i for i in m if m[i]["wave"] not in OFF_PLAN | {"W12"}]
+
+
+def plan_text(m, template):
+    """Fill plan-template.md from the rows. Returns the plan, the open days, and the longest chain."""
+    lab =lambda i: f'{i:03d} {m[i]["epic_id"]}'
     link = lambda i: f'[{lab(i)}]({m[i]["file"]})'
     id2 = {v["epic_id"]: k for k, v in m.items()}
     parts = []
@@ -108,35 +137,50 @@ def build_plan(m):
         cov.append(f"| [{pname}](../slm-agent-platform-epic-v3.md#{anchor}) | " + ", ".join(link(i) for i in ids) + " |")
     best = critical_paths(m)
     arrow = lambda p: " → ".join(lab(x) for x in p)
-    core = [i for i in m if m[i]["wave"] != "W12"]
+    core = open_rows(m)
     end = max(core, key=lambda k: best[k][0])
     total = sum(DAYS[m[i]["size"]] for i in core)
     prio = collections.Counter(i["priority"] for i in m.values())
+    n_done, done_days = wave_days(m, DONE)
+    n_parked, parked_days = wave_days(m, PARKED)
+    mvp_days, mvp_path = best[id2[MVP_ANCHOR]]
     values = {
         "TABLE": "\n".join(parts).rstrip(), "COVERAGE": "\n".join(cov),
-        "MVP_PATH": arrow(best[id2["A-3"]][1]), "MVP_DAYS": f'{best[id2["A-3"]][0]:g}',
+        "MVP_PATH": arrow(mvp_path), "MVP_DAYS": f"{mvp_days:g}",
         "ALL_PATH": arrow(best[end][1]), "TOTAL_DAYS": f"{total:g}", "TOTAL_WEEKS": f"{total / 5:.0f}",
+        "N_DONE": n_done, "DONE_DAYS": f"{done_days:g}",
+        "N_PARKED": n_parked, "PARKED_DAYS": f"{parked_days:g}",
         "N_CHASSIS": sum("chassis" in i["layers"] for i in m.values()),
         "N_AGENT": sum("agent-profile" in i["layers"] for i in m.values()),
         "N_PLATFORM": sum(i["layers"] == ["platform"] for i in m.values()),
         **{p: prio[p] for p in ("P0", "P1", "P2", "P3")},
     }
-    t = (TOOLS / "plan-template.md").read_text()
+    t = template
     for k, v in values.items():
         t = t.replace("{{" + k + "}}", str(v))
     t = re.sub(r"\{\{L:([^}]+)\}\}", lambda x: link(id2[x.group(1)]), t)
-
-    def rng(w):
-        ix = [i for i in m if m[i]["wave"] == w]
-        return f"{min(ix):03d}" if len(ix) == 1 else f"{min(ix):03d}–{max(ix):03d}"
-
-    t = re.sub(r"\{\{R:(W\d+)\}\}", lambda x: rng(x.group(1)), t)
+    t = re.sub(r"\{\{R:(W\w+)\}\}", lambda x: wave_range(m, x.group(1)), t)
     leftover = re.findall(r"\{\{[^}]+\}\}", t)
     assert not leftover, f"unfilled placeholders in plan-template.md: {leftover}"
+    return t, total, arrow(best[end][1])
+
+
+def build_plan(m):
+    t, total, path = plan_text(m, (TOOLS / "plan-template.md").read_text())
     plan = ISS / "000-plan.md"
     changed = plan.read_text() != t if plan.exists() else True
     plan.write_text(t)
-    return (["updated 000-plan.md"] if changed else []), total, arrow(best[end][1])
+    return (["updated 000-plan.md"] if changed else []), total, path
+
+
+def summary(m, total, path):
+    """sync's last line: the done, parked, and open totals, and the longest open chain."""
+    n_done, done_days = wave_days(m, DONE)
+    n_parked, parked_days = wave_days(m, PARKED)
+    return (
+        f"{len(m)} issues: {n_done} done ({done_days:g} days), {n_parked} parked ({parked_days:g} days), "
+        f"{total:g} engineer-days open (W0–W11), longest chain: {path}"
+    )
 
 
 def main():
@@ -146,7 +190,7 @@ def main():
     plan_changes, total, path = build_plan(by_idx)
     changes += plan_changes
     print("\n".join(changes) or "no changes")
-    print(f"{len(by_idx)} issues, {total:g} engineer-days (W0–W11), longest chain: {path}")
+    print(summary(by_idx, total, path))
 
 
 if __name__ == "__main__":

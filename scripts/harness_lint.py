@@ -6,8 +6,9 @@ skill that does not exist, a hook that settings.json names but the disk lacks, a
 without its README or CLAUDE.md, and a plan without a Status line. It also keeps the root
 CLAUDE.md agent and skill lists equal to the disk, caps CLAUDE.md size, checks that repo paths
 cited in CLAUDE.md files exist, rejects two test files with the same name (test folders
-have no __init__.py, so pytest cannot import both), and checks that every test a PoC README cites
-(`::test_x`, `::TestX`) is defined under packages/ or pocs/. Drift is a finding, not a traceback.
+have no __init__.py, so pytest cannot import both), and checks that every test a PoC README or a
+ticked backlog box in docs/planning/issues/ cites (`::test_x`, `::TestX`) is defined under
+packages/, pocs/, or scripts/tests/. Drift is a finding, not a traceback.
 """
 
 from __future__ import annotations
@@ -174,14 +175,17 @@ def check_test_names() -> None:
 
 # A README evidence citation: `::test_name` or `::TestClass`, after a file or another `::` part.
 CITED_TEST = re.compile(r"::((?:test_|Test)\w+)")
+# Also check the tests cited on ticked boxes (`- [x]`) of docs/planning/issues/*.md.
+SCAN_ISSUE_TICKS = True
 DEFINED_TEST = re.compile(r"^\s*(?:async\s+def|def|class)\s+((?:test_|Test)\w+)", re.M)
 
 
 def defined_test_names() -> set[str]:
-    """Every `test_*` function or method and `Test*` class under packages/ and pocs/. A method a
-    contract suite defines (chassis_contracts) counts, so an inherited test resolves too."""
+    """Every `test_*` function or method and `Test*` class under packages/, pocs/, and
+    scripts/tests/ (the planning tools' tests). A method a contract suite defines
+    (chassis_contracts) counts, so an inherited test resolves too."""
     names: set[str] = set()
-    for top in ("packages", "pocs"):
+    for top in ("packages", "pocs", "scripts/tests"):
         for path in repo_files("*.py", ROOT / top):
             names.update(DEFINED_TEST.findall(path.read_text(errors="replace")))
     return names
@@ -190,11 +194,22 @@ def defined_test_names() -> set[str]:
 def check_cited_tests() -> None:
     defined = defined_test_names()
     for readme in sorted((ROOT / "pocs").glob("*/README.md")):
-        rel = readme.relative_to(ROOT)
-        for number, line in enumerate(readme.read_text().splitlines(), start=1):
-            for name in CITED_TEST.findall(line):
-                if name not in defined:
-                    say(f"{rel}:{number}: cites test {name!r}, which no test file defines")
+        cited_tests(readme, defined, only_ticked=False)
+    if SCAN_ISSUE_TICKS:
+        for issue in sorted((ROOT / "docs" / "planning" / "issues").glob("*.md")):
+            cited_tests(issue, defined, only_ticked=True)
+
+
+def cited_tests(path: Path, defined: set[str], *, only_ticked: bool) -> None:
+    """A finding for each test the file cites that no test file defines. A backlog issue counts
+    only its ticked boxes: an open box may name a test that is not written yet."""
+    rel = path.relative_to(ROOT)
+    for number, line in enumerate(path.read_text().splitlines(), start=1):
+        if only_ticked and not line.startswith("- [x]"):
+            continue
+        for name in CITED_TEST.findall(line):
+            if name not in defined:
+                say(f"{rel}:{number}: cites test {name!r}, which no test file defines")
 
 
 def main() -> int:

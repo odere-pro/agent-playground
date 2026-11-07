@@ -1,13 +1,15 @@
 ---
 title: "A-3: Result events with source, stored by the recorder"
 labels: ["story", "priority:P0", "phase:3-simplifier-agent", "area:agent", "size:S", "layer:platform"]
-milestone: "W4 Simplifier agent live"
+milestone: "Parked: the SLM track (2026-11-06)"
 index: 43
 epic_id: A-3
 depends_on: ["019 H-17", "040 D-0", "041 A-1"]
 blocks: ["045 A-4"]
 epic_refs: [B.4, D.3]
 ---
+
+Parked 2026-11-06 with the SLM track. The live result-event boxes moved to 019 H-17.
 
 ## Why
 
@@ -32,7 +34,7 @@ Every simplifier call must become a record, so the golden set can grow. The `sou
 
 ## Acceptance criteria
 
-- [ ] Each call through the native, OpenAI, or Anthropic API, or through an event, sends exactly one result event with all listed fields.
+- [ ] ~~Each call through the native, OpenAI, or Anthropic API, or through an event, sends exactly one result event with all listed fields.~~ Moved to 019 H-17 on 2026-11-06: one event per call on every interface, the extensions, and the model-source field name.
 - [ ] The recorder stores one record per call, with `source` set.
 - [ ] A repeated call with the same `idempotency_key` returns the same result and leaves one record.
 - [ ] The simplifier's workload container holds no credential at all. Only the chassis holds the broker credential.

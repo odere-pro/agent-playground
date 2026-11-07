@@ -1,11 +1,11 @@
 ---
 title: "O-3: Agent pools on task queues with KEDA autoscaling"
-labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:M", "layer:platform"]
+labels: ["story", "priority:P1", "phase:7-orchestrator", "area:orchestrator", "size:L", "layer:platform"]
 milestone: "W9 Orchestrator"
 index: 104
 epic_id: O-3
 depends_on: ["025 H-10", "100 O-2"]
-blocks: ["105 O-4", "120 X-7", "122 X-5"]
+blocks: ["105 O-4", "133 X-5b"]
 epic_refs: [F.6, J]
 ---
 
@@ -16,14 +16,16 @@ Agents run in pools: groups of identical stateless containers behind Temporal ta
 ## What
 
 - A task queue worker in the chassis: an inbound adapter that polls a Temporal task queue and calls the workload through the connector, like REST. Only the chassis holds the Temporal credential.
-- The pool name comes from the agent config `scaling.queue` (for example `simplify`), and workflow steps pick it with `pool`.
+- The pool name comes from the agent config `scaling.queue` (for example `echo`), and workflow steps pick it with `pool`.
 - The orchestrator's agent port sends steps that name a `pool` to that task queue. Steps without one still use the native API.
-- KEDA scales each pool on task queue backlog (suggested: the KEDA Temporal scaler), within `scaling.min_replicas` and `scaling.max_replicas`, set through the Helm chart.
+- KEDA scales each pool on task queue backlog (suggested: the KEDA Temporal scaler), within `scaling.min_replicas` and `scaling.max_replicas`, set through the library chart values in `deploy/helm/agent-lib`.
 - Event-driven agents scale on broker consumer lag with the KEDA scaler for the broker chosen in DEC-1.
-- Both containers in a pod scale together. A `remote` workload pod scales on its own. A cold start includes both containers.
+- Both containers in a pod scale together. A cold start includes both containers.
 - Idle pools scale to zero. Evaluator pools run on CPU.
-- Pods drain in-flight tasks on shutdown in the two-container order (gap (g) in [the gaps in the backlog plan](000-plan.md#adr-001-follow-ups)): the workload finishes its in-flight `handle` calls, and both containers get a short preStop delay. suggested: the chassis stops polling the task queue at the start of its preStop delay.
+- Pods drain in-flight tasks on shutdown in the order the chart already uses: the chassis is a native sidecar (`deploy/helm/agent-lib/templates/_deployment.tpl`), `/ready` goes false first, and in-flight runs finish (gap (g) in [the gaps in the backlog plan](000-plan.md#adr-001-follow-ups)). suggested: the chassis stops polling the task queue when `/ready` goes false.
 - Pool metrics: queue length, replicas, and task latency.
+- Per-pool hosting cost, scale-to-zero, and replica-hours on the cost dashboard, with rates from config. This moved here from 120 X-7 on 2026-11-06.
+- Status after PoC-4 and PoC-9: facts, not ticks. PoC-4 proved request-level drain, kill, and rolling restart on Compose and kind ([demo](../../../pocs/poc-04-stateless-scalable/demo/2026-10-01-demo-scale.md), [container roles](../../../pocs/poc-04-stateless-scalable/notes/2026-10-01-container-roles.md); `pocs/poc-04-stateless-scalable/tests/test_killed_replica.py::test_a_retry_after_a_dead_owner_runs_once_after_the_lease`, `test_graceful_shutdown.py::test_the_chassis_drains_in_flight_runs_and_ready_goes_false_first`). The PoC-9 HPA drill scaled 2 to 4 replicas at 203% CPU, and scale-down was not waited for ([HPA drill](../../../pocs/poc-09-agent-mvp-template/notes/2026-11-05-kind-hpa-drill.md)). No task queue, KEDA, scale from 0, or lag scaling exists. The product plan runs CPU HPA only; KEDA pools are `later`.
 
 ## Reuse
 
@@ -34,23 +36,25 @@ Agents run in pools: groups of identical stateless containers behind Temporal ta
 ## Out of scope
 
 - Fan-out logic (105 O-4).
-- The cost dashboard (120 X-7) and load tests (122 X-5).
+- The cost dashboard per agent (120 X-7) and the load tests (122 X-5). The pool load tests are 133 X-5b.
 - GPU node setup (039 X-2).
+- A `remote` workload pod that scales on its own. The product plan runs a `remote` pod as one replica with no HPA; this is `later`.
 
 ## Acceptance criteria
 
-- [ ] A workflow step with `pool: simplify` runs on a simplifier pod that pulled it from the `simplify` task queue.
+- [ ] A workflow step with `pool: echo` runs on an echo agent pod that pulled it from the `echo` task queue.
 - [ ] Under load, the pool scales up from 0 and never goes above `max_replicas`.
 - [ ] With no work, the pool scales back to 0 after the cooldown.
 - [ ] Killing a pool pod mid-task: the task is retried on another pod, and the run finishes.
 - [ ] Scale-down never drops an in-flight task.
 - [ ] An event-driven agent scales up when consumer lag grows on its topic.
 - [ ] Queue length and replica count per pool show in Prometheus.
+- [ ] Per-pool hosting cost, scale-to-zero, and replica-hours show on the cost dashboard, with rates from config.
 
 ## Dependencies
 
 - Depends on: [025 H-10](025-H-10-template-repo.md), [100 O-2](100-O-2-temporal-checkpoints.md)
-- Blocks: [105 O-4](105-O-4-fan-out-fan-in.md), [120 X-7](120-X-7-cost-dashboard.md), [122 X-5](122-X-5-load-tests.md)
+- Blocks: [105 O-4](105-O-4-fan-out-fan-in.md), [133 X-5b](133-X-5b-load-tests-pools-registry.md)
 
 ## References
 

@@ -8,9 +8,12 @@
 # finding.
 #
 # Trigger: push, pull_request, and workflow_dispatch. Never pull_request_target.
-# Secret: SNYK_TOKEN only, only in the scan step's env. GitHub gives no secret to a fork PR, so
-# there it is empty and scan.sh prints a notice and stops after the inspect run (exit 0). The
-# same happens until the repo has the secret.
+# Secret: SNYK_TOKEN only, only in the scan step's env, and only on a push to main or a
+# workflow_dispatch (review R0-08). On any other branch push and on every PR, the scan script,
+# mcp.json, and the MCP servers it starts are branch code, and a server could read the scanner's
+# environment, so those runs get an empty token: scan.sh prints a notice and stops after the
+# inspect run (exit 0). The same happens until the repo has the secret. A workflow_dispatch is a
+# person with write access choosing the ref; dispatch it on main for a real scan.
 # The reports (inspect.json, scan.json) are uploaded as one artifact, also when the scan fails.
 # Every action is pinned by a full commit SHA, the same as ci.yml.
 name: poc07-agent-scan
@@ -34,7 +37,11 @@ jobs:
           persist-credentials: false
       - name: Agent Scan
         env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          # Empty unless a push to main or a manual dispatch (R0-08).
+          SNYK_TOKEN: >-
+            ${{ (github.event_name == 'workflow_dispatch'
+            || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+            && secrets.SNYK_TOKEN || '' }}
           AGENT_SCAN_OUT: ${{ runner.temp }}/agent-scan
         run: deploy/agent-scan/scan.sh
       - name: Upload the reports

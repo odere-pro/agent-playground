@@ -1,46 +1,48 @@
 ---
-title: "A-5: Simplifier agent dashboard: pass rate, fallback rate, tokens saved, latency"
-labels: ["story", "priority:P1", "phase:3-simplifier-agent", "area:agent", "size:S", "layer:platform"]
+title: "A-5: Container dashboard and per-agent gate panels"
+labels: ["story", "priority:P1", "phase:3-simplifier-agent", "area:agent", "size:M", "layer:platform"]
 milestone: "W4 Simplifier agent live"
 index: 46
 epic_id: A-5
-depends_on: ["014 H-7", "042 A-2"]
+depends_on: ["001 DEC-1", "014 H-7", "042 A-2"]
 blocks: ["048 M-4", "075 E-3", "096 P-2a"]
 epic_refs: [G.2, success-metrics]
 ---
 
 ## Why
 
-The simplifier needs its own view of quality and savings, so the team can see whether it meets the success metrics. It follows the gate (042 A-2), which produces the pass, retry, and fallback counts the dashboard shows. It is P1, because the router savings dashboard already shows the headline numbers.
+Phase E needs one container dashboard: the north star, its inputs, and the counter metrics, next to the gate panels per agent. It follows the gate (042 A-2), which produces the run, retry, and fallback counts. The generator is `python -m chassis.dashboards`, which writes `deploy/dashboards/`.
 
 ## What
 
-- A Grafana dashboard for the simplifier, built on the Prometheus `/metrics` (014 H-7) and the router's token and cost counts (004 G-2).
-- Panels: pass rate (first-try `facts_kept` pass), retry rate, fallback rate, tokens saved, p50 and p95 latency, requests, errors, and cost.
-- Tokens saved: big-model tokens avoided on calls the SLM served, minus fallback and judge tokens.
-- Target lines for the success metrics: fallback rate < 10% and `facts_kept` ≥ 0.95.
-- Filters by config version and model route version, so a new model can be compared with the last one.
+- A Grafana dashboard built from code on the Prometheus `/metrics` (014 H-7), with the token and cost input from 006 G-6.
+- Three rows from `docs/specs/metrics.md`: the north star, its inputs, and the counter metrics.
+- Gate panels per agent: first-try pass rate, 1 − (`chassis_gate_retries_total` + `chassis_gate_fallbacks_total`) / `chassis_gate_runs_total`; retry rate; fallback rate with a target line at 10%.
 - Links from panels to Langfuse traces and Loki logs.
-- The dashboard is stored as code in the template repo, so every agent gets one with the G.2 panels.
+- A filter by config version and model route version needs a label the metric families do not carry ([contract v7 A.3](../../contracts/contract-v7.md#a3-the-families)). It waits on a contract change.
 
 ## Out of scope
 
 - SLOs and alerts (117 X-3).
 - Cost per agent and per pool (120 X-7).
 - The router savings dashboard (006 G-6).
+- Tokens saved and the G-3 baseline: parked with the simplifier.
+- A dashboard in the generated repo: `agentctl` ships no dashboards (059 H-15).
+- A scripted 100-call load with 10 forced fallbacks: replaced by the PoC-8 stack drill.
 
 ## Acceptance criteria
 
-- [ ] The dashboard shows every listed panel for the simplifier, in Docker Compose and on Kubernetes.
-- [ ] A scripted load of 100 calls with 10 forced fallbacks shows a 90% pass rate and a 10% fallback rate.
-- [ ] Tokens saved subtracts fallback and judge tokens, and matches the router counts for the same load.
-- [ ] Target lines show at 10% fallback rate and 0.95 `facts_kept`.
-- [ ] Filtering by model route version splits the numbers per model.
-- [ ] The dashboard is provisioned from code, not built by hand.
+- [ ] The dashboard shows every panel with data, in Docker Compose and on Kubernetes. Open: `pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_metrics.py` (`test_every_panel_query_has_data`, `test_grafana_has_the_agent_dashboard_with_every_panel`) is `network`-marked and waits on run 41011346864; no Kubernetes path exists.
+- [ ] The north star, its inputs, and the counter metrics from `docs/specs/metrics.md` each have a row.
+- [ ] First-try pass rate and retry rate show per agent, from the gate counters.
+- [ ] The fallback rate shows per agent, with a target line at 10%.
+- [ ] Panels link to Langfuse traces and Loki logs.
+- [ ] Filtering by config version and model route version splits the numbers, once the metric families carry that label (a contract change).
+- [x] The dashboard is provisioned from code, not built by hand, and a test checks that the file is up to date. · Delivered in PoC-8: `packages/chassis/tests/test_dashboards.py::test_the_generated_files_are_up_to_date`, `pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_static.py::test_grafana_provisions_every_file_of_deploy_dashboards`
 
 ## Dependencies
 
-- Depends on: [014 H-7](014-H-7-observability.md), [042 A-2](042-A-2-evaluator-gate-fallback.md)
+- Depends on: [001 DEC-1](001-DEC-1-resolve-open-decisions.md), [014 H-7](014-H-7-observability.md), [042 A-2](042-A-2-evaluator-gate-fallback.md)
 - Blocks: [048 M-4](048-M-4-canary-rollback.md), [075 E-3](075-E-3-evaluator-replaces-judge.md), [096 P-2a](096-P-2a-mcp-golden-set-metrics-tools.md)
 
 ## References

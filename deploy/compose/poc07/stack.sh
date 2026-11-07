@@ -2,6 +2,7 @@
 # PoC-7 stack: Langfuse v4, the OTel Collector, Jaeger.
 # Usage: stack.sh up|wait|down|digests|env|logs
 # Every credential is generated into .env.poc07 (mode 600, git-ignored) and never printed.
+# The chassis's OTLP token is one of them: the Collector's receiver refuses a call without it.
 # `wait` polls the three endpoints from the host: the jaeger and collector images have no shell,
 # so they carry no in-container healthcheck. `logs` prints log tails with every env file value
 # masked, for CI on failure.
@@ -11,8 +12,13 @@ env_file="$here/.env.poc07"
 compose=(docker compose -p poc07 --env-file "$env_file" -f "$here/docker-compose.yaml")
 
 make_env() {
-  [[ -f "$env_file" ]] && return 0
   umask 077
+  if [[ -f "$env_file" ]]; then
+    # An env file from before review R7-15 has no receiver token: add one, keep the rest.
+    grep -q '^OTLP_CHASSIS_TOKEN=' "$env_file" ||
+      echo "OTLP_CHASSIS_TOKEN=$(openssl rand -hex 24)" >>"$env_file"
+    return 0
+  fi
   local pk sk
   pk="pk-lf-$(openssl rand -hex 16)"
   sk="sk-lf-$(openssl rand -hex 16)"
@@ -27,6 +33,9 @@ make_env() {
     echo "LANGFUSE_PUBLIC_KEY=$pk"
     echo "LANGFUSE_SECRET_KEY=$sk"
     echo "LANGFUSE_AUTH=$(printf '%s:%s' "$pk" "$sk" | base64 -w0)"
+    # The Collector's OTLP receiver token (review R7-15). Only the Collector service and the
+    # chassis (on the host, from this file) get it.
+    echo "OTLP_CHASSIS_TOKEN=$(openssl rand -hex 24)"
   } >"$env_file"
 }
 
@@ -49,8 +58,8 @@ wait_ready() {
   done
 }
 
-# Masks every value of the env file, and anything shaped like a Langfuse key or a Basic header,
-# in stdin. The values are read inside Python and never echoed.
+# Masks every value of the env file, and anything shaped like a Langfuse key or a Basic or
+# Bearer header, in stdin. The values are read inside Python and never echoed.
 redact() {
   python3 -I -c '
 import re, sys
@@ -63,7 +72,7 @@ try:
                 secrets.append(value)
 except FileNotFoundError:
     pass
-shapes = re.compile(r"(pk|sk)-lf-[0-9A-Za-z-]+|Basic [A-Za-z0-9+/=]+")
+shapes = re.compile(r"(pk|sk)-lf-[0-9A-Za-z-]+|(Basic|Bearer) [A-Za-z0-9+/=._-]+")
 for line in sys.stdin:
     for value in secrets:
         line = line.replace(value, "***")
@@ -96,7 +105,8 @@ case "${1:-}" in
     done
     ;;
   env)
-    # The names the network tests read, with the path of the file that holds the values.
+    # The names the network tests read, with the path of the file that holds the values
+    # (the Langfuse keys and OTLP_CHASSIS_TOKEN).
     echo "POC07_ENV_FILE=$env_file"
     ;;
   *)

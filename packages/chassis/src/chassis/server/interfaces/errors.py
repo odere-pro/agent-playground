@@ -38,6 +38,7 @@ from chassis.server.pipeline import RunPipeline
 
 __all__ = [
     "INTERFACE_KEY",
+    "MCP_HOP_SCOPE_KEY",
     "install_validation_errors",
     "register_validation_format",
     "route_interface",
@@ -46,7 +47,13 @@ __all__ = [
 ]
 
 INTERFACE_KEY = "x-chassis-interface"
-"""The OpenAPI extension on each interface operation; suggested: the name."""
+"""The OpenAPI extension on each interface operation; suggested: the name. Never read as a
+request header (contract v8, item 6)."""
+
+MCP_HOP_SCOPE_KEY = "chassis.mcp_hop"
+"""The ASGI scope key that marks the MCP tool's in-process call to `/v1/run` (`interfaces.mcp`
+sets it; suggested: the name). A server never sets a custom scope key from a header, so only that
+hop can carry it."""
 
 _FORMATS = "validation_formats"
 

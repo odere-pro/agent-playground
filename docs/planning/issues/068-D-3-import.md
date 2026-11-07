@@ -4,14 +4,14 @@ labels: ["story", "priority:P1", "phase:4-golden-set", "area:data", "size:S", "l
 milestone: "W6 Golden set and evaluator SLM"
 index: 68
 epic_id: D-3
-depends_on: ["067 D-5", "030 S-4"]
-blocks: ["070 D-4", "071 D-8", "106 O-5", "113 O-9"]
+depends_on: ["067 D-5", "037 M-2"]
+blocks: ["070 D-4", "071 D-8", "106 O-5"]
 epic_refs: [H]
 ---
 
 ## Why
 
-Golden sets also come from outside the recorder: hand-labeled files, other teams, and the S-4 held-out test set. Import in one step, from any of three sources, is part of the Phase 4 done-when. It comes right after the check and dedup step (067 D-5), which every source runs through.
+Golden sets also come from outside the recorder: hand-labeled files, other teams, and the 50-case gate set (037 M-2). Import in one step, from any of three sources, is part of the Phase 4 done-when. It comes right after the check and dedup step (067 D-5), which every source runs through.
 
 ## What
 
@@ -42,15 +42,15 @@ Golden sets also come from outside the recorder: hand-labeled files, other teams
 - [ ] One upload of a file in each of JSONL, CSV, Parquet, and Hugging Face datasets format imports its records and returns an import ID and a report.
 - [ ] The same records sent in one API call give the same result.
 - [ ] A file dropped into the watched prefix is imported once; dropping it again adds no records.
-- [ ] The S-4 held-out test set (≥ 300 records) imports in one step, marked as already reviewed, with split `holdout`.
+- [ ] The 50-case gate set (`cases.yaml` plus `cases-gate.yaml`) imports in one step, marked as already reviewed, with split `holdout`.
 - [ ] A caller without the write scope gets `403`.
 - [ ] A file upload over the size limit is refused with a clear error that points to the bucket watch or a presigned URL.
 - [ ] A 100,000-record file imports through the bucket watch without the service running out of memory (suggested size).
 
 ## Dependencies
 
-- Depends on: [067 D-5](067-D-5-import-schema-dedup.md), [030 S-4](030-S-4-hand-review-test-set.md)
-- Blocks: [070 D-4](070-D-4-export-formats.md), [071 D-8](071-D-8-data-rules.md), [106 O-5](106-O-5-compare-runs.md), [113 O-9](113-O-9-orchestrator-memory.md)
+- Depends on: [067 D-5](067-D-5-import-schema-dedup.md), [037 M-2](037-M-2-eval-gate-ci.md)
+- Blocks: [070 D-4](070-D-4-export-formats.md), [071 D-8](071-D-8-data-rules.md), [106 O-5](106-O-5-compare-runs.md)
 
 ## References
 

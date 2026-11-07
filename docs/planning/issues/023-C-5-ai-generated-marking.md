@@ -15,16 +15,16 @@ Agents with `limited` risk and above must mark every output as AI-generated (E.4
 
 ## What
 
-- An `ai_generated` flag in the output metadata of every response, in a machine-readable form.
-- The chassis sets the flag on the way out, after the workload's events come back. Whatever the workload sends in that field is overwritten.
+- Decided in [ADR-008](../adr/008-security-identity-guardrails-defense-in-depth.md) and [contract v7](../../contracts/contract-v7.md#e-ai-generated-marking-the-rest-of-023-c-5) E, the marking is:
+  - the `X-AI-Generated` and `X-AI-Disclosure-Required` headers on every public interface, complete and streaming, because `Response` is frozen (contract v5, part C);
+  - the `ai_marking` body field in the OpenAI and Anthropic formats, complete and on every chunk;
+  - the `aigenerated` CloudEvent extension on result events, so stored records keep it;
+  - `Access-Control-Expose-Headers` for the two flags, so browser clients can read them.
+- The chassis sets the marking on the way out, after the workload's events come back. Whatever the workload sends in those headers or that field is overwritten.
 - Marking on when `governance.risk_class` is `limited` or `high`, or when `governance.ai_generated_marking` is `true`.
 - A config check that refuses `ai_generated_marking: false` for `limited` and `high` agents.
-- The flag in all three APIs, streaming and complete (suggested: a response header plus a metadata field for the OpenAI and Anthropic formats, which have no standard field for it).
-- A disclosure flag for client apps that tells them to show the user they are dealing with AI (suggested name: `disclosure_required`).
-- The same flag on result events, so stored records keep it.
-- A short guide for client app teams: how to read the flags and show a disclosure.
-- Proposed in PoC-7 ([ADR-008](../adr/008-security-identity-guardrails-defense-in-depth.md), [contract v6](../../contracts/contract-v6.md); the user accepts it at the PoC-7 pull request): the marking is two response headers, `X-AI-Generated` and `X-AI-Disclosure-Required`, on every public interface, complete and streaming, because `Response` is frozen (contract v5, part C). Still open here: a body field in the OpenAI and Anthropic formats, and the flag on result events (suggested: a CloudEvent extension attribute).
-- Status after PoC-8 ([contract v7](../../contracts/contract-v7.md) part E): built: the `ai_marking` body field in the OpenAI and Anthropic formats, complete and every chunk; the CloudEvent extension `aigenerated` on result events; `Access-Control-Expose-Headers` for the two flags (`packages/chassis/tests/test_marking_body.py`). Add to acceptance: a consumer on a chassis older than PoC-8 must read an event with `aigenerated`; `CloudEvent` has `extra="forbid"`, so an older one rejects it. Open, user decision: (a) accept and drop unknown extensions in `CloudEvent` from now on, or (b) keep `forbid` and roll consumers out before producers for every new extension. suggested: (a). Still open from PoC-7: legal on disclosure for `minimal` with marking on.
+- A short guide for client app teams: how to read the flags and show a disclosure. It is due before the AI Act Art. 50(2) date, 2026-12-02 (phase A, decided 2026-11-06).
+- `CloudEvent` has `extra="forbid"` (`packages/chassis/src/chassis/ports/events.py`), so a consumer on a chassis older than PoC-8 rejects an event with `aigenerated`. Accept and drop unknown extensions from now on, or roll consumers out before producers for every new extension: 001 DEC-1 decides. suggested: accept and drop them.
 
 ## Out of scope
 
@@ -35,14 +35,15 @@ Agents with `limited` risk and above must mark every output as AI-generated (E.4
 
 ## Acceptance criteria
 
-- [ ] An agent with `risk_class: limited` returns `ai_generated: true` on every output, through all three APIs, streaming and complete.
-- [ ] A `limited` or `high` agent with `ai_generated_marking: false` is refused at config load.
-- [ ] A `minimal` agent with `ai_generated_marking: true` marks its outputs; with `false`, it does not.
-- [ ] Responses carry the disclosure flag, and the client guide is published.
-- [ ] Result events carry the same `ai_generated` flag.
+- [x] An agent with `risk_class: limited` marks every output through all three APIs, streaming and complete: the two headers everywhere, and the `ai_marking` body field in OpenAI and Anthropic. · Delivered in PoC-7, PoC-8: `packages/chassis/tests/test_marking.py::test_limited_marks_every_interface_streaming_and_complete`, `packages/chassis/tests/test_marking_body.py::test_the_openai_body_carries_the_flags_complete_and_on_every_chunk`, `::test_the_anthropic_body_carries_the_flags_complete_and_on_message_start`, [contract v7 E.1](../../contracts/contract-v7.md#e1-the-body-field)
+- [x] A `limited` or `high` agent with `ai_generated_marking: false` is refused at config load. · Delivered in PoC-7: `packages/chassis/tests/test_marking.py::test_marking_false_is_refused_for_limited_and_high`
+- [x] A `minimal` agent with `ai_generated_marking: true` marks its outputs; with `false`, it does not. · Delivered in PoC-7: `packages/chassis/tests/test_marking.py::test_minimal_marks_only_when_asked`
+- [ ] Responses carry the disclosure flag (`X-AI-Disclosure-Required`), and the client guide is published.
+- [x] Result events carry the same marking as the `aigenerated` CloudEvent extension. · Delivered in PoC-8: `packages/chassis/tests/test_marking_body.py::test_result_events_carry_the_aigenerated_extension`, [contract v7 E.2](../../contracts/contract-v7.md#e2-the-cloudevent-extension)
 - [ ] A contract test checks the marking on every endpoint.
-- [ ] The marking holds in the `inprocess` and `sidecar` lanes, with the same flags for the same input.
-- [ ] A test workload that sends `ai_generated: false` still gets `ai_generated: true` on a `limited` agent's output, because the chassis sets the flag on the way out.
+- [x] The marking holds in the `inprocess` and `sidecar` lanes, with the same flags for the same input. · Delivered in PoC-7: `packages/chassis/tests/test_marking.py::test_inprocess_and_sidecar_give_the_same_flags`
+- [ ] A test workload that sends its own marking, in the headers or in the `ai_marking` body field, still gets the chassis's marking on a `limited` agent's output, because the chassis sets it on the way out.
+- [ ] A consumer on a chassis older than PoC-8 reads an event with `aigenerated`.
 
 ## Dependencies
 

@@ -18,17 +18,19 @@ The AI Act asks for automatic records of every call and run (Art. 12), and an au
 - A data agent built from the template that consumes, from the broker, every event type in the D.3 catalog that lists the audit log as a consumer: calls, runs, config changes, model promotions, review decisions, registry changes, and incidents.
 - Append-only storage in object storage with object lock (write once, read many): MinIO locally, S3 or GCS in the cloud.
 - Only the chassis holds the object storage credential. suggested: it exposes the audit store to its workload as MCP tools through the tool proxy (054 H-16). This is gap (a) in [the gaps in the backlog plan](000-plan.md#adr-001-follow-ups).
-- Events arrive through a Dapr subscription on the chassis port, never on the workload's. How Dapr's API is kept from the workload is gap (c).
+- Decided in ADR-004: a broker client in the chassis; the `dapr` adapter stays a tested alternative. The chassis consumes the events through its broker client and hands them to the audit workload. This needs 021 H-20, which is `later`; today the chassis refuses `spec.events.consume` at load.
 - Retention per risk class from the agent's `governance` block (`log_retention_days`). A `high` risk agent gets at least six months.
 - An export API per agent, per agent version, and per time range.
 - Suggested: entries batched per agent per minute, with a hash chain across batches, so a gap or a change can be found.
 - Duplicates dropped by event `id`. Failed writes use retries and the dead-letter topic (053 H-22).
 - PII redacted before storage, with the chassis redaction as in 022 H-6.
 - Export needs its own read scope, and no role can delete entries.
+- Blocked on follow-up (a) in the backlog plan (a service that writes its own store): decide before the first box.
+- Status after PoC-7 ([backlog changes](../../../pocs/poc-07-cross-cutting-decisions/notes/backlog-changes.md)): `agents.feedback.received.v1` lists the audit log as a consumer. The event is published and valid; nothing consumes it yet.
 
 ## Reuse
 
-- **Use:** S3 Object Lock (or GCS retention lock) for append-only storage, and a Dapr subscription on the chassis port for the events.
+- **Use:** S3 Object Lock (or GCS retention lock) for append-only storage. Decided in ADR-004: a broker client in the chassis; the `dapr` adapter stays a tested alternative. The chassis consumes the events through its broker client and hands them to the audit workload.
 - **Build:** the data agent and the export API.
 - Details: [reuse analysis](../poc/010-reuse-analysis.md)
 
