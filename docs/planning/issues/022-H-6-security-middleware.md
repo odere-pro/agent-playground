@@ -5,7 +5,7 @@ milestone: "W2 Chassis MVP"
 index: 22
 epic_id: H-6
 depends_on: ["011 H-2", "018 H-18"]
-blocks: ["040 D-0", "054 H-16", "065 D-2", "072 C-3", "076 R-1", "132 CH-13"]
+blocks: ["040 D-0", "054 H-16", "065 D-2", "072 C-3", "076 R-1", "132 CH-13", "134 CH-14"]
 epic_refs: [G.3]
 ---
 
@@ -64,11 +64,12 @@ Every agent needs the same auth, limits, and PII rules, so the chassis pipeline 
 - [ ] One caller cannot add more new idempotency keys than its cap, so it cannot fill the shared store.
 - [ ] A workload's `guardrails` key never reaches LiteLLM.
 - [ ] The key-leak canary also looks for a refused key's last 4 characters and its hash.
+- [ ] With `spec.guardrails.output` on, a streamed answer's PII does not reach the client: `packages/chassis/tests/test_guard_stages.py` `test_output_stage_masks_pii_when_the_call_is_a_stream` passes with no xfail, or LiteLLM's after-call guardrail is shown on the Mac run (gap review, 2026-11-07).
 
 ## Dependencies
 
 - Depends on: [011 H-2](011-H-2-inbound-adapters.md), [018 H-18](018-H-18-idempotency.md)
-- Blocks: [040 D-0](040-D-0-recorder-agent.md), [054 H-16](054-H-16-tool-port.md), [065 D-2](065-D-2-review-ui.md), [072 C-3](072-C-3-audit-log-agent.md), [076 R-1](076-R-1-registry-data-model-api.md), [132 CH-13](132-CH-13-owasp-agentic-map.md)
+- Blocks: [040 D-0](040-D-0-recorder-agent.md), [054 H-16](054-H-16-tool-port.md), [065 D-2](065-D-2-review-ui.md), [072 C-3](072-C-3-audit-log-agent.md), [076 R-1](076-R-1-registry-data-model-api.md), [132 CH-13](132-CH-13-owasp-agentic-map.md), [134 CH-14](134-CH-14-cloud-security-defaults.md)
 
 ## References
 

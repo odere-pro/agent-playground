@@ -24,7 +24,7 @@ Open, for the user:
 
 ## The order of work
 
-suggested: the sizes. Phases A and B can run in parallel. C needs B's route map. D needs C only for the demo. E can start after A. F is last.
+suggested: the sizes. Phases A and B can run in parallel. C needs B's route map. D needs C only for the demo. E can start after A. F is last of the template's phases. G, added on 2026-11-07, can start after A and needs E's alert rules for the budget alert and the ring gate.
 
 | Phase | What | Done when | Size |
 | ----- | ---- | --------- | ---- |
@@ -34,6 +34,7 @@ suggested: the sizes. Phases A and B can run in parallel. C needs B's route map.
 | D. LangSmith | The `otlphttp/langsmith` exporter in the Collector; `fake-langsmith`; the `langsmith` feedback adapter; LangSmith datasets against the 20 golden cases (ADR-010's trial rule); the two stack tests | one trace, one score, and one eval run visible in LangSmith, with the key only in the Collector and the chassis | 1–2 weeks |
 | E. Measure and show | SLOs and alerts ([117 X-3](../planning/issues/117-X-3-slos-alerts.md)); the container dashboard; a guard-stage span; sampling in the Collector; the OWASP agentic threat list (ASI01–ASI10) mapped to the controls; the weekly record | the north star, inputs, and counters are on one dashboard with one week of real numbers | 2 weeks |
 | F. Template GA | The chart in the generated repo and a published platform pin ([059 H-15](../planning/issues/059-H-15-agent-factory-cli.md), 025 H-10); a per-case scriptable fake model; a trial by a person new to the code | a person goes from `agentctl new` to a demo in under a day, recorded | 1–2 weeks |
+| G. Under load and on rollout | Added 2026-11-07 from the gap review below, agreed by the user. Backpressure ([135 CH-15](../planning/issues/135-CH-15-backpressure.md)); the model proxy under failure: the budget refusal code, a per-call timeout, LiteLLM retries and fallbacks per route ([136 CH-16](../planning/issues/136-CH-16-model-proxy-failures.md)); the rings ([056 CH-7](../planning/issues/056-CH-7-chassis-release-rings.md)); the drain order and the schema versions on the card (P-29, P-30 in the [backlog review proposals](../reviews/2026-11-06-backlog-review/proposals.md)) | an overload is a 503 a client can retry; a rollout drains with no failed request; a bad chassis tag stops at the canary | suggested: 2 weeks |
 
 The user's own items, Mac runs and repository settings, are in [what is left](../planning/poc/011-what-is-left.md), sections 1 to 3. The product cannot close phase B or E without the Mac run.
 
