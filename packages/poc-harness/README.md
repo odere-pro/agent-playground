@@ -22,7 +22,7 @@ Test support used by more than one PoC, by a demo, or by a plain script that a d
 | `replica_doubles` | `HarnessModel`, `SeverableState`, `RecordingTaskStore`, `OffsetClock`, and the `SLOW`, `HANG`, `FAIL` prompts. |
 | `replica_calls` | One call through any interface (`call`, `Reply`), `without_created`. |
 | `plugin` | The `requires_env` drill gate, a pytest plugin loaded by entry point. |
-| `drills` | The named marks: `POC04_STACK`, `POC04_KIND`, `POC05_KIND`, `POC06_KIND`. `required_env`: a variable a drill needs, or a failure. |
+| `drills` | The named marks: `COMPOSE_STACK` (marker `stack`), and `KIND_SCALE`, `KIND_SANDBOX`, `KIND_BAKEOFF` (marker `kind`, one per cluster). `gate_is_on`: a gate variable, or a deprecated name for it, is `1`. `required_env`: a variable a drill needs, or a failure. |
 | `lane_tokens` | Who holds which token in a `remote` lane (`Tokens`), `new_token`, `new_trace_id`, `traceparent` (the header value). |
 | `remote_lane` | The `remote` lane in one process (`remote_lane`, `RemoteLane`, `GatedTools`, `workload_server`), and the `LaneContract` factories. |
 | `kind` | kubectl helpers pinned to `kind-poc05`, `exec_probe` (`ExecFailed`), `probe`, `node_sh`, `unpoliced_caller`, `tcp_check`. |

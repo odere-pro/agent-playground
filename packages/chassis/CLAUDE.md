@@ -49,8 +49,8 @@ Under `packages/chassis/`: `configs/` the bundled specs, `schemas/` the publishe
 - Real adapters: `tests/integration/`, marked `network`, run by `make test-integration` (Docker). Never in the gate.
 - `make schemas` after a schema change. A test fails on drift.
 - `make lint` checks the import rules. `make quick` before every commit.
-- PoC-5 scenarios: `pocs/poc-05-sandboxed/tests/`. The kind ones run with `POC05_KIND=1`.
-- PoC-6 scenarios: `pocs/poc-06a-bake-off-sidecar-lane/tests/`, `pocs/poc-06b-bake-off-remote-lane/tests/`, `pocs/poc-06c-pretrained-slm/tests/`. The kind ones run with `POC06_KIND=1`.
-- PoC-7 scenarios: `pocs/poc-07-cross-cutting-decisions/tests/`. The stack drills run with `POC07_STACK=1`.
-- PoC-8 scenarios: `pocs/poc-08-cross-cutting-build/tests/`. The stack drills run with `POC08_STACK=1` and `POC08_LITELLM=1`.
+- PoC-5 scenarios: `pocs/poc-05-sandboxed/tests/`. The kind ones run with `KIND_DRILLS=1`.
+- PoC-6 scenarios: `pocs/poc-06a-bake-off-sidecar-lane/tests/`, `pocs/poc-06b-bake-off-remote-lane/tests/`, `pocs/poc-06c-pretrained-slm/tests/`. The kind ones run with `KIND_DRILLS=1`.
+- PoC-7 scenarios: `pocs/poc-07-cross-cutting-decisions/tests/`. The stack drills run with `COMPOSE_STACK=1`.
+- PoC-8 scenarios: `pocs/poc-08-cross-cutting-build/tests/`. The stack drills run with `COMPOSE_STACK=1` and `COMPOSE_STACK=1`.
 - The full test map is in `docs/guides/chassis-reference.md`.

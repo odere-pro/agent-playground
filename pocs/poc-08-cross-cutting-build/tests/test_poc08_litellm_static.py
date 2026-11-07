@@ -8,7 +8,7 @@
 - Keys: no key literal in any file; the master key reaches LiteLLM only, the virtual key the
   chassis only, both from git-ignored files that `stack.sh` makes.
 - The workflow is read-only, pinned by SHA, uses no secret, and uploads its artifacts.
-- The drill is collected only with `POC08_LITELLM=1`, and then every test in it is `network`.
+- The drill is collected only with `COMPOSE_STACK=1`, and then every test in it is `network`.
 
 Parses files and runs `pytest --collect-only`; no Docker, no socket.
 """
@@ -29,6 +29,7 @@ import yaml
 from chassis.adapters.litellm.guardrails import StageNames
 from chassis.server import ChassisConfig
 from chassis_contracts.redteam import load_cases
+from poc_harness.plugin import DEPRECATED_NAMES
 
 ROOT = Path(__file__).resolve().parents[3]
 STACK = ROOT / "deploy/compose/poc08-litellm"
@@ -380,7 +381,7 @@ def test_the_workflow_runs_the_drill_uploads_artifacts_and_tears_down() -> None:
     runs = " ".join(str(s.get("run", "")) for s in _steps())
     for verb in ("up", "wait", "digests", "env"):
         assert f"deploy/compose/poc08-litellm/stack.sh {verb}" in runs
-    assert f"POC08_LITELLM=1 uv run pytest -m network -v -s \\\n            {DRILL}" in (
+    assert f"COMPOSE_STACK=1 uv run pytest -m network -v -s \\\n            {DRILL}" in (
         WORKFLOW.read_text()
     )
     upload = steps["Artifacts"]
@@ -414,9 +415,10 @@ def test_the_model_script_checks_raw_values_before_the_mask() -> None:
 
 
 def _collect(env_value: str | None, target: str) -> dict[str, list[str]]:
-    env = {k: v for k, v in os.environ.items() if k != "POC08_LITELLM"}
+    gates = {"COMPOSE_STACK", *DEPRECATED_NAMES}
+    env = {k: v for k, v in os.environ.items() if k not in gates}
     if env_value is not None:
-        env["POC08_LITELLM"] = env_value
+        env["COMPOSE_STACK"] = env_value
     code = (
         "import json, sys, pytest\n"
         "class Seen:\n"

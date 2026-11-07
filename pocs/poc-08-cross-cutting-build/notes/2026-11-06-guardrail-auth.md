@@ -34,7 +34,7 @@ Offline, in `make test-poc POC=08` (`test_poc08_litellm_static.py`): `test_every
 ```bash
 deploy/compose/poc08-litellm/stack.sh up && deploy/compose/poc08-litellm/stack.sh wait
 export "$(deploy/compose/poc08-litellm/stack.sh env)"
-POC08_LITELLM=1 uv run pytest -m network -v -s \
+COMPOSE_STACK=1 uv run pytest -m network -v -s \
     pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_litellm.py
 deploy/compose/poc08-litellm/stack.sh down
 ```

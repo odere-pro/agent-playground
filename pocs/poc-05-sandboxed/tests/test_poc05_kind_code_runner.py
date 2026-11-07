@@ -28,9 +28,9 @@ standard-library code. Each refusal sits next to its allowed control in the same
 - `/dev/shm` is an 8Mi memory `emptyDir`: a write past it fails with ENOSPC.
 - The claim for a call is gone, with its pod, within 10 s (`suggested:`) of the call's end.
 
-A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc_harness.drills`). It needs the
+A kind test: marked `network`, skipped unless `KIND_DRILLS=1` (`poc_harness.drills`). It needs the
 gateway URL and the chassis's key in the environment. Run:
-`POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network <this file>`.
+`KIND_DRILLS=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network <this file>`.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ from typing import Any
 
 import pytest
 from chassis.adapters.mcp.gateway import McpGatewayTools
-from poc_harness.drills import POC05_KIND, required_env
+from poc_harness.drills import KIND_SANDBOX, required_env
 from poc_harness.kind import (
     AGENTS_NS,
     CONTEXT,
@@ -69,7 +69,7 @@ from poc_harness.kind import (
     warm_sandboxes,
 )
 
-pytestmark = POC05_KIND
+pytestmark = KIND_SANDBOX
 
 URL_VAR = "POC05_GATEWAY_MCP_URL"
 KEY_VAR = "POC05_CHASSIS_VIRTUAL_KEY"

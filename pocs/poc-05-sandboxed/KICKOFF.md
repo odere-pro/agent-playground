@@ -32,7 +32,7 @@ Step 2. Finish T19 (bring-up), one agent, holds Docker and kind:
 - If the cluster is gone, run `deploy/kind/poc05/run.sh up` from nothing and record that it worked in one go (it was never shown end to end in one run). If it is up, run `up` again and show it converges. The last change in progress was the preflight memory check, which must not count our own poc05 node.
 - Record one request through agent-echo (sidecar lane), one through chassis-echo-remote (remote lane: chassis -> remote Sandbox on gVisor -> chassis listener 8091 with its token -> LiteLLM with the chassis key -> fake model), and one tool call through the gateway. Add the missing "Requests" section to the bring-up note.
 - Item 10: memory per pod and for the node once all are Ready; a table in the note.
-- Run the kind tier: `POC05_KIND=1 uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs` (admission and tool-gateway files exist); fix what fails. Pass any key to a test through env read from the Secret in a subshell, never argv or a log.
+- Run the kind tier: `KIND_DRILLS=1 uv run pytest -m network pocs/poc-05-sandboxed/tests -q -rs` (admission and tool-gateway files exist); fix what fails. Pass any key to a test through env read from the Secret in a subshell, never argv or a log.
 
 Step 3. Cluster suites, one kind task at a time:
 - T21 sidecar lane: criteria 3, 4, 5, 7 on kind. Hard requirement 1 per service (LiteLLM, MCP gateway, Valkey, MinIO): a call without the chassis's credential is refused and the same call through the chassis works. No provider key, internal credential, or service account token in the workload container. Metadata address, Kubernetes API (node IP:6443, not the Service IP), and the chassis public port on loopback unreachable from the workload; note that the metadata block cannot be demonstrated on Docker Desktop (nothing answers there), so record it as a static check plus a stated limit. Admission: run test_poc05_kind_admission.py.
@@ -68,7 +68,7 @@ RULES
 - Every kubectl call pins --context kind-poc05; every kind call --name poc05.
 - No secret value in any file, argv, log, or report.
 - Run pytest over earlier PoCs only through scripts/check_offline.sh or with -m "not network"; plain uv run pytest starts Docker.
-- Test basenames are unique repo-wide; PoC tests start with test_poc05_; kind tests are marked network and gated by POC05_KIND=1.
+- Test basenames are unique repo-wide; PoC tests start with test_poc05_; kind tests are marked network and gated by KIND_DRILLS=1.
 - Each agent owns named files; name the turn limit in each brief (developer and tester about 60, docs-editor 40, reviewer 30) and resume a stopped agent with SendMessage. Have agents append long notes one section per write and write long reports to a notes file.
 - Refer to security checks by their H ids and describe them as "the control refuses X"; never write or ask for code that attacks.
 - Commit only when I ask; never force-push.

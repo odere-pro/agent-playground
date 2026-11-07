@@ -15,8 +15,8 @@ runner's half is `test_poc05_kind_code_runner.py` (`test_dev_shm_is_capped`, str
 
 Every write is checked from outside the pod: `kubectl exec` of echo-python's own Python (T10 is
 dropped). The fill stops at 40 MiB and removes its files on every path. A kind test: marked
-`network`, skipped unless `POC05_KIND=1` (`poc_harness.drills`). Run:
-`POC05_KIND=1 uv run pytest -m network <this file>`.
+`network`, skipped unless `KIND_DRILLS=1` (`poc_harness.drills`). Run:
+`KIND_DRILLS=1 uv run pytest -m network <this file>`.
 """
 
 from __future__ import annotations
@@ -25,10 +25,10 @@ import json
 from typing import Any
 
 import pytest
-from poc_harness.drills import POC05_KIND
+from poc_harness.drills import KIND_SANDBOX
 from poc_harness.kind import REMOTE_NS, WORKLOAD, kubectl, node_sh, pod
 
-pytestmark = POC05_KIND
+pytestmark = KIND_SANDBOX
 
 REMOTE = "remote-echo"
 SHM_CAP_MIB = 32  # suggested: the remote's /tmp sizeLimit; no /dev/shm cap is set today

@@ -454,7 +454,7 @@ Spec: [contract v4](../contracts/contract-v4.md). How it works: [the PoC-5 guide
     - So a remote spends tokens and calls tools only inside the run it serves, under its budget.
 - `remote_tokens(auth)` reads the listener's tokens from `spec.engine.auth.proxy_token_env` and `proxy_previous_token_env` (R2-09). Then the outbound `token_env` is not accepted, so a remote cannot replay the token the chassis sends it. With `proxy_token_env` unset, it falls back to `token_env` and `previous_token_env`, one token both ways. `proxy_previous_token_env` without `proxy_token_env` is a config error. A missing variable is a `LookupError` that names it. A set token shorter than `MIN_TOKEN_LENGTH` (suggested: 32 characters), current or previous, is a `ValueError` that names the variable, never the value (R2-31); `chassis serve` exits with status 2.
 - `chassis serve` runs it only when `spec.engine.connector` is `remote` (see [cli.py](#clipy)).
-- Tests: `tests/test_remote_auth.py`, `tests/test_remote_proxy_token.py`, `tests/test_server_cli.py`. Scenarios: `pocs/poc-05-sandboxed/tests/test_poc05_remote_lane_offline.py`; on kind, `test_poc05_kind_remote_controls.py` (`POC05_KIND=1`).
+- Tests: `tests/test_remote_auth.py`, `tests/test_remote_proxy_token.py`, `tests/test_server_cli.py`. Scenarios: `pocs/poc-05-sandboxed/tests/test_poc05_remote_lane_offline.py`; on kind, `test_poc05_kind_remote_controls.py` (`KIND_DRILLS=1`).
 
 ### mcp/gateway.py
 
@@ -495,7 +495,7 @@ Spec: [contract v4](../contracts/contract-v4.md). How it works: [the PoC-5 guide
 
 - The connector: `tests/test_remote_connector.py`, `tests/test_remote_token_scrub.py` (the remote's token never leaves the connector).
 - The lane contract: `pocs/poc-05-sandboxed/tests/test_poc05_remote_lane_contract.py`.
-- Every PoC-5 scenario is in `pocs/poc-05-sandboxed/tests/`. The kind ones run with `POC05_KIND=1`.
+- Every PoC-5 scenario is in `pocs/poc-05-sandboxed/tests/`. The kind ones run with `KIND_DRILLS=1`.
 
 ## PoC-6 modules
 

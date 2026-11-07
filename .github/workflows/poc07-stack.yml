@@ -53,7 +53,7 @@ jobs:
           set -euo pipefail
           # `stack.sh env` prints POC07_ENV_FILE=<path>: the path, never the values.
           export "$(deploy/compose/poc07/stack.sh env)"
-          POC07_STACK=1 uv run pytest -m network -v \
+          COMPOSE_STACK=1 uv run pytest -m network -v \
             pocs/poc-07-cross-cutting-decisions/tests/test_poc07_stack.py
       - name: Logs
         if: failure()

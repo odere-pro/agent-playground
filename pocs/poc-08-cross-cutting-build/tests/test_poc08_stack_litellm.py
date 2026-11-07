@@ -1,10 +1,10 @@
 """PoC-8 drill: a real LiteLLM proxy in the trace, with its real Presidio hook, against
-`deploy/compose/poc08-litellm`. `network`; collected only with `POC08_LITELLM=1` (conftest.py),
+`deploy/compose/poc08-litellm`. `network`; collected only with `COMPOSE_STACK=1` (conftest.py),
 so `make test` never sees it. CI runs it in `.github/workflows/poc08-litellm.yml`; by hand:
 
     deploy/compose/poc08-litellm/stack.sh up && deploy/compose/poc08-litellm/stack.sh wait
     export "$(deploy/compose/poc08-litellm/stack.sh env)"
-    POC08_LITELLM=1 uv run pytest -m network -v -s \\
+    COMPOSE_STACK=1 uv run pytest -m network -v -s \\
         pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_litellm.py
 
 What it shows:
@@ -49,12 +49,13 @@ import httpx
 import pytest
 from chassis_contracts.redteam import load_cases
 from chassis_contracts.redteam.live import Evidence, request_body, stopped
+from poc_harness.drills import gate_is_on
 
 pytestmark = [
     pytest.mark.network,
     pytest.mark.skipif(
-        os.environ.get("POC08_LITELLM") != "1",
-        reason="a PoC-8 drill: needs deploy/compose/poc08-litellm up and POC08_LITELLM=1",
+        not gate_is_on("COMPOSE_STACK"),
+        reason="a PoC-8 drill: needs deploy/compose/poc08-litellm up and COMPOSE_STACK=1",
     ),
 ]
 

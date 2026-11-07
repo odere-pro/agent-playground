@@ -26,8 +26,8 @@ closed connection never counts. The control: a run through that chassis
 publishes its result event, read back from the topic with the chassis's own SCRAM user, inside
 the chassis container (aiokafka; the password read from its env there and never returned).
 
-A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc_harness.drills`). Run:
-`POC05_KIND=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network <this file>`.
+A kind test: marked `network`, skipped unless `KIND_DRILLS=1` (`poc_harness.drills`). Run:
+`KIND_DRILLS=1 deploy/kind/poc05/run.sh with-gateway uv run pytest -m network <this file>`.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ import uuid
 from typing import Any
 
 import pytest
-from poc_harness.drills import POC05_KIND
+from poc_harness.drills import KIND_SANDBOX
 from poc_harness.kind import (
     AGENTS_NS,
     CHASSIS,
@@ -56,7 +56,7 @@ from poc_harness.kind import (
     service_ip,
 )
 
-pytestmark = POC05_KIND
+pytestmark = KIND_SANDBOX
 
 # The gateway lists a tool as `<server>-<tool>`; the chassis's `/mcp` passes the name on.
 GLOSSARY = "fake_tools-glossary_lookup"

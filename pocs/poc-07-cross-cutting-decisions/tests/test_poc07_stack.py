@@ -1,10 +1,10 @@
 """Exit criteria 1 and 2 against the real services of `deploy/compose/poc07` (Langfuse v4, the
-OTel Collector, Jaeger). `network`; skipped unless `POC07_STACK=1`. CI runs it in
+OTel Collector, Jaeger). `network`; skipped unless `COMPOSE_STACK=1`. CI runs it in
 `.github/workflows/poc07-stack.yml`; by hand:
 
     deploy/compose/poc07/stack.sh up && deploy/compose/poc07/stack.sh wait
     export "$(deploy/compose/poc07/stack.sh env)"
-    POC07_STACK=1 uv run pytest -m network -v \\
+    COMPOSE_STACK=1 uv run pytest -m network -v \\
         pocs/poc-07-cross-cutting-decisions/tests/test_poc07_stack.py
 
 Credentials come from the env file named by `POC07_ENV_FILE` (made by `stack.sh`). They are
@@ -47,12 +47,13 @@ import httpx
 import pytest
 from chassis.ports.feedback import Feedback
 from chassis_contracts import FeedbackPortContract
+from poc_harness.drills import gate_is_on
 
 pytestmark = [
     pytest.mark.network,
     pytest.mark.skipif(
-        os.environ.get("POC07_STACK") != "1",
-        reason="a PoC-7 stack drill: needs deploy/compose/poc07 up and POC07_STACK=1",
+        not gate_is_on("COMPOSE_STACK"),
+        reason="a PoC-7 stack drill: needs deploy/compose/poc07 up and COMPOSE_STACK=1",
     ),
 ]
 

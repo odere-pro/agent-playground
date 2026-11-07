@@ -16,8 +16,8 @@ is built from). Both go as the cluster admin, so RBAC refuses neither; the root 
 its twin only in its user, so the trust rule admits it and PodSecurity alone refuses it. Nothing
 is created.
 
-A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc_harness.drills`). Run:
-`POC05_KIND=1 uv run pytest -m network <this file>`.
+A kind test: marked `network`, skipped unless `KIND_DRILLS=1` (`poc_harness.drills`). Run:
+`KIND_DRILLS=1 uv run pytest -m network <this file>`.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from typing import Any
 
 import pytest
 import yaml
-from poc_harness.drills import POC05_KIND
+from poc_harness.drills import KIND_SANDBOX
 from poc_harness.kind import (
     AGENTS_NS,
     REMOTE_NS,
@@ -42,7 +42,7 @@ from poc_harness.kind import (
     warm_sandboxes,
 )
 
-pytestmark = POC05_KIND
+pytestmark = KIND_SANDBOX
 
 REPO = Path(__file__).resolve().parents[3]
 FIXTURES = REPO / "deploy" / "kind" / "poc05" / "admission" / "fixtures"

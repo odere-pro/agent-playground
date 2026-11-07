@@ -10,7 +10,7 @@
 - The model script answers each drill input with the rule the drill needs, the judge included
   (the real `judge_messages` and `parse_verdict`).
 - The workflow: read-only, every action pinned by SHA, no secret, the stack always torn down.
-- The drill is collected only with `POC08_STACK=1`, and is `network`.
+- The drill is collected only with `COMPOSE_STACK=1`, and is `network`.
 - The drill's and the latency script's helpers, on `httpx.MockTransport`.
 
 The live half is `test_poc08_stack_metrics.py` (`network`) and `poc08_stack_latency.py`.

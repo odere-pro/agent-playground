@@ -70,7 +70,7 @@ jobs:
           mkdir -p artifacts/poc08-stack
           # `stack.sh env` prints POC08_ENV_FILE=<path>: the path, never the values.
           export "$(deploy/compose/poc08/stack.sh env)"
-          POC08_STACK=1 uv run pytest -m network -v \
+          COMPOSE_STACK=1 uv run pytest -m network -v \
             --junitxml=artifacts/poc08-stack/drill.xml \
             pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_metrics.py
       - name: Latency, stages on and off

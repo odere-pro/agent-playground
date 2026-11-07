@@ -23,8 +23,8 @@ Known gap:
   tool calls ("what the chassis cannot see"), so a `tool_call` event there is a failure of the
   limit, not a pass.
 
-A kind test: marked `POC06_KIND` (`poc_harness.drills`), so also `network`, and skipped unless
-`POC06_KIND=1`.
+A kind test: marked `KIND_BAKEOFF` (`poc_harness.drills`), so also `network`, and skipped unless
+`KIND_DRILLS=1`.
 Run: `deploy/kind/poc06/run.sh test`.
 """
 
@@ -40,9 +40,9 @@ from poc_harness.bakeoff_kind import (
     run_stream,
 )
 from poc_harness.bakeoff_tasks import CHECKS, LOOKUP, Task
-from poc_harness.drills import POC06_KIND
+from poc_harness.drills import KIND_BAKEOFF
 
-pytestmark = POC06_KIND
+pytestmark = KIND_BAKEOFF
 
 CASES = [
     pytest.param(engine, name, id=f"{engine.id}-{name}")

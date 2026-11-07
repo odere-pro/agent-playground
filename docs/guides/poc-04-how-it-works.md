@@ -280,11 +280,11 @@ make test
 make test-poc POC=04
 ```
 
-The integration tests: real adapters in testcontainers (`packages/chassis/tests/integration/`) and the `network` scenarios in `pocs/poc-04-stateless-scalable/tests/`. Needs Docker. Sockets on, keys stripped (`scripts/check_integration.sh`). Compose drills also need `POC04_STACK=1`; kind drills `POC04_KIND=1`.
+The integration tests: real adapters in testcontainers (`packages/chassis/tests/integration/`) and the `network` scenarios in `pocs/poc-04-stateless-scalable/tests/`. Needs Docker. Sockets on, keys stripped (`scripts/check_integration.sh`). Compose drills also need `COMPOSE_STACK=1`; kind drills `KIND_DRILLS=1`.
 
 ```bash
 make test-integration
-POC04_STACK=1 uv run pytest pocs/poc-04-stateless-scalable/tests/test_compose_scale.py -v -p no:randomly
+COMPOSE_STACK=1 uv run pytest pocs/poc-04-stateless-scalable/tests/test_compose_scale.py -v -p no:randomly
 ```
 
 The Compose scale stack (`deploy/compose/scale.sh`, project `poc04`):

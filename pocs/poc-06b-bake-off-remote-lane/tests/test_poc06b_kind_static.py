@@ -1363,7 +1363,7 @@ def test_the_run_sh_text_selects_the_kind_files_by_path_and_names_missing_ones()
         "pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_sidecar_controls.py",
     ]
     assert not missing, missing
-    assert "POC06_KIND=1" in text and '"${KIND_TESTS[@]}"' in text and "-m network" in text
+    assert "KIND_DRILLS=1" in text and '"${KIND_TESTS[@]}"' in text and "-m network" in text
     assert " -k " not in run_tests, "select by file path, not by -k"
 
 

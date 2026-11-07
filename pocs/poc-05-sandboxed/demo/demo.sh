@@ -105,8 +105,8 @@ kind_tests() {
     [[ -f ${id%%::*} ]] || { echo "missing test file: ${id%%::*} (not written yet?)"; return 1; }
   done
   xml="$TMP/$label.xml"
-  printf '$ run.sh with-gateway env POC05_KIND=1 uv run pytest -m network -q -rs %s\n' "$*"
-  "$RUN" with-gateway env POC05_KIND=1 uv run pytest -m network -q -rs -p no:cacheprovider \
+  printf '$ run.sh with-gateway env KIND_DRILLS=1 uv run pytest -m network -q -rs %s\n' "$*"
+  "$RUN" with-gateway env KIND_DRILLS=1 uv run pytest -m network -q -rs -p no:cacheprovider \
     --junitxml="$xml" "$@" 2>&1 | "$RUN" redact | tail -n 12 || rc=$?
   [[ -s $xml ]] || { echo "no test report for $label"; return 1; }
   echo

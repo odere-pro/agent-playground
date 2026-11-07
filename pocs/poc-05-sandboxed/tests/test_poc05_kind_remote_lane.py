@@ -19,8 +19,8 @@ and a scripted model failure. Per-run values are masked: the request id, the too
 trace id and idempotency key, and the names that differ per deployment (agent name, config hash).
 Every event is also parsed with `chassis.core.events.parse_event`.
 
-A kind test: marked `network`, skipped unless `POC05_KIND=1` (`poc_harness.drills`). Run:
-`POC05_KIND=1 uv run pytest -m network <this file>`.
+A kind test: marked `network`, skipped unless `KIND_DRILLS=1` (`poc_harness.drills`). Run:
+`KIND_DRILLS=1 uv run pytest -m network <this file>`.
 """
 
 from __future__ import annotations
@@ -32,10 +32,10 @@ import pytest
 import yaml
 from chassis.core.events import parse_event
 from chassis_contracts.lane import assert_same
-from poc_harness.drills import POC05_KIND
+from poc_harness.drills import KIND_SANDBOX
 from poc_harness.kind import AGENTS_NS, CHASSIS, REMOTE_NS, get_json, kubectl, pod
 
-pytestmark = POC05_KIND
+pytestmark = KIND_SANDBOX
 
 SIDECAR = "agent-echo"
 REMOTE = "chassis-echo-remote"

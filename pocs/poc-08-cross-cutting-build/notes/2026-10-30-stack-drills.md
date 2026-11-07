@@ -29,7 +29,7 @@ Run: [poc08-litellm 41011333394](https://github.com/odere-pro/agent-playground/a
 ```bash
 deploy/compose/poc08-litellm/stack.sh up
 deploy/compose/poc08-litellm/stack.sh wait
-POC08_LITELLM=1 uv run pytest pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_litellm.py
+COMPOSE_STACK=1 uv run pytest pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_litellm.py
 ```
 
 Stack: LiteLLM v1.103.0 with auth on, its Presidio hook, guardrail-server with the pattern stand-in, the OTel Collector, Jaeger.

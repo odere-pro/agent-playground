@@ -292,7 +292,7 @@ def test_workflow_runs_the_stack_and_always_tears_it_down(workflow: dict[str, An
     verbs = ("up", "wait", "digests")
     missing = [v for v in verbs if f"deploy/compose/poc07/stack.sh {v}" not in joined]
     assert missing == []
-    assert "POC07_STACK=1" in joined or job.get("env", {}).get("POC07_STACK") == "1"
+    assert "COMPOSE_STACK=1" in joined or job.get("env", {}).get("COMPOSE_STACK") == "1"
     assert "test_poc07_stack.py" in joined
     assert any(cond == "always()" and "stack.sh down" in run for cond, run in runs), (
         "stack.sh down runs always"

@@ -573,7 +573,7 @@ def test_with_gateway_reads_the_key_with_tracing_off_and_masks_it_in_ci() -> Non
 def test_run_sh_test_runs_through_with_gateway() -> None:
     """Code review MEDIUM: `run.sh test` skipped the code-runner and gateway tests without it."""
     body = _function("run_tests")
-    assert "with_gateway env POC05_KIND=1 uv run pytest -m network" in body
+    assert "with_gateway env KIND_DRILLS=1 uv run pytest -m network" in body
 
 
 def test_replace_changed_job_deletes_a_failed_job_regardless_of_the_dry_run() -> None:

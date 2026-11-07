@@ -203,7 +203,7 @@ def test_a_context_failure_stops_the_drill_before_its_fixtures_start(
     pytester.runpytest_inprocess().assert_outcomes(errors=1)
 
 
-def test_the_named_marks_carry_their_variable_and_context() -> None:
+def test_the_named_marks_carry_their_marker_and_context() -> None:
     gates = {
         name: (mark.name, mark.args, mark.kwargs.get("context"))
         for name, mark in vars(drills).items()
@@ -211,10 +211,10 @@ def test_the_named_marks_carry_their_variable_and_context() -> None:
     }
 
     assert gates == {
-        "POC04_STACK": ("requires_env", ("POC04_STACK",), None),
-        "POC04_KIND": ("requires_env", ("POC04_KIND",), None),
-        "POC05_KIND": ("requires_env", ("POC05_KIND",), "kind-poc05"),
-        "POC06_KIND": ("requires_env", ("POC06_KIND",), "kind-poc05"),
+        "COMPOSE_STACK": ("stack", (), None),
+        "KIND_SCALE": ("kind", (), None),
+        "KIND_SANDBOX": ("kind", (), "kind-poc05"),
+        "KIND_BAKEOFF": ("kind", (), "kind-poc05"),
     }
 
 

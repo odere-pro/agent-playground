@@ -16,7 +16,7 @@ Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still appl
 ## Rules
 
 - Docker and kind: the rules on who may use them and which kind context to pass are in `deploy/CLAUDE.md`.
-- Tests are `test_poc05_*`, and the docstring names the exit criterion. Kind tests are marked `network` and run only with `POC05_KIND=1`. Everything else runs offline in `make test`.
+- Tests are `test_poc05_*`, and the docstring names the exit criterion. Kind tests are marked `network` and run only with `KIND_DRILLS=1`. Everything else runs offline in `make test`.
 - A refusal check always has a paired allowed control: the same call works where it should.
 - T10, the in-pod probe workload, is WIP by the user and a recorded exception (`notes/2026-10-09-t10-probe-exception.md`; how to test it: `docs/guides/poc-05-runbooks.md`, "Testing the probe workload (T10) after it is built"). Until it lands, check controls from outside the pod: `kubectl exec` of tools already in our images, pod specs, cgroup files.
 - Never write an attack tool.

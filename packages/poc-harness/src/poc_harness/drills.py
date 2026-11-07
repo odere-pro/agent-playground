@@ -1,4 +1,7 @@
-"""The named drill marks: put one in a test file's `pytestmark`. See `poc_harness.plugin`."""
+"""The named drill marks: put one in a test file's `pytestmark`. See `poc_harness.plugin`.
+
+A kind drill runs with `KIND_DRILLS=1`, a Compose stack drill with `COMPOSE_STACK=1`.
+"""
 
 from __future__ import annotations
 
@@ -6,18 +9,25 @@ import os
 
 import pytest
 
-POC04_STACK = pytest.mark.requires_env("POC04_STACK")
-"""The PoC-4 Compose scale stack is up."""
-POC04_KIND = pytest.mark.requires_env("POC04_KIND")
-"""The PoC-4 kind cluster is up. `deploy/kind/run.sh` pins its own context."""
-POC05_KIND = pytest.mark.requires_env(
-    "POC05_KIND", context="kind-poc05", hint="make kind-poc05 ARGS=up"
-)
-"""The PoC-5 kind cluster is up."""
-POC06_KIND = pytest.mark.requires_env(
-    "POC06_KIND", context="kind-poc05", hint="make kind-poc06 ARGS=up"
-)
-"""The PoC-6 kind cluster is up. It is the PoC-5 cluster with PoC-6 installed on it."""
+from poc_harness.plugin import gate_is_on
+
+__all__ = [
+    "COMPOSE_STACK",
+    "KIND_BAKEOFF",
+    "KIND_SANDBOX",
+    "KIND_SCALE",
+    "gate_is_on",
+    "required_env",
+]
+
+COMPOSE_STACK = pytest.mark.stack
+"""A Compose stack is up. The test file's docstring names which one."""
+KIND_SCALE = pytest.mark.kind
+"""The scale cluster of `deploy/kind/run.sh` is up. The script pins its own context."""
+KIND_SANDBOX = pytest.mark.kind(context="kind-poc05", hint="make kind-poc05 ARGS=up")
+"""The sandbox cluster of `deploy/kind/poc05` is up."""
+KIND_BAKEOFF = pytest.mark.kind(context="kind-poc05", hint="make kind-poc06 ARGS=up")
+"""The bake-off is installed on the sandbox cluster (`deploy/kind/poc06`)."""
 
 
 def required_env(*names: str) -> list[str]:
