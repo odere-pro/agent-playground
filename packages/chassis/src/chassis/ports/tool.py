@@ -49,6 +49,8 @@ class ToolError(Exception):
       on the key's allow-list, or the key is not valid (not retryable).
     - `tool_unavailable` (PoC-5): the gateway or the tool server did not answer, timed out, or
       failed with a 5xx (`retryable=True`).
+      Also a result over the size cap (R5a-24, `MAX_RESULT_BYTES` in `adapters/mcp/gateway.py`),
+      which is not retryable, because the same call returns the same result.
 
     A failure the tool itself reports is `ToolResult(is_error=True)`, never a `ToolError`.
     """

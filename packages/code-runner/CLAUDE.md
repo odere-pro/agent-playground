@@ -12,7 +12,9 @@ The sandbox pod is the security boundary, not this code. The server runs any Pyt
 - `src/code_runner/isolation.py` the Linux-only isolation between calls: `ensure_reaper`, `harden_server`, `descendants`, `sweep`, `nproc_limit`, `lost`. README "Isolation between calls".
 - `src/code_runner/server.py` `create_server(*, limits, tmp_root, cache_size) -> FastMCP`: the idempotency cache (`ResultCache`), `resolve_key`, `fingerprint`, `GET /health`. `new_mcp` and `register_run_python(mcp, limits, call)` hold the one tool definition both servers use.
 - `src/code_runner/dispatch.py` the dispatcher: `Dispatcher` (a `SandboxClaim` per call; holds the `ResultCache`), `create_dispatch_server`, `DispatchConfig`, the two clients `api_client` and `sandbox_client`. Design: `docs/plans/2026-10-09-poc-05-per-call-sandbox.md`.
-- `src/code_runner/cli.py` `code-runner --host --port --tmp-root --cache-size` serves the tool; `code-runner dispatch --pool --namespace` runs the dispatcher. Both: uvicorn, streamable HTTP at `/mcp`, stateless.
+- `src/code_runner/a2a_dispatch.py` the PoC-6 remote-run front door: `RunDispatcher` (a `SandboxClaim` per A2A streaming run, on `dispatch.Claims`), `FrontDoorConfig`, `load_engines`, `parse_engine_ports`, `create_front_doors` (one app per engine port; another engine's path is 404 with no claim). README "A2A front door mode".
+- `src/code_runner/asgi.py` the HTTP front both servers share: `guard(app, *, limits, token)`, `BodyCap` (413 `body_too_large` over `MAX_BODY_FACTOR` x `max_code_bytes`), `BearerAuth` (401 `unauthorized`; every path but `/health`), `read_token_file`.
+- `src/code_runner/cli.py` `serve_app` and `dispatch_app` build the guarded app; `code-runner --host --port --tmp-root --cache-size` serves the tool; `code-runner dispatch --pool --namespace [--inbound-token-file]` runs the dispatcher; `code-runner a2a-dispatch --namespace --cards-dir --public-url --engine-port NAME=PORT...` runs the front door, one uvicorn server per port in one process (`run_servers`). Both: uvicorn, streamable HTTP at `/mcp`, stateless.
 - `Dockerfile`: uid 10003, root-owned `/app`, read-only root, writes only `/tmp`.
 
 ## Rules
@@ -21,7 +23,7 @@ The sandbox pod is the security boundary, not this code. The server runs any Pyt
 - The child gets `child_env(...)` only, no shell, `-I -S`, a new session, a fresh directory removed afterwards. Keep it that way.
 - One call at a time per process (`MAX_CONCURRENT = 1`): the sweep kills every process started since the call began. Do not raise it.
 - Isolation tests that need prctl or `/proc` are marked to skip off Linux; keep a portable test for the process-group path.
-- Error codes are stable strings at the start of the tool error: `idempotency_key_required`, `bad_arguments`, `run_failed`; the dispatcher adds `sandbox_unavailable` (nothing ran) and `sandbox_lost` (key freed). The text after the code is fixed: never an upstream body or the token.
+- Error codes are stable strings at the start of the tool error: `idempotency_key_required`, `bad_arguments`, `run_failed`; the dispatcher adds `sandbox_unavailable` (nothing ran) and `sandbox_lost` (key freed). The text after the code is fixed: never an upstream body, the token, or the input (a schema refusal is `bad_arguments` with a fixed text, `server.SCHEMA_REFUSAL`). The HTTP refusals are `body_too_large` (413) and `unauthorized` (401), and never echo the body or the token.
 - Never log the code, its output, or a key. The log line has sizes, exit code, and timing.
 - Tests start with `test_code_runner_` (basenames are unique in the repo). They use the in-process FastMCP client and `httpx.ASGITransport`, no socket. A test that starts a child keeps the code tiny and the timeout short.
 - `pyproject.toml` and `uv.lock` belong to T01 in PoC-5: ask the orchestrator for a dependency change.

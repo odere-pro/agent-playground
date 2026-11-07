@@ -17,7 +17,10 @@
 #   admission test uses for fixtures in poc05-agents, so the policy, not RBAC, refuses them. It
 #   cannot read or write Secrets (seed.sh, run as cluster admin, makes them) and cannot edit the
 #   params. It applies the code-runner SandboxTemplate and SandboxWarmPool in tools/, but never a
-#   SandboxClaim: claims are the dispatcher's alone.
+#   SandboxClaim: claims are the dispatcher's alone. It has no NetworkPolicy rights (core review
+#   R5a-02): the hard limits live in NetworkPolicy and the pipeline is not the boundary, so one
+#   pipeline manifest must not delete default-deny or open an edge. `run.sh` applies every
+#   NetworkPolicy (base/default-deny.yaml and each folder's network-policy.yaml) as cluster admin.
 # - The dispatcher: poc05-platform/code-runner-dispatch (the ServiceAccount is made in
 #   platform/code-runner-dispatch.yaml, not here). Its Role in poc05-tools allows create, get, and
 #   delete on sandboxclaims and nothing else: no list or watch (orphans expire at shutdownTime), no
@@ -96,9 +99,6 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["extensions.agents.x-k8s.io"]
     resources: ["sandboxtemplates", "sandboxwarmpools"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["networking.k8s.io"]
-    resources: ["networkpolicies"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

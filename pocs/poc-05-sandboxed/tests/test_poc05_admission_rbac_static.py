@@ -57,7 +57,17 @@ def test_deployer_deploys_every_workload_namespace(rbac: list[Doc]) -> None:
     assert all(b["kind"] == "RoleBinding" for b in found), "no cluster-wide grant"
     assert {b["metadata"]["namespace"] for b in found} == ENFORCED_NAMESPACES
     needed = {"pods", "configmaps", "services", "serviceaccounts", "deployments", "sandboxes"}
-    assert needed | {"networkpolicies"} <= resources_of(rbac, DEPLOYER)
+    assert needed <= resources_of(rbac, DEPLOYER)
+
+
+def test_deployer_cannot_write_network_policies(rbac: list[Doc]) -> None:
+    """Core review R5a-02: the hard limits live in NetworkPolicy, and the pipeline is not the
+    boundary, so the deployer may not delete `default-deny` or open an edge. `run.sh` applies
+    each folder's `network-policy.yaml` as the cluster admin. The paired control: the deployer
+    still creates pods in `poc05-tools`."""
+    assert "networkpolicies" not in resources_of(rbac, DEPLOYER)
+    assert not can_i(rbac, DEPLOYER, "delete", "networkpolicies", "networking.k8s.io", TOOLS)
+    assert can_i(rbac, DEPLOYER, "create", "pods", "", TOOLS)
 
 
 @pytest.mark.parametrize(

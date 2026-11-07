@@ -11,6 +11,8 @@ from an allowed peer in the same test (code review and security review, 2026-10-
 
 `unpoliced_caller` starts a short-lived pod in `default` (no NetworkPolicy there): the control
 that an address answers from this cluster when no egress policy holds the caller back.
+`gateway_caller` starts one as the gateway peer, the only in-cluster caller a chassis's public
+port 8080 takes (core review R5a-07; `deploy/kind/poc05/agents/gateway-network-policy.yaml`).
 
 Every kubectl call pins `--context kind-poc05`.
 """
@@ -52,6 +54,11 @@ CALLER = "poc05-t22-caller"  # a prefix: each caller pod gets its own name
 CALLER_PART_OF = "poc05-t22"
 CALLER_NS = "default"
 CALLER_IMAGE = "kind.local/agent-platform/echo-python:poc05"
+# suggested: the gateway peer of every chassis's 8080 (agents/network-policy.yaml).
+GATEWAY_NS = "agent-platform-system"
+GATEWAY_LABELS = {"agents.platform/role": "gateway"}
+# kube-dns takes any caller (kube-system has no policy): the control that a caller's egress works.
+DNS = ("kube-system", "kube-dns")
 
 
 def kubectl(
@@ -211,15 +218,40 @@ def unpoliced_caller() -> Iterator[str]:
     test sessions on one cluster never delete each other's caller (full tier, 2026-10-09: a fixed
     name let one session's setup kill the pod another session was using). Caller pods left by an
     interrupted run that are no longer Running are deleted first. Deleted after."""
+    with _caller(CALLER_NS, {}) as name:
+        yield name
+
+
+@contextmanager
+def gateway_caller() -> Iterator[str]:
+    """A pod in `GATEWAY_NS` with `GATEWAY_LABELS`, made as the cluster admin (no other identity
+    may create pods there); its name. Its egress is the gateway policy: every chassis's 8080 and
+    nothing else. Run checks in it with `in_caller(name, checks, GATEWAY_NS)`. Deleted after."""
+    with _caller(GATEWAY_NS, GATEWAY_LABELS) as name:
+        yield name
+
+
+@contextmanager
+def _caller(namespace: str, labels: dict[str, str]) -> Iterator[str]:
+    """`CALLER_POD` in `namespace`, with `labels` added, under its own name."""
     exe = shutil.which("kubectl")
     assert exe is not None, "kubectl is not on PATH"
     gone = kubectl(
-        "delete", "pod", "-n", CALLER_NS, "-l", f"app.kubernetes.io/part-of={CALLER_PART_OF}",
+        "delete", "pod", "-n", namespace, "-l", f"app.kubernetes.io/part-of={CALLER_PART_OF}",
         "--field-selector=status.phase!=Running", "--ignore-not-found", "--wait=true",
     )  # fmt: skip
     assert gone.returncode == 0, gone.stderr
     name = f"{CALLER}-{uuid.uuid4().hex[:6]}"
-    manifest = {**CALLER_POD, "metadata": {**CALLER_POD["metadata"], "name": name}}
+    meta = CALLER_POD["metadata"]
+    manifest = {
+        **CALLER_POD,
+        "metadata": {
+            **meta,
+            "name": name,
+            "namespace": namespace,
+            "labels": {**meta["labels"], **labels},
+        },
+    }
     made = subprocess.run(
         [exe, "--context", CONTEXT, "create", "-f", "-"],
         input=json.dumps(manifest),
@@ -231,17 +263,25 @@ def unpoliced_caller() -> Iterator[str]:
     assert made.returncode == 0, made.stderr
     try:
         ready = kubectl(
-            "wait", "-n", CALLER_NS, "--for=condition=Ready", f"pod/{name}", "--timeout=90s"
+            "wait", "-n", namespace, "--for=condition=Ready", f"pod/{name}", "--timeout=90s"
         )
         assert ready.returncode == 0, ready.stderr
         yield name
     finally:
-        kubectl("delete", "pod", name, "-n", CALLER_NS, "--wait=false", "--grace-period=0")
+        kubectl("delete", "pod", name, "-n", namespace, "--wait=false", "--grace-period=0")
 
 
-def in_caller(caller: str, checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Run `checks` in the caller pod `caller` (the name `unpoliced_caller` gave)."""
-    return probe(CALLER_NS, caller, "caller", checks)
+def in_caller(
+    caller: str, checks: list[dict[str, Any]], namespace: str = CALLER_NS
+) -> list[dict[str, Any]]:
+    """Run `checks` in the caller pod `caller` (the name `unpoliced_caller` or, with
+    `namespace=GATEWAY_NS`, `gateway_caller` gave)."""
+    return probe(namespace, caller, "caller", checks)
+
+
+def dns_check() -> dict[str, Any]:
+    """A TCP check to kube-dns on 53, which every caller may reach: its egress works."""
+    return tcp_check(service_ip(*DNS), 53)
 
 
 def tcp_check(host: str, port: int) -> dict[str, Any]:

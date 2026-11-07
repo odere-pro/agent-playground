@@ -6,6 +6,10 @@ fixture: a write tool without a key is `idempotency_key_required` and has no eff
 twice is one effect and the same result; two keys are two effects; a tool outside the allow-list
 is not listed and its call raises `unknown_tool` or `tool_denied`; an unavailable port raises
 `tool_unavailable` with `retryable=True`.
+
+Argument schema (R5b-08), skipped without `nested_port`: given the one shared schema
+`NESTED_PARAMETERS`, the same arguments with a nested property of the wrong type are
+`bad_arguments` in every binding, and the message names the path, never the value.
 """
 
 from __future__ import annotations
@@ -19,6 +23,26 @@ from chassis.ports.tool import ToolError, ToolPort, ToolResult
 
 DENIED_CODES = frozenset({"unknown_tool", "tool_denied"})
 """A call outside the allow-list raises one of these: whichever the gateway gives (section 2.6)."""
+
+
+NESTED_TOOL = "nested_lookup"
+"""A read-only tool a `nested_port` lists with `NESTED_PARAMETERS`, answering any valid call."""
+
+NESTED_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "term": {"type": "string"},
+        "filter": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer"}},
+            "required": ["limit"],
+        },
+    },
+    "required": ["term", "filter"],
+}
+NESTED_VALUE = "nested-value-never-echoed"
+NESTED_VALID: dict[str, Any] = {"term": "SLM", "filter": {"limit": 3}}
+NESTED_WRONG: dict[str, Any] = {"term": "SLM", "filter": {"limit": NESTED_VALUE}}
 
 
 class KnownCall:
@@ -39,6 +63,9 @@ class ToolPortContract:
     port but is outside this credential's allow-list; called with `{}`), `count_effects` (how
     many effects the write tool has had so far), `make_unavailable` (makes the next call fail as
     unavailable). A case whose fixture is not provided is skipped.
+
+    Argument schema, optional: `nested_port` (a port that lists `NESTED_TOOL`, read-only, with
+    `NESTED_PARAMETERS` as its schema).
     """
 
     @pytest.fixture
@@ -212,3 +239,23 @@ class ToolPortContract:
             await tool_port.call(known_call.name, known_call.arguments)
         assert info.value.code == "tool_unavailable"
         assert info.value.retryable is True
+
+    # Argument schema (R5b-08). Optional fixture: skipped when the binding does not override it.
+
+    @pytest.fixture
+    def nested_port(self) -> ToolPort:
+        pytest.skip(f"provide a nested_port fixture: a port listing {NESTED_TOOL}")
+
+    async def test_a_nested_property_of_the_wrong_type_is_bad_arguments(
+        self, nested_port: ToolPort
+    ) -> None:
+        (definition,) = [d for d in nested_port.list_tools() if d.name == NESTED_TOOL]
+        assert definition.parameters["properties"] == NESTED_PARAMETERS["properties"]
+        answered = await nested_port.call(NESTED_TOOL, NESTED_VALID)
+        assert answered.is_error is False
+        with pytest.raises(ToolError) as info:
+            await nested_port.call(NESTED_TOOL, NESTED_WRONG)
+        assert info.value.code == "bad_arguments"
+        assert info.value.retryable is False
+        assert "filter.limit" in info.value.message
+        assert NESTED_VALUE not in info.value.message

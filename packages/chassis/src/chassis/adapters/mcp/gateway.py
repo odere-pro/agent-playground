@@ -20,8 +20,10 @@ MCP limit) is `unknown_tool` before any request, so it never reaches the gateway
 `call()`, in order:
 - a write tool (`read_only: false`; a tool with no `readOnlyHint` counts as one) with no
   `idempotency_key` raises `idempotency_key_required` before any request;
-- arguments that fail the listed schema (required fields, top-level types, extra fields when
-  `additionalProperties` is false) raise `bad_arguments` before any request;
+- arguments that fail the listed schema raise `bad_arguments` before any request. The check is
+  `chassis.ports.tool_arguments.check_arguments`, the one the fake tools run (R5b-08): types,
+  `enum`, `anyOf`/`oneOf`, and nested `properties`, `required`, `additionalProperties: false`.
+  The message names fields and paths, never a value;
 - the key goes as `_meta.idempotency_key`, and also as the `idempotency_key` argument when the
   tool's schema declares that property (the fallback for a gateway that drops `_meta`);
 - the gateway's answer maps to: the call's own JSON-RPC error first (an unknown tool
@@ -38,6 +40,18 @@ in-cluster name (`check_gateway_url`), so the key never crosses an outside netwo
 http (review R5a-25). The `ValueError` names the variable, never the URL or the key. Profile
 `cloud` requires `https` always; `chassis.profiles` checks that before this adapter is built.
 
+Result size (R5a-24): a result whose serialized form is over `MAX_RESULT_BYTES` (1 MiB, suggested)
+is `tool_unavailable` (not retryable) with a fixed message that names the cap, never the content.
+The MCP client library reads a whole response, then parses it, before the adapter sees the
+result; so the adapter also wraps each response body as it streams in and stops reading past
+`MAX_RESPONSE_BYTES` (twice the cap plus framing: FastMCP sends a result as text and again as
+structured content). The count is of decoded bytes: the client asks for `Accept-Encoding:
+identity`, and a body the gateway encodes anyway (gzip, deflate) is decoded in the wrapper, in
+pieces of at most 64 KiB, so a small compressed body cannot grow past the cap; any other encoding,
+and bytes after the end of a compressed body, are refused as over the cap. The chassis
+therefore holds at most about `MAX_RESPONSE_BYTES` plus one decoded piece of one response, and
+relays at most `MAX_RESULT_BYTES`.
+
 Known limit: the refusal texts are matched on any tool's error text, not only the gateway's, so an
 upstream tool whose error starts with one picks its own code (`unknown_tool`, `tool_denied`,
 `idempotency_key_required`, `bad_arguments`). It cannot pick the message, which stays fixed text,
@@ -48,11 +62,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import re
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+import zlib
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -64,6 +80,7 @@ from mcp_types import CallToolResult, TextContent, Tool
 
 from chassis.adapters.loopback import is_loopback_host
 from chassis.ports.tool import ToolDefinition, ToolError, ToolResult
+from chassis.ports.tool_arguments import check_arguments
 
 URL_VAR = "LITELLM_MCP_URL"
 API_KEY_VAR = "LITELLM_API_KEY"
@@ -80,6 +97,12 @@ UNKNOWN_REFRESH_COOLDOWN_S = 10.0
 does for an unknown `kid`, so a flood of made-up names cannot multiply the gateway's load."""
 MAX_TOOL_NAME = 128
 """The longest tool name `call()` accepts (the MCP spec's limit for tool names)."""
+MAX_RESULT_BYTES = 1024 * 1024
+"""suggested: the largest serialized tool result the chassis relays (1 MiB), from the gateway
+here and from any port in `adapters/mcp/server.py`. Over it: `tool_unavailable`."""
+MAX_RESPONSE_BYTES = 2 * MAX_RESULT_BYTES + 64 * 1024
+"""The most body bytes the adapter reads from one gateway response: a result travels as text and
+again as structured content, plus JSON-RPC and SSE framing."""
 
 IN_CLUSTER_SUFFIXES = (".svc", ".svc.cluster.local")
 """suggested: a host ending in one of these is a Kubernetes service name, reached in-cluster."""
@@ -134,49 +157,6 @@ _BAD_ARGUMENTS = re.compile(
 _INVALID_PARAMS = -32602
 _METHOD_NOT_FOUND = -32601
 
-_JSON_TYPES: dict[str, Callable[[Any], bool]] = {
-    "string": lambda v: isinstance(v, str),
-    "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
-    "number": lambda v: isinstance(v, int | float) and not isinstance(v, bool),
-    "boolean": lambda v: isinstance(v, bool),
-    "object": lambda v: isinstance(v, Mapping),
-    "array": lambda v: isinstance(v, list | tuple),
-    "null": lambda v: v is None,
-}
-
-
-def _matches(schema: Any, value: Any) -> bool:
-    """A small JSON Schema type check: `type` (one or a list), else `anyOf` or `oneOf`."""
-    if not isinstance(schema, Mapping):
-        return True
-    kind = schema.get("type")
-    if isinstance(kind, str):
-        check = _JSON_TYPES.get(kind)
-        return check is None or check(value)
-    if isinstance(kind, list):
-        return any(_JSON_TYPES.get(k, lambda _: True)(value) for k in kind if isinstance(k, str))
-    options = schema.get("anyOf") or schema.get("oneOf")
-    if isinstance(options, list) and options:
-        return any(_matches(option, value) for option in options)
-    return True
-
-
-def _argument_problem(schema: Mapping[str, Any], arguments: Mapping[str, Any]) -> str | None:
-    """What is wrong with the arguments, by field name only, or None."""
-    properties = schema.get("properties")
-    properties = properties if isinstance(properties, Mapping) else {}
-    for field in schema.get("required") or ():
-        if field not in arguments:
-            return f"missing required argument {field!r}"
-    for field, value in arguments.items():
-        if field not in properties:
-            if schema.get("additionalProperties") is False:
-                return f"unexpected argument {field!r}"
-            continue
-        if not _matches(properties[field], value):
-            return f"argument {field!r} has the wrong type"
-    return None
-
 
 def _definition(tool: Tool) -> ToolDefinition:
     hint = tool.annotations.read_only_hint if tool.annotations is not None else None
@@ -190,13 +170,110 @@ def _definition(tool: Tool) -> ToolDefinition:
     )
 
 
-def _content(result: CallToolResult) -> Any:
+def over_cap(name: str) -> ToolError:
+    """The fixed refusal of a result over `MAX_RESULT_BYTES`: the cap, never the content."""
+    return ToolError("tool_unavailable", f"the result of {name!r} is over {MAX_RESULT_BYTES} bytes")
+
+
+def serialized_size(content: Any) -> int:
+    """The bytes `content` takes as the chassis relays it: a string as UTF-8, else as JSON."""
+    text = content if isinstance(content, str) else json.dumps(content, default=str)
+    return len(text.encode("utf-8"))
+
+
+def _content(result: CallToolResult, name: str) -> Any:
+    """The result's content, refused with `over_cap` when its serialized form is too large."""
+    content: Any
     if result.structured_content is not None:
-        return result.structured_content
-    blocks = result.content
-    if len(blocks) == 1 and isinstance(blocks[0], TextContent):
-        return blocks[0].text
-    return [block.model_dump(mode="json", exclude_none=True) for block in blocks]
+        content = result.structured_content
+    elif len(result.content) == 1 and isinstance(result.content[0], TextContent):
+        content = result.content[0].text
+    else:
+        content = [block.model_dump(mode="json", exclude_none=True) for block in result.content]
+    if serialized_size(content) > MAX_RESULT_BYTES:
+        raise over_cap(name)
+    return content
+
+
+class _ResponseTooLarge(Exception):
+    """A gateway response body passed `MAX_RESPONSE_BYTES`; reading stopped there."""
+
+
+_DECODE_PIECE = 64 * 1024
+"""The most decoded data `_Inflate` hands on at once, so the cap is checked before more comes."""
+
+
+class _UnknownEncoding(Exception):
+    """A `Content-Encoding` the capped stream cannot decode in bounded pieces; refused."""
+
+
+class _Inflate:
+    """A gzip or deflate body, decoded with the stdlib in pieces of at most `_DECODE_PIECE`."""
+
+    def __init__(self, encoding: str) -> None:
+        gzip = encoding in ("gzip", "x-gzip")
+        self._z = zlib.decompressobj(16 + zlib.MAX_WBITS if gzip else zlib.MAX_WBITS)
+
+    def decode(self, data: bytes) -> Iterator[bytes]:
+        if self._z.eof and data:
+            # zlib would keep bytes after the end of the stream in `unused_data`, uncounted.
+            raise _ResponseTooLarge("bytes after the end of the compressed body")
+        while True:
+            piece = self._z.decompress(data, _DECODE_PIECE)
+            if self._z.unused_data:
+                raise _ResponseTooLarge("bytes after the end of the compressed body")
+            data = self._z.unconsumed_tail
+            if piece:
+                yield piece
+            if not data and len(piece) < _DECODE_PIECE:
+                return
+
+    def flush(self) -> Iterator[bytes]:
+        yield from self.decode(b"")
+        rest = self._z.flush()
+        if rest:
+            yield rest
+
+
+class _CappedStream(httpx2.AsyncByteStream):
+    """A response body that raises once more than `MAX_RESPONSE_BYTES` of decoded data came in,
+    so the rest is never read into the chassis. With a `decoder`, it decodes the body itself, in
+    bounded pieces, and counts what comes out; the hook drops `Content-Encoding` so httpx does
+    not decode it again. It records the overrun on `statuses`, because the MCP client may wrap
+    or swallow the exception."""
+
+    def __init__(self, inner: Any, statuses: _Statuses, decoder: _Inflate | None = None) -> None:
+        self._inner = inner
+        self._statuses = statuses
+        self._decoder = decoder
+        self._read = 0
+
+    def _count(self, piece: bytes) -> bytes:
+        self._read += len(piece)
+        if self._read > MAX_RESPONSE_BYTES:
+            self._statuses.over_cap = True
+            raise _ResponseTooLarge(f"over {MAX_RESPONSE_BYTES} bytes")
+        return piece
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        decoder = self._decoder
+        raw = 0
+        try:
+            async for chunk in self._inner:
+                raw += len(chunk)
+                if raw > MAX_RESPONSE_BYTES:
+                    raise _ResponseTooLarge(f"over {MAX_RESPONSE_BYTES} raw bytes")
+                for piece in decoder.decode(chunk) if decoder is not None else (chunk,):
+                    yield self._count(piece)
+            if decoder is not None:
+                for piece in decoder.flush():
+                    yield self._count(piece)
+        except _ResponseTooLarge:
+            self._statuses.over_cap = True
+            raise
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
 
 
 def _first_text(result: CallToolResult) -> str:
@@ -222,10 +299,35 @@ class _Statuses:
 
     def __init__(self) -> None:
         self.seen: list[int] = []
+        self.over_cap = False
 
     async def hook(self, response: httpx2.Response) -> None:
         if response.status_code >= 400 and response.request.method != "DELETE":
             self.seen.append(response.status_code)
+        try:
+            decoder = _take_decoder(response)
+        except _UnknownEncoding:
+            # Fail closed: a body whose decoded size cannot be bounded is treated as over the cap.
+            self.over_cap = True
+            raise _ResponseTooLarge("an encoding the gateway adapter cannot bound") from None
+        response.stream = _CappedStream(response.stream, self, decoder)
+
+
+def _take_decoder(response: httpx2.Response) -> _Inflate | None:
+    """The decoder for the body's `Content-Encoding`, or None for a plain body. The header is
+    dropped, so the capped stream decodes and counts the body, and httpx passes it on as is.
+    Only one gzip or deflate layer is decoded; anything else raises `_UnknownEncoding`."""
+    encodings = [
+        value.strip().lower()
+        for value in response.headers.get_list("content-encoding", split_commas=True)
+    ]
+    encodings = [value for value in encodings if value and value != "identity"]
+    if not encodings:
+        return None
+    if len(encodings) > 1 or encodings[0] not in ("gzip", "x-gzip", "deflate"):
+        raise _UnknownEncoding(", ".join(encodings))
+    del response.headers["content-encoding"]
+    return _Inflate(encodings[0])
 
 
 def _rpc_error(exc: BaseException | None, name: str) -> ToolError | None:
@@ -241,9 +343,28 @@ def _rpc_error(exc: BaseException | None, name: str) -> ToolError | None:
     return None
 
 
-def _failure(exc: BaseException | None, statuses: Sequence[int], name: str) -> ToolError:
+def _iter_leaves(exc: BaseException | None) -> Iterator[BaseException]:
+    """The leaves of `exc` and of its `__cause__` and `__context__` chain."""
+    seen: set[int] = set()
+    todo = [exc] if exc is not None else []
+    while todo:
+        current = todo.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        for leaf in _leaves(current):
+            yield leaf
+            todo.extend(e for e in (leaf.__cause__, leaf.__context__) if e is not None)
+
+
+def _failure(
+    exc: BaseException | None, statuses: Sequence[int], name: str, *, over: bool = False
+) -> ToolError:
     """Map a failed session to a `ToolError`. The message is fixed text, never upstream text.
-    The call's own JSON-RPC error (unknown tool, denial, invalid params) beats any HTTP status."""
+    The call's own JSON-RPC error (unknown tool, denial, invalid params) beats any HTTP status;
+    a response over `MAX_RESPONSE_BYTES` beats both."""
+    if over or any(isinstance(leaf, _ResponseTooLarge) for leaf in _iter_leaves(exc)):
+        return over_cap(name)
     rpc = _rpc_error(exc, name)
     if rpc is not None:
         return rpc
@@ -321,7 +442,9 @@ class McpGatewayTools:
 
         transport = StreamableHttpTransport(
             self.url,
-            headers={self._auth_header: f"Bearer {self._api_key}"},
+            # identity: the cap counts decoded bytes; a gateway that encodes anyway is decoded
+            # by `_CappedStream`.
+            headers={self._auth_header: f"Bearer {self._api_key}", "Accept-Encoding": "identity"},
             httpx_client_factory=factory,  # type: ignore[arg-type]
         )
         return Client(transport, timeout=self.timeout)
@@ -340,7 +463,7 @@ class McpGatewayTools:
                 tools = await client.list_tools()
         except Exception as exc:  # every failure keeps the last list
             self.refresh_failures += 1
-            error = _failure(exc, statuses.seen, "tools/list")
+            error = _failure(exc, statuses.seen, "tools/list", over=statuses.over_cap)
             log.warning("tool gateway: refresh failed: %s", error.message)
             self._refresh_failed()
             return False
@@ -395,9 +518,7 @@ class McpGatewayTools:
         if definition is not None:
             if not definition.read_only and not idempotency_key:
                 raise ToolError("idempotency_key_required", f"{name!r} is a write tool")
-            problem = _argument_problem(definition.parameters, args)
-            if problem is not None:
-                raise ToolError("bad_arguments", f"{name!r}: {problem}")
+            check_arguments(definition, args)
             properties = definition.parameters.get("properties") or {}
             if idempotency_key and not definition.read_only and META_KEY in properties:
                 args[META_KEY] = idempotency_key
@@ -407,12 +528,12 @@ class McpGatewayTools:
             async with asyncio.timeout(self.timeout), self._client(statuses) as client:
                 result = await client.call_tool_mcp(name, args, meta=meta)
         except Exception as exc:  # every failure maps to a code
-            error = _failure(exc, statuses.seen, name)
+            error = _failure(exc, statuses.seen, name, over=statuses.over_cap)
             log.warning("tool gateway: call %r failed: %s %s", name, error.code, error.message)
             raise error from None
         if result.is_error:
             return self._tool_error(name, result)
-        return ToolResult(content=_content(result))
+        return ToolResult(content=_content(result, name))
 
     def _may_refresh_for_unknown(self) -> bool:
         """True at most once per `unknown_refresh_cooldown_s`; records the refresh it allows."""
@@ -436,4 +557,4 @@ class McpGatewayTools:
             raise ToolError("idempotency_key_required", f"{name!r} needs an idempotency key")
         if _BAD_ARGUMENTS.search(text):
             raise ToolError("bad_arguments", f"the arguments for {name!r} were refused")
-        return ToolResult(content=_content(result), is_error=True)
+        return ToolResult(content=_content(result, name), is_error=True)

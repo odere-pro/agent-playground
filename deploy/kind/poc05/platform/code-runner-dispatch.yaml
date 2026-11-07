@@ -6,10 +6,15 @@
 # - Same image as the sandboxes (packages/code-runner), started as `code-runner dispatch`. On runc
 #   in poc05-platform, like LiteLLM: admission rule 7d refuses a tool-shape pod with a token, and
 #   that rule stays strict.
-# - Its one credential: a projected service account token (suggested: expirationSeconds 3600) and
+# - Its API credential: a projected service account token (suggested: expirationSeconds 3600) and
 #   the cluster CA, in its one container, read-only. The token's rights are `create`, `get`,
 #   `delete` on sandboxclaims in poc05-tools only (admission/rbac.yaml, applied by the cluster
-#   admin). No model or tool key, no Secret, no env.
+#   admin). No model or tool key, no env.
+# - Its inbound bearer (code review R5a-23) comes from the Secret `code-runner-dispatch-token`
+#   (seed.sh base), mounted read-only as a file and named by `--inbound-token-file`. Every path
+#   but /health needs that token as a bearer; LiteLLM sends it (litellm/config.yaml,
+#   `auth_value`). A wrong or missing bearer is 401 before a claim is made. The value is never in
+#   argv or env.
 # - No DNS: it reaches the API at KUBERNETES_SERVICE_HOST:KUBERNETES_SERVICE_PORT (set for every
 #   pod, whatever enableServiceLinks says) and the sandboxes by pod IP. network-policy.yaml allows
 #   LiteLLM in on 8000, the sandboxes out on 8000, and the API server endpoint on 6443 (the one
@@ -62,6 +67,8 @@ spec:
             - 0.0.0.0
             - --port
             - "8000"
+            - --inbound-token-file
+            - /var/run/secrets/code-runner-dispatch/token
           ports:
             - name: mcp
               containerPort: 8000
@@ -104,6 +111,9 @@ spec:
             - name: kube-api-access
               mountPath: /var/run/secrets/kubernetes.io/serviceaccount
               readOnly: true
+            - name: inbound-token
+              mountPath: /var/run/secrets/code-runner-dispatch
+              readOnly: true
       volumes:
         - name: tmp
           emptyDir:
@@ -120,6 +130,12 @@ spec:
                   items:
                     - key: ca.crt
                       path: ca.crt
+        - name: inbound-token
+          secret:
+            secretName: code-runner-dispatch-token  # pragma: allowlist secret (a Secret name)
+            items:
+              - key: token
+                path: token
 ---
 apiVersion: v1
 kind: Service

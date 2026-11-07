@@ -1,17 +1,19 @@
 # The allowed NetworkPolicy edges of the PoC-6 pods as data. test_poc06b_kind_static.py computes
 # the edges from deploy/kind/poc06/{remote,agents,kagent} and requires equality with this file, both
-# ways. PoC-5's namespace `default-deny` refuses everything else. Format: a peer is {ns, labels};
-# `src: any` is a rule with ports and no `from` (the chassis's public port, ingress only).
+# ways. PoC-5's namespace `default-deny` refuses everything else. Format: a peer is {ns, labels}.
+# The chassis's public port takes only PoC-5's gateway peer (core review R5a-07; suggested: a pod
+# in agent-platform-system labeled agents.platform/role: gateway); no rule is peerless.
 # Ports are PROTO/NUMBER. No rule uses an ipBlock. Only the chassis pods have DNS; no remote has.
 external_pods:
   - {ns: kube-system, labels: {k8s-app: kube-dns}}
 
 sidecar_pods: [agent-openai-agents, agent-typescript]
+# door_port: the front door's port for the pair's engine; only that chassis may reach it.
 remote_pairs:
-  - {remote: remote-smolagents, chassis: chassis-smolagents-remote}
-  - {remote: remote-claude-agent, chassis: chassis-claude-agent-remote}
-  - {remote: remote-typescript, chassis: chassis-typescript-remote}
-  - {remote: remote-kagent-adk, chassis: chassis-kagent-adk-remote}
+  - {remote: remote-smolagents, chassis: chassis-smolagents-remote, door_port: TCP/9002}
+  - {remote: remote-claude-agent, chassis: chassis-claude-agent-remote, door_port: TCP/9001}
+  - {remote: remote-typescript, chassis: chassis-typescript-remote, door_port: TCP/9003}
+  - {remote: remote-kagent-adk, chassis: chassis-kagent-adk-remote, door_port: TCP/9004}
 
 # For every chassis pod (the two sidecar pods and the four remote chassis):
 chassis_egress:
@@ -19,9 +21,16 @@ chassis_egress:
   - {dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: litellm}}, ports: [TCP/4000]}
   - {dst: {ns: poc05-platform, labels: {app.kubernetes.io/name: valkey}}, ports: [TCP/6379]}
 chassis_ingress:
-  - {src: any, ports: [TCP/8080]}
+  - src: {ns: agent-platform-system, labels: {agents.platform/role: gateway}}
+    ports: [TCP/8080]
 
 # For every pair (the remote and its chassis, and nobody else):
 pair_edges:
   - {from: remote, to: chassis, ports: [TCP/8091]}
-  - {from: chassis, to: remote, ports: [TCP/9000]}
+
+# The A2A call goes through the remote-run front door, one fresh pod per run (core review R6-11):
+# each remote chassis's egress to the door on its own engine's port (door_port above), and each
+# remote's ingress from the door on 9000. The door's own policy is in deploy/kind/poc06/platform/
+# (test_poc06b_run_isolation_static.py pins its per-port ingress).
+front_door: {ns: poc05-platform, labels: {app.kubernetes.io/name: remote-run-dispatch}}
+remote_ports: [TCP/9000]

@@ -1,0 +1,15 @@
+# Binds agent-service-rule (service-policy.yaml) to the PoC-5 workload namespaces, the same selector
+# and actions as binding.yaml (the label agents.platform/admission: enforce on poc05-agents,
+# poc05-remote, poc05-tools). Apply after the policy has compiled. No paramRef: the rule takes no
+# params.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agent-service-rule
+spec:
+  policyName: agent-service-rule
+  validationActions: [Deny, Audit]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        agents.platform/admission: enforce

@@ -172,12 +172,14 @@ canary() {
   die "admission: canary $rejected was admitted; $policy is not enforcing"
 }
 
-# The trust rule (admission/policy.yaml header) and the extension rules for SandboxTemplate and
-# SandboxClaim (admission/extension-policy.yaml; they need the extension CRDs from `create`).
+# The trust rule (admission/policy.yaml header), the extension rules for SandboxTemplate and
+# SandboxClaim (admission/extension-policy.yaml; they need the extension CRDs from `create`), and
+# the Service rule S1 (admission/service-policy.yaml: ClusterIP only, no outside address).
 # Order matters: params first (the binding denies everything without them), each policy before
 # its binding (a policy that does not compile enforces nothing), and canaries last: the rule-1
 # fixture must be refused by agent-trust-rule and the rule-T1 fixture (no networkPolicyManagement)
-# by sandbox-template-rule, each next to its admitted twin, so a silent no-op policy fails here.
+# by sandbox-template-rule, and the rule-S1 NodePort fixture by agent-service-rule, each next to
+# its admitted twin, so a silent no-op policy fails here.
 # The fixtures are in poc05-agents and poc05-tools, where only the deployer may create (review F2).
 admission() {
   local dir=$HERE/admission fx=$HERE/admission/fixtures name
@@ -188,15 +190,20 @@ admission() {
   kctl -n poc05-tools delete rolebinding agent-submitter --ignore-not-found
   kctl apply -f "$dir/policy.yaml"
   kctl apply -f "$dir/extension-policy.yaml"
+  kctl apply -f "$dir/service-policy.yaml"
   for name in agent-trust-rule sandbox-template-rule sandbox-claim-rule; do
     type_checked "$name"
   done
+  type_checked agent-service-rule
   kctl apply -f "$dir/binding.yaml"
   kctl apply -f "$dir/extension-binding.yaml"
+  kctl apply -f "$dir/service-binding.yaml"
   canary agent-trust-rule "$fx/rule1-trust-label/rejected.yaml" \
     "$fx/rule1-trust-label/admitted.yaml"
   canary sandbox-template-rule "$fx/ruleT1-network-policy-unmanaged/rejected-absent.yaml" \
     "$fx/ruleT1-network-policy-unmanaged/admitted.yaml" "template rule T1"
+  canary agent-service-rule "$fx/ruleS1-service-type/rejected.yaml" \
+    "$fx/ruleS1-service-type/admitted.yaml" "service rule S1"
 }
 
 # The workload folders, applied as the platform deployer (admission/rbac.yaml), never as a tenant:
@@ -207,6 +214,7 @@ workloads() {
   apply_folder tools
   apply_folder remote
   apply_folder agents
+  apply_policies agent-platform-system "$HERE/agents/gateway-network-policy.yaml"
 }
 
 # --- bring-up: platform, seed, workloads, requests (plan section 8) ----------------------------
@@ -215,8 +223,19 @@ PLATFORM_NS=poc05-platform
 NAMESPACES=(poc05-platform poc05-tools poc05-remote poc05-agents agent-sandbox-system)
 SEED=$HERE/platform/seed.sh
 
-# apply_folder FOLDER: remote/, tools/, agents/ go in as the platform deployer only (review F2).
-apply_folder() { kctl apply -k "$HERE/$1" --as="$DEPLOYER"; }
+# shellcheck source=deploy/kind/policies.sh
+source "$HERE/../policies.sh"
+
+# apply_folder FOLDER: remote/, tools/, agents/. The cluster admin applies the folder's
+# network-policy.yaml in the kustomization's namespace, then the deployer the rendered folder,
+# whose kustomization does not list that file.
+apply_folder() {
+  local ns
+  ns=$(sed -nE 's/^namespace: *([a-z0-9-]+)$/\1/p' "$HERE/$1/kustomization.yaml")
+  [[ -n $ns ]] || die "apply: $1/kustomization.yaml names no namespace"
+  apply_policies "$ns" "$HERE/$1/network-policy.yaml"
+  kctl kustomize "$HERE/$1" | apply_deployer
+}
 
 # On a failed wait: the object's events and the last log lines, never a Secret.
 explain() {
@@ -397,6 +416,9 @@ apply_remote() {
 
 apply_agents() {
   apply_folder agents
+  # The gateway peer's egress to the chassis public port (in agent-platform-system; not in the
+  # kustomization, which would move it into poc05-agents). Cluster admin, like every policy.
+  apply_policies agent-platform-system "$HERE/agents/gateway-network-policy.yaml"
   wait_rollout poc05-agents agent-echo
   wait_rollout poc05-agents chassis-echo-remote
 }
@@ -422,7 +444,8 @@ kafka() {
   kctl -n poc05-agents create configmap chassis-echo-events-config \
     --from-file=config.yaml="$HERE/agents/chassis/echo-events.yaml" --dry-run=client -o yaml |
     kctl apply -f - --as="$DEPLOYER"
-  kctl apply -f "$HERE/agents/agent-echo-events.yaml" --as="$DEPLOYER"
+  apply_policies poc05-agents "$HERE/agents/agent-echo-events-network-policy.yaml"
+  apply_deployer <"$HERE/agents/agent-echo-events.yaml"
   wait_rollout poc05-agents agent-echo-events
   # The verbs after this one (test, with-gateway) then fail, not skip, on a missing broker.
   export POC05_KAFKA=1

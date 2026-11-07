@@ -272,6 +272,13 @@ spec:
         has(variables.spec.volumes) && variables.spec.volumes.exists(v,
           has(v.projected) && has(v.projected.sources) &&
           v.projected.sources.exists(s, has(s.serviceAccountToken)))
+    # The names of the projected volumes that carry a service account token (rule 7e).
+    - name: tokenVolumes
+      expression: >-
+        has(variables.spec.volumes)
+        ? variables.spec.volumes.filter(v, has(v.projected) && has(v.projected.sources) &&
+            v.projected.sources.exists(s, has(s.serviceAccountToken))).map(v, v.name)
+        : []
     - name: secretVolumes
       expression: >-
         has(variables.spec.volumes)
@@ -279,6 +286,27 @@ spec:
             (has(v.projected) && has(v.projected.sources) &&
              v.projected.sources.exists(s, has(s.secret)))).map(v, v.name)
         : []
+    # Rule 7f: the pod-level runAsUser, -1 when unset; then each container's effective explicit
+    # runAsUser, chassis containers and the others apart (-1: none set at either level).
+    - name: podUser
+      expression: >-
+        has(variables.spec.securityContext) && has(variables.spec.securityContext.runAsUser)
+        ? variables.spec.securityContext.runAsUser : -1
+    - name: chassisUsers
+      expression: >-
+        variables.containers.filter(c, has(c.image) && c.image in variables.chassisImages)
+        .map(c, has(c.securityContext) && has(c.securityContext.runAsUser)
+          ? c.securityContext.runAsUser : variables.podUser)
+    - name: otherUsers
+      expression: >-
+        variables.containers.filter(c, !has(c.image) || !(c.image in variables.chassisImages))
+        .map(c, has(c.securityContext) && has(c.securityContext.runAsUser)
+          ? c.securityContext.runAsUser : variables.podUser)
+    # Rule 7g: the names of the containers that run the chassis image.
+    - name: chassisNames
+      expression: >-
+        variables.containers.filter(c, has(c.image) && c.image in variables.chassisImages)
+        .map(c, c.name)
     # The image of every container that references a Secret.
     - name: secretUsers
       expression: >-
@@ -402,10 +430,38 @@ spec:
         variables.shape != 'tool' ||
         (has(variables.spec.runtimeClassName) && variables.spec.runtimeClassName == 'gvisor' &&
          has(variables.spec.automountServiceAccountToken) &&
-         variables.spec.automountServiceAccountToken == false)
+         variables.spec.automountServiceAccountToken == false &&
+         !variables.projectedToken)
       message: >-
         trust rule 7d: a tool pod must set runtimeClassName gvisor and
-        automountServiceAccountToken false
+        automountServiceAccountToken false, and mount no projected service account token
+      reason: Forbidden
+    - expression: >-
+        variables.shape != 'chassis' ||
+        (has(variables.spec.automountServiceAccountToken) &&
+         variables.spec.automountServiceAccountToken == false &&
+         variables.containers.all(c, (has(c.image) && c.image in variables.chassisImages) ||
+           !has(c.volumeMounts) ||
+           !c.volumeMounts.exists(m, m.name in variables.tokenVolumes)))
+      message: >-
+        trust rule 7e: a chassis pod must set automountServiceAccountToken false, and only the
+        chassis container may mount a projected service account token
+      reason: Forbidden
+    - expression: >-
+        !variables.isSidecar ||
+        (!(has(variables.spec.shareProcessNamespace) &&
+           variables.spec.shareProcessNamespace == true) &&
+         variables.chassisUsers.all(u, u >= 0) &&
+         variables.otherUsers.all(u, u >= 0 && !(u in variables.chassisUsers)))
+      message: >-
+        trust rule 7f: a sidecar-lane pod may not share its process namespace, and every other
+        container must set a runAsUser that differs from the chassis container's
+      reason: Forbidden
+    - expression: >-
+        !has(variables.spec.ephemeralContainers) ||
+        variables.spec.ephemeralContainers.all(e, !has(e.targetContainerName) ||
+          !(e.targetContainerName in variables.chassisNames))
+      message: "trust rule 7g: an ephemeral container may not target the chassis container"
       reason: Forbidden
     - expression: "variables.isRemote || variables.fromOwnStore"
       message: >-

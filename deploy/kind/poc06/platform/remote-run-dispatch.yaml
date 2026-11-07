@@ -1,0 +1,292 @@
+# remote-run-dispatch: the PoC-6 remote-run front door (core review R6-11). A remote pod used to
+# be one long-lived Sandbox per engine, so runs shared its uid, /tmp, and process tree. Now each
+# engine is a SandboxTemplate and SandboxWarmPool in poc05-remote (../remote/, ../kagent/), and
+# every chassis remote URL is http://remote-run-dispatch.poc05-platform.svc.cluster.local:<port>/<engine>.
+# One port per engine (suggested: 9001 claude-agent, 9002 smolagents, 9003 typescript, 9004
+# kagent-adk), one process: a port serves only its own engine, and any other path there is 404 with
+# no claim. The NetworkPolicy lets each chassis reach its own engine's port only, so no chassis can
+# start a run on another engine (kagent-adk checks no bearer, so this is its only inbound control).
+# Per streaming A2A run the door creates a SandboxClaim on the pool remote-<engine>, waits for it,
+# streams the run to and from the claimed pod's IP on 9000, and deletes the claim after (the pod
+# goes with it). A card fetch never claims. Code: packages/code-runner/src/code_runner/a2a_dispatch.py.
+#
+# - Same image as the code-runner dispatcher, started as `code-runner a2a-dispatch`. runc, in
+#   poc05-platform, restricted securityContext.
+# - Its API credential: a projected token in its one container (suggested: expirationSeconds 3600)
+#   and the cluster CA. Rights: create, get, delete on sandboxclaims in poc05-remote only
+#   (../admission/remote-run-rbac.yaml, applied by the cluster admin), capped by a ResourceQuota.
+# - No model key, tool key, or remote token. No inbound bearer of its own: each chassis sends its own
+#   remote token, passed through untouched to the pod, whose workload checks it
+#   (`--require-token-env`; kagent-adk checks none, see ../kagent/remote-kagent-adk.yaml).
+# - The cards below are pinned here, not read from a pod: a fetch must not claim a pod. The door sets
+#   each interface URL to its own /<engine> URL; the chassis pins it to its configured URL anyway.
+# - NetworkPolicy (remote-run-dispatch-network-policy.yaml, applied by path as the cluster admin):
+#   in from each remote chassis on its own engine's port only; out to the remote pods on 9000 and
+#   to the API server on 6443. The API rule is an ipBlock filled in by run.sh from the sentinel,
+#   the same way as PoC-5's code-runner dispatcher (../../poc05/platform/network-policy.yaml).
+#   Never apply that file without run.sh: the API refuses the sentinel.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: remote-run-dispatch
+  namespace: poc05-platform
+  labels:
+    app.kubernetes.io/name: remote-run-dispatch
+    app.kubernetes.io/part-of: poc06
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: remote-run-dispatch-cards
+  namespace: poc05-platform
+  labels:
+    app.kubernetes.io/name: remote-run-dispatch
+    app.kubernetes.io/part-of: poc06
+data:
+  claude-agent.json: |
+    {
+      "name": "echo-claude-agent",
+      "description": "echo-claude-agent behind the chassis remote lane, one pod per run",
+      "version": "0.0.1",
+      "supportedInterfaces": [
+        {
+          "url": "http://set-by-the-front-door.invalid/",
+          "protocolBinding": "JSONRPC",
+          "protocolVersion": "1.0"
+        }
+      ],
+      "capabilities": {
+        "streaming": true
+      },
+      "skills": [],
+      "defaultInputModes": [
+        "text/plain",
+        "application/json"
+      ],
+      "defaultOutputModes": [
+        "text/plain",
+        "application/json"
+      ]
+    }
+  smolagents.json: |
+    {
+      "name": "echo-smolagents",
+      "description": "echo-smolagents behind the chassis remote lane, one pod per run",
+      "version": "0.0.1",
+      "supportedInterfaces": [
+        {
+          "url": "http://set-by-the-front-door.invalid/",
+          "protocolBinding": "JSONRPC",
+          "protocolVersion": "1.0"
+        }
+      ],
+      "capabilities": {
+        "streaming": true
+      },
+      "skills": [],
+      "defaultInputModes": [
+        "text/plain",
+        "application/json"
+      ],
+      "defaultOutputModes": [
+        "text/plain",
+        "application/json"
+      ]
+    }
+  typescript.json: |
+    {
+      "name": "echo-typescript",
+      "description": "echo-typescript behind the chassis remote lane, one pod per run",
+      "version": "0.0.1",
+      "supportedInterfaces": [
+        {
+          "url": "http://set-by-the-front-door.invalid/",
+          "protocolBinding": "JSONRPC",
+          "protocolVersion": "1.0"
+        }
+      ],
+      "capabilities": {
+        "streaming": true
+      },
+      "skills": [],
+      "defaultInputModes": [
+        "text/plain",
+        "application/json"
+      ],
+      "defaultOutputModes": [
+        "text/plain",
+        "application/json"
+      ]
+    }
+  kagent-adk.json: |
+    {
+      "name": "kagent_adk",
+      "description": "kagent_adk behind the chassis remote lane, one pod per run",
+      "version": "0.0.1",
+      "supportedInterfaces": [
+        {
+          "url": "http://set-by-the-front-door.invalid/",
+          "protocolBinding": "JSONRPC",
+          "protocolVersion": "1.0"
+        }
+      ],
+      "capabilities": {
+        "streaming": true
+      },
+      "skills": [],
+      "defaultInputModes": [
+        "text/plain",
+        "application/json"
+      ],
+      "defaultOutputModes": [
+        "text/plain",
+        "application/json"
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: remote-run-dispatch
+  namespace: poc05-platform
+  labels:
+    app.kubernetes.io/name: remote-run-dispatch
+    app.kubernetes.io/part-of: poc06
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: remote-run-dispatch
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: remote-run-dispatch
+        app.kubernetes.io/part-of: poc06
+    spec:
+      serviceAccountName: remote-run-dispatch
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: remote-run-dispatch
+          image: kind.local/agent-platform/code-runner:poc05
+          imagePullPolicy: Never
+          command: [code-runner]
+          args:
+            - a2a-dispatch
+            - --namespace
+            - poc05-remote
+            - --cards-dir
+            - /etc/remote-run-dispatch/cards
+            - --public-url
+            - http://remote-run-dispatch.poc05-platform.svc.cluster.local
+            - --host
+            - 0.0.0.0
+            - --engine-port
+            - claude-agent=9001
+            - --engine-port
+            - smolagents=9002
+            - --engine-port
+            - typescript=9003
+            - --engine-port
+            - kagent-adk=9004
+          ports:
+            - name: claude-agent
+              containerPort: 9001
+            - name: smolagents
+              containerPort: 9002
+            - name: typescript
+              containerPort: 9003
+            - name: kagent-adk
+              containerPort: 9004
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 9001
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9001
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9001
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          # suggested: 192Mi; it holds at most a body cap per run and streams the rest.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 192Mi
+            limits:
+              cpu: 500m
+              memory: 192Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10003
+            runAsGroup: 10003
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: kube-api-access
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+            - name: cards
+              mountPath: /etc/remote-run-dispatch/cards
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Mi
+        - name: kube-api-access
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+        - name: cards
+          configMap:
+            name: remote-run-dispatch-cards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: remote-run-dispatch
+  namespace: poc05-platform
+  labels:
+    app.kubernetes.io/name: remote-run-dispatch
+    app.kubernetes.io/part-of: poc06
+spec:
+  selector:
+    app.kubernetes.io/name: remote-run-dispatch
+  ports:
+    - name: claude-agent
+      port: 9001
+      targetPort: 9001
+    - name: smolagents
+      port: 9002
+      targetPort: 9002
+    - name: typescript
+      port: 9003
+      targetPort: 9003
+    - name: kagent-adk
+      port: 9004
+      targetPort: 9004

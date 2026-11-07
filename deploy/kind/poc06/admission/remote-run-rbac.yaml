@@ -1,0 +1,46 @@
+# The remote-run front door's one right (core review R6-11; platform/remote-run-dispatch.yaml).
+# Applied by the cluster admin with the admission params (run.sh `apply_params`): the deployer has
+# no RBAC or quota rights (../../poc05/admission/rbac.yaml).
+#
+# - Role in poc05-remote: create, get, delete on sandboxclaims and nothing else. No list or watch
+#   (an orphan expires at its shutdownTime), no update or patch (a claim never changes), no pods
+#   (the pod address is in the claim's status), no templates, pools, Sandboxes, or Secrets.
+# - Admission claim rule C3 holds a claim in poc05-remote to the remote-<engine> pools.
+# - The quota caps what a stolen token can start. A stolen token can still delete another run's
+#   claim (denial of service), as with PoC-5's dispatcher.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: remote-run-claims
+  namespace: poc05-remote
+rules:
+  - apiGroups: ["extensions.agents.x-k8s.io"]
+    resources: ["sandboxclaims"]
+    verbs: ["create", "get", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: remote-run-claims
+  namespace: poc05-remote
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: remote-run-claims
+subjects:
+  - kind: ServiceAccount
+    name: remote-run-dispatch
+    namespace: poc05-platform
+---
+# suggested: 6 claims (the door's 4 concurrent runs, plus 2 being deleted), 16 pods (PoC-5's
+# remote-echo, 4 warm, up to 6 claimed, and room for pods that are still terminating). No memory
+# quota: that would make every pod in poc05-remote set a memory limit, PoC-5's included.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: remote-run
+  namespace: poc05-remote
+spec:
+  hard:
+    count/sandboxclaims.extensions.agents.x-k8s.io: "6"
+    pods: "16"

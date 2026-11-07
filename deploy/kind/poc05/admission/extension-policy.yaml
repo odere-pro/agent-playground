@@ -20,8 +20,9 @@
 #   C2. a claim sets no label or annotation in spec.additionalPodMetadata. The empty object is
 #       admitted: the controller's own UPDATE of a claim writes `additionalPodMetadata: {}` (kind,
 #       2026-10-09), and refusing it left every claim not Ready.
-#   C3. a claim's spec.warmPoolRef.name is code-runner (suggested: a literal; a params key if a
-#       second pool comes).
+#   C3. a claim's spec.warmPoolRef.name is a pool of its own namespace: code-runner in poc05-tools,
+#       one of the PoC-6 remote-<engine> pools in poc05-remote (core review R6-11, the remote-run
+#       front door), and none anywhere else (suggested: literals; a params key if more pools come).
 #   C4. a claim sets spec.lifecycle.shutdownPolicy Delete and spec.lifecycle.shutdownTime, so an
 #       orphan is removed by the controller. lifecycle is optional and shutdownPolicy defaults to
 #       Retain, so a claim without either is refused.
@@ -104,8 +105,14 @@ spec:
       reason: Forbidden
     - expression: >-
         has(object.spec.warmPoolRef) && has(object.spec.warmPoolRef.name) &&
-        object.spec.warmPoolRef.name == 'code-runner'
-      message: "claim rule C3: a SandboxClaim may claim only from the warm pool code-runner"
+        (request.namespace == 'poc05-tools' ?
+          object.spec.warmPoolRef.name == 'code-runner' :
+          request.namespace == 'poc05-remote' &&
+          object.spec.warmPoolRef.name in ['remote-smolagents', 'remote-claude-agent',
+            'remote-typescript', 'remote-kagent-adk'])
+      message: >-
+        claim rule C3: a SandboxClaim may claim only from its namespace's pools: code-runner in
+        poc05-tools, a remote-<engine> pool in poc05-remote
       reason: Forbidden
     - expression: >-
         has(object.spec.lifecycle) && has(object.spec.lifecycle.shutdownPolicy) &&

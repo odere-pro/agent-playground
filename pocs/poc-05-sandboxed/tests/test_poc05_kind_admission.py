@@ -15,6 +15,15 @@ question 5); the admitted twins alone would then pass, so the rejected ones are 
 policy is live. Neither identity can write the platform's params, and with the params gone every
 request is denied.
 
+The core review adds rules 7e and 7f (fixtures, R5a-01 and R5a-05), a projected-token case for 7d
+(R5a-06), and rule 7g (R5a-16), which has no fixture file: a Pod may not carry ephemeral containers
+at create, so `test_ephemeral_container_is_refused_next_to_its_twin` patches
+`pods/ephemeralcontainers` on the live `agent-echo` pod as the cluster admin, with --dry-run=server.
+
+The platform-security review of the core-review fixes adds the Service rule S1
+(`agent-service-rule`, fixtures `ruleS1-service-type/`): the deployer's NodePort, LoadBalancer, or
+externalIPs Service is refused, its ClusterIP twin admitted.
+
 The per-call plan's `can-i` lists (`CAN_I`, in `poc_harness.admission_manifests`, so the static and
 kind tests never drift) and the check that no agent-sandbox object owns a NetworkPolicy close the
 security review's required changes 1, 2, and 4 on the cluster.
@@ -25,6 +34,7 @@ A kind test: marked `network` and skipped unless `POC05_KIND=1` and the `kind-po
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -38,7 +48,7 @@ from poc_harness.admission_manifests import DEPLOYER as DEPLOYER_ACCOUNT
 from poc_harness.admission_manifests import DISPATCHER as DISPATCHER_ACCOUNT
 from poc_harness.admission_manifests import SUBMITTER as SUBMITTER_ACCOUNT
 from poc_harness.drills import POC05_KIND
-from poc_harness.kind import get_json
+from poc_harness.kind import AGENTS_NS, SIDECAR_POD, get_json, pod
 from poc_harness.manifests import load_manifests
 
 pytestmark = POC05_KIND
@@ -64,6 +74,7 @@ POLICY_OF_PREFIX = {
     "trust rule": "agent-trust-rule",
     "template rule": "sandbox-template-rule",
     "claim rule": "sandbox-claim-rule",
+    "service rule": "agent-service-rule",
 }
 RBAC_REFUSAL = re.compile(r"cannot \w+ resource")
 KIND = re.compile(r"(?m)^kind: (\S+)$")
@@ -82,9 +93,12 @@ class Fixture:
     kind: str
 
     @property
-    def identity(self) -> str:
+    def identity(self) -> str | None:
+        """Who sends the fixture. None is the cluster admin: a claim in poc05-remote is the PoC-6
+        front door's, whose Role only `deploy/kind/poc06/run.sh` applies. The admission binding
+        holds every identity, so the admin's dry run still meets the claim rule."""
         if self.kind == "SandboxClaim":
-            return DISPATCHER
+            return DISPATCHER if self.namespace == "poc05-tools" else None
         return DEPLOYER if self.namespace in DEPLOYER_NAMESPACES else SUBMITTER
 
     @property
@@ -136,9 +150,10 @@ def _one_line(text: str) -> str:
     return " ".join(text.split())
 
 
-def test_policy_and_binding_are_installed() -> None:
+@pytest.mark.parametrize("name", ["agent-trust-rule", "agent-service-rule"])
+def test_policy_and_binding_are_installed(name: str) -> None:
     for kind in ("validatingadmissionpolicy", "validatingadmissionpolicybinding"):
-        got = kubectl("get", kind, "agent-trust-rule", "-o", "name")
+        got = kubectl("get", kind, name, "-o", "name")
         assert got.returncode == 0, got.stderr
     params = kubectl("get", "configmap", PARAMS[1], "-n", PARAMS[0], "-o", "name")
     assert params.returncode == 0, params.stderr
@@ -247,13 +262,60 @@ def test_nobody_but_the_admin_reads_secrets(user: str, ns: str) -> None:
 @pytest.mark.parametrize("resource", ["networkpolicies", "services"])
 def test_submitter_cannot_open_network_edges(resource: str) -> None:
     """Review F3: NetworkPolicies and Services select by labels; only the platform writes them.
-    The paired control: the platform deployer (`agent-deployer` in `rbac.yaml`) may create the
-    same resource in the same namespace."""
+    The paired control: the platform deployer (`agent-deployer` in `rbac.yaml`) may create a
+    Service in the same namespace, and the cluster admin a NetworkPolicy (core review R5a-02: the
+    deployer has no NetworkPolicy rights; `run.sh` applies each `network-policy.yaml` as admin)."""
     denied = can_i(SUBMITTER, "create", resource, "-n", "poc05-remote")
-    allowed = can_i(DEPLOYER, "create", resource, "-n", "poc05-remote")
+    if resource == "networkpolicies":
+        allowed = admin_can_i("create", resource, "-n", "poc05-remote")
+        deployer = can_i(DEPLOYER, "create", resource, "-n", "poc05-remote")
+        assert deployer == "no", "core review R5a-02: the deployer writes no NetworkPolicy"
+    else:
+        allowed = can_i(DEPLOYER, "create", resource, "-n", "poc05-remote")
 
     assert denied == "no", resource
     assert allowed == "yes", resource
+
+
+SERVICE_FIXTURES = FIXTURES / "ruleS1-service-type"
+
+
+@pytest.mark.parametrize("ns", ["poc05-agents", "poc05-tools"])
+def test_deployer_nodeport_service_is_refused_by_rule_s1(ns: str) -> None:
+    """Criterion 5: "an agent pod has no route to the internal services except through the
+    chassis" (platform-security review of the core-review fixes, HIGH).
+
+    Exit criterion 5: the deployer may write Services, so a NodePort on a chassis's 8080 would
+    reach it from the node, past the gateway-only ingress (R5a-07). As the deployer, with
+    --dry-run=server, the NodePort fixture is refused by agent-service-rule and not by RBAC. The
+    paired control: the ClusterIP twin, sent the same way, is admitted."""
+    rejected = SERVICE_FIXTURES / "rejected.yaml"
+    twin = SERVICE_FIXTURES / "admitted.yaml"
+
+    got = _dry_run_text(_in_namespace(rejected, ns))
+    allowed = _dry_run_text(_in_namespace(twin, ns))
+
+    err = _one_line(got.stderr)
+    assert got.returncode != 0, got.stdout
+    assert not RBAC_REFUSAL.search(err), err
+    assert "'agent-service-rule'" in err and "service rule S1" in err, err
+    assert allowed.returncode == 0, allowed.stderr
+
+
+def _in_namespace(path: Path, ns: str) -> str:
+    doc = yaml.safe_load(path.read_text())
+    doc["metadata"]["namespace"] = ns
+    return yaml.safe_dump(doc)
+
+
+def _dry_run_text(manifest: str) -> subprocess.CompletedProcess[str]:
+    exe = shutil.which("kubectl")
+    assert exe is not None, "kubectl is not on PATH"
+    command = [exe, "--context", CONTEXT, "apply", "--dry-run=server", "-f", "-"]
+    command.append(f"--as={DEPLOYER}")
+    return subprocess.run(
+        command, input=manifest, capture_output=True, text=True, timeout=TIMEOUT_S, check=False
+    )
 
 
 def test_missing_params_deny_everything() -> None:
@@ -437,3 +499,74 @@ def test_no_network_policy_is_owned_by_an_agent_sandbox_object() -> None:
         if _agent_sandbox_owned(p)
     )
     assert not owned, f"NetworkPolicies owned by an agent-sandbox object: {owned}"
+
+
+# Review R5a-16: ephemeral containers on the live `agent-echo` pod, sent as the cluster admin
+# (who holds `pods/ephemeralcontainers`; RBAC is not what refuses) with --dry-run=server, so the
+# pod never changes. Each refused case sits next to an admitted twin that differs in one field.
+DEBUG_IMAGE = "kind.local/agent-platform/echo-python:poc05"
+OUTSIDE_IMAGE = "docker.io/library/busybox:1.36"
+# (case id, refused image and target, admitted image and target, message the refusal carries)
+EPHEMERAL_CASES = [
+    ("image", (OUTSIDE_IMAGE, "workload"), (DEBUG_IMAGE, "workload"), "trust rule 3"),
+    ("target", (DEBUG_IMAGE, "chassis"), (DEBUG_IMAGE, "workload"), "trust rule 7g"),
+]
+
+
+def _debug_container(name: str, image: str, target: str) -> dict[str, object]:
+    """A restricted-profile ephemeral container that also meets rules 7f and 8."""
+    return {
+        "name": name,
+        "image": image,
+        "imagePullPolicy": "Never",
+        "targetContainerName": target,
+        "command": ["sleep", "1"],
+        "securityContext": {
+            "allowPrivilegeEscalation": False,
+            "capabilities": {"drop": ["ALL"]},
+            "readOnlyRootFilesystem": True,
+            "runAsNonRoot": True,
+            "runAsUser": 10003,
+            "runAsGroup": 10003,
+            "seccompProfile": {"type": "RuntimeDefault"},
+        },
+    }
+
+
+def _add_debug(
+    pod_name: str, name: str, image: str, target: str
+) -> subprocess.CompletedProcess[str]:
+    patch = {"spec": {"ephemeralContainers": [_debug_container(name, image, target)]}}
+    return kubectl(
+        "patch", "pod", pod_name, "-n", AGENTS_NS, "--subresource=ephemeralcontainers",
+        "--type=strategic", "-p", json.dumps(patch), "--dry-run=server",
+    )  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("refused", "admitted", "message"),
+    [c[1:] for c in EPHEMERAL_CASES],
+    ids=[c[0] for c in EPHEMERAL_CASES],
+)
+def test_ephemeral_container_is_refused_next_to_its_twin(
+    refused: tuple[str, str], admitted: tuple[str, str], message: str
+) -> None:
+    """The image case, criterion 7: "The admission check rejects an `untrusted` workload, and a
+    third-party image, in the `sidecar` lane." The target case, ADR-001 hard requirement 1: "Every
+    internal service requires a credential that only the chassis holds." A debug container joined
+    to the chassis's process namespace could read its credentials.
+
+    Exit criterion 7 and hard requirement 1 (review R5a-16): given the live `agent-echo` pod, an
+    ephemeral container with an image outside the platform prefix is refused by
+    `agent-trust-rule` with 'trust rule 3', and one with `targetContainerName: chassis` with
+    'trust rule 7g'. The paired control: the same container with our image, aimed at the
+    workload, is admitted. All three are `--dry-run=server`; the pod is not changed."""
+    name = pod(AGENTS_NS, SIDECAR_POD)["metadata"]["name"]
+
+    got = _add_debug(name, "poc05-debug", *refused)
+    twin = _add_debug(name, "poc05-debug", *admitted)
+
+    err = _one_line(got.stderr)
+    assert got.returncode != 0, f"admitted: {got.stdout}"
+    assert "'agent-trust-rule'" in err and message in err, err
+    assert twin.returncode == 0, twin.stderr

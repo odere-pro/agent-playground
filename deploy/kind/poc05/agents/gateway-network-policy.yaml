@@ -1,0 +1,31 @@
+# The gateway peer's egress (core review R5a-07): the one in-cluster caller of a chassis's public
+# port 8080. suggested: a pod in agent-platform-system labeled agents.platform/role: gateway. That
+# namespace has default-deny both ways (base/default-deny.yaml) and no tenant or deployer binding,
+# so only the cluster admin can start such a pod; on kind the kind tests' gateway caller is one
+# (poc_harness.kind.gateway_caller). Every chassis pod, PoC-5's and PoC-6's, carries
+# agents.platform/role: chassis and takes 8080 from this peer only (agents/network-policy.yaml).
+# Not in agents/kustomization.yaml, whose namespace would move it into poc05-agents: `run.sh`
+# applies it as cluster admin in `apply_agents`, after the folder.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agent-gateway
+  namespace: agent-platform-system
+  labels:
+    app.kubernetes.io/part-of: poc05
+spec:
+  podSelector:
+    matchLabels:
+      agents.platform/role: gateway
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              agents.platform/role: chassis
+      ports:
+        - port: 8080
+          protocol: TCP

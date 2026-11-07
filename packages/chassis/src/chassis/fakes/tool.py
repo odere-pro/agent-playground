@@ -4,10 +4,9 @@ PoC-5 adds write mode, the allow-list, and
 `write_mode_tools()`: the write tool `note_write` and the never-allowed `unlisted_probe`.
 `default_tools()` stays read-only.
 
-Arguments are checked against each definition's `parameters` by a small hand-written JSON Schema
-check (`check_arguments`): `type`, `properties`, `required`, `additionalProperties: false`, and
-`enum`. Other keywords are not checked. `jsonschema` is not a declared chassis dependency, so the
-fake does not import it.
+Arguments are checked against each definition's `parameters` by `check_arguments` from
+`chassis.ports.tool_arguments`, the same check the MCP gateway adapter runs (R5b-08), so the fake
+and the real adapter refuse the same arguments. A refusal names fields and paths, never values.
 """
 
 from __future__ import annotations
@@ -17,59 +16,10 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from chassis.ports.tool import ToolDefinition, ToolError, ToolResult
+from chassis.ports.tool_arguments import check_arguments
 
 ToolFn = Callable[..., Any]
 """Called with the arguments as keywords. May be sync or async. May return a `ToolResult`."""
-
-_TYPES: dict[str, tuple[type, ...]] = {
-    "object": (dict,),
-    "array": (list, tuple),
-    "string": (str,),
-    "integer": (int,),
-    "number": (int, float),
-    "boolean": (bool,),
-    "null": (type(None),),
-}
-
-
-def _type_ok(value: Any, expected: str) -> bool:
-    kinds = _TYPES.get(expected)
-    if kinds is None:
-        return True  # an unknown type name is not checked
-    if isinstance(value, bool) and expected in ("integer", "number"):
-        return False
-    return isinstance(value, kinds)
-
-
-def _check(value: Any, schema: Mapping[str, Any], path: str) -> list[str]:
-    problems: list[str] = []
-    expected = schema.get("type")
-    if expected is not None:
-        names = [expected] if isinstance(expected, str) else list(expected)
-        if not any(_type_ok(value, n) for n in names):
-            return [f"{path}: expected {' or '.join(names)}, got {type(value).__name__}"]
-    if "enum" in schema and value not in schema["enum"]:
-        problems.append(f"{path}: {value!r} is not one of {schema['enum']!r}")
-    if isinstance(value, dict):
-        props: Mapping[str, Any] = schema.get("properties", {})
-        problems.extend(
-            f"{path}: missing required {key!r}"
-            for key in schema.get("required", [])
-            if key not in value
-        )
-        for key, item in value.items():
-            if key in props:
-                problems.extend(_check(item, props[key], f"{path}.{key}"))
-            elif schema.get("additionalProperties") is False:
-                problems.append(f"{path}: unexpected {key!r}")
-    return problems
-
-
-def check_arguments(definition: ToolDefinition, arguments: Mapping[str, Any]) -> None:
-    """Raise `ToolError("bad_arguments")` when `arguments` fail the definition's schema."""
-    problems = _check(dict(arguments), definition.parameters, "arguments")
-    if problems:
-        raise ToolError("bad_arguments", f"{definition.name}: {'; '.join(problems)}")
 
 
 class InMemoryTools:

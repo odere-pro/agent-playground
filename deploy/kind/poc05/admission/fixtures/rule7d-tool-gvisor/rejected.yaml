@@ -1,7 +1,7 @@
 # Rule 7d, tool pods on gVisor (review F3, F15): a tool pod without gVisor.
 # expect: rejected
 # rule: 7d
-# message: trust rule 7d: a tool pod must set runtimeClassName gvisor and automountServiceAccountToken false
+# message: trust rule 7d: a tool pod must set runtimeClassName gvisor and automountServiceAccountToken false, and mount no projected service account token
 # differs: .spec.runtimeClassName
 apiVersion: v1
 kind: Pod

@@ -7,20 +7,36 @@
 # (`config: memory`) and have no edge to it.
 # Left from the section 2.10 table on purpose:
 # - `agent-probe-sidecar`, `chassis-probe-remote`: the probe workload is out of scope for this pass.
-# The 8080 rule matters for in-cluster callers only; `kubectl port-forward` enters through the
-# kubelet. A policy cannot tell the two containers of agent-echo apart (shared network namespace),
-# so the sidecar workload rides the chassis's egress and the services' own auth is the control.
+# The chassis public port 8080 takes only the gateway peer (core review R5a-07): /v1/run takes no
+# credential, so an open 8080 let any pod whose own egress is not policed (`default`,
+# `kube-system`) drive the agent and spend its LiteLLM key. suggested: the gateway is a pod in
+# `agent-platform-system` labeled `agents.platform/role: gateway`; only the cluster admin creates
+# pods there (admission/rbac.yaml binds no one in it), and its egress is
+# gateway-network-policy.yaml. `kubectl port-forward` enters through the kubelet and needs no
+# rule; a chassis calling its own pod IP (the kind tests' /v1/run) never leaves its netns.
+# A policy cannot tell the two containers of agent-echo apart (shared network namespace), so the
+# sidecar workload rides the chassis's egress and the services' own auth is the control.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: agent-echo
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/part-of: poc05
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: agent-echo
   policyTypes: [Ingress, Egress]
   ingress:
-    - ports:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agent-platform-system
+          podSelector:
+            matchLabels:
+              agents.platform/role: gateway
+      ports:
         - port: 8080
           protocol: TCP
   egress:
@@ -72,13 +88,23 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: chassis-echo-remote
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/part-of: poc05
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: chassis-echo-remote
   policyTypes: [Ingress, Egress]
   ingress:
-    - ports:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agent-platform-system
+          podSelector:
+            matchLabels:
+              agents.platform/role: gateway
+      ports:
         - port: 8080
           protocol: TCP
     - from:

@@ -65,7 +65,7 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
     - `bad_arguments`: the arguments fail `parameters`. Not retryable.
     - `idempotency_key_required` (PoC-5): a write tool (`read_only: false`) called without `idempotency_key`. Not retryable.
     - `tool_denied` (PoC-5): the gateway refused the call for this credential. Not retryable.
-    - `tool_unavailable` (PoC-5): the gateway or the tool server did not answer, timed out, or failed with a 5xx. Retryable (`retryable=True`).
+    - `tool_unavailable` (PoC-5): the gateway or the tool server did not answer, timed out, or failed with a 5xx. Retryable (`retryable=True`). A result over the size cap (R5a-24) is also `tool_unavailable`, but not retryable.
   - `ToolPort.call` takes an optional `idempotency_key`. A write tool requires it.
 - `StatePort` in `state.py` stores bytes by key.
   - Methods: `get`, `set`, `set_if_absent` (with a required TTL), `compare_and_set` (`value=None` deletes), `delete`.
@@ -92,7 +92,7 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
   - It exposes `published` and `fail_next_publish`.
   - Two replicas in a test share one bus.
 - `fakes/tool.py` defines the shared read-only `glossary_lookup` once (`GLOSSARY`, `default_tools()`).
-  - A small hand-written JSON Schema check validates arguments. It is not `jsonschema`.
+  - Arguments are checked by `check_arguments` in `ports/tool_arguments.py`, the one check the gateway adapter runs too (R5b-08). It is not `jsonschema`. It checks `type` (one or a list; a bool is never `integer` or `number`), `enum`, `anyOf`/`oneOf`, and nested `properties`, `required`, and `additionalProperties: false`. A refusal names fields and paths, never a value.
 
 ## adapters
 
@@ -465,9 +465,10 @@ Spec: [contract v4](../contracts/contract-v4.md). How it works: [the PoC-5 guide
 - `from_env` refuses a `LITELLM_MCP_URL` that is not `https`, unless the host is loopback or an in-cluster name: one label with no dot, or a name ending in `.svc` or `.svc.cluster.local` (suggested). The `ValueError` names the variable, never the URL. Profile `cloud` requires `https` always. Tests: `tests/test_tool_gateway_url.py`.
 - `list_tools()` is sync, so the adapter keeps a cached list. `await refresh()` fills it. `start()` refreshes it in the background. A failed refresh keeps the last list.
 - The tool endpoint's lifespan calls `refresh()`, then `start()`, and `aclose()` on shutdown.
-- `call()` checks before any request: a write tool with no key raises `idempotency_key_required`; arguments that fail the schema raise `bad_arguments`.
+- `call()` checks before any request: a write tool with no key raises `idempotency_key_required`; arguments that fail the schema raise `bad_arguments` (the shared `check_arguments`, so the fake and the gateway refuse the same arguments).
+- A result over `MAX_RESULT_BYTES` (1 MiB, suggested) is `tool_unavailable`, not retryable, with a fixed message naming the cap (R5a-24). The adapter stops reading a response past `MAX_RESPONSE_BYTES` (twice the cap plus framing) of decoded bytes, because the MCP client parses a whole response before the adapter sees it. It sends `Accept-Encoding: identity`, and decodes a gzip or deflate body the gateway sends anyway itself, so a compressed body cannot pass the cap. The tool endpoint (`adapters/mcp/server.py`) applies the same cap to any port's result.
 - Gateway answers map to `unknown_tool`, `tool_denied`, `bad_arguments`, or `tool_unavailable` (see [ports](#ports)). A `ToolError.message` is fixed text, never an upstream body.
-- Tests: `tests/test_tool_gateway_contract.py` (the whole `ToolPortContract`, over the fake MCP server in process), `tests/test_tool_endpoint_gateway_lifecycle.py`. On kind: `pocs/poc-05-sandboxed/tests/test_poc05_kind_tool_gateway.py`.
+- Tests: `tests/test_tool_gateway_contract.py` (the whole `ToolPortContract`, over the fake MCP server in process), `tests/test_tool_arguments.py`, `tests/test_tool_endpoint_gateway_lifecycle.py`. On kind: `pocs/poc-05-sandboxed/tests/test_poc05_kind_tool_gateway.py`.
 
 ### Write mode
 

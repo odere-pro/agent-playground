@@ -48,6 +48,11 @@ SERVICES = (
 )
 DISPATCHER = "code-runner-dispatch"
 CODE_RUNNER_URL = "http://code-runner-dispatch.poc05-platform.svc.cluster.local:8000/mcp"
+# R5a-23: the bearer LiteLLM sends to the dispatcher. One Secret, made by seed.sh, mounted as a
+# file into the dispatcher and read from env by LiteLLM.
+DISPATCH_TOKEN = "code-runner-dispatch-token"
+DISPATCH_TOKEN_ENV = "CODE_RUNNER_DISPATCH_TOKEN"
+CODE_RUNNER_AUTH = {"auth_type": "bearer_token", "auth_value": f"os.environ/{DISPATCH_TOKEN_ENV}"}
 CHASSIS = {"agents.platform/role": "chassis"}
 AGENT_ECHO = KIND / "agents/agent-echo.yaml"
 MINIO_USER = "chassis-echo"  # a name, not a secret, like Valkey's user `chassis`
@@ -183,8 +188,9 @@ def test_kind_litellm_keeps_keys_in_postgres_and_reaches_only_platform_tools() -
     assert config["general_settings"]["database_url"] == "os.environ/DATABASE_URL"
     servers = config["mcp_servers"]
     assert set(servers) == {"fake_tools", "code_runner"}, sorted(servers)
-    for entry in servers.values():
-        assert set(entry) <= {"url", "transport", "description"}, sorted(entry)
+    for name, entry in servers.items():
+        extra = set(CODE_RUNNER_AUTH) if name == "code_runner" else set()
+        assert set(entry) <= {"url", "transport", "description", *extra}, sorted(entry)
     assert config["litellm_settings"]["turn_off_message_logging"] is True
 
 
@@ -201,6 +207,43 @@ def test_kind_litellm_reaches_the_code_runner_only_through_the_dispatcher() -> N
     ]
     assert svc["spec"]["selector"] == {"app.kubernetes.io/name": DISPATCHER}
     assert [(p["port"], p["targetPort"]) for p in svc["spec"]["ports"]] == [(8000, 8000)]
+
+
+def test_kind_litellm_sends_the_dispatcher_its_bearer_from_the_environment() -> None:
+    """R5a-23: LiteLLM sends `Authorization: Bearer <token>` to the dispatcher only. The token is
+    an env reference, never a literal; `fake_tools` gets no credential."""
+    servers = yaml.safe_load(KIND_LITELLM.read_text())["mcp_servers"]
+    code_runner = servers["code_runner"]
+    assert {k: code_runner.get(k) for k in CODE_RUNNER_AUTH} == CODE_RUNNER_AUTH
+    assert not set(CODE_RUNNER_AUTH) & set(servers["fake_tools"])
+
+
+def test_litellm_reads_the_dispatcher_token_from_its_secret() -> None:
+    """R5a-23: the env variable the config names comes from the Secret seed.sh makes."""
+    (c,) = _pod_spec(_workloads()["litellm"])["containers"]
+    env = {e["name"]: e for e in c.get("env", [])}
+    assert env[DISPATCH_TOKEN_ENV] == {
+        "name": DISPATCH_TOKEN_ENV,
+        "valueFrom": {"secretKeyRef": {"name": DISPATCH_TOKEN, "key": "token"}},
+    }
+
+
+def test_seed_makes_the_dispatcher_token_through_a_pipe_in_the_first_pass() -> None:
+    """R5a-23: a random value, piped into one Secret in poc05-platform before the platform
+    starts; `rotate` knows the name."""
+    base = _seed_function("seed_base")
+    assert re.search(
+        rf"printf '%s' \"\$value\" \| put_secret \"\$PLATFORM\" {DISPATCH_TOKEN} token", base
+    ), base
+    assert f'secret_exists "$PLATFORM" {DISPATCH_TOKEN}' in base
+    rotate = _seed_function("rotate")
+    assert re.search(rf"(?m)^\s*[\w| -]*\b{DISPATCH_TOKEN}\b[\w| -]*\)", rotate), rotate
+
+
+def _seed_function(name: str) -> str:
+    match = re.search(rf"(?ms)^{name}\(\) \{{\n(.*?)^\}}", SEED.read_text())
+    assert match, f"seed.sh has no {name}()"
+    return match.group(1)
 
 
 # --- Platform workloads: credentials and hardening -------------------------------------------
@@ -276,14 +319,14 @@ def test_valkey_reads_its_password_from_a_mounted_file_never_argv() -> None:
 def test_only_the_platform_services_get_the_platform_secrets() -> None:
     """Section 2.12: each service gets its own credentials only."""
     allowed = {
-        "litellm": {"litellm-master", "litellm-db"},
+        "litellm": {"litellm-master", "litellm-db", DISPATCH_TOKEN},
         "postgres": {"litellm-db"},
         "valkey": {"valkey-auth"},
         "minio": {"minio-root"},
         "minio-init": {"minio-root", "chassis-echo-minio"},
         "fake-model-server": set(),
         "fake-mcp-server": set(),
-        DISPATCHER: set(),
+        DISPATCHER: {DISPATCH_TOKEN},
         "kafka": {"kafka-sasl"},
     }
     for name, doc in _workloads().items():
@@ -433,7 +476,14 @@ def test_seed_is_idempotent_and_rotates_on_request() -> None:
     text = SEED.read_text()
     assert re.search(r"(?m)^\s*rotate\)", text)
     assert re.search(r"(?m)^secret_exists\(\)", text)
-    for name in ("litellm-master", "litellm-db", "valkey-auth", "minio-root", "chassis-echo-minio"):
+    for name in (
+        "litellm-master",
+        "litellm-db",
+        "valkey-auth",
+        "minio-root",
+        "chassis-echo-minio",
+        DISPATCH_TOKEN,
+    ):
         assert name in text, name
     for svc in ("echo", "echo-remote"):
         assert f'"{svc}|' in text, svc

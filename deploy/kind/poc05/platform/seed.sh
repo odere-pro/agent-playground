@@ -3,7 +3,8 @@
 # docs/plans/2026-10-02-poc-05-sandboxed.md, section 2.9; bring-up order in section 8).
 #
 #   seed.sh base          first pass, before the platform starts: litellm-master, litellm-db,
-#                         valkey-auth, minio-root, chassis-echo-minio (both namespaces)
+#                         valkey-auth, minio-root, chassis-echo-minio (both namespaces),
+#                         code-runner-dispatch-token (poc05-platform only)
 #   seed.sh keys          second pass, once LiteLLM is Ready: one virtual key per chassis
 #                         (chassis-<svc>-litellm) and one token per remote (remote-<name>-token)
 #   seed.sh rotate NAME   replace one Secret (and its LiteLLM key); then restart what mounts it
@@ -112,6 +113,14 @@ seed_base() {
       put_env_secret "$PLATFORM" minio-root
     unset value
     log "made $PLATFORM/minio-root"
+  fi
+  # The dispatcher's inbound bearer (code review R5a-23): one Secret, read as a file by the
+  # dispatcher (--inbound-token-file) and as env by LiteLLM, which sends it to code_runner only.
+  if ! secret_exists "$PLATFORM" code-runner-dispatch-token; then
+    value=$(new_secret)
+    printf '%s' "$value" | put_secret "$PLATFORM" code-runner-dispatch-token token
+    unset value
+    log "made $PLATFORM/code-runner-dispatch-token"
   fi
   # The bucket-wide reader of older runs had no consumer (review F10): drop a copy left behind.
   drop_secret "$PLATFORM" minio-chassis
@@ -259,7 +268,7 @@ service_known() {
 rotate() {
   local name=${1:-}
   case $name in
-    litellm-master | litellm-db | minio-root)
+    litellm-master | litellm-db | minio-root | code-runner-dispatch-token)
       drop_secret "$PLATFORM" "$name"
       seed_base
       ;;
@@ -287,6 +296,7 @@ rotate() {
     *) die "rotate: unknown Secret '$name'" ;;
   esac
   log "rotated $name; restart the pods that mount it (litellm-db: Postgres too, then rekey;" \
+    "code-runner-dispatch-token: litellm and code-runner-dispatch;" \
     "chassis-echo-minio: first delete job/minio-init and run run.sh apply)"
 }
 
@@ -345,7 +355,7 @@ seed_kafka_topics() {
   done
 }
 
-usage() { sed -n '2,13p' "$0"; }
+usage() { sed -n '2,14p' "$0"; }
 
 (($# > 0)) || { usage; exit 0; }
 case $1 in

@@ -1,0 +1,54 @@
+# Rule 7e (core review R5a-01): a sidecar pod with no automountServiceAccountToken field, so
+# every container would get the namespace's default token.
+# expect: rejected
+# rule: 7e
+# message: trust rule 7e: a chassis pod must set automountServiceAccountToken false, and only the chassis container may mount a projected service account token
+# differs: .spec.automountServiceAccountToken
+apiVersion: v1
+kind: Pod
+metadata:
+  name: admission-rule7e
+  namespace: poc05-agents
+  labels:
+    app.kubernetes.io/name: admission-rule7e
+    agents.platform/trust: trusted
+spec:
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  initContainers:
+  - name: chassis
+    image: kind.local/agent-platform/chassis:poc05
+    imagePullPolicy: Never
+    restartPolicy: Always
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: &id001
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsUser: 10001
+      runAsGroup: 10001
+    volumeMounts:
+    - name: sa-token
+      mountPath: /var/run/secrets/poc05
+      readOnly: true
+  containers:
+  - name: workload
+    image: kind.local/agent-platform/echo-python:poc05
+    imagePullPolicy: Never
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: *id001
+      readOnlyRootFilesystem: true
+      runAsUser: 10002
+      runAsGroup: 10002
+  volumes:
+  - name: sa-token
+    projected:
+      sources:
+      - serviceAccountToken:
+          audience: poc05-fixture
+          expirationSeconds: 3600
+          path: token

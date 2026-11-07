@@ -21,7 +21,7 @@ spec:
     a2a:
       usage_key: kagent.dev/a2a/usage
       context_id: omit
-    url: http://remote-kagent-adk.poc05-remote.svc.cluster.local:9000
+    url: http://remote-run-dispatch.poc05-platform.svc.cluster.local:9004/kagent-adk
     auth:
       scheme: bearer
       token_env: REMOTE_TOKEN
