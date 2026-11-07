@@ -50,6 +50,7 @@ rebuilt when the ports change, and it follows a reloaded `spec.idempotency`.
 
 from __future__ import annotations
 
+import secrets
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import aclosing
@@ -63,7 +64,7 @@ from starlette.types import Receive, Scope, Send
 from chassis import CHASSIS_VERSION
 from chassis.core.collector import collect
 from chassis.core.envelope import Budget, Context, Request, Response, TaskInput, Versions
-from chassis.core.events import Error, Event
+from chassis.core.events import ERROR_MESSAGE_MAX, Error, Event
 from chassis.core.inbound import Interface, Served
 from chassis.core.trace import parse_traceparent, trace_id_hex
 from chassis.ports.bundle import PortBundle
@@ -90,6 +91,8 @@ __all__ = [
 
 ON_FINISHED_FAILED = "chassis.on_finished_failed"
 """suggested: the counter of an `on_finished` callback that raised."""
+RUN_SECRET_BYTES = 32
+"""suggested: random bytes of a run's secret, `ctx.run_secret` (contract v8; 43 characters)."""
 SESSION_ID_MAX = 128
 """suggested: the longest session id kept; a longer or non-printable one is dropped."""
 
@@ -113,6 +116,9 @@ class Observed:
     session_id: str | None = None
     user_id: str | None = None
     traceparent: str | None = None
+    subject: str | None = None
+    """The raw principal subject, never on a span: the feedback owner hash (contract v8, G).
+    `user_id` is the span's printable cut of it and can be None when this is not."""
 
     def span_attributes(self, trace_id: str) -> dict[str, str]:
         """The `chassis.run` attributes for a run in `trace_id` (32 hex). The `traceparent` is
@@ -158,7 +164,10 @@ def mapped_task(request: Request, config: ChassisConfig) -> str | None:
 def context_for(request: Request, config: ChassisConfig) -> Context:
     """The run's `Context`. `model_route` is the route of the caller's task through
     `spec.model.routes`, else `spec.model.route`; `versions.model_route` stays the agent's
-    configured route."""
+    configured route. `run_secret` is fresh per run (contract v8, R2-02): the workload sends it
+    back as `x-chassis-run-secret`. Plain mode (`spec.engine.protocol: a2a`) never sends `ctx` to
+    the remote, so it gets None."""
+    plain = config.spec.engine.protocol == "a2a"
     return Context(
         request_id=request.request_id,
         trace_id=request.trace_id,
@@ -168,6 +177,7 @@ def context_for(request: Request, config: ChassisConfig) -> Context:
         budget=request.budget,
         versions=versions_for(config),
         model_route=config.spec.model.route_for(task_of(request)),
+        run_secret=None if plain else secrets.token_urlsafe(RUN_SECRET_BYTES),
     )
 
 
@@ -177,7 +187,8 @@ async def _guarded(events: AsyncIterator[Event]) -> AsyncGenerator[Event]:
         async for event in events:
             yield event
     except Exception as exc:  # the pipeline owns errors; never a 500 on the stream
-        yield Error(code="engine_error", message=f"{type(exc).__name__}: {exc}")
+        text = f"{type(exc).__name__}: {exc}"[:ERROR_MESSAGE_MAX]
+        yield Error(code="engine_error", message=text)
 
 
 async def _replay(events: Sequence[Event]) -> AsyncIterator[Event]:
@@ -295,6 +306,7 @@ class RunPipeline:
             session_id=_printable(session),
             user_id=_printable(user_id, 256),
             traceparent=traceparent if isinstance(traceparent, str) else None,
+            subject=user_id or None,
         )
 
     def open(

@@ -173,7 +173,7 @@ class Stack:
             return await client.post("/v1/run", json=body, headers=headers)
 
     async def send_feedback(self, request_id: str, token: str = RUNNER) -> httpx.Response:
-        body = {"request_id": request_id, "score": 0, "label": "thumbs-down"}
+        body = {"request_id": request_id, "score": 0, "label": "bad"}
         async with self.client() as client:
             return await client.post(
                 "/v1/feedback", json=body, headers={"Authorization": f"Bearer {token}"}

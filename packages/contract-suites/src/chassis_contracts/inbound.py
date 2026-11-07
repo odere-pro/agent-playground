@@ -72,7 +72,6 @@ from chassis_contracts.inbound_cases import (
     OTHER_IDS,
     PARTIAL,
     PRE_RUN_CODES,
-    SDK_INTERFACES,
     SERVED,
     TOOL_ANSWER,
     BodyCase,
@@ -577,13 +576,11 @@ class InboundAdapterContract:
         assert read.text == PARTIAL
         assert read.error is not None, "the client reads no error"
         assert read.error.code == MID_ERROR.code
-        # The SDK formats send a fixed text per code; the run's own message stays in the log and
-        # the span. Native and MCP keep contract v1's message (debt: PoC-8).
-        sends_public_text = adapter.interface in SDK_INTERFACES
-        sent = {True: public_message(MID_ERROR.code), False: MID_ERROR.message}
-        assert sent[sends_public_text] in read.error.message
-        assert (MID_ERROR.message in read.error.message) is not sends_public_text, (
-            f"the run's own text in {read.error.message!r}: want {not sends_public_text}"
+        # Every format sends a fixed text per code (contract v8, item 1: native and MCP too); the
+        # run's own message stays in the log and the span.
+        assert public_message(MID_ERROR.code) in read.error.message
+        assert MID_ERROR.message not in read.error.message, (
+            f"the run's own text in {read.error.message!r}"
         )
         assert read.finish is None, f"a finish ({read.finish!r}) was sent after the error"
         assert read.tool_calls == 0

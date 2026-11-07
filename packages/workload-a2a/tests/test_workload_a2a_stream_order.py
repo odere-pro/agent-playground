@@ -201,3 +201,34 @@ async def test_server_publishes_nothing_more_when_the_handle_ends_after_a_cancel
 def test_mapping_version_equals_the_server_version_when_an_error_is_built() -> None:
     """`error_event` stamps the mapping's version; it must equal the vendored schema's."""
     assert mapping.SCHEMA_VERSION == SCHEMA_VERSION
+
+
+async def test_server_cuts_a_long_exception_text_to_the_error_message_cap() -> None:
+    """An exception text past the cap is cut, so the server's own error event fits the schema."""
+    from workload_a2a import task_store
+
+    async def loud(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[Any]:
+        yield START
+        raise RuntimeError("x" * (task_store.ERROR_MESSAGE_MAX * 2))
+
+    queue = _Queue()
+
+    await HandleExecutor(loud).execute(_context(), queue)
+
+    error = _wire_events(queue)[-1]
+    assert error["code"] == "workload.exception"
+    assert len(error["message"]) == task_store.ERROR_MESSAGE_MAX
+
+
+def test_task_store_message_cap_equals_the_vendored_schema_cap() -> None:
+    """The cap in `task_store` is the `maxLength` of `Error.message` in `events.v0.json`."""
+    from importlib import resources
+
+    from workload_a2a import task_store
+
+    schema = json.loads(
+        resources.files("workload_a2a").joinpath("schemas/events.v0.json").read_text()
+    )
+    assert schema["$defs"]["Error"]["properties"]["message"]["maxLength"] == (
+        task_store.ERROR_MESSAGE_MAX
+    )

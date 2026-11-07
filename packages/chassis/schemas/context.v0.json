@@ -70,7 +70,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "What the chassis gives a `handle` next to the input. Never holds a key.",
+  "description": "What the chassis gives a `handle` next to the input.\n\nNever holds a product or platform credential; `run_secret` is a run-scoped capability for the\nchassis's own listener.",
   "properties": {
     "agent": {
       "title": "Agent",
@@ -84,6 +84,7 @@
       "$ref": "#/$defs/Budget"
     },
     "idempotency_key": {
+      "pattern": "^[\\x21-\\x7E]{1,255}$",
       "title": "Idempotency Key",
       "type": "string"
     },
@@ -100,10 +101,24 @@
       "title": "Model Route"
     },
     "request_id": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
       "title": "Request Id",
       "type": "string"
     },
+    "run_secret": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Secret"
+    },
     "trace_id": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
       "title": "Trace Id",
       "type": "string"
     },

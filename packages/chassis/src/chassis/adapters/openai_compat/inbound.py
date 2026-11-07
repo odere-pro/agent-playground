@@ -4,8 +4,10 @@ router is `chassis.server.interfaces.openai` (`POST /v1/chat/completions` on the
 a model; `chassis.server.model_proxy`). Both share `messages.py` for content parts.
 
 **In** (`to_request`). The body is the SDK's `CompletionCreateParams` as FastAPI validated it:
-`messages` and every list inside it are lazy iterators, read here once; a `ValidationError` while
-reading is 400 `invalid_body`, never a 500. Then, in order:
+`messages` and every list inside it are lazy iterators, read here once (`chat_common.materialize`,
+the Anthropic interface's reader too); a `ValidationError` while reading, or a value nested too
+deep, is 400 `invalid_body` naming the item in the bracket form (`messages[1].content`), never a
+500. Then, in order:
 
 - `model` must equal the served agent, else 404 `model_not_found`.
 - The refused parameters are 400 `unsupported_parameter` with `param` set (`REFUSED_PARAMS`): what
@@ -36,12 +38,11 @@ are `{"error": {"message", "type", "param", "code", "retryable"}}` with `status_
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Callable, Iterable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from typing import Any
 
-from pydantic import ValidationError
-
 from chassis.adapters.ai_marking import marked, with_marking
+from chassis.adapters.chat_common import InvalidBody, materialize
 from chassis.adapters.openai_compat.messages import (
     UnsupportedMessage,
     is_empty,
@@ -160,29 +161,6 @@ REFUSED_PARAMS: tuple[tuple[str, Callable[[Any], bool], str], ...] = (
 """`(param, refused(value), why)`: what the client would read and not find (section 2)."""
 
 
-def _plain(value: Any) -> Any:
-    """`value` with every lazy iterator read into a list, once. Raises `ValidationError`."""
-    if isinstance(value, Mapping):
-        return {key: _plain(item) for key, item in value.items()}
-    if isinstance(value, str | bytes):
-        return value
-    if isinstance(value, Iterable):
-        return [_plain(item) for item in value]
-    return value
-
-
-def _validation_text(exc: ValidationError, at: str) -> str:
-    """At most three distinct `<loc>: <msg>` lines; the input is never echoed."""
-    lines: list[str] = []
-    for error in exc.errors():
-        loc = ".".join(str(part) for part in (at, *error.get("loc", ())))
-        line = f"{loc}: {error.get('msg', 'invalid')}"
-        if line not in lines:
-            lines.append(line)
-    more = "; ..." if len(lines) > 3 else ""
-    return "; ".join(lines[:3]) + more
-
-
 class OpenAIInbound:
     """`InboundAdapter[CompletionCreateParams]` (module docstring). Pure: no I/O, clock, or ids."""
 
@@ -258,9 +236,9 @@ class OpenAIInbound:
         plain: dict[str, Any] = {}
         for key, value in body.items():
             try:
-                plain[key] = _plain(value)
-            except ValidationError as exc:
-                raise self._refused(ids, "invalid_body", _validation_text(exc, key), key) from exc
+                plain[key] = materialize(value, key)
+            except InvalidBody as exc:  # a lazy item that fails, or a value nested too deep
+                raise self._refused(ids, "invalid_body", str(exc), key) from None
         return plain
 
     @staticmethod

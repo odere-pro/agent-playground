@@ -7,7 +7,8 @@ tools to `CHASSIS_TOOL_URL`. No model key lives here; the chassis holds the cred
 `remote` lane the chassis's listener wants a bearer: when `CHASSIS_API_TOKEN` is set and not empty,
 every model and MCP call carries `Authorization: Bearer <token>`; unset (the `sidecar` lane), no
 `Authorization` header is sent. The token is read from the environment on each run and is never
-logged. `ctx["traceparent"]`, when set, is the `traceparent` header on every model and MCP call.
+logged. `ctx["traceparent"]`, when set, is the `traceparent` header on every model and MCP call;
+`ctx["run_secret"]`, when set, is the `x-chassis-run-secret` header next to it (never logged).
 The input text goes to the model in its own user message, never in the system prompt.
 """
 
@@ -29,6 +30,8 @@ SYSTEM_PROMPT = "Rewrite in plain words. Short sentences. Keep every fact."
 DEFAULT_ROUTE = "big-default"
 MODEL_URL_VAR = "CHASSIS_MODEL_URL"
 TOKEN_VAR = "CHASSIS_API_TOKEN"
+# The run-scoped capability the chassis checks on its remote listener (contract v8).
+RUN_SECRET_HEADER = "x-chassis-run-secret"  # pragma: allowlist secret (a header name, not a secret)
 DEFAULT_MODEL_URL = "http://127.0.0.1:8090/v1"
 # suggested: 30 s for the model call when `ctx.budget.timeout_ms` is not set; the epic gives none.
 DEFAULT_TIMEOUT_S = 30.0
@@ -78,6 +81,8 @@ def _headers(ctx: dict[str, Any]) -> dict[str, str]:
     headers: dict[str, str] = {}
     if ctx.get("traceparent"):
         headers["traceparent"] = str(ctx["traceparent"])
+    if ctx.get("run_secret"):  # the chassis's per-run check; never logged
+        headers[RUN_SECRET_HEADER] = str(ctx["run_secret"])
     token = os.environ.get(TOKEN_VAR)
     if token:
         headers["authorization"] = f"Bearer {token}"

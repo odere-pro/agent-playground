@@ -19,6 +19,9 @@ import openai
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 
 SCHEMA_VERSION = "0"
+ERROR_MESSAGE_MAX = 8192
+"""Contract v8, C: the v0 schema's bound on `error.message`. A copy: workloads never import the
+chassis. An upstream body can be any size, so the message is cut to it."""
 
 
 def event(kind: str, **fields: Any) -> dict[str, Any]:
@@ -111,7 +114,7 @@ def error_event(exc: BaseException) -> dict[str, Any]:
     (suggested: the code name).
     """
     exc = _leaf(exc)
-    message = str(exc) or type(exc).__name__
+    message = (str(exc) or type(exc).__name__)[:ERROR_MESSAGE_MAX]
     status: int | None = None
     if isinstance(exc, openai.APIStatusError):
         status = exc.status_code

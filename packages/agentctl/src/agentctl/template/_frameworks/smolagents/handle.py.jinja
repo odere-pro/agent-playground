@@ -15,6 +15,8 @@ This engine is `untrusted`: the `CodeAgent` asks the model for Python and runs i
   back through a `queue.Queue`; `handle` reads it without blocking the event loop.
 - `ctx["traceparent"]`, when set, is a default header on both HTTP clients, so every model call
   and every MCP request carries it (contract v1 decision 4). A plain header, no OpenTelemetry.
+- `ctx["run_secret"]`, when set, is the `x-chassis-run-secret` header next to it on the same
+  requests (contract v8). Never logged.
 - No model key. In the `remote` lane `CHASSIS_API_TOKEN`, when set and not empty, is the openai
   client's `api_key` (so `Authorization: Bearer <token>` on every model call) and a default header
   on the MCP client; unset, no `Authorization` header is sent. Read once per run, never logged.
@@ -51,6 +53,8 @@ DEFAULT_ROUTE = "big-default"
 MODEL_URL_VAR = "CHASSIS_MODEL_URL"
 DEFAULT_MODEL_URL = "http://127.0.0.1:8090/v1"
 TOKEN_VAR = "CHASSIS_API_TOKEN"
+# The run-scoped capability the chassis checks on its remote listener (contract v8).
+RUN_SECRET_HEADER = "x-chassis-run-secret"  # pragma: allowlist secret (a header name, not a secret)
 # The openai SDK refuses an empty key, so it gets this placeholder, never an `*_API_KEY` variable.
 # It is not sent either: `_scrub_headers` removes the header. The chassis model proxy ignores
 # `Authorization` anyway and adds the real, scoped key itself; only the chassis holds credentials.
@@ -145,6 +149,8 @@ async def handle(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[di
         timeout = timeout_s(ctx)
         traceparent = ctx.get("traceparent")
         headers = {"traceparent": str(traceparent)} if traceparent else {}
+        if ctx.get("run_secret"):  # the chassis's per-run check; never logged
+            headers[RUN_SECRET_HEADER] = str(ctx["run_secret"])
         token = os.environ.get(TOKEN_VAR) or None
         tool_headers = {**headers, "authorization": f"Bearer {token}"} if token else headers
         model, http = _model(route, headers, timeout, token)

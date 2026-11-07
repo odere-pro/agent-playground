@@ -67,7 +67,7 @@ def _chat_body(route: str = ROUTE) -> dict[str, Any]:
 
 async def _remote_chat(lane: RemoteLane, trace: str | None, route: str = ROUTE) -> tuple[int, Any]:
     """One model call to the remote listener with the remote's own token, as the remote pod."""
-    headers = {} if trace is None else {"traceparent": trace}
+    headers = lane.run_headers(trace)
     async with lane.remote_proxy_client(lane.tokens.sends) as client:
         response = await client.post(CHAT, json=_chat_body(route), headers=headers)
     return response.status_code, response.json()
@@ -78,7 +78,7 @@ async def _remote_chat(lane: RemoteLane, trace: str | None, route: str = ROUTE) 
 
 def _mcp_client(lane: RemoteLane, trace: str) -> Client[Any]:
     """An MCP client of the chassis's `/mcp` on the remote listener, with the remote's own token
-    and the run's `traceparent`, over the listener's Unix socket. Never TCP.
+    and the run's `traceparent` and secret, over the listener's Unix socket. Never TCP.
     """
     uds = lane.remote_proxy_uds
 
@@ -96,7 +96,7 @@ def _mcp_client(lane: RemoteLane, trace: str) -> Client[Any]:
             **kw,
         )
 
-    headers = {"Authorization": f"Bearer {lane.tokens.sends}", "traceparent": trace}
+    headers = {"Authorization": f"Bearer {lane.tokens.sends}", **lane.run_headers(trace)}
     transport = StreamableHttpTransport(
         f"{REMOTE_PROXY_URL}/mcp", headers=headers, httpx_client_factory=factory
     )
@@ -411,7 +411,9 @@ async def test_h29_a_route_outside_the_key_is_refused_and_an_in_scope_call_is_20
     # `http_401` (suggested: `model_route_denied` there too; not pinned here).
     assert refused["status"] == "error", refused
     error = refused["output"]["error"]
-    assert error["message"] == "this model route is not allowed for this service", error
+    # Contract v8 (R3-02): native `/v1/run` sends the fixed public text for the code; the
+    # upstream text stays in the log and the span.
+    assert error["message"] == public_message(error["code"]), error
     assert not refused["output"].get("text"), refused
     assert scoped[0].refused == [OUT_OF_SCOPE], scoped[0].refused
 
@@ -442,6 +444,37 @@ async def test_h29_past_the_run_budget_is_429_and_a_run_with_budget_left_is_200(
     assert over[0] == 429 and _code(over[1]) == "budget_exhausted", over
     assert over[1]["error"]["retryable"] is False, over
     assert after == before, (before, after)
+
+
+# --- H17, two traceparents: the run check and the tool endpoint must read the same run ---
+
+
+async def test_h17_two_traceparents_with_the_first_runs_secret_are_403(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on
+    every commit."
+
+    Exit criterion 1 (offline), H17, contract v8 security review: inside run A, with its own
+    token, the remote sends A's `traceparent` and secret, then a second `traceparent`. The run
+    check would read the first header and FastMCP the last, so the call could land under the
+    other run. It is refused 403 `run_required` before the model is called. The control: the
+    same call with one `traceparent` is 200 in the same run.
+    """
+    async with remote_lane(monkeypatch) as lane, lane.held_run() as run:
+        headers = [
+            *lane.run_headers(run.traceparent).items(),
+            ("traceparent", HeldRun(new_trace_id()).traceparent),
+        ]
+        before = len(lane.model.calls)
+        async with lane.remote_proxy_client(lane.tokens.sends) as client:
+            refused = await client.post(CHAT, json=_chat_body(), headers=headers)
+        after = len(lane.model.calls)
+        allowed = await _remote_chat(lane, run.traceparent)
+    assert refused.status_code == 403 and _code(refused.json()) == "run_required", refused.text
+    assert after == before, (before, after)
+    assert allowed[0] == 200, allowed
+    assert run.response is not None and run.response.json()["status"] == "ok", run.response
 
 
 # --- H17: already covered end to end; named here so the map is complete ---

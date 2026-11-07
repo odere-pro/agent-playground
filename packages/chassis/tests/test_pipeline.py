@@ -9,14 +9,14 @@ from typing import Any
 
 import pytest
 from chassis.core.envelope import Context, Request, TaskInput
-from chassis.core.events import Delta, End, Error, Event, Start
+from chassis.core.events import ERROR_MESSAGE_MAX, Delta, End, Error, Event, Start
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.correlation import TraceIdInUse
-from chassis.server.pipeline import RunPipeline, RunStream
+from chassis.server.pipeline import RUN_SECRET_BYTES, RunPipeline, RunStream, context_for
 from fastapi import FastAPI
 from starlette.requests import ClientDisconnect
 
@@ -247,3 +247,68 @@ async def test_an_engine_exception_becomes_one_engine_error_event() -> None:
     assert error.message == "ValueError: kaput"
     assert response.status == "error"
     assert response.output["error"] == {"code": "engine_error", "message": "ValueError: kaput"}
+
+
+def test_context_for_mints_a_fresh_run_secret_for_every_run() -> None:
+    """Contract v8 (R2-02): every chassis-mode run gets its own secret, out of `repr`."""
+    config = ChassisConfig.model_validate(CONFIG)
+    request = Request(
+        request_id="r1",
+        trace_id="f" * 32,
+        idempotency_key="k1",
+        agent="echo",
+        agent_version="0.0.1",
+        input=TaskInput(text="x"),
+    )
+    first, second = context_for(request, config), context_for(request, config)
+    assert first.run_secret and second.run_secret and first.run_secret != second.run_secret
+    assert len(first.run_secret) == 43 and RUN_SECRET_BYTES == 32
+    assert first.run_secret not in repr(first)
+
+
+def test_context_for_gives_a_plain_mode_run_no_secret() -> None:
+    """Plain mode (`spec.engine.protocol: a2a`) never sends `ctx`, so it gets no secret."""
+    engine = {
+        "connector": "remote",
+        "url": "http://remote.test:8443",
+        "auth": {"scheme": "bearer", "token_env": "POC05_TEST_REMOTE_TOKEN"},
+        "protocol": "a2a",
+    }
+    config = ChassisConfig.model_validate({**CONFIG, "spec": {**CONFIG["spec"], "engine": engine}})
+    request = Request(
+        request_id="r1",
+        trace_id="f" * 32,
+        idempotency_key="k1",
+        agent="echo",
+        agent_version="0.0.1",
+        input=TaskInput(text="x"),
+    )
+    assert context_for(request, config).run_secret is None
+
+
+async def test_the_open_run_record_holds_the_ctx_secret() -> None:
+    """`RunPipeline.open` puts the minted secret on the run's record."""
+    app = _app()
+    async with app.router.lifespan_context(app):
+        pipeline: RunPipeline = app.state.pipeline
+        run = pipeline.open(_request(pipeline))
+        assert run.ctx.run_secret and run.record.run_secret == run.ctx.run_secret
+        [event async for event in run.events()]
+
+
+async def test_an_engine_exception_text_is_cut_to_the_error_message_cap() -> None:
+    """A huge exception text is cut to `ERROR_MESSAGE_MAX`, so the error event stays valid."""
+
+    async def boom(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
+        yield Start(request_id=ctx.request_id)
+        raise ValueError("x" * (ERROR_MESSAGE_MAX * 2))
+
+    app = _app(FakeEngine(handle=boom))
+    async with app.router.lifespan_context(app):
+        pipeline: RunPipeline = app.state.pipeline
+        run = pipeline.open(_request(pipeline))
+        events = [event async for event in run.events()]
+    error = events[-1]
+    assert isinstance(error, Error) and error.code == "engine_error"
+    assert len(error.message) == ERROR_MESSAGE_MAX
+    assert error.message.startswith("ValueError: xxx")

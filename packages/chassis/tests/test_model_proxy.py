@@ -30,7 +30,7 @@ from chassis.server import ChassisConfig, create_app
 from chassis.server.correlation import RunRecord
 from chassis.server.model_admission import DEFAULT_UNCORRELATED_MAX_TOKENS
 from chassis.server.proxy_app import create_proxy_app
-from chassis.server.remote_auth import create_remote_proxy_app
+from chassis.server.remote_auth import RUN_SECRET, create_remote_proxy_app
 from proxy_fakes import (
     ANTHROPIC_BODY,
     PLAIN_WORDS,
@@ -48,7 +48,11 @@ from proxy_fakes import (
 CONFIG: dict[str, Any] = {
     "profile": "fake",
     "agent": {"name": "echo", "version": "0.0.1"},
-    "spec": {"engine": {"connector": "inprocess", "handle": "chassis.core.handle:echo_wire"}},
+    "spec": {
+        "engine": {"connector": "inprocess", "handle": "chassis.core.handle:echo_wire"},
+        # The route `BODY` names: an uncorrelated call is pinned to it (R6).
+        "model": {"route": "big-default"},
+    },
 }
 
 BODY: dict[str, Any] = {
@@ -528,6 +532,7 @@ async def test_an_unsupported_message_is_400_before_the_model_is_called(
 # --- The body cap: the same `BODY_CAP_BYTES` as the Anthropic proxy route ---
 
 REMOTE_TOKEN = "remote-token-canary-chat-0123456789"  # pragma: allowlist secret (canary)
+RUN_SECRET_VALUE = "run-secret-test-value"  # pragma: allowlist secret (a test value)
 
 
 def _oversized_body() -> bytes:
@@ -553,8 +558,13 @@ async def test_chat_proxy_answers_413_without_calling_the_model_when_the_body_is
     """A correlated chat body one byte over the cap is 413 on both listeners; the model is idle."""
     ports = _chat_ports()
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
-    headers = {"traceparent": TRACEPARENT, "authorization": f"Bearer {REMOTE_TOKEN}"}
+    headers = {
+        "traceparent": TRACEPARENT,
+        "authorization": f"Bearer {REMOTE_TOKEN}",
+        RUN_SECRET: RUN_SECRET_VALUE,
+    }
     request, ctx = run_request(max_tokens=100)
+    ctx = ctx.model_copy(update={"run_secret": RUN_SECRET_VALUE})
 
     async with (
         asgi_client(_listener(kind, app)) as client,
