@@ -11,28 +11,15 @@ name: poc08-stack
 # poc08_stack_latency.py (p50 and p95 of /v1/run, PoC-8 stages on and off, 200 requests each).
 # The JUnit report and the latency JSON are uploaded as the artifact `poc08-stack`.
 #
-# Trigger: push on the stack's paths, pull_request, and workflow_dispatch. Never
-# pull_request_target. No secret is used: stack.sh makes every credential into an env file
+# Trigger: workflow_dispatch only, since 2026-11-08: a finished PoC is checked locally, not on every
+# push and pull request (docs/guides/testing.md, "What CI runs"). Never pull_request_target.
+# No secret is used: stack.sh makes every credential into an env file
 # (mode 600) on the runner. The tests get its path from `stack.sh env` and read it themselves;
 # nothing here prints it. On failure, log tails go through `stack.sh logs`, which masks every env
-# file value. The offline gate (`make check`, ci.yml) stays the every-commit gate. Every action
+# file value. The offline gate (`make check`, ci.yml) is the every-commit gate. Every action
 # is pinned by a full commit SHA.
 
 on:
-  push:
-    paths:
-      - "deploy/compose/poc08/**"
-      - "deploy/dashboards/**"
-      - "packages/chassis/**"
-      - "packages/fake-model-server/**"
-      - "packages/poc-harness/src/poc_harness/metrics_stack.py"
-      - "packages/poc-harness/src/poc_harness/paths.py"
-      - "packages/workloads/echo-python/**"
-      - "pocs/poc-08-cross-cutting-build/tests/poc08_stack_latency.py"
-      - "pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_metrics.py"
-      - "uv.lock"
-      - ".github/workflows/poc08-stack.yml"
-  pull_request:
   workflow_dispatch:
 
 permissions:

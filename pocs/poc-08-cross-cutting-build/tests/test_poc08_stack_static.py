@@ -370,9 +370,8 @@ def test_the_workflow_is_read_only_pinned_and_has_no_secret(workflow: dict[Any, 
     assert "pull_request_target" not in text
     assert "secrets." not in text
     triggers: dict[str, Any] = workflow["on"] if "on" in workflow else workflow[True]
-    assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}
-    assert "deploy/compose/poc08/**" in triggers["push"]["paths"]
-    assert "deploy/dashboards/**" in triggers["push"]["paths"]
+    # Since 2026-11-08 the drill runs only by hand: a finished PoC is checked locally.
+    assert set(triggers) == {"workflow_dispatch"}
     assert workflow["permissions"] == {"contents": "read"}
     for name, job in workflow["jobs"].items():
         assert job.get("permissions", {"contents": "read"}) == {"contents": "read"}, name

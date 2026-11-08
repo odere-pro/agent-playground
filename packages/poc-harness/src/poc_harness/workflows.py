@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -36,3 +37,23 @@ def workflow_runs(doc: dict[str, Any]) -> str:
 def workflow_triggers(doc: dict[str, Any]) -> set[str]:
     triggers = doc["on"]
     return set(triggers) if isinstance(triggers, (dict, list)) else {triggers}
+
+
+def gate_paths(root: Path) -> dict[str, list[str]]:
+    """`make gate-paths` in `root`: {"gate": what the CI gate tests, "local": the test folders of
+    the finished PoCs, which run only in `make test-pocs-done`}."""
+    done = subprocess.run(
+        ["make", "--no-print-directory", "-s", "gate-paths"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    lists: dict[str, list[str]] = {}
+    for line in done.stdout.splitlines():
+        name, _, paths = line.partition(":")
+        lists[name.strip()] = paths.split()
+    if set(lists) != {"gate", "local"}:
+        raise RuntimeError(f"make gate-paths printed {done.stdout!r}")
+    return lists

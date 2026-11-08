@@ -8,17 +8,14 @@ remote's token Secret, <name>-workload-token (agent-lib.remoteTokenSecret). Its 
 port binds the pod IP, never 0.0.0.0, so loopback carries only the proxies (H13). The image's
 ENTRYPOINT is `chassis serve`; the chart sets args only, never a command (admission rule 6b).
 */}}
+{{- define "agent-lib.readyMarker" -}}/tmp/chassis-ready{{- end -}}
+
 {{- define "agent-lib.chassisContainer" -}}
 {{- $v := .v -}}
 {{- $c := $v.chassis -}}
 - name: chassis
   image: {{ include "agent-lib.chassisImage" $c.image | quote }}
   imagePullPolicy: {{ $c.image.pullPolicy }}
-  {{- if eq .lane "sidecar" }}
-  # The native sidecar: an init container that keeps running. The kubelet starts the workload
-  # only after this startupProbe passes, so the chassis binds its proxies first (contract v4 H14).
-  restartPolicy: Always
-  {{- end }}
   args:
     - --config
     - /etc/chassis/config.yaml
@@ -38,6 +35,9 @@ ENTRYPOINT is `chassis serve`; the chart sets args only, never a command (admiss
     - {{ int $c.drainDelaySeconds | quote }}
     - --drain-timeout-s
     - {{ int $c.drainTimeoutSeconds | quote }}
+    # In chassis-tmp, which no other container mounts (ADR-012, H14; the startupProbe below).
+    - --ready-marker
+    - {{ include "agent-lib.readyMarker" . }}
     {{- range $c.extraArgs }}
     - {{ toString . | quote }}
     {{- end }}
@@ -80,13 +80,18 @@ ENTRYPOINT is `chassis serve`; the chart sets args only, never a command (admiss
       containerPort: {{ int $c.remoteProxyPort }}
       protocol: TCP
     {{- end }}
-  # `/health` answers once the proxies are bound; `/ready` is 503 until the workload answers.
+  # Started means bound: the marker exists only once the proxies and the public listener have
+  # bound, and the console script deletes a stale one before it imports anything (ADR-012, H14).
+  # Not an httpGet: in the sidecar lane the workload starts first and could take the public port.
+  # python is the image's own (its HEALTHCHECK uses it); no shell is assumed. The kubelet runs
+  # readiness and liveness only after this passes, so those stay HTTP: `/ready` is 503 until the
+  # workload answers, `/health` says the process serves.
   startupProbe:
-    httpGet:
-      path: /health
-      port: {{ int $c.port }}
-    periodSeconds: 1
-    failureThreshold: 60
+    exec:
+      command: {{ toJson (list "python" "-c" (printf "import os,sys; sys.exit(0 if os.path.exists(%s) else 1)" (include "agent-lib.readyMarker" . | squote))) }}
+    periodSeconds: 2
+    timeoutSeconds: 2
+    failureThreshold: 30
   readinessProbe:
     httpGet:
       path: /ready
@@ -120,6 +125,9 @@ ENTRYPOINT is `chassis serve`; the chart sets args only, never a command (admiss
 
 {{/*
 The workload in the sidecar lane (uid 10002): plain env only, no Secret, no port in the pod spec.
+It is the native sidecar, an init container that keeps running (ADR-012): the kubelet starts the
+chassis only after its startupProbe passes, and stops it only after the chassis has exited. It
+has no readinessProbe: it is never in the Service, and the chassis's `/ready` probes it.
 It listens on 127.0.0.1 and reaches the chassis's proxies on loopback. The kubelet's httpGet goes
 to the pod IP, so its probes exec a GET on the agent card (suggested: python; set
 workload.probeCommand for another runtime). The liveness probe has its own grace of 10 s, so a
@@ -135,6 +143,7 @@ hung process restarts the pod without waiting for the pod's grace (024 CH-3, PoC
 - name: workload
   image: {{ $w.image | quote }}
   imagePullPolicy: {{ $w.pullPolicy }}
+  restartPolicy: Always
   {{- with $w.args }}
   args:
     {{- range . }}

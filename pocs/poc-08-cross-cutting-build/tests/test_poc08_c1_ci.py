@@ -4,11 +4,12 @@
 Static checks of the CI wiring, the way PoC-3's `test_exit_1_the_suites_run_offline_in_ci_on_every_
 commit` checks it, extended to PoC-8:
 
-- `ci.yml` runs `make check` on every push and pull request; `make check` runs `make test`, which
-  is `scripts/check_offline.sh` with no path, so pytest's `testpaths` (`packages`, `pocs`) take in
-  every PoC test folder, this one included. The script strips `*_API_KEY` and passes
-  `--disable-socket --allow-unix-socket --record-mode=none`. Under those flags this folder is
-  collected and no test in it is marked `network`.
+- `ci.yml` runs `make check` on every push and pull request. Since 2026-11-08 `make check` runs
+  `make test-gate` (packages, scripts/tests, and the open PoCs), and a finished PoC, this one
+  included, runs in `make test-pocs-done` (docs/guides/testing.md, "What CI runs"). Every PoC test
+  folder is in one of the two (`make gate-paths`), and both use `scripts/check_offline.sh`. The
+  script strips `*_API_KEY` and passes `--disable-socket --allow-unix-socket --record-mode=none`.
+  Under those flags this folder is collected and no test in it is marked `network`.
 - `poc08-evals.yml` runs the eval gate (`eval_kit.evalgate`) for every supported engine, the
   drop-facts regression (exit 1 required; criterion 5 checks the recipe), and the red-team set for
   every engine `evals/redteam/baseline.json` records.
@@ -35,6 +36,7 @@ from typing import Any
 import pytest
 import yaml
 from poc_harness.paths import ROOT
+from poc_harness.workflows import gate_paths
 from pytest_socket import SocketBlockedError
 
 WORKFLOWS = ROOT / ".github/workflows"
@@ -94,9 +96,10 @@ def _matrix(job: dict[str, Any]) -> set[str]:
     return set(job["strategy"]["matrix"]["engine"])
 
 
-def test_ci_runs_make_check_and_make_check_runs_every_poc_folder_offline() -> None:
-    """Criterion 1: CI's `check` job runs `make check` on every commit; `make check` runs the
-    offline gate over `packages` and `pocs`, with no filter that could drop a suite."""
+def test_ci_runs_make_check_and_every_poc_folder_runs_offline_in_the_gate_or_locally() -> None:
+    """Criterion 1: CI's `check` job runs `make check` on every commit. Since 2026-11-08
+    `make check` runs `make test-gate`, and a finished PoC's folder runs in `make
+    test-pocs-done`; every PoC folder is in exactly one, and both use the offline script."""
     workflow = _workflow("ci.yml")
     triggers = _triggers(workflow)
     assert set(triggers) >= {"push", "pull_request"}
@@ -105,8 +108,15 @@ def test_ci_runs_make_check_and_make_check_runs_every_poc_folder_offline() -> No
 
     makefile = (ROOT / "Makefile").read_text()
     assert "PYTEST := scripts/check_offline.sh" in makefile
-    assert "test" in _recipe(makefile, "check")[0].split()
+    assert "test-gate" in _recipe(makefile, "check")[0].split()
+    assert _recipe(makefile, "test-gate") == ["$(PYTEST) $(GATE_TESTS)"]
+    assert _recipe(makefile, "test-pocs-done") == ["$(PYTEST) $(DONE_POC_TESTS)"]
     assert _recipe(makefile, "test") == ["$(PYTEST)"], "no path, no -m: testpaths decide"
+    paths = gate_paths(ROOT)
+    folders = {f"pocs/{p.name}/tests" for p in (ROOT / "pocs").glob("poc-*") if p.is_dir()}
+    assert {"packages", "scripts/tests"} <= set(paths["gate"])
+    assert folders == {p for p in paths["gate"] if p.startswith("pocs/")} | set(paths["local"])
+    assert HERE in paths["local"]
 
     script = (ROOT / "scripts/check_offline.sh").read_text()
     assert "_API_KEY" in script and 'unset "$v"' in script
@@ -134,7 +144,8 @@ print("@@COLLECTED@@" + json.dumps({"code": int(code), "items": seen.items}))
 
 @pytest.mark.slow
 def test_the_gate_collects_this_folder_with_no_network_test() -> None:
-    """Criterion 1: with the gate's own flags, every PoC-8 scenario file is collected, every
+    """Criterion 1: with the offline script's own flags (`make test-pocs-done` since 2026-11-08),
+    every PoC-8 scenario file is collected, every
     cell is there, and none of it is marked `network` (so none is left out of `make test`).
     The stack drills in `GATED_DRILLS` are not scenario files: they need a running Compose
     stack and are collected only with their variable (conftest.py; test_poc08_litellm_static.py

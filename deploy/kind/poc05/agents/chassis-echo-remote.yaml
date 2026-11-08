@@ -6,7 +6,9 @@
 #   `run_required`. The loopback proxy listener (127.0.0.1:8090) is unchanged and unused.
 # - `chassis-echo-remote-proxy` is the fixed-ClusterIP Service in front of 8091. The remote pod has
 #   no DNS (section 2.10), so it gets this IP as plain env (remote/remote-echo.yaml). suggested:
-#   10.96.85.91, inside kind's default Service range 10.96.0.0/16. If it changes, change both files.
+#   10.96.0.91: the static band of the 10.96.0.0/16 Service range (10.96.0.0 to 10.96.0.255), which
+#   Kubernetes keeps off the dynamic allocator, so no other Service can take it first (KEP-3070).
+#   Never move it into 10.96.1.0 or above. If it changes, change both files.
 # - One replica: the remote listener answers only for a run in flight in this process
 #   (`run_required`), so a second replica behind the same Service would answer 403 at random.
 # - Secrets, chassis container only: its LiteLLM virtual key, the Valkey password, and REMOTE_TOKEN
@@ -179,7 +181,7 @@ metadata:
   labels:
     app.kubernetes.io/name: chassis-echo-remote
 spec:
-  clusterIP: 10.96.85.91
+  clusterIP: 10.96.0.91
   selector:
     app.kubernetes.io/name: chassis-echo-remote
   ports:

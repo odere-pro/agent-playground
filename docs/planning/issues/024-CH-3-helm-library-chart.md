@@ -15,7 +15,7 @@ epic_refs: [G.4, H]
 
 ## What
 
-- A Helm library chart that adds the chassis container to a service's pod (Kubernetes 1.33 or later, with native sidecars). Decided in [contract v4](../../contracts/contract-v4.md) (Bind order): the chassis is the native sidecar (an init container with `restartPolicy: Always`) and the workload the main container, because the proxies must bind before the workload starts.
+- A Helm library chart that adds the chassis container to a service's pod (Kubernetes 1.33 or later, with native sidecars). Decided in [ADR-012](../adr/012-drain-order-on-rollout.md) (2026-11-08, P-29 option 1): the workload is the native sidecar (an init container with `restartPolicy: Always`) and the chassis the main container, so the kubelet stops the chassis first and it drains before the workload stops. Until then [contract v4](../../contracts/contract-v4.md) (Bind order) had the reverse; the bind order now holds by refusal: the chassis exits on a taken port and the pod never goes Ready.
 - The chassis image tag, set in one place in the library chart.
 - A per-service pin: one value that holds a service on the previous tag.
 - The Service points at the chassis port only. The workload listens on localhost and is not in the Service. The chassis arguments are allow-listed, because a flag can move a listener off loopback.

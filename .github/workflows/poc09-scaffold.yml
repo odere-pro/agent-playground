@@ -2,11 +2,13 @@
 # a minute per agent, so not in `make check`, which must stay quick. The tests skip without
 # POC09_SCAFFOLD=1; a skip here would look green, so the step needs the exact pass count.
 #
-# Trigger: push and pull_request on what a scaffold is made of, and workflow_dispatch. No secret.
+# Trigger: pull_request on what a scaffold is made of, push to main on the same paths (since
+# 2026-11-08: a branch push repeated the PR run), and workflow_dispatch. No secret.
 name: poc09-scaffold
 
 on:
   push:
+    branches: [main]
     paths: &scaffold-paths
       - packages/agentctl/**
       - packages/agent-testkit/**
@@ -24,7 +26,8 @@ permissions:
 
 concurrency:
   group: poc09-scaffold-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer PR push cancels the old run; on main every merge keeps its own run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   poc09-scaffold:

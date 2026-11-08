@@ -70,6 +70,7 @@ from poc03_support import (
     uds_http_client,
 )
 from poc_harness.sockets import on_unix_socket
+from poc_harness.workflows import gate_paths
 
 # --- 1 -----------------------------------------------------------------------------------------
 
@@ -89,6 +90,7 @@ def test_exit_1_the_suites_run_offline_in_ci_on_every_commit(
     on every commit".
 
     With the gate's flags, the suite's file is collected and none of its tests is marked `network`.
+    Since 2026-11-08 the flags are those of `make test-pocs-done`, not of the CI gate.
     """
     relative = str(SUITE_FILES[suite].relative_to(ROOT))
 
@@ -131,17 +133,21 @@ def test_exit_1_ci_runs_make_check() -> None:
     assert "make check" in ci_run_steps()
 
 
-def test_exit_1_make_check_runs_the_offline_script_with_no_path_or_filter() -> None:
+def test_exit_1_make_test_pocs_done_runs_this_folder_with_the_offline_script() -> None:
     """Exit criterion: "The interface contract suite and the Schemathesis tests run offline in CI
     on every commit".
 
-    `make check` runs `make test`, which is `scripts/check_offline.sh` with no path and no `-m`.
+    Since 2026-11-08 a finished PoC leaves the CI gate (docs/guides/testing.md, "What CI runs").
+    This folder runs in `make test-pocs-done` and in `make test`, both `scripts/check_offline.sh`.
     """
     makefile = MAKEFILE.read_text()
 
+    local = gate_paths(ROOT)["local"]
+
     assert "PYTEST := scripts/check_offline.sh" in makefile
-    assert "test" in recipe(makefile, "check")[0].split()
     assert recipe(makefile, "test") == ["$(PYTEST)"], "no path, no -m: testpaths decide"
+    assert recipe(makefile, "test-pocs-done") == ["$(PYTEST) $(DONE_POC_TESTS)"]
+    assert "pocs/poc-03-one-interface-every-client/tests" in local
 
 
 def test_exit_1_the_offline_script_strips_the_api_keys() -> None:

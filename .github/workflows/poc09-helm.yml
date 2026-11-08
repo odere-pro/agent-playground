@@ -10,7 +10,10 @@
 # (scripts/check_offline.sh: no socket, no key). The tests skip when helm is not on PATH; here
 # POC09_HELM_REQUIRED=1 turns that skip into a failure.
 #
-# Trigger: push, pull_request, and workflow_dispatch. Never pull_request_target. No secret is used.
+# Trigger, since 2026-11-08: pull_request and push to main on what the tests read (the charts, the
+# PoC-5 admission rules the boundary test compares, poc-harness, the test files and their conftest,
+# the offline script, the root pyproject and lock), and
+# workflow_dispatch. Never pull_request_target. No secret is used.
 # helm is pinned by version and by a sha256 in the job env, read once from the project's published
 # sha256 file; the job never fetches a sum from the same release. It goes first on PATH, ahead of
 # the runner's preinstalled helm, and the step checks the version it got.
@@ -19,8 +22,22 @@
 name: poc09-helm
 
 on:
-  push:
   pull_request:
+    paths: &chart-paths
+      - deploy/helm/**
+      - deploy/kind/poc05/**
+      - packages/poc-harness/**
+      - pocs/poc-09-agent-mvp-template/tests/chart_render.py
+      - pocs/poc-09-agent-mvp-template/tests/conftest.py
+      - pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py
+      - pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_boundary.py
+      - scripts/check_offline.sh
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/poc09-helm.yml
+  push:
+    branches: [main]
+    paths: *chart-paths
   workflow_dispatch:
 
 permissions:

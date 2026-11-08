@@ -102,12 +102,13 @@ def _launcher() -> ModuleType:
 
 
 def test_workflow_triggers_and_never_pull_request_target() -> None:
-    """Security: "Snyk Agent Scan in CI": the workflow never uses `pull_request_target`."""
+    """Security: "Snyk Agent Scan in CI": the workflow never uses `pull_request_target`.
+    Since 2026-11-08 the workflow runs only by hand: a finished PoC is checked locally."""
     code = [ln for ln in WORKFLOW.read_text().splitlines() if not ln.lstrip().startswith("#")]
     assert not any("pull_request_target" in ln for ln in code)
     # PyYAML reads the bare key `on` as True.
     triggers = _workflow()[True]
-    assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}
+    assert set(triggers) == {"workflow_dispatch"}
 
 
 def test_workflow_permissions_are_read_only() -> None:

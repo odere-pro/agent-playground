@@ -9,7 +9,8 @@
 # on a version tag), then the `network` drill
 # pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_litellm.py.
 #
-# Trigger: push, pull_request, and workflow_dispatch. Never pull_request_target.
+# Trigger: workflow_dispatch only, since 2026-11-08: a finished PoC is checked locally, not on every
+# push and pull request (docs/guides/testing.md, "What CI runs"). Never pull_request_target.
 # No secret is used: no hosted model key, no Hugging Face token (Prompt Guard 2 is out of scope;
 # the pattern stand-in answers the injection check). stack.sh makes the LiteLLM master key, the
 # database password, and the guardrail server's token on the runner (mode 600) and mints the
@@ -22,8 +23,6 @@
 name: poc08-litellm
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 permissions:

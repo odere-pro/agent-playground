@@ -57,7 +57,7 @@ the merged values; prints nothing; fails the render with an "agent-lib:" message
 
 {{- /* Arguments: an allow-list. A flag here can move a listener off loopback or turn auth off,
 and argparse accepts abbreviations, so a deny-list cannot hold. */ -}}
-{{- $safeArg := "^(--log-level(=[a-z]+)?|debug|info|warning|error|--drain-(delay|timeout)-s(=[0-9]+)?|[0-9]+)$" -}}
+{{- $safeArg := "^(--log-level(=[a-z]+)?|debug|info|warning|error|--drain-(delay|timeout)-s(=[0-9]{1,4})?|[0-9]{1,4})$" -}}
 {{- range concat ($v.workload.args | default list) (dig "extraArgs" (list) $v.chassis) -}}
 {{- if not (regexMatch $safeArg (toString .)) -}}
 {{- fail (printf "agent-lib: argument %q is not allowed: only --log-level and --drain-delay-s or --drain-timeout-s" (toString .)) -}}
@@ -153,6 +153,34 @@ and argparse accepts abbreviations, so a deny-list cannot hold. */ -}}
 {{- end -}}
 {{- if not (kindIs "map" $v.chassis.config) -}}
 {{- fail "agent-lib: chassis.config must be the chassis config document (a map)" -}}
+{{- end -}}
+
+{{- /* The pod's grace covers the chassis's worst-case drain (ADR-012 item 3): the drain delay,
+the drain timeout, and 5 s for pending result events. A drain flag in chassis.extraArgs comes after
+the chart's own on the command line, so it is the one the chassis reads; it is counted here. */ -}}
+{{- $delay := int $v.chassis.drainDelaySeconds -}}
+{{- $timeout := int $v.chassis.drainTimeoutSeconds -}}
+{{- $prev := "" -}}
+{{- range (dig "extraArgs" (list) $v.chassis) -}}
+{{- $a := toString . -}}
+{{- if eq $prev "--drain-delay-s" -}}{{- $delay = atoi $a -}}{{- end -}}
+{{- if eq $prev "--drain-timeout-s" -}}{{- $timeout = atoi $a -}}{{- end -}}
+{{- if hasPrefix "--drain-delay-s=" $a -}}{{- $delay = atoi (trimPrefix "--drain-delay-s=" $a) -}}{{- end -}}
+{{- if hasPrefix "--drain-timeout-s=" $a -}}{{- $timeout = atoi (trimPrefix "--drain-timeout-s=" $a) -}}{{- end -}}
+{{- $prev = $a -}}
+{{- end -}}
+{{- $grace := float64 $v.terminationGracePeriodSeconds -}}
+{{- /* Each term on its own first, as a float: a huge value would clamp in atoi or wrap in add. */ -}}
+{{- range $key, $value := dict "chassis.drainDelaySeconds" (list (float64 $v.chassis.drainDelaySeconds) $delay) "chassis.drainTimeoutSeconds" (list (float64 $v.chassis.drainTimeoutSeconds) $timeout) -}}
+{{- range $value -}}
+{{- if or (lt (float64 .) 0.0) (gt (float64 .) $grace) -}}
+{{- fail (printf "agent-lib: %s %v must be 0 or more and at most terminationGracePeriodSeconds %v (ADR-012 item 3; a drain flag in chassis.extraArgs counts)" $key . $v.terminationGracePeriodSeconds) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $bound := add $delay $timeout 5 -}}
+{{- if lt (int $v.terminationGracePeriodSeconds) (int $bound) -}}
+{{- fail (printf "agent-lib: terminationGracePeriodSeconds %d is below chassis.drainDelaySeconds (%d) + chassis.drainTimeoutSeconds (%d) + 5 s for pending events = %d; the kubelet would kill the chassis mid-drain (ADR-012 item 3; a drain flag in chassis.extraArgs counts)" (int $v.terminationGracePeriodSeconds) $delay $timeout (int $bound)) -}}
 {{- end -}}
 
 {{- /* The lane and the trust rule. */ -}}

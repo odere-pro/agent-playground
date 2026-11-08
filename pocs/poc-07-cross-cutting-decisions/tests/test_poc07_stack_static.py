@@ -260,13 +260,14 @@ def workflow() -> dict[str, Any]:
 
 def test_workflow_triggers_and_permissions(workflow: dict[Any, Any]) -> None:
     """Criterion 1: "by exporter config only": the stack workflow never uses
-    `pull_request_target` and reads only."""
+    `pull_request_target` and reads only. Since 2026-11-08 the workflow runs only by hand: a
+    finished PoC is checked locally."""
     text = _code(WORKFLOW)
     assert "pull_request_target" not in text
     assert "secrets." not in text
     # PyYAML reads the bare key `on` as True.
     triggers: dict[str, Any] = workflow["on"] if "on" in workflow else workflow[True]
-    assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}
+    assert set(triggers) == {"workflow_dispatch"}
     assert workflow["permissions"] == {"contents": "read"}
 
 

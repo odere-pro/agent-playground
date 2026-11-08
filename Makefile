@@ -5,8 +5,19 @@ POC ?= 01
 PY := uv run python
 PYTEST := scripts/check_offline.sh
 
+# The CI gate leaves out the scenario tests of a finished PoC (decided 2026-11-08; docs/guides/
+# testing.md, "What CI runs"). Finished: every PoC whose README says `Status: done`, plus the ones
+# named in CI_FINISHED_POCS, whose work is finished while their Status line is still open.
+CI_FINISHED_POCS := 06a 06b 06c 07
+POC_DIRS := $(patsubst %/,%,$(wildcard pocs/poc-*/))
+DONE_POCS := $(sort $(patsubst %/README.md,%,$(shell grep -l '^Status: done' pocs/poc-*/README.md)) \
+	$(foreach n,$(CI_FINISHED_POCS),$(wildcard pocs/poc-$(n)-*)))
+OPEN_POCS := $(filter-out $(DONE_POCS),$(POC_DIRS))
+GATE_TESTS := packages scripts/tests $(wildcard $(addsuffix /tests,$(OPEN_POCS)))
+DONE_POC_TESTS := $(wildcard $(addsuffix /tests,$(DONE_POCS)))
+
 .PHONY: help setup evals evals-regression redteam fmt fmt-check lint lint-extra type \
-	test test-poc test-integration load-test \
+	test test-gate test-poc test-pocs-done gate-paths test-integration load-test \
 	kind-poc04 kind-poc05 kind-poc06 kind-chart bakeoff poc06-mac record-cassettes \
 	quick check planning-sync planning-check planning-check-strict schemas harness-lint \
 	fake-model-server ts-check clean
@@ -55,8 +66,18 @@ type: ## mypy, strict
 test: ## Every test, offline: sockets disabled, API keys stripped from the environment
 	$(PYTEST)
 
+test-gate: ## The CI gate's tests, offline: packages, scripts/tests, and the open PoCs only
+	$(PYTEST) $(GATE_TESTS)
+
 test-poc: ## Scenario tests of one PoC: make test-poc POC=01 (POC=06 runs 06a, 06b, 06c)
 	$(PYTEST) pocs/poc-$(POC)*/tests
+
+test-pocs-done: ## Scenario tests of every finished PoC, offline; CI does not run them
+	$(PYTEST) $(DONE_POC_TESTS)
+
+gate-paths: ## Print which test folders the CI gate runs and which run only locally
+	@echo "gate: $(strip $(GATE_TESTS))"
+	@echo "local: $(strip $(DONE_POC_TESTS))"
 
 test-integration: ## Network tests: real adapters in testcontainers, sockets on, keys stripped; needs Docker
 	scripts/check_integration.sh $(ARGS)
@@ -115,8 +136,8 @@ quick: ## Iteration gate: format check, lint, and the tests of the packages you 
 	dirs=$$(echo "$$changed" | grep -oE '^(packages|pocs)/[^/]+' | sort -u | while read -r d; do [ -d "$$d" ] && [ -n "$$(find "$$d" -name 'test_*.py' -not -path '*/node_modules/*' -print -quit)" ] && echo "$$d"; done) ; \
 	if [ -n "$$dirs" ]; then echo "testing: $$dirs"; $(PYTEST) $$dirs; else $(PYTEST) -m "not slow"; fi
 
-check: ## Boundary gate: what the CI `check` job runs (not lint-extra, ts-check, or images)
-	$(MAKE) fmt-check lint type test planning-check harness-lint
+check: ## Boundary gate: what the CI `check` job runs; finished PoCs: make test-pocs-done
+	$(MAKE) fmt-check lint type test-gate planning-check harness-lint
 
 planning-sync: ## Regenerate the generated parts of the backlog
 	cd docs/planning && python3 tools/sync.py

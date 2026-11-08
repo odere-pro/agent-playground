@@ -21,24 +21,13 @@
 #   The model: deploy/compose/poc06/model.sha256 (written by the script on its first run, printed
 #   below) and POC06_GGUF_REV (the Hugging Face revision; `main` until pinned, printed below).
 #
-# Trigger: push and pull_request on the paths below, and workflow_dispatch. Never
-# pull_request_target. No secret is used: the LiteLLM key is generated per run by the script.
+# Trigger: workflow_dispatch only, since 2026-11-08: a finished PoC is checked locally, not on every
+# push and pull request (docs/guides/testing.md, "What CI runs"). Never pull_request_target.
+# No secret is used: the LiteLLM key is generated per run by the script.
 # Every action is pinned by a full commit SHA, the same as ci.yml.
 name: poc06-slm
 
 on:
-  push:
-    paths:
-      - .github/workflows/poc06-slm.yml
-      - scripts/poc06_mac.sh
-      - scripts/poc06_mac/**
-      - deploy/compose/poc06/**
-  pull_request:
-    paths:
-      - .github/workflows/poc06-slm.yml
-      - scripts/poc06_mac.sh
-      - scripts/poc06_mac/**
-      - deploy/compose/poc06/**
   workflow_dispatch:
 
 permissions:

@@ -725,7 +725,7 @@ def _proxy_base(name: str) -> str:
 @pytest.mark.parametrize("name", REMOTES)
 def test_the_remote_reaches_its_chassis_at_the_fixed_service_ip(name: str) -> None:
     """The remote has no DNS: its chassis proxy is a fixed ClusterIP, on 8091. The IPs are inside
-    the Service range, distinct from each other and from PoC-5's 10.96.85.91."""
+    the static band of the Service range, distinct from each other and from PoC-5's 10.96.0.91."""
     want = EXPECT["remotes"][name]
     folder = "kagent" if name == "remote-kagent-adk" else "agents"
     cluster = yaml.safe_load((POC05 / "cluster.yaml").read_text())
@@ -735,7 +735,11 @@ def test_the_remote_reaches_its_chassis_at_the_fixed_service_ip(name: str) -> No
 
     assert ip == want["ip"]
     assert ipaddress.ip_address(ip) in ipaddress.ip_network(cluster["networking"]["serviceSubnet"])
-    assert ip != "10.96.85.91"
+    assert ip != "10.96.0.91"
+    # Kubernetes allocates dynamic IPs from the upper band first and keeps the lower band
+    # (for a /16: 10.96.0.0 to 10.96.0.255) for static pins, so a pin there cannot be taken first.
+    assert ipaddress.ip_address(ip) in ipaddress.ip_network("10.96.0.0/24")
+    assert ip not in {"10.96.0.1", "10.96.0.10"}  # the API and kube-dns
     assert svc["spec"]["selector"] == {NAME: want["chassis"]}
     assert [p["port"] for p in svc["spec"]["ports"]] == [8091]
 
@@ -1513,15 +1517,16 @@ def workflow() -> dict[str, Any]:
     return load_workflow(WORKFLOW)
 
 
-def test_the_workflow_runs_on_push_and_never_on_pull_request_target(
+def test_the_workflow_runs_by_hand_and_never_on_pull_request_target(
     workflow: dict[str, Any],
 ) -> None:
-    """Triggers are push, pull_request, and dispatch; no line names pull_request_target."""
+    """The only trigger is workflow_dispatch; no line names pull_request_target.
+    Since 2026-11-08 the workflow runs only by hand: a finished PoC is checked locally."""
     code = _code_lines(WORKFLOW.read_text())
 
     triggers = workflow_triggers(workflow)
 
-    assert triggers == {"push", "pull_request", "workflow_dispatch"}
+    assert triggers == {"workflow_dispatch"}
     assert not any("pull_request_target" in ln for ln in code)
 
 

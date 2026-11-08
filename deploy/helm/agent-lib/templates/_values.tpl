@@ -12,7 +12,9 @@ A release bumps `chassis.image.tag` below; a service holds the previous tag with
 {{- define "agent-lib.defaults" -}}
 nameOverride: ""
 replicas: 1
-# 50 = drain delay 10 + drain timeout 30 + 10 margin (024 CH-3, PoC-4 status).
+# 50 = drain delay 10 + drain timeout 30 + 5 for pending events + 5 margin (ADR-012 item 3).
+# The render refuses a grace below drainDelaySeconds + drainTimeoutSeconds + 5, and a delay or
+# timeout that is negative or above the grace.
 terminationGracePeriodSeconds: 50
 chassis:
   image:

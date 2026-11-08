@@ -16,7 +16,7 @@ Split from X-1. The first cloud must give the chassis the same cluster contract 
 ## What
 
 - One Terraform module for the first cloud, per DEC-1 (AWS or GCP): a Kubernetes cluster, networking, IAM, and object storage buckets for the config store and datasets.
-- Kubernetes 1.33 or later, so the chassis runs as a native sidecar ([ADR-001](../adr/001-chassis-delivery-model.md)).
+- Kubernetes 1.33 or later, for native sidecars: the workload runs as one next to the chassis ([ADR-001](../adr/001-chassis-delivery-model.md), [ADR-012](../adr/012-drain-order-on-rollout.md)).
 - Cloud-neutral module inputs and outputs (for example cluster name, region, node pools, and bucket names in; cluster endpoint and bucket URLs out), so 116 X-1b can match them.
 - The environments dev, staging, and prod, each with its own remote state and locking.
 - Cluster add-ons installed through Argo CD: CloudNativePG (Postgres 17 with pgvector), Vault with External Secrets, cert-manager, and the observability stack. Admission is the ValidatingAdmissionPolicy and its parameter file (`deploy/kind/poc05/admission/`), not Kyverno.

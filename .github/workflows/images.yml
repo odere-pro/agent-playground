@@ -1,0 +1,72 @@
+# Every container image builds and runs as the uid in the table (moved out of ci.yml on 2026-11-08).
+#
+# Trigger: pull_request and push to main on what an image is built from (the Dockerfiles, the
+# packages, the root pyproject and lock), and workflow_dispatch. Never pull_request_target. A
+# docs-only or PoC-only change builds no image. No secret is used. Every action is pinned by a full
+# commit SHA, the same as ci.yml.
+name: images
+
+on:
+  pull_request:
+    paths: &image-paths
+      - "**/Dockerfile"
+      - "**/.dockerignore"
+      - ".dockerignore"
+      - "packages/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/images.yml"
+  push:
+    branches: [main]
+    paths: *image-paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: images-${{ github.ref }}
+  # A newer PR push cancels the old run; on main every merge keeps its own run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Every image builds, and runs as the uid in the table (deploy/README.md, "Container uids";
+  # packages/chassis/tests/test_image_uids.py checks the files, this job checks the built images).
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: chassis, dockerfile: packages/chassis/Dockerfile, context: ., uid: "10001"}
+          - {name: echo-python, dockerfile: packages/workloads/echo-python/Dockerfile, context: ., uid: "10002"}
+          - {name: echo-pydanticai, dockerfile: packages/workloads/echo-pydanticai/Dockerfile, context: ., uid: "10002"}
+          - {name: echo-langgraph, dockerfile: packages/workloads/echo-langgraph/Dockerfile, context: ., uid: "10002"}
+          - {name: echo-openai-agents, dockerfile: packages/workloads/echo-openai-agents/Dockerfile, context: ., uid: "10002"}
+          - {name: echo-claude-agent, dockerfile: packages/workloads/echo-claude-agent/Dockerfile, context: ., uid: "10002"}
+          - {name: echo-smolagents, dockerfile: packages/workloads/echo-smolagents/Dockerfile, context: ., uid: "10002"}
+          - {name: echo-typescript, dockerfile: packages/workloads/echo-typescript/Dockerfile, context: packages/workloads/echo-typescript, uid: "10002"}
+          - {name: code-runner, dockerfile: packages/code-runner/Dockerfile, context: ., uid: "10003"}
+          - {name: fake-model-server, dockerfile: packages/fake-model-server/Dockerfile, context: ., uid: "10004"}
+          - {name: fake-mcp-server, dockerfile: packages/fake-mcp-server/Dockerfile, context: ., uid: "10005"}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Build
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: docker build -t "ci/${{ matrix.name }}" -f "${{ matrix.dockerfile }}" "${{ matrix.context }}"
+      - name: User matches the uid table
+        run: |
+          user="$(docker image inspect -f '{{.Config.User}}' "ci/${{ matrix.name }}")"
+          echo "image user: ${user}"
+          test "${user}" = "${{ matrix.uid }}:${{ matrix.uid }}"
+      # No --read-only here: that would refuse the write for the wrong reason. This checks ownership.
+      - name: App code is not writable by the app user
+        run: |
+          docker run --rm --entrypoint sh "ci/${{ matrix.name }}" -c \
+            'if touch /app/.write-probe 2>/dev/null; then echo "/app is writable"; exit 1; fi; id -u'
+      - name: Size
+        run: docker image ls "ci/${{ matrix.name }}" --format '{{.Repository}} {{.Size}}'

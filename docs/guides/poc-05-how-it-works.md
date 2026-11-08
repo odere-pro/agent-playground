@@ -74,7 +74,7 @@ flowchart LR
 ```
 
 - **Sidecar lane.** The two containers share one network namespace. A NetworkPolicy cannot tell them apart, so the workload can open any socket the chassis can. That is why every service must refuse a call without the chassis's credential, and why untrusted code goes remote.
-- **Remote lane.** The workload has its own pod, on gVisor, in its own namespace. It finds the chassis by a fixed ClusterIP (`10.96.85.91`, the Service `chassis-echo-remote-proxy`), given as plain env, because it has no DNS. The chassis finds it by name (`remote-echo.poc05-remote.svc.cluster.local:9000`).
+- **Remote lane.** The workload has its own pod, on gVisor, in its own namespace. It finds the chassis by a fixed ClusterIP (`10.96.0.91`, the Service `chassis-echo-remote-proxy`), given as plain env, because it has no DNS. The chassis finds it by name (`remote-echo.poc05-remote.svc.cluster.local:9000`).
 - **The public port** binds the pod IP in both lanes. So localhost in the sidecar pod carries only the loopback proxy (8090) and the workload (9000).
 - **Tools.** A workload never reaches a tool server. It calls `/mcp` on its chassis; the chassis calls LiteLLM's MCP gateway with its own virtual key; the gateway calls `fake-mcp-server` or `code-runner-dispatch`.
 - **The code runner, a sandbox per call.** The dispatcher is the only server LiteLLM registers as `code_runner`. It never runs code itself (next section).
@@ -345,7 +345,7 @@ sequenceDiagram
     W->>W: workload-a2a checks the token, then calls handle
     Note over W: ctx.traceparent carries the run's trace id
 
-    W->>BA: POST /v1/chat/completions to 10.96.85.91:8091 with Bearer token and traceparent
+    W->>BA: POST /v1/chat/completions to 10.96.0.91:8091 with Bearer token and traceparent
     alt token missing or wrong
         BA-->>W: 401 remote_unauthenticated, counted as chassis.remote.auth_failed
     else token matches current or previous
@@ -491,7 +491,7 @@ The checks per threat id, each with its paired allowed control, are in [the plan
 
 **Criterion 8 is flagged, "partly shown".** The in-pod probe workload (T10) is a recorded exception, work in progress, owner the user ([the T10 note](../../pocs/poc-05-sandboxed/notes/2026-10-09-t10-probe-exception.md)). How it is tested once built is in [the runbooks](poc-05-runbooks.md#testing-the-probe-workload-t10-after-it-is-built). Until then, the kind suites check the controls from outside the pod: `kubectl exec` of the image's own Python in our own workload containers, the live pod spec, and the node's cgroup. Each refusal has its paired control in the same test ([sidecar suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md), [remote suite](../../pocs/poc-05-sandboxed/notes/2026-10-08-remote-suite.md)). Hard requirement 1 for LiteLLM, the MCP gateway, and Valkey now runs from the sidecar workload container. H05 to H08 and H10 also have earlier bring-up evidence ([bring-up](../../pocs/poc-05-sandboxed/notes/2026-10-02-bring-up.md), items 2, 3, and 5). The full list per id is in [the blind-spots note](../../pocs/poc-05-sandboxed/notes/2026-10-02-blind-spots.md), section 3.
 
-**What runs in CI.** On push and pull request, `.github/workflows/remote-lane.yml` runs `run.sh up`, the Kafka pass, and `run.sh test-remote`: the remote lane, the code runner, and the whole sidecar hostile suite (sidecar controls, hard requirement 1 with the broker, the tool gateway, runtime hardening, admission) ([README, criterion 1](../../pocs/poc-05-sandboxed/README.md#exit-criteria) names the run). The kind evidence in the table below comes from runs on the Mac; the CI run repeats it on every push.
+**What runs in CI.** By hand (`workflow_dispatch`; on every push and pull request until 2026-11-08), `.github/workflows/remote-lane.yml` runs `run.sh up`, the Kafka pass, and `run.sh test-remote`: the remote lane, the code runner, and the whole sidecar hostile suite (sidecar controls, hard requirement 1 with the broker, the tool gateway, runtime hardening, admission) ([README, criterion 1](../../pocs/poc-05-sandboxed/README.md#exit-criteria) names the run). The kind evidence in the table below comes from runs on the Mac; a dispatched CI run repeats it. The offline remote lane stays in the CI gate ([what CI runs](testing.md#what-ci-runs)).
 
 | Control | Proves | Does not prove | Evidence |
 | ------- | ------ | -------------- | -------- |

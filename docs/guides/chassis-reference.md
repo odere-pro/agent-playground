@@ -427,6 +427,7 @@ The Anthropic proxy route (`POST /v1/messages` on the proxy port; contract v5, p
 - The `remote` lane adds a third listener: `--remote-proxy-host <pod IP>` and `--remote-proxy-port` (8091, suggested). See [remote_auth.py](#remote_authpy).
 - The proxy listeners bind first. A taken proxy port exits with status 3 before the public listener binds.
 - `--drain-delay-s` 5 and `--drain-timeout-s` 30. suggested.
+- `--ready-marker PATH`, off by default; an absolute path or status 2. The file exists only while every listener is bound: the console script (`chassis.entry`) deletes it before it imports the server, `Drain.serve` deletes it again, writes it once the proxies and the public listener have bound, and deletes it on exit. A failed bind writes none. The chart passes `/tmp/chassis-ready`, in `chassis-tmp`, which no other container mounts, and its chassis startupProbe checks only that file ([ADR-012](../planning/adr/012-drain-order-on-rollout.md), H14). Compose and the other lanes do not pass it.
 
 ### tool_endpoint.py
 
