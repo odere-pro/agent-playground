@@ -341,23 +341,26 @@ def test_minio_refuses_the_workload_without_the_chassis_key(sidecar: str) -> Non
     assert version.startswith("minio-1+"), version
     assert _chassis_restarts(sidecar) == restarts, "the checks restarted the chassis"
 
-    litellm = service_ip(PLATFORM_NS, "litellm")
-    dropped = [("chassis-echo-remote", CHASSIS)]
+    # Each pod's control is an edge its own policy allows, so a drop to MinIO is the policy, not a
+    # dead network: LiteLLM for chassis-echo-remote; Kafka for agent-echo-events, whose chassis
+    # runs `model: fake` and has no LiteLLM edge (agent-echo-events-network-policy.yaml).
+    dropped = [("chassis-echo-remote", CHASSIS, service_ip(PLATFORM_NS, "litellm"), 4000)]
     if pods(AGENTS_NS, EVENTS_DEPLOYMENT):
-        dropped.append((EVENTS_DEPLOYMENT, WORKLOAD))
-    for app, container in dropped:
+        kafka = service_ip(PLATFORM_NS, "kafka")
+        dropped.append((EVENTS_DEPLOYMENT, WORKLOAD, kafka, KAFKA_PORT))
+    for app, container, control_host, control_port in dropped:
         name = pod(AGENTS_NS, app)["metadata"]["name"]
-        to_minio, to_litellm = probe(
+        to_minio, to_control = probe(
             AGENTS_NS,
             name,
             container,
             [
                 {"kind": "tcp", "host": minio, "port": MINIO_PORT},
-                {"kind": "tcp", "host": litellm, "port": 4000},
+                {"kind": "tcp", "host": control_host, "port": control_port},
             ],
         )
         assert to_minio.get("error") == POLICY_DROPPED, (app, to_minio)
-        assert to_litellm.get("connected") is True, (app, to_litellm)
+        assert to_control.get("connected") is True, (app, control_port, to_control)
 
 
 # --- H11: the broker ------------------------------------------------------------------------
