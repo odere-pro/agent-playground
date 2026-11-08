@@ -35,7 +35,7 @@ The provider key and Hugging Face access stay on the Mac, so only the user can d
 The user's call, on GitHub.
 
 - [ ] **Add the `SNYK_TOKEN` repo secret (PoC-7).** Then `poc07-agent-scan` runs a real Snyk Agent Scan, not only the inspect step.
-- [ ] **Make `poc08-evals` a required check on `main` (PoC-8).** `main` is protected now, and `check` is the one required check (`gh api .../branches/main/protection/required_status_checks` lists `["check"]`). Add `poc08-evals` to that list. Until then the offline eval gate reports but does not block a merge.
+- [ ] **Make `poc08-evals` a required check on `main` (PoC-8).** `main` is protected now, and `check` is the one required check (`gh api .../branches/main/protection/required_status_checks` lists `["check"]`). Since 2026-11-08 `poc08-evals` runs only on the eval gate's paths, and a path-filtered workflow must never be a required check (a skipped one stays pending and blocks the merge). So first add an always-run summary job that passes when the eval jobs pass or were not needed, then make that job required ([what CI runs](../../guides/testing.md#what-ci-runs)). Until then the offline eval gate reports but does not block a merge.
 
 ## 3. Decisions for the user
 

@@ -1,14 +1,16 @@
 """PoC-5 CI wiring, offline (plan `docs/plans/2026-10-02-poc-05-sandboxed.md`, section 7, T24).
 
 Exit criterion 1: "The hostile suites run in CI; the parts that need no cluster run offline on every
-commit." The offline half: `ci.yml` runs `make check`, and `make check` collects the PoC-5 offline
-tests. The kind half: `remote-lane.yml` runs on push and pull request, now that the x86_64 gVisor
-sum, the kind remote test files, and the kind and kubectl sha256 sums are all pinned (the trigger
-test requires every one). Whether gVisor starts on a GitHub runner is shown only by a run.
+commit." Since 2026-11-08 a finished PoC is checked locally (docs/guides/testing.md, "What CI
+runs"): the PoC-5 offline tests run in `make test-pocs-done`, and `remote-lane.yml` runs only by
+hand. The x86_64 gVisor sum, the kind remote test files, and the kind and kubectl sha256 sums stay
+pinned (the trigger test requires every one). Whether gVisor starts on a GitHub runner is shown
+only by a run.
 
 Exit criterion 2: "CI runs a fake workload through the `remote` lane on every commit, and it passes
-the same contract suite as the `sidecar` lane." Offline that is the `LaneContract` file in `make
-check`. On kind, the `test-remote` verb selects the kind remote test files by path and fails, naming
+the same contract suite as the `sidecar` lane." Offline that is the `LaneContract` file here, and
+in the CI gate its package binding, `packages/chassis/tests/test_lane_contract_remote.py`. On
+kind, the `test-remote` verb selects the kind remote test files by path and fails, naming
 them, if one is missing. It also runs the sidecar hostile suite (R5a-03; the product plan, phase A):
 the sidecar controls, hard requirement 1, the tool gateway, and admission, so criteria 3, 5, and 7
 are checked on the cluster in CI. The job runs the Kafka pass (`run.sh kafka`) between `up` and
@@ -33,6 +35,7 @@ import pytest
 from poc_harness.workflows import (
     PINNED,
     SHA256,
+    gate_paths,
     load_workflow,
     workflow_runs,
     workflow_steps,
@@ -80,13 +83,13 @@ def _job_env(doc: dict[str, Any]) -> dict[str, Any]:
     return env
 
 
-def test_poc05_remote_lane_runs_on_push_with_everything_pinned(
+def test_poc05_remote_lane_runs_by_hand_with_everything_pinned(
     remote_lane: dict[str, Any],
 ) -> None:
-    """The job runs on push and pull request (and by hand), so all three must hold (security
-    review item 3): the x86_64 gVisor sum is pinned, the kind remote test files exist, and
-    `KIND_SHA256` and `KUBECTL_SHA256` are pinned in the job env."""
-    assert workflow_triggers(remote_lane) == {"push", "pull_request", "workflow_dispatch"}
+    """Since 2026-11-08 the job runs only by hand (workflow_dispatch). All three pins still hold
+    (security review item 3): the x86_64 gVisor sum is pinned, the kind remote test files exist,
+    and `KIND_SHA256` and `KUBECTL_SHA256` are pinned in the job env."""
+    assert workflow_triggers(remote_lane) == {"workflow_dispatch"}
     gvisor = INSTALL_GVISOR.read_text()
     assert re.search(r"^GVISOR_SHA512_X86_64=[0-9a-f]{128}$", gvisor, re.M), "x86_64 not pinned"
     missing = [f for f in REMOTE_TESTS if not (ROOT / f).is_file()]
@@ -342,11 +345,15 @@ def test_poc05_ci_runs_make_check() -> None:
     assert re.search(r"^\s*make check\s*$", workflow_runs(ci), re.M)
 
 
-def test_poc05_make_check_collects_poc05_offline_tests() -> None:
+def test_poc05_make_test_pocs_done_collects_poc05_offline_tests() -> None:
+    """Since 2026-11-08 the PoC-5 offline tests run in `make test-pocs-done` (and `make test`),
+    not in the CI gate; the remote lane's `LaneContract` stays in the gate through
+    `packages/chassis/tests/test_lane_contract_remote.py`."""
     make = MAKEFILE.read_text()
-    check = re.search(r"^check:.*\n\t(.+)$", make, re.M)
-    assert check and re.search(r"\btest\b", check.group(1)), "make check no longer runs test"
+    assert re.search(r"^test-pocs-done:.*\n\t\$\(PYTEST\) \$\(DONE_POC_TESTS\)$", make, re.M)
+    assert "pocs/poc-05-sandboxed/tests" in gate_paths(ROOT)["local"]
     assert re.search(r'^testpaths = \[.*"pocs".*\]', PYPROJECT.read_text(), re.M)
+    assert (ROOT / "packages/chassis/tests/test_lane_contract_remote.py").is_file()
     offline = {
         "test_poc05_ci_wiring.py",
         "test_poc05_remote_lane_contract.py",

@@ -367,7 +367,8 @@ def test_the_workflow_is_read_only_pinned_and_uses_no_secret() -> None:
     workflow = _workflow()
     triggers = workflow.get("on", workflow.get(True))  # YAML 1.1 reads a bare `on` as true
     assert isinstance(triggers, dict)
-    assert set(triggers) == {"push", "pull_request", "workflow_dispatch"}
+    # Since 2026-11-08 the drill runs only by hand: a finished PoC is checked locally.
+    assert set(triggers) == {"workflow_dispatch"}
     assert workflow["permissions"] == {"contents": "read"}
     assert "permissions" not in workflow["jobs"]["poc08-litellm"]
     text = _code(WORKFLOW)

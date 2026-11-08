@@ -13,14 +13,18 @@ Installs Python 3.12 through uv, every workspace package in editable mode, the d
 | Command | When | What |
 | ------- | ---- | ---- |
 | `make quick` | before every commit | format check, lint (ruff and import rules), tests of the packages you changed; no mypy |
-| `make check` | before a PR, at an iteration end | the CI `check` job: format, lint, mypy, all tests, planning check, harness lint |
+| `make check` | before a PR, at an iteration end | the CI `check` job: format, lint, mypy, the gate's tests (`make test-gate`), planning check, harness lint |
 | `make test` | any time | every test, offline ([testing.md](testing.md#offline-is-enforced)) |
 | `make test-poc POC=01` | while working on an iteration | that iteration's scenario tests |
+| `make test-pocs-done` | before a change that could touch a finished PoC | the finished PoCs' scenario tests, which CI does not run ([testing.md](testing.md#what-ci-runs)) |
+| `make gate-paths` | any time | which test folders the gate runs and which run only locally |
 
-A green `make check` covers only the CI `check` job. The other CI jobs:
+A green `make check` covers only the CI `check` job. The other CI jobs, and when each runs, are in [testing.md](testing.md#what-ci-runs):
 
-- In `.github/workflows/ci.yml`: `lint-extra` (`make lint-extra`), `typescript` (`make ts-check`), and `images` (builds each container image).
-- One workflow per drill: `poc06-kind`, `poc06-load`, `poc06-slm`, `poc07-agent-scan`, `poc07-evals`, `poc07-stack`, `poc08-evals`, and `remote-lane`.
+- In `.github/workflows/ci.yml`: `lint-extra` (`make lint-extra`) and `typescript` (`make ts-check`).
+- `images.yml` builds each container image.
+- On their paths: `poc08-evals` (`make evals`, `make redteam`), `poc09-helm`, and `poc09-scaffold`.
+- By hand only: `remote-lane`, `poc06-kind`, `poc06-load`, `poc06-slm`, `poc07-agent-scan`, `poc07-evals`, `poc07-stack`, `poc08-litellm`, and `poc08-stack`.
 
 ## Parallel work
 

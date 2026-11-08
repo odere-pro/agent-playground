@@ -7,19 +7,12 @@ name: poc07-evals
 # DeepEval from evals/deepeval/requirements.txt (`--require-hashes --no-deps`), never by name
 # (R7-18). The reports (eval-report.v0 and DeepEval's own JSON) are uploaded as artifacts.
 # Local: uv run python -m eval_kit.evaltrial --tool deepeval --out /tmp/evals
+#
+# Trigger: workflow_dispatch only, since 2026-11-08: a finished PoC is checked locally, not on every
+# push and pull request (docs/guides/testing.md, "What CI runs"). Never pull_request_target.
+# The eval gate that blocks a regression is poc08-evals.yml.
 
 on:
-  push:
-    paths:
-      - "evals/**"
-      - "packages/bakeoff/**"
-      - "packages/eval-kit/**"
-      - "packages/fake-model-server/**"
-      - "packages/chassis/**"
-      - "packages/workloads/echo-python/**"
-      - "packages/workloads/echo-langgraph/**"
-      - ".github/workflows/poc07-evals.yml"
-  pull_request:
   workflow_dispatch:
 
 permissions:

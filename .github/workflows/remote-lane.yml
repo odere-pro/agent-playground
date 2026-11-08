@@ -1,14 +1,15 @@
 # PoC-5 remote lane on kind (plan docs/plans/2026-10-02-poc-05-sandboxed.md, section 7, T24).
 #
-# Trigger: push, pull_request, and workflow_dispatch. Never pull_request_target. The switch from
-# manual came once the three pins held (test_poc05_ci_wiring.py now requires them): the x86_64
-# gVisor sha512 in install-gvisor.sh, the kind remote test files in run.sh REMOTE_TESTS, and
-# KIND_SHA256 and KUBECTL_SHA256 below. Each install step still fails closed on a bad sum.
+# Trigger: workflow_dispatch only, since 2026-11-08: a finished PoC is checked locally, not on every
+# push and pull request (docs/guides/testing.md, "What CI runs"). Never pull_request_target.
+# The three pins still hold (test_poc05_ci_wiring.py requires them): the x86_64 gVisor sha512 in
+# install-gvisor.sh, the kind remote test files in run.sh REMOTE_TESTS, and KIND_SHA256 and
+# KUBECTL_SHA256 below. Each install step still fails closed on a bad sum.
 #
 # Open: no spike has run gVisor (systrap, nested under Docker) on a GitHub ubuntu-latest runner.
 # If runsc cannot start there, the job fails at the gVisor step of `run.sh up`; it never skips the
-# check. The offline remote lane in `make check` (ci.yml, LaneContract over the remote lane)
-# stays the every-commit gate either way (hard requirement 2).
+# check. The offline remote lane in `make check` (ci.yml; LaneContract over the remote lane in
+# packages/chassis/tests/test_lane_contract_remote.py) is the every-commit gate (hard requirement 2).
 #
 # What it runs after `up`: the Kafka pass, then `run.sh test-remote`, which is the remote lane,
 # the code runner, and the whole sidecar hostile suite (sidecar controls, hard requirement 1, the
@@ -22,8 +23,6 @@
 name: remote-lane
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 permissions:

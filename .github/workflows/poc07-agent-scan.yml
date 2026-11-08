@@ -7,7 +7,8 @@
 # privileges, uid 65534, and the repo mounted read-only. With --ci the scan step fails on a
 # finding.
 #
-# Trigger: push, pull_request, and workflow_dispatch. Never pull_request_target.
+# Trigger: workflow_dispatch only, since 2026-11-08: a finished PoC is checked locally, not on every
+# push and pull request (docs/guides/testing.md, "What CI runs"). Never pull_request_target.
 # Secret: SNYK_TOKEN only, only in the scan step's env, and only on a push to main or a
 # workflow_dispatch (review R0-08). On any other branch push and on every PR, the scan script,
 # mcp.json, and the MCP servers it starts are branch code, and a server could read the scanner's
@@ -19,8 +20,6 @@
 name: poc07-agent-scan
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 permissions:

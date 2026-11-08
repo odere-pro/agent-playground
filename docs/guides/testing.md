@@ -7,12 +7,38 @@ The test layers of the PoC plan, and where each lives today.
 | Unit | core, fakes, adapters, business logic with fakes | `packages/*/tests` | every commit, offline |
 | Port contract | fakes and real adapters behave the same | `packages/contract-suites`, bound in each package's tests | every commit (fakes); nightly and on adapter change (real) |
 | Inbound contract | every protocol maps to the same canonical request | PoC-3 | every commit, offline |
-| Lane contract | every case gives the same result over A2A on localhost and in memory; a fake workload through `remote` | PoC-2, PoC-5 | every commit (ADR-001 hard requirement 2) |
+| Lane contract | every case gives the same result over A2A on localhost and in memory; a fake workload through `remote` | `packages/chassis/tests/test_lane_contract.py`, `test_lane_contract_remote.py`; first in PoC-2 and PoC-5 | every commit (ADR-001 hard requirement 2) |
 | Component | the whole chassis in-process, every interface, fakes | PoC-1 walking skeleton | every commit, offline |
-| Scenario | one test per PoC exit criterion | `pocs/poc-NN-*/tests` | every commit |
+| Scenario | one test per PoC exit criterion | `pocs/poc-NN-*/tests` | every commit while the PoC is open; once it is finished, locally only (`make test-pocs-done`) |
 | Integration | real dependencies in containers | `packages/chassis/tests/integration/` (Valkey, MinIO, Kafka, Dapr suite bindings) and the `network` tests in `pocs/poc-04-stateless-scalable/tests/`; `make test-integration` | every merge; needs Docker |
 | End to end | the Compose stack, `local` profile | PoC-1 onward | every merge, nightly |
-| Evals | quality on the golden set | PoC-7 | on business logic, prompt, or model change |
+| Evals | quality on the golden set | `packages/eval-kit`, `evals/`; `poc08-evals.yml` | on business logic, prompt, or model change (the workflow's paths) |
+
+## What CI runs
+
+Decided on 2026-11-08: a finished PoC is checked with local tests only, not on every push and pull request.
+
+- The required check is `check` (`ci.yml`). It runs on every push on every branch and on every pull request. It runs `make check`, whose tests are `make test-gate`: `packages`, `scripts/tests`, and the open PoCs.
+- A PoC is finished when its README says `Status: done`, or when the Makefile names it in `CI_FINISHED_POCS` (06a, 06b, 06c, and 07 since 2026-11-08). Its scenario tests run in `make test-pocs-done` and `make test-poc POC=NN`. `make test` still runs every test.
+- `make gate-paths` prints both lists. `scripts/tests/test_ci_gate_paths.py` runs in the gate and fails when a PoC folder is in neither list or in both.
+- ADR-001 hard requirement 2 stays in the gate through the package tests: `test_lane_contract.py` (`inprocess`, `sidecar`) and `test_lane_contract_remote.py` (`remote`).
+- A workflow filtered by `paths:` must never be a required check: when it is skipped, the check stays pending and blocks the merge.
+
+| Workflow | Runs on |
+| -------- | ------- |
+| `ci.yml` `check` | every push, every pull request (required) |
+| `ci.yml` `lint-extra`, `typescript` | pull requests, pushes to `main` |
+| `images.yml` | pull requests and pushes to `main` that touch a Dockerfile, `packages/`, `pyproject.toml`, or `uv.lock` |
+| `poc08-evals.yml` | pull requests and pushes to `main` that touch the eval gate's inputs (evals, eval-kit, engines, chassis source, fake servers) |
+| `poc09-helm.yml` | pull requests and pushes to `main` that touch the charts, the PoC-5 admission rules, poc-harness, or the chart tests |
+| `poc09-scaffold.yml` | pull requests and pushes to `main` that touch what a scaffold is made of |
+| `remote-lane.yml`, `poc06-kind.yml`, `poc06-load.yml`, `poc06-slm.yml`, `poc07-agent-scan.yml`, `poc07-evals.yml`, `poc07-stack.yml`, `poc08-litellm.yml`, `poc08-stack.yml` | by hand only (`workflow_dispatch`): run one with `gh workflow run <file> --ref <branch>` |
+
+Run the finished PoCs' tests before a change that could touch them, and at the end of a review:
+
+```bash
+make test-pocs-done
+```
 
 ## Offline is enforced
 
