@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import tempfile
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -43,8 +44,10 @@ from chassis.fakes import ScriptedModel
 from chassis.fakes.tool import UNLISTED_MARKER, UNLISTED_PROBE, write_mode_tools
 from chassis.ports.model import ModelChunk, ModelError, ModelMessage, ModelResult, ToolSpec
 from chassis.server import ChassisConfig
-from chassis.server.cli import build_all, parse_args
+from chassis.server.cli import Servers, build_all, parse_args
+from chassis.server.lifecycle import Drain, DrainSettings
 from chassis.server.proxy_app import create_proxy_app
+from chassis_contracts.events import wait_until
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from poc_harness.lane_tokens import REMOTE_PROXY_URL, new_token, new_trace_id
@@ -225,6 +228,76 @@ def test_h13_the_public_port_binds_the_pod_ip_and_the_proxy_loopback(
         assert servers.remote is not None and servers.remote.config.host == POD_IP
     else:
         assert servers.remote is None
+
+
+def _move_to_sockets(servers: Servers, folder: str) -> str:
+    """Each listener on a Unix socket in `folder`; returns the public socket's path."""
+    for name, server in (
+        ("public", servers.public),
+        ("proxy", servers.proxy),
+        ("remote", servers.remote),
+    ):
+        if server is not None:
+            server.config.uds = str(Path(folder, f"{name}.sock"))
+    return str(Path(folder, "public.sock"))
+
+
+def _take(path: str) -> None:
+    """A plain file where the socket goes: the bind fails, as on a port a workload took first."""
+    Path(path).write_text("a workload's", encoding="utf-8")
+
+
+@pytest.mark.parametrize("taken", [True, False], ids=["public port taken", "free (control)"])
+@pytest.mark.parametrize("pod", list(CHASSIS_MANIFESTS))
+async def test_h14_a_taken_public_port_leaves_no_ready_marker(
+    pod: str, taken: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR-012, H14 by refusal: in the chart's `sidecar` lane the workload starts first, so it
+    can take the chassis's public address. The chart's chassis startupProbe passes only on the
+    marker `--ready-marker` writes once every listener has bound, so a pod whose public port
+    was taken never starts, is never Ready, and gets no Service traffic. A marker left by the
+    previous container is cleared at start. The paired control: a free address gets the marker.
+
+    Stand-in: the PoC-5 manifest's chassis args go through the real `chassis serve` checks and
+    `build_all`, then each listener is moved to a Unix socket (no TCP offline). A plain file at
+    the public socket's path is the taken port: the bind fails, as on `EADDRINUSE`.
+    """
+    manifest, config = CHASSIS_MANIFESTS[pod]
+    source = yaml.safe_load(config.read_text())
+    auth = source["spec"]["engine"].get("auth")
+    if auth is not None:
+        monkeypatch.setenv(auth["token_env"], new_token())
+    marker = tmp_path / "chassis-ready"
+    marker.write_text("", encoding="utf-8")  # the previous container's, in the kept emptyDir
+    argv = _with_config(_chassis_args(manifest), _offline_config(config, tmp_path))
+    args = parse_args(["serve", *argv, "--ready-marker", str(marker)])
+    servers = build_all(args)
+    with tempfile.TemporaryDirectory(prefix="p5-") as folder:  # short: macOS caps the path
+        public_sock = _move_to_sockets(servers, folder)
+        # The bind is under test, not the workload: no lifespan, so no call to a workload that
+        # is not running (the offline gate blocks it, and a failed startup stops the server).
+        servers.public.config.lifespan = "off"
+        if taken:
+            _take(public_sock)
+        drain = Drain(
+            servers.public,
+            servers.proxy,
+            DrainSettings(delay_s=0.0, timeout_s=1.0),
+            remote=servers.remote,
+            ready_marker=args.ready_marker,
+        )
+        run = asyncio.create_task(drain.serve())
+        if taken:
+            await asyncio.wait_for(run, 30)
+            assert not servers.public.started
+            assert not marker.exists(), "a pod whose public port was taken never starts"
+            return
+        # The stale marker goes before any bind, so a marker seen once started is this run's.
+        await wait_until(lambda: servers.public.started and marker.exists(), 30, "the ready marker")
+        assert servers.proxy.started
+        drain.signal()
+        await asyncio.wait_for(run, 30)
+    assert not marker.exists(), "the marker goes with the process"
 
 
 # --- H15, H16: the uncorrelated cap on the loopback proxy, next to a real run's calls ---

@@ -52,11 +52,12 @@ Each finding id is assigned here once, in bold. P-24 has no id: it carries two i
 
 - **P-4:** option 1. With auth on, `/metrics` needs a token with `agent:read` in the `cloud` profile (`metrics_scope`). `local` and `fake` keep the token-free default. Built in 134 CH-14.
 - **P-26:** option 1. P-2 reopens for `cloud` only: `rate_limit_on_unavailable: fail_closed`, so a store outage refuses counted calls with 503 `state_unavailable`. `local` and `fake` stay `fail_open`, as P-2 decided. Built in 134 CH-14.
+- **P-29:** option 1, in [ADR-012](../../planning/adr/012-drain-order-on-rollout.md): the chassis is the main container and the workload the native sidecar in the `sidecar` pod.
 - **P-27:** option 1. `user.id` in baggage is the `sha256[:32]` of the subject, the hash the rate limit uses, in every lane. Option 2 (no `user.id` to an `untrusted` remote) can follow. Built in 134 CH-14.
 
 Done by a merged PR: **P-16.** Rule 9, the minimum chassis version, landed in `agent-lib` in PR #79; `docs/specs/architecture.md` and `docs/specs/security.md` name it.
 
-The other proposals, P-3, P-5, P-7 to P-15, P-17 to P-25, and P-28 to P-34, stay open. Each one's owner agent advises; a pick that changes code is its own PR after PR-R.
+The other proposals, P-3, P-5, P-7 to P-15, P-17 to P-25, P-28, and P-30 to P-34, stay open. Each one's owner agent advises; a pick that changes code is its own PR after PR-R.
 
 ## P-1: An evaluator outage: fail open or fail closed
 
@@ -435,7 +436,7 @@ P-26 to P-34 come from the section "If phases A to F are all built: what is stil
   1. An ADR: the chassis is the main container and the workload the native sidecar, so the chassis drains first.
   2. Keep the order, and have the chassis go not-ready on the workload's SIGTERM.
 - suggested: option 1.
-- ADR: 012, [ADR-012](../../planning/adr/012-drain-order-on-rollout.md), Proposed 2026-11-08. It states the options and the suggested pick; P-29 stays open for the user.
+- ADR: 012, [ADR-012](../../planning/adr/012-drain-order-on-rollout.md). Decided by the user on 2026-11-08: option 1.
 - Owner: `chassis-architect`.
 - In the backlog: 024 CH-3's "rolling restart under load fails no request" box ticks only after the pick.
 

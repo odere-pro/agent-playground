@@ -11,6 +11,8 @@ import asyncio
 import math
 import os
 import signal
+import subprocess
+import sys
 import tempfile
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import contextmanager
@@ -25,7 +27,7 @@ from chassis.core.events import Delta, End, Event, Start
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
-from chassis.server import ChassisConfig, cli, create_app
+from chassis.server import ChassisConfig, cli, create_app, lifecycle
 from chassis.server.lifecycle import Drain, DrainSettings, QuietServer
 from chassis.server.proxy_app import create_proxy_app
 from chassis_contracts.events import wait_until
@@ -348,3 +350,90 @@ async def test_a_stream_started_while_draining_closes_after_its_end_event() -> N
                 rest = "".join([first] + [chunk async for chunk in frames])
         await asyncio.wait_for(served, 10)
     assert "event: end" in rest and '"status":"ok"' in rest.replace(" ", "")
+
+
+# --- the ready marker (ADR-012, H14): the startup probe passes only once the chassis has bound ---
+
+
+def _taken(path: str) -> None:
+    """A plain file where the socket goes: the bind fails, as on a port a workload took first."""
+    Path(path).write_text("taken", encoding="utf-8")
+
+
+async def _serve_until_started(drain: Drain) -> asyncio.Task[None]:
+    task = asyncio.create_task(drain.serve())
+    await _started(drain)
+    return task
+
+
+async def test_the_ready_marker_appears_only_after_every_listener_has_bound(
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "chassis-ready"
+    with sockets() as (public_uds, proxy_uds):
+        drain = _pair(Slow(), public_uds, proxy_uds, DrainSettings(delay_s=0.0))
+        drain.ready_marker = marker
+        assert not marker.exists(), "no marker before the chassis serves"
+        task = await _serve_until_started(drain)
+        await wait_until(marker.exists, HANG_GUARD_S, "the ready marker")
+        drain.signal()
+        await asyncio.wait_for(task, HANG_GUARD_S)
+    assert not marker.exists(), "the marker goes with the process"
+
+
+@pytest.mark.parametrize("taken", ["public", "proxy"])
+async def test_a_taken_listener_leaves_no_ready_marker_and_clears_a_stale_one(
+    tmp_path: Path, taken: str
+) -> None:
+    """A container restart keeps the emptyDir, so a marker from the last run is stale: it goes
+    at the next start, and a run that cannot bind writes none."""
+    marker = tmp_path / "chassis-ready"
+    marker.write_text("", encoding="utf-8")  # left by the previous container
+    with sockets() as (public_uds, proxy_uds):
+        _taken(public_uds if taken == "public" else proxy_uds)
+        drain = _pair(Slow(), public_uds, proxy_uds, DrainSettings(delay_s=0.0))
+        drain.ready_marker = marker
+        if taken == "proxy":
+            with pytest.raises(lifecycle.ProxyBindFailed):
+                await asyncio.wait_for(drain.serve(), HANG_GUARD_S)
+        else:
+            await asyncio.wait_for(drain.serve(), HANG_GUARD_S)
+        assert not drain.public.started
+    assert not marker.exists()
+
+
+def test_the_ready_marker_flag_is_off_by_default_and_must_be_absolute() -> None:
+    assert cli.parse_args(["serve", "--config", FAKE_YAML]).ready_marker is None
+    args = cli.parse_args(["serve", "--config", FAKE_YAML, "--ready-marker", "/tmp/chassis-ready"])
+    assert args.ready_marker == Path("/tmp/chassis-ready")
+    with pytest.raises(SystemExit):
+        cli.parse_args(["serve", "--config", FAKE_YAML, "--ready-marker", "chassis-ready"])
+
+
+@pytest.mark.parametrize("form", ["two args", "one arg"])
+def test_the_entry_point_clears_a_stale_marker_before_it_imports_the_server(
+    tmp_path: Path, form: str
+) -> None:
+    """The chassis is Running while it imports. A marker the previous container left in the kept
+    emptyDir would pass the startup probe for that whole time, so the console script's first act,
+    before `chassis.server` is imported, is to delete it."""
+    marker = tmp_path / "chassis-ready"
+    marker.write_text("", encoding="utf-8")
+    flag = ["--ready-marker", str(marker)] if form == "two args" else [f"--ready-marker={marker}"]
+    code = (
+        "import sys; import chassis.entry as e; "
+        f"e.clear_stale_marker(['serve', *{flag!r}]); "
+        "sys.exit(0 if 'chassis.server' not in sys.modules else 3)"
+    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
+    assert proc.returncode == 0, proc.stderr or "chassis.entry imported chassis.server"
+    assert not marker.exists()
+
+
+def test_the_entry_point_leaves_a_relative_marker_path_to_the_parser(tmp_path: Path) -> None:
+    """A relative path is the parser's to refuse (exit 2); the entry point deletes nothing."""
+    from chassis import entry
+
+    other = Path("chassis-ready")
+    entry.clear_stale_marker(["serve", "--ready-marker", str(other)])  # no error, no unlink
+    assert entry.marker_path(["serve", "--ready-marker", str(other)]) is None

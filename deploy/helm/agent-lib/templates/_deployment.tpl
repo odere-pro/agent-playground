@@ -1,11 +1,12 @@
 {{/*
 agent-lib.deployment: the agent's pod.
 
-sidecar lane: one pod, two containers. The chassis is the native sidecar (an init container with
-`restartPolicy: Always`) and the workload the main container, as on kind in PoC-5
-(deploy/kind/poc05/agents/agent-echo.yaml): the chassis must bind its proxies before the workload
-starts (contract v4, "Bind order"). PoC-4 measured the reverse order for drain; 024 CH-3 leaves
-the pick to the owner, and this chart carries PoC-5's.
+sidecar lane: one pod, two containers. The workload is the native sidecar (an init container with
+`restartPolicy: Always`) and the chassis the main container (ADR-012, accepted 2026-11-08). The
+kubelet stops main containers first, so the chassis gets SIGTERM, drains, and exits before the
+workload gets SIGTERM (contract, "Container order"). The kubelet starts the chassis only after the
+workload's startupProbe passes. A taken proxy port makes the chassis exit non-zero, so the pod is
+never Ready (H14 holds by refusal, not by order). PoC-5's manifests keep the old order.
 
 remote lane (ADR-005, deploy/kind/poc05/): two pods. The chassis pod runs the chassis alone,
 outside the sandbox, with every internal credential. The workload pod runs under the gVisor
@@ -58,9 +59,9 @@ spec:
         {{- include "agent-lib.podSecurityContext" . | nindent 8 }}
       {{- if eq $lane "sidecar" }}
       initContainers:
-        {{- include "agent-lib.chassisContainer" $args | nindent 8 }}
-      containers:
         {{- include "agent-lib.workloadContainer" $args | nindent 8 }}
+      containers:
+        {{- include "agent-lib.chassisContainer" $args | nindent 8 }}
       {{- else }}
       containers:
         {{- include "agent-lib.chassisContainer" $args | nindent 8 }}

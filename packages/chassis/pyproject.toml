@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
-chassis = "chassis.server.cli:main"
+chassis = "chassis.entry:main"
 
 [build-system]
 requires = ["uv_build>=0.8,<0.12"]
