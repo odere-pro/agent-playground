@@ -1,7 +1,8 @@
 """The uncorrelated cap (PoC-5, H16): model calls that name no run in flight are served, then
 refused with 429 `budget_exhausted` past `spec.limits.uncorrelated_tokens_per_minute` tokens in a
-fixed one-minute window. `0` refuses all, a reload changes the cap, a correlated call is never
-touched. Time is a fake clock; nothing sleeps. The scripted model reports 15 tokens a call.
+fixed one-minute window. `0` refuses all (403 `uncorrelated_refused`, CH-14), a reload changes
+the cap, a correlated call is never touched. Time is a fake clock; nothing sleeps. The scripted
+model reports 15 tokens a call.
 """
 
 from __future__ import annotations
@@ -111,9 +112,9 @@ async def test_zero_refuses_every_uncorrelated_call_and_never_reaches_the_model(
     (app, proxy), _, ports = _build(0)
     async with asgi_client(proxy) as client, app.router.lifespan_context(app):
         res = await client.post("/v1/chat/completions", json=BODY)
-    assert res.status_code == 429
+    assert res.status_code == 403  # CH-14: a cap of 0 is `uncorrelated_refused`
     error = res.json()["error"]
-    assert error["code"] == "budget_exhausted" and error["retryable"] is False
+    assert error["code"] == "uncorrelated_refused" and error["retryable"] is False
     model = ports.model
     assert isinstance(model, ScriptedModel) and model.calls == []
 
@@ -133,7 +134,7 @@ async def test_a_reload_changes_the_cap_without_a_restart() -> None:
         app.state.config = _config(100)  # what an accepted reload does: one assignment
         assert (await client.post("/v1/chat/completions", json=BODY)).status_code == 200
         app.state.config = _config(0)
-        assert (await client.post("/v1/chat/completions", json=BODY)).status_code == 429
+        assert (await client.post("/v1/chat/completions", json=BODY)).status_code == 403
 
 
 async def test_a_correlated_call_is_never_touched_by_the_cap() -> None:
@@ -160,7 +161,7 @@ async def test_a_traceparent_naming_no_run_in_flight_counts_as_uncorrelated() ->
         res = await client.post(
             "/v1/chat/completions", json=BODY, headers={"traceparent": TRACEPARENT}
         )
-    assert res.status_code == 429
+    assert res.status_code == 403
 
 
 async def _until(predicate: Any) -> None:
@@ -299,5 +300,5 @@ async def test_a_reload_mid_window_applies_to_the_next_admission_not_to_calls_in
         assert (await client.post("/v1/chat/completions", json=small)).status_code == 200
         assert (await held).status_code == 200
         app.state.config = _config(0)
-        assert (await client.post("/v1/chat/completions", json=small)).status_code == 429
+        assert (await client.post("/v1/chat/completions", json=small)).status_code == 403
     assert model.max_tokens == [60, 10]

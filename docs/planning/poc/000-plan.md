@@ -142,6 +142,8 @@ The connector is the lane, picked by `spec.engine.connector`.
 | `remote` | Untrusted code (see the trust rule below), third-party images, managed runtimes (AWS Bedrock AgentCore, Vertex AI Agent Engine), and other teams' services | A2A, with a cloud auth adapter for a managed runtime. OpenAI-compatible HTTP only for a workload that cannot speak A2A | Inputs and outputs only. The workload runs in its own gVisor pod with default-deny egress, or at its own endpoint. Its model and tool calls go through the chassis's proxies over the network, with a per-remote credential. A managed runtime that cannot be pointed at the proxies holds its own scoped key: the one relaxation of hard requirement 1. What is outside the chassis's reach is listed per remote: at least the remote's own internal steps and calls |
 | `inprocess` | The template A2A server, loaded in the chassis's own process | A2A in memory (an ASGI transport, no socket), with fakes | The chassis's own tests and local runs only: no network, no keys, one debugger. A workload's own tests run the chassis as a separate process in the `fake` profile instead, so the workload never installs the chassis package |
 
+In the `sidecar` pod the chassis must drain before the workload gets SIGTERM ([contract v3](../../contracts/contract-v3.md#shutdown)). Which container is the native sidecar, so that this and the bind order hold together, is proposed in [ADR-012](../adr/012-drain-order-on-rollout.md) (2026-11-08, proposal P-29; the user decides).
+
 **The trust rule** ([ADR-001](../adr/001-chassis-delivery-model.md), item 5) decides what goes to `remote`. A workload is trusted only if both tests pass:
 
 - **Source:** the owning team wrote and reviewed it, and its image is built in our registry.

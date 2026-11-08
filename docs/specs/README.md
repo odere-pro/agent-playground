@@ -11,7 +11,7 @@ Where a spec and the code differ, the code wins, and the spec is fixed. A value 
 
 ## What the container is
 
-The agent container is one generic image, the chassis, that runs in front of every agent. It owns the public port. It maps native, OpenAI, Anthropic, MCP, A2A, and CloudEvents calls to one request. It runs one pipeline on every request: auth, limits, guards, idempotency, config, budgets, the evaluator gate, AI marking, events, and telemetry. The agent's own code plugs in behind it over A2A, in one of three lanes. Only the chassis holds credentials. A new agent is scaffolded with `agentctl new`, tested offline with `agent-testkit`, and deployed with the `agent-lib` Helm chart. The chassis ships as one image, rolled out in rings, with no agent rebuild.
+The agent container is one generic image, the chassis, that runs in front of every agent. It owns the public port. It maps native, OpenAI, Anthropic, MCP, A2A, and CloudEvents calls to one request. It runs one pipeline on every request: auth, limits, guards, idempotency, config, budgets, the evaluator gate, AI marking, events, and telemetry. The agent's own code plugs in behind it over A2A, in one of three lanes. Only the chassis holds credentials. A new agent is scaffolded with `agentctl new`, tested offline with `agent-testkit`, and deployed with the `agent-lib` Helm chart. The chassis ships as one image, meant to roll out in rings, with no agent rebuild (rings are not built: 056 CH-7).
 
 ## Reading order
 

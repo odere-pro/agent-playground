@@ -169,6 +169,6 @@ Reopen this decision on any of these:
 
 ## Open questions for the user
 
-1. Should `user.id` be a keyed hash of the caller's subject, and should an `untrusted` remote get no `user.id` at all (item 3, shared with ADR-007)?
+1. The hash half is decided by the user on 2026-11-08 (P-27): `user.id` is the `sha256[:32]` of the subject in every lane. Still open: should an `untrusted` remote get no `user.id` at all (item 3, shared with ADR-007)?
 2. API keys for callers: a second `AuthPort` adapter, or the IdP's client-credentials flow (item 2)?
 3. For a `minimal` agent with `ai_generated_marking: true`, is `X-AI-Disclosure-Required: true` right, or does legal want it off (item 7)?

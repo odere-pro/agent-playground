@@ -7,7 +7,7 @@ What the container records, and where it goes. Why: [ADR-007](../planning/adr/00
 - The chassis and the workload export OTLP to one OpenTelemetry Collector. The Collector redacts and fans out to the backends. The backends' keys live in the Collector's environment, never in a pod.
 - The run continues the caller's `traceparent`. Otherwise the trace id is `trace_id_hex(ctx.trace_id)`. The connector's run span is the parent of the `traceparent` sent to the workload, so the workload's spans hang under it, in every lane.
 - The workload runs the OpenInference instrumentor for its framework, or native OpenTelemetry, and forwards `traceparent` and `baggage` on every model and MCP call. LiteLLM adds its own span under the model call. The chassis imports no framework.
-- Baggage carries `user.id` (the caller's subject from `AuthPort`) and `session.id` (from the header `spec.observability.session_header`, suggested `x-session-id`). An inbound `baggage` header from the caller is dropped.
+- Baggage carries `user.id` (`sha256(subject)[:32]` of the caller's subject from `AuthPort`, in every lane; P-27, CH-14) and `session.id` (from the header `spec.observability.session_header`, suggested `x-session-id`). An inbound `baggage` header from the caller is dropped.
 - `TelemetryPort` is `OtelTelemetry` in `local` and `cloud` (`chassis/adapters/otel/`, configured by `OTEL_EXPORTER_OTLP_*`) and `InMemoryTelemetry` in `fake`.
 
 ## Spans

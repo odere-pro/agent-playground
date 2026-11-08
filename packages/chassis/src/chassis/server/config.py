@@ -245,14 +245,16 @@ class LimitsSpec(BaseModel):
       (`input.data.history` plus the input), per call.
     - `uncorrelated_tokens_per_minute: 20000` (PoC-5, plan section 2.12, H16): the per-replica
       token bucket for model calls on the loopback model proxy that name no run in flight; past
-      it, 429 `budget_exhausted`. `0` refuses every uncorrelated call. Reloadable.
+      it, 429 `budget_exhausted`. `0` refuses every uncorrelated call with 403
+      `uncorrelated_refused` (CH-14). Reloadable. The `cloud` profile's default is `0`.
     - The rate limit per caller (PoC-8, 022 H-6; `chassis.server.rate_limit`): a token bucket per
       agent and per caller (the `Principal` subject) in `StatePort`, so every replica shares it.
       `rate_limit: true` (on by default: the defaults are generous, and it counts only callers
       with a checked identity, so auth off changes nothing), `requests_per_minute: 600` (the
       refill rate), `request_burst: 100` (the bucket size), `rate_limit_on_unavailable:
       fail_open` (a store outage lets the call through and is counted; `fail_closed` answers 503
-      `state_unavailable`). Past it, 429 `rate_limited` with `Retry-After`. Reloadable.
+      `state_unavailable`). Past it, 429 `rate_limited` with `Retry-After`. Reloadable. The
+      `cloud` profile's default is `fail_closed` (CH-14, P-26).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -425,7 +427,8 @@ class ObservabilitySpec(BaseModel):
       and in baggage. The user id is the caller's `Principal.subject`, never a header.
     - `log_level: info` (PoC-8): the level of the chassis's JSON log lines (`chassis.logs`).
     - `metrics_scope: null` (PoC-8): the scope `GET /metrics` needs. Unset, a scraper needs no
-      token, as for `/health`; set, the caller needs a valid token with that scope.
+      token, as for `/health`; set, the caller needs a valid token with that scope. The `cloud`
+      profile's default is `spec.security.read_scope` (`agent:read`; CH-14, P-4).
     - `prices` (PoC-8): USD per million tokens per model route, for
       `chassis_model_cost_microusd_total`. A route with no price counts no cost.
     """
@@ -486,14 +489,70 @@ class Spec(BaseModel):
     governance: GovernanceSpec = Field(default_factory=GovernanceSpec)
 
 
+CLOUD_LIMITS: dict[str, Any] = {
+    "uncorrelated_tokens_per_minute": 0,
+    "rate_limit_on_unavailable": "fail_closed",
+}
+"""suggested (CH-14, issue 134): the `spec.limits` values the `cloud` profile fills when the
+document leaves them unset: no uncorrelated model call, and a rate-limit store outage refuses the
+call (P-26 option 1). `fake` and `local` keep the `LimitsSpec` defaults."""
+
+
+def _cloud_weakened(spec: Spec) -> list[str]:
+    """The `cloud` defaults the document names a weaker value for: a nonzero uncorrelated cap,
+    `fail_open`, or `metrics_scope: null`. Only fields the document set count."""
+    limits, observability = spec.limits, spec.observability
+    named = limits.model_fields_set if "limits" in spec.model_fields_set else set()
+    seen = observability.model_fields_set if "observability" in spec.model_fields_set else set()
+    out = []
+    if "uncorrelated_tokens_per_minute" in named and limits.uncorrelated_tokens_per_minute != 0:
+        out.append("spec.limits.uncorrelated_tokens_per_minute")
+    if "rate_limit_on_unavailable" in named and limits.rate_limit_on_unavailable == "fail_open":
+        out.append("spec.limits.rate_limit_on_unavailable")
+    if "metrics_scope" in seen and observability.metrics_scope is None:
+        out.append("spec.observability.metrics_scope")
+    return out
+
+
+def with_cloud_defaults(spec: Spec) -> Spec:
+    """A new `Spec` with the `cloud` defaults filled where the document named none: the
+    `CLOUD_LIMITS`, and `spec.observability.metrics_scope` set to `spec.security.read_scope`
+    (P-4 option 1). The filled fields count as set, so a dump and reload keeps them."""
+    limits_unset = {k: v for k, v in CLOUD_LIMITS.items() if k not in spec.limits.model_fields_set}
+    observability = spec.observability
+    if "metrics_scope" not in observability.model_fields_set:
+        observability = observability.model_copy(update={"metrics_scope": spec.security.read_scope})
+    return spec.model_copy(
+        update={
+            "limits": spec.limits.model_copy(update=limits_unset),
+            "observability": observability,
+        }
+    )
+
+
 class ChassisConfig(BaseModel):
-    """The whole config. `version` is the file's content hash when the file does not name one."""
+    """The whole config. `version` is the file's content hash when the file does not name one.
+    In the `cloud` profile a document that names a value weaker than a CH-14 default is refused,
+    and `with_cloud_defaults` fills the defaults it does not name."""
 
     model_config = ConfigDict(extra="forbid")
     version: str | None = None
     profile: Profile
     agent: AgentSpec
     spec: Spec = Field(default_factory=Spec)
+
+    @model_validator(mode="after")
+    def _cloud_security_defaults(self) -> ChassisConfig:
+        if self.profile != "cloud":
+            return self
+        weakened = _cloud_weakened(self.spec)
+        if weakened:
+            # CH-14: refused, not only defaulted; the message names the fields, never a value.
+            raise ValueError(
+                f"{', '.join(weakened)}: a weaker value than the default; profile 'cloud' "
+                "refuses it (CH-14)"
+            )
+        return self.model_copy(update={"spec": with_cloud_defaults(self.spec)})
 
     @model_validator(mode="after")
     def _lane_fits_profile(self) -> ChassisConfig:

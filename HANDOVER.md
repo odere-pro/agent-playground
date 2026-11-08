@@ -1,6 +1,6 @@
 # Handover
 
-Checkpoint of 2026-11-08, at `main` `f49d542` plus the PRs below. Read this first in the next session, then replace it at the next checkpoint.
+Checkpoint of 2026-11-08, at `main` `36441d9`. Read this first in the next session, then replace it at the next checkpoint.
 
 ## Where things stand
 
@@ -16,16 +16,16 @@ Landed or in flight on 2026-11-08:
 | What | PR | State when this was written |
 | ---- | -- | --------------------------- |
 | `remote-lane` green again: `agent-echo-events`' allowed control is Kafka, not LiteLLM | #100 | Merged (another session). Run 42503295381 on `f49d542`: `207 passed, 3 skipped, 2 xfailed` |
-| Step 0: the plan and the specs in line with the backlog; ADR-012 (drain order, Proposed) | #103 | Open, squash auto-merge on |
-| Step 1: 134 CH-14, the `cloud` security defaults; 134 retires to `WD` | #104 | Open, squash auto-merge on |
-| This file, and the PoC-5 criterion 3 flag lifted (MinIO through the chassis, run 42503295381) | this PR | Open, squash auto-merge on |
+| Step 0: the plan and the specs in line with the backlog; ADR-012 (drain order, Proposed) | #103 | Merged |
+| Step 1: 134 CH-14, the `cloud` security defaults; 134 retires to `WD` | #104 | Merged. Its `remote-lane` kind run (42505718055) was still running at merge |
+| PoC-5 criterion 3's flag lifted: MinIO through the chassis, run 42503295381 | #102 | Merged (another session) |
+| This file | #105 | Open, squash auto-merge on |
 
 The user decided on 2026-11-08, each option 1: **P-4** (`/metrics` needs `agent:read` in `cloud`), **P-26** (`fail_closed` on a rate-limit store outage in `cloud` only), **P-27** (`user.id` in baggage is `sha256[:32]` of the subject, in every lane). They are recorded in [the backlog review proposals](docs/reviews/2026-11-06-backlog-review/proposals.md), ADR-007, ADR-008, and 022 H-6 (in #104).
 
 ## In flight when this was written
 
-- **#103 and #104** both edit `docs/specs/contract.md` and the backlog review `proposals.md`, in different places. If the second one to merge shows a conflict, rebase it on `main`, run `make planning-sync planning-check`, and push. Never force-push to `main`; a branch push after a rebase is fine.
-- **#104's kind proof:** its two new raw `tools/call` asserts in `pocs/poc-05-sandboxed/tests/test_poc05_kind_tool_gateway.py` (H07, H08, the gateway's own `tool_denied`) are proven only by the `remote-lane` run on the PR. If the gateway answers another denial code there, widen those two lines to `DENIED_CODES`.
+- **#104's kind proof:** its two new raw `tools/call` asserts in `pocs/poc-05-sandboxed/tests/test_poc05_kind_tool_gateway.py` (H07, H08, the gateway's own `tool_denied`) are proven only by `remote-lane` (run 42505718055 on the PR, then the runs on `main`). Check it first. If the gateway answers another denial code there, widen those two lines to `DENIED_CODES`.
 - **#103's open choices** for the user to check in review: the phase for issues 134 to 139 (the phase map predates them), and the plan keeps its own week sizes with a note on the gap to the map's days.
 - **Two proposed sessions** (cards in the 2026-11-08 session, not started when this was written): "Finish phase A: 122 X-5 throughput, 056 CH-7 warn-first" and "Model proxy failures and backpressure: CH-16 then CH-15". If they are gone, start them from steps 1 and 3 below.
 
@@ -74,8 +74,8 @@ Read HANDOVER.md at the repository root, then the product plan it links
 
 Goal: continue the agent container product from the checkpoint of 2026-11-08.
 
-1. Check what changed since main f49d542: git log, open PRs (gh pr list),
-   and the in-flight items in HANDOVER.md (#103, #104, the two proposed
+1. Check what changed since main 36441d9: git log, open PRs (gh pr list),
+   and the in-flight items in HANDOVER.md (#104's kind run, the two proposed
    sessions). Report their state in two lines.
 2. Do step 1 of "Next steps" (phase A's rest: 122 X-5, 056 CH-7), unless a
    session already owns it. Read each issue's acceptance criteria first.
