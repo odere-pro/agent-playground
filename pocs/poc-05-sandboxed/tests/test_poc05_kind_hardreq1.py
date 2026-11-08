@@ -342,10 +342,12 @@ def test_minio_refuses_the_workload_without_the_chassis_key(sidecar: str) -> Non
     assert _chassis_restarts(sidecar) == restarts, "the checks restarted the chassis"
 
     litellm = service_ip(PLATFORM_NS, "litellm")
-    dropped = [("chassis-echo-remote", CHASSIS)]
+    # Each pod with no MinIO edge, and whether its policy lets it reach LiteLLM. agent-echo-events
+    # calls neither LiteLLM nor Valkey (agent-echo-events.yaml), so its policy drops both.
+    dropped = [("chassis-echo-remote", CHASSIS, True)]
     if pods(AGENTS_NS, EVENTS_DEPLOYMENT):
-        dropped.append((EVENTS_DEPLOYMENT, WORKLOAD))
-    for app, container in dropped:
+        dropped.append((EVENTS_DEPLOYMENT, WORKLOAD, False))
+    for app, container, reaches_litellm in dropped:
         name = pod(AGENTS_NS, app)["metadata"]["name"]
         to_minio, to_litellm = probe(
             AGENTS_NS,
@@ -357,7 +359,10 @@ def test_minio_refuses_the_workload_without_the_chassis_key(sidecar: str) -> Non
             ],
         )
         assert to_minio.get("error") == POLICY_DROPPED, (app, to_minio)
-        assert to_litellm.get("connected") is True, (app, to_litellm)
+        if reaches_litellm:
+            assert to_litellm.get("connected") is True, (app, to_litellm)
+        else:
+            assert to_litellm.get("error") == POLICY_DROPPED, (app, to_litellm)
 
 
 # --- H11: the broker ------------------------------------------------------------------------
