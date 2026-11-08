@@ -1,0 +1,5 @@
+# The rolling-restart drill (ADR-012 item 5): example-agent's kind values plus three fixed
+# replicas, as PoC-4 ran. Applied after deploy/helm/example-agent/values-kind.yaml.
+replicas: 3
+hpa:
+  enabled: false
