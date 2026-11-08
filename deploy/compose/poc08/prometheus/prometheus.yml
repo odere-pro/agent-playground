@@ -5,6 +5,11 @@ global:
   scrape_interval: 5s
   evaluation_interval: 5s
 
+# The chassis alert rules (deploy/prometheus/rules/chassis.yaml, mounted read-only). CH-16's
+# budget alert fires in the drill (test_poc08_stack_metrics.py); 117 X-3 adds the SLO rules.
+rule_files:
+  - /etc/prometheus/rules/chassis.yaml
+
 scrape_configs:
   - job_name: chassis
     metrics_path: /metrics

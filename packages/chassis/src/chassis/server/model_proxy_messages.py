@@ -48,7 +48,7 @@ from chassis.adapters.anthropic_compat.model_wire import (
     parse_messages_request,
     refusal_error,
 )
-from chassis.ports.model import ModelChunk, ModelError, Usage
+from chassis.ports.model import SERVICE_BUDGET_EXHAUSTED, ModelChunk, ModelError, Usage
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server.model_admission import (
     SPAN,
@@ -59,6 +59,7 @@ from chassis.server.model_admission import (
     is_ready,
     note_denied,
     note_rejected,
+    note_service_budget,
     read_capped,
 )
 
@@ -79,6 +80,8 @@ def _note(telemetry: TelemetryPort, route: str, exc: ModelError, err: WireError)
         note_denied(telemetry, route, exc)
     elif err.code == "model_rejected_request":
         note_rejected(telemetry, route, exc)
+    elif err.code == SERVICE_BUDGET_EXHAUSTED:
+        note_service_budget(telemetry, route, exc)
 
 
 def error_response(err: WireError, request_id: str) -> JSONResponse:
@@ -130,7 +133,7 @@ class _MessagesStream(StreamingResponse):
             with self._admission.bundle.telemetry.span(SPAN, **self._admission.attributes):
                 self._deadline = time.monotonic() + _deadline_s(hold)
                 hold.charge_abandoned = True
-                chunks = self._admission.bundle.model.stream(
+                chunks = self._admission.model.stream(
                     self._parsed.messages,
                     route=self._admission.route,
                     tools=self._parsed.tools,
@@ -245,7 +248,7 @@ def _deadline_s(hold: Hold) -> float:
     record = hold.record
     if record is None:
         return UNCORRELATED_STREAM_DEADLINE_S
-    return max(0.0, record.started_at + record.budget.timeout_ms / 1000 - time.monotonic())
+    return record.remaining_s()
 
 
 _CLEANUPS: set[asyncio.Future[None]] = set()
@@ -355,7 +358,7 @@ async def _complete(
     telemetry = admission.bundle.telemetry
     with hold.settled(), telemetry.span(SPAN, **admission.attributes):
         try:
-            result = await admission.bundle.model.complete(
+            result = await admission.model.complete(
                 parsed.messages,
                 route=admission.route,
                 tools=parsed.tools,

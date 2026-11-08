@@ -1,0 +1,22 @@
+# Prometheus alert rules for the chassis. One file for every stack: the PoC-8 Compose stack mounts
+# it (deploy/compose/poc08/prometheus/prometheus.yml, `rule_files`); kind gets it with 117 X-3,
+# which adds the SLO rules (availability, p95, error rate, fallback rate) next to this one.
+# Every rule names a metric the chassis exports (packages/chassis/tests/test_alert_rules.py).
+# Runbooks: docs/guides/poc-05-runbooks.md until 119 X-6 writes one per alert.
+groups:
+  - name: chassis
+    rules:
+      # CH-16: LiteLLM refused a model call for the service's budget (its `budget_exceeded`).
+      # The chassis answers the workload 429 `service_budget_exhausted` and counts it per route;
+      # without this rule the refusal is a 429 nobody sees. One refusal is already the whole
+      # service down for its budget period, so the threshold is any increase over 15 minutes.
+      # suggested: the window, the wait, and the severity; the epic gives no values.
+      - alert: ChassisModelBudgetExhausted
+        expr: sum by (agent, route) (increase(chassis_model_budget_exhausted_total[15m])) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.agent }}: the model router refuses route {{ $labels.route }} for the service's budget"
+          description: "{{ $value }} model calls of agent {{ $labels.agent }} on route {{ $labels.route }} were refused for the service's budget in the last 15 minutes. The workload gets 429 service_budget_exhausted; the budget resets on its period, or an operator raises it on the LiteLLM key or team."
+          runbook_url: https://github.com/odere-pro/agent-playground/blob/main/docs/guides/poc-05-runbooks.md#the-model-router-refuses-for-the-services-budget

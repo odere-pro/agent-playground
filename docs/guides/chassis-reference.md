@@ -105,6 +105,7 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
 - The key is never logged.
 - The httpx client ignores the environment (`trust_env=False`).
 - It binds the same contract suite as `ScriptedModel` in `tests/test_contracts.py`. The run is offline, against the fake model server.
+- CH-16: LiteLLM's budget refusal (`error.type: budget_exceeded`, at 400 or 429) is `ModelError("service_budget_exhausted")`, not retryable. `timeout_s` bounds the whole call: it caps the request's httpx timeout, `complete` runs under `asyncio.timeout`, and a stream checks the deadline on every read; past it the call raises `timeout` and the response is left, which closes the connection (`tests/test_litellm_failures.py` shows the fake seeing the close over a real socket). The adapter never retries: `num_retries` and `fallbacks` per route live in every LiteLLM config under `deploy/` (`tests/test_litellm_route_resilience.py`).
 
 ### PoC-4 adapters
 
@@ -391,6 +392,8 @@ The model proxy (proxy port) is the OpenAI-compatible pass-through a workload ca
 - `admit(...)` is the one admission step both routes use: count the call, find the run, refuse with 429, else reserve.
 - A correlated call whose `model` is not the run's `RunRecord.model_route` (the task's route through `spec.model.routes`, else `spec.model.route`; the gate's fallback route for its fallback attempt) is sent to the run's route and counted `chassis.model_route_forced{route}`. The `chassis.model.route` span records the choice.
 - An upstream 401 or 403 answers 403 `model_route_denied` on both routes (it was 500 `http_401`). It counts `chassis.model_upstream_denied{route}` and logs once. A chat stream keeps its 200 and its error frame.
+- CH-16: `Admission.model` is a `BoundModel`, the port bound to the call. It passes the run's remaining time (`RunRecord.remaining_s`) as the port's `timeout_s` (None for an uncorrelated call), and it races a correlated call against `RunRecord.ended`: when the run closes first the port call is cancelled and the call raises `run_ended`, answered 403 `permission_error` on both routes.
+- CH-16: `service_budget_exhausted` is 429 on both routes with `x-should-retry: false`, counted `chassis.model_budget_exhausted{route}` (`note_service_budget`). The alert on it is `deploy/prometheus/rules/chassis.yaml`, mounted by the PoC-8 Compose stack's Prometheus.
 
 ### model_proxy_messages.py
 
@@ -415,6 +418,7 @@ The Anthropic proxy route (`POST /v1/messages` on the proxy port; contract v5, p
 - `RunRegistry` holds at most one in-flight run per trace id. A second gets `TraceIdInUse`.
 - `RunRecord` has `reserve`, `settle`, and `release`. Its `model_route` is the run's route, set at `open` from `ctx.model_route` and replaced by the evaluator gate for its fallback attempt.
 - `RunRecord.run_secret` is copied from `ctx.run_secret` by `open`. It is held for the life of the run on this replica, and never in `repr` (contract v8, D).
+- `RunRecord.ended` is set by `RunRegistry.close`, and `RunRecord.remaining_s()` is what is left of `budget.timeout_ms` (CH-16). The model proxy reads both.
 - It re-exports `parse_traceparent`.
 
 ### cli.py

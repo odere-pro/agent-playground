@@ -25,6 +25,11 @@ What it shows:
     so is a run through the chassis. Each service is stopped and started through `stack.sh stop`
     and `stack.sh start` (an allow-list, project poc08-litellm only), never a raw container command;
     `start` waits for its health, in a `finally`, so the next test finds the stack whole.
+(e) CH-16, LiteLLM's retries and fallbacks per route: a run whose text makes the fake answer
+    `big-default`'s deployment with a 503 gets the reply of `local-small`, the route's fallback
+    (litellm.yaml `router_settings.fallbacks`), and the chassis counted ONE model call for it
+    (`chassis_model_calls_total{route="big-default"}`): the retries and the fallback were
+    LiteLLM's, not the chassis's.
 
 Artifacts go to `POC08_LITELLM_OUT` (CI uploads it): the Jaeger trace JSON and the results.
 The chassis's virtual key comes from the file `POC08_LITELLM_KEY_FILE` names (`stack.sh env`);
@@ -368,6 +373,32 @@ def _direct_chat(litellm: httpx.Client, text: str) -> httpx.Response:
 def _refused(response: httpx.Response, *answers: str) -> bool:
     """Not a 2xx, and none of the model's scripted answers in the body."""
     return not response.is_success and not [a for a in answers if a in response.text]
+
+
+# --- (e) CH-16: a provider error on the route is answered by LiteLLM's fallback, no chassis retry
+
+
+def _metric(chassis: httpx.Client, name: str, **labels: str) -> float:
+    text = chassis.get("/metrics").text
+    wanted = "".join(f'{k}="{v}"' for k, v in labels.items())
+    for line in text.splitlines():
+        if line.startswith(name + "{") and all(f'{k}="{v}"' in line for k, v in labels.items()):
+            return float(line.rsplit(" ", 1)[1])
+    raise AssertionError(f"{name}{{{wanted}}} is not on /metrics")
+
+
+def test_a_provider_error_is_answered_by_the_fallback_route_with_one_chassis_call(
+    chassis: httpx.Client, out_dir: Path
+) -> None:
+    before = _metric(chassis, "chassis_model_calls_total", route="big-default")
+    response = _run(chassis, {"input": {"text": SCRIPT.PROVIDER_FAULT_TEXT}})
+    answer = _answer(response)
+    after = _metric(chassis, "chassis_model_calls_total", route="big-default")
+    _write(
+        out_dir, "fallback-route.json", {"answer": answer, "calls_before": before, "after": after}
+    )
+    assert answer == SCRIPT.FALLBACK_REPLY, f"the fallback did not answer: {answer!r}"
+    assert after - before == 1, "the chassis made more than one model call: it retried"
 
 
 def test_a_stopped_guardrail_server_refuses_the_call(

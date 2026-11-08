@@ -41,7 +41,7 @@ The gate's cost, a second model call per gated request, is decided in [ADR-010](
 - The output schema check, and `harness.timeout_ms` and `harness.budget.max_tokens` in agent config. `HarnessSpec` has none of them, and no product phase needs them. The envelope's budget is the limit.
 - The budget error code: P-11 in the [backlog review proposals](../../reviews/2026-11-06-backlog-review/proposals.md). A Python workload reports the proxy's `budget_exhausted` as `http_429`, so a client cannot tell a spent budget from a rate limit by its code.
 - The TypeScript echo's budget refusal. It has no tool loop, so the case is a strict xfail.
-- Retries and fallbacks LiteLLM can make per route (136 CH-16, gap review of 2026-11-07). This issue's retry stage covers only the errors LiteLLM cannot see.
+- Retries and fallbacks LiteLLM can make per route (136 CH-16, gap review of 2026-11-07; decided in [ADR-013](../adr/013-model-call-retries-belong-to-the-router.md)). This issue's retry stage covers only the errors LiteLLM cannot see: a bad answer, a schema failure, a workload error. It never retries a `ModelError` the router already retried.
 
 ## Acceptance criteria
 

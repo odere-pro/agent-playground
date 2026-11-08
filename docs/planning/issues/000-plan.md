@@ -96,13 +96,13 @@ Waves are GitHub milestones. Each one ends in something that can be shown. The w
 
 | Wave | Issues | Ends with |
 | ---- | ------ | --------- |
-| Done: delivered by the PoC track | 011–134 | 2 issues, 7.5 days of the first estimate, not counted below |
+| Done: delivered by the PoC track | 011–136 | 3 issues, 10 days of the first estimate, not counted below |
 | W0 Decisions | 001 | Broker, first cloud, public A2A endpoint, banned words, and metric targets decided. Feeds phases D and E: the primary trace view and the north star |
 | W1 Router and baseline | 002–006 | Every model call goes through the router; token spend is counted and on a dashboard; the baseline clock is running. Feeds phases B and E; the baseline is parked |
 | W2 Chassis MVP | 007–026 | An echo workload runs behind the chassis: in the `sidecar` lane from the shared library chart, locally and in Kubernetes, and over A2A in memory in the chassis's tests. It answers through native, OpenAI, and Anthropic APIs (streaming and complete), is started by events and emits result events, is traced, holds no key, and passes the contract tests over both transports. Feeds phases A, B, E, and F |
 | W3 Simplifier SLM | 028–038 | Break-even is known; the SLM meets its targets on the held-out set, is served on vLLM, and ships only through the eval gate; the first cloud is up. Mostly parked; feeds phase B |
 | W4 Simplifier agent live | 040–046 | **First measured savings** (Phase 3 done-when): the agent is called through any API, recorded by the recorder, falls back when needed, and shows on the dashboards. Mostly parked; feeds phases B and E |
-| W5 Chassis completion | 050–136 | Phase 0 done-when fully met (MCP tools from OpenAPI, AsyncAPI, reliable events); service operations, the `remote` lane and trust rule, ring rollouts, framework event mappings, and one non-Python workload; tool port and agent factory ready for the registry and orchestrator. Feeds phases A, C, D, E, F, and G |
+| W5 Chassis completion | 050–135 | Phase 0 done-when fully met (MCP tools from OpenAPI, AsyncAPI, reliable events); service operations, the `remote` lane and trust rule, ring rollouts, framework event mappings, and one non-Python workload; tool port and agent factory ready for the registry and orchestrator. Feeds phases A, C, D, E, F, and G |
 | W6 Golden set and evaluator SLM | 064–138 | Phase 4 done-when; the evaluator SLM replaces the big-model judge; the audit log runs. Feeds phase D; the evaluator SLM is parked |
 | W7 Registry and governance gate | 076–093 | Phase 5 done-when; no agent goes live without a governance block. `later`: no phase |
 | W8 Platform MCP server | 094–097 | Phase 6 done-when: an MCP client searches the registry, runs an agent, and exports a golden set version. `later`: no phase |
@@ -194,8 +194,8 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 
 ## Estimate check
 
-- **Open:** about 287 engineer-days (57 weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
-- **Done** (wave `WD`): 7.5 days over 2 of the issues. **Parked** (wave `WP`): 52.5 days over 23. Neither is in the open total.
+- **Open:** about 284.5 engineer-days (57 weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
+- **Done** (wave `WD`): 10 days over 3 of the issues. **Parked** (wave `WP`): 52.5 days over 23. Neither is in the open total.
 - **Phases A to F:** 86.5 days against the 8–10 weeks the product plan has left (suggested: 50–60 engineer-days), from [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md#totals). Phases A, B, and E are each about twice the plan's size. The rest of the open total is `later`: no phase needs it.
 - **The epic** says 29–33 weeks for one engineer. Either the epic assumes a lot of reuse, or the phase estimates need a second look with the team. The sizes here are first guesses; re-size in planning.
 
@@ -207,6 +207,7 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
 | 011 | H-2 | [Inbound adapters: native, OpenAI-compatible, Anthropic-compatible, with streaming](011-H-2-inbound-adapters.md) | chassis, agent-profile | P0 | L | [007](007-H-1-harness-library-ports-envelope.md), [008](008-H-14-one-agent-interface.md), [009](009-CH-1-engine-connectors-a2a.md) |
 | 134 | CH-14 | [Security defaults in the cloud profile: no uncorrelated tokens, unknown tools refused, auth required](134-CH-14-cloud-security-defaults.md) | chassis | P0 | M | [013](013-CH-2-outbound-model-proxy.md), [022](022-H-6-security-middleware.md) |
+| 136 | CH-16 | [The model proxy under failure: budget refusal code, per-call timeout, LiteLLM retries and fallbacks](136-CH-16-model-proxy-failures.md) | chassis | P1 | M | [013](013-CH-2-outbound-model-proxy.md), [017](017-H-4-harness-features.md), [003](003-G-1b-named-model-routes.md), [117](117-X-3-slos-alerts.md) |
 
 ### W0 Decisions
 
@@ -284,7 +285,6 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | 129 | CH-10 | [LangSmith as a trace backend: Collector exporter, fake-langsmith, stack tests](129-CH-10-langsmith-trace-backend.md) | chassis | P1 | M | [014](014-H-7-observability.md) |
 | 130 | CH-11 | [LangSmith feedback adapter behind FeedbackPort](130-CH-11-langsmith-feedback-adapter.md) | chassis | P1 | S | [129](129-CH-10-langsmith-trace-backend.md) |
 | 135 | CH-15 | [Backpressure: a cap on runs in flight per replica, 503 overloaded, and a gauge to scale on](135-CH-15-backpressure.md) | chassis | P1 | M | [017](017-H-4-harness-features.md), [014](014-H-7-observability.md) |
-| 136 | CH-16 | [The model proxy under failure: budget refusal code, per-call timeout, LiteLLM retries and fallbacks](136-CH-16-model-proxy-failures.md) | chassis | P1 | M | [013](013-CH-2-outbound-model-proxy.md), [017](017-H-4-harness-features.md), [003](003-G-1b-named-model-routes.md), [117](117-X-3-slos-alerts.md) |
 
 ### W6 Golden set and evaluator SLM
 

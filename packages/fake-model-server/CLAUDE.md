@@ -18,6 +18,11 @@ rules:
     reply: "From the glossary: SLM means small language model."
   - match: "fail"
     error: { status: 500, message: "scripted failure" }
+  - match: "budget"                    # LiteLLM's own refusal shape, when `type` is set (CH-16)
+    error: { status: 400, type: budget_exceeded, message: "ExceededBudget: ..." }
+  - match: "slow"
+    reply: "late"
+    delay_s: 30                        # a client that leaves first counts in app.state.aborted
   - match: "simplify"
     reply: "Plain words."
     usage: { prompt_tokens: 42, completion_tokens: 9 }

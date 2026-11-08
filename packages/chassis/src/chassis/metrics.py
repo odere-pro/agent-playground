@@ -63,6 +63,10 @@ DECLARED: Mapping[str, tuple[str, str]] = {
     "chassis_model_call_duration_seconds": ("histogram", "Model proxy call latency, by route."),
     "chassis_model_tokens_total": ("counter", "Model tokens, by route and direction."),
     "chassis_model_cost_microusd_total": ("counter", "Model cost in micro-USD, by route."),
+    "chassis_model_budget_exhausted_total": (
+        "counter",
+        "Model calls the router refused for the service's budget, by route.",
+    ),
     "chassis_tool_calls_total": ("counter", "Tool proxy calls, by tool."),
     "chassis_gate_runs_total": ("counter", "Runs the evaluator gate checked, by mode."),
     "chassis_gate_retries_total": ("counter", "Evaluator gate retries."),

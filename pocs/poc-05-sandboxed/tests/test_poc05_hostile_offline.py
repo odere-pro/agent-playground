@@ -381,10 +381,16 @@ class KeyScopedModel(ScriptedModel):
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> ModelResult:
         self._check(route)
         return await super().complete(
-            messages, route=route, tools=tools, temperature=temperature, max_tokens=max_tokens
+            messages,
+            route=route,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
         )
 
     async def stream(
@@ -395,10 +401,16 @@ class KeyScopedModel(ScriptedModel):
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> AsyncIterator[ModelChunk]:
         self._check(route)
         chunks = super().stream(
-            messages, route=route, tools=tools, temperature=temperature, max_tokens=max_tokens
+            messages,
+            route=route,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
         )
         async for chunk in chunks:
             yield chunk

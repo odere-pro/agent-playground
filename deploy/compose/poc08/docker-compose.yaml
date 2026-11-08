@@ -139,6 +139,7 @@ services:
       - /prometheus:uid=65534,gid=65534
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../prometheus/rules:/etc/prometheus/rules:ro
     depends_on:
       chassis:
         condition: service_healthy

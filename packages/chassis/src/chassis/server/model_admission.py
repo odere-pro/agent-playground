@@ -10,15 +10,23 @@ bound they keep, are in the `chassis.server.model_proxy` docstring.
 
 Both routes also read their body through `read_capped`, so neither parses more than
 `BODY_CAP_BYTES`.
+
+Under failure (CH-16). `Admission.model` is the port bound to the call: it passes the run's
+remaining time (`RunRecord.remaining_s`) as the port's `timeout_s`, and it cuts the call with
+`run_ended` when the run closes first (`RunRecord.ended`), cancelling the adapter's call so the
+upstream connection closes. A `service_budget_exhausted` error is counted once per call as
+`chassis.model_budget_exhausted{route}` (`note_service_budget`), the metric the alert rule in
+`deploy/prometheus/rules/chassis.yaml` reads.
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,7 +36,17 @@ from fastapi import Request as HTTPRequest
 from chassis.adapters.anthropic_compat.model_wire import BODY_CAP_BYTES
 from chassis.core.trace import continued
 from chassis.ports.bundle import PortBundle
-from chassis.ports.model import ModelError, Usage
+from chassis.ports.model import (
+    RUN_ENDED,
+    SERVICE_BUDGET_EXHAUSTED,
+    ModelChunk,
+    ModelError,
+    ModelMessage,
+    ModelPort,
+    ModelResult,
+    ToolSpec,
+    Usage,
+)
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server.correlation import RunRecord, RunRegistry, parse_traceparent
 from chassis.server.observability import count_usage
@@ -39,6 +57,9 @@ ROUTE_SPAN = "chassis.model.route"  # suggested: the routing choice (PoC-8)
 DENIED = "chassis.model_upstream_denied"  # suggested
 FORCED = "chassis.model_route_forced"  # suggested: a call sent to the run's route, not its own
 PINNED = "chassis.model_route_pinned"  # suggested: an uncorrelated call sent to `spec.model.route`
+BUDGET_EXHAUSTED = "chassis.model_budget_exhausted"
+"""suggested (CH-16): the router refused a call for the service's budget, by route. Exported as
+`chassis_model_budget_exhausted_total`."""
 WINDOW_S = 60.0
 # suggested: the worst case reserved, and forwarded, for an uncorrelated call that sets no
 # `max_tokens`; never more than the cap itself. The epic gives no value.
@@ -199,15 +220,115 @@ class Hold:
             self.cap.release(self.tokens)
 
 
+class BoundModel:
+    """`ports.model` for one admitted call (CH-16). `complete` and `stream` take the proxy's
+    arguments and add `timeout_s`: what the run has left, or None for an uncorrelated call (the
+    adapter's default then bounds it). A correlated call is also raced against the run's end:
+    when `record.ended` is set first, the port call is cancelled (the adapter closes the upstream
+    connection on cancel) and the call raises `run_ended`.
+    """
+
+    def __init__(self, model: ModelPort, record: RunRecord | None) -> None:
+        self._model = model
+        self._record = record
+
+    @property
+    def timeout_s(self) -> float | None:
+        return None if self._record is None else self._record.remaining_s()
+
+    async def complete(
+        self,
+        messages: Sequence[ModelMessage],
+        *,
+        route: str,
+        tools: Sequence[ToolSpec] | None = None,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+    ) -> ModelResult:
+        call = self._model.complete(
+            messages,
+            route=route,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_s=self.timeout_s,
+        )
+        if self._record is None:
+            return await call
+        return await until_run_ends(self._record, call)
+
+    async def stream(
+        self,
+        messages: Sequence[ModelMessage],
+        *,
+        route: str,
+        tools: Sequence[ToolSpec] | None = None,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+    ) -> AsyncIterator[ModelChunk]:
+        chunks = self._model.stream(
+            messages,
+            route=route,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_s=self.timeout_s,
+        )
+        try:
+            if self._record is None:
+                async for chunk in chunks:
+                    yield chunk
+                return
+            while True:
+                nxt = await until_run_ends(self._record, _next_chunk(chunks))
+                if nxt is None:
+                    return
+                yield nxt
+        finally:
+            # Closing this generator must close the adapter's: `async for` does not do it on an
+            # exit by exception, and the route counts on one close freeing the upstream.
+            aclose = getattr(chunks, "aclose", None)
+            if aclose is not None:
+                with contextlib.suppress(Exception):
+                    await aclose()
+
+
+async def _next_chunk(chunks: AsyncIterator[ModelChunk]) -> ModelChunk | None:
+    try:
+        return await chunks.__anext__()
+    except StopAsyncIteration:
+        return None
+
+
+async def until_run_ends[T](record: RunRecord, awaitable: Awaitable[T]) -> T:
+    """`awaitable`, unless `record.ended` is set first: then the awaitable's task is cancelled and
+    the call raises `run_ended`. A cancel of the caller cancels the task too."""
+    task = asyncio.ensure_future(awaitable)
+    ended = asyncio.ensure_future(record.ended.wait())
+    try:
+        done, _ = await asyncio.wait({task, ended}, return_when=asyncio.FIRST_COMPLETED)
+        if task in done:
+            return task.result()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        raise ModelError(RUN_ENDED, f"request {record.request_id} ended before the model answered")
+    finally:
+        ended.cancel()
+        if not task.done():
+            task.cancel()
+
+
 @dataclass
 class Admission:
-    """A call let through: its reservation (`hold.max_tokens` is what to forward), and the span
-    attributes. Settle or release the hold exactly as `Hold` says."""
+    """A call let through: its reservation (`hold.max_tokens` is what to forward), the span
+    attributes, and `model`, the port bound to this call (`BoundModel`). Settle or release the
+    hold exactly as `Hold` says."""
 
     hold: Hold
     attributes: dict[str, Any]
     bundle: PortBundle
     route: str
+    model: BoundModel
 
 
 def note_rejected(telemetry: TelemetryPort, route: str, exc: ModelError) -> None:
@@ -232,6 +353,28 @@ def note_denied(telemetry: TelemetryPort, route: str, exc: ModelError) -> None:
     from a chassis key that is itself invalid; the operator can, from this."""
     telemetry.counter(DENIED, route=route)
     log.warning("model route refused by the upstream: route=%s code=%s", route, exc.code)
+
+
+def note_service_budget(telemetry: TelemetryPort, route: str, exc: ModelError) -> None:
+    """Count and log a call the router refused for the service's budget (CH-16). The upstream
+    text (redacted and capped by the adapter) names which budget; it never reaches the response."""
+    telemetry.counter(BUDGET_EXHAUSTED, route=route)
+    log.warning(
+        "model call refused for the service's budget: route=%s upstream=%r", route, exc.message
+    )
+
+
+def note_model_error(telemetry: TelemetryPort, route: str, exc: ModelError) -> None:
+    """Count and log one failed model call by its kind: a refused route, the service's budget, a
+    run that ended, or any other upstream failure."""
+    if exc.code in ("http_401", "http_403"):
+        note_denied(telemetry, route, exc)
+    elif exc.code == SERVICE_BUDGET_EXHAUSTED:
+        note_service_budget(telemetry, route, exc)
+    elif exc.code == RUN_ENDED:
+        log.info("model call cut: its run ended: route=%s", route)
+    else:
+        note_failed(route, exc)
 
 
 def is_ready(app: FastAPI) -> bool:
@@ -360,10 +503,11 @@ def admit(
     choice = {"route.requested": requested, "route.forced": route != requested}
     with telemetry.span(ROUTE_SPAN, **attributes, **choice):
         pass  # the choice is made above; the span records it in the call's trace
-    return Admission(hold, attributes, bundle, route)
+    return Admission(hold, attributes, bundle, route, BoundModel(bundle.model, record))
 
 
 __all__ = [
+    "BUDGET_EXHAUSTED",
     "DEFAULT_UNCORRELATED_MAX_TOKENS",
     "DENIED",
     "FORCED",
@@ -373,6 +517,7 @@ __all__ = [
     "UNCORRELATED_REFUSED",
     "WINDOW_S",
     "Admission",
+    "BoundModel",
     "Hold",
     "Refusal",
     "UncorrelatedCap",
@@ -380,6 +525,9 @@ __all__ = [
     "is_ready",
     "note_denied",
     "note_failed",
+    "note_model_error",
     "note_rejected",
+    "note_service_budget",
     "read_capped",
+    "until_run_ends",
 ]

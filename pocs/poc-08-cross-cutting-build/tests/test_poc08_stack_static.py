@@ -38,6 +38,7 @@ from fake_model_server import Script
 from poc08_stack_latency import STAGES_OFF, STAGES_ON, Target, measure, report
 from poc_harness.metrics_stack import (
     AGENT,
+    BUDGET_INPUT,
     CHASSIS,
     CHASSIS_PLAIN,
     CHASSIS_STAGES,
@@ -330,6 +331,8 @@ def test_the_model_script_answers_each_drill_input_as_the_drill_needs() -> None:
     assert fallback.reply == FALLBACK_ANSWER
     fail = script.pick(_msgs(system, ("user", FAIL_INPUT)), model=MAIN_ROUTE)
     assert fail.error is not None and fail.error.status >= 500
+    budget = script.pick(_msgs(system, ("user", BUDGET_INPUT)), model=MAIN_ROUTE)
+    assert budget.error is not None and budget.error.type == "budget_exceeded"  # CH-16
 
 
 def test_the_judge_fails_only_the_gate_answer() -> None:

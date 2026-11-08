@@ -10,6 +10,10 @@ reports what reached the model. Its rules match the last user message, first mat
 3. `CONTROL_TEXT` whole: `CONTROL_REPLY`. Plain text passed unchanged.
 4. the red-team triggers of the cases the drill runs (`REDTEAM_CASES`), from
    `chassis_contracts.redteam.live.model_script`.
+5. `PROVIDER_FAULT_TEXT` (CH-16): a 503 when the request's `model` is `big-default`'s deployment
+   (`fake-model`), and `FALLBACK_REPLY` when it is `local-small`'s (`fake-model-fallback`,
+   litellm.yaml). LiteLLM retries the 503 `num_retries` times, then takes the fallback route; the
+   drill sees the fallback's reply with one chassis model call.
 
 Anything else gets `ok`. The drill (`pocs/poc-08-cross-cutting-build/tests/
 test_poc08_stack_litellm.py`) loads this file by path for the same constants. The red-team
@@ -35,6 +39,13 @@ RAW_REPLY = "pii-seen-raw"
 MASKED_REPLY = "pii-seen-masked"
 CONTROL_REPLY = "control-seen-unchanged"
 MASK_TOKEN = "<EMAIL_ADDRESS>"
+PROVIDER_FAULT_TEXT = "Trigger a provider fault on the main route."
+FALLBACK_REPLY = "answered-by-the-fallback-route"
+PROVIDER_FAULT_STATUS = 503
+MAIN_DEPLOYMENT = "fake-model"
+FALLBACK_DEPLOYMENT = "fake-model-fallback"
+"""The `model` LiteLLM sends the fake for `big-default` and for `local-small` (litellm.yaml:
+`openai/<name>`, the prefix stripped)."""
 REDTEAM_CASES = (
     "exfil-02-input-asks-post",
     "exfil-04-markdown-image",
@@ -57,6 +68,18 @@ def pii_rules() -> list[dict[str, Any]]:
     ]
 
 
+def fault_rules() -> list[dict[str, Any]]:
+    """CH-16: the main deployment fails the provider-fault text; the fallback answers it."""
+    return [
+        {
+            "match": PROVIDER_FAULT_TEXT,
+            "model": MAIN_DEPLOYMENT,
+            "error": {"status": PROVIDER_FAULT_STATUS, "message": "scripted provider fault"},
+        },
+        {"match": PROVIDER_FAULT_TEXT, "model": FALLBACK_DEPLOYMENT, "reply": FALLBACK_REPLY},
+    ]
+
+
 def script() -> dict[str, Any]:
     from chassis_contracts.redteam import load_cases
     from chassis_contracts.redteam.live import model_script
@@ -65,7 +88,7 @@ def script() -> dict[str, Any]:
     redteam = model_script(cases)
     return {
         "model": redteam["model"],
-        "rules": [*pii_rules(), *redteam["rules"]],
+        "rules": [*fault_rules(), *pii_rules(), *redteam["rules"]],
         "default_reply": "ok",
     }
 

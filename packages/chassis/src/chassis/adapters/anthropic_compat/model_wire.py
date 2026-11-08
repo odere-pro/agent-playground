@@ -23,6 +23,8 @@ from pydantic import ValidationError
 
 from chassis.adapters.chat_common import is_empty
 from chassis.ports.model import (
+    RUN_ENDED,
+    SERVICE_BUDGET_EXHAUSTED,
     ModelChunk,
     ModelError,
     ModelMessage,
@@ -35,8 +37,10 @@ from chassis.ports.model import (
 __all__ = [
     "BILLING_PREFIX",
     "BODY_CAP_BYTES",
+    "BUDGET_TEXT",
     "DENIED_TEXT",
     "MODEL_MAX_CHARS",
+    "RUN_ENDED_TEXT",
     "TOO_LARGE",
     "ParsedMessages",
     "RefusedField",
@@ -53,6 +57,12 @@ __all__ = [
 MODEL_MAX_CHARS = 256  # suggested: a route name, which reaches labels, logs, and spans
 BILLING_PREFIX = "x-anthropic-billing-header:"
 DENIED_TEXT = "this model route is not allowed for this service"
+BUDGET_TEXT = "the service's model budget is exhausted"
+"""CH-16: LiteLLM refused for the service's budget. 429 `rate_limit_error`, never retryable: the
+budget resets on its period, not on a retry."""
+RUN_ENDED_TEXT = "the run this call belongs to has ended"
+"""CH-16: the run was cancelled, timed out, or finished while the model call was open. 403
+`permission_error`, as `run_required`: a retry would name no run in flight."""
 
 # Top-level keys that are accepted and counted by their own name (A.5). Any other key is `other`.
 _DROPPED = (
@@ -482,6 +492,10 @@ def model_error_to_wire(exc: ModelError) -> WireError:
     reaches the remote. The route logs the upstream text at the chassis instead.
     """
     code = exc.code
+    if code == SERVICE_BUDGET_EXHAUSTED:
+        return WireError(429, "rate_limit_error", code, BUDGET_TEXT, False)
+    if code == RUN_ENDED:
+        return WireError(403, "permission_error", code, RUN_ENDED_TEXT, False)
     status = int(code[5:]) if code.startswith("http_") and code[5:].isdigit() else 0
     if status in (400, 413, 422):
         text = "the model route rejected the request"

@@ -43,6 +43,11 @@ class ErrorSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: int = 500
     message: str = "scripted error"
+    type: str | None = None
+    """When set, the answer is the OpenAI error shape LiteLLM's proxy sends,
+    `{"error": {"message", "type", "param": null, "code": "<status>"}}`, so a script can replay
+    LiteLLM's own refusals: `budget_exceeded` is the service's budget (CH-16). Without it the
+    answer is FastAPI's `{"detail": message}`."""
 
 
 class Rule(BaseModel):
@@ -55,6 +60,9 @@ class Rule(BaseModel):
     tool_call: ToolCallSpec | None = None
     usage: UsageSpec = Field(default_factory=UsageSpec)
     error: ErrorSpec | None = None
+    delay_s: float = 0.0
+    """How long the answer takes (CH-16: a slow model). A client that leaves during the wait is
+    counted in `app.state.aborted`."""
 
 
 class Script(BaseModel):

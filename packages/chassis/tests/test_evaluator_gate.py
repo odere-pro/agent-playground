@@ -352,10 +352,16 @@ class RouteModel(ScriptedModel):
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> ModelResult:
         self.routes.append(route)
         return await super().complete(
-            messages, route=route, tools=tools, temperature=temperature, max_tokens=max_tokens
+            messages,
+            route=route,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
         )
 
     async def stream(
@@ -366,10 +372,16 @@ class RouteModel(ScriptedModel):
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> AsyncIterator[ModelChunk]:
         self.routes.append(route)
         async for chunk in super().stream(
-            messages, route=route, tools=tools, temperature=temperature, max_tokens=max_tokens
+            messages,
+            route=route,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
         ):
             yield chunk
 

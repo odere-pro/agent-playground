@@ -22,7 +22,7 @@ from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, Scripte
 from chassis.fakes.state import InMemoryState
 from chassis.fakes.tool import InMemoryTools, default_tools
 from chassis.ports.bundle import PortBundle
-from chassis.ports.model import ModelMessage, ToolCallRequest, ToolSpec
+from chassis.ports.model import SERVICE_BUDGET_EXHAUSTED, ModelMessage, ToolCallRequest, ToolSpec
 from chassis.ports.tool import ToolDefinition
 from chassis_contracts import (
     ConfigPortContract,
@@ -34,10 +34,11 @@ from chassis_contracts import (
 from chassis_contracts.config import Bump
 from chassis_contracts.engine import JSON_VALUES_HANDLE, json_values_handle
 from chassis_contracts.helpers import make_request
-from chassis_contracts.model import ReceivedMessages, ToolCallCase
+from chassis_contracts.model import CallsMade, ReceivedMessages, ToolCallCase
 from chassis_contracts.telemetry import ReadCounter, ReadSpans
 from chassis_contracts.tool import NESTED_PARAMETERS, NESTED_TOOL, KnownCall
 from fake_model_server import Script, create_app
+from fake_model_server.script import ErrorSpec, Rule
 from fastapi import FastAPI
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -67,6 +68,8 @@ class TestScriptedModel(ModelPortContract):
                     match="lookup", tool_call=ToolCallRequest(call_id="c1", name="glossary_lookup")
                 ),
                 ScriptRule(match="fail", error="upstream_down", retryable=True),
+                ScriptRule(match="budget", error=SERVICE_BUDGET_EXHAUSTED),
+                ScriptRule(match="slow", reply="late", delay_s=30.0),
                 ScriptRule(reply="Plain words. Short sentences."),
             ]
         )
@@ -74,6 +77,18 @@ class TestScriptedModel(ModelPortContract):
     @pytest.fixture
     def received_messages(self, model_port: ScriptedModel) -> ReceivedMessages:
         return lambda: model_port.calls[-1]
+
+    @pytest.fixture
+    def calls_made(self, model_port: ScriptedModel) -> CallsMade:
+        return lambda: len(model_port.calls)
+
+    @pytest.fixture
+    def budget_refused_messages(self) -> list[ModelMessage]:
+        return [ModelMessage(role="user", content="budget")]
+
+    @pytest.fixture
+    def slow_messages(self) -> list[ModelMessage]:
+        return [ModelMessage(role="user", content="slow")]
 
     @pytest.fixture
     def tool_call_case(self) -> ToolCallCase:
@@ -120,7 +135,15 @@ class TestLiteLLMModel(ModelPortContract):
 
     @pytest.fixture
     def fake_server(self) -> FastAPI:
-        return create_app(Script.from_yaml(EXAMPLE_SCRIPT))
+        """The example script, plus LiteLLM's budget refusal for `budget` and a slow answer for
+        `slow` (the CH-16 cases)."""
+        script = Script.from_yaml(EXAMPLE_SCRIPT)
+        rules = [
+            *script.rules,
+            Rule(match="budget", error=ErrorSpec(status=400, type="budget_exceeded")),
+            Rule(match="slow", reply="late", delay_s=30.0),
+        ]
+        return create_app(script.model_copy(update={"rules": rules}))
 
     @pytest.fixture
     def model_port(self, fake_server: FastAPI) -> LiteLLMModel:
@@ -129,6 +152,18 @@ class TestLiteLLMModel(ModelPortContract):
     @pytest.fixture
     def received_messages(self, fake_server: FastAPI) -> ReceivedMessages:
         return lambda: [_from_openai(m) for m in fake_server.state.calls[-1]["messages"]]
+
+    @pytest.fixture
+    def calls_made(self, fake_server: FastAPI) -> CallsMade:
+        return lambda: int(fake_server.state.calls_total)
+
+    @pytest.fixture
+    def budget_refused_messages(self) -> list[ModelMessage]:
+        return [ModelMessage(role="user", content="budget")]
+
+    @pytest.fixture
+    def slow_messages(self) -> list[ModelMessage]:
+        return [ModelMessage(role="user", content="slow")]
 
     @pytest.fixture
     def tool_call_case(self) -> ToolCallCase:

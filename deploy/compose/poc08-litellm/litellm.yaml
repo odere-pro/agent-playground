@@ -16,8 +16,27 @@ model_list:
   - model_name: big-default
     litellm_params:
       model: openai/fake-model
+      num_retries: 2
       api_base: http://fake-model-server:8081/v1
       api_key: fake  # pragma: allowlist secret (a placeholder; the fake takes no key)
+  # CH-16: the fallback route, the same fake under another model name (`fake-model-fallback`), so
+  # the fake's script can answer the two differently (model_script.py, the provider-fault rules)
+  # and the drill can see which one answered.
+  - model_name: local-small
+    litellm_params:
+      model: openai/fake-model-fallback
+      num_retries: 2
+      api_base: http://fake-model-server:8081/v1
+      api_key: fake  # pragma: allowlist secret (a placeholder; the fake takes no key)
+
+# CH-16: LiteLLM retries a provider error on the route (`num_retries`, per route, suggested: 2)
+# and then takes the route's fallback (`router_settings.fallbacks`); the chassis never retries a
+# model call. The drill (test_poc08_stack_litellm.py) shows a 503 on `big-default` answered by
+# `local-small` with one `chassis_model_calls_total` increment.
+router_settings:
+  fallbacks:
+    - big-default: [local-small]
+    - local-small: [big-default]
 
 # ADR-008 item 4: every guardrail is on for every call (`default_on`), so no key can skip it,
 # and the chassis's guard stages call the same names through `POST /guardrails/apply_guardrail`.
