@@ -46,7 +46,7 @@ A chat interface may set two keys in `data` (suggested: the names): `system` (st
 
 ### `Context` (`context.v0.json`)
 
-What the chassis gives `handle` next to the input. It never holds a key. Passed through the lane unchanged. A workload must ignore keys it does not know.
+What the chassis gives `handle` next to the input. It never holds a product or platform credential. Its one secret, `run_secret`, is a capability for the chassis's own remote listener, for this run only. Passed through the lane unchanged. A workload must ignore keys it does not know.
 
 | Field | Type | Set by | Value |
 | ----- | ---- | ------ | ----- |
@@ -54,6 +54,7 @@ What the chassis gives `handle` next to the input. It never holds a key. Passed 
 | `budget` | `Budget` | the pipeline | The request's |
 | `versions` | `Versions` | the pipeline | As on the response |
 | `model_route` | string or null | the pipeline | the route of `input.data.task` through `spec.model.routes`, else `spec.model.route`; the fallback route on a gate fallback attempt (section 11) |
+| `run_secret` | string or null | the pipeline, per run | `secrets.token_urlsafe(32)` (43 characters; `RUN_SECRET_BYTES`), minted fresh for every run in every lane (a retry is a new run with a new secret). Null in plain-A2A mode, which never sends `ctx`. Hidden from `repr`, kept in `RunRecord`, never in `StatePort`, scrubbed from every event the `remote` lane yields. Not a credential for anything but the run that holds it (section 7) |
 | `traceparent` | string or null | the connector, per run | `00-<trace id>-<parent id>-01`. The trace id is `trace_id_hex(ctx.trace_id)`: `trace_id` as is when it is 32 lowercase hex, else the first 32 hex of its sha256. The parent id is the connector's run span id, else a fresh random 16 hex (suggested). Not a credential |
 
 ### `Response` (`response.v0.json`)
@@ -125,7 +126,7 @@ async def handle(input: dict, ctx: dict) -> AsyncIterator[dict]: ...
 Every workload implements it. It yields event dicts (or objects with `model_dump(mode="json")`). It is served over A2A in every lane. A workload never installs the chassis package.
 
 - **What `handle` gets.** `input` is exactly `chassis.input`, `{text, data}`. `ctx` is exactly `context.v0.json`. Integers stay integers both ways.
-- **What `handle` forwards.** `ctx["traceparent"]`, when set, as the `traceparent` header on every model proxy call and every MCP request. A child span id is fine: the proxies key on the trace id only (`core/trace.py`, `parse_traceparent`).
+- **What `handle` forwards.** `ctx["traceparent"]`, when set, as the `traceparent` header on every model proxy call and every MCP request. A child span id is fine: the proxies key on the trace id only (`core/trace.py`, `parse_traceparent`). `ctx["run_secret"]`, when set, as the `x-chassis-run-secret` header on the same calls. It never logs the secret. The `sidecar` loopback proxy ignores the header; the remote listener requires it (section 7).
 - **Where it calls.** Only the chassis's proxy listeners: `CHASSIS_MODEL_URL` (default `http://127.0.0.1:8090/v1`, suggested: the port) and `CHASSIS_TOOL_URL` (`http://127.0.0.1:8090/mcp`). A remote workload calls the remote listener instead.
 - **No key, no retry.** A workload holds no key and sends no `Authorization` of its own; an SDK that insists on one gets a placeholder. Retries and fallback are the chassis's.
 - **Safe to run twice.** The evaluator gate may rerun a request; write tools dedupe by the run's key (section 7).
@@ -249,7 +250,8 @@ OpenAI body: `{"error": {"message", "type", "param", "code", "retryable"}}`. Ant
 | `Authorization: Bearer` | in | every public route but `/health`, `/ready` | The caller's token (section 8). Removed before the route |
 | `traceparent` | in | every interface | The run's trace id when valid and the body sets none; dropped when it names a trace in use (re-minted, `chassis.trace_id_reminted{interface}`) |
 | `Idempotency-Key` | in | every interface | Wins over the native body's key |
-| `x-chassis-interface: mcp` | in | `/v1/run` | Set by the MCP tool's inner call: `stream` read as false, telemetry labeled `mcp`. Grants nothing |
+| `x-chassis-interface` | none | none | Not a request header. It is the OpenAPI extension that marks each interface operation for the manifest. A caller who sends it on `/v1/run` is ignored: the call is native |
+| `x-chassis-run-secret` | in | remote listener only | The run's `ctx.run_secret`, on every model and `/mcp` call (section 7). Removed before the route; never logged |
 | `x-session-id` (`spec.observability.session_header`) | in | run routes | `session.id` on the run span |
 | `x-api-key`, `anthropic-version`, `anthropic-beta`, `baggage` | in | chat formats | Accepted and ignored; never forwarded or logged |
 | `x-request-id`, `x-trace-id`, `request-id` (Anthropic) | out | OpenAI, Anthropic | The run's ids |
@@ -261,7 +263,7 @@ OpenAI body: `{"error": {"message", "type", "param", "code", "retryable"}}`. Ant
 
 ### MCP (`adapters/mcp/agent.py`)
 
-Generated with `FastMCP.from_openapi` over the `/v1/run` operation alone. One tool named after the agent; its input schema is the `RunRequest` body. The call goes in process to `POST /v1/run` with `x-chassis-interface: mcp`, forwarding only `traceparent`, `tracestate`, `Idempotency-Key`, and the caller's `Authorization`; every other caller header is dropped. A run with `status: error` is a normal tool result; only a non-2xx is an MCP tool error. 503 before and after the lifespan. Not watched for a client that leaves.
+Generated with `FastMCP.from_openapi` over the `/v1/run` operation alone. One tool named after the agent; its input schema is the `RunRequest` body. The call goes in process to `POST /v1/run` marked by the ASGI scope key `chassis.mcp_hop` (`MCP_HOP_SCOPE_KEY`, set to `True` on a copy of the scope by `_mark_mcp_hop`; a server never sets a scope key from a header, so only this hop carries it). The flag reads `stream` as false, skips the disconnect watch, labels telemetry `mcp`, and re-mints a body `trace_id` already in use instead of answering 409. It grants nothing. The call forwards only `traceparent`, `tracestate`, `Idempotency-Key`, and the caller's `Authorization`; every other caller header is dropped. A run with `status: error` is a normal tool result; only a non-2xx is an MCP tool error. 503 before and after the lifespan. Not watched for a client that leaves.
 
 ### `GET /manifest` (`manifest.v0.json`, `core/manifest.py`)
 
@@ -321,7 +323,20 @@ The bootstrap file (`chassis serve --config`) is a whole `ChassisConfig`. With `
 
 ## 7. The model proxy and the tool proxy
 
-Two uvicorn servers in one loop. The proxy listener (`--proxy-host 127.0.0.1 --proxy-port 8090`, suggested; loopback only unless `--allow-any-proxy-host`) serves `POST /v1/chat/completions`, `POST /v1/messages`, and `/mcp`, with no caller auth. The remote listener (`--remote-proxy-host <pod IP> --remote-proxy-port 8091`, suggested; one IP, never loopback or a wildcard) serves exactly the same three routes behind two middlewares, outermost first: `BearerAuth` (401 `remote_unauthenticated`, `authentication_error`, `missing or invalid bearer token`, `www-authenticate: Bearer`; constant-time compare against the current and previous token) and `RequireRun` (403 `run_required`, `permission_error`, `the traceparent names no run in flight`). Every other path is 404 after both checks; a websocket is closed with 1008. Both listeners share one `state`, one run registry, and one uncorrelated cap. The public port never carries the proxies. Before the lifespan every proxy route answers 503.
+Two uvicorn servers in one loop. The proxy listener (`--proxy-host 127.0.0.1 --proxy-port 8090`, suggested; loopback only unless `--allow-any-proxy-host`) serves `POST /v1/chat/completions`, `POST /v1/messages`, and `/mcp`, with no caller auth. The remote listener (`--remote-proxy-host <pod IP> --remote-proxy-port 8091`, suggested; one IP, never loopback or a wildcard) serves exactly the same three routes behind two middlewares, outermost first: `BearerAuth` (401 `remote_unauthenticated`, `authentication_error`, `missing or invalid bearer token`, `www-authenticate: Bearer`; constant-time compare against the current and previous token) and `RequireRun` (403 `run_required`, `permission_error`, `the traceparent names no run in flight`; see "The per-run secret" below). Every other path is 404 after both checks; a websocket is closed with 1008. Both listeners share one `state`, one run registry, and one uncorrelated cap. The public port never carries the proxies. Before the lifespan every proxy route answers 503.
+
+### The per-run secret (`server/remote_auth.py`, `RequireRun`)
+
+The bearer proves the caller is a remote workload. The run secret proves the call belongs to one run in flight. `RequireRun` runs after `BearerAuth` on every remote-listener call, in this order:
+
+1. More than one `traceparent` header: refused, reason `traceparent_count`. It is never guessed, because `RequireRun` and FastMCP would read different headers.
+2. The `traceparent` must name a run in `state.runs`. Else reason `no_run`. This path also runs one `hmac.compare_digest` against a stand-in, so the time does not show whether a trace id names a run.
+3. Plain-A2A mode (`spec.engine.protocol: a2a`, set by config, never by the caller) with a run that holds no secret: the call passes on the traceparent alone. Counted as `chassis.remote.run_secret_skipped{reason="lane_without_secret"}` (suggested).
+4. Otherwise exactly one `x-chassis-run-secret` header must match the run's secret under `hmac.compare_digest`. None is `secret_missing`. More than one, a value over `RUN_SECRET_MAX` (128 bytes, suggested), a run with no secret, or a mismatch is `secret_wrong`.
+
+Every reason is 403 `run_required` with the same body bytes (the Anthropic body on `/v1/messages`), so a caller cannot tell "no such run" from "not your run". Counted as `chassis.remote.run_required{reason}`. A call that passes has the `x-chassis-run-secret` header removed before the route sees it. The `sidecar` loopback proxy has no `RequireRun`; the secret is minted and sent there but never checked.
+
+Limit: the secret separates runs only between processes that share no memory and no `/proc`. A remote pod that serves several runs holds every run's secret. Full isolation needs one run per pod (core-review proposal R6-11, not built).
 
 ### `POST /v1/chat/completions` (`server/model_proxy.py`)
 
@@ -455,7 +470,7 @@ Declared families, every sample labeled `agent`:
 
 Every other `TelemetryPort.counter(name, ...)` shows as `<name>_total` with `.` and other characters made `_`. Timed spans: `chassis.run`, `chassis.model.call`, `chassis.tool.call`, `chassis.evaluator.score`; buckets 0.005 s to 120 s (suggested). The cost is `input_tokens * input_per_mtok + output_tokens * output_per_mtok` in whole micro-USD, an estimate, not LiteLLM's bill.
 
-Counter names the chassis uses (labels in braces): `chassis.requests{interface}`, `chassis.requests_refused{reason}`, `chassis.inbound_ignored{interface, param}`, `chassis.trace_id_reminted{interface}`, `chassis.client_disconnected{interface}`, `chassis.idempotency.{claimed, refused{code}, waited, taken_over, lease_lost, fenced, renew_failed, unknown_version, not_cached{reason}, finish_failed, replayed{interface}, run_fenced{interface}}`, `chassis.config.{reloaded, rejected{reason}, poll_failed{reason}}`, `chassis.events.{published{topic}, publish_failed{topic}, publish_abandoned}`, `chassis.model_calls{route}`, `chassis.model_calls_uncorrelated{route}`, `chassis.model_calls_refused{route}`, `chassis.model_proxy.ignored{format, param}`, `chassis.model_upstream_denied{route}`, `chassis.model_route_forced{route}`, `chassis.model_stream_timeout{route}`, `chassis.model_tokens{route, direction}`, `chassis.model_cost_microusd{route}`, `chassis.tool_calls{tool}`, `chassis.tools.refresh_failed`, `chassis.remote.auth_failed{reason}`, `chassis.remote.run_required`, `chassis.auth_refused{code, path_class}`, `chassis.guardrail_blocked{stage, reason}`, `chassis.guardrail_unavailable{stage}`, `chassis.output_url_masked`, `chassis.rate_limited{path_class}`, `chassis.rate_limit_unavailable`, `chassis.evaluator_calls{evaluator, mode, outcome}`, `chassis.gate_runs{mode}`, `chassis.gate_retries`, `chassis.gate_fallbacks`, `chassis.gate_failed_open`, `chassis.evaluator_dropped`, `chassis.evaluator_abandoned`, `chassis.feedback{label}`, `chassis.feedback_failed{code}`, `chassis.feedback.lookup_failed`, `chassis.on_finished_failed`. suggested: every name.
+Counter names the chassis uses (labels in braces): `chassis.requests{interface}`, `chassis.requests_refused{reason}`, `chassis.inbound_ignored{interface, param}`, `chassis.trace_id_reminted{interface}`, `chassis.client_disconnected{interface}`, `chassis.idempotency.{claimed, refused{code}, waited, taken_over, lease_lost, fenced, renew_failed, unknown_version, not_cached{reason}, finish_failed, replayed{interface}, run_fenced{interface}}`, `chassis.config.{reloaded, rejected{reason}, poll_failed{reason}}`, `chassis.events.{published{topic}, publish_failed{topic}, publish_abandoned}`, `chassis.model_calls{route}`, `chassis.model_calls_uncorrelated{route}`, `chassis.model_calls_refused{route}`, `chassis.model_proxy.ignored{format, param}`, `chassis.model_upstream_denied{route}`, `chassis.model_route_forced{route}`, `chassis.model_stream_timeout{route}`, `chassis.model_tokens{route, direction}`, `chassis.model_cost_microusd{route}`, `chassis.tool_calls{tool}`, `chassis.tools.refresh_failed`, `chassis.remote.auth_failed{reason}`, `chassis.remote.run_required{reason}`, `chassis.remote.run_secret_skipped{reason}`, `chassis.auth_refused{code, path_class}`, `chassis.guardrail_blocked{stage, reason}`, `chassis.guardrail_unavailable{stage}`, `chassis.output_url_masked`, `chassis.rate_limited{path_class}`, `chassis.rate_limit_unavailable`, `chassis.evaluator_calls{evaluator, mode, outcome}`, `chassis.gate_runs{mode}`, `chassis.gate_retries`, `chassis.gate_fallbacks`, `chassis.gate_failed_open`, `chassis.evaluator_dropped`, `chassis.evaluator_abandoned`, `chassis.feedback{label}`, `chassis.feedback_failed{code}`, `chassis.feedback.lookup_failed`, `chassis.on_finished_failed`. suggested: every name.
 
 ### Logs (`logs.py`)
 
