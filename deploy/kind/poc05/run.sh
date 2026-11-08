@@ -172,9 +172,11 @@ canary() {
   die "admission: canary $rejected was admitted; $policy is not enforcing"
 }
 
-# The trust rule (admission/policy.yaml header), the extension rules for SandboxTemplate and
-# SandboxClaim (admission/extension-policy.yaml; they need the extension CRDs from `create`), and
-# the Service rule S1 (admission/service-policy.yaml: ClusterIP only, no outside address).
+# The trust rule (admission/policy.yaml header), the minimum chassis version (rule 9,
+# admission/chassis-version-policy.yaml, its own policy so its binding can warn first), the
+# extension rules for SandboxTemplate and SandboxClaim (admission/extension-policy.yaml; they need
+# the extension CRDs from `create`), and the Service rule S1 (admission/service-policy.yaml:
+# ClusterIP only, no outside address).
 # Order matters: params first (the binding denies everything without them), each policy before
 # its binding (a policy that does not compile enforces nothing), and canaries last: the rule-1
 # fixture must be refused by agent-trust-rule and the rule-T1 fixture (no networkPolicyManagement)
@@ -189,17 +191,21 @@ admission() {
   # cluster from before that change keeps the binding until this removes it.
   kctl -n poc05-tools delete rolebinding agent-submitter --ignore-not-found
   kctl apply -f "$dir/policy.yaml"
+  kctl apply -f "$dir/chassis-version-policy.yaml"
   kctl apply -f "$dir/extension-policy.yaml"
   kctl apply -f "$dir/service-policy.yaml"
-  for name in agent-trust-rule sandbox-template-rule sandbox-claim-rule; do
+  for name in agent-trust-rule sandbox-template-rule sandbox-claim-rule agent-chassis-version; do
     type_checked "$name"
   done
   type_checked agent-service-rule
   kctl apply -f "$dir/binding.yaml"
+  kctl apply -f "$dir/chassis-version-binding.yaml"
   kctl apply -f "$dir/extension-binding.yaml"
   kctl apply -f "$dir/service-binding.yaml"
   canary agent-trust-rule "$fx/rule1-trust-label/rejected.yaml" \
     "$fx/rule1-trust-label/admitted.yaml"
+  canary agent-chassis-version "$fx/rule9-chassis-version/rejected-old-tag.yaml" \
+    "$fx/rule9-chassis-version/admitted.yaml" "trust rule 9"
   canary sandbox-template-rule "$fx/ruleT1-network-policy-unmanaged/rejected-absent.yaml" \
     "$fx/ruleT1-network-policy-unmanaged/admitted.yaml" "template rule T1"
   canary agent-service-rule "$fx/ruleS1-service-type/rejected.yaml" \

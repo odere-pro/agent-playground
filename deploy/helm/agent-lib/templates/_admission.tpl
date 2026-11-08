@@ -7,12 +7,21 @@ ADR-001 hard requirement 1 and item 9; ADR-005 decisions 4 and 5).
   spec is deploy/kind/poc05/admission/policy.yaml's (the same parsed spec, held equal by the chart
   test test_the_admission_chart_renders_the_poc05_trust_rule_unchanged; comments and metadata
   may differ), so the kind admission suite in CI proves the CEL the chart ships. Rules 1 to 8 are the
-  lane and trust rules PoC-5 built (the header of that file explains each); rule 9 is the minimum
-  chassis version.
+  lane and trust rules PoC-5 built (the header of that file explains each).
 - agent-lib.admissionBinding: Deny (and Audit) in every namespace labeled
   agents.platform/admission: enforce. The platform labels namespaces; no tenant role may. A
   service cannot switch the rules off: it has no value for them (agent-lib.validateServiceValues
   refuses `admission`), no file, and no RBAC on cluster-scoped admission objects.
+- agent-lib.chassisVersionPolicy: rule 9, the minimum chassis version, in its own policy (the
+  spec is deploy/kind/poc05/admission/chassis-version-policy.yaml's, held equal by
+  test_the_admission_chart_renders_the_poc05_chassis_version_rule_unchanged). A binding carries
+  one validationActions list for the whole policy, so the rule that warns first stands alone.
+- agent-lib.chassisVersionBinding: the same namespaces and params as the trust rule's binding,
+  with validationActions from the platform's admission.chassisVersionAction: Deny (the default,
+  [Deny, Audit]) or Warn ([Warn, Audit]: a pod below the minimum is admitted with a warning on
+  the request and an audit annotation). ADR-001 item 9: a new minimum warns first, then
+  enforces. The platform sets Warn for one ring cycle (suggested) after it raises the minimum,
+  then Deny. Nothing turns the rule off: every other value is refused.
 - agent-lib.admissionParams: the params ConfigMap, in the platform release's namespace, which
   the binding reads (parameterNotFoundAction: Deny). registryPrefix, imageSource,
   trustedRepositories, and supportedChassisDigests (digest mode, rule 9: the digests a cloud's
@@ -39,6 +48,9 @@ params:
   # imageSource digest is refused here; empty with pull-never is right (the store is loaded by
   # tag, and the rule refuses a digest beside the tag there).
   supportedChassisDigests: []
+# Rule 9's binding: Deny ([Deny, Audit]) or Warn ([Warn, Audit], the warn-first ring of a new
+# minimum, ADR-001 item 9). The trust rule (rules 0 to 8) always denies.
+chassisVersionAction: Deny
 {{- end -}}
 
 {{- define "agent-lib.admissionValues" -}}
@@ -54,9 +66,12 @@ params:
 {{- define "agent-lib.validateAdmission" -}}
 {{- $a := .a -}}
 {{- range $k, $_ := .user -}}
-{{- if ne $k "params" -}}
-{{- fail (printf "agent-lib: admission.%s is not a value; the admission rules bind to every namespace labeled agents.platform/admission: enforce and cannot be switched off. Allowed: params" $k) -}}
+{{- if not (has $k (list "params" "chassisVersionAction")) -}}
+{{- fail (printf "agent-lib: admission.%s is not a value; the admission rules bind to every namespace labeled agents.platform/admission: enforce and cannot be switched off. Allowed: params, chassisVersionAction" $k) -}}
 {{- end -}}
+{{- end -}}
+{{- if not (has (toString $a.chassisVersionAction) (list "Deny" "Warn")) -}}
+{{- fail (printf "agent-lib: admission.chassisVersionAction %q must be Deny ([Deny, Audit]) or Warn ([Warn, Audit], the warn-first ring of a new minimum chassis version, ADR-001 item 9); rule 9 cannot be switched off" (toString $a.chassisVersionAction)) -}}
 {{- end -}}
 {{- $keys := list "registryPrefix" "imageSource" "trustedRepositories" "supportedChassisDigests" -}}
 {{- range $k, $_ := $a.params -}}
@@ -136,12 +151,37 @@ spec:
         agents.platform/admission: enforce
 {{- end -}}
 
+{{- define "agent-lib.chassisVersionBinding" -}}
+{{- $a := include "agent-lib.admissionValues" . | fromYaml -}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agent-chassis-version
+  labels:
+    {{- include "agent-lib.labels" (dict "root" . "name" "agent-chassis-version") | nindent 4 }}
+spec:
+  policyName: agent-chassis-version
+  validationActions: [{{ $a.chassisVersionAction }}, Audit]
+  paramRef:
+    name: agent-trust-params
+    namespace: {{ .Release.Namespace }}
+    parameterNotFoundAction: Deny
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        agents.platform/admission: enforce
+{{- end -}}
+
 {{- define "agent-lib.admission" -}}
 {{ include "agent-lib.admissionParams" . }}
 ---
 {{ include "agent-lib.admissionPolicy" . }}
 ---
 {{ include "agent-lib.admissionBinding" . }}
+---
+{{ include "agent-lib.chassisVersionPolicy" . }}
+---
+{{ include "agent-lib.chassisVersionBinding" . }}
 {{- end -}}
 
 {{/* The policy. Everything under `spec:` is deploy/kind/poc05/admission/policy.yaml's, verbatim. */}}
@@ -320,24 +360,6 @@ spec:
         variables.imageSource == 'pull-never'
         ? variables.containers.all(c, has(c.imagePullPolicy) && c.imagePullPolicy == 'Never')
         : variables.images.all(i, i.contains('@sha256:'))
-    - name: supportedChassisTags
-      expression: >-
-        variables.data[?'supportedChassisTags'].orValue('').split(',')
-        .map(t, t.trim()).filter(t, t != '')
-    - name: supportedChassisDigests
-      expression: >-
-        variables.data[?'supportedChassisDigests'].orValue('').split(',')
-        .map(d, d.trim()).filter(d, d != '')
-    # The tag of each chassis image: after the last ':' of the reference without its digest, when
-    # that ':' comes after the last '/' (a registry port is before it). No tag gives ''.
-    - name: chassisTags
-      expression: >-
-        variables.chassisImages.map(i, i.contains('@') ? i.substring(0, i.indexOf('@')) : i)
-        .map(r, r.lastIndexOf(':') > r.lastIndexOf('/') ? r.substring(r.lastIndexOf(':') + 1) : '')
-    # The digest of each chassis image, after its '@'; no digest gives ''.
-    - name: chassisDigests
-      expression: >-
-        variables.chassisImages.map(i, i.contains('@') ? i.substring(i.indexOf('@') + 1) : '')
   validations:
     - expression: >-
         variables.prefix != '' && size(variables.trustedRepositories) > 0 &&
@@ -468,6 +490,100 @@ spec:
         trust rule 8: outside the remote lane every image must come from the cluster image store:
         imagePullPolicy Never, or an @sha256 digest when imageSource is digest
       reason: Forbidden
+{{- end -}}
+
+{{/* The minimum chassis version, rule 9, in its own policy so its binding can warn first (ADR-001
+item 9). Everything under `spec:` is deploy/kind/poc05/admission/chassis-version-policy.yaml's,
+verbatim. */}}
+{{- define "agent-lib.chassisVersionPolicy" -}}
+{{- $_ := include "agent-lib.admissionValues" . -}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agent-chassis-version
+  labels:
+    {{- include "agent-lib.labels" (dict "root" . "name" "agent-chassis-version") | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    # Pods are the last hop for every controller; the workload kinds are matched too, so a bad
+    # Deployment or Sandbox is refused at apply time instead of failing to make pods later.
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "pods/ephemeralcontainers", "replicationcontrollers"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+      - apiGroups: ["agents.x-k8s.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["sandboxes"]
+      # Per-call sandbox plan, "Admission": the template's pod is checked when it is applied, not
+      # only when the pool makes its first Sandbox. A SandboxClaim has no pod; the claim rule in
+      # extension-policy.yaml covers it.
+      - apiGroups: ["extensions.agents.x-k8s.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["sandboxtemplates"]
+  variables:
+    # The pod (or pod template) the object describes.
+    - name: template
+      expression: >-
+        request.kind.kind == 'Pod' ? object :
+        request.kind.kind == 'CronJob' ? object.spec.jobTemplate.spec.template :
+        request.kind.kind in ['Sandbox', 'SandboxTemplate'] ? object.spec.podTemplate :
+        object.spec.template
+    - name: spec
+      expression: "variables.template.spec"
+    - name: containers
+      expression: >-
+        variables.spec.containers +
+        (has(variables.spec.initContainers) ? variables.spec.initContainers : []) +
+        (has(variables.spec.ephemeralContainers) ? variables.spec.ephemeralContainers : [])
+    - name: images
+      expression: "variables.containers.map(c, has(c.image) ? c.image : '')"
+    - name: data
+      expression: "has(params.data) ? params.data : {}"
+    - name: prefix
+      expression: "variables.data[?'registryPrefix'].orValue('')"
+    - name: imageSource
+      expression: "variables.data[?'imageSource'].orValue('')"
+    - name: chassisRepository
+      expression: "variables.prefix + 'chassis'"
+    - name: chassisImages
+      expression: >-
+        variables.images.filter(i, i == variables.chassisRepository ||
+          i.startsWith(variables.chassisRepository + ':') ||
+          i.startsWith(variables.chassisRepository + '@'))
+    - name: supportedChassisTags
+      expression: >-
+        variables.data[?'supportedChassisTags'].orValue('').split(',')
+        .map(t, t.trim()).filter(t, t != '')
+    - name: supportedChassisDigests
+      expression: >-
+        variables.data[?'supportedChassisDigests'].orValue('').split(',')
+        .map(d, d.trim()).filter(d, d != '')
+    # The tag of each chassis image: after the last ':' of the reference without its digest, when
+    # that ':' comes after the last '/' (a registry port is before it). No tag gives ''.
+    - name: chassisTags
+      expression: >-
+        variables.chassisImages.map(i, i.contains('@') ? i.substring(0, i.indexOf('@')) : i)
+        .map(r, r.lastIndexOf(':') > r.lastIndexOf('/') ? r.substring(r.lastIndexOf(':') + 1) : '')
+    # The digest of each chassis image, after its '@'; no digest gives ''.
+    - name: chassisDigests
+      expression: >-
+        variables.chassisImages.map(i, i.contains('@') ? i.substring(i.indexOf('@') + 1) : '')
+  validations:
     - expression: >-
         variables.imageSource == 'digest'
         ? variables.chassisDigests.all(d, d in variables.supportedChassisDigests)

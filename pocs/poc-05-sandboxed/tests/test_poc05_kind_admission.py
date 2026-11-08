@@ -38,12 +38,13 @@ import json
 import re
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 import yaml
-from poc_harness.admission_manifests import CAN_I
+from poc_harness.admission_manifests import CAN_I, VERSION_POLICY_NAME, VERSION_RULES
 from poc_harness.admission_manifests import DEPLOYER as DEPLOYER_ACCOUNT
 from poc_harness.admission_manifests import DISPATCHER as DISPATCHER_ACCOUNT
 from poc_harness.admission_manifests import SUBMITTER as SUBMITTER_ACCOUNT
@@ -79,7 +80,7 @@ POLICY_OF_PREFIX = {
 RBAC_REFUSAL = re.compile(r"cannot \w+ resource")
 KIND = re.compile(r"(?m)^kind: (\S+)$")
 PARAMS = ("agent-platform-system", "agent-trust-params")
-HEADER = re.compile(r"^#\s*(expect|message|namespace):\s*(.*?)\s*$")
+HEADER = re.compile(r"^#\s*(expect|rule|message|namespace):\s*(.*?)\s*$")
 NAMESPACE = re.compile(r"(?m)^  namespace: (\S+)$")
 TIMEOUT_S = 60
 
@@ -88,6 +89,7 @@ TIMEOUT_S = 60
 class Fixture:
     path: Path
     expect: str
+    rule: str
     message: str | None
     namespace: str
     kind: str
@@ -103,7 +105,11 @@ class Fixture:
 
     @property
     def policy(self) -> str:
+        """The policy that holds the fixture's rule. Rule 9 keeps the `trust rule` prefix but
+        lives in `agent-chassis-version`, so its binding can warn first (ADR-001 item 9)."""
         assert self.message is not None
+        if self.rule in VERSION_RULES:
+            return VERSION_POLICY_NAME
         prefix = self.message.split(" ", 2)[:2]
         return POLICY_OF_PREFIX[" ".join(prefix)]
 
@@ -128,6 +134,7 @@ def _fixture(path: Path) -> Fixture:
     return Fixture(
         path=path,
         expect=fields["expect"],
+        rule=fields.get("rule", ""),
         message=fields.get("message"),
         namespace=m.group(1),
         kind=k.group(1),
@@ -150,7 +157,7 @@ def _one_line(text: str) -> str:
     return " ".join(text.split())
 
 
-@pytest.mark.parametrize("name", ["agent-trust-rule", "agent-service-rule"])
+@pytest.mark.parametrize("name", ["agent-trust-rule", VERSION_POLICY_NAME, "agent-service-rule"])
 def test_policy_and_binding_are_installed(name: str) -> None:
     for kind in ("validatingadmissionpolicy", "validatingadmissionpolicybinding"):
         got = kubectl("get", kind, name, "-o", "name")
@@ -210,6 +217,63 @@ def test_admitted_twin_is_admitted(fixture: Fixture) -> None:
 
     assert got.returncode == 0, f"{fixture.id}: refused: {got.stderr}"
     assert "(server dry run)" in got.stdout
+
+
+VERSION_BINDING = ADMISSION / "chassis-version-binding.yaml"
+RULE9_OLD_TAG = FIXTURES / "rule9-chassis-version" / "rejected-old-tag.yaml"
+WARN_RING = json.dumps({"spec": {"validationActions": ["Warn", "Audit"]}})
+# A binding change reaches the API server's admission informer within seconds; retry that long.
+RING_SETTLE_TRIES = 15
+
+
+def _dry_run_until(path: Path, admitted: bool) -> subprocess.CompletedProcess[str]:
+    """`kubectl apply --dry-run=server` of `path` as the deployer, retried until it is admitted
+    (or refused) as asked, so a binding patched a moment ago has reached admission."""
+    for _ in range(RING_SETTLE_TRIES):
+        got = kubectl("apply", "--dry-run=server", "-f", str(path), as_user=DEPLOYER)
+        if (got.returncode == 0) == admitted:
+            return got
+        time.sleep(1)
+    return got
+
+
+def test_a_chassis_below_the_minimum_is_admitted_with_a_warning_in_the_warn_ring() -> None:
+    """ADR-001 item 9: "it warns first, then enforces." With `agent-chassis-version`'s binding
+    on [Warn, Audit] (the ring cycle after a new minimum, 026 CH-4), the pod on the old chassis
+    tag is admitted and the request carries rule 9's message as a warning; the binding restored
+    from its file ([Deny, Audit]) refuses the same pod again. The trust rule's binding is not
+    touched: the paired control is that a rule-1 fixture stays refused while rule 9 warns."""
+    rule1 = FIXTURES / "rule1-trust-label" / "rejected.yaml"
+    before = kubectl(
+        "get", "validatingadmissionpolicybinding", VERSION_POLICY_NAME,
+        "-o", "jsonpath={.spec.validationActions}",
+    )  # fmt: skip
+    assert before.returncode == 0, before.stderr
+    assert json.loads(before.stdout) == ["Deny", "Audit"], (
+        f"the binding is not in the enforce ring before the test: {before.stdout}; a killed run "
+        "left it on Warn; restore it with `deploy/kind/poc05/run.sh admission`"
+    )
+    patched = kubectl(
+        "patch", "validatingadmissionpolicybinding", VERSION_POLICY_NAME, "--type", "merge",
+        "-p", WARN_RING,
+    )  # fmt: skip
+    assert patched.returncode == 0, patched.stderr
+    try:
+        warned = _dry_run_until(RULE9_OLD_TAG, admitted=True)
+        still_denied = kubectl("apply", "--dry-run=server", "-f", str(rule1), as_user=DEPLOYER)
+    finally:
+        restored = kubectl("apply", "-f", str(VERSION_BINDING))
+    if restored.returncode != 0:
+        pytest.fail(f"the binding was not restored from {VERSION_BINDING.name}: {restored.stderr}")
+    denied_again = _dry_run_until(RULE9_OLD_TAG, admitted=False)
+
+    warning = _one_line(warned.stderr)
+    assert warned.returncode == 0, f"warn ring refused the pod: {warning}"
+    assert "Warning:" in warning and f"'{VERSION_POLICY_NAME}'" in warning, warning
+    assert "trust rule 9:" in warning, warning
+    assert still_denied.returncode != 0 and "trust rule 1:" in _one_line(still_denied.stderr)
+    assert denied_again.returncode != 0, "the binding did not go back to Deny"
+    assert "trust rule 9:" in _one_line(denied_again.stderr), denied_again.stderr
 
 
 def can_i(user: str, *args: str) -> str:

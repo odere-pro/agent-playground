@@ -15,6 +15,9 @@ ADMISSION = KIND_POC05 / "admission"
 FIXTURES = ADMISSION / "fixtures"
 NAMESPACES = KIND_POC05 / "base/namespaces.yaml"
 POLICY_NAME = "agent-trust-rule"
+# Rule 9, the minimum chassis version, in its own policy so its binding can warn first (ADR-001
+# item 9); it reads the trust rule's params.
+VERSION_POLICY_NAME = "agent-chassis-version"
 PARAMS_NAME = "agent-trust-params"
 PARAMS_NAMESPACE = "agent-platform-system"
 ENFORCE_LABEL = ("agents.platform/admission", "enforce")
@@ -33,8 +36,10 @@ NAME = "app.kubernetes.io/name"
 PREFIX = "kind.local/agent-platform/"
 RULES = (
     "1", "2", "3", "4", "5", "6a", "6b", "6c", "7a", "7b", "7c", "7d", "7e", "7f", "7g", "8",
-    "9",
 )  # fmt: skip
+# The rules of agent-chassis-version. Their messages keep the `trust rule N:` prefix: the fixture
+# headers, the model, and the docs name rule 9 by number.
+VERSION_RULES = ("9",)
 # Rules with no fixture file: a Pod may not carry ephemeralContainers at create, so the API server
 # refuses such a file before admission. The kind test patches `pods/ephemeralcontainers` instead.
 EPHEMERAL_RULES = ("7g",)
@@ -82,6 +87,8 @@ ADMISSION_OBJECTS = {
     "rbac.yaml",
     "policy.yaml",
     "binding.yaml",
+    "chassis-version-policy.yaml",
+    "chassis-version-binding.yaml",
     "extension-policy.yaml",
     "extension-binding.yaml",
     "service-policy.yaml",
