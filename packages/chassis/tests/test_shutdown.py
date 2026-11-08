@@ -376,6 +376,8 @@ async def test_the_ready_marker_appears_only_after_every_listener_has_bound(
         assert not marker.exists(), "no marker before the chassis serves"
         task = await _serve_until_started(drain)
         await wait_until(marker.exists, HANG_GUARD_S, "the ready marker")
+        # The marker names its writer (the #107 LOW): this process's pid, then its start time.
+        assert marker.read_text(encoding="utf-8").split()[0] == str(os.getpid())
         drain.signal()
         await asyncio.wait_for(task, HANG_GUARD_S)
     assert not marker.exists(), "the marker goes with the process"

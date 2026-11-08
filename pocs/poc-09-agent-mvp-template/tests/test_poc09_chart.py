@@ -149,9 +149,11 @@ def test_the_chassis_starts_on_its_ready_marker_in_a_volume_only_it_mounts(
         assert "chassis-tmp" not in {m["name"] for m in c.get("volumeMounts", [])}, c["name"]
     probe = chassis["startupProbe"]
     assert "httpGet" not in probe, "a workload on the public port would answer an httpGet"
-    command = probe["exec"]["command"]
-    assert command[:2] == ["python", "-c"], "the chassis image has python, no shell assumed"
-    assert marker in command[2]
+    # The probe checks the marker's stamp against the live process, not only that the file
+    # exists: a marker a killed chassis left in the kept emptyDir fails (the #107 LOW).
+    assert probe["exec"]["command"] == ["python", "-m", "chassis.ready_marker", marker], (
+        "the chassis image has python, no shell assumed"
+    )
 
 
 def test_sidecar_lane_secrets_are_on_the_chassis_container_only(chart: Charts) -> None:

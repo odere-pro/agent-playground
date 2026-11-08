@@ -46,8 +46,10 @@ Ready marker (`--ready-marker PATH`, off by default; ADR-012). The chassis is Ru
 imports, before it binds, so an HTTP startup probe on its public port could be answered by a
 workload that took that port first. With the flag, `Drain.serve` deletes any marker at start (a
 container restart keeps the emptyDir), writes it only once the proxies and the public listener
-have bound, and deletes it again on the way out. The chart's chassis startupProbe checks only
-that file, in a volume no other container mounts.
+have bound, and deletes it again on the way out. The marker names its writer, the pid and its
+start time (`chassis.ready_marker`), and the chart's chassis startupProbe passes only while that
+process is live: a marker a killed chassis left in the kept emptyDir fails on the restarted
+container. The file sits in a volume no other container mounts.
 
 `DeferredStartup` moves the wait for the workload to readiness. It wraps the public app's lifespan
 so that uvicorn binds the public port at once (`/health` 200, `/ready` 503 `starting`) while the
@@ -89,6 +91,8 @@ from typing import Any
 import httpx
 import uvicorn
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from chassis import ready_marker
 
 log = logging.getLogger("chassis.lifecycle")
 
@@ -258,7 +262,7 @@ class Drain:
                 break
             await asyncio.sleep(0.01)
         if self.public.started and not self.public.should_exit:
-            self.ready_marker.write_bytes(b"")
+            ready_marker.write(self.ready_marker)
             log.info("all listeners bound: ready marker %s written", self.ready_marker)
 
     async def serve(self) -> None:
