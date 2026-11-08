@@ -19,7 +19,7 @@ DONE_POC_TESTS := $(wildcard $(addsuffix /tests,$(DONE_POCS)))
 .PHONY: help setup evals evals-regression redteam fmt fmt-check lint lint-extra type \
 	test test-gate test-poc test-pocs-done gate-paths test-integration load-test \
 	kind-poc04 kind-poc05 kind-poc06 bakeoff poc06-mac record-cassettes \
-	quick check planning-sync planning-check planning-check-strict schemas harness-lint \
+	quick check planning-sync planning-check planning-check-strict progress schemas harness-lint \
 	fake-model-server ts-check clean
 
 help: ## Show this help
@@ -143,6 +143,9 @@ planning-check: ## Verify the backlog and the planning docs, with the evidence r
 	cd docs/planning && python3 tools/check.py --strict
 
 planning-check-strict: planning-check ## Alias of planning-check, which is strict since 2026-11-07
+
+progress: ## The product plan per phase: issues done, boxes ticked, open complexity, what it waits on, critical path (PHASE=A lists its issues)
+	cd docs/planning && python3 tools/progress.py $(PHASE)
 
 schemas: ## Regenerate the JSON Schemas in packages/chassis/schemas from the models
 	$(PY) -m chassis.schemas --write

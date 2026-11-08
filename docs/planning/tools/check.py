@@ -13,6 +13,7 @@ from pathlib import Path
 import yaml
 
 from backlog import WAVES
+from product_phases import PRODUCT_PHASE
 
 TOOLS = Path(__file__).resolve().parent
 ROOT = TOOLS.parent
@@ -29,6 +30,11 @@ TICKED = re.compile(r"^- \[x\].*$", re.M)
 DELIVERED_BY = re.compile(r"^(?:- )?Delivered by:", re.M)
 TOKEN = re.compile(r"`([^`]+)`")
 LINK = re.compile(r"\]\([^)\s]+\)")
+# The product plan and its table of issues per phase, which product_phases.py must match.
+PLAN = ROOT.parent / "plans" / "2026-11-06-agent-container-product.md"
+PLAN_TABLE = "### The issues in each phase"
+PLAN_ROW = re.compile(r"^\| ([A-G]) \|(.*)$", re.M)
+PLAN_LINK = re.compile(r"\[\d{3} ([A-Z]+-\d+[a-z]?)\]")
 
 
 def slugs(text):
@@ -154,6 +160,46 @@ def check_strict(p, s, fm, repo):
     return errors
 
 
+def check_product_phases(issues, phases, plan=None):
+    """Every entry in product_phases.py names an issue that is not parked and a phase A to G, and
+    the product plan's table lists the same issues per phase. A done issue keeps its phase."""
+    errors = []
+    waves = {str(fm.get("epic_id")): fm.get("milestone") for _, _, fm in issues}
+    for eid, ph in sorted(phases.items()):
+        if ph not in tuple("ABCDEFG"):
+            errors.append(f"product_phases.py: {eid} has phase {ph!r}, not one of A to G")
+        if eid not in waves:
+            errors.append(f"product_phases.py: {eid} is not a backlog issue")
+        elif waves[eid] == PARKED:
+            errors.append(f"product_phases.py: {eid} is parked; a parked issue has no phase")
+    if plan is not None and plan.exists():
+        errors += check_plan_table(plan.read_text(), phases)
+    return errors
+
+
+def check_plan_table(text, phases):
+    """The plan's "The issues in each phase" table lists, per phase, the issues product_phases.py
+    puts there: the bracketed `[NNN ID]` links of each `| X |` row."""
+    if PLAN_TABLE not in text:
+        return [f"product plan: no `{PLAN_TABLE}` table"]
+    table = text.split(PLAN_TABLE, 1)[1].split("\n#", 1)[0]
+    listed = {ph: set(PLAN_LINK.findall(rest)) for ph, rest in PLAN_ROW.findall(table)}
+    errors = []
+    for ph in "ABCDEFG":
+        want = {e for e, p in phases.items() if p == ph}
+        have = listed.get(ph, set())
+        for e in sorted(have - want):
+            where = phases.get(e, "later")
+            errors.append(
+                f"product plan: phase {ph} lists {e}; product_phases.py puts it in {where}"
+            )
+        for e in sorted(want - have):
+            errors.append(
+                f"product plan: phase {ph} does not list {e}, which product_phases.py puts there"
+            )
+    return errors
+
+
 def check_coverage(covered, story_ids):
     """3. Every epic story exactly once; a split story twice. DEC-, L-, CH- are not epic stories.
 
@@ -194,9 +240,10 @@ def check_links(root):
     return errors
 
 
-def run(root=ROOT, first=1, last=10**6, strict=False):
+def run(root=ROOT, first=1, last=10**6, strict=False, phases=None, plan=None):
     """Every check on the planning folder `root` (the repo is two levels up). Returns the errors
-    and a one-line summary."""
+    and a one-line summary. With `phases`, it also holds product_phases.py, and the plan file
+    `plan` when given, to the issues."""
     repo = root.parents[1]
     errors = check_epic(root)
     story_ids = set(re.findall(r"^\d+\. \*\*([A-Z]-\d+b?)\*\*", (root / EPIC_NAME).read_text(), re.M))
@@ -214,6 +261,8 @@ def run(root=ROOT, first=1, last=10**6, strict=False):
             if strict and MARKER not in s:
                 errors += check_strict(p, s, fm, repo)
     errors += check_parked_deps(issues)
+    if phases is not None:
+        errors += check_product_phases(issues, phases, plan)
     errors += check_coverage([str(fm.get("epic_id")) for _, _, fm in issues], story_ids)
     errors += check_links(root)
     return errors, f"{len(files)} issues, {len(story_ids)} epic stories"
@@ -233,7 +282,7 @@ def parse_args(argv):
 
 def main(argv):
     first, last, strict = parse_args(argv)
-    errors, line = run(ROOT, first, last, strict)
+    errors, line = run(ROOT, first, last, strict, phases=PRODUCT_PHASE, plan=PLAN)
     print(line)
     if errors:
         print("\n".join(errors))
