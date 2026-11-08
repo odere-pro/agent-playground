@@ -18,14 +18,33 @@ name: poc08-evals
 # hosted model, no egress beyond package installs. DeepEval telemetry is off (set by the launcher).
 # kagent-adk runs only on kind (poc06-kind.yml) and is skipped here, as the baselines record.
 # Every action is pinned by a full commit SHA. Never pull_request_target.
+#
+# Trigger, since 2026-11-08: pull_request and push to main, on what the gate is made of (the paths
+# below: the golden and baseline files, eval-kit, the engines, the chassis source, the fake servers),
+# and workflow_dispatch. Evals run on a business logic, prompt, or model change
+# (docs/guides/testing.md); a chassis test or a docs change does not run them.
 
 on:
-  push:
-    paths:
-      - "evals/**"
-      - "packages/**"
-      - ".github/workflows/poc08-evals.yml"
   pull_request:
+    paths: &eval-paths
+      - "evals/**"
+      - "packages/bakeoff/**"
+      - "packages/chassis/pyproject.toml"
+      - "packages/chassis/src/**"
+      - "packages/contract-suites/src/**"
+      - "packages/eval-kit/**"
+      - "packages/fake-mcp-server/**"
+      - "packages/fake-model-server/**"
+      - "packages/guardrail-server/**"
+      - "packages/workload-a2a/**"
+      - "packages/workloads/**"
+      - "Makefile"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/poc08-evals.yml"
+  push:
+    branches: [main]
+    paths: *eval-paths
   workflow_dispatch:
 
 permissions:
@@ -33,7 +52,8 @@ permissions:
 
 concurrency:
   group: poc08-evals-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer PR push cancels the old run; on main every merge keeps its own run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   evals:

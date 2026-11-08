@@ -1517,15 +1517,16 @@ def workflow() -> dict[str, Any]:
     return load_workflow(WORKFLOW)
 
 
-def test_the_workflow_runs_on_push_and_never_on_pull_request_target(
+def test_the_workflow_runs_by_hand_and_never_on_pull_request_target(
     workflow: dict[str, Any],
 ) -> None:
-    """Triggers are push, pull_request, and dispatch; no line names pull_request_target."""
+    """The only trigger is workflow_dispatch; no line names pull_request_target.
+    Since 2026-11-08 the workflow runs only by hand: a finished PoC is checked locally."""
     code = _code_lines(WORKFLOW.read_text())
 
     triggers = workflow_triggers(workflow)
 
-    assert triggers == {"push", "pull_request", "workflow_dispatch"}
+    assert triggers == {"workflow_dispatch"}
     assert not any("pull_request_target" in ln for ln in code)
 
 

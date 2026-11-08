@@ -12,8 +12,9 @@
 # recorded in pocs/poc-06a-bake-off-sidecar-lane/notes/ (the first record:
 # notes/2026-10-28-sidecar-load-in-ci.md).
 #
-# Trigger: push and pull_request on the paths below, and workflow_dispatch. Never
-# pull_request_target. A shared GitHub runner is noisy: the numbers show the engines pass the load
+# Trigger: workflow_dispatch only, since 2026-11-08: a finished PoC is checked locally, not on every
+# push and pull request (docs/guides/testing.md, "What CI runs"). Never pull_request_target.
+# A shared GitHub runner is noisy: the numbers show the engines pass the load
 # suite; growth with pairs is recorded, not asserted (4 pairs do not fit a 4-CPU runner).
 #
 # No secret is used: scale.sh generates the stack's passwords into .env.poc04 (mode 600) and never
@@ -22,22 +23,6 @@
 name: poc06-load
 
 on:
-  push:
-    paths:
-      - .github/workflows/poc06-load.yml
-      - deploy/compose/scale.sh
-      - deploy/compose/docker-compose.scale.yaml
-      - packages/load-tools/**
-      - packages/workloads/echo-openai-agents/**
-      - packages/workloads/echo-typescript/**
-  pull_request:
-    paths:
-      - .github/workflows/poc06-load.yml
-      - deploy/compose/scale.sh
-      - deploy/compose/docker-compose.scale.yaml
-      - packages/load-tools/**
-      - packages/workloads/echo-openai-agents/**
-      - packages/workloads/echo-typescript/**
   workflow_dispatch:
 
 permissions:

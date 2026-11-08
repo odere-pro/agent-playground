@@ -47,7 +47,7 @@ uv run python -m chassis_contracts.redteam                            # the red-
 uv run python -m bakeoff.evaltrial --tool deepeval --out "$OUT"       # the picked eval tool on two engines
 ```
 
-With Docker (CI runs it in `poc07-stack.yml`):
+With Docker (CI runs it by hand in `poc07-stack.yml`, `workflow_dispatch`, since 2026-11-08):
 
 ```bash
 deploy/compose/poc07/stack.sh up && deploy/compose/poc07/stack.sh wait
@@ -55,7 +55,7 @@ COMPOSE_STACK=1 uv run pytest pocs/poc-07-cross-cutting-decisions/tests/test_poc
 deploy/compose/poc07/stack.sh down
 ```
 
-The agent scan: `deploy/agent-scan/scan.sh` (needs Docker; the `scan` half needs `SNYK_TOKEN`). CI runs it in `poc07-agent-scan.yml`.
+The agent scan: `deploy/agent-scan/scan.sh` (needs Docker; the `scan` half needs `SNYK_TOKEN`). CI runs it by hand in `poc07-agent-scan.yml` (`workflow_dispatch`, since 2026-11-08; dispatch it on `main` for the real scan).
 
 ## Demo
 

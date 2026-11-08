@@ -6,7 +6,8 @@
 # every new pod). The cluster is PoC-5's; `remote-lane.yml` runs PoC-5's own suite on its own cluster
 # and is not touched.
 #
-# Trigger: push, pull_request, and workflow_dispatch. Never pull_request_target.
+# Trigger: workflow_dispatch only, since 2026-11-08: a finished PoC is checked locally, not on every
+# push and pull request (docs/guides/testing.md, "What CI runs"). Never pull_request_target.
 # Open: gVisor (systrap, nested under Docker) on a GitHub ubuntu-latest runner is shown by
 # remote-lane.yml; if runsc cannot start here either, the job fails at the gVisor step of
 # `run.sh up`; it never skips the check. The offline gate (`make check`, ci.yml) stays the
@@ -20,8 +21,6 @@
 name: poc06-kind
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
 
 permissions:
