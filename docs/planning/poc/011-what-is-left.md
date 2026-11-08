@@ -68,7 +68,7 @@ Code an engineer or an agent can do now. Each item names the PoC criterion it mo
 - [ ] **A test that every workload image accepts the scale stack's command (6a follow-up).** The TypeScript agent refused `--drain-timeout-s` for a while, and no offline test caught it.
 - [ ] **The rare 502 under load (6a follow-up).** About 1 in 4,600 calls at 4 pairs. Find out if the chassis or Traefik answers it.
 - [ ] **Named-entity masking in the Collector log pipeline (PoC-8).** Waits on Q6 in section 3. Today it masks only emails and phone numbers.
-- [ ] **Throughput at 4 pairs (PoC-4 criterion 4).** Rerun the load matrix on a Linux host or with pinned CPUs. Tracked in [122 X-5](../issues/122-X-5-load-tests.md).
+- [ ] **Throughput at 4 pairs (PoC-4 criterion 4).** Rerun the load matrix on a Linux host or with pinned CPUs. Tracked in [122 X-5](../issues/122-X-5-load-tests.md). On 2026-11-08 the matrix ran for every engine on 4-vCPU GitHub runners ([note](../../../pocs/poc-06a-bake-off-sidecar-lane/notes/2026-11-08-x5-linux-runner-load.md)): every engine grows 1 to 2 pairs, none fits 4 pairs on 4 vCPUs. The host this item needs has about 12 cores and pinned CPUs.
 
 ## 5. Planning and docs
 

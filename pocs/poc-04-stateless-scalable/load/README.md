@@ -39,7 +39,7 @@ Output, under `../notes/load/`:
   The failures and exceptions CSVs that held only a header row were removed on 2026-10-08. A missing file means no failure and no exception.
 - `raw/<scenario>-docker-stats.csv`: `phase` (`idle` or `load`), time, container, vCPU, MiB.
 - `results.json`: each run merges into it, so partial runs add up. Its keys:
-  - `engines.<engine>.<pairs>` holds `rps`, `requests`, `failures`, `p50_ms`, and `p95_ms`. It also holds `containers.<role>`, with `replicas`, `vcpu_mean`, `vcpu_max`, `mib_mean`, `mib_max`, `idle_vcpu`, and `idle_mib`. The chassis role also has `vcpu_per_100rps`.
+  - `engines.<engine>.<pairs>` holds `rps`, `requests`, `failures`, `p50_ms`, and `p95_ms`. It also holds `containers.<role>`, with `replicas`, `vcpu_mean`, `vcpu_p95`, `vcpu_max`, `mib_mean`, `mib_p95`, `mib_max`, `idle_vcpu`, and `idle_mib` (the p95 since 2026-11-08, 122 X-5: nearest rank over every sample of every replica). The chassis role also has `vcpu_per_100rps`.
   - `hop.sidecar`, `hop.inprocess`, and `hop.hop_ms` (`p50_ms`, `p95_ms`).
   - `idempotency.no_key` and `idempotency.cost_ms`.
   - `host`: CPUs, Docker VM memory, and how many other containers were running.

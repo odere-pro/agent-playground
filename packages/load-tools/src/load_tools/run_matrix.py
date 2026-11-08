@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import os
 import platform
 import statistics
@@ -284,7 +285,8 @@ def role(name: str) -> str:
 
 
 def per_role(rows: Iterable[dict[str, Any]]) -> dict[str, dict[str, float]]:
-    """Per role: the mean of each replica's mean, and the max over replicas, of CPU and memory."""
+    """Per role: the mean of each replica's mean, the p95 over every sample of every replica
+    (122 X-5 reads the sidecar at p95), and the max over replicas, of CPU and memory."""
     by_name: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         by_name.setdefault(row["name"], []).append(row)
@@ -293,11 +295,14 @@ def per_role(rows: Iterable[dict[str, Any]]) -> dict[str, dict[str, float]]:
         by_role.setdefault(role(name), []).append(samples)
     out: dict[str, dict[str, float]] = {}
     for name, replicas in by_role.items():
+        every = [s for r in replicas for s in r]
         out[name] = {
             "replicas": len(replicas),
             "vcpu_mean": round(statistics.fmean(_mean(r, "vcpu") for r in replicas), 4),
+            "vcpu_p95": round(_p95(every, "vcpu"), 4),
             "vcpu_max": round(max(max(s["vcpu"] for s in r) for r in replicas), 4),
             "mib_mean": round(statistics.fmean(_mean(r, "mib") for r in replicas), 2),
+            "mib_p95": round(_p95(every, "mib"), 2),
             "mib_max": round(max(max(s["mib"] for s in r) for r in replicas), 2),
         }
     return out
@@ -305,6 +310,12 @@ def per_role(rows: Iterable[dict[str, Any]]) -> dict[str, dict[str, float]]:
 
 def _mean(samples: Sequence[dict[str, Any]], key: str) -> float:
     return statistics.fmean(s[key] for s in samples)
+
+
+def _p95(samples: Sequence[dict[str, Any]], key: str) -> float:
+    """The nearest-rank 95th percentile: the value at least 95% of the samples are at or below."""
+    ordered = sorted(float(s[key]) for s in samples)
+    return ordered[max(0, math.ceil(0.95 * len(ordered)) - 1)]
 
 
 # Locust results ------------------------------------------------------------------------------

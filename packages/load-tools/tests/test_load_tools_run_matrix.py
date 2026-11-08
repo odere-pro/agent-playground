@@ -91,3 +91,20 @@ def test_load_tools_merge_computes_the_hop_from_both_lanes() -> None:
         "inprocess": {"p50_ms": 10.0, "p95_ms": 25.0},
         "hop_ms": {"p50_ms": 2.0, "p95_ms": 5.0},
     }
+
+
+def test_load_tools_per_role_records_the_p95_of_every_sample_next_to_mean_and_max() -> None:
+    """122 X-5 reads the sidecar's CPU and memory at p95: per role, the p95 over every sample of
+    every replica (nearest rank), next to the mean of the replica means and the max."""
+    rows = [
+        {"name": "poc04-chassis-1-1", "vcpu": v, "mib": m}
+        for v, m in zip([0.1] * 19 + [1.0], [100.0] * 19 + [200.0], strict=True)
+    ] + [{"name": "poc04-chassis-2-1", "vcpu": 0.3, "mib": 150.0}]
+
+    roles = run_matrix.per_role(rows)
+
+    chassis = roles["chassis"]
+    assert chassis["replicas"] == 2
+    assert chassis["vcpu_p95"] == 0.3
+    assert chassis["mib_p95"] == 150.0
+    assert chassis["vcpu_max"] == 1.0 and chassis["mib_max"] == 200.0

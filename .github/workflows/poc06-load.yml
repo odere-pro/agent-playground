@@ -14,6 +14,9 @@
 #
 # Trigger: workflow_dispatch only, since 2026-11-08: a finished PoC is checked locally, not on every
 # push and pull request (docs/guides/testing.md, "What CI runs"). Never pull_request_target.
+# The inputs pick the engines and the scenario kinds (122 X-5, 2026-11-08: one dispatch per engine
+# pair runs the whole matrix on Linux runners in parallel; `hop` adds the echo-python sidecar
+# against inprocess hop). The defaults are the PoC-6a run above.
 # A shared GitHub runner is noisy: the numbers show the engines pass the load
 # suite; growth with pairs is recorded, not asserted (4 pairs do not fit a 4-CPU runner).
 #
@@ -24,6 +27,15 @@ name: poc06-load
 
 on:
   workflow_dispatch:
+    inputs:
+      engines:
+        description: "Engines, comma-separated (echo-python, echo-pydanticai, echo-langgraph, echo-openai-agents, echo-typescript)"
+        type: string
+        default: "echo-openai-agents,echo-typescript"
+      only:
+        description: "Scenario kinds, comma-separated (main, rate, hop, idem)"
+        type: string
+        default: "main,rate"
 
 permissions:
   contents: read
@@ -32,6 +44,10 @@ jobs:
   poc06-load:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # The inputs reach the shell through env only, never by expression inside a script.
+      ENGINES: ${{ inputs.engines || 'echo-openai-agents,echo-typescript' }}
+      ONLY: ${{ inputs.only || 'main,rate' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -55,17 +71,35 @@ jobs:
         run: deploy/compose/scale.sh build
       - name: Load matrix
         run: |
-          uv run python -m load_tools.run_matrix \
-            --engine echo-openai-agents --engine echo-typescript \
-            --only main --only rate --results "$RUNNER_TEMP/poc06-load.json"
+          set -euo pipefail
+          args=()
+          IFS=',' read -ra engines <<<"$ENGINES"
+          for e in "${engines[@]}"; do
+            [[ $e =~ ^[a-z0-9-]+$ ]] || { echo "::error::bad engine '$e'"; exit 1; }
+            args+=(--engine "$e")
+          done
+          IFS=',' read -ra kinds <<<"$ONLY"
+          for k in "${kinds[@]}"; do
+            [[ $k =~ ^[a-z]+$ ]] || { echo "::error::bad scenario kind '$k'"; exit 1; }
+            args+=(--only "$k")
+          done
+          uv run python -m load_tools.run_matrix "${args[@]}" \
+            --results "$RUNNER_TEMP/poc06-load.json"
       - name: Check every scenario ran, with at most 0.1% failed calls
         run: |
           uv run python - <<'EOF'
           import json, os, sys
           d = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "poc06-load.json")))
-          engines = ("echo-openai-agents", "echo-typescript")
-          runs = [(f"{e} {p}p", d.get("engines", {}).get(e, {}).get(p)) for e in engines for p in ("1", "2", "4")]
-          runs += [(f"{e} rate10", d.get("rate", {}).get(e)) for e in engines]
+          engines = [e for e in os.environ["ENGINES"].split(",") if e]
+          kinds = {k for k in os.environ["ONLY"].split(",") if k}
+          runs = []
+          if "main" in kinds:
+              runs += [(f"{e} {p}p", d.get("engines", {}).get(e, {}).get(p)) for e in engines for p in ("1", "2", "4")]
+          if "rate" in kinds:
+              runs += [(f"{e} rate10", d.get("rate", {}).get(e)) for e in engines]
+          if "hop" in kinds and "echo-python" in engines:
+              runs += [(f"hop {lane}", d.get("hop", {}).get(lane)) for lane in ("sidecar", "inprocess")]
+              print(f"hop sidecar minus inprocess: {d.get('hop', {}).get('hop_ms')}")
           bad = []
           for name, r in runs:
               if r is None:
