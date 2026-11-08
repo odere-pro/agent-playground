@@ -1,5 +1,5 @@
 # agent-admission: the platform's admission rules, from the library chart's agent-lib.admission
-# (the trust rule, its binding, its params). Installed once per cluster by the platform, in its
+# (the trust rule and the minimum chassis version, each with its binding; the params). Installed once per cluster by the platform, in its
 # own namespace, never by a service. The chassis tags it allows come from agent-lib's defaults,
 # so a chassis release that bumps the tag there bumps the minimum version here (ADR-001 item 9).
 # Build the dependency first, from the repo root (file:// only, no network):

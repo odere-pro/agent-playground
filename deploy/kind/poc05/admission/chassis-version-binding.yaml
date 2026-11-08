@@ -1,0 +1,23 @@
+# Binds agent-chassis-version (rule 9, the minimum chassis version) to the same namespaces as the
+# trust rule (binding.yaml), with the same params. Apply it after chassis-version-policy.yaml
+# type-checked. [Deny, Audit] is the enforce ring; a new minimum runs [Warn, Audit] for one ring
+# cycle first (ADR-001 item 9; the chart's admission.chassisVersionAction). The kind test
+# test_poc05_kind_admission.py patches this binding to Warn, shows the warning on a pod below the
+# minimum, and restores it from this file. In the warn ring a missing or incomplete params
+# ConfigMap only warns for this policy (parameterNotFoundAction is subject to validationActions);
+# the trust rule's binding still denies it, through its own parameterNotFoundAction and rule 0.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agent-chassis-version
+spec:
+  policyName: agent-chassis-version
+  validationActions: [Deny, Audit]
+  paramRef:
+    name: agent-trust-params
+    namespace: agent-platform-system
+    parameterNotFoundAction: Deny
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        agents.platform/admission: enforce

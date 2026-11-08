@@ -8,8 +8,10 @@ resources:
   - params.yaml
   - rbac.yaml
   - policy.yaml
+  - chassis-version-policy.yaml
   - extension-policy.yaml
   - service-policy.yaml
   - binding.yaml
+  - chassis-version-binding.yaml
   - extension-binding.yaml
   - service-binding.yaml

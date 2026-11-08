@@ -17,3 +17,9 @@ admission:
     # Digest mode only (rule 9): the chassis digests at or above the minimum version, as the
     # registry holds them (sha256:<64 hex>). Empty on kind, where the store is loaded by tag.
     supportedChassisDigests: []
+  # Rule 9's binding (agent-chassis-version): Deny is [Deny, Audit], the enforce ring. When the
+  # platform raises the minimum chassis version (a new tag list in agent-lib), set Warn for one
+  # ring cycle (suggested): [Warn, Audit] admits a pod below the minimum with a warning on the
+  # request and an audit annotation, so services see the new floor before it refuses them
+  # (ADR-001 item 9). Then back to Deny. No other value renders; the trust rule always denies.
+  chassisVersionAction: Deny

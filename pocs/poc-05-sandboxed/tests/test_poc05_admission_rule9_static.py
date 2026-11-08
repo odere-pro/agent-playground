@@ -1,8 +1,9 @@
 """PoC-5 admission, offline: trust rule 9, the minimum chassis version (ADR-001 item 9; backlog
 056 CH-7; the product plan, phase A), on the Python model of the rules
-(`poc_harness.admission_model`). The policy itself is `deploy/kind/poc05/admission/policy.yaml`,
-checked against its pins in `test_poc05_admission_static.py` and run on kind by
-`test_poc05_kind_admission.py` with the `rule9-chassis-version` fixtures.
+(`poc_harness.admission_model`). The policy itself is
+`deploy/kind/poc05/admission/chassis-version-policy.yaml` (`agent-chassis-version`, its own policy
+so its binding can warn first), checked against its pins in `test_poc05_admission_static.py` and
+run on kind by `test_poc05_kind_admission.py` with the `rule9-chassis-version` fixtures.
 
 Exit criterion 7 (offline part): "Admission rejects `untrusted` and a third-party image in
 `sidecar`." Rule 9 reads the chassis image the way the node resolves it: with `imageSource:

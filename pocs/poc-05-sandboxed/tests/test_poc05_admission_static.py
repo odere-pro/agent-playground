@@ -62,6 +62,8 @@ from poc_harness.admission_manifests import (
     SUBMITTER,
     TEMPLATE_RULES,
     TRUST,
+    VERSION_POLICY_NAME,
+    VERSION_RULES,
     Fixture,
     all_fixtures,
     namespace_labels,
@@ -91,6 +93,18 @@ def binding() -> Doc:
 
 
 @pytest.fixture(scope="module")
+def version_policy() -> Doc:
+    return one_of_kind(ADMISSION / "chassis-version-policy.yaml", "ValidatingAdmissionPolicy")
+
+
+@pytest.fixture(scope="module")
+def version_binding() -> Doc:
+    return one_of_kind(
+        ADMISSION / "chassis-version-binding.yaml", "ValidatingAdmissionPolicyBinding"
+    )
+
+
+@pytest.fixture(scope="module")
 def extension_policies() -> dict[str, Doc]:
     docs = load_manifests(ADMISSION / "extension-policy.yaml")
     assert all(d["kind"] == "ValidatingAdmissionPolicy" for d in docs)
@@ -105,8 +119,8 @@ def extension_bindings() -> dict[str, Doc]:
 
 
 @pytest.fixture(scope="module")
-def all_policies(policy: Doc, extension_policies: dict[str, Doc]) -> list[Doc]:
-    return [policy, *extension_policies.values()]
+def all_policies(policy: Doc, version_policy: Doc, extension_policies: dict[str, Doc]) -> list[Doc]:
+    return [policy, version_policy, *extension_policies.values()]
 
 
 @pytest.fixture(scope="module")
@@ -182,13 +196,44 @@ def test_the_template_variable_reads_a_sandbox_template_pod(policy: Doc) -> None
     assert "request.kind.kind in ['Sandbox', 'SandboxTemplate'] ? object.spec.podTemplate" in expr
 
 
-def test_policy_has_only_the_params_check_and_rules_1_to_9(policy: Doc) -> None:
+def test_policy_has_only_the_params_check_and_rules_1_to_8(policy: Doc) -> None:
     """Criterion 7: "The admission check rejects an `untrusted` workload, and a third-party image,
     in the `sidecar` lane."
 
-    Criterion 7: the trust policy holds rule 0 and rules 1 to 9, and no other rule. Rule 9 is
-    the minimum chassis version (ADR-001 item 9; the product plan, phase A)."""
+    Criterion 7: the trust policy holds rule 0 and rules 1 to 8, and no other rule. Rule 9, the
+    minimum chassis version, is `agent-chassis-version`'s (the test below)."""
     assert sorted(_messages(policy)) == sorted(["0", *RULES])
+
+
+def test_the_version_policy_holds_rule_9_alone_and_matches_what_the_trust_rule_matches(
+    policy: Doc, version_policy: Doc
+) -> None:
+    """ADR-001 item 9: the minimum chassis version is its own policy, so its binding can warn
+    for one ring cycle while the trust rule denies. It fails closed, reads the same params, and
+    matches the same kinds, so no pod the trust rule sees escapes it."""
+    spec = version_policy["spec"]
+
+    assert version_policy["metadata"]["name"] == VERSION_POLICY_NAME
+    assert sorted(_messages(version_policy)) == list(VERSION_RULES)
+    assert spec["failurePolicy"] == "Fail"
+    assert spec["paramKind"] == policy["spec"]["paramKind"]
+    assert spec["matchConstraints"] == policy["spec"]["matchConstraints"]
+    assert all(v["reason"] == "Forbidden" for v in spec["validations"])
+
+
+def test_the_version_binding_denies_on_kind_with_the_trust_rules_selector_and_params(
+    binding: Doc, version_binding: Doc
+) -> None:
+    """ADR-001 item 9: on kind the binding is the enforce ring, [Deny, Audit]; the warn ring is
+    the same binding with Warn (`test_poc05_kind_admission.py` patches it and restores it). The
+    namespaces and the params are the trust rule's, so the two rules see the same pods."""
+    spec = version_binding["spec"]
+
+    assert version_binding["metadata"]["name"] == VERSION_POLICY_NAME
+    assert spec["policyName"] == VERSION_POLICY_NAME
+    assert spec["validationActions"] == ["Deny", "Audit"]
+    assert spec["matchResources"] == binding["spec"]["matchResources"]
+    assert spec["paramRef"] == binding["spec"]["paramRef"]
 
 
 @pytest.mark.parametrize("rule", ["0", *RULES])
@@ -472,7 +517,7 @@ ALL = [f for f in all_fixtures() if f.doc["kind"] != "Service"] if FIXTURES.is_d
 REJECTED = [f for f in ALL if f.expect == "rejected"]
 # A SandboxClaim describes no pod; the trust rule does not match it.
 PODS = [f for f in ALL if f.doc["kind"] != "SandboxClaim"]
-ALL_RULES = (*RULES, *TEMPLATE_RULES, *CLAIM_RULES)
+ALL_RULES = (*RULES, *VERSION_RULES, *TEMPLATE_RULES, *CLAIM_RULES)
 
 
 def test_every_rule_has_a_rejected_fixture_and_an_admitted_twin() -> None:
@@ -543,8 +588,12 @@ def test_c2_admits_the_empty_metadata_the_controller_writes() -> None:
     assert extension_broken_rules(claim({"annotations": {"a": "b"}})) == {"C2"}
 
 
-def test_fixture_headers_are_complete(policy: Doc, extension_policies: dict[str, Doc]) -> None:
-    messages = _messages(policy) | _extension_messages(extension_policies)
+def test_fixture_headers_are_complete(
+    policy: Doc, version_policy: Doc, extension_policies: dict[str, Doc]
+) -> None:
+    messages = (
+        _messages(policy) | _messages(version_policy) | _extension_messages(extension_policies)
+    )
     for f in ALL:
         assert f.expect in {"rejected", "admitted"}, f.id
         assert f.rule in ALL_RULES, f.id
@@ -733,7 +782,8 @@ def test_rule_expression_matches_its_pin_when_the_policy_loads(
 @pytest.mark.parametrize(
     ("name", "pinned"),
     [
-        ("agent-trust-rule", "0b424ea969cea927"),  # pragma: allowlist secret
+        ("agent-trust-rule", "9c0da6ae5c41dbce"),  # pragma: allowlist secret
+        ("agent-chassis-version", "2baad9d602640a39"),  # pragma: allowlist secret
         ("sandbox-template-rule", "e3b0c44298fc1c14"),  # pragma: allowlist secret
         ("sandbox-claim-rule", "e3b0c44298fc1c14"),  # pragma: allowlist secret
     ],

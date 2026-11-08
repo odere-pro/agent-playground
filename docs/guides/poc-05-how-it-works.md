@@ -125,7 +125,7 @@ sequenceDiagram
 
 ## 3. The trust rule: config load, then admission
 
-The rule is checked in two places. The chassis checks its own config at load (`spec.trust` against `spec.engine.connector`, `chassis/server/config.py`). The cluster checks every pod and pod template with the `ValidatingAdmissionPolicy` `agent-trust-rule` (`admission/policy.yaml`). It reads the pod shape from the images, never from a label alone:
+The rule is checked in two places. The chassis checks its own config at load (`spec.trust` against `spec.engine.connector`, `chassis/server/config.py`). The cluster checks every pod and pod template with the `ValidatingAdmissionPolicy` `agent-trust-rule` (`admission/policy.yaml`); a second policy, `agent-chassis-version` (`admission/chassis-version-policy.yaml`), holds rule 9, the minimum chassis version, alone, so its binding can warn for one ring cycle after a new minimum while the trust rule keeps denying (ADR-001 item 9). The trust rule reads the pod shape from the images, never from a label alone:
 
 - **chassis shape:** at least one image is `registryPrefix` + `chassis`. With any other image next to it, the pod is in the `sidecar` lane.
 - **remote shape:** no chassis image, and `agents.platform/lane: remote` or `agents.platform/trust: untrusted`.

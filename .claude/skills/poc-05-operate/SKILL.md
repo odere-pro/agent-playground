@@ -31,7 +31,7 @@ From nothing it took 297 s; on a running cluster it converges in about 54 to 87 
 
 Ready looks like this:
 - nine `PASS` smoke lines;
-- `admission: canary refused by agent-trust-rule, twin admitted`;
+- `admission: canary refused by agent-trust-rule, twin admitted`, and the same for `agent-chassis-version` (rule 9);
 - four `request` lines, each `HTTP 200` (`agent-echo` and `chassis-echo-remote`, "hello" and "glossary");
 - `up done in N s`;
 - `kubectl --context kind-poc05 get pods -A`: 20 pods Running and Ready, `minio-init` Completed.

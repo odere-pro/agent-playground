@@ -48,7 +48,7 @@ from chart_render import (
     values_file,
     walk,
 )
-from poc_harness.admission_manifests import RULES, TRUST
+from poc_harness.admission_manifests import RULES, TRUST, VERSION_POLICY_NAME, VERSION_RULES
 from poc_harness.admission_model import AdmissionParams, broken_rules
 from poc_harness.manifests import load_manifests
 from poc_harness.paths import KIND_POC05
@@ -56,6 +56,7 @@ from poc_harness.paths import KIND_POC05
 pytestmark = NEEDS_HELM
 
 POC05_POLICY = KIND_POC05 / "admission/policy.yaml"
+POC05_VERSION_POLICY = KIND_POC05 / "admission/chassis-version-policy.yaml"
 POLICY = "agent-trust-rule"
 PARAMS = "agent-trust-params"
 ENFORCE = {"agents.platform/admission": "enforce"}
@@ -117,6 +118,54 @@ def test_the_admission_chart_renders_the_poc05_trust_rule_unchanged(chart: Chart
     assert rules == [f"trust rule {r}" for r in ("0", *RULES)]
 
 
+def test_the_admission_chart_renders_the_poc05_chassis_version_rule_unchanged(
+    chart: Charts,
+) -> None:
+    """ADR-001 item 9: rule 9, the minimum chassis version, is its own policy so that its binding
+    can warn first. The chart's spec is the kind file's, so the kind run of the warn ring
+    (`test_poc05_kind_admission.py`) proves the CEL the chart ships."""
+    (expected,) = [
+        d for d in load_manifests(POC05_VERSION_POLICY) if d["kind"] == "ValidatingAdmissionPolicy"
+    ]
+
+    policy = one(chart.template_admission(), "ValidatingAdmissionPolicy", VERSION_POLICY_NAME)
+
+    assert policy["apiVersion"] == expected["apiVersion"]
+    assert policy["spec"] == expected["spec"]
+    assert policy["spec"]["failurePolicy"] == "Fail"
+    rules = [v["message"].split(":", 1)[0] for v in policy["spec"]["validations"]]
+    assert rules == [f"trust rule {r}" for r in VERSION_RULES]
+
+
+@pytest.mark.parametrize(
+    ("values", "actions"),
+    [
+        (None, ["Deny", "Audit"]),
+        ({"admission": {"chassisVersionAction": "Deny"}}, ["Deny", "Audit"]),
+        ({"admission": {"chassisVersionAction": "Warn"}}, ["Warn", "Audit"]),
+    ],
+    ids=["default", "Deny", "Warn"],
+)
+def test_the_chassis_version_binding_denies_by_default_and_warns_for_a_ring_cycle(
+    chart: Charts, tmp_path: Path, values: dict[str, Any] | None, actions: list[str]
+) -> None:
+    """ADR-001 item 9: "it warns first, then enforces." The platform sets
+    `admission.chassisVersionAction: Warn` for one ring cycle after a new minimum, then `Deny`
+    (the default). Both modes bind the same namespaces and params as the trust rule, whose
+    binding denies in every mode."""
+    docs = chart.template_admission(values_file(tmp_path, values) if values else None)
+
+    binding = one(docs, "ValidatingAdmissionPolicyBinding", VERSION_POLICY_NAME)
+    trust = one(docs, "ValidatingAdmissionPolicyBinding", POLICY)
+
+    spec = binding["spec"]
+    assert spec["policyName"] == VERSION_POLICY_NAME
+    assert spec["validationActions"] == actions
+    assert spec["matchResources"] == trust["spec"]["matchResources"]
+    assert spec["paramRef"] == trust["spec"]["paramRef"]
+    assert trust["spec"]["validationActions"] == ["Deny", "Audit"]
+
+
 def test_the_binding_denies_in_every_enforced_namespace_with_platform_params(
     chart: Charts,
 ) -> None:
@@ -140,11 +189,13 @@ def test_the_binding_denies_in_every_enforced_namespace_with_platform_params(
         "parameterNotFoundAction": "Deny",
     }
     assert params["metadata"]["namespace"] == PLATFORM_NAMESPACE
-    assert {d["kind"] for d in docs} == {
-        "ValidatingAdmissionPolicy",
-        "ValidatingAdmissionPolicyBinding",
-        "ConfigMap",
-    }
+    assert sorted((d["kind"], d["metadata"]["name"]) for d in docs) == [
+        ("ConfigMap", PARAMS),
+        ("ValidatingAdmissionPolicy", VERSION_POLICY_NAME),
+        ("ValidatingAdmissionPolicy", POLICY),
+        ("ValidatingAdmissionPolicyBinding", VERSION_POLICY_NAME),
+        ("ValidatingAdmissionPolicyBinding", POLICY),
+    ]
 
 
 def test_the_params_list_the_trusted_repositories_and_the_library_chassis_tags(
@@ -264,6 +315,16 @@ REFUSED: dict[str, tuple[str, dict[str, Any], str]] = {
         "admission",
         {"admission": {"enabled": False}},
         "admission.enabled",
+    ),
+    "the platform chart switching the version rule off": (
+        "admission",
+        {"admission": {"chassisVersionAction": "Off"}},
+        "chassisVersionAction",
+    ),
+    "the platform chart binding the version rule with no action": (
+        "admission",
+        {"admission": {"chassisVersionAction": []}},
+        "chassisVersionAction",
     ),
     "a service widening the supported chassis tags": (
         "example",
