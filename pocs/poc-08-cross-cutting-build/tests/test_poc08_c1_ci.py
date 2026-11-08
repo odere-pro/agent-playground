@@ -92,18 +92,23 @@ def _gate_flags() -> list[str]:
     return words[words.index("pytest") + 1 : words.index("$@")]
 
 
-def _matrix(job: dict[str, Any]) -> set[str]:
-    return set(job["strategy"]["matrix"]["engine"])
+def _engines(workflow: dict[str, Any]) -> set[str]:
+    """The workflow's `ENGINES` list: one job loops over it (since 2026-11-08, not a matrix)."""
+    return set(str(workflow["env"]["ENGINES"]).split())
 
 
 def test_ci_runs_make_check_and_every_poc_folder_runs_offline_in_the_gate_or_locally() -> None:
-    """Criterion 1: CI's `check` job runs `make check` on every commit. Since 2026-11-08
+    """Criterion 1: CI's `check` job runs `make check` on every pull request and every push to
+    `main` (since 2026-11-08; a branch push only repeated the PR run). Since 2026-11-08
     `make check` runs `make test-gate`, and a finished PoC's folder runs in `make
     test-pocs-done`; every PoC folder is in exactly one, and both use the offline script."""
     workflow = _workflow("ci.yml")
     triggers = _triggers(workflow)
+    # Since 2026-11-08: every pull request and every push to main (a branch push only repeated
+    # the PR run).
     assert set(triggers) >= {"push", "pull_request"}
-    assert not (triggers["push"] or {}).get("branches"), "every commit, on every branch"
+    assert not triggers["pull_request"], "every pull request, no paths filter"
+    assert triggers["push"] == {"branches": ["main"]}, "every push to main, no paths filter"
     assert "make check" in _runs(workflow["jobs"]["check"])
 
     makefile = (ROOT / "Makefile").read_text()
@@ -173,31 +178,30 @@ def test_the_gate_collects_this_folder_with_no_network_test() -> None:
 
 
 def test_poc08_evals_runs_the_gate_and_the_redteam_set_on_every_supported_engine() -> None:
-    """Criterion 1 (and 2): the eval gate runs on every supported engine; the red-team job covers
-    every engine of `evals/redteam/baseline.json`; the drop-facts regression runs."""
+    """Criterion 1 (and 2): the eval gate runs on every supported engine; the red-team step covers
+    every engine of `evals/redteam/baseline.json`; the drop-facts regression runs. Since
+    2026-11-08 one job runs all three, looping over the workflow's `ENGINES`."""
     workflow = _workflow("poc08-evals.yml")
     assert set(_triggers(workflow)) >= {"push", "pull_request"}
-    jobs = workflow["jobs"]
+    assert set(workflow["jobs"]) == {"evals"}
+    runs = " ".join(_runs(workflow["jobs"]["evals"]))
 
-    assert _matrix(jobs["evals"]) == SUPPORTED
-    evals_runs = " ".join(_runs(jobs["evals"]))
-    assert "-m eval_kit.evalrun --engine ${{ matrix.engine }}" in evals_runs
-    assert "-m eval_kit.evalgate --report" in evals_runs and "--engine ${{ matrix.engine }}" in (
-        evals_runs
-    )
+    assert _engines(workflow) == SUPPORTED
+    assert "for engine in $ENGINES" in runs
+    assert '-m eval_kit.evalrun --engine "$engine"' in runs
+    assert '-m eval_kit.evalgate --report eval-reports --engine "$engine"' in runs
     gate = json.loads((ROOT / "evals/gate/baseline.json").read_text())
     gated = {e for agent in gate["agents"].values() for e in agent["engines"]}
     assert gated == SUPPORTED, "every supported engine has a gate baseline"
     assert "kagent-adk" in gate["skipped"]
 
-    assert any(run.startswith("make evals-regression") for run in _runs(jobs["regression"]))
+    assert any(run.startswith("make evals-regression") for run in _runs(workflow["jobs"]["evals"]))
 
     redteam = json.loads((ROOT / "evals/redteam/baseline.json").read_text())
     recorded = {target.split("/")[0] for cfg in redteam["configs"].values() for target in cfg}
-    assert recorded <= _matrix(jobs["redteam"]), recorded - _matrix(jobs["redteam"])
-    assert _matrix(jobs["redteam"]) == SUPPORTED
+    assert recorded <= _engines(workflow), recorded - _engines(workflow)
     assert set(redteam["configs"]) == {"litellm", "keyword"}
-    assert "-m eval_kit.redteam --engine ${{ matrix.engine }}" in " ".join(_runs(jobs["redteam"]))
+    assert '-m eval_kit.redteam --engine "$engine"' in runs
 
 
 @pytest.mark.parametrize("name", SUITE_WORKFLOWS)

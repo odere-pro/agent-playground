@@ -23,6 +23,14 @@ The user's rule: a finished PoC is checked with local tests only, not on every p
 - Workflows: dispatch only for `remote-lane`, `poc06-kind`, `poc06-load`, `poc06-slm`, `poc07-agent-scan`, `poc07-evals`, `poc07-stack`, `poc08-litellm`, `poc08-stack`. Paths filters on pull requests, and push on `main` only, for `poc08-evals`, `poc09-helm`, `poc09-scaffold`, and the new `images.yml` (moved out of `ci.yml`). `lint-extra` and `typescript` run on pull requests and `main`. `check` is unchanged: every push and every pull request.
 - The static tests that pinned the old triggers now pin the new ones. Docs: `docs/guides/testing.md` ("What CI runs"), `docs/guides/local-dev.md`, the root `CLAUDE.md`, PoC READMEs, and the PoC-5 guide.
 
+## Amended 2026-11-08: no duplicate runs
+
+The first PR run still started 34 checks; 26 were the `poc08-evals` and `images` matrices, each job under about a minute. The user: "no duplications, priority is main product, universal agent container".
+
+- `images.yml` is one job that loops over the 11 images; `poc08-evals.yml` is one job (the gate, the regression, the red-team set) that loops over `ENGINES`. A failure names its image or engine.
+- `ci.yml` runs on pull requests and pushes to `main` only, not on branch pushes. `typescript` moved to `typescript.yml`, filtered to its folder.
+- The gate's package tests are already the product's: chassis, agentctl, and agent-testkit are 274 s of 344 s; the test-only packages take about 20 s and stay.
+
 ## Branch protection
 
 The required check stays `check` alone; nothing has to change. A path-filtered workflow must not become a required check. PoC-8's flag (`poc08-evals` as a required check) still waits: it needs an always-run summary job first.

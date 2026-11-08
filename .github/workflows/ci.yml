@@ -1,17 +1,21 @@
 name: check
 
-# `check` runs on every push on every branch and every pull request: it is the required check.
-# `lint-extra` and `typescript` run on pull requests and on main. The images build in images.yml.
+# `check` is the required check. It and `lint-extra` run on every pull request and every push to
+# main. A branch push with a PR open would only repeat the PR run (no duplicate runs, 2026-11-08);
+# a branch with no PR gets no CI. The images build in images.yml, the TypeScript workload in
+# typescript.yml.
 on:
-  push:
   pull_request:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer PR push cancels the old run; on main every merge keeps its own run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -40,8 +44,6 @@ jobs:
   # Extra linters, kept out of `make check` so the pre-commit hook stays fast.
   # `make lint-extra` runs the same steps locally; uv.lock pins every tool by hash.
   lint-extra:
-    # A branch push with an open PR would run this twice: run it on the PR and on main.
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -56,31 +58,3 @@ jobs:
         run: uv sync --all-packages --locked
       - name: Lint extra
         run: make lint-extra
-
-  # The TypeScript workload. `make ts-check` runs the same steps locally.
-  typescript:
-    # A branch push with an open PR would run this twice: run it on the PR and on main.
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: packages/workloads/echo-typescript
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          # The image is node:24-slim (packages/workloads/echo-typescript/Dockerfile).
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: packages/workloads/echo-typescript/package-lock.json
-      - name: Install
-        run: npm ci
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Test
-        run: npm test
-      - name: Build
-        run: npm run build

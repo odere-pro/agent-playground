@@ -14,8 +14,9 @@ CI and `make evals-regression` call it. Offline, no socket beyond the cells' Uni
   the same checks (`score_case`) and replace those rows in the report. The gate passes the normal
   logic and fails the drop-facts logic for that engine and lane. So the answer the engine and the
   chassis deliver is what the gate scores, and nothing on the way restores a dropped fact.
-- **The CI job is the same command.** `poc08-evals.yml`'s `regression` job runs
-  `make evals-regression`, whose recipe runs the drop-facts logic and fails unless the gate exits 1.
+- **The CI job is the same command.** `poc08-evals.yml`'s `evals` job (one job since
+  2026-11-08) runs `make evals-regression`, whose recipe runs the drop-facts logic and fails unless
+  the gate exits 1.
 
 The full DeepEval run through each stack is CI's (`poc08-evals.yml`, job `evals`); it needs the
 eval tool and is not offline.
@@ -160,10 +161,10 @@ def _recipe(makefile: str, target: str) -> list[str]:
 
 
 def test_the_ci_regression_job_runs_the_same_drop_facts_gate() -> None:
-    """Criterion 5 (CI): the `regression` job runs `make evals-regression`, which runs the
+    """Criterion 5 (CI): the `evals` job runs `make evals-regression`, which runs the
     drop-facts logic through `eval_kit.evalrun` and fails unless `eval_kit.evalgate` exits 1."""
     workflow = yaml.safe_load((ROOT / ".github/workflows/poc08-evals.yml").read_text())
-    runs = [step.get("run", "") for step in workflow["jobs"]["regression"]["steps"]]
+    runs = [step.get("run", "") for step in workflow["jobs"]["evals"]["steps"]]
     assert any(run.startswith("make evals-regression") for run in runs), runs
     recipe = " ".join(_recipe((ROOT / "Makefile").read_text(), "evals-regression"))
     assert f"-m eval_kit.evalrun --logic {DROP}" in recipe

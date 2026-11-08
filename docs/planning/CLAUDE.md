@@ -24,6 +24,7 @@ python3 tools/sync.py          # regenerate the generated parts of issues/ (see 
 python3 tools/check.py         # epic unchanged, numbering, dependency order, story coverage, sections, links and anchors
 python3 tools/check.py 37 67   # body checks for issues 037–067 only; every other check still runs
 python3 tools/check.py --strict  # plus the evidence rules below; what `make planning-check` runs
+python3 tools/progress.py [PHASE]  # progress per plan phase
 ```
 
 Run `sync.py` and then `check.py --strict` after any change to `issues/`, `poc/`, or `adr/`. `make planning-check` and `make check` at the repo root run it with `--strict`, so CI enforces the evidence rules.
