@@ -112,16 +112,18 @@ def test_exit_1_no_suite_file_uses_the_network_marker(suite: str) -> None:
     assert not has_network_marker(SUITE_FILES[suite])
 
 
-def test_exit_1_ci_triggers_on_every_push_and_every_pull_request() -> None:
+def test_exit_1_ci_triggers_on_every_pull_request_and_every_push_to_main() -> None:
     """Exit criterion: "The interface contract suite and the Schemathesis tests run offline in CI
     on every commit".
 
-    CI runs on `push` and `pull_request`, with no branch filter on `push`.
+    Since 2026-11-08 CI's `check` runs on every pull request and every push to `main`, with no
+    paths filter; a branch push only repeated the PR run.
     """
     triggers = ci_triggers()
 
     assert set(triggers) >= {"push", "pull_request"}
-    assert not (triggers["push"] or {}).get("branches"), "every commit, on every branch"
+    assert not triggers["pull_request"], "every pull request, no paths filter"
+    assert triggers["push"] == {"branches": ["main"]}, "every push to main, no paths filter"
 
 
 def test_exit_1_ci_runs_make_check() -> None:

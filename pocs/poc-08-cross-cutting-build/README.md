@@ -58,7 +58,7 @@ make evals-regression                                        # drop-facts must f
 make redteam                                                 # the red-team set, every engine and lane
 ```
 
-CI runs them in `.github/workflows/poc08-evals.yml`, one job per engine, on pull requests and pushes to `main` that touch what the gate is made of (since 2026-11-08; the paths are in the workflow).
+CI runs them in `.github/workflows/poc08-evals.yml`, on pull requests and pushes to `main` that touch what the gate is made of. Since 2026-11-08 that is one job, `evals`, with a log group per engine; before, it was one job per engine (the paths are in the workflow).
 
 The two stack drills (Docker, localhost only, no key from outside; each `stack.sh` makes its own credentials into a git-ignored file and never prints them; verbs `up|wait|down|digests|env|logs`):
 

@@ -32,41 +32,58 @@ concurrency:
 jobs:
   # Every image builds, and runs as the uid in the table (deploy/README.md, "Container uids";
   # packages/chassis/tests/test_image_uids.py checks the files, this job checks the built images).
+  # One job, not one per image: each build takes under a minute, and a job per image spent most of
+  # its time on runner setup and filled the queue (2026-11-08). A failure names its image.
   images:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {name: chassis, dockerfile: packages/chassis/Dockerfile, context: ., uid: "10001"}
-          - {name: echo-python, dockerfile: packages/workloads/echo-python/Dockerfile, context: ., uid: "10002"}
-          - {name: echo-pydanticai, dockerfile: packages/workloads/echo-pydanticai/Dockerfile, context: ., uid: "10002"}
-          - {name: echo-langgraph, dockerfile: packages/workloads/echo-langgraph/Dockerfile, context: ., uid: "10002"}
-          - {name: echo-openai-agents, dockerfile: packages/workloads/echo-openai-agents/Dockerfile, context: ., uid: "10002"}
-          - {name: echo-claude-agent, dockerfile: packages/workloads/echo-claude-agent/Dockerfile, context: ., uid: "10002"}
-          - {name: echo-smolagents, dockerfile: packages/workloads/echo-smolagents/Dockerfile, context: ., uid: "10002"}
-          - {name: echo-typescript, dockerfile: packages/workloads/echo-typescript/Dockerfile, context: packages/workloads/echo-typescript, uid: "10002"}
-          - {name: code-runner, dockerfile: packages/code-runner/Dockerfile, context: ., uid: "10003"}
-          - {name: fake-model-server, dockerfile: packages/fake-model-server/Dockerfile, context: ., uid: "10004"}
-          - {name: fake-mcp-server, dockerfile: packages/fake-mcp-server/Dockerfile, context: ., uid: "10005"}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-      - name: Build
+      - name: Build each image and check its uid and read-only app code
         env:
           DOCKER_BUILDKIT: "1"
-        run: docker build -t "ci/${{ matrix.name }}" -f "${{ matrix.dockerfile }}" "${{ matrix.context }}"
-      - name: User matches the uid table
+          # name dockerfile context uid
+          IMAGES: |
+            chassis packages/chassis/Dockerfile . 10001
+            echo-python packages/workloads/echo-python/Dockerfile . 10002
+            echo-pydanticai packages/workloads/echo-pydanticai/Dockerfile . 10002
+            echo-langgraph packages/workloads/echo-langgraph/Dockerfile . 10002
+            echo-openai-agents packages/workloads/echo-openai-agents/Dockerfile . 10002
+            echo-claude-agent packages/workloads/echo-claude-agent/Dockerfile . 10002
+            echo-smolagents packages/workloads/echo-smolagents/Dockerfile . 10002
+            echo-typescript packages/workloads/echo-typescript/Dockerfile packages/workloads/echo-typescript 10002
+            code-runner packages/code-runner/Dockerfile . 10003
+            fake-model-server packages/fake-model-server/Dockerfile . 10004
+            fake-mcp-server packages/fake-mcp-server/Dockerfile . 10005
         run: |
-          user="$(docker image inspect -f '{{.Config.User}}' "ci/${{ matrix.name }}")"
-          echo "image user: ${user}"
-          test "${user}" = "${{ matrix.uid }}:${{ matrix.uid }}"
-      # No --read-only here: that would refuse the write for the wrong reason. This checks ownership.
-      - name: App code is not writable by the app user
-        run: |
-          docker run --rm --entrypoint sh "ci/${{ matrix.name }}" -c \
-            'if touch /app/.write-probe 2>/dev/null; then echo "/app is writable"; exit 1; fi; id -u'
-      - name: Size
-        run: docker image ls "ci/${{ matrix.name }}" --format '{{.Repository}} {{.Size}}'
+          set -uo pipefail
+          failed=()
+          while read -r name dockerfile context uid; do
+            [[ -n "$name" ]] || continue
+            echo "::group::$name"
+            if ! docker build -t "ci/$name" -f "$dockerfile" "$context"; then
+              echo "::error::$name: the build failed"; failed+=("$name"); echo "::endgroup::"; continue
+            fi
+            user="$(docker image inspect -f '{{.Config.User}}' "ci/$name")"
+            echo "image user: $user"
+            if [[ "$user" != "$uid:$uid" ]]; then
+              echo "::error::$name: runs as '$user', the uid table says $uid:$uid"; failed+=("$name")
+            fi
+            # No --read-only here: that would refuse the write for the wrong reason. This checks
+            # ownership.
+            if ! docker run --rm --entrypoint sh "ci/$name" -c \
+              'if touch /app/.write-probe 2>/dev/null; then echo "/app is writable"; exit 1; fi; id -u'; then
+              echo "::error::$name: /app is writable by the app user"; failed+=("$name")
+            fi
+            docker image ls "ci/$name" --format '{{.Repository}} {{.Size}}'
+            docker image rm -f "ci/$name" >/dev/null
+            echo "::endgroup::"
+          done <<<"$IMAGES"
+          df -h / | tail -1
+          if (( ${#failed[@]} )); then
+            echo "::error::failed images: ${failed[*]}"
+            exit 1
+          fi
+          echo "every image ok"
