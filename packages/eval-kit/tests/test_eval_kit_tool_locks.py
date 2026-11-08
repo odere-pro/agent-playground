@@ -25,10 +25,9 @@ from eval_kit.evaltrial import (
 WORKFLOWS = ROOT / ".github/workflows"
 EVAL_JOBS = [("poc07-evals.yml", "evals"), ("poc08-evals.yml", "evals")]
 # Every job that installs tools on `pull_request`: no cache and no credential reach a PR run.
+# Since 2026-11-08 poc08-evals runs the gate, the regression, and the red-team set in one job.
 PR_JOBS = [
     *EVAL_JOBS,
-    ("poc08-evals.yml", "regression"),
-    ("poc08-evals.yml", "redteam"),
     ("poc06-load.yml", "poc06-load"),
 ]
 _PIN = re.compile(r"^([A-Za-z0-9_.\-\[\],]+)==(\S+)")

@@ -18,7 +18,9 @@ The test layers of the PoC plan, and where each lives today.
 
 Decided on 2026-11-08: a finished PoC is checked with local tests only, not on every push and pull request.
 
-- The required check is `check` (`ci.yml`). It runs on every push on every branch and on every pull request. It runs `make check`, whose tests are `make test-gate`: `packages`, `scripts/tests`, and the open PoCs.
+- No duplicate runs: every workflow runs on pull requests and on pushes to `main`, never on a branch push, which only repeated the PR run. A branch with no PR gets no CI. One job per suite, not one per engine or image: those jobs took under a minute each and spent it on runner setup.
+- CI time goes to the product first: the chassis and the packages the agent container is built from (the product plan's list in `docs/plans/2026-11-06-agent-container-product.md`).
+- The required check is `check` (`ci.yml`). It runs on every pull request and every push to `main`. It runs `make check`, whose tests are `make test-gate`: `packages`, `scripts/tests`, and the open PoCs.
 - A PoC is finished when its README says `Status: done`, or when the Makefile names it in `CI_FINISHED_POCS` (06a, 06b, 06c, and 07 since 2026-11-08). Its scenario tests run in `make test-pocs-done` and `make test-poc POC=NN`. `make test` still runs every test.
 - `make gate-paths` prints both lists. `scripts/tests/test_ci_gate_paths.py` runs in the gate and fails when a PoC folder is in neither list or in both.
 - ADR-001 hard requirement 2 stays in the gate through the package tests: `test_lane_contract.py` (`inprocess`, `sidecar`) and `test_lane_contract_remote.py` (`remote`).
@@ -26,10 +28,11 @@ Decided on 2026-11-08: a finished PoC is checked with local tests only, not on e
 
 | Workflow | Runs on |
 | -------- | ------- |
-| `ci.yml` `check` | every push, every pull request (required) |
-| `ci.yml` `lint-extra`, `typescript` | pull requests, pushes to `main` |
-| `images.yml` | pull requests and pushes to `main` that touch a Dockerfile, `packages/`, `pyproject.toml`, or `uv.lock` |
-| `poc08-evals.yml` | pull requests and pushes to `main` that touch the eval gate's inputs (evals, eval-kit, engines, chassis source, fake servers) |
+| `ci.yml` `check` | every pull request, every push to `main` (required) |
+| `ci.yml` `lint-extra` | every pull request, every push to `main` |
+| `typescript.yml` | pull requests and pushes to `main` that touch `packages/workloads/echo-typescript` |
+| `images.yml` (one job, every image) | pull requests and pushes to `main` that touch a Dockerfile, `packages/`, `pyproject.toml`, or `uv.lock` |
+| `poc08-evals.yml` (one job: the gate, the regression, the red-team set, every engine) | pull requests and pushes to `main` that touch the eval gate's inputs (evals, eval-kit, engines, chassis source, fake servers) |
 | `poc09-helm.yml` | pull requests and pushes to `main` that touch the charts, the PoC-5 admission rules, poc-harness, or the chart tests |
 | `poc09-scaffold.yml` | pull requests and pushes to `main` that touch what a scaffold is made of |
 | `remote-lane.yml`, `poc06-kind.yml`, `poc06-load.yml`, `poc06-slm.yml`, `poc07-agent-scan.yml`, `poc07-evals.yml`, `poc07-stack.yml`, `poc08-litellm.yml`, `poc08-stack.yml` | by hand only (`workflow_dispatch`): run one with `gh workflow run <file> --ref <branch>` |
