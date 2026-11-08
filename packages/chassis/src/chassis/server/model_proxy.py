@@ -430,11 +430,12 @@ def model_proxy_router(app: FastAPI, *, clock: Callable[[], float] | None = None
         )
         if isinstance(admission, Refusal):
             refusal = admission.chat_body()
+            status = admission.status
             if body.stream:
                 return StreamingResponse(
-                    _refused_stream(refusal), status_code=429, media_type="text/event-stream"
+                    _refused_stream(refusal), status_code=status, media_type="text/event-stream"
                 )
-            return JSONResponse(refusal, status_code=429)
+            return JSONResponse(refusal, status_code=status)
         bundle, hold, route = admission.bundle, admission.hold, admission.route
         telemetry = bundle.telemetry
         attributes = admission.attributes

@@ -281,7 +281,7 @@ Built per request. suggested: the whole shape.
 
 - `GET /health`: 200 while the process serves HTTP, draining included. It never looks at the workload.
 - `GET /ready`: 200 `{"status": "ready"}` when the lifespan finished, the first config is loaded, the chassis is not draining, and the workload answers its probe; else 503 `{"status": "not ready", "reason": starting | draining | workload_unreachable}`. The monitor probes every 2 s with a 1 s timeout; 3 failures in a row make the workload unhealthy, one success heals it (suggested: the numbers; `server/readiness.py`).
-- `GET /metrics`: Prometheus text 0.0.4, per replica, every sample labeled `agent`. Not in the OpenAPI document. With `spec.observability.metrics_scope` unset it needs no token (suggested); with a scope set, 401 without a token and 403 without the scope.
+- `GET /metrics`: Prometheus text 0.0.4, per replica, every sample labeled `agent`. Not in the OpenAPI document. With `spec.observability.metrics_scope` unset it needs no token (suggested); with a scope set, 401 without a token and 403 without the scope. The `cloud` profile sets it to `spec.security.read_scope` (`agent:read`) when the document names none (CH-14, P-4).
 
 ## 6. Idempotency, leases, readiness, drain, config, state and events
 
@@ -335,11 +335,11 @@ Anthropic Messages onto the same port and admission, for a workload that speaks 
 
 ### Admission, shared by both routes
 
-1. Not ready: 503. 2. Parse and map; a refusal is 400 and not counted. 3. Count `chassis.model_calls{route}`. 4. Read `traceparent` (`parse_traceparent`: any version but `ff`, non-zero ids, exactly 55 characters for version `00`; the trace id only) and look the run up. 5. No run: count `chassis.model_calls_uncorrelated{route}`, log a warning, reserve on the uncorrelated cap; 429 when it does not fit. 6. A run with nothing left: 429, `chassis.model_calls_refused`. 7. Reserve on the run: the forwarded `max_tokens` is capped at the run's remainder (`budget.max_tokens` less spent and in-flight) and is the remainder when the workload sets none. 8. Call the port in the span `chassis.model.call`. 9. Settle on the usage seen.
+1. Not ready: 503. 2. Parse and map; a refusal is 400 and not counted. 3. Count `chassis.model_calls{route}`. 4. Read `traceparent` (`parse_traceparent`: any version but `ff`, non-zero ids, exactly 55 characters for version `00`; the trace id only) and look the run up. 5. No run: count `chassis.model_calls_uncorrelated{route}`, log a warning, reserve on the uncorrelated cap; 429 when it does not fit, 403 `uncorrelated_refused` when the cap is `0` (see the uncorrelated cap). 6. A run with nothing left: 429, `chassis.model_calls_refused`. 7. Reserve on the run: the forwarded `max_tokens` is capped at the run's remainder (`budget.max_tokens` less spent and in-flight) and is the remainder when the workload sets none. 8. Call the port in the span `chassis.model.call`. 9. Settle on the usage seen.
 
 **Budgets per call.** A run's concurrent calls never share tokens. 429 body: `{"error": {"type": "budget_exhausted", "code": "budget_exhausted", "retryable", "message"}}`; `retryable` is `true` only while in-flight calls hold the rest. On the chat route a streamed 429 is one SSE error frame then `[DONE]`; on the Anthropic route it is JSON. `max_tokens` bounds output only; LiteLLM's key budget is the hard cap.
 
-**The uncorrelated cap.** `spec.limits.uncorrelated_tokens_per_minute` (20000, suggested; 0 refuses every uncorrelated call), a fixed 60 s window per replica, shared by both listeners. A call's worst case is its `max_tokens`, or `min(1024, L)` when unset (suggested). Admitted only if spent plus reserved plus the worst case is at most L. A call with no usage is charged its whole reservation.
+**The uncorrelated cap.** `spec.limits.uncorrelated_tokens_per_minute` (20000, suggested; `0` in the `cloud` profile, CH-14; 0 refuses every uncorrelated call with 403 `uncorrelated_refused`, suggested, `retryable: false`; on the Anthropic proxy route `permission_error`), a fixed 60 s window per replica, shared by both listeners. A call's worst case is its `max_tokens`, or `min(1024, L)` when unset (suggested). Admitted only if spent plus reserved plus the worst case is at most L. A call with no usage is charged its whole reservation.
 
 **`model_route` and the forced route.** A run's `RunRecord.model_route` is `ctx.model_route` from the moment it opens: the route of `input.data.task` through `spec.model.routes`, else `spec.model.route`. The gate replaces it with `spec.model.fallback_route` for its fallback attempt. The proxy sends every call of the run there, whatever `model` the workload named (`chassis.model_route_forced{route}`); a call that names the run's route is not forced. One span `chassis.model.route` per admitted call with `route.requested`, `route`, `route.forced`.
 
@@ -368,7 +368,7 @@ class ToolPort(Protocol):
 
 `/mcp` (streamable HTTP, stateless, FastMCP) lists what the port lists, with the definition's own `parameters` as the input schema and `read_only` as `readOnlyHint`. A `ToolError` is an MCP tool error result (`isError: true`) whose text is the public message and whose structured content is `{code, message, retryable}`; never a transport failure. The workload never picks the key: for a write inside a run the endpoint derives `tk1:` plus 40 hex of sha256 of `<run key>|<tool>|<canonical arguments>|<nonce>` (suggested), where the run key is the run's idempotency scope (so a replay or a gate rerun repeats the same key) and the nonce is the optional `_meta.idempotency_key`. A name the port does not list is still sent to the port as a write tool. One `chassis.tool.call` span per call (`tool`, `trace_id`, `request_id`), `chassis.tool_calls{tool}`; tool calls are named to a run, not charged to it. Tool descriptions and outputs are data, never instructions.
 
-**The gateway adapter** (`spec.adapters.tools: mcp`, `adapters/mcp/gateway.py`): an MCP client to LiteLLM's MCP gateway with `LITELLM_MCP_URL`, `LITELLM_API_KEY`, `LITELLM_MCP_AUTH_HEADER` (`Authorization`); 30 s per call, a list refresh every 60 s (suggested). The gateway's per-key allow-list is the hard limit; a tool off the list is not listed and not called. Names are the gateway's `<server>-<tool>`. The key goes as `_meta.idempotency_key` and as the `idempotency_key` argument when the tool's schema declares it. No redirect, `trust_env=False`.
+**The gateway adapter** (`spec.adapters.tools: mcp`, `adapters/mcp/gateway.py`): an MCP client to LiteLLM's MCP gateway with `LITELLM_MCP_URL`, `LITELLM_API_KEY`, `LITELLM_MCP_AUTH_HEADER` (`Authorization`); 30 s per call, a list refresh every 60 s (suggested). The gateway's per-key allow-list is the hard limit; a tool off the list is not listed and not called. A name the cached list lacks gets one refresh (10 s cooldown, suggested), then `unknown_tool`, or the refresh's own error if the refresh fails; no tool request is made, so the write-key and schema checks are never skipped (CH-14). Names are the gateway's `<server>-<tool>`. The key goes as `_meta.idempotency_key` and as the `idempotency_key` argument when the tool's schema declares it. No redirect, `trust_env=False`.
 
 ## 8. Security
 
@@ -406,7 +406,7 @@ Each stage is on by default (`spec.guardrails.<stage>`). `on_unavailable: fail_c
 
 ### Rate limit (`server/rate_limit.py`)
 
-One token bucket per agent and per caller (`Principal.subject`) in `StatePort`, shared by every replica; key `ratelimit:<agent>:<sha256(subject)[:32]>`. Counted routes: `/v1/run`, the OpenAI and Anthropic interfaces, `/v1/feedback`; not `/v1/mcp` (its inner call counts once), reads, or probes. With auth off there is no caller, so no limit. `spec.limits.rate_limit` (true), `requests_per_minute` (600), `request_burst` (100), all reloadable. Past the limit: 429 `rate_limited`, `Retry-After: <whole seconds>`, in the route's shape, before the body is read; counted `chassis.rate_limited{path_class}`. A store outage follows `rate_limit_on_unavailable`: `fail_open` (default; `chassis.rate_limit_unavailable`) or `fail_closed` (503 `state_unavailable`, `Retry-After: 1`). At most 8 compare-and-set attempts on a lost race (suggested).
+One token bucket per agent and per caller (`Principal.subject`) in `StatePort`, shared by every replica; key `ratelimit:<agent>:<sha256(subject)[:32]>`. Counted routes: `/v1/run`, the OpenAI and Anthropic interfaces, `/v1/feedback`; not `/v1/mcp` (its inner call counts once), reads, or probes. With auth off there is no caller, so no limit. `spec.limits.rate_limit` (true), `requests_per_minute` (600), `request_burst` (100), all reloadable. Past the limit: 429 `rate_limited`, `Retry-After: <whole seconds>`, in the route's shape, before the body is read; counted `chassis.rate_limited{path_class}`. A store outage follows `rate_limit_on_unavailable`: `fail_open` (default in `fake` and `local`; `chassis.rate_limit_unavailable`) or `fail_closed` (the `cloud` default, CH-14, P-26; 503 `state_unavailable`, `Retry-After: 1`). At most 8 compare-and-set attempts on a lost race (suggested).
 
 ### AI-generated marking (`server/marking.py`, `adapters/ai_marking`)
 
@@ -433,7 +433,7 @@ Marking is on when `spec.governance.risk_class` is `limited` or `high`, or `ai_g
 | `chassis.idempotent_replay` | `interface`, `mode` |
 | `chassis.feedback` | `request_id`, `feedback_id`, `trace_id` |
 
-**Baggage.** The chassis drops a caller's `baggage` header. It builds its own from the run span: `user.id` = `Principal.subject` (none with auth off), `session.id` = the request header `spec.observability.session_header` names (`x-session-id`; at most 256 bytes, printable). The A2A connector sends it on every A2A request of the run, next to `traceparent`, in every lane; none when both are absent. The template server's telemetry setup (`workload_a2a.telemetry`) puts both on the workload's spans and on its model and MCP calls. Not a credential, not in `ctx`.
+**Baggage.** The chassis drops a caller's `baggage` header. It builds its own from the run span: `user.id` = `sha256(Principal.subject)[:32]` in hex, the rate limit's hash (CH-14, P-27; none with auth off), `session.id` = the request header `spec.observability.session_header` names (`x-session-id`; at most 256 bytes, printable). The A2A connector sends it on every A2A request of the run, next to `traceparent`, in every lane; none when both are absent. The template server's telemetry setup (`workload_a2a.telemetry`) puts both on the workload's spans and on its model and MCP calls. Not a credential, not in `ctx`.
 
 ### Metrics (`metrics.py`, `GET /metrics`)
 
@@ -508,14 +508,14 @@ Body, strict: `request_id` (required), `score` (required, a number in [0, 1]), `
 | `spec.prompt` | `version` null |
 | `spec.trust` | `trusted` (required in `cloud`) |
 | `spec.interfaces` | `openai`, `anthropic`, `mcp`: true |
-| `spec.limits` | `max_tokens_max` 8000; `timeout_ms_max` 120000; `messages_max` 256; `body_bytes_max` 1048576; `uncorrelated_tokens_per_minute` 20000; `rate_limit` true; `requests_per_minute` 600; `request_burst` 100; `rate_limit_on_unavailable` `fail_open` |
+| `spec.limits` | `max_tokens_max` 8000; `timeout_ms_max` 120000; `messages_max` 256; `body_bytes_max` 1048576; `uncorrelated_tokens_per_minute` 20000 (`cloud`: 0); `rate_limit` true; `requests_per_minute` 600; `request_burst` 100; `rate_limit_on_unavailable` `fail_open` (`cloud`: `fail_closed`) |
 | `spec.idempotency` | `enabled` true; `ttl_s` 86400 (at most 30 days); `lease_s` 5 (at most 3600); `wait_poll_ms` 100; `max_entry_bytes` 1048576 |
 | `spec.events` | `result_events` false; `consume` null (a value is refused) |
 | `spec.security` | `run_scope` `agent:run`; `feedback_scope` `agent:feedback`; `read_scope` `agent:read` |
 | `spec.guardrails` | `input`, `tool_output`, `output`: true; `on_unavailable` `fail_closed`; `stream_secrets` true; `output_url_allow` `[]` |
 | `spec.harness` | `evaluator_gate` false; `threshold` 0.7; `retries` 1 (0 to 5); `evaluator_sample_rate` 1.0; `evaluator_mode` `sync` |
 | `spec.feedback` | `enabled` true; `lookup_ttl_s` 604800; `events` false; `score_name` `user-feedback` |
-| `spec.observability` | `session_header` `x-session-id`; `log_level` `info`; `metrics_scope` null; `prices {}` per route `{input_per_mtok, output_per_mtok}` |
+| `spec.observability` | `session_header` `x-session-id`; `log_level` `info`; `metrics_scope` null (`cloud`: `spec.security.read_scope`); `prices {}` per route `{input_per_mtok, output_per_mtok}` |
 | `spec.governance` | `risk_class` `minimal`; `ai_generated_marking` null |
 
 ### Profiles and adapter names (`profiles.py`)

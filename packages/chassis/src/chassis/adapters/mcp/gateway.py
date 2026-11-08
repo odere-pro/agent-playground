@@ -13,9 +13,13 @@ the last list and counts `refresh_failures`; the background loop logs a refresh 
 keeps looping. Each call opens one short MCP session.
 
 A call to a name the cached list does not hold refreshes the list first, at most once per
-`unknown_refresh_cooldown_s` (suggested: 10 s); inside the cooldown the call goes to the gateway
-on the cached list, and the gateway still decides. A name longer than `MAX_TOOL_NAME` (128, the
-MCP limit) is `unknown_tool` before any request, so it never reaches the gateway or the log.
+`unknown_refresh_cooldown_s` (suggested: 10 s; inside the cooldown there is no refresh). A name
+still not listed is `unknown_tool` before any tool request (CH-14), so no name skips the
+write-key and schema checks below: only a listed tool reaches `tools/call`. When that refresh
+itself fails, the list is unknown, so the call answers the refresh's error instead (for example
+`tool_unavailable`, retryable for a gateway outage), still with no tool request. A name longer than
+`MAX_TOOL_NAME` (128, the MCP limit) is `unknown_tool` before any request, so it never reaches
+the gateway or the log.
 
 `call()`, in order:
 - a write tool (`read_only: false`; a tool with no `readOnlyHint` counts as one) with no
@@ -457,6 +461,10 @@ class McpGatewayTools:
     async def refresh(self) -> bool:
         """Replace the cached list with what the gateway shows this key. On failure keep the
         last list, count it, and return False."""
+        return await self._refresh() is None
+
+    async def _refresh(self) -> ToolError | None:
+        """`refresh`, answering the failure's `ToolError` (fixed text), or None on success."""
         statuses = _Statuses()
         try:
             async with asyncio.timeout(self.timeout), self._client(statuses) as client:
@@ -466,9 +474,9 @@ class McpGatewayTools:
             error = _failure(exc, statuses.seen, "tools/list", over=statuses.over_cap)
             log.warning("tool gateway: refresh failed: %s", error.message)
             self._refresh_failed()
-            return False
+            return error
         self._tools = {t.name: _definition(t) for t in tools}
-        return True
+        return None
 
     def _refresh_failed(self) -> None:
         """Call `on_refresh_failed`; a failing callback (telemetry) is logged, never raised."""
@@ -511,17 +519,21 @@ class McpGatewayTools:
         if len(name) > MAX_TOOL_NAME:
             raise ToolError("unknown_tool", f"no tool has a name over {MAX_TOOL_NAME} characters")
         definition = self._tools.get(name)
+        failed: ToolError | None = None
         if definition is None and self._may_refresh_for_unknown():
-            await self.refresh()  # the list may be stale; the gateway still decides
+            failed = await self._refresh()  # the list may be stale
             definition = self._tools.get(name)
+        if definition is None:
+            # CH-14: an unlisted name never reaches `tools/call`, so it skips no check below.
+            # A refresh that failed leaves the list unknown: its own error, not `unknown_tool`.
+            raise failed or ToolError("unknown_tool", f"no tool named {name!r} for this key")
         args = dict(arguments)
-        if definition is not None:
-            if not definition.read_only and not idempotency_key:
-                raise ToolError("idempotency_key_required", f"{name!r} is a write tool")
-            check_arguments(definition, args)
-            properties = definition.parameters.get("properties") or {}
-            if idempotency_key and not definition.read_only and META_KEY in properties:
-                args[META_KEY] = idempotency_key
+        if not definition.read_only and not idempotency_key:
+            raise ToolError("idempotency_key_required", f"{name!r} is a write tool")
+        check_arguments(definition, args)
+        properties = definition.parameters.get("properties") or {}
+        if idempotency_key and not definition.read_only and META_KEY in properties:
+            args[META_KEY] = idempotency_key
         meta = {META_KEY: idempotency_key} if idempotency_key else None
         statuses = _Statuses()
         try:

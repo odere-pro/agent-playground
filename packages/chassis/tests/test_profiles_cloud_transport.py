@@ -178,6 +178,13 @@ def test_cloud_refuses_auth_none(resolved: list[str]) -> None:
     assert resolved == []
 
 
+def test_cloud_refuses_auth_static(resolved: list[str]) -> None:
+    """`static` is an in-memory double (`IN_MEMORY`), refused next to `none` (CH-14)."""
+    message = _refused("cloud", AdapterSpec(auth="static"))
+    assert message.startswith("auth: 'static' is an in-memory double")
+    assert resolved == []
+
+
 @pytest.mark.parametrize("profile", ["fake", "local"])
 def test_auth_none_is_still_the_default_outside_cloud(profile: profiles.Profile) -> None:
     assert profiles.merge_adapters(profile).auth == "none"

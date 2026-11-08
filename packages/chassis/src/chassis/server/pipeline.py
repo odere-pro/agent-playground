@@ -38,7 +38,8 @@ which calls each in order. A callback that raises is counted
 of the request's trace id), so a telemetry adapter roots the run in that trace. `open(...,
 observed=...)` adds what the caller's HTTP request says about the run (`Observed`, built by
 `observed_for` from the headers): `session.id` from the header `spec.observability.session_header`
-names, `user.id` when the caller gives one (the caller's principal; never a header), and the
+names, `user.id` when the caller gives one (`sha256[:32]` of the caller's principal subject,
+`security.subject_hash`; never a header, never the subject), and the
 caller's `traceparent` when it names the run's own trace (a re-minted trace id drops it), so the
 run span continues the caller's span. They are span attributes only: no field of `Context` or
 `Request` changes (contract v5, C.2). The OTel adapter turns `user.id` and `session.id` into
@@ -75,6 +76,7 @@ from chassis.server.config import ChassisConfig, GuardrailsSpec
 from chassis.server.correlation import RunRecord, RunRegistry, TraceIdInUse
 from chassis.server.idempotency import Idempotency
 from chassis.server.output_filter import URL_MASKED, mask_answer
+from chassis.server.security import subject_hash
 from chassis.server.stream_guard import guard_stream, stream_guard_on
 
 __all__ = [
@@ -111,15 +113,16 @@ def _printable(value: str | None, limit: int = SESSION_ID_MAX) -> str | None:
 @dataclass(frozen=True)
 class Observed:
     """What the caller's request adds to the run's span: the session id, the user id (the
-    caller's principal subject, set by the auth layer; never read from a header), and the caller's
-    `traceparent`. All optional; none of them changes the run."""
+    `subject_hash` of the caller's principal subject, set by the auth layer; never read from a
+    header, never the subject itself; CH-14, P-27), and the caller's `traceparent`. All optional;
+    none of them changes the run."""
 
     session_id: str | None = None
     user_id: str | None = None
     traceparent: str | None = None
     subject: str | None = None
     """The raw principal subject, never on a span: the feedback owner hash (contract v8, G).
-    `user_id` is the span's printable cut of it and can be None when this is not."""
+    `user_id` is its `subject_hash`."""
 
     def span_attributes(self, trace_id: str) -> dict[str, str]:
         """The `chassis.run` attributes for a run in `trace_id` (32 hex). The `traceparent` is
@@ -296,8 +299,8 @@ class RunPipeline:
 
     def observed_for(self, headers: Mapping[str, str], *, user_id: str | None = None) -> Observed:
         """The `Observed` of one inbound call: the session id from the header
-        `spec.observability.session_header` names, `user_id` as given, and the `traceparent`
-        header as sent (`Observed.span_attributes` checks it)."""
+        `spec.observability.session_header` names, the `subject_hash` of `user_id` (the raw
+        subject), and the `traceparent` header as sent (`Observed.span_attributes` checks it)."""
         name = self.config.spec.observability.session_header.lower()
         session = headers.get(name)
         if session is None:
@@ -305,7 +308,7 @@ class RunPipeline:
         traceparent = headers.get("traceparent")
         return Observed(
             session_id=_printable(session),
-            user_id=_printable(user_id, 256),
+            user_id=subject_hash(user_id) if user_id else None,
             traceparent=traceparent if isinstance(traceparent, str) else None,
             subject=user_id or None,
         )

@@ -48,9 +48,15 @@ Each finding id is assigned here once, in bold. P-24 has no id: it carries two i
 - **P-6:** option 1. The 011 H-2 box is rewritten to the contract; 011 H-2 retires.
 - Not a proposal, decided the same day: the 023 C-5 client guide joins phase A, before 2026-12-02.
 
+## Decided by the user, 2026-11-08
+
+- **P-4:** option 1. With auth on, `/metrics` needs a token with `agent:read` in the `cloud` profile (`metrics_scope`). `local` and `fake` keep the token-free default. Built in 134 CH-14.
+- **P-26:** option 1. P-2 reopens for `cloud` only: `rate_limit_on_unavailable: fail_closed`, so a store outage refuses counted calls with 503 `state_unavailable`. `local` and `fake` stay `fail_open`, as P-2 decided. Built in 134 CH-14.
+- **P-27:** option 1. `user.id` in baggage is the `sha256[:32]` of the subject, the hash the rate limit uses, in every lane. Option 2 (no `user.id` to an `untrusted` remote) can follow. Built in 134 CH-14.
+
 Done by a merged PR: **P-16.** Rule 9, the minimum chassis version, landed in `agent-lib` in PR #79; `docs/specs/architecture.md` and `docs/specs/security.md` name it.
 
-The other proposals, P-3 to P-5, P-7 to P-15, and P-17 to P-34, stay open. Each one's owner agent advises; a pick that changes code is its own PR after PR-R.
+The other proposals, P-3, P-5, P-7 to P-15, P-17 to P-25, and P-28 to P-34, stay open. Each one's owner agent advises; a pick that changes code is its own PR after PR-R.
 
 ## P-1: An evaluator outage: fail open or fail closed
 

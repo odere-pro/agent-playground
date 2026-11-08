@@ -9,8 +9,9 @@ not an interface. It is on the public app only, never the proxy app or the remot
 token, as for `/health` and `/ready`, so a Prometheus scraper needs no credential. `OpenMetrics`, an
 ASGI middleware outside caller auth, answers it. With a scope set, the call goes through caller
 auth like any other route (401 without a valid token), and the route answers 403 `forbidden` unless
-the token has the scope. The PoC-7 backlog notes carry "/metrics scope" as open; this is the pick
-until the user decides.
+the token has the scope. The `cloud` profile sets the scope to `spec.security.read_scope`
+(`agent:read`) when the document names none (CH-14, P-4 option 1), so there a scraper needs a
+token with it; `fake` and `local` stay open.
 
 **Usage.** `count_usage` turns one model call's usage into `chassis.model_tokens{route, direction}`
 and, when `spec.observability.prices` names the route, `chassis.model_cost_microusd{route}`. The

@@ -4,7 +4,8 @@ The OpenAI route (`POST /v1/chat/completions` on the proxy port, `chassis.server
 the Anthropic proxy route (`POST /v1/messages` on the proxy port,
 `chassis.server.model_proxy_messages`) both call `admit`: one run lookup, one budget reservation,
 one uncorrelated cap. `admit` answers an `Admission`, whose `Hold` is the call's reservation, or a
-`Refusal` (429 `budget_exhausted`). The rules for the budget and the uncorrelated cap, and the
+`Refusal` (429 `budget_exhausted`, or 403 `uncorrelated_refused` when the uncorrelated cap is
+`0`, the `cloud` default; CH-14). The rules for the budget and the uncorrelated cap, and the
 bound they keep, are in the `chassis.server.model_proxy` docstring.
 
 Both routes also read their body through `read_capped`, so neither parses more than
@@ -107,7 +108,8 @@ class UncorrelatedCap:
 
 @dataclass(frozen=True)
 class Refusal:
-    """A call refused at admission: 429 `budget_exhausted`, before the model is called."""
+    """A call refused at admission, before the model is called: 429 `budget_exhausted`, or 403
+    `uncorrelated_refused` under an uncorrelated cap of `0`. `status` is the HTTP status."""
 
     code: str
     message: str
@@ -270,7 +272,15 @@ def _budget_error(record: RunRecord) -> Refusal:
     return Refusal("budget_exhausted", message, not record.exhausted)
 
 
+UNCORRELATED_REFUSED = "uncorrelated_refused"
+"""suggested (CH-14): the code when `spec.limits.uncorrelated_tokens_per_minute` is `0`, the
+`cloud` default. 403, not retryable: no wait makes room under a cap of 0."""
+
+
 def _uncorrelated_error(limit: int, worst: int) -> Refusal:
+    if limit == 0:
+        message = "model calls that name no run in flight are refused"
+        return Refusal(UNCORRELATED_REFUSED, message, False, status=403)
     message = f"uncorrelated model calls are capped at {limit} tokens per minute"
     if 0 < limit < worst:
         message += f"; this call asks for {worst}"
@@ -335,7 +345,7 @@ def admit(
         )
         limit = app.state.config.spec.limits.uncorrelated_tokens_per_minute
         worst = cap.worst_case(wanted, limit)
-        if not cap.reserve(worst, limit):
+        if limit == 0 or not cap.reserve(worst, limit):
             telemetry.counter("chassis.model_calls_refused", route=route)
             return _uncorrelated_error(limit, worst)
     elif record.remaining_tokens == 0:
@@ -360,6 +370,7 @@ __all__ = [
     "PINNED",
     "ROUTE_SPAN",
     "SPAN",
+    "UNCORRELATED_REFUSED",
     "WINDOW_S",
     "Admission",
     "Hold",

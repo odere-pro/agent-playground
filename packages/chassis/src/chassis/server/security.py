@@ -44,6 +44,7 @@ and `x-chassis-interface` grant nothing.
 from __future__ import annotations
 
 import contextvars
+import hashlib
 import json
 from typing import Any, Literal
 
@@ -64,6 +65,7 @@ __all__ = [
     "principal_of",
     "refusal_body",
     "send_json",
+    "subject_hash",
 ]
 
 AUTH_REFUSED = "chassis.auth_refused"
@@ -113,9 +115,21 @@ _CALLER: contextvars.ContextVar[Principal | None] = contextvars.ContextVar(
 )
 
 
+SUBJECT_HASH_HEX = 32
+"""suggested: the hex digits of `subject_hash` (128 bits)."""
+
+
+def subject_hash(subject: str) -> str:
+    """`sha256(subject)[:32]` in hex: how the chassis names a caller outside the request, so the
+    IdP's subject is never stored or sent. The rate limit's bucket key and `user.id` on spans and
+    in baggage both use it (CH-14, P-27 option 1)."""
+    return hashlib.sha256(subject.encode("utf-8")).hexdigest()[:SUBJECT_HASH_HEX]
+
+
 def current_user_id() -> str | None:
-    """The checked caller's subject for this request, for `user.id` on spans and in baggage
-    (PoC-7, ADR-007). None with auth off (`NoAuth`'s anonymous principal) or outside a request.
+    """The checked caller's raw subject for this request: it scopes the idempotency key and the
+    feedback owner hash; `user.id` on spans and in baggage is its `subject_hash` (PoC-7, ADR-007;
+    CH-14). None with auth off (`NoAuth`'s anonymous principal) or outside a request.
     """
     principal = _CALLER.get()
     if principal is None or ANY_SCOPE in principal.scopes:

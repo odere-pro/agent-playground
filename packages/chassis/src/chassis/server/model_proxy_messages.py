@@ -91,7 +91,9 @@ def error_response(err: WireError, request_id: str) -> JSONResponse:
 
 
 def _refusal_error(refusal: Refusal) -> WireError:
-    return WireError(429, "rate_limit_error", refusal.code, refusal.message, refusal.retryable)
+    """429 is Anthropic's `rate_limit_error`; 403 (`uncorrelated_refused`) is `permission_error`."""
+    kind = "permission_error" if refusal.status == 403 else "rate_limit_error"
+    return WireError(refusal.status, kind, refusal.code, refusal.message, refusal.retryable)
 
 
 async def _next(chunks: AsyncIterator[ModelChunk]) -> ModelChunk | None:

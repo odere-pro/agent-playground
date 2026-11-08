@@ -29,7 +29,7 @@ from chassis.adapters.mcp.gateway import (
     serialized_size,
 )
 from chassis.fakes import tool as chassis_fake_tools
-from chassis.ports.tool import ToolError
+from chassis.ports.tool import ToolDefinition, ToolError
 from chassis_contracts.tool import NESTED_PARAMETERS, NESTED_TOOL, KnownCall, ToolPortContract
 from fake_mcp_server import PROBE_MARKER, FakeMcpState, create_app
 from fake_mcp_server import server as fake_server
@@ -57,6 +57,7 @@ class Gateway:
         self.delete_status: int | None = None
         self.requests = 0
         self.lists = 0
+        self.tool_calls = 0
         self.client_kwargs: list[dict[str, Any]] = []
         self.most_read = 0
         """The most body bytes the client pulled from one response."""
@@ -74,6 +75,8 @@ class _Transport(httpx2.AsyncBaseTransport):
         self.gate.requests += 1
         if b'"tools/list"' in request.content:
             self.gate.lists += 1
+        if b'"tools/call"' in request.content:
+            self.gate.tool_calls += 1
         if request.method == "DELETE" and self.gate.delete_status is not None:
             # A gateway in stateless mode refuses the session-close `DELETE`.
             return httpx2.Response(self.gate.delete_status, request=request)
@@ -259,18 +262,22 @@ async def test_write_without_key_is_refused_before_any_request(
     assert fake_state.calls == []
 
 
-async def test_write_without_key_reaches_the_server_and_is_refused_with_no_effect(
+async def test_a_write_the_cache_lacks_never_goes_out_when_the_list_fails(
     gateway_tools: McpGatewayTools, gate: Gateway, fake_state: FakeMcpState
 ) -> None:
-    """Review L6: a tool missing from the cache skips the local check, so the server's own refusal
-    is what holds. Here the list fails, the cache is empty, and the call goes out with no key."""
+    """Review L6, closed by CH-14: a tool missing from the cache used to skip the local check and
+    go out with no key. Now, with the list failing and the cache empty, the call answers the
+    refresh's own error (the gateway is down: retryable `tool_unavailable`) and sends no
+    `tools/call`."""
     gateway_tools._tools = {}
     gate.list_fails_with = 503
-    before = gate.requests
+    lists, calls = gate.lists, gate.tool_calls
     with pytest.raises(ToolError) as info:
         await gateway_tools.call("note_write", {"text": "x"})
-    assert info.value.code == "idempotency_key_required"
-    assert gate.requests > before, "the call reached the server"
+    assert info.value.code == "tool_unavailable"
+    assert info.value.retryable is True
+    assert gate.lists - lists == 1
+    assert gate.tool_calls == calls
     assert fake_state.executions == 0
 
 
@@ -592,10 +599,17 @@ async def test_bytes_after_the_end_of_a_gzip_body_are_refused() -> None:
 
     gate.factory = factory  # type: ignore[method-assign]
     async for port in _open(gate):
+        # Every answer is refused, `tools/list` too; list the tool so the call's own session
+        # opens and is refused (CH-14: an unlisted name never opens one).
+        port._tools = {"small": _SMALL}
         with pytest.raises(ToolError) as info:
             await port.call("small", {})
     assert info.value.code == "tool_unavailable"
     assert info.value.retryable is False
+
+
+_SMALL = ToolDefinition(name="small", description="Returns two bytes.", read_only=True)
+"""What `small` lists as, for a test whose transport refuses the `tools/list` answer too."""
 
 
 class _BrotliLabelTransport(_GzipTransport):
@@ -623,6 +637,9 @@ async def test_an_answer_in_an_encoding_the_adapter_cannot_bound_is_refused() ->
 
     gate.factory = factory  # type: ignore[method-assign]
     async for port in _open(gate):
+        # Every answer is refused, `tools/list` too; list the tool so the call's own session
+        # opens and is refused (CH-14: an unlisted name never opens one).
+        port._tools = {"small": _SMALL}
         with pytest.raises(ToolError) as info:
             await port.call("small", {})
     assert info.value.code == "tool_unavailable"
@@ -842,6 +859,58 @@ async def test_unknown_names_refresh_the_list_once_when_inside_the_cooldown(
             await gateway_tools.call(f"no_such_tool_{index}", {})
 
     assert gate.lists - before == 1
+
+
+async def test_an_unlisted_name_gets_one_refresh_then_unknown_tool_and_no_tool_request(
+    gateway_tools: McpGatewayTools, gate: Gateway, fake_state: FakeMcpState
+) -> None:
+    """CH-14: a name the cached list lacks refreshes the list once; still unlisted, it is
+    `unknown_tool` before any `tools/call`, so it skips no write-key or schema check."""
+    lists, calls = gate.lists, gate.tool_calls
+
+    with pytest.raises(ToolError) as info:
+        await gateway_tools.call("no_such_tool", {"anything": "goes"})
+
+    assert info.value.code == "unknown_tool"
+    assert info.value.retryable is False
+    assert gate.lists - lists == 1
+    assert gate.tool_calls == calls
+    assert fake_state.executions == 0
+
+
+async def test_an_unlisted_name_inside_the_cooldown_is_unknown_with_no_request(
+    gateway_tools: McpGatewayTools, gate: Gateway
+) -> None:
+    """CH-14: inside the cooldown there is no refresh, and the name still never reaches the
+    gateway: the cached list decides."""
+    with pytest.raises(ToolError):
+        await gateway_tools.call("no_such_tool", {})
+    requests = gate.requests
+
+    with pytest.raises(ToolError) as info:
+        await gateway_tools.call("another_unlisted_tool", {})
+
+    assert info.value.code == "unknown_tool"
+    assert gate.requests == requests
+
+
+async def test_a_name_the_refresh_adds_is_called_after_the_refresh(
+    gateway_tools: McpGatewayTools, gate: Gateway, fake_state: FakeMcpState
+) -> None:
+    """The paired control: a tool the stale cache lacks but the gateway lists is called once the
+    unknown-name refresh finds it, with its checks on."""
+    gateway_tools._tools.pop("glossary_lookup")  # the cache is stale: the gateway lists it
+    calls = gate.tool_calls
+
+    result = await gateway_tools.call("glossary_lookup", {"term": "SLM"})
+
+    assert result.is_error is False
+    assert "glossary_lookup" in [d.name for d in gateway_tools.list_tools()]  # refreshed
+    assert gate.tool_calls - calls == 1
+    with pytest.raises(ToolError) as info:  # and its schema check is on again
+        await gateway_tools.call("glossary_lookup", {"term": 1})
+    assert info.value.code == "bad_arguments"
+    assert gate.tool_calls - calls == 1
 
 
 async def test_an_unknown_name_refreshes_again_when_the_cooldown_has_passed(gate: Gateway) -> None:
