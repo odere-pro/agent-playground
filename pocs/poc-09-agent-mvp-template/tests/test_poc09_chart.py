@@ -6,19 +6,22 @@ Renders `deploy/helm/example-agent`, which includes the library chart `deploy/he
 with `helm template` (`chart_render`, the `chart` fixture in `conftest.py`), parses the YAML, and
 checks:
 
-- Default values (the sidecar lane): one pod with exactly two containers, `chassis` (the native
-  sidecar, an init container with `restartPolicy: Always`, as PoC-5) and `workload`. Every Secret
-  reference (`secretKeyRef`, `secretRef`, a `secret` volume) is on the chassis; the workload has
-  none, and no service account token. The Service's `targetPort` is the chassis port, never the
-  workload port. Both containers run non-root with the uid table's uids, a read-only root, all
-  capabilities dropped, no privilege escalation, and seccomp `RuntimeDefault`. The paired control:
-  the example values do give the chassis a Secret, so "none on the workload" is not vacuous.
+- Default values (the sidecar lane): one pod with exactly two containers, `workload` (the native
+  sidecar, an init container with `restartPolicy: Always`) and `chassis` (the main container), so
+  the kubelet stops the chassis first and it drains before the workload stops (ADR-012). Every
+  Secret reference (`secretKeyRef`, `secretRef`, a `secret` volume) is on the chassis; the
+  workload has none, and no service account token. The Service's `targetPort` is the chassis port,
+  never the workload port. Both containers run non-root with the uid table's uids, a read-only
+  root, all capabilities dropped, no privilege escalation, and seccomp `RuntimeDefault`. The
+  paired control: the example values do give the chassis a Secret, so "none on the workload" is
+  not vacuous.
 - `connector: remote` with `trust: untrusted` (ADR-005): the remote lane is two pods, as on kind
   in PoC-5. The chassis pod holds every internal credential; the workload pod runs under the
   gVisor RuntimeClass with one Secret, its own bearer token (ADR-005 decision 1), named after it
   (admission rule 7c), and may reach only its chassis's remote proxy port.
 - Values that try to give the workload a Secret (or break the trust rule) fail the render with
-  the chart's own `agent-lib:` message.
+  the chart's own `agent-lib:` message. So does a pod grace shorter than the chassis's worst-case
+  drain, `drainDelaySeconds + drainTimeoutSeconds + 5` (ADR-012 item 3); exactly the bound renders.
 
 The admission and egress rules the chart carries are in `test_poc09_chart_boundary.py`.
 `helm lint` runs on both charts. Skipped, with the reason, when `helm` is not on PATH;
@@ -93,14 +96,62 @@ def test_sidecar_lane_renders_one_pod_with_the_chassis_and_the_workload(chart: C
     pod = one(docs, "Deployment", RELEASE)["spec"]["template"]["spec"]
     by_name = containers(pod)
     assert sorted(by_name) == ["chassis", "workload"]
-    # The chassis is the native sidecar (PoC-5 bind order, contract v4 H14).
-    assert [c["name"] for c in pod["initContainers"]] == ["chassis"]
+    # The workload is the native sidecar and the chassis the main container (ADR-012 item 1).
+    assert [c["name"] for c in pod["initContainers"]] == ["workload"]
     assert pod["initContainers"][0]["restartPolicy"] == "Always"
-    assert [c["name"] for c in pod["containers"]] == ["workload"]
+    assert [c["name"] for c in pod["containers"]] == ["chassis"]
     assert "runtimeClassName" not in pod
     image = by_name["chassis"]["image"]
     assert image.startswith("kind.local/agent-platform/chassis:") and not image.endswith(":latest")
     assert not [d for d in docs if d["kind"] == "HorizontalPodAutoscaler"], "HPA is off by default"
+
+
+def test_sidecar_lane_stop_order_puts_the_chassis_first(chart: Charts) -> None:
+    """ADR-012 items 1-2: the kubelet stops main containers before restartable init containers,
+    so the chassis (main) gets SIGTERM first and drains; the workload (native sidecar) stops after
+    the chassis has exited. The workload's startupProbe gates the chassis's start."""
+    pod = one(chart.template(), "Deployment", RELEASE)["spec"]["template"]["spec"]
+    (workload,) = pod["initContainers"]
+    (chassis,) = pod["containers"]
+    assert (workload["name"], chassis["name"]) == ("workload", "chassis")
+    assert workload["restartPolicy"] == "Always"
+    assert "restartPolicy" not in chassis, "a main container takes the pod's restart policy"
+    # The kubelet starts the chassis only after this probe passes.
+    assert "exec" in workload["startupProbe"]
+    assert "readinessProbe" not in workload, "the workload is never in the Service"
+    # The chassis keeps HTTP probes for readiness and liveness; its startup is the marker's.
+    assert chassis["readinessProbe"]["httpGet"]["path"] == "/ready"
+    assert chassis["livenessProbe"]["httpGet"]["path"] == "/health"
+    assert pod["terminationGracePeriodSeconds"] == 50
+
+
+@pytest.mark.parametrize("values", [None, REMOTE_VALUES], ids=["sidecar", "remote"])
+def test_the_chassis_starts_on_its_ready_marker_in_a_volume_only_it_mounts(
+    chart: Charts, tmp_path: Path, values: dict[str, Any] | None
+) -> None:
+    """ADR-012, H14: the workload starts first and could answer on the chassis's public port
+    while the chassis imports. The startup probe passes only on the marker `--ready-marker`
+    writes once the chassis has bound, in `chassis-tmp`, which no other container mounts."""
+    path = values_file(tmp_path, values) if values is not None else None
+    docs = chart.template(path)
+    pods = [d["spec"]["template"]["spec"] for d in docs if d["kind"] == "Deployment"]
+    pod = one(docs, "Deployment", RELEASE)["spec"]["template"]["spec"]
+    chassis = containers(pod)["chassis"]
+    args = chassis["args"]
+    marker = args[args.index("--ready-marker") + 1]
+    mounts = {m["mountPath"]: m["name"] for m in chassis["volumeMounts"]}
+    assert mounts[str(Path(marker).parent)] == "chassis-tmp", (marker, mounts)
+    volume = next(v for v in pod["volumes"] if v["name"] == "chassis-tmp")
+    assert volume["emptyDir"]["medium"] == "Memory"
+    others = [c for p in pods for c in containers(p).values() if c["name"] != "chassis"]
+    assert others, "the paired control: a workload container exists to check"
+    for c in others:
+        assert "chassis-tmp" not in {m["name"] for m in c.get("volumeMounts", [])}, c["name"]
+    probe = chassis["startupProbe"]
+    assert "httpGet" not in probe, "a workload on the public port would answer an httpGet"
+    command = probe["exec"]["command"]
+    assert command[:2] == ["python", "-c"], "the chassis image has python, no shell assumed"
+    assert marker in command[2]
 
 
 def test_sidecar_lane_secrets_are_on_the_chassis_container_only(chart: Charts) -> None:
@@ -291,6 +342,34 @@ REFUSED: dict[str, tuple[dict[str, Any], str]] = {
         {"networkPolicy": {"chassisEgress": [{"to": [{"ipBlock": {"cidr": "0.0.0.0/0"}}]}]}},
         "ipBlock",
     ),
+    "pod grace below the chassis drain": (
+        {"terminationGracePeriodSeconds": 44},
+        "chassis.drainDelaySeconds",
+    ),
+    "drain timeout raised past the grace": (
+        {"chassis": {"drainTimeoutSeconds": 36}},
+        "terminationGracePeriodSeconds",
+    ),
+    "drain timeout raised past the grace by an extra arg": (
+        {"chassis": {"extraArgs": ["--drain-timeout-s=36"]}},
+        "terminationGracePeriodSeconds",
+    ),
+    "drain timeout that overflows the sum": (
+        {"chassis": {"drainTimeoutSeconds": 9223372036854775800}},
+        "chassis.drainTimeoutSeconds",
+    ),
+    "drain timeout extra arg past atoi's range": (
+        {"chassis": {"extraArgs": ["--drain-timeout-s", "99999999999999999999"]}},
+        "is not allowed",
+    ),
+    "negative drain delay": (
+        {"chassis": {"drainDelaySeconds": -10}},
+        "chassis.drainDelaySeconds",
+    ),
+    "remote lane pod grace below the chassis drain": (
+        REMOTE_VALUES | {"terminationGracePeriodSeconds": 44},
+        "chassis.drainTimeoutSeconds",
+    ),
     "remote lane with two replicas": (REMOTE_VALUES | {"replicas": 2}, "one replica"),
     "remote lane without a proxy ClusterIP": (
         REMOTE_VALUES | {"remote": {"namespace": REMOTE_NAMESPACE}},
@@ -319,6 +398,27 @@ def test_the_render_fails_on_values_that_break_the_boundary(
     proc = chart.helm("template", RELEASE, str(chart.example), "-f", str(path), check=False)
     assert proc.returncode != 0, f"{case}: rendered, want a refusal:\n{proc.stdout}"
     assert "agent-lib:" in proc.stderr and needle in proc.stderr, proc.stderr
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"terminationGracePeriodSeconds": 45},
+        {
+            "terminationGracePeriodSeconds": 25,
+            "chassis": {"drainDelaySeconds": 5, "drainTimeoutSeconds": 15},
+        },
+        {"terminationGracePeriodSeconds": 45, "chassis": {"extraArgs": ["--drain-delay-s", "10"]}},
+    ],
+    ids=["the default drain at exactly the bound", "a shorter drain at its bound", "extra arg"],
+)
+def test_the_render_passes_with_the_grace_at_exactly_the_drain_bound(
+    chart: Charts, tmp_path: Path, values: dict[str, Any]
+) -> None:
+    """The paired control for the grace refusals: grace == delay + timeout + 5 renders."""
+    pod = one(chart.template(values_file(tmp_path, values)), "Deployment", RELEASE)
+    want = values["terminationGracePeriodSeconds"]
+    assert pod["spec"]["template"]["spec"]["terminationGracePeriodSeconds"] == want
 
 
 def test_the_kind_values_pull_nothing_and_hold_no_secret(chart: Charts) -> None:

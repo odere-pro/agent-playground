@@ -1,13 +1,15 @@
 # ADR-012: In the `sidecar` pod, the chassis is the main container and the workload the native sidecar
 
 - **Date:** 2026-11-08
-- **Deciders:** the user decides proposal P-29; proposed by `chassis-architect`
+- **Deciders:** the user, who picked option 1 of proposal P-29 on 2026-11-08; proposed by `chassis-architect`
 - **Format:** Michael Nygard's template: Status, Context, Decision, Consequences
 - **Related:** proposal P-29 (and the decided P-6) in the [backlog review proposals](../../reviews/2026-11-06-backlog-review/proposals.md); [024 CH-3](../issues/024-CH-3-helm-library-chart.md) (the rolling-restart box and the container-order box); [contract v3](../../contracts/contract-v3.md#shutdown) "Shutdown"; [contract v4](../../contracts/contract-v4.md) "Bind order" (H14); [the PoC-4 container roles note](../../../pocs/poc-04-stateless-scalable/notes/2026-10-01-container-roles.md); the gap review in [the product plan](../../plans/2026-11-06-agent-container-product.md#if-phases-a-to-f-are-all-built-what-is-still-missing)
 
 ## Status
 
-Proposed 2026-11-08. P-29 stays open until the user picks. Nothing in the chart changes before that.
+Accepted 2026-11-08, by the user: option 1. Proposed the same day.
+
+Evidence that is not in yet: items 4, 5, and 7 of the decision run on kind. Until the drill passes, 024 CH-3's rolling-restart box stays open.
 
 ## Context
 
@@ -57,7 +59,7 @@ This is reasoning from the code, not a measurement. PoC-5 chose this order and w
 
 ## Decision
 
-suggested: option 1. The user decides P-29.
+Option 1, picked by the user on 2026-11-08 (P-29).
 
 1. In the `sidecar` lane, `agent-lib` renders the workload as the native sidecar (`initContainers`, `restartPolicy: Always`) and the chassis as the main container. The `remote` lane does not change.
 2. The kubelet then sends the chassis SIGTERM first. The chassis drains as contract v3 says. The workload gets SIGTERM only after the chassis has exited, with nothing left in flight.
@@ -85,6 +87,7 @@ Easier:
 Harder:
 
 - The bind order no longer holds by time. It holds by refusal: the chassis exits on a taken port, and a pod without a running chassis is never Ready, so the Service sends it nothing. The NetworkPolicy admits the chassis port in (`_networkpolicy.tpl:9-11`, `:40-42`), from `networkPolicy.ingressFrom`, or from any pod when that list is empty. So a hostile workload that takes the pod IP's port 8080 first can answer a client that dials the pod IP directly. Its answer passes no auth, no guard, and no marking. It still holds no credential, and LiteLLM and the gateway refuse it (ADR-001 hard requirement 1). The `sidecar` lane runs trusted workloads only (admission rule 2); hostile code goes to `remote`. So this is a defense-in-depth loss, not an escape. If the user wants H14 to hold by privilege rather than by order, a follow-up can give the chassis ports below 1024 that only it may bind (`NET_BIND_SERVICE`, allowed by Pod Security `restricted`, plus a file capability in the chassis image). suggested: not in this change; its own ADR if wanted, reviewed by `platform-security`.
+- H14 holds by refusal plus a marker-gated startup probe (platform-security review, 2026-11-08). The chassis is Running while it imports, so an `httpGet` startup probe on the public port could be answered by a workload that took that port first, and the pod would go Ready. The chart's chassis startupProbe checks a file instead: `chassis serve --ready-marker` writes it only once every listener has bound, in `chassis-tmp` (no other container mounts it), and the console script deletes a stale one before it imports anything, since the emptyDir outlives a container restart. Readiness and liveness stay HTTP; the kubelet runs them only after startup passes.
 - Two assertions flip, and the chart's H14 check is new work (item 4).
 - The keep-alive race at the end of the drain delay is still there, in any order. The 10 s delay is meant to cover it. Only the drill shows whether it does.
 

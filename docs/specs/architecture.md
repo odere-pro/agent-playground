@@ -75,7 +75,7 @@ A replica keeps nothing a retry needs, so the service scales by adding pods.
 
 - **Idempotency and leases** live in `StatePort` (`chassis/server/idempotency.py`): a repeated `idempotency_key` replays the same result from any replica, with `Idempotent-Replayed: true`; a claim is fenced at 80% of its lease, and a retry after a dead owner runs once.
 - **Config comes from the store** (`chassis/server/config_loader.py`): a change takes effect on the next request with no restart; a bad document is refused and the last good one stays; a bad document at startup fails startup.
-- **`/ready` and drain** (`readiness.py`, `lifecycle.py`): a draining replica should fail no request. **Not met by the chart today**: it stops the workload first while the chassis still answers `/ready` 200 ([ADR-012](../planning/adr/012-drain-order-on-rollout.md), P-29).
+- **`/ready` and drain** (`readiness.py`, `lifecycle.py`): a draining replica should fail no request. The chart renders the order [ADR-012](../planning/adr/012-drain-order-on-rollout.md) accepted (2026-11-08): the workload is the native sidecar and the chassis the main container, so the chassis drains before the workload stops. The kind drill (ADR-012 items 4, 5, 7) is still to run, so 024 CH-3's rolling-restart box stays open.
 - **Events go out through a broker client** behind `EventPort`, not through Dapr: CloudEvents 1.0, at least once, with a `.dlq` topic.
 - The chassis and the workload share a pod, so they add replicas together.
 
@@ -84,7 +84,7 @@ A replica keeps nothing a retry needs, so the service scales by adding pods.
 The `agent-lib` Helm library chart (`deploy/helm/agent-lib`) is the one way a service is deployed. Every service includes it.
 
 - The chassis image tag is set once in `agent-lib.defaults`. A service may pin an older tag. `latest` is refused. Releases are meant to roll out in rings with no service rebuild. **Rings are not built** ([056 CH-7](../planning/issues/056-CH-7-chassis-release-rings.md)): today a tag bump reaches every service at once, and one bad image can too.
-- `sidecar` lane: the chassis runs as a native sidecar (an init container with `restartPolicy: Always`). Ports: 8080 public, 8090 the proxies, 8091 the remote proxy; the workload on 127.0.0.1:9000.
+- `sidecar` lane: the workload runs as a native sidecar (an init container with `restartPolicy: Always`) and the chassis as the main container, so the kubelet stops the chassis first ([ADR-012](../planning/adr/012-drain-order-on-rollout.md)). PoC-5's manifests keep the old order. Ports: 8080 public, 8090 the proxies, 8091 the remote proxy; the workload on 127.0.0.1:9000.
 - `remote` lane: a second pod for the workload under `runtimeClassName: gvisor`, a token secret, a fixed proxy ClusterIP.
 - Secrets reach the chassis container only (`secretEnv`, `envFromSecrets`, `secretVolumes`). The workload gets plain env from an allow-list, and credential-looking names are refused.
 - Fixed in the chart: uids 10001 and 10002, a read-only root, all capabilities dropped, seccomp `RuntimeDefault`, no service account token, a memory-backed `/tmp`.

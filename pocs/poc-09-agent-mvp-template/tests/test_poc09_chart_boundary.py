@@ -211,7 +211,7 @@ def test_a_chassis_below_the_minimum_version_is_refused_at_render_and_by_rule_9(
     rule 9. Its twin on the current tag passes (the test above)."""
     values = values_file(tmp_path, {"chassis": {"image": {"tag": "poc07"}}})
     deployment = copy.deepcopy(one(chart.template(KIND_VALUES), "Deployment", RELEASE))
-    chassis = deployment["spec"]["template"]["spec"]["initContainers"][0]
+    chassis = containers(deployment["spec"]["template"]["spec"])["chassis"]
     chassis["image"] = chassis["image"].rsplit(":", 1)[0] + ":poc07"
 
     refused = chart.render(chart.example, RELEASE, NAMESPACE, values, check=False)

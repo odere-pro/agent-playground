@@ -37,8 +37,17 @@ its own (a failed startup), the others stop too.
 Bind order (PoC-5 plan, section 2.12, H14). `Drain.serve` starts the proxy listeners first and
 waits until each one has bound. Only then does it start the public server, whose lifespan builds
 the ports and reaches the workload. A proxy that cannot bind raises `ProxyBindFailed`: nothing
-else starts, and `chassis serve` exits non-zero. So a workload can never bind the proxy port
-first, and the chassis never runs without its proxy.
+else starts, and `chassis serve` exits non-zero. So the chassis never runs without its proxy. In
+the chart's `sidecar` lane the workload starts first (ADR-012: it is the native sidecar, so the
+chassis drains before it stops). There the bind order holds by refusal, not by time: a workload
+that took the proxy port first leaves the chassis exited and the pod never Ready.
+
+Ready marker (`--ready-marker PATH`, off by default; ADR-012). The chassis is Running while it
+imports, before it binds, so an HTTP startup probe on its public port could be answered by a
+workload that took that port first. With the flag, `Drain.serve` deletes any marker at start (a
+container restart keeps the emptyDir), writes it only once the proxies and the public listener
+have bound, and deletes it again on the way out. The chart's chassis startupProbe checks only
+that file, in a volume no other container mounts.
 
 `DeferredStartup` moves the wait for the workload to readiness. It wraps the public app's lifespan
 so that uvicorn binds the public port at once (`/health` 200, `/ready` 503 `starting`) while the
@@ -74,6 +83,7 @@ import signal
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -162,6 +172,8 @@ class Drain:
     task: asyncio.Task[None] | None = None
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
     """Times the drain delay. Tests pass a fake."""
+    ready_marker: Path | None = None
+    """Written once every listener has bound, removed at start and on exit (module docstring)."""
 
     def _servers(self) -> list[uvicorn.Server]:
         return [s for s in (self.public, self.proxy, self.remote) if s is not None]
@@ -201,6 +213,8 @@ class Drain:
             await server.serve()
         except SystemExit:  # uvicorn exits on a failed bind or lifespan; `started` tells
             log.error("the %s listener failed to start", name)
+        except OSError as exc:  # a Unix socket's failed bind is raised, not turned into an exit
+            log.error("the %s listener failed to bind: %s", name, exc)
         finally:
             self.order.append(f"{name} stopped")
             for other in self._servers():  # step 6: the proxies go after the public server
@@ -231,6 +245,22 @@ class Drain:
             await asyncio.sleep(0.01)
         return tasks
 
+    def _clear_marker(self) -> None:
+        if self.ready_marker is not None:
+            self.ready_marker.unlink(missing_ok=True)
+
+    async def _mark_when_bound(self, public: asyncio.Task[None]) -> None:
+        """Write the ready marker once the public listener has bound; never if it fails."""
+        if self.ready_marker is None:
+            return
+        while True:  # `started` is a plain flag on uvicorn's server; there is no event to wait on
+            if self.public.started or public.done():
+                break
+            await asyncio.sleep(0.01)
+        if self.public.started and not self.public.should_exit:
+            self.ready_marker.write_bytes(b"")
+            log.info("all listeners bound: ready marker %s written", self.ready_marker)
+
     async def serve(self) -> None:
         """Every server in this loop, with the signal handlers installed: the proxies bind
         first, then the public server starts. Returns when all have stopped.
@@ -238,12 +268,16 @@ class Drain:
         proxies = [("proxy", self.proxy)]
         if self.remote is not None:
             proxies.append(("remote proxy", self.remote))
+        self._clear_marker()
         with handle_signals(self.signal):
             try:
                 tasks = await self._bind_proxies(proxies)
-                tasks.append(asyncio.create_task(self._run("public", self.public)))
+                public = asyncio.create_task(self._run("public", self.public))
+                tasks.append(public)
+                await self._mark_when_bound(public)
                 await asyncio.gather(*tasks)
             finally:
+                self._clear_marker()
                 if self.task is not None and not self.task.done():
                     self.task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):

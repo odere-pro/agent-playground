@@ -40,6 +40,7 @@ import ipaddress
 import math
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 from typing import NamedTuple
 
 import uvicorn
@@ -114,6 +115,13 @@ def _parser() -> argparse.ArgumentParser:
         default=DRAIN.timeout_s,
         help="on SIGTERM, seconds in-flight runs may go on before they are cancelled",
     )
+    serve.add_argument(
+        "--ready-marker",
+        type=Path,
+        default=None,
+        help="an absolute path: written once every listener has bound, removed at start and "
+        "exit, for a startup probe the workload cannot answer (ADR-012; off by default)",
+    )
     return parser
 
 
@@ -178,6 +186,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         for flag in ("drain_delay_s", "drain_timeout_s", "startup_wait_s"):
             if getattr(args, flag) < 0:
                 parser.error(f"--{flag.replace('_', '-')} must be 0 or more")
+        if args.ready_marker is not None and not args.ready_marker.is_absolute():
+            parser.error("--ready-marker must be an absolute path")
         if args.proxy_port == args.port:
             parser.error("--proxy-port must differ from --port: the proxies never share it")
         if args.allow_any_proxy_host or args.remote_proxy_host is not None:
@@ -252,13 +262,16 @@ async def serve(
     proxy: uvicorn.Server,
     settings: DrainSettings = DRAIN,
     remote: uvicorn.Server | None = None,
+    ready_marker: Path | None = None,
 ) -> None:
     """Every server in one loop, with the chassis's own signal handling (`Drain`): the proxies
     bind first, then the public server starts. When any stops, so do the others; the proxies
     stop after the public one. Raises `ProxyBindFailed` when a proxy cannot bind.
     """
     state = getattr(public.config.app, "state", None)
-    await Drain(public, proxy, settings, state=state, remote=remote).serve()
+    await Drain(
+        public, proxy, settings, state=state, remote=remote, ready_marker=ready_marker
+    ).serve()
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -267,7 +280,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         servers = build_all(args)
         settings = DrainSettings(delay_s=args.drain_delay_s, timeout_s=args.drain_timeout_s)
         try:
-            asyncio.run(serve(servers.public, servers.proxy, settings, servers.remote))
+            asyncio.run(
+                serve(servers.public, servers.proxy, settings, servers.remote, args.ready_marker)
+            )
         except ProxyBindFailed as exc:
             print(f"chassis: {exc}", file=sys.stderr)
             sys.exit(STARTUP_FAILURE)
