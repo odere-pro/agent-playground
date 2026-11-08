@@ -9,6 +9,7 @@ ASGI, `StaticTokens` as the auth port.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -24,6 +25,7 @@ from chassis.ports.auth import Principal
 from chassis.ports.bundle import PortBundle
 from chassis.server import ChassisConfig, create_app
 from chassis.server.interfaces.mcp import MCP_PATH
+from chassis.server.rate_limit import bucket_key
 from chassis.server.security import AUTH_REFUSED, CallerAuth, path_class, principal_of
 from fastapi import FastAPI, Request
 from fastmcp import Client
@@ -287,8 +289,10 @@ async def test_before_the_lifespan_auth_none_passes_and_oidc_refuses(
     assert response.status_code == status
 
 
-async def test_the_callers_subject_is_user_id_on_the_run_span() -> None:
-    """`user.id` on the run span is the token's subject, never a header (ADR-007)."""
+async def test_user_id_on_the_run_span_is_the_hash_of_the_callers_subject() -> None:
+    """`user.id` on the run span is `sha256(subject)[:32]` of the token's subject, never a header
+    (ADR-007; CH-14, P-27 option 1). The hash is the rate limit's own: the same digest ends the
+    caller's bucket key. The span, and so the baggage of every lane, never holds the subject."""
     app = _app()
     async with _client(app) as client:
         reply = await client.post(
@@ -299,8 +303,23 @@ async def test_the_callers_subject_is_user_id_on_the_run_span() -> None:
         assert reply.status_code == 200
         telemetry: InMemoryTelemetry = app.state.ports.telemetry
     runs = [s for s in telemetry.spans if s.name == "chassis.run"]
-    assert runs[-1].attributes["user.id"] == "user-run"
+    user_id = runs[-1].attributes["user.id"]
+    assert user_id == hashlib.sha256(b"user-run").hexdigest()[:32]
+    assert bucket_key("echo", "user-run") == f"ratelimit:echo:{user_id}"
+    assert "user-run" not in repr(runs[-1].attributes)
     assert runs[-1].attributes["session.id"] == "s-1"
+
+
+async def test_a_subject_that_is_not_printable_still_gets_a_hashed_user_id() -> None:
+    """The hash is printable for any subject, so a non-ASCII one is no longer dropped."""
+    tokens = {**TOKENS, "tok-accent": Principal("user-é", frozenset({"agent:run"}))}
+    app = _app(auth=StaticTokens(tokens))
+    async with _client(app) as client:
+        reply = await client.post("/v1/run", json=RUN_BODY, headers=_bearer("tok-accent"))
+        assert reply.status_code == 200
+        telemetry: InMemoryTelemetry = app.state.ports.telemetry
+    runs = [s for s in telemetry.spans if s.name == "chassis.run"]
+    assert runs[-1].attributes["user.id"] == hashlib.sha256("user-é".encode()).hexdigest()[:32]
 
 
 async def test_auth_off_puts_no_user_id_on_the_run_span() -> None:

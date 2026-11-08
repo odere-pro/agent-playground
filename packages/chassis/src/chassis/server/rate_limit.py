@@ -3,7 +3,8 @@
 **The bucket.** One token bucket per agent and per caller, kept in `StatePort`, so every replica
 that shares the store (Valkey in `local` and `cloud`; one `InMemoryState` in a test) shares the
 limit, and a replica keeps nothing of it. The caller is the checked `Principal.subject`; the key is
-`ratelimit:<agent>:<sha256(subject)[:32]>`, so the store never holds the IdP's subject. The value
+`ratelimit:<agent>:<sha256(subject)[:32]>` (`security.subject_hash`, the same hash as `user.id`),
+so the store never holds the IdP's subject. The value
 is `<tokens>:<unix time>`. A call reads it, adds `requests_per_minute / 60` tokens per second since
 then (up to `request_burst`), and takes one with `compare_and_set`; a key that is not there is a
 full bucket, created with `set_if_absent`. A write lost to another replica is read again, up to
@@ -38,7 +39,6 @@ as `chassis.rate_limited{path_class}` (suggested). A store outage follows
 
 from __future__ import annotations
 
-import hashlib
 import math
 import time
 from collections.abc import Callable
@@ -51,7 +51,13 @@ from chassis.ports.auth import ANY_SCOPE
 from chassis.ports.state import StatePort, StateUnavailable
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server.config import ChassisConfig, LimitsSpec
-from chassis.server.security import path_class, principal_of, refusal_body, send_json
+from chassis.server.security import (
+    path_class,
+    principal_of,
+    refusal_body,
+    send_json,
+    subject_hash,
+)
 
 __all__ = [
     "CAS_ATTEMPTS",
@@ -97,8 +103,7 @@ class Refused:
 
 def bucket_key(agent: str, subject: str) -> str:
     """The store key of one caller's bucket for one agent. The subject is hashed."""
-    digest = hashlib.sha256(subject.encode("utf-8")).hexdigest()[:32]
-    return f"ratelimit:{agent}:{digest}"
+    return f"ratelimit:{agent}:{subject_hash(subject)}"
 
 
 def _encode(tokens: float, at: float) -> bytes:

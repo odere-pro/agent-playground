@@ -221,8 +221,8 @@ Each is built by `from_env()` and loaded lazily.
 - `ChassisConfig` and `load_config`.
 - `spec.interfaces` is `{openai, anthropic, mcp}`. Each is on by default. Unknown keys are refused.
 - `spec.limits` is `LimitsSpec`: `max_tokens_max`, `timeout_ms_max`, `messages_max`, `body_bytes_max`. Each is at least 1.
-  - PoC-8 adds the rate limit: `rate_limit` (`true`), `requests_per_minute` (`600`), `request_burst` (`100`), `rate_limit_on_unavailable` (`fail_open` or `fail_closed`). All reload with `spec.limits`.
-- `spec.observability` (PoC-7: `session_header`) gains `log_level` (`info`), `metrics_scope` (unset: `/metrics` needs no token), and `prices` (USD per million tokens per route, `ModelPrice`). Restart-only.
+  - PoC-8 adds the rate limit: `rate_limit` (`true`), `requests_per_minute` (`600`), `request_burst` (`100`), `rate_limit_on_unavailable` (`fail_open` or `fail_closed`). All reload with `spec.limits`. The `cloud` profile fills `uncorrelated_tokens_per_minute: 0` and `rate_limit_on_unavailable: fail_closed` when the document names none (CH-14, `config.with_cloud_defaults`).
+- `spec.observability` (PoC-7: `session_header`) gains `log_level` (`info`), `metrics_scope` (unset: `/metrics` needs no token; `cloud` fills `spec.security.read_scope`), and `prices` (USD per million tokens per route, `ModelPrice`). Restart-only.
 - `spec.guardrails` (PoC-7: the three stages, `on_unavailable`) gains `stream_secrets` (`true`) and `output_url_allow` (`[]`, default deny; `*` turns it off). Restart-only.
 - `spec.idempotency` is `IdempotencySpec`: `enabled`, `ttl_s`, `lease_s`, `wait_poll_ms`, `max_entry_bytes`.
 - `spec.events` is `EventsSpec` with `result_events`. A non-null `consume` is refused at load until event-triggered runs exist.
@@ -385,7 +385,7 @@ The model proxy (proxy port) is the OpenAI-compatible pass-through a workload ca
 - A correlated call's `max_tokens` is capped at the run's remainder. When unset, it is the remainder.
 - The tokens are reserved at start and settled on usage.
 - When nothing is left, it answers 429 `budget_exhausted`. That is `retryable` only when in-flight reservations hold the rest.
-- Uncorrelated calls are served with their own `max_tokens` and counted.
+- Uncorrelated calls are served with their own `max_tokens` and counted, under the uncorrelated cap below (403 `uncorrelated_refused` when the cap is `0`).
   - They always go to `spec.model.route`, whatever `model` they name. When the name differs, `chassis.model_route_pinned{route}` is counted (suggested) and the span has `route.forced`.
   - The rule is in `admit`, so both routes follow it (contract v8, I).
 - `admit(...)` is the one admission step both routes use: count the call, find the run, refuse with 429, else reserve.
@@ -463,11 +463,12 @@ Spec: [contract v4](../contracts/contract-v4.md). How it works: [the PoC-5 guide
 - It authenticates with the service's own LiteLLM virtual key. The gateway's per-key allow-list is the hard limit; the adapter adds none of its own.
 - The httpx client ignores the environment (`trust_env=False`) and never follows a redirect. The key is never logged, never in an error, and never in `repr`.
 - `from_env` refuses a `LITELLM_MCP_URL` that is not `https`, unless the host is loopback or an in-cluster name: one label with no dot, or a name ending in `.svc` or `.svc.cluster.local` (suggested). The `ValueError` names the variable, never the URL. Profile `cloud` requires `https` always. Tests: `tests/test_tool_gateway_url.py`.
-- `list_tools()` is sync, so the adapter keeps a cached list. `await refresh()` fills it. `start()` refreshes it in the background. A failed refresh keeps the last list.
+- `list_tools()` is sync, so the adapter keeps a cached list. `await refresh()` fills it. `start()` refreshes it in the background. A failed refresh keeps the last list. A name the list lacks gets one refresh (10 s cooldown, suggested), then `unknown_tool`; if that refresh fails, its own error. Either way no tool request goes out (CH-14).
 - The tool endpoint's lifespan calls `refresh()`, then `start()`, and `aclose()` on shutdown.
 - `call()` checks before any request: a write tool with no key raises `idempotency_key_required`; arguments that fail the schema raise `bad_arguments` (the shared `check_arguments`, so the fake and the gateway refuse the same arguments).
 - A result over `MAX_RESULT_BYTES` (1 MiB, suggested) is `tool_unavailable`, not retryable, with a fixed message naming the cap (R5a-24). The adapter stops reading a response past `MAX_RESPONSE_BYTES` (twice the cap plus framing) of decoded bytes, because the MCP client parses a whole response before the adapter sees it. It sends `Accept-Encoding: identity`, and decodes a gzip or deflate body the gateway sends anyway itself, so a compressed body cannot pass the cap. The tool endpoint (`adapters/mcp/server.py`) applies the same cap to any port's result.
 - Gateway answers map to `unknown_tool`, `tool_denied`, `bad_arguments`, or `tool_unavailable` (see [ports](#ports)). A `ToolError.message` is fixed text, never an upstream body.
+- A name the cached list lacks gets one refresh (at most one per 10 s cooldown, suggested), then `unknown_tool` before any tool request (CH-14). If that refresh fails, the call answers the refresh's error (for example retryable `tool_unavailable`). A retry inside the cooldown after a failed refresh makes no refresh and gets `unknown_tool`, not retryable.
 - Tests: `tests/test_tool_gateway_contract.py` (the whole `ToolPortContract`, over the fake MCP server in process), `tests/test_tool_arguments.py`, `tests/test_tool_endpoint_gateway_lifecycle.py`. On kind: `pocs/poc-05-sandboxed/tests/test_poc05_kind_tool_gateway.py`.
 
 ### Write mode
@@ -480,7 +481,7 @@ Spec: [contract v4](../contracts/contract-v4.md). How it works: [the PoC-5 guide
 ### The uncorrelated cap
 
 - A model call that names no run in flight is served, but a replica spends at most `spec.limits.uncorrelated_tokens_per_minute` tokens (20000, suggested) of them per fixed one-minute window.
-- Past the cap, 429 `budget_exhausted`. `0` refuses every such call. It is reloadable. A correlated call never touches it.
+- Past the cap, 429 `budget_exhausted`. `0` refuses every such call with 403 `uncorrelated_refused` (suggested), not retryable; the `cloud` profile sets `0` (CH-14). It is reloadable. A correlated call never touches it.
 - It lives in `server/model_proxy.py` (`UncorrelatedCap`) and covers both model proxy routes.
 - Since contract v8, such a call is also pinned to `spec.model.route` (see [model_proxy.py](#model_proxypy)).
 - Tests: `tests/test_uncorrelated_cap.py`.

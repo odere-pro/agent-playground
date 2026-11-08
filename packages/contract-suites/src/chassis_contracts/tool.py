@@ -4,7 +4,8 @@ tool and bad arguments raise `ToolError` with their codes, and a read-only tool 
 PoC-5 write mode (plan section 2.6), each case skipped when the binding does not provide its
 fixture: a write tool without a key is `idempotency_key_required` and has no effect; the same key
 twice is one effect and the same result; two keys are two effects; a tool outside the allow-list
-is not listed and its call raises `unknown_tool` or `tool_denied`; an unavailable port raises
+is not listed and its call raises `unknown_tool` or `tool_denied`; a name no tool has is
+`unknown_tool` before any key or schema check, with no effect (CH-14); an unavailable port raises
 `tool_unavailable` with `retryable=True`.
 
 Argument schema (R5b-08), skipped without `nested_port`: given the one shared schema
@@ -227,6 +228,20 @@ class ToolPortContract:
             await tool_port.call(denied_name, {})
         assert info.value.code in DENIED_CODES
         assert info.value.retryable is False
+
+    async def test_an_unlisted_name_is_unknown_tool_before_any_check_or_effect(
+        self, tool_port: ToolPort, count_effects: Callable[[], int] | None
+    ) -> None:
+        """CH-14: a name the port does not list is `unknown_tool`, called with no key and with
+        arguments no schema allows; it never runs, and never reaches the write-key check."""
+        assert "no_such_write_tool_ever" not in [d.name for d in tool_port.list_tools()]
+        before = count_effects() if count_effects is not None else None
+        with pytest.raises(ToolError) as info:
+            await tool_port.call("no_such_write_tool_ever", {"text": "x", "extra": [1, 2]})
+        assert info.value.code == "unknown_tool"
+        assert info.value.retryable is False
+        if count_effects is not None:
+            assert count_effects() == before
 
     async def test_unavailable_is_retryable(
         self,

@@ -304,7 +304,7 @@ Evidence: `packages/chassis/tests/test_idempotency_waiters.py::test_the_17th_wai
 - When the named route differs, it is counted as `chassis.model_route_pinned{route}` (suggested). The `chassis.model.route` span has `route.requested` (the name the workload sent), `route` (the default), and `route.forced: true`.
 - The rule is in the shared admission step (`chassis.server.model_admission.admit`), so both proxy routes follow it: `/v1/chat/completions` and the Anthropic proxy route `/v1/messages`.
 - A correlated call keeps its route, or the run's fallback route (contract v6, G).
-- The uncorrelated cap (contract v4) is unchanged.
+- The uncorrelated cap (contract v4) is unchanged here. Later, 134 CH-14 made a cap of `0` answer 403 `uncorrelated_refused` (suggested) instead of 429; `docs/specs/contract.md` holds the rule in force.
 - The remote listener never sees such a call: `RequireRun` refuses it.
 
 Evidence: `packages/chassis/tests/test_router_span.py::test_an_uncorrelated_call_naming_another_route_is_sent_to_the_default_route`, `::test_a_correlated_call_naming_another_route_keeps_its_route`.

@@ -27,6 +27,21 @@ Assume the model will be tricked. The boundary is made of **fixed controls** in 
 | Regex redaction of logs and events in the chassis, and of spans and logs in the Collector | hygiene | `chassis/logs.py`, `chassis.redaction`, `deploy/compose/poc07/otel-collector.yaml` |
 | Supply chain: images pinned by tag, never `latest`; CI actions pinned by SHA; SBOM, provenance, and keyless cosign in the template's CI; Snyk Agent Scan in a sandbox | fixed | the template, `deploy/agent-scan/` |
 
+## The `cloud` profile defaults (CH-14)
+
+Each is filled when the document names none. `fake` and `local` keep the old default.
+
+- No uncorrelated model calls: `spec.limits.uncorrelated_tokens_per_minute: 0`, so a loopback proxy call with no run in flight is 403 `uncorrelated_refused` (suggested) (`chassis/server/config.py`, `model_admission.py`).
+- A tool name the gateway's list lacks gets one refresh, then `unknown_tool` with no tool request, so it skips no write-key or schema check; in every profile (`chassis/adapters/mcp/gateway.py`).
+- `auth: none` is refused at load, as the `static` fake is (`chassis/profiles.py`).
+- `/metrics` needs a token with `spec.security.read_scope` (`agent:read`): `spec.observability.metrics_scope` (`chassis/server/config.py`, `observability.py`).
+- A rate-limit store outage refuses counted calls with 503 `state_unavailable`: `spec.limits.rate_limit_on_unavailable: fail_closed` (`chassis/server/rate_limit.py`).
+- `user.id` on spans and in baggage is `sha256(subject)[:32]`, the rate limit's hash, never the subject; in every profile and lane (`chassis/server/security.py` `subject_hash`, `pipeline.py`).
+
+Three of these are refused in `cloud`, not only defaulted: a document (at load or on a reload) that names `spec.limits.uncorrelated_tokens_per_minute` other than 0, `spec.limits.rate_limit_on_unavailable: fail_open`, or `spec.observability.metrics_scope: null` is refused, and on a reload the last good config stays (`chassis/server/config.py`).
+
+Residual risk: `user.id` is an unkeyed `sha256[:32]`, the same in every agent, so whoever reads baggage, traces, or the rate-limit store can test guessed subjects (emails) and link one user across agents. suggested follow-up: an HMAC with a key only the chassis holds.
+
 The LiteLLM client sends only `traceparent` upstream, never baggage, and ignores proxy environment variables (`chassis/adapters/litellm/client.py`).
 
 ## What a workload may never hold

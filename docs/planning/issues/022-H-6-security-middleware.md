@@ -17,10 +17,10 @@ Every agent needs the same auth, limits, and PII rules, so the chassis pipeline 
 
 - Caller auth on every inbound adapter: OIDC bearer tokens or caller API keys.
   - Decided in [ADR-008](../adr/008-security-identity-guardrails-defense-in-depth.md) and [contract v6](../../contracts/contract-v6.md#d-auth-guard-stages-and-the-new-error-codes): `OidcAuth` behind `AuthPort`, one scope per route from `spec.security`, with 401 `unauthenticated`, 403 `forbidden`, and 503 `auth_unavailable`. `/manifest`, `/openapi.json`, and `/docs` need the read scope.
-  - Caller API keys are not built (an ADR-008 open question). `/metrics` is open by default: P-4 in the [backlog review proposals](../../reviews/2026-11-06-backlog-review/proposals.md).
+  - Caller API keys are not built (an ADR-008 open question). `/metrics` needs `agent:read` in the `cloud` profile and is open by default elsewhere: P-4, decided 2026-11-08 in the [backlog review proposals](../../reviews/2026-11-06-backlog-review/proposals.md), built in 134 CH-14.
   - The in-process MCP hop is never trusted by loopback address or by `x-chassis-interface`, and `x-chassis-interface: mcp` is never used for billing or quotas.
 - Scopes from `spec.security.scopes` (for example `simplify:run`), with separate read and write scopes.
-- Rate limits per agent and per caller in `StatePort`, kept in Valkey in the stack profiles, so limits hold across pods and the process stays stateless: 429 `rate_limited` with `Retry-After` ([contract v7](../../contracts/contract-v7.md#c-rate-limits) C). A store outage lets calls through unlimited, decided 2026-11-06 (P-2). The limit is a rate, not a cap, so new idempotency keys per caller get their own cap.
+- Rate limits per agent and per caller in `StatePort`, kept in Valkey in the stack profiles, so limits hold across pods and the process stays stateless: 429 `rate_limited` with `Retry-After` ([contract v7](../../contracts/contract-v7.md#c-rate-limits) C). A store outage lets calls through unlimited, decided 2026-11-06 (P-2), except in the `cloud` profile, which refuses counted calls with 503 `state_unavailable` (P-26, decided 2026-11-08). The limit is a rate, not a cap, so new idempotency keys per caller get their own cap.
 - Input size limits: `spec.limits` bounds each call on every public interface, with 400 `limit_exceeded`, or 413 for the body (suggested: `max_tokens_max: 8000`, `timeout_ms_max: 120000`, `body_bytes_max: 1048576`, `messages_max: 256`).
 - PII redaction before logging or storage. In the chassis it is regex only (emails, phone numbers, IDs). Since PR #89 it also masks secrets as `SECRET`, first, and its phone and card rules are stricter: a card needs the Luhn check, and a phone needs a `+` or a separator (`packages/chassis/src/chassis/redaction.py`). Named-entity redaction runs in LiteLLM's guardrails and in the OpenTelemetry Collector log pipeline, never in the chassis: a named-entity model would add about 0.5–1 GiB per replica and break ADR-001's estimate:
   - the chassis redacts the events it publishes and its own logs;
@@ -50,7 +50,7 @@ Every agent needs the same auth, limits, and PII rules, so the chassis pipeline 
 
 ## Acceptance criteria
 
-- [ ] A call with no bearer token or a wrong one gets 401 on every run and read route. Only `/health` and `/ready` are open. Open until P-4 decides `/metrics`, open by default today (`packages/chassis/tests/test_metrics.py::test_metrics_need_no_token_by_default_even_with_auth_on`).
+- [ ] A call with no bearer token or a wrong one gets 401 on every run and read route. Only `/health` and `/ready` are open, and `/metrics` outside the `cloud` profile (P-4, decided 2026-11-08: `cloud` needs `agent:read`, built in 134 CH-14).
 - [ ] A call with no caller API key or a wrong one gets 401 on every run and read route.
 - [x] A valid caller without the needed scope gets 403. · Delivered in PoC-7: `packages/chassis/tests/test_security_auth.py::test_run_scope_is_needed_on_every_run_interface`, `::test_read_scope_is_needed_for_the_manifest_and_docs` (403 `forbidden`, contract v6 D.4)
 - [ ] A caller over its rate limit gets 429, and the limit holds across two pods. Open until a stack test runs two chassis processes on one Valkey and shows one bucket.
