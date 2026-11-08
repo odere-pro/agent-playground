@@ -314,7 +314,7 @@ def _mean(samples: Sequence[dict[str, Any]], key: str) -> float:
 
 def _p95(samples: Sequence[dict[str, Any]], key: str) -> float:
     """The nearest-rank 95th percentile: the value at least 95% of the samples are at or below."""
-    ordered = sorted(s[key] for s in samples)
+    ordered = sorted(float(s[key]) for s in samples)
     return ordered[max(0, math.ceil(0.95 * len(ordered)) - 1)]
 
 
