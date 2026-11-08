@@ -130,11 +130,11 @@ CASSETTE_TESTS ?= packages/chassis/tests/test_recorded_model.py \
 record-cassettes: ## Re-record model cassettes offline, against the fake model server
 	$(PYTEST) --record-mode=rewrite $(CASSETTE_TESTS)
 
-quick: ## Iteration gate: format check, lint, and the tests of the packages you changed; no mypy (make check runs it)
-	$(MAKE) fmt-check lint
-	@changed=$$(git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard) ; \
-	dirs=$$(echo "$$changed" | grep -oE '^(packages|pocs)/[^/]+' | sort -u | while read -r d; do [ -d "$$d" ] && [ -n "$$(find "$$d" -name 'test_*.py' -not -path '*/node_modules/*' -print -quit)" ] && echo "$$d"; done) ; \
-	if [ -n "$$dirs" ]; then echo "testing: $$dirs"; $(PYTEST) $$dirs; else $(PYTEST) -m "not slow"; fi
+quick: ## Iteration gate: format, lint, planning and harness checks, the non-PoC tests of what changed; no mypy, no PoC tests
+	$(MAKE) fmt-check lint planning-check harness-lint
+	@tests=$$( { git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard; } | $(PY) scripts/quick_select.py ) ; \
+	if [ -n "$$tests" ]; then echo "testing:" $$tests; $(PYTEST) $$tests; else echo "no non-PoC test covers the change"; fi ; \
+	echo "PoC tests are not in quick: make test-poc POC=NN, or dispatch the PoC's CI workflow"
 
 check: ## Boundary gate: what the CI `check` job runs; finished PoCs: make test-pocs-done
 	$(MAKE) fmt-check lint type test-gate planning-check harness-lint

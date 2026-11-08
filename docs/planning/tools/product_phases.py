@@ -31,7 +31,6 @@ PRODUCT_PHASE = {
     "CH-6": "A",
     "X-5": "A",
     "CH-14": "A",
-    "CH-7": "A",
     # B. Models and the judge
     "G-1": "B",
     "G-1b": "B",
@@ -71,4 +70,5 @@ PRODUCT_PHASE = {
     # G. Under load and on rollout
     "CH-15": "G",
     "CH-16": "G",
+    "CH-7": "G",
 }

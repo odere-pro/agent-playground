@@ -129,8 +129,8 @@ Since 2026-11-06 the [product plan](../../plans/2026-11-06-agent-container-produ
 
 ## Critical path
 
-- **To template GA (H-15):** 007 H-1 → 008 H-14 → 009 CH-1 → 016 H-9 → 024 CH-3 → 026 CH-4 → 055 CH-6 → 059 H-15. About 24 working days. Template GA is phase F. The baseline ([005 G-3](005-G-3-baseline-report.md)) and the SLM steps are parked, so no baseline wait sits on this path.
-- **Longest chain overall:** 007 H-1 → 008 H-14 → 009 CH-1 → 016 H-9 → 024 CH-3 → 026 CH-4 → 055 CH-6 → 059 H-15 → 076 R-1 → 090 R-13 → 091 R-11 → 092 R-12 → 099 O-1 → 100 O-2 → 103 O-11 → 107 O-6 → 109 O-8 → 110 C-6 → 115 O-15. The registry search and the orchestrator engine are the long pole.
+- **To template GA (H-15):** 002 G-1 → 003 G-1b → 012 H-3 → 015 H-8 → 025 H-10 → 057 H-19 → 059 H-15. About 22.5 working days. Template GA is phase F. The baseline ([005 G-3](005-G-3-baseline-report.md)) and the SLM steps are parked, so no baseline wait sits on this path.
+- **Longest chain overall:** 002 G-1 → 003 G-1b → 012 H-3 → 015 H-8 → 025 H-10 → 057 H-19 → 059 H-15 → 076 R-1 → 090 R-13 → 091 R-11 → 092 R-12 → 099 O-1 → 100 O-2 → 103 O-11 → 107 O-6 → 109 O-8 → 110 C-6 → 115 O-15. The registry search and the orchestrator engine are the long pole.
 
 ## Open decisions and what they block
 
@@ -229,7 +229,7 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
 | 007 | H-1 | [Chassis package and image: ports, `handle` contract, JSON event schema, envelope](007-H-1-harness-library-ports-envelope.md) | chassis | P0 | S | — |
 | 008 | H-14 | [One agent interface for all classes (stateless, orchestrator, data)](008-H-14-one-agent-interface.md) | chassis | P0 | L | [007](007-H-1-harness-library-ports-envelope.md) |
-| 009 | CH-1 | [Engine connectors `inprocess` and `sidecar` over A2A, plus the template A2A server that wraps `handle`](009-CH-1-engine-connectors-a2a.md) | chassis | P0 | S | [007](007-H-1-harness-library-ports-envelope.md), [008](008-H-14-one-agent-interface.md) |
+| 009 | CH-1 | [Engine connectors `inprocess` and `sidecar` over A2A, plus the template A2A server that wraps `handle`](009-CH-1-engine-connectors-a2a.md) | chassis | P0 | S | [007](007-H-1-harness-library-ports-envelope.md) |
 | 010 | H-12 | [Config loader: object storage, JSON Schema check, reload on change](010-H-12-config-loader.md) | chassis | P0 | M | [007](007-H-1-harness-library-ports-envelope.md) |
 | 012 | H-3 | [Model port to the LLM router, with a route map per task](012-H-3-model-port.md) | agent-profile | P0 | L | [003](003-G-1b-named-model-routes.md), [007](007-H-1-harness-library-ports-envelope.md), [004](004-G-2-token-cost-counting.md) |
 | 013 | CH-2 | [Outbound model proxy: an OpenAI- and Anthropic-compatible URL for workloads, forwarded with the service's scoped key](013-CH-2-outbound-model-proxy.md) | chassis, agent-profile | P0 | M | [012](012-H-3-model-port.md), [009](009-CH-1-engine-connectors-a2a.md) |
@@ -273,7 +273,7 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | 053 | H-22 | [Event reliability: idempotent consumers, retries with backoff, dead-letter topic](053-H-22-event-reliability.md) | chassis | P1 | M | [018](018-H-18-idempotency.md), [021](021-H-20-event-consumer-adapter.md), [040](040-D-0-recorder-agent.md) |
 | 054 | H-16 | [Tool port: native tool calls or JSON via guided decoding; read and write modes](054-H-16-tool-port.md) | agent-profile | P1 | L | [018](018-H-18-idempotency.md), [017](017-H-4-harness-features.md), [022](022-H-6-security-middleware.md) |
 | 055 | CH-6 | [Remote lane and the trust rule: sandboxed pod or managed runtime over A2A, cloud auth adapter, admission check](055-CH-6-remote-lane-trust-rule.md) | chassis | P1 | S | [009](009-CH-1-engine-connectors-a2a.md), [026](026-CH-4-chassis-only-credentials-egress.md), [010](010-H-12-config-loader.md), [024](024-CH-3-helm-library-chart.md) |
-| 056 | CH-7 | [Chassis release in rings, with a per-service pin and a minimum-version admission rule](056-CH-7-chassis-release-rings.md) | chassis | P1 | L | [024](024-CH-3-helm-library-chart.md), [055](055-CH-6-remote-lane-trust-rule.md), [014](014-H-7-observability.md), [051](051-H-13-openapi-mcp-tools.md), [038](038-X-1a-terraform-first-cloud.md) |
+| 056 | CH-7 | [Chassis release in rings, with a per-service pin and a minimum-version admission rule](056-CH-7-chassis-release-rings.md) | chassis | P1 | L | [024](024-CH-3-helm-library-chart.md), [055](055-CH-6-remote-lane-trust-rule.md), [014](014-H-7-observability.md) |
 | 057 | H-19 | [Stateless check in CI: fail the build on local disk writes or kept data](057-H-19-stateless-check-ci.md) | chassis | P1 | M | [025](025-H-10-template-repo.md), [015](015-H-8-testing-kit.md) |
 | 058 | CH-8 | [Framework event mappings and one non-Python workload in the service template](058-CH-8-framework-event-mappings.md) | chassis | P1 | L | [015](015-H-8-testing-kit.md) |
 | 059 | H-15 | [Agent factory CLI: scaffold an agent by class and kind, modules by config](059-H-15-agent-factory-cli.md) | chassis | P1 | L | [025](025-H-10-template-repo.md), [057](057-H-19-stateless-check-ci.md), [058](058-CH-8-framework-event-mappings.md), [055](055-CH-6-remote-lane-trust-rule.md), [024](024-CH-3-helm-library-chart.md) |
