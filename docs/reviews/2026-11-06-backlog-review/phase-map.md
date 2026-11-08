@@ -52,7 +52,7 @@ Product plan size: 1 week left (suggested: 5 days). Issue days: **21.5**, 9 issu
 | P1: default-deny egress is not a product rule | 026 CH-4 | closed 2026-11-06 (PR #79) |
 | P1: the admission rules are not in the chart | 026 CH-4 | closed 2026-11-06 (PR #79); warn-first left |
 | Phase A item: the sidecar hostile suite in CI (PoC-5 criterion 1) | 026 CH-4 box 6 | closed 2026-11-06 (PR #79, PR #80) |
-| Phase A item: MinIO through the chassis (PoC-5 criterion 3) | 026 CH-4 box 2 | open |
+| Phase A item: MinIO through the chassis (PoC-5 criterion 3) | 026 CH-4 box 2 | closed 2026-11-08 (PR #92, PR #100; `remote-lane` run 42503295381) |
 | Phase A item: the T10 probe (PoC-5 criterion 8) | 055 CH-6 box 2; the probe workload itself is the user's (011 section 4) | open |
 | Phase A item: throughput at 4 pairs on Linux (PoC-4 criterion 4) | 122 X-5; needs a Linux host (owner list) | open |
 | Not in the product plan: the AI Act Art. 50(2) client guide, due 2026-12-02 | 023 C-5 box 4, moved to phase A by the user on 2026-11-06 | open |
