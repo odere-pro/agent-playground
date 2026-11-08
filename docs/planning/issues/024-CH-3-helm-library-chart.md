@@ -53,7 +53,7 @@ epic_refs: [G.4, H]
 - [ ] Secrets are mounted only into the chassis container, checked from inside the workload container.
 - [x] No service account token is mounted in the workload container, checked from inside it. · Delivered in PoC-5, PoC-9: `pocs/poc-09-agent-mvp-template/notes/2026-11-05-kind-hpa-drill.md` ("In the workload container: no service account token"), `pocs/poc-05-sandboxed/tests/test_poc05_kind_sidecar_controls.py::test_h02_no_service_account_token_in_the_workload`
 - [ ] A workload that stops answering its liveness probe gets the pod restarted, on this chart on kind.
-- [ ] A rolling restart under load fails no request, on this chart on kind.
+- [x] A rolling restart under load fails no request, on this chart on kind. · Delivered in PoC-9: `pocs/poc-09-agent-mvp-template/notes/2026-11-08-kind-drain-order.md` (ADR-012 option 1, PR #107 head `2f4fbe8`: 0 failed of 6312 and of 7736 with no retry; the chart as built failed 515 and 464), `deploy/kind/chart/run.sh` (`drill-rolling`)
 - [x] The chart runs on a local kind or k3d cluster with native sidecars. · Delivered in PoC-9: `pocs/poc-09-agent-mvp-template/notes/2026-11-05-kind-hpa-drill.md` (sidecar lane, chassis as the native sidecar)
 - [ ] One ADR picks the container order, so that the bind order (contract v4) and the drain order hold together (`docs/specs/contract.md`: the workload gets SIGTERM after the chassis has drained), or the chart adds a preStop. The chart follows it. Owner: `chassis-architect`.
 

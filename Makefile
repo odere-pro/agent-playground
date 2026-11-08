@@ -18,7 +18,7 @@ DONE_POC_TESTS := $(wildcard $(addsuffix /tests,$(DONE_POCS)))
 
 .PHONY: help setup evals evals-regression redteam fmt fmt-check lint lint-extra type \
 	test test-gate test-poc test-pocs-done gate-paths test-integration load-test \
-	kind-poc04 kind-poc05 kind-poc06 bakeoff poc06-mac record-cassettes \
+	kind-poc04 kind-poc05 kind-poc06 kind-chart bakeoff poc06-mac record-cassettes \
 	quick check planning-sync planning-check planning-check-strict progress schemas harness-lint \
 	fake-model-server ts-check clean
 
@@ -93,6 +93,9 @@ kind-poc05: ## PoC-5 kind cluster (gVisor, NetworkPolicy, admission): make kind-
 
 kind-poc06: ## PoC-6 engines on the PoC-5 kind cluster: make kind-poc06 ARGS="..."
 	deploy/kind/poc06/run.sh $(ARGS)
+
+kind-chart: ## The library chart on kind (ADR-012 drain drill, H14): make kind-chart ARGS="up"
+	deploy/kind/chart/run.sh $(ARGS)
 
 bakeoff: ## PoC-6 benchmark kit: make bakeoff ARGS="..."
 	uv run python -m bakeoff $(ARGS)

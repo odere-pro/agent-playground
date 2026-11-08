@@ -34,6 +34,7 @@ SCRIPTS = (
     "poc06/seed.sh",
     "poc06/hosted.sh",
     "poc06/run.sh",
+    "chart/run.sh",
 )
 PINNED = [
     ("run.sh", "kind-poc04", "kind-poc04"),
@@ -43,6 +44,7 @@ PINNED = [
     ("poc06/seed.sh", "kind-poc05", "seed-poc06"),
     ("poc06/hosted.sh", "kind-poc05", "hosted-poc06"),
     ("poc06/run.sh", "kind-poc05", "kind-poc06"),
+    ("chart/run.sh", "kind-agent-chart", "kind-agent-chart"),
 ]
 """What each script printed and pinned before the move, byte for byte."""
 

@@ -1,0 +1,21 @@
+# The drill's way in from the host, as PoC-4's (kind/poc04/base): a NodePort Service on the
+# chassis port of the example-agent pods, so the client's calls go through kube-proxy and its
+# keep-alive connections stay pinned to one pod, as they would behind a cluster Service. Not part
+# of the chart: the chart's own Service stays ClusterIP. The chart's NetworkPolicy takes the
+# chassis port from any source when networkPolicy.ingressFrom is empty, as it is in the kind values.
+apiVersion: v1
+kind: Service
+metadata:
+  name: example-agent-drill
+  namespace: agents
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: example-agent
+    app.kubernetes.io/instance: example-agent
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30082
+      protocol: TCP
