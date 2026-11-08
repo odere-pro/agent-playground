@@ -429,6 +429,7 @@ P-26 to P-34 come from the section "If phases A to F are all built: what is stil
   1. An ADR: the chassis is the main container and the workload the native sidecar, so the chassis drains first.
   2. Keep the order, and have the chassis go not-ready on the workload's SIGTERM.
 - suggested: option 1.
+- ADR: 012, [ADR-012](../../planning/adr/012-drain-order-on-rollout.md), Proposed 2026-11-08. It states the options and the suggested pick; P-29 stays open for the user.
 - Owner: `chassis-architect`.
 - In the backlog: 024 CH-3's "rolling restart under load fails no request" box ticks only after the pick.
 
