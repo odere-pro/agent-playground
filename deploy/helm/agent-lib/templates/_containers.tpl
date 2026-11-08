@@ -82,13 +82,16 @@ ENTRYPOINT is `chassis serve`; the chart sets args only, never a command (admiss
     {{- end }}
   # Started means bound: the marker exists only once the proxies and the public listener have
   # bound, and the console script deletes a stale one before it imports anything (ADR-012, H14).
-  # Not an httpGet: in the sidecar lane the workload starts first and could take the public port.
-  # python is the image's own (its HEALTHCHECK uses it); no shell is assumed. The kubelet runs
+  # The marker names its writer (pid and start time), and the probe passes only while that
+  # process is live, so a marker a killed chassis left in the kept emptyDir fails on the
+  # restarted container even before the delete. Not an httpGet: in the sidecar lane the workload
+  # starts first and could take the public port. python is the image's own (its HEALTHCHECK uses
+  # it); no shell is assumed, and the module imports only the standard library. The kubelet runs
   # readiness and liveness only after this passes, so those stay HTTP: `/ready` is 503 until the
   # workload answers, `/health` says the process serves.
   startupProbe:
     exec:
-      command: {{ toJson (list "python" "-c" (printf "import os,sys; sys.exit(0 if os.path.exists(%s) else 1)" (include "agent-lib.readyMarker" . | squote))) }}
+      command: {{ toJson (list "python" "-m" "chassis.ready_marker" (include "agent-lib.readyMarker" .)) }}
     periodSeconds: 2
     timeoutSeconds: 2
     failureThreshold: 30

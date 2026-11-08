@@ -5,7 +5,9 @@ The chassis is Running while it imports, seconds before it binds. A container re
 emptyDir, so a marker the previous container wrote would pass the chart's startup probe for that
 whole time, while a workload that took the public port answers the readiness probe. So the
 marker goes here, with only the standard library loaded. `Drain.serve` deletes it again and
-writes it once every listener has bound. A relative path is left to the parser, which refuses it.
+writes it once every listener has bound, stamped with this process's pid and start time, so the
+probe (`chassis.ready_marker`) fails a stale marker even in the window before this delete. A
+relative path is left to the parser, which refuses it.
 """
 
 from __future__ import annotations

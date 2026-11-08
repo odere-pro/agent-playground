@@ -53,7 +53,7 @@ Each step names its issue. Read the issue's acceptance criteria before you start
 7. **Measure and show (phase E).** Needs the north star decision. 117 X-3, 046 A-5, 132 CH-13.
 8. **Template GA (phase F), last.** 059 H-15, 025 H-10, 139 CH-19.
 
-Follow-ups, not yet issues. From #107 (small: chassis code, the chart's startup probe, tests; `platform-security` reviews): stamp the ready marker with the process start time, so a marker left by a SIGKILL or an OOM cannot pass the startup probe in the milliseconds before `chassis.entry` deletes it (LOW, `platform-security`). From CH-14: a keyed `user.id` (HMAC with a chassis-only key; the unkeyed hash lets a reader test guessed subjects and link a user across agents), and P-27 option 2 (no `user.id` at all to an `untrusted` remote).
+Follow-ups, not yet issues. From #107: the ready marker is stamped with the writer's pid and start time, and the chart's probe checks it (`chassis.ready_marker`; the LOW from `platform-security`, done in the ready-marker PR). From CH-14: a keyed `user.id` (HMAC with a chassis-only key; the unkeyed hash lets a reader test guessed subjects and link a user across agents), and P-27 option 2 (no `user.id` at all to an `untrusted` remote).
 
 Steps 1 and 3 touch different files and can run as parallel sessions, one worktree each. Step 3 touches the model proxy files CH-14 changed; #104 is merged, so start from `main`.
 
