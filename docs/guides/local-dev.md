@@ -12,7 +12,7 @@ Installs Python 3.12 through uv, every workspace package in editable mode, the d
 
 | Command | When | What |
 | ------- | ---- | ---- |
-| `make quick` | before every commit | format check, lint (ruff and import rules), tests of the packages you changed; no mypy |
+| `make quick` | before every commit | format check, lint (ruff and import rules), `planning-check`, `harness-lint`, and the non-PoC tests of what changed ([scripts/quick_select.py](../../scripts/quick_select.py)); no mypy, no PoC tests |
 | `make check` | before a PR, at an iteration end | the CI `check` job: format, lint, mypy, the gate's tests (`make test-gate`), planning check, harness lint |
 | `make test` | any time | every test, offline ([testing.md](testing.md#offline-is-enforced)) |
 | `make test-poc POC=01` | while working on an iteration | that iteration's scenario tests |

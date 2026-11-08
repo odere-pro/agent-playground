@@ -40,7 +40,7 @@ The service chassis for the SLM agent platform, and the nine PoC iterations that
 ## Commands
 
 - `make setup` once.
-- `make quick` before every commit. It does not run mypy.
+- `make quick` before every commit. It runs the non-PoC tests of what changed, never the PoC tests, and no mypy.
 - `make check` before a PR. It is the CI `check` job, mypy included.
 - `make test` and `make test-poc POC=NN` while you work. CI leaves out finished PoCs; `make test-pocs-done` runs them (`docs/guides/testing.md`, "What CI runs").
 - `make lint-fix` repairs formatting, typos, and moved `.secrets.baseline` lines.

@@ -53,7 +53,7 @@ make test-pocs-done
 - A test that needs a socket is marked `network` and is not part of any gate.
 - HTTP tests use the httpx ASGI transport, which needs no socket.
 
-The pre-commit hook ([scripts/git-hooks/pre-commit](../../scripts/git-hooks/pre-commit)) runs `make lint-staged` first: codespell, shellcheck, yamllint, and detect-secrets on the staged files ([scripts/lint_staged.sh](../../scripts/lint_staged.sh)). Then it runs `make quick`. `make lint-fix` repairs formatting, typos, and moved `.secrets.baseline` lines. In `make lint-extra`, [scripts/check_secrets.sh](../../scripts/check_secrets.sh) fails on a new secret only, not on moved baseline lines.
+The pre-commit hook ([scripts/git-hooks/pre-commit](../../scripts/git-hooks/pre-commit)) runs `make lint-staged` first: codespell, shellcheck, yamllint, and detect-secrets on the staged files ([scripts/lint_staged.sh](../../scripts/lint_staged.sh)). Then it runs `make quick`, which picks its tests from the changed files ([scripts/quick_select.py](../../scripts/quick_select.py)): a package's own tests, `scripts/tests` for a change under `scripts/` or `docs/planning/tools/`, and every non-PoC test for a shared file (`Makefile`, `pyproject.toml`, `uv.lock`). A docs-only change runs no test. PoC scenario tests never run in the hook: run them with `make test-poc POC=NN`, or dispatch the PoC's CI workflow. `make lint-fix` repairs formatting, typos, and moved `.secrets.baseline` lines. In `make lint-extra`, [scripts/check_secrets.sh](../../scripts/check_secrets.sh) fails on a new secret only, not on moved baseline lines.
 
 ## Test shape
 
