@@ -125,14 +125,14 @@ ENGINES: tuple[KindEngine, ...] = (
         "chassis-smolagents-remote",
         "remote-smolagents",
         marker=" [code]",
-        proxy_ip="10.96.85.92",
+        proxy_ip="10.96.0.92",
         token_secret="remote-smolagents-token",  # pragma: allowlist secret (a Secret name)
     ),
     kind_engine(
         "echo-claude-agent",
         "chassis-claude-agent-remote",
         "remote-claude-agent",
-        proxy_ip="10.96.85.93",
+        proxy_ip="10.96.0.93",
         token_secret="remote-claude-agent-token",  # pragma: allowlist secret (a Secret name)
     ),
     kind_engine(
@@ -140,7 +140,7 @@ ENGINES: tuple[KindEngine, ...] = (
         "chassis-typescript-remote",
         "remote-typescript",
         lane="remote",
-        proxy_ip="10.96.85.94",
+        proxy_ip="10.96.0.94",
         token_secret="remote-typescript-token",  # pragma: allowlist secret (a Secret name)
     ),
     kind_engine(
@@ -149,7 +149,7 @@ ENGINES: tuple[KindEngine, ...] = (
         "remote-kagent-adk",
         marker=" [text]",
         plain=True,
-        proxy_ip="10.96.85.95",
+        proxy_ip="10.96.0.95",
     ),
 )
 REMOTES = tuple(e for e in ENGINES if e.lane == "remote")

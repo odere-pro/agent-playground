@@ -46,7 +46,7 @@ CHARTS = ("agent-lib", "example-agent", "agent-admission")
 # own. The token Secret is not a value: the chart names it after the workload (admission rule 7c).
 REMOTE_VALUES: dict[str, Any] = {
     "chassis": {"config": {"spec": {"trust": "untrusted", "engine": {"connector": "remote"}}}},
-    "remote": {"namespace": REMOTE_NAMESPACE, "proxyClusterIP": "10.96.85.92"},
+    "remote": {"namespace": REMOTE_NAMESPACE, "proxyClusterIP": "10.96.0.92"},
 }
 
 Doc = dict[str, Any]

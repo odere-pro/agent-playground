@@ -3,7 +3,7 @@
 # Sandbox `remote-smolagents` on gVisor in poc05-remote.
 #
 # - Public port 8080 and the remote proxy listener 8091, both on the pod IP.
-# - `chassis-smolagents-remote-proxy` is the fixed-ClusterIP Service in front of 8091 (10.96.85.92). The remote has no DNS,
+# - `chassis-smolagents-remote-proxy` is the fixed-ClusterIP Service in front of 8091 (10.96.0.92, in the static band 10.96.0.0 to 10.96.0.255 that dynamic allocation skips). The remote has no DNS,
 #   so it gets this IP as plain env (remote/remote-smolagents.yaml). If it changes, change both files.
 # - One replica: the remote listener answers only for a run in flight in this process.
 # - Secrets, chassis container only: its LiteLLM virtual key, the Valkey password, and REMOTE_TOKEN
@@ -171,7 +171,7 @@ metadata:
   labels:
     app.kubernetes.io/name: chassis-smolagents-remote
 spec:
-  clusterIP: 10.96.85.92
+  clusterIP: 10.96.0.92
   selector:
     app.kubernetes.io/name: chassis-smolagents-remote
   ports:

@@ -71,7 +71,7 @@ REMOTE_KIND_VALUES: dict[str, Any] = {
         "config": {"spec": {"trust": "untrusted", "engine": {"connector": "remote"}}},
     },
     "workload": {"image": "kind.local/agent-platform/echo-python:poc09", "pullPolicy": "Never"},
-    "remote": {"namespace": REMOTE_NAMESPACE, "proxyClusterIP": "10.96.85.92"},
+    "remote": {"namespace": REMOTE_NAMESPACE, "proxyClusterIP": "10.96.0.92"},
 }
 PEER = {
     "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "platform"}},

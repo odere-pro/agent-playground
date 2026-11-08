@@ -9,7 +9,7 @@ Some manifests are copies of each other. A hardening change made in one must be 
 | Files | What differs |
 | ----- | ------------ |
 | `agents/agent-openai-agents.yaml`, `agents/agent-typescript.yaml` (208 lines each) | Names and labels, the image, the workload probe command (`python -c` or `node -e`), and the workload memory limit (384Mi or 256Mi). 21 changed lines |
-| `agents/chassis-smolagents-remote.yaml`, `agents/chassis-claude-agent-remote.yaml`, `agents/chassis-typescript-remote.yaml` (180 lines each) | Names, labels, Secret and ConfigMap names, and the proxy Service `clusterIP` (`10.96.85.92`, `.93`, `.94`). Nothing else |
+| `agents/chassis-smolagents-remote.yaml`, `agents/chassis-claude-agent-remote.yaml`, `agents/chassis-typescript-remote.yaml` (180 lines each) | Names, labels, Secret and ConfigMap names, and the proxy Service `clusterIP` (`10.96.0.92`, `.93`, `.94`). Nothing else |
 
 Each remote chassis `clusterIP` is also written in its remote, as the model and MCP URLs in `remote/remote-<engine>.yaml`. Change both files together.
 
