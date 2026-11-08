@@ -39,7 +39,7 @@ metadata:
   labels:
     app.kubernetes.io/name: remote-kagent-adk
 data:
-  config.json: '{"model": {"type": "openai", "model": "fake-chat", "base_url": "http://10.96.85.95:8091/v1", "api_key_passthrough": true}, "description": "kagent-adk behind the chassis remote lane", "instruction": "Rewrite in plain words. Short sentences. Keep every fact.", "stream": true}'  # pragma: allowlist secret (a flag name, no value)
+  config.json: '{"model": {"type": "openai", "model": "fake-chat", "base_url": "http://10.96.0.95:8091/v1", "api_key_passthrough": true}, "description": "kagent-adk behind the chassis remote lane", "instruction": "Rewrite in plain words. Short sentences. Keep every fact.", "stream": true}'  # pragma: allowlist secret (a flag name, no value)
   run_kagent_adk.py: |
     """Run the kagent ADK runtime as `kagent-adk static` builds it, with local=True (in-memory
     task store, no kagent API). Usage: run_kagent_adk.py CONFIG_DIR HOST PORT. After kagent's

@@ -74,7 +74,7 @@ flowchart LR
 ```
 
 - **Sidecar lane.** The two containers share one network namespace. A NetworkPolicy cannot tell them apart, so the workload can open any socket the chassis can. That is why every service must refuse a call without the chassis's credential, and why untrusted code goes remote.
-- **Remote lane.** The workload has its own pod, on gVisor, in its own namespace. It finds the chassis by a fixed ClusterIP (`10.96.85.91`, the Service `chassis-echo-remote-proxy`), given as plain env, because it has no DNS. The chassis finds it by name (`remote-echo.poc05-remote.svc.cluster.local:9000`).
+- **Remote lane.** The workload has its own pod, on gVisor, in its own namespace. It finds the chassis by a fixed ClusterIP (`10.96.0.91`, the Service `chassis-echo-remote-proxy`), given as plain env, because it has no DNS. The chassis finds it by name (`remote-echo.poc05-remote.svc.cluster.local:9000`).
 - **The public port** binds the pod IP in both lanes. So localhost in the sidecar pod carries only the loopback proxy (8090) and the workload (9000).
 - **Tools.** A workload never reaches a tool server. It calls `/mcp` on its chassis; the chassis calls LiteLLM's MCP gateway with its own virtual key; the gateway calls `fake-mcp-server` or `code-runner-dispatch`.
 - **The code runner, a sandbox per call.** The dispatcher is the only server LiteLLM registers as `code_runner`. It never runs code itself (next section).
@@ -345,7 +345,7 @@ sequenceDiagram
     W->>W: workload-a2a checks the token, then calls handle
     Note over W: ctx.traceparent carries the run's trace id
 
-    W->>BA: POST /v1/chat/completions to 10.96.85.91:8091 with Bearer token and traceparent
+    W->>BA: POST /v1/chat/completions to 10.96.0.91:8091 with Bearer token and traceparent
     alt token missing or wrong
         BA-->>W: 401 remote_unauthenticated, counted as chassis.remote.auth_failed
     else token matches current or previous

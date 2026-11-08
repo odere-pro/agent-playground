@@ -4,7 +4,7 @@ only. The workload port is never in it; in the sidecar lane the workload listens
 
 remote lane, two more Services:
 - <name>-remote-proxy, in front of the chassis's remote proxy port, on the fixed ClusterIP
-  remote.proxyClusterIP (the remote pod has no DNS; PoC-5 used 10.96.85.91).
+  remote.proxyClusterIP (the remote pod has no DNS; PoC-5 used 10.96.0.91).
 - <name>-workload in remote.namespace, so the chassis reaches its remote by name.
 */}}
 {{- define "agent-lib.service" -}}

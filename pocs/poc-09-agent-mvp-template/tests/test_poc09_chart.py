@@ -220,7 +220,7 @@ def test_remote_lane_services_and_policies(chart: Charts, tmp_path: Path) -> Non
     public = one(docs, "Service", RELEASE)
     assert [p["targetPort"] for p in public["spec"]["ports"]] == [CHASSIS_PORT]
     proxy = one(docs, "Service", f"{RELEASE}-remote-proxy")
-    assert proxy["spec"]["clusterIP"] == "10.96.85.92"
+    assert proxy["spec"]["clusterIP"] == "10.96.0.92"
     assert [p["targetPort"] for p in proxy["spec"]["ports"]] == [REMOTE_PROXY_PORT]
     policy = one(docs, "NetworkPolicy", f"{RELEASE}-workload")
     assert policy["metadata"]["namespace"] == REMOTE_NAMESPACE
@@ -301,7 +301,7 @@ REFUSED: dict[str, tuple[dict[str, Any], str]] = {
         | {
             "remote": {
                 "namespace": REMOTE_NAMESPACE,
-                "proxyClusterIP": "10.96.85.92",
+                "proxyClusterIP": "10.96.0.92",
                 "tokenSecret": {"name": "other-agent-workload-token"},
             }
         },

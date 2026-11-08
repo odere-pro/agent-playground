@@ -79,7 +79,7 @@ REPO = Path(__file__).resolve().parents[3]
 CLUSTER_YAML = REPO / "deploy" / "kind" / "poc05" / "cluster.yaml"
 TOKEN_ENV = "CHASSIS_API_TOKEN"
 OUTSIDE_IP = "1.1.1.1"  # a literal public address: no DNS involved
-POC05_PROXY_IP = "10.96.85.91"  # the PoC-5 remote's chassis proxy
+POC05_PROXY_IP = "10.96.0.91"  # the PoC-5 remote's chassis proxy
 NAME_LABEL = "app.kubernetes.io/name"
 CHASSIS_CREDENTIALS = {"LITELLM_API_KEY", "VALKEY_PASSWORD", "REMOTE_TOKEN"}
 
