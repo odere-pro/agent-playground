@@ -3,10 +3,16 @@
 can check the messages a client sent, tool loop included. The log keeps the last `max_calls`
 (suggested: 1000) in a `deque`, so a load run cannot grow it without bound (it got the server
 OOM-killed); `app.state.calls_total` counts every call.
+
+Failure rules (CH-16). A rule with `delay_s` answers that much later; while it waits, the handler
+watches for the client to leave (a socket close, or the ASGI transport's cancel) and counts it in
+`app.state.aborted`, so a test can show that a timed-out caller ended the upstream call. An error
+rule with a `type` answers in the OpenAI error shape LiteLLM's proxy uses.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 import uuid
@@ -16,7 +22,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from fake_model_server.script import Rule, Script
 
@@ -138,6 +144,44 @@ async def _stream(turn: _Turn) -> AsyncIterator[str]:
 
 MAX_CALLS = 1000
 """suggested: how many request bodies `app.state.calls` keeps."""
+DISCONNECT_POLL_S = 0.02
+"""suggested: how often a delayed answer checks whether the client is still there."""
+
+
+class _ClientGone(Exception):
+    """The client left while the answer was delayed."""
+
+
+async def _delay(request: Request, seconds: float) -> None:
+    """Wait `seconds`, or raise `_ClientGone` as soon as the client disconnects. A cancel (the
+    ASGI transport's way of saying the client gave up) is counted the same way and re-raised."""
+    deadline = time.monotonic() + seconds
+    try:
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return
+            if await request.is_disconnected():
+                raise _ClientGone
+            await asyncio.sleep(min(DISCONNECT_POLL_S, left))
+    except asyncio.CancelledError:
+        request.app.state.aborted += 1
+        raise
+
+
+def _error_response(error: Any) -> Any:
+    """LiteLLM's `ProxyException` shape when the rule names a `type`; else FastAPI's detail."""
+    if error.type is None:
+        raise HTTPException(status_code=error.status, detail=error.message)
+    body = {
+        "error": {
+            "message": error.message,
+            "type": error.type,
+            "param": None,
+            "code": str(error.status),
+        }
+    }
+    return JSONResponse(body, status_code=error.status)
 
 
 def create_app(script: Script, *, max_calls: int = MAX_CALLS) -> FastAPI:
@@ -145,6 +189,7 @@ def create_app(script: Script, *, max_calls: int = MAX_CALLS) -> FastAPI:
     app.state.script = script
     app.state.calls = deque[dict[str, Any]](maxlen=max_calls)  # the last `max_calls`, oldest first
     app.state.calls_total = 0
+    app.state.aborted = 0  # clients that left during a delayed answer (CH-16)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -164,8 +209,14 @@ def create_app(script: Script, *, max_calls: int = MAX_CALLS) -> FastAPI:
         app.state.calls.append(body)
         app.state.calls_total += 1
         rule = script.pick(messages, body.get("model"))
+        if rule.delay_s > 0:
+            try:
+                await _delay(request, rule.delay_s)
+            except _ClientGone:
+                app.state.aborted += 1
+                return Response(status_code=499)  # never seen: the client is gone
         if rule.error is not None:
-            raise HTTPException(status_code=rule.error.status, detail=rule.error.message)
+            return _error_response(rule.error)
         turn = _Turn(
             completion_id=f"chatcmpl-{uuid.uuid4().hex[:12]}",
             created=int(time.time()),

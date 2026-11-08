@@ -1,7 +1,19 @@
 """LiteLLMModel: `complete` and `stream` over `POST {base_url}/chat/completions`.
 
 Errors map to `ModelError`: `http_<status>` (retryable at 5xx), `connect_error` and `timeout`
-(retryable), `bad_response` (not). The agent name, when set, rides along as a LiteLLM tag in
+(retryable), `bad_response` (not), and `service_budget_exhausted` (not) when LiteLLM refuses for
+the service's budget: a 4xx whose body is `{"error": {"type": "budget_exceeded", ...}}`, the
+proxy's `BudgetExceededError`; the status has been 400 and 429 across releases, so the type is
+what is matched (CH-16). The adapter never retries; `num_retries` and `fallbacks` per route in the
+LiteLLM config do.
+
+Per-call timeout (CH-16). `timeout_s` is the wall clock of the whole call. The request's httpx
+timeout is the smaller of it and the adapter's default, so a hung connect or read ends by then;
+a complete call is bounded by `asyncio.timeout`, and a stream checks its deadline on every read.
+Past the deadline the call raises `timeout` and leaves the `httpx` response, which closes the
+connection: the upstream sees the client go and stops generating.
+
+The agent name, when set, rides along as a LiteLLM tag in
 both the `x-litellm-tags` header and `metadata.tags`, so per-agent cost shows up in the router.
 The httpx client ignores the environment (`trust_env=False`), as the sidecar connector's does: no
 proxy variable can route the key elsewhere.
@@ -14,15 +26,20 @@ telemetry) no header is sent. Only `traceparent` goes out; no baggage, so no use
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import os
-from collections.abc import AsyncIterator, Sequence
+import time
+from collections.abc import AsyncIterator, Awaitable, Sequence
 from typing import Any
 
 import httpx
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from chassis.ports.model import (
+    SERVICE_BUDGET_EXHAUSTED,
+    TIMEOUT,
     ModelChunk,
     ModelError,
     ModelMessage,
@@ -128,16 +145,34 @@ def _error_message(response: httpx.Response, body: bytes, api_key: str | None) -
     return message or response.reason_phrase or f"HTTP {response.status_code}"
 
 
+BUDGET_EXCEEDED_TYPE = "budget_exceeded"
+"""LiteLLM's `error.type` for its `BudgetExceededError` (key, team, user, or proxy budget)."""
+
+
+def _is_budget_refusal(body: bytes) -> bool:
+    try:
+        data = json.loads(body)
+    except ValueError:
+        return False
+    err = data.get("error") if isinstance(data, dict) else None
+    return isinstance(err, dict) and err.get("type") == BUDGET_EXCEEDED_TYPE
+
+
 def _from_http_status(response: httpx.Response, body: bytes, api_key: str | None) -> ModelError:
     status = response.status_code
-    return ModelError(
-        f"http_{status}", _error_message(response, body, api_key), retryable=status >= 500
-    )
+    message = _error_message(response, body, api_key)
+    if 400 <= status < 500 and _is_budget_refusal(body):
+        return ModelError(SERVICE_BUDGET_EXHAUSTED, message, retryable=False)
+    return ModelError(f"http_{status}", message, retryable=status >= 500)
+
+
+def _deadline_error(timeout_s: float) -> ModelError:
+    return ModelError(TIMEOUT, f"the call passed its {timeout_s:g} s deadline", retryable=True)
 
 
 def _from_transport(exc: httpx.HTTPError) -> ModelError:
     if isinstance(exc, httpx.TimeoutException):
-        return ModelError("timeout", str(exc) or "request timed out", retryable=True)
+        return ModelError(TIMEOUT, str(exc) or "request timed out", retryable=True)
     if isinstance(exc, httpx.ConnectError):
         return ModelError("connect_error", str(exc) or "connection failed", retryable=True)
     return ModelError("transport_error", str(exc) or type(exc).__name__, retryable=True)
@@ -174,12 +209,30 @@ class _ToolCallBuffer:
         return calls
 
 
-# suggested: 60 s per router call; the epic gives no number. It is not capped at the run's
-# `budget.timeout_ms`: `ModelPort.complete` and `.stream` take no per-call timeout, so the proxy
-# cannot pass the run's remaining time down without a port change (backlog 013 CH-2, PoC-2
-# budgets). Until then the workload's own client caps the call at `budget.timeout_ms`
-# (`echo_python.handle`), and a run over its time budget is the workload's timeout, not this one.
+# suggested: 60 s per httpx operation (connect, read, write, pool) when the call names no
+# `timeout_s`; the epic gives no number. The model proxy passes the run's remaining time as
+# `timeout_s` (CH-16), which caps this per call.
 DEFAULT_TIMEOUT_S = 60.0
+
+
+async def _next_line(lines: AsyncIterator[str]) -> str | None:
+    try:
+        return await lines.__anext__()
+    except StopAsyncIteration:
+        return None
+
+
+async def _by[T](deadline: float | None, awaitable: Awaitable[T], timeout_s: float | None) -> T:
+    """`awaitable`, or `timeout` once `deadline` (monotonic) has passed. The wait runs in the
+    caller's task, so a stream whose reads come from different tasks is still bounded."""
+    if deadline is None:
+        return await awaitable
+    left = deadline - time.monotonic()
+    try:
+        async with asyncio.timeout(max(left, 0.0)):
+            return await awaitable
+    except TimeoutError as exc:
+        raise _deadline_error(timeout_s if timeout_s is not None else 0.0) from exc
 
 
 class LiteLLMModel:
@@ -233,6 +286,12 @@ class LiteLLMModel:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    def _request_timeout(self, timeout_s: float | None) -> httpx.Timeout:
+        """The httpx timeout of one request: the call's `timeout_s` when it is the smaller."""
+        if timeout_s is None or timeout_s >= self.timeout:
+            return httpx.Timeout(self.timeout)
+        return httpx.Timeout(max(timeout_s, 0.0))
+
     def _body(
         self,
         messages: Sequence[ModelMessage],
@@ -262,10 +321,16 @@ class LiteLLMModel:
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> ModelResult:
         body = self._body(messages, route, tools, temperature, max_tokens)
         try:
-            response = await self._client.post("/chat/completions", json=body)
+            async with asyncio.timeout(timeout_s):
+                response = await self._client.post(
+                    "/chat/completions", json=body, timeout=self._request_timeout(timeout_s)
+                )
+        except TimeoutError as exc:
+            raise _deadline_error(timeout_s if timeout_s is not None else 0.0) from exc
         except httpx.HTTPError as exc:
             raise _from_transport(exc) from exc
         if response.status_code >= 400:
@@ -297,17 +362,27 @@ class LiteLLMModel:
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> AsyncIterator[ModelChunk]:
         body = self._body(messages, route, tools, temperature, max_tokens)
         body["stream"] = True
         body["stream_options"] = {"include_usage": True}
         usage: Usage | None = None
         buffer = _ToolCallBuffer()
+        deadline = None if timeout_s is None else time.monotonic() + timeout_s
         try:
-            async with self._client.stream("POST", "/chat/completions", json=body) as response:
+            async with contextlib.AsyncExitStack() as stack:
+                request = self._client.stream(
+                    "POST", "/chat/completions", json=body, timeout=self._request_timeout(timeout_s)
+                )
+                response = await _by(deadline, stack.enter_async_context(request), timeout_s)
                 if response.status_code >= 400:
                     raise _from_http_status(response, await response.aread(), self._api_key)
-                async for line in response.aiter_lines():
+                lines = response.aiter_lines()
+                while True:
+                    line = await _by(deadline, _next_line(lines), timeout_s)
+                    if line is None:
+                        break
                     if not line.startswith("data:"):
                         continue
                     payload = line[5:].strip()

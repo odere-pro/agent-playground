@@ -7,13 +7,24 @@ model_list:
     litellm_params:
       # `openai/<name>` is LiteLLM's prefix for any OpenAI-compatible endpoint.
       model: openai/fake-model
+      num_retries: 2
       api_base: http://fake-model-server:8081/v1
       api_key: fake
   - model_name: local-small
     litellm_params:
       model: openai/fake-model
+      num_retries: 2
       api_base: http://fake-model-server:8081/v1
       api_key: fake
+
+# CH-16: LiteLLM retries a provider error on the route (`num_retries`, per route, suggested: 2)
+# and then takes the route's fallback (`router_settings.fallbacks`); the chassis never retries a
+# model call. Every route has an entry; an empty list states that a route has no safe fallback.
+router_settings:
+  fallbacks:
+    - big-default: [local-small]
+    - local-small: [big-default]
+
 
 # PoC-3: LiteLLM's MCP gateway in front of the chassis's agent MCP endpoint. A client calls
 # http://127.0.0.1:4000/mcp/ and LiteLLM forwards to the chassis over the internal Compose network

@@ -105,8 +105,8 @@ def asgi_client(app: Any, *, raise_app_exceptions: bool = True) -> httpx.AsyncCl
     return httpx.AsyncClient(transport=transport, base_url="http://chassis")
 
 
-def run_request(max_tokens: int) -> tuple[Request, Context]:
-    """A run with a token budget, traced by `TRACE`, for `app.state.runs.register`."""
+def run_request(max_tokens: int, *, timeout_ms: int = 30_000) -> tuple[Request, Context]:
+    """A run with a token and time budget, traced by `TRACE`, for `app.state.runs.register`."""
     request = Request(
         request_id="req-1",
         trace_id=TRACE,
@@ -114,7 +114,7 @@ def run_request(max_tokens: int) -> tuple[Request, Context]:
         agent="echo",
         agent_version="0.0.1",
         input=TaskInput(text="x"),
-        budget=Budget(max_tokens=max_tokens),
+        budget=Budget(max_tokens=max_tokens, timeout_ms=timeout_ms),
     )
     ctx = Context(
         request_id=request.request_id,
@@ -167,10 +167,16 @@ class RecordingModel(ScriptedModel):
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> ModelResult:
         self._note(tools, max_tokens, temperature)
         return await super().complete(
-            messages, route=route, tools=tools, temperature=temperature, max_tokens=max_tokens
+            messages,
+            route=route,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
         )
 
     async def stream(
@@ -181,13 +187,19 @@ class RecordingModel(ScriptedModel):
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> AsyncIterator[ModelChunk]:
         self._note(tools, max_tokens, temperature)
         self.streaming.set()
         if self.gate is not None:
             await asyncio.wait_for(self.gate.wait(), timeout=5)
         async for chunk in super().stream(
-            messages, route=route, tools=tools, temperature=temperature, max_tokens=max_tokens
+            messages,
+            route=route,
+            tools=tools,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
         ):
             yield chunk
 

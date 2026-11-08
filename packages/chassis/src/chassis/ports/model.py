@@ -1,5 +1,17 @@
 """ModelPort: how the chassis calls a model. The default real adapter is LiteLLM over OpenAI-
 compatible HTTP.
+
+Failure (CH-16). A `ModelError` carries a `code`. Three codes are the port's own, and every
+adapter uses them: `SERVICE_BUDGET_EXHAUSTED` when the model service refuses for the service's
+budget (LiteLLM's `budget_exceeded`), `TIMEOUT` when a call passed its `timeout_s` or a transport
+timeout, and `RUN_ENDED` when the run a call belongs to ended first (set by the proxy, never by an
+adapter). Any other upstream status is `http_<status>`. An adapter never retries: the retries and
+the fallback routes are the model router's (`num_retries` and `fallbacks` per route in the LiteLLM
+config), so a chassis retry would multiply them.
+
+`timeout_s` is the wall clock of the whole call, in seconds: the proxy passes what the run has
+left of `budget.timeout_ms`. Past it the adapter raises `TIMEOUT` and ends the upstream call, so a
+run that is over keeps paying for nothing. `None` is the adapter's own default.
 """
 
 from __future__ import annotations
@@ -83,6 +95,15 @@ class ModelChunk(BaseModel):
     finish: bool = False
 
 
+SERVICE_BUDGET_EXHAUSTED = "service_budget_exhausted"
+"""The model service refused the call for the service's budget. Not retryable: the budget resets
+on its own period, not on a retry."""
+TIMEOUT = "timeout"
+"""The call passed its `timeout_s`, or a transport timeout. Retryable."""
+RUN_ENDED = "run_ended"
+"""The run this call belongs to ended before the model answered. Not retryable."""
+
+
 class ModelError(Exception):
     def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
         super().__init__(f"{code}: {message}")
@@ -102,6 +123,7 @@ class ModelPort(Protocol):
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> ModelResult: ...
 
     def stream(
@@ -112,4 +134,5 @@ class ModelPort(Protocol):
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> AsyncIterator[ModelChunk]: ...

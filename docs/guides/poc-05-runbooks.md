@@ -202,6 +202,20 @@ $ deploy/kind/poc05/run.sh apply
 
 **Verify.** `run.sh test-remote` runs `test_poc05_kind_hardreq1.py::test_minio_refuses_the_workload_without_the_chassis_key`: a run through the chassis reports the store document's version.
 
+## The model router refuses for the service's budget
+
+**Symptom.** The alert `ChassisModelBudgetExhausted` fires (`deploy/prometheus/rules/chassis.yaml`), or runs end with the model proxy's 429 `service_budget_exhausted` (CH-16). `chassis_model_budget_exhausted_total{agent, route}` rises on `/metrics`.
+
+**Check.** Which LiteLLM budget is spent: the chassis's virtual key, its team, or the proxy. The chassis log line `model call refused for the service's budget` carries LiteLLM's own text, which names the budget and its limit; no key value is in it.
+
+```
+$ kubectl --context kind-poc05 -n poc05-agents logs deploy/agent-echo -c chassis | grep "service's budget"
+```
+
+**Cause.** LiteLLM answered `budget_exceeded` (its `BudgetExceededError`): the key's `max_budget` for its `budget_duration` is spent, or the team's or the proxy's. The chassis never retries it, and the budget resets on its period, not on a retry. Not yet run on kind; seen on the PoC-8 Compose stack drill (`test_poc08_stack_metrics.py`, the budget fault).
+
+**Fix.** Either wait for the budget period, or raise the budget on the LiteLLM key or team (`seed.sh` on kind holds the key body). Then check the spend that drained it: `chassis_model_tokens_total` and `chassis_model_cost_microusd_total` by route on the agent's dashboard. A budget drained by one agent in minutes is a runaway loop or an uncorrelated caller; the uncorrelated cap (`spec.limits.uncorrelated_tokens_per_minute`) is the first thing to read.
+
 ## Rotating the remote token
 
 **Symptom.** The remote token must change: it leaked, or it is due.

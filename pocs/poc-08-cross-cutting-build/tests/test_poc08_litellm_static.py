@@ -303,8 +303,8 @@ def test_no_key_literal_in_any_file() -> None:
         found = KEY_SHAPE.findall(path.read_text())
         assert not found, f"{path.name} holds a key-shaped literal"
     assert _litellm_config()["general_settings"]["master_key"] == "os.environ/LITELLM_MASTER_KEY"
-    # The one literal `api_key` is the fake model server's placeholder; it takes no key.
-    assert [m["litellm_params"]["api_key"] for m in _litellm_config()["model_list"]] == ["fake"]
+    # The only literal `api_key` is the fake model server's placeholder; it takes no key.
+    assert {m["litellm_params"]["api_key"] for m in _litellm_config()["model_list"]} == {"fake"}
 
 
 def test_every_compose_secret_comes_from_the_env_file_and_fails_closed() -> None:
@@ -455,5 +455,5 @@ def test_without_its_variable_the_drill_is_not_collected(value: str | None) -> N
 
 def test_with_its_variable_every_drill_test_is_collected_and_network() -> None:
     items = _collect("1", DRILL)
-    assert len(items) == 6, sorted(items)
+    assert len(items) == 7, sorted(items)  # CH-16 added the fallback-route drill
     assert all("network" in marks for marks in items.values())

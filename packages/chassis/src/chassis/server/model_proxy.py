@@ -119,12 +119,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import Message, Receive, Scope, Send
 
 from chassis.adapters.anthropic_compat.model_wire import (
-    DENIED_TEXT,
     TOO_LARGE,
+    WireError,
     model_error_to_wire,
 )
 from chassis.adapters.openai_compat.messages import UnsupportedMessage, to_port_message
 from chassis.ports.model import (
+    RUN_ENDED,
+    SERVICE_BUDGET_EXHAUSTED,
     ModelChunk,
     ModelError,
     ModelMessage,
@@ -145,8 +147,7 @@ from chassis.server.model_admission import (
     UncorrelatedCap,
     admit,
     is_ready,
-    note_denied,
-    note_failed,
+    note_model_error,
     read_capped,
 )
 from chassis.server.model_proxy_messages import add_messages_route
@@ -247,15 +248,34 @@ def _denied(exc: ModelError) -> bool:
     return exc.code in ("http_401", "http_403")
 
 
-def _denied_body() -> dict[str, Any]:
+def _permission_body(wire: WireError) -> dict[str, Any]:
+    """The 403 body: `model_route_denied` (an upstream 401 or 403) or `run_ended` (CH-16)."""
     return {
         "error": {
-            "message": DENIED_TEXT,
+            "message": wire.message,
             "type": "permission_error",
-            "code": "model_route_denied",
+            "code": wire.code,
             "retryable": False,
         }
     }
+
+
+def _error_response(telemetry: TelemetryPort, route: str, exc: ModelError) -> JSONResponse:
+    """The complete call's answer to a `ModelError`, counted and logged by its kind: 403 for a
+    refused route or a run that ended (`permission_error`), 429 `service_budget_exhausted`
+    (CH-16), else 502 when retryable and 500 when not. Every one carries `x-should-retry` from
+    `retryable`, which the OpenAI and Anthropic SDKs read before their own status rules, so a
+    non-retryable 429 or 500 is not retried by the client."""
+    note_model_error(telemetry, route, exc)
+    wire = model_error_to_wire(exc)
+    headers = {"x-should-retry": "true" if exc.retryable else "false"}
+    if _denied(exc) or exc.code == RUN_ENDED:
+        return JSONResponse(_permission_body(wire), status_code=403, headers=headers)
+    if exc.code == SERVICE_BUDGET_EXHAUSTED:
+        return JSONResponse(_error_body(exc), status_code=wire.status, headers=headers)
+    return JSONResponse(
+        _error_body(exc), status_code=502 if exc.retryable else 500, headers=headers
+    )
 
 
 def _too_large_body() -> dict[str, Any]:
@@ -340,7 +360,7 @@ async def _sse(
     hold.started = True  # from here the model may be called
     with telemetry.span(SPAN, **attributes):
         try:
-            async for frame in _frames(chunks, route, completion_id, created, hold.seen):
+            async for frame in _frames(chunks, route, completion_id, created, hold.seen, telemetry):
                 yield frame
         finally:
             hold.settle(hold.seen[-1] if hold.seen else None)
@@ -371,6 +391,7 @@ async def _frames(
     completion_id: str,
     created: int,
     seen_usage: list[Usage],
+    telemetry: TelemetryPort,
 ) -> AsyncIterator[str]:
     def frame(delta: dict[str, Any], finish: str | None = None, **extra: Any) -> str:
         payload = {
@@ -398,8 +419,8 @@ async def _frames(
                 seen_usage.append(usage)
         yield frame({}, "tool_calls" if tool_index else "stop", usage=_usage(usage))
     except ModelError as exc:
-        if not _denied(exc):
-            note_failed(route, exc)
+        if not _denied(exc):  # a denied stream keeps its 200 and is not counted (contract v5)
+            note_model_error(telemetry, route, exc)
         yield f"data: {json.dumps(_error_body(exc))}\n\n"
     yield "data: [DONE]\n\n"
 
@@ -444,7 +465,7 @@ def model_proxy_router(app: FastAPI, *, clock: Callable[[], float] | None = None
         try:
             tools = body.port_tools()
             if body.stream:
-                chunks = bundle.model.stream(
+                chunks = admission.model.stream(
                     messages,
                     route=route,
                     tools=tools,
@@ -459,7 +480,7 @@ def model_proxy_router(app: FastAPI, *, clock: Callable[[], float] | None = None
             raise
         with hold.settled(), telemetry.span(SPAN, **attributes):
             try:
-                result = await bundle.model.complete(
+                result = await admission.model.complete(
                     messages,
                     route=route,
                     tools=tools,
@@ -467,11 +488,7 @@ def model_proxy_router(app: FastAPI, *, clock: Callable[[], float] | None = None
                     max_tokens=hold.max_tokens,
                 )
             except ModelError as exc:
-                if _denied(exc):
-                    note_denied(telemetry, route, exc)
-                    return JSONResponse(_denied_body(), status_code=403)
-                note_failed(route, exc)
-                return JSONResponse(_error_body(exc), status_code=502 if exc.retryable else 500)
+                return _error_response(telemetry, route, exc)
             hold.settle(result.usage)
         return JSONResponse(_completion(result, route, completion_id, created))
 

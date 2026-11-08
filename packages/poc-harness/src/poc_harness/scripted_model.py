@@ -52,6 +52,7 @@ class ToolLoopModel:
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> ModelResult:
         return self._answer(messages, tools)
 
@@ -63,6 +64,7 @@ class ToolLoopModel:
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> AsyncIterator[ModelChunk]:
         result = self._answer(messages, tools)
         if result.text:

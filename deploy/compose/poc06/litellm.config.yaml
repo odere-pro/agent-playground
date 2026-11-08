@@ -13,14 +13,25 @@ model_list:
       # example). An OpenAI-compatible provider needs OPENAI_API_BASE in the container, which
       # LiteLLM reads on its own for `openai/` models.
       model: os.environ/POC06_HOSTED_MODEL
+      num_retries: 2
       api_key: os.environ/POC06_HOSTED_API_KEY  # pragma: allowlist secret
   - model_name: local-small
     litellm_params:
       model: openai/local-small
+      num_retries: 2
       # llama-server on the host: http://host.docker.internal:<port>/v1 (Docker Desktop resolves
       # the name). llama.cpp has no auth; LiteLLM's client wants a non-empty placeholder.
       api_base: os.environ/POC06_LLAMA_BASE
       api_key: fake  # pragma: allowlist secret
+
+# CH-16: LiteLLM retries a provider error on the route (`num_retries`, per route, suggested: 2)
+# and then takes the route's fallback (`router_settings.fallbacks`); the chassis never retries a
+# model call. Every route has an entry; an empty list states that a route has no safe fallback.
+router_settings:
+  fallbacks:
+    - big-default: [local-small]
+    - local-small: [big-default]
+
 
 litellm_settings:
   # Keep token counts, drop request and response content from the logs.

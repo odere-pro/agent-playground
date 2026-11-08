@@ -52,6 +52,7 @@ NEW_ENTRY = {
     "model_name": "big-default",
     "litellm_params": {
         "model": "__POC06_HOSTED_MODEL__",
+        "num_retries": 2,  # CH-16: every route sets it (test_litellm_route_resilience.py)
         "api_key": "os.environ/POC06_PROVIDER_KEY",  # pragma: allowlist secret
     },
 }

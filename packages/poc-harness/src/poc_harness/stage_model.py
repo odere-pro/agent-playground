@@ -126,6 +126,7 @@ class StageModel:
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> ModelResult:
         return self._result(messages, tools, route)
 
@@ -137,6 +138,7 @@ class StageModel:
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> AsyncIterator[ModelChunk]:
         result = self._result(messages, tools, route)
         for word in re.findall(r"\S+\s*", result.text or ""):  # word by word, as a model streams

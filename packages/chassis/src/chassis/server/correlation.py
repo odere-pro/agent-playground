@@ -28,6 +28,7 @@ the `traceparent` they send to the workload, so the workload hands it back uncha
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import time
 from collections.abc import AsyncIterator
@@ -78,6 +79,13 @@ class RunRecord:
     """Contract v8 (R2-02): the run's secret, copied from `ctx.run_secret` by `open`. The remote
     listener's `RequireRun` compares it with the `x-chassis-run-secret` header. None in plain
     mode. Held on this replica for the life of the run only; never logged, never in `repr`."""
+    ended: asyncio.Event = field(default_factory=asyncio.Event, repr=False, compare=False)
+    """Set by `RunRegistry.close`: the run is over (done, cancelled, or timed out). A model call
+    still open for it is cut (`model_admission.BoundModel`, CH-16)."""
+
+    def remaining_s(self) -> float:
+        """What is left of `budget.timeout_ms`, in seconds; 0 when the run is past it."""
+        return max(0.0, self.started_at + self.budget.timeout_ms / 1000 - time.monotonic())
 
     @property
     def spent_tokens(self) -> int:
@@ -177,7 +185,9 @@ class RunRegistry:
         return record
 
     def close(self, record: RunRecord) -> None:
-        """Free the record's trace id. Idempotent; never frees another run's record."""
+        """Free the record's trace id and mark the run ended. Idempotent; never frees another
+        run's record."""
+        record.ended.set()
         if self._runs.get(record.trace_id) is record:
             del self._runs[record.trace_id]
 

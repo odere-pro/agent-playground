@@ -24,6 +24,11 @@ rules:
   # A run that ends in an error (the errors panel).
   - match: fail-model
     error: {status: 500, message: scripted failure}
+  # CH-16: LiteLLM's refusal for the service's budget, as its proxy sends it (`type`
+  # budget_exceeded). The chassis answers 429 service_budget_exhausted and counts
+  # chassis_model_budget_exhausted_total; the alert ChassisModelBudgetExhausted fires on it.
+  - match: budget-refusal
+    error: {status: 400, type: budget_exceeded, message: "ExceededBudget: scripted"}
   # The answer the judge scores low, so the gate retries, then falls back.
   - match: gate-check
     reply: GATE-BAD-ANSWER

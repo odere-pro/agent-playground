@@ -1,14 +1,17 @@
 """ScriptedModel: a ModelPort that answers from a script. Streaming, tool calls, scripted errors,
-and a tool loop that ends. It records the messages of every call in `.calls`.
+a slow answer (`delay_s`) that `timeout_s` cuts into a `timeout` error, and a tool loop that ends.
+It records the messages of every call in `.calls`.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Sequence
 
 from pydantic import BaseModel, Field
 
 from chassis.ports.model import (
+    TIMEOUT,
     ModelChunk,
     ModelError,
     ModelMessage,
@@ -37,6 +40,9 @@ class ScriptRule(BaseModel):
     error: str | None = None
     """When set, the call raises ModelError(error, ...) instead of answering."""
     retryable: bool = False
+    delay_s: float = 0.0
+    """How long the answer takes. A call whose `timeout_s` is shorter raises `timeout` instead,
+    as the real adapter does when the upstream is slow (CH-16)."""
 
 
 def _last_user(messages: Sequence[ModelMessage]) -> str:
@@ -83,6 +89,16 @@ class ScriptedModel:
     def _pick(self, messages: Sequence[ModelMessage]) -> ScriptRule:
         return _pick_rule(self.rules, messages) or ScriptRule(reply=self.default_reply)
 
+    @staticmethod
+    async def _take(rule: ScriptRule, timeout_s: float | None) -> None:
+        """Wait `rule.delay_s`, or raise `timeout` when `timeout_s` runs out first."""
+        if rule.delay_s <= 0:
+            return
+        if timeout_s is not None and timeout_s < rule.delay_s:
+            await asyncio.sleep(timeout_s)
+            raise ModelError(TIMEOUT, f"scripted answer took over {timeout_s} s", retryable=True)
+        await asyncio.sleep(rule.delay_s)
+
     async def complete(
         self,
         messages: Sequence[ModelMessage],
@@ -91,9 +107,11 @@ class ScriptedModel:
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> ModelResult:
         self.calls.append(list(messages))
         rule = self._pick(messages)
+        await self._take(rule, timeout_s)
         if rule.error:
             raise ModelError(
                 rule.error, f"scripted error for route {route}", retryable=rule.retryable
@@ -113,9 +131,11 @@ class ScriptedModel:
         tools: Sequence[ToolSpec] | None = None,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        timeout_s: float | None = None,
     ) -> AsyncIterator[ModelChunk]:
         self.calls.append(list(messages))
         rule = self._pick(messages)
+        await self._take(rule, timeout_s)
         if rule.error:
             raise ModelError(
                 rule.error, f"scripted error for route {route}", retryable=rule.retryable

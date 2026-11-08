@@ -10,9 +10,18 @@ model_list:
   - model_name: fake-chat
     litellm_params:
       model: openai/fake-model
+      num_retries: 2
       api_base: http://fake-model-server.poc05-platform.svc.cluster.local:8081/v1
       # The fake model server takes no key (section 2.12: it is closed by network, H09).
       api_key: fake
+
+# CH-16: LiteLLM retries a provider error on the route (`num_retries`, per route, suggested: 2)
+# and then takes the route's fallback (`router_settings.fallbacks`); the chassis never retries a
+# model call. Every route has an entry; an empty list states that a route has no safe fallback.
+router_settings:
+  fallbacks:
+    - fake-chat: []
+
 
 # The MCP gateway. Each key sees only the servers and tools its permission names (seed.sh); no
 # entry has `allow_all_keys` (H07), so a caller with no key is granted nothing.

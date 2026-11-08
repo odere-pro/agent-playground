@@ -23,6 +23,11 @@ Grafana has every dashboard file loaded, `chassis-echo` with all its panels, and
 through Grafana. Last, a burst meets 429 `rate_limited`: the rate limit runs, and with
 `rate_limit_on_unavailable: fail_closed` every run before it proves Valkey answered.
 
+CH-16 (fault test): a run whose text makes the fake model answer LiteLLM's `budget_exceeded`
+raises `chassis_model_budget_exhausted_total{route="big-default"}` on the `echo` chassis, and the
+alert `ChassisModelBudgetExhausted` (deploy/prometheus/rules/chassis.yaml, mounted into this
+stack's Prometheus) is `firing` once its `for` has passed.
+
 Credentials come from the env file named by `POC08_ENV_FILE` (made by `stack.sh`), never printed.
 """
 
@@ -40,6 +45,9 @@ import pytest
 from poc_harness.drills import gate_is_on
 from poc_harness.metrics_stack import (
     AGENT,
+    BUDGET_ALERT,
+    BUDGET_COUNTER,
+    BUDGET_INPUT,
     CHASSIS,
     DASHBOARD_UID,
     FAIL_INPUT,
@@ -260,6 +268,38 @@ def test_the_dashboard_datasource_resolves_to_prometheus(
     [expr] = [e for title, _, e in panel_queries(dashboard_file()) if title == FEEDBACK_PANEL]
     frames = grafana_query(grafana, chosen["uid"], expr)
     assert frames and any(frame_has_values(f) for f in frames), frames
+
+
+ALERT_WAIT_S = float(os.environ.get("POC08_ALERT_WAIT_S", "180"))
+"""suggested: the rule's `for` (1 m) plus scrape and evaluation intervals, with room."""
+
+
+def _alert_state(prom: httpx.Client, name: str) -> str | None:
+    body = prom.get("/api/v1/alerts").json()
+    for alert in body["data"]["alerts"]:
+        if alert["labels"].get("alertname") == name and alert["labels"].get("agent") == AGENT:
+            return str(alert["state"])
+    return None
+
+
+def test_a_budget_refusal_raises_the_counter_and_fires_the_alert(
+    drill: Drill, prom: httpx.Client
+) -> None:
+    """CH-16: the fake answers LiteLLM's `budget_exceeded`; the chassis counts it per route and
+    the alert rule fires on the increase."""
+    with httpx.Client(base_url=CHASSIS, timeout=RUN_TIMEOUT_S) as client:
+        code, body = run(client, BUDGET_INPUT, drill.token)
+    assert body.get("status") == "error", (code, body)
+    expr = f'{BUDGET_COUNTER}{{{A}, route="big-default"}}'
+    wait_until(
+        lambda: _total(prom, expr) >= 1, timeout_s=SCRAPE_WAIT_S, poll_s=2.0, what="the counter"
+    )
+    wait_until(
+        lambda: _alert_state(prom, BUDGET_ALERT) == "firing",
+        timeout_s=ALERT_WAIT_S,
+        poll_s=5.0,
+        what=f"{BUDGET_ALERT} firing",
+    )
 
 
 def test_a_burst_meets_the_rate_limit_kept_in_valkey(drill: Drill) -> None:
