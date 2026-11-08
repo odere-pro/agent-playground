@@ -5,7 +5,7 @@ milestone: "W2 Chassis MVP"
 index: 8
 epic_id: H-14
 depends_on: ["007 H-1"]
-blocks: ["009 CH-1", "011 H-2", "040 D-0", "072 C-3", "076 R-1", "099 O-1"]
+blocks: ["011 H-2", "040 D-0", "072 C-3", "076 R-1", "099 O-1"]
 epic_refs: [B.1, B.5, Fig.1]
 ---
 
@@ -54,7 +54,7 @@ All agent classes (stateless, orchestrator, data) must share one interface and o
 ## Dependencies
 
 - Depends on: [007 H-1](007-H-1-harness-library-ports-envelope.md)
-- Blocks: [009 CH-1](009-CH-1-engine-connectors-a2a.md), [011 H-2](011-H-2-inbound-adapters.md), [040 D-0](040-D-0-recorder-agent.md), [072 C-3](072-C-3-audit-log-agent.md), [076 R-1](076-R-1-registry-data-model-api.md), [099 O-1](099-O-1-orchestrator-agent.md)
+- Blocks: [011 H-2](011-H-2-inbound-adapters.md), [040 D-0](040-D-0-recorder-agent.md), [072 C-3](072-C-3-audit-log-agent.md), [076 R-1](076-R-1-registry-data-model-api.md), [099 O-1](099-O-1-orchestrator-agent.md)
 
 ## References
 

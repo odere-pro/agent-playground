@@ -4,7 +4,7 @@ labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:S", "l
 milestone: "W2 Chassis MVP"
 index: 9
 epic_id: CH-1
-depends_on: ["007 H-1", "008 H-14"]
+depends_on: ["007 H-1"]
 blocks: ["011 H-2", "013 CH-2", "014 H-7", "015 H-8", "016 H-9", "017 H-4", "018 H-18", "019 H-17", "024 CH-3", "055 CH-6"]
 epic_refs: [F.1, F.2, G.1]
 ---
@@ -56,7 +56,7 @@ epic_refs: [F.1, F.2, G.1]
 
 ## Dependencies
 
-- Depends on: [007 H-1](007-H-1-harness-library-ports-envelope.md), [008 H-14](008-H-14-one-agent-interface.md)
+- Depends on: [007 H-1](007-H-1-harness-library-ports-envelope.md)
 - Blocks: [011 H-2](011-H-2-inbound-adapters.md), [013 CH-2](013-CH-2-outbound-model-proxy.md), [014 H-7](014-H-7-observability.md), [015 H-8](015-H-8-testing-kit.md), [016 H-9](016-H-9-local-debug-profile.md), [017 H-4](017-H-4-harness-features.md), [018 H-18](018-H-18-idempotency.md), [019 H-17](019-H-17-event-port.md), [024 CH-3](024-CH-3-helm-library-chart.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md)
 
 ## References

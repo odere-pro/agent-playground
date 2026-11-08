@@ -4,7 +4,7 @@ labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:L", "l
 milestone: "W5 Chassis completion"
 index: 56
 epic_id: CH-7
-depends_on: ["024 CH-3", "055 CH-6", "014 H-7", "051 H-13", "038 X-1a"]
+depends_on: ["024 CH-3", "055 CH-6", "014 H-7"]
 blocks: ["077 C-1", "083 R-2"]
 epic_refs: [G.4]
 ---
@@ -19,7 +19,7 @@ epic_refs: [G.4]
 - Promotion to the next ring when the error rate and latency hold. suggested: for one hour.
 - suggested: Argo CD sync waves or Argo Rollouts to drive the rings.
 - A per-service pin to the previous tag, and a one-step rollback.
-- The chassis version reported by `/manifest` (051 H-13), so the rollout can be checked per service. Today `/manifest` reports the Python package version (`CHASSIS_VERSION = __version__`), not the image tag the rings roll out.
+- The chassis version reported by `/manifest` (built: `packages/chassis/src/chassis/server/manifest.py`), so the rollout can be checked per service. Today `/manifest` reports the Python package version (`CHASSIS_VERSION = __version__`), not the image tag the rings roll out.
 - Alerts that come with the rings, moved from 117 X-3 on 2026-11-06: SLOs compared per ring, so a ring is promoted only while its services hold them; an alert for pods below the minimum chassis version while that rule warns; alerts for `remote` endpoint failures.
 - Schema compatibility across a rollout: the chassis accepts the current and the previous major version of the event schema (007 H-1), so a workload built before the release keeps working while the rings advance.
 - The urgent-fix order (ADR item 10), written down:
@@ -37,6 +37,7 @@ epic_refs: [G.4]
 - SLO alerts per ring (117 X-3).
 - Runbooks for a bad release (119 X-6).
 - Model canaries (048 M-4). They are a different rollout.
+- Rings across the first cloud's clusters, after 038 X-1a. Every box here runs on kind.
 - The minimum-version admission rule, moved to 026 CH-4 on 2026-11-06. Since PR #79 it is rule 9 of `agent-trust-rule` (ValidatingAdmissionPolicy, [ADR-005](../adr/005-remote-lane-auth-and-trust-admission.md) decision 4), in `agent-lib.admission` and in `deploy/kind/poc05/admission/policy.yaml`. The chart renders the allowed tags from `chassis.image.supportedTags` (the current tag and the previous one), so bumping the tag in `agent-lib` moves the minimum. The rule denies; a warn mode is not built.
 
 ## Acceptance criteria
@@ -52,7 +53,7 @@ epic_refs: [G.4]
 
 ## Dependencies
 
-- Depends on: [024 CH-3](024-CH-3-helm-library-chart.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [014 H-7](014-H-7-observability.md), [051 H-13](051-H-13-openapi-mcp-tools.md), [038 X-1a](038-X-1a-terraform-first-cloud.md)
+- Depends on: [024 CH-3](024-CH-3-helm-library-chart.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [014 H-7](014-H-7-observability.md)
 - Blocks: [077 C-1](077-C-1-governance-enforcement.md), [083 R-2](083-R-2-kubernetes-controller.md)
 
 ## References

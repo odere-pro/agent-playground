@@ -5,7 +5,7 @@ milestone: "W3 Simplifier SLM"
 index: 38
 epic_id: X-1a
 depends_on: ["001 DEC-1", "025 H-10", "026 CH-4"]
-blocks: ["039 X-2", "056 CH-7", "116 X-1b", "121 X-4"]
+blocks: ["039 X-2", "116 X-1b", "121 X-4"]
 epic_refs: [G.4, H]
 ---
 
@@ -57,7 +57,7 @@ Split from X-1. The first cloud must give the chassis the same cluster contract 
 ## Dependencies
 
 - Depends on: [001 DEC-1](001-DEC-1-resolve-open-decisions.md), [025 H-10](025-H-10-template-repo.md), [026 CH-4](026-CH-4-chassis-only-credentials-egress.md)
-- Blocks: [039 X-2](039-X-2-gpu-setup.md), [056 CH-7](056-CH-7-chassis-release-rings.md), [116 X-1b](116-X-1b-terraform-second-cloud.md), [121 X-4](121-X-4-backups-restore.md)
+- Blocks: [039 X-2](039-X-2-gpu-setup.md), [116 X-1b](116-X-1b-terraform-second-cloud.md), [121 X-4](121-X-4-backups-restore.md)
 
 ## References
 

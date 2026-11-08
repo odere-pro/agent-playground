@@ -31,13 +31,13 @@ The user decided on 2026-11-08, each option 1: **P-29** (the drain order, ADR-01
 
 - **#107 first, then the drill PR.** The [drill session](claude://claude.ai/epitaxy/local_5cff7537-1531-4344-a9e7-dba5e13fd40c) reruns the drill, the H14 check, item 7, and the exec startup probe's timing under the chassis's 500m CPU on #107's head. Then it rebases on `main` after #107 merges and turns on auto-merge. Its PR ticks 024 CH-3's rolling-restart box. If the kind run shows a problem in #107's chart, fix it in a follow-up PR.
 - **#103's open choices** for the user to check: the phase for issues 134 to 139 (the phase map predates them), and the plan keeps its own week sizes with a note on the gap to the map's days.
-- **Two proposed sessions, not started:** "Finish phase A: 122 X-5 throughput, 056 CH-7 warn-first" and "Model proxy failures and backpressure: CH-16 then CH-15". Start them from steps 1 and 3 below if the cards are gone.
+- **Two proposed sessions, not started:** "Finish phase A: 122 X-5 throughput, 056 CH-7 warn-first" (warn-first is now a box in 026 CH-4; 056 CH-7 moved to phase G on 2026-11-08) and "Model proxy failures and backpressure: CH-16 then CH-15". Start them from steps 1 and 3 below if the cards are gone.
 
 ## Next steps, in order
 
 Each step names its issue. Read the issue's acceptance criteria before you start; they are the done-when.
 
-1. **Finish phase A.** Throughput at 4 pairs on a Linux host ([122 X-5](docs/planning/issues/122-X-5-load-tests.md)); a GitHub Actions Linux runner counts. Warn-first for a new minimum chassis version ([056 CH-7](docs/planning/issues/056-CH-7-chassis-release-rings.md), now in phase A). The 023 C-5 client guide is due before 2026-12-02 (AI Act Art. 50(2)). The T10 probe workload is the user's.
+1. **Finish phase A.** Throughput at 4 pairs on a Linux host ([122 X-5](docs/planning/issues/122-X-5-load-tests.md)); a GitHub Actions Linux runner counts. Warn-first for a new minimum chassis version: a box in [026 CH-4](docs/planning/issues/026-CH-4-chassis-only-credentials-egress.md) (ADR-001 item 9); 056 CH-7, the rings, is phase G since 2026-11-08. The 023 C-5 client guide is due before 2026-12-02 (AI Act Art. 50(2)). The T10 probe workload is the user's.
 2. **The drain order (P-29), finishing.** #107 and the drill PR (see "In flight"). After both merge, 024 CH-3's rolling-restart box is ticked, and the PoC-4 and PoC-9 drain notes point at the drill note.
 3. **The model proxy under failure, and backpressure (phase G).** [136 CH-16](docs/planning/issues/136-CH-16-model-proxy-failures.md) first: LiteLLM `num_retries` and `fallbacks` per route, the budget refusal code, a per-call timeout. Then [135 CH-15](docs/planning/issues/135-CH-15-backpressure.md): `max_in_flight`, 503 `overloaded`. The schema versions on the card are P-30.
 4. **Make the judge safe to turn on (phase B).** [137 CH-17](docs/planning/issues/137-CH-17-judge-calibration.md), then [138 CH-18](docs/planning/issues/138-CH-18-judge-per-agent.md). Until both pass, the gate reports (`async`) and never blocks. The judge numbers need the Mac run.
@@ -81,7 +81,7 @@ Goal: continue the agent container product from the checkpoint of 2026-11-08.
 1. Check what changed since main 9f1a813: git log, open PRs (gh pr list),
    and the in-flight items in HANDOVER.md (#107, the drill PR, the two
    proposed sessions). Report their state in two lines.
-2. Do step 1 of "Next steps" (phase A's rest: 122 X-5, 056 CH-7), unless a
+2. Do step 1 of "Next steps" (phase A's rest: 122 X-5, the 026 CH-4 warn-first box), unless a
    session already owns it. Read each issue's acceptance criteria first.
    Failing tests first, make quick green, ask platform-security to review,
    then a PR with squash auto-merge.
