@@ -21,3 +21,10 @@ Evidence: the [scorecard](2026-10-09-scorecard.md), [ADR-006](../../../docs/plan
 
 - **Rare 502 under load at 4 pairs, not diagnosed.** 1 in 4,611 calls on `echo-typescript` at 4 pairs in CI; PoC-4 had 4 in 11,596 on the TypeScript echo and 1 in 4,512 on `echo-python` at 2 pairs. The chassis answers 502 for a non-retryable workload failure, and Traefik answers 502 for a broken backend connection; no run kept the container logs. Suggested: a follow-up under the PoC-4 debt (keep chassis and Traefik logs for a failed scenario in `run_matrix.py`, then find the source). It does not block a criterion: the load suites accept up to 0.1% failed calls (suggested).
 - **The workload flag contract.** The scale stack passes `--drain-timeout-s` to every workload image. The TypeScript agent refused it from `764a25c` until `ce9274d`, and no offline test ran the image with the stack's command. Suggested: a static test that every workload image's entry point accepts the Compose `command` of `docker-compose.scale.yaml` (the TypeScript side is now `test/auth.test.ts`, "starts with the PoC-4 scale stack's command").
+
+## 2026-11-08: the 122 X-5 Linux runner pass
+
+Applied with skill `planning-sync` in the same PR: a dated status bullet under `## What` of 122 X-5, and the 011 section 4 item for throughput at 4 pairs. No box is ticked: [the note](2026-11-08-x5-linux-runner-load.md) shows every engine grows 1 to 2 pairs on Linux and none fits 4 pairs on a 4-vCPU runner, so box 1 still needs the dedicated host (about 12 cores, pinned CPUs). Boxes 2 and 3 need a `rate` rerun for the p95 (`run_matrix.py` records it since this date) and a chassis-side hop timer; box 5 has its rate (3 in 34,018) and not its source.
+
+- The 502 under load: 3 more, two at 4 pairs and one at 2 pairs, each a single `HTTP 502`, no logs kept. Same proposal as above.
+- `poc06-load.yml` takes `engines` and `only` inputs since this date, so the matrix runs one engine pair per runner, in parallel.

@@ -1,0 +1,743 @@
+{
+  "engines": {
+    "echo-pydanticai": {
+      "1": {
+        "containers": {
+          "chassis": {
+            "idle_mib": 159.8,
+            "idle_vcpu": 0.2788,
+            "mib_max": 185.0,
+            "mib_mean": 174.98,
+            "replicas": 1,
+            "vcpu_max": 0.9838,
+            "vcpu_mean": 0.6676,
+            "vcpu_per_100rps": 2.359
+          },
+          "fake-model-server": {
+            "idle_mib": 34.89,
+            "idle_vcpu": 0.2971,
+            "mib_max": 54.25,
+            "mib_mean": 42.91,
+            "replicas": 1,
+            "vcpu_max": 0.4304,
+            "vcpu_mean": 0.1864
+          },
+          "minio": {
+            "idle_mib": 159.5,
+            "idle_vcpu": 0.0,
+            "mib_max": 161.2,
+            "mib_mean": 160.44,
+            "replicas": 1,
+            "vcpu_max": 0.0015,
+            "vcpu_mean": 0.0003
+          },
+          "traefik": {
+            "idle_mib": 12.88,
+            "idle_vcpu": 0.0001,
+            "mib_max": 33.63,
+            "mib_mean": 30.73,
+            "replicas": 1,
+            "vcpu_max": 0.0254,
+            "vcpu_mean": 0.0154
+          },
+          "valkey": {
+            "idle_mib": 3.31,
+            "idle_vcpu": 0.0017,
+            "mib_max": 10.55,
+            "mib_mean": 6.41,
+            "replicas": 1,
+            "vcpu_max": 0.0548,
+            "vcpu_mean": 0.0314
+          },
+          "workload": {
+            "idle_mib": 113.1,
+            "idle_vcpu": 0.0023,
+            "mib_max": 149.4,
+            "mib_mean": 147.3,
+            "replicas": 1,
+            "vcpu_max": 1.022,
+            "vcpu_mean": 0.9292
+          }
+        },
+        "duration_s": 60,
+        "engine": "echo-pydanticai",
+        "env": {},
+        "failures": 0,
+        "finished": "2026-11-08T22:13:59+00:00",
+        "ok_rps": 28.3,
+        "p50_ms": 2200.0,
+        "p95_ms": 2800.0,
+        "pairs": 1,
+        "requests": 1665,
+        "rps": 28.3,
+        "users": 64
+      },
+      "2": {
+        "containers": {
+          "chassis": {
+            "idle_mib": 159.2,
+            "idle_vcpu": 0.2915,
+            "mib_max": 180.5,
+            "mib_mean": 169.79,
+            "replicas": 2,
+            "vcpu_max": 0.9072,
+            "vcpu_mean": 0.601,
+            "vcpu_per_100rps": 3.0726
+          },
+          "fake-model-server": {
+            "idle_mib": 34.63,
+            "idle_vcpu": 0.2784,
+            "mib_max": 51.38,
+            "mib_mean": 43.54,
+            "replicas": 1,
+            "vcpu_max": 0.5707,
+            "vcpu_mean": 0.3029
+          },
+          "minio": {
+            "idle_mib": 161.3,
+            "idle_vcpu": 0.0004,
+            "mib_max": 163.5,
+            "mib_mean": 162.29,
+            "replicas": 1,
+            "vcpu_max": 0.0029,
+            "vcpu_mean": 0.0009
+          },
+          "traefik": {
+            "idle_mib": 13.89,
+            "idle_vcpu": 0.0054,
+            "mib_max": 39.47,
+            "mib_mean": 34.72,
+            "replicas": 1,
+            "vcpu_max": 0.052,
+            "vcpu_mean": 0.0249
+          },
+          "valkey": {
+            "idle_mib": 3.59,
+            "idle_vcpu": 0.0316,
+            "mib_max": 8.56,
+            "mib_mean": 6.74,
+            "replicas": 1,
+            "vcpu_max": 0.0548,
+            "vcpu_mean": 0.0251
+          },
+          "workload": {
+            "idle_mib": 115.05,
+            "idle_vcpu": 0.0091,
+            "mib_max": 150.1,
+            "mib_mean": 137.87,
+            "replicas": 2,
+            "vcpu_max": 0.9676,
+            "vcpu_mean": 0.8093
+          }
+        },
+        "duration_s": 60,
+        "engine": "echo-pydanticai",
+        "env": {},
+        "failures": 0,
+        "finished": "2026-11-08T22:15:45+00:00",
+        "ok_rps": 39.12,
+        "p50_ms": 1600.0,
+        "p95_ms": 2200.0,
+        "pairs": 2,
+        "requests": 2309,
+        "rps": 39.12,
+        "users": 64
+      },
+      "4": {
+        "containers": {
+          "chassis": {
+            "idle_mib": 159.18,
+            "idle_vcpu": 0.2768,
+            "mib_max": 178.8,
+            "mib_mean": 168.55,
+            "replicas": 4,
+            "vcpu_max": 0.6232,
+            "vcpu_mean": 0.3561,
+            "vcpu_per_100rps": 3.9315
+          },
+          "fake-model-server": {
+            "idle_mib": 34.35,
+            "idle_vcpu": 0.4194,
+            "mib_max": 54.87,
+            "mib_mean": 45.49,
+            "replicas": 1,
+            "vcpu_max": 0.4026,
+            "vcpu_mean": 0.2148
+          },
+          "minio": {
+            "idle_mib": 175.0,
+            "idle_vcpu": 0.0001,
+            "mib_max": 178.3,
+            "mib_mean": 176.83,
+            "replicas": 1,
+            "vcpu_max": 0.0036,
+            "vcpu_mean": 0.001
+          },
+          "traefik": {
+            "idle_mib": 14.76,
+            "idle_vcpu": 0.0,
+            "mib_max": 41.17,
+            "mib_mean": 34.74,
+            "replicas": 1,
+            "vcpu_max": 0.0407,
+            "vcpu_mean": 0.0266
+          },
+          "valkey": {
+            "idle_mib": 3.56,
+            "idle_vcpu": 0.0015,
+            "mib_max": 11.23,
+            "mib_mean": 6.66,
+            "replicas": 1,
+            "vcpu_max": 0.0549,
+            "vcpu_mean": 0.0305
+          },
+          "workload": {
+            "idle_mib": 115.65,
+            "idle_vcpu": 0.2591,
+            "mib_max": 146.0,
+            "mib_mean": 133.86,
+            "replicas": 4,
+            "vcpu_max": 0.7065,
+            "vcpu_mean": 0.4834
+          }
+        },
+        "duration_s": 60,
+        "engine": "echo-pydanticai",
+        "env": {},
+        "failures": 0,
+        "finished": "2026-11-08T22:17:40+00:00",
+        "ok_rps": 36.23,
+        "p50_ms": 1700.0,
+        "p95_ms": 3200.0,
+        "pairs": 4,
+        "requests": 2130,
+        "rps": 36.23,
+        "users": 64
+      }
+    },
+    "echo-python": {
+      "1": {
+        "containers": {
+          "chassis": {
+            "idle_mib": 160.0,
+            "idle_vcpu": 0.2791,
+            "mib_max": 188.3,
+            "mib_mean": 178.67,
+            "replicas": 1,
+            "vcpu_max": 1.0042,
+            "vcpu_mean": 0.7438,
+            "vcpu_per_100rps": 2.9009
+          },
+          "fake-model-server": {
+            "idle_mib": 34.85,
+            "idle_vcpu": 0.1148,
+            "mib_max": 42.55,
+            "mib_mean": 41.13,
+            "replicas": 1,
+            "vcpu_max": 0.4029,
+            "vcpu_mean": 0.1656
+          },
+          "minio": {
+            "idle_mib": 172.7,
+            "idle_vcpu": 0.0013,
+            "mib_max": 173.4,
+            "mib_mean": 173.02,
+            "replicas": 1,
+            "vcpu_max": 0.0016,
+            "vcpu_mean": 0.0005
+          },
+          "traefik": {
+            "idle_mib": 13.9,
+            "idle_vcpu": 0.0,
+            "mib_max": 32.73,
+            "mib_mean": 29.91,
+            "replicas": 1,
+            "vcpu_max": 0.025,
+            "vcpu_mean": 0.0137
+          },
+          "valkey": {
+            "idle_mib": 3.11,
+            "idle_vcpu": 0.0016,
+            "mib_max": 7.16,
+            "mib_mean": 5.72,
+            "replicas": 1,
+            "vcpu_max": 0.0569,
+            "vcpu_mean": 0.0356
+          },
+          "workload": {
+            "idle_mib": 64.26,
+            "idle_vcpu": 0.0017,
+            "mib_max": 154.7,
+            "mib_mean": 129.91,
+            "replicas": 1,
+            "vcpu_max": 1.0305,
+            "vcpu_mean": 0.8242
+          }
+        },
+        "duration_s": 60,
+        "engine": "echo-python",
+        "env": {},
+        "failures": 0,
+        "finished": "2026-11-08T22:08:33+00:00",
+        "ok_rps": 25.64,
+        "p50_ms": 2400.0,
+        "p95_ms": 3000.0,
+        "pairs": 1,
+        "requests": 1503,
+        "rps": 25.64,
+        "users": 64
+      },
+      "2": {
+        "containers": {
+          "chassis": {
+            "idle_mib": 159.0,
+            "idle_vcpu": 0.3368,
+            "mib_max": 181.5,
+            "mib_mean": 170.44,
+            "replicas": 2,
+            "vcpu_max": 0.9963,
+            "vcpu_mean": 0.6957,
+            "vcpu_per_100rps": 4.0839
+          },
+          "fake-model-server": {
+            "idle_mib": 34.38,
+            "idle_vcpu": 0.3869,
+            "mib_max": 52.3,
+            "mib_mean": 43.21,
+            "replicas": 1,
+            "vcpu_max": 0.524,
+            "vcpu_mean": 0.2409
+          },
+          "minio": {
+            "idle_mib": 176.7,
+            "idle_vcpu": 0.0003,
+            "mib_max": 179.4,
+            "mib_mean": 178.06,
+            "replicas": 1,
+            "vcpu_max": 0.0019,
+            "vcpu_mean": 0.0006
+          },
+          "traefik": {
+            "idle_mib": 14.71,
+            "idle_vcpu": 0.0051,
+            "mib_max": 36.21,
+            "mib_mean": 32.49,
+            "replicas": 1,
+            "vcpu_max": 0.0424,
+            "vcpu_mean": 0.0243
+          },
+          "valkey": {
+            "idle_mib": 3.37,
+            "idle_vcpu": 0.0411,
+            "mib_max": 8.2,
+            "mib_mean": 6.61,
+            "replicas": 1,
+            "vcpu_max": 0.057,
+            "vcpu_mean": 0.0268
+          },
+          "workload": {
+            "idle_mib": 64.47,
+            "idle_vcpu": 0.1619,
+            "mib_max": 137.0,
+            "mib_mean": 111.85,
+            "replicas": 2,
+            "vcpu_max": 0.9875,
+            "vcpu_mean": 0.7176
+          }
+        },
+        "duration_s": 60,
+        "engine": "echo-python",
+        "env": {},
+        "failures": 0,
+        "finished": "2026-11-08T22:10:19+00:00",
+        "ok_rps": 34.07,
+        "p50_ms": 1900.0,
+        "p95_ms": 2700.0,
+        "pairs": 2,
+        "requests": 2015,
+        "rps": 34.07,
+        "users": 64
+      },
+      "4": {
+        "containers": {
+          "chassis": {
+            "idle_mib": 159.38,
+            "idle_vcpu": 0.2834,
+            "mib_max": 177.7,
+            "mib_mean": 169.97,
+            "replicas": 4,
+            "vcpu_max": 0.6027,
+            "vcpu_mean": 0.4149,
+            "vcpu_per_100rps": 5.2337
+          },
+          "fake-model-server": {
+            "idle_mib": 34.34,
+            "idle_vcpu": 0.0012,
+            "mib_max": 54.94,
+            "mib_mean": 44.51,
+            "replicas": 1,
+            "vcpu_max": 0.5013,
+            "vcpu_mean": 0.1875
+          },
+          "minio": {
+            "idle_mib": 173.5,
+            "idle_vcpu": 0.0026,
+            "mib_max": 176.0,
+            "mib_mean": 174.51,
+            "replicas": 1,
+            "vcpu_max": 0.0021,
+            "vcpu_mean": 0.0009
+          },
+          "traefik": {
+            "idle_mib": 16.16,
+            "idle_vcpu": 0.0035,
+            "mib_max": 40.7,
+            "mib_mean": 35.23,
+            "replicas": 1,
+            "vcpu_max": 0.0297,
+            "vcpu_mean": 0.0216
+          },
+          "valkey": {
+            "idle_mib": 3.31,
+            "idle_vcpu": 0.0013,
+            "mib_max": 11.27,
+            "mib_mean": 6.69,
+            "replicas": 1,
+            "vcpu_max": 0.054,
+            "vcpu_mean": 0.0297
+          },
+          "workload": {
+            "idle_mib": 67.53,
+            "idle_vcpu": 0.2478,
+            "mib_max": 116.6,
+            "mib_mean": 97.7,
+            "replicas": 4,
+            "vcpu_max": 0.6507,
+            "vcpu_mean": 0.4328
+          }
+        },
+        "duration_s": 60,
+        "engine": "echo-python",
+        "env": {},
+        "failures": 1,
+        "finished": "2026-11-08T22:12:14+00:00",
+        "ok_rps": 31.69,
+        "p50_ms": 1900.0,
+        "p95_ms": 3100.0,
+        "pairs": 4,
+        "requests": 1875,
+        "rps": 31.71,
+        "users": 64
+      }
+    }
+  },
+  "hop": {
+    "engine": "echo-python",
+    "hop_ms": {
+      "p50_ms": -1.0,
+      "p95_ms": -13.0
+    },
+    "inprocess": {
+      "containers": {
+        "chassis": {
+          "idle_mib": 159.3,
+          "idle_vcpu": 0.0016,
+          "mib_max": 176.7,
+          "mib_mean": 165.55,
+          "replicas": 1,
+          "vcpu_max": 1.0522,
+          "vcpu_mean": 0.9992,
+          "vcpu_per_100rps": 4.8813
+        },
+        "fake-model-server": {
+          "idle_mib": 34.71,
+          "idle_vcpu": 0.1147,
+          "mib_max": 54.88,
+          "mib_mean": 41.28,
+          "replicas": 1,
+          "vcpu_max": 0.3643,
+          "vcpu_mean": 0.17
+        },
+        "minio": {
+          "idle_mib": 177.8,
+          "idle_vcpu": 0.0,
+          "mib_max": 180.4,
+          "mib_mean": 178.89,
+          "replicas": 1,
+          "vcpu_max": 0.0017,
+          "vcpu_mean": 0.0006
+        },
+        "traefik": {
+          "idle_mib": 14.06,
+          "idle_vcpu": 0.0001,
+          "mib_max": 18.41,
+          "mib_mean": 16.99,
+          "replicas": 1,
+          "vcpu_max": 0.0216,
+          "vcpu_mean": 0.0137
+        },
+        "valkey": {
+          "idle_mib": 3.54,
+          "idle_vcpu": 0.0383,
+          "mib_max": 6.12,
+          "mib_mean": 5.1,
+          "replicas": 1,
+          "vcpu_max": 0.051,
+          "vcpu_mean": 0.0261
+        }
+      },
+      "duration_s": 60,
+      "engine": "inprocess",
+      "env": {},
+      "failures": 0,
+      "finished": "2026-11-08T22:20:48+00:00",
+      "ok_rps": 20.47,
+      "p50_ms": 41.0,
+      "p95_ms": 94.0,
+      "pairs": 1,
+      "requests": 1208,
+      "rps": 20.47,
+      "users": 1
+    },
+    "pairs": 1,
+    "sidecar": {
+      "containers": {
+        "chassis": {
+          "idle_mib": 159.4,
+          "idle_vcpu": 0.0087,
+          "mib_max": 174.6,
+          "mib_mean": 163.09,
+          "replicas": 1,
+          "vcpu_max": 0.8251,
+          "vcpu_mean": 0.6594,
+          "vcpu_per_100rps": 2.9689
+        },
+        "fake-model-server": {
+          "idle_mib": 34.66,
+          "idle_vcpu": 0.2072,
+          "mib_max": 52.94,
+          "mib_mean": 42.09,
+          "replicas": 1,
+          "vcpu_max": 0.3833,
+          "vcpu_mean": 0.1738
+        },
+        "minio": {
+          "idle_mib": 182.3,
+          "idle_vcpu": 0.001,
+          "mib_max": 183.7,
+          "mib_mean": 182.58,
+          "replicas": 1,
+          "vcpu_max": 0.0019,
+          "vcpu_mean": 0.0005
+        },
+        "traefik": {
+          "idle_mib": 14.0,
+          "idle_vcpu": 0.0,
+          "mib_max": 17.48,
+          "mib_mean": 17.0,
+          "replicas": 1,
+          "vcpu_max": 0.0219,
+          "vcpu_mean": 0.0142
+        },
+        "valkey": {
+          "idle_mib": 3.6,
+          "idle_vcpu": 0.0014,
+          "mib_max": 6.54,
+          "mib_mean": 5.23,
+          "replicas": 1,
+          "vcpu_max": 0.0431,
+          "vcpu_mean": 0.0246
+        },
+        "workload": {
+          "idle_mib": 64.38,
+          "idle_vcpu": 0.0022,
+          "mib_max": 83.21,
+          "mib_mean": 71.12,
+          "replicas": 1,
+          "vcpu_max": 0.9327,
+          "vcpu_mean": 0.7063
+        }
+      },
+      "duration_s": 60,
+      "engine": "echo-python",
+      "env": {},
+      "failures": 0,
+      "finished": "2026-11-08T22:19:14+00:00",
+      "ok_rps": 22.21,
+      "p50_ms": 40.0,
+      "p95_ms": 81.0,
+      "pairs": 1,
+      "requests": 1311,
+      "rps": 22.21,
+      "users": 1
+    }
+  },
+  "host": {
+    "cpus": 4,
+    "docker_cpus": 4,
+    "docker_mem_mib": 15983,
+    "other_running_containers": 0,
+    "platform": "Linux-7.0.0-1019-azure-x86_64-with-glibc2.43"
+  },
+  "rate": {
+    "echo-pydanticai": {
+      "containers": {
+        "chassis": {
+          "idle_mib": 159.1,
+          "idle_vcpu": 0.0044,
+          "mib_max": 173.0,
+          "mib_mean": 163.73,
+          "replicas": 1,
+          "vcpu_max": 0.5285,
+          "vcpu_mean": 0.2927,
+          "vcpu_per_100rps": 2.9067
+        },
+        "fake-model-server": {
+          "idle_mib": 34.75,
+          "idle_vcpu": 0.1694,
+          "mib_max": 40.58,
+          "mib_mean": 38.52,
+          "replicas": 1,
+          "vcpu_max": 0.3707,
+          "vcpu_mean": 0.1659
+        },
+        "minio": {
+          "idle_mib": 170.1,
+          "idle_vcpu": 0.0,
+          "mib_max": 171.1,
+          "mib_mean": 170.38,
+          "replicas": 1,
+          "vcpu_max": 0.0015,
+          "vcpu_mean": 0.0007
+        },
+        "traefik": {
+          "idle_mib": 15.48,
+          "idle_vcpu": 0.0051,
+          "mib_max": 19.5,
+          "mib_mean": 18.63,
+          "replicas": 1,
+          "vcpu_max": 0.0136,
+          "vcpu_mean": 0.0102
+        },
+        "valkey": {
+          "idle_mib": 3.32,
+          "idle_vcpu": 0.0013,
+          "mib_max": 4.95,
+          "mib_mean": 4.38,
+          "replicas": 1,
+          "vcpu_max": 0.0354,
+          "vcpu_mean": 0.0093
+        },
+        "workload": {
+          "idle_mib": 112.9,
+          "idle_vcpu": 0.0017,
+          "mib_max": 136.7,
+          "mib_mean": 127.75,
+          "replicas": 1,
+          "vcpu_max": 0.4926,
+          "vcpu_mean": 0.3153
+        }
+      },
+      "duration_s": 60,
+      "engine": "echo-pydanticai",
+      "env": {
+        "LOAD_RATE_PER_USER": "1"
+      },
+      "failures": 0,
+      "finished": "2026-11-08T22:24:07+00:00",
+      "ok_rps": 10.07,
+      "p50_ms": 270.0,
+      "p95_ms": 520.0,
+      "pairs": 1,
+      "requests": 600,
+      "rps": 10.07,
+      "users": 10
+    },
+    "echo-python": {
+      "containers": {
+        "chassis": {
+          "idle_mib": 159.1,
+          "idle_vcpu": 0.0102,
+          "mib_max": 174.3,
+          "mib_mean": 164.59,
+          "replicas": 1,
+          "vcpu_max": 0.6582,
+          "vcpu_mean": 0.3481,
+          "vcpu_per_100rps": 3.4741
+        },
+        "fake-model-server": {
+          "idle_mib": 34.32,
+          "idle_vcpu": 0.1391,
+          "mib_max": 41.69,
+          "mib_mean": 38.51,
+          "replicas": 1,
+          "vcpu_max": 0.3221,
+          "vcpu_mean": 0.1154
+        },
+        "minio": {
+          "idle_mib": 177.0,
+          "idle_vcpu": 0.0014,
+          "mib_max": 177.4,
+          "mib_mean": 176.96,
+          "replicas": 1,
+          "vcpu_max": 0.0066,
+          "vcpu_mean": 0.0009
+        },
+        "traefik": {
+          "idle_mib": 16.05,
+          "idle_vcpu": 0.0054,
+          "mib_max": 20.53,
+          "mib_mean": 18.72,
+          "replicas": 1,
+          "vcpu_max": 0.0114,
+          "vcpu_mean": 0.0076
+        },
+        "valkey": {
+          "idle_mib": 3.32,
+          "idle_vcpu": 0.0015,
+          "mib_max": 7.79,
+          "mib_mean": 4.67,
+          "replicas": 1,
+          "vcpu_max": 0.0477,
+          "vcpu_mean": 0.0112
+        },
+        "workload": {
+          "idle_mib": 64.41,
+          "idle_vcpu": 0.0021,
+          "mib_max": 90.73,
+          "mib_mean": 79.66,
+          "replicas": 1,
+          "vcpu_max": 0.5948,
+          "vcpu_mean": 0.2956
+        }
+      },
+      "duration_s": 60,
+      "engine": "echo-python",
+      "env": {
+        "LOAD_RATE_PER_USER": "1"
+      },
+      "failures": 0,
+      "finished": "2026-11-08T22:22:27+00:00",
+      "ok_rps": 10.02,
+      "p50_ms": 310.0,
+      "p95_ms": 530.0,
+      "pairs": 1,
+      "requests": 605,
+      "rps": 10.02,
+      "users": 10
+    }
+  },
+  "source": {
+    "commit": "07bdf4c",
+    "copied_from": "the Results JSON step of the job log",
+    "inputs": {
+      "engines": "echo-python,echo-pydanticai",
+      "only": "main,rate,hop"
+    },
+    "ref": "poc-06/x5-linux-load",
+    "run_id": "42528406090",
+    "workflow": "poc06-load.yml"
+  },
+  "updated": "2026-11-08T22:24:07+00:00",
+  "version": 1
+}
