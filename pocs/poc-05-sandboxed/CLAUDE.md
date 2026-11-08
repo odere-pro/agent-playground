@@ -1,6 +1,6 @@
 # pocs/poc-05-sandboxed
 
-Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still apply. Status: done (2026-10-09), criteria 3 (MinIO) and 8 (T10) flagged (`README.md`); criterion 1 closed on 2026-11-06 when the sidecar hostile suite ran in CI. The decisions are in `notes/2026-10-02-mac-kickoff.md` and `notes/backlog-changes.md`.
+Context for this iteration. The root `CLAUDE.md` and `pocs/CLAUDE.md` still apply. Status: done (2026-10-09), criterion 8 (T10) flagged (`README.md`); criterion 1 closed on 2026-11-06 when the sidecar hostile suite ran in CI, criterion 3 (MinIO) on 2026-11-08. The decisions are in `notes/2026-10-02-mac-kickoff.md` and `notes/backlog-changes.md`.
 
 ## Read first
 
