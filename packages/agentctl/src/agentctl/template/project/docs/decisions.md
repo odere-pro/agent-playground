@@ -17,6 +17,6 @@ The platform's architecture decisions (ADRs) live in the platform monorepo, not 
 | [ADR-014](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/014-langgraph-state-between-runs.md) | A LangGraph agent keeps no state between runs; the graph compiles with no checkpointer. Session state, when needed, sits behind the chassis's store through chassis tools, never a store client here. |
 | [ADR-015](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/015-interrupts-end-the-run.md) | An agent run never waits for a person: a LangGraph `interrupt()` ends the run with `error interrupt_unsupported`. Ask for the decision in the answer and let the next run carry it. |
 
-ADR-001 is the delivery model the whole PoC track tests. ADR-002 is from PoC-1. ADR-005 is from PoC-5. ADR-006 is from PoC-6. ADR-007 to ADR-010 are from PoC-7. ADR-011 and ADR-012 are from the product's phase A. ADR-014 and ADR-015 are from phase C, Proposed. Check each one's Status line.
+ADR-001 is the delivery model the whole PoC track tests. ADR-002 is from PoC-1. ADR-005 is from PoC-5. ADR-006 is from PoC-6. ADR-007 to ADR-010 are from PoC-7. ADR-011 and ADR-012 are from the product's phase A. ADR-014 and ADR-015 are from phase C, accepted 2026-11-09. Check each one's Status line.
 
 The wire contract these build on: [contract v7](https://github.com/odere-pro/agent-playground/blob/main/docs/contracts/contract-v7.md), with its frozen surface in [contract v5, part C](https://github.com/odere-pro/agent-playground/blob/main/docs/contracts/contract-v5.md).

@@ -7,7 +7,7 @@
 
 ## Status
 
-Proposed 2026-11-09. The user accepts or picks another option; 128 CH-9's second box ticks on acceptance. The template test for item 2 is in (`test_an_interrupt_is_refused_with_a_clear_error`).
+Accepted 2026-11-09, by the user, as proposed (PR #123). Proposed the same day. The template test for item 2 is in (`test_an_interrupt_is_refused_with_a_clear_error`).
 
 ## Context
 

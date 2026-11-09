@@ -7,7 +7,7 @@
 
 ## Status
 
-Proposed 2026-11-09. The user accepts or picks another option; 128 CH-9's first box ticks on acceptance. `chassis-architect` reviewed the proposal on 2026-11-09 (the key bound to the principal, the fingerprint, the owner issue, and the latest-only rule are its findings); item 2's auth-off rule wants a `platform-security` look before acceptance.
+Accepted 2026-11-09, by the user, as proposed (PR #123). Proposed the same day. `chassis-architect` reviewed the proposal on 2026-11-09 (the key bound to the principal, the fingerprint, the owner issue, and the latest-only rule are its findings); item 2's auth-off rule is accepted as `suggested:`; `platform-security` confirms it when 140 CH-20 builds it.
 
 ## Context
 
