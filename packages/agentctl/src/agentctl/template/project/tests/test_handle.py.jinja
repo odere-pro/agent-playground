@@ -196,9 +196,9 @@ async def test_a_model_failure_is_one_error_event() -> None:
 
 
 def test_an_interrupt_is_refused_with_a_clear_error() -> None:
-    """ADR-014: a node that calls `interrupt()` ends the run with one `error`, code
+    """ADR-015: a node that calls `interrupt()` ends the run with one `error`, code
     `interrupt_unsupported`, naming the ADR. An agent run never waits for a person; ask for the
-    decision in the answer and let the next run carry it. No checkpointer ships (ADR-013)."""
+    decision in the answer and let the next run carry it. No checkpointer ships (ADR-014)."""
     from langgraph.types import Interrupt
 
     from {{ package_name }}.mapping import EventMapper, InterruptUnsupported, error_event
@@ -212,7 +212,7 @@ def test_an_interrupt_is_refused_with_a_clear_error() -> None:
 
     jsonschema.validate(error, EVENTS_SCHEMA)
     assert error["code"] == "interrupt_unsupported" and error["retryable"] is False
-    assert "ADR-014" in error["message"]
+    assert "ADR-015" in error["message"]
 {%- endif %}
 {%- elif framework == 'smolagents' %}
 

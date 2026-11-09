@@ -5,7 +5,7 @@ milestone: "W5 Chassis completion"
 index: 54
 epic_id: H-16
 depends_on: ["018 H-18", "017 H-4", "022 H-6"]
-blocks: ["063 S-8"]
+blocks: ["063 S-8", "140 CH-20"]
 epic_refs: [B.3, R2]
 ---
 
@@ -64,7 +64,7 @@ Tool agents answer by calling tools. Small models call tools less reliably than 
 ## Dependencies
 
 - Depends on: [018 H-18](018-H-18-idempotency.md), [017 H-4](017-H-4-harness-features.md), [022 H-6](022-H-6-security-middleware.md)
-- Blocks: [063 S-8](063-S-8-tool-call-finetune.md)
+- Blocks: [063 S-8](063-S-8-tool-call-finetune.md), [140 CH-20](140-CH-20-session-memory-tools-and-saver.md)
 
 ## References
 

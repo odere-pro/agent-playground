@@ -184,6 +184,7 @@ ROWS = [
     ('CH-17', 'Judge calibration against people: fail cases, a second labeler, TPR and TNR', 'judge-calibration', 'W6', '3', 'evaluator', 'P0', 'M', ['S-3', 'A-2'], ['B.2', 'E.5'], 'story', "From the product plan's gap review (2026-11-07), phase B second step: blocks the judge gating anywhere. Owner: eval-expert."),
     ('CH-18', 'The judge per agent: rubric by name, escapes on the trace, a shadow judge', 'judge-per-agent', 'W6', '3', 'evaluator', 'P1', 'M', ['A-2'], ['B.2', 'G.2'], 'story', "From the product plan's gap review (2026-11-07), phase B second step. Owner: eval-expert."),
     ('CH-19', 'One reference stack: make platform-up on kind from deploy/helm, with the example agent as smoke test', 'reference-stack', 'W10', '8', 'infra', 'P1', 'L', ['CH-3', 'CH-4', 'X-8'], ['G.4', 'H'], 'story', "From the product plan's gap review (2026-11-07), operating it: no phase owns it. Owner: platform-security."),
+    ('CH-20', 'Session memory tools on the tool proxy, and the LangGraph saver over them', 'session-memory-tools-and-saver', 'W10', '0', 'harness', 'P2', 'M', ['CH-9', 'H-16'], ['F.1', 'B.5'], 'story', 'From ADR-014 (2026-11-09): the build issue for session state behind StatePort. Owner: chassis-architect.'),
 ]
 
 

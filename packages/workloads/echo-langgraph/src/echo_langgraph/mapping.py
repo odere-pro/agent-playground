@@ -7,9 +7,9 @@ Input: what `graph.astream(..., stream_mode=["messages", "updates"])` yields, `(
   the tool calls it asked for and its `usage_metadata`; the tool node's `ToolMessage` gives each
   result, and the pending call becomes one `tool_call` event.
 Failures become one `error` event with echo-python's codes. An `__interrupt__` update (a node
-called `interrupt()`; with no checkpointer the graph stops there, ADR-013) raises
+called `interrupt()`; with no checkpointer the graph stops there, ADR-014) raises
 `InterruptUnsupported`, which `error_event` maps to `error {interrupt_unsupported}`: an agent run
-never waits for a person (ADR-014).
+never waits for a person (ADR-015).
 """
 
 from __future__ import annotations
@@ -28,17 +28,17 @@ chassis. An upstream body can be any size, so the message is cut to it."""
 
 
 INTERRUPT_CODE = "interrupt_unsupported"
-"""suggested: the code of the one `error` event an interrupt ends the run with (ADR-014)."""
+"""suggested: the code of the one `error` event an interrupt ends the run with (ADR-015)."""
 
 
 class InterruptUnsupported(RuntimeError):
     """A graph node called `interrupt()`. The run ends; a decision is asked for in the answer and
-    carried by the caller's next run (ADR-014, decision 2)."""
+    carried by the caller's next run (ADR-015, decision 2)."""
 
     def __init__(self, value: Any) -> None:
         shown = str(value)[:200]
         super().__init__(
-            "the graph asked to pause for input, which an agent run never does (ADR-014): "
+            "the graph asked to pause for input, which an agent run never does (ADR-015): "
             f"return what you need in the answer and let the next run carry the decision; "
             f"interrupt value: {shown}"
         )

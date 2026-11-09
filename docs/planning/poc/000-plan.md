@@ -334,7 +334,7 @@ Security follows [ADR-001](../adr/001-chassis-delivery-model.md). The trust rule
 
 - The delivery model is decided: [ADR-001](../adr/001-chassis-delivery-model.md), option I5, with the `sidecar` lane as the default.
 - Accept or replace the reuse picks (tracked in backlog issue [001 DEC-1](../issues/001-DEC-1-resolve-open-decisions.md)).
-- Final framework shortlist for PoC-6: decided in [ADR-006](../adr/006-agent-engines-default-supported-lanes.md), accepted 2026-10-30. Amended 2026-11-06 by the [product plan](../../plans/2026-11-06-agent-container-product.md): LangGraph is the default engine.
+- Final framework shortlist for PoC-6: decided in [ADR-006](../adr/006-agent-engines-default-supported-lanes.md), accepted 2026-10-30. Amended 2026-11-06 by the [product plan](../../plans/2026-11-06-agent-container-product.md): LangGraph is the default engine. State between runs and interrupts for that engine: proposed in [ADR-014](../adr/014-langgraph-state-between-runs.md) and [ADR-015](../adr/015-interrupts-end-the-run.md) (phase C), for the user to accept.
 - How many untrusted workloads the MVP must run in the `remote` lane, beyond the fake one.
 - Whether PoC-9 also runs on Kubernetes (kind or k3d), or stays on Docker Compose. PoC-5 already needs a kind cluster.
 - Dapr, or a broker client in the chassis behind `EventPort`: decided in [ADR-004](../adr/004-events-through-a-broker-client.md), from PoC-4, accepted 2026-10-08. The broker client; the Dapr adapter stays as a tested alternative, the default in no profile. The broker product (NATS JetStream or Kafka) stays open in [001 DEC-1](../issues/001-DEC-1-resolve-open-decisions.md).

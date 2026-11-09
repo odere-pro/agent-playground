@@ -108,7 +108,7 @@ Source: `core/events.py`; `events.v0.json`. A discriminated union on `type`. Eve
 | `a2a.transport` | connector | The connection failed or dropped, the a2a-sdk client failed, or the stream ended with no `end` or `error` | true |
 | `a2a.canceled` | connector | The task reached `CANCELED` by another hand | false |
 | `a2a.failed` | connector | A terminal `FAILED` or `REJECTED` with no `chassis.event` | false |
-| `a2a.unsupported_state` | connector | `INPUT_REQUIRED` or `AUTH_REQUIRED`: an agent run never waits for a person ([ADR-014](../planning/adr/014-interrupts-end-the-run.md)) | false |
+| `a2a.unsupported_state` | connector | `INPUT_REQUIRED` (an agent run never waits for a person, [ADR-015](../planning/adr/015-interrupts-end-the-run.md)) or `AUTH_REQUIRED` (the workload holds no credential and never needs one from a caller, ADR-001 hard requirement 1) | false |
 | `engine_error` | pipeline | The connector raised instead of yielding an `error` | false |
 | `guardrail_blocked` | pipeline, stream guard | A guard stage blocked the input or the answer (section 8) | false |
 | `guardrail_unavailable` | pipeline | The guardrail port failed and `on_unavailable` is `fail_closed` | true |
@@ -195,7 +195,7 @@ Transport error text: in chassis mode `a2a.timeout` and `a2a.transport` carry `s
 | `COMPLETED` (status, task, or a bare `message`) | `metrics`, then `end ok`; `output: {"text": ...}` only when no delta was sent |
 | `FAILED`, `REJECTED` | `metrics` if usage was seen, then `error a2a.failed`, fixed text |
 | `CANCELED` | `error a2a.canceled` |
-| `INPUT_REQUIRED`, `AUTH_REQUIRED` | `error a2a.unsupported_state`; the task is cancelled ([ADR-014](../planning/adr/014-interrupts-end-the-run.md): a pause has no place in a run; a LangGraph `interrupt()` in the template ends the run with the workload's own `error interrupt_unsupported`) |
+| `INPUT_REQUIRED`, `AUTH_REQUIRED` | `error a2a.unsupported_state`; the task is cancelled ([ADR-015](../planning/adr/015-interrupts-end-the-run.md)) |
 
 Usage comes from the metadata key `spec.engine.a2a.usage_key` (default null, zeros), aliases `promptTokenCount` / `prompt_tokens` / `input_tokens` / `inputTokens` and the output twins; the last value wins. `tool_call` never appears. The span gets `a2a.protocol` and `a2a.usage_known`.
 
