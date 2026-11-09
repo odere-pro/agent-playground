@@ -19,7 +19,10 @@ Scenarios: `main` is every engine (echo-python, echo-pydanticai, echo-langgraph,
 echo-typescript)
 at every pair count (1, 2, 4) with `--users`. `hop` is echo-python at 1 pair with `--hop-users`,
 in the sidecar lane and in the inprocess lane (`packages/chassis/configs/scale-inprocess.yaml`);
-the hop is sidecar minus inprocess, at p50 and p95. `idem` is echo-python at 1 pair with no
+the hop is sidecar minus inprocess, at p50 and p95 as Locust sees it (`hop_ms`) and as the
+chassis's own timer sees it (`chassis_hop_ms`: the `chassis.engine.run` histogram on `/metrics`,
+read before and after the measured run of every 1-pair scenario, `engine_run`). `idem` is
+echo-python at 1 pair with no
 `Idempotency-Key` (`LOAD_NO_KEY=1`), against the keyed run of `main`, to price idempotency.
 
 Output, under `pocs/poc-04-stateless-scalable/notes/load/`: `raw/<scenario>_*.csv` (Locust's
@@ -37,6 +40,7 @@ import json
 import math
 import os
 import platform
+import re
 import statistics
 import subprocess
 import sys
@@ -318,6 +322,88 @@ def _p95(samples: Sequence[dict[str, Any]], key: str) -> float:
     return ordered[max(0, math.ceil(0.95 * len(ordered)) - 1)]
 
 
+# The chassis-side timer (122 X-5) -------------------------------------------------------------
+
+ENGINE_FAMILY = "chassis_engine_run_duration_seconds"
+"""The chassis's own histogram of the A2A call to the workload (`chassis.engine.run`), by lane
+and status, on `GET /metrics`. Read for a 1-pair scenario only: Traefik sends each scrape to one
+replica, and with one pair that is the replica under load."""
+_SAMPLE = re.compile(r"^(?P<name>[a-zA-Z_:][a-zA-Z0-9_:]*)\{(?P<labels>[^}]*)\} (?P<value>\S+)$")
+_LABEL = re.compile(r'(\w+)="((?:[^"\\]|\\.)*)"')
+
+
+@dataclass(frozen=True)
+class Histogram:
+    """One Prometheus histogram: the cumulative count at each finite bound, the sum, the count."""
+
+    buckets: dict[float, int]
+    total: float
+    count: int
+
+
+def engine_histogram(text: str) -> Histogram:
+    """The `status="ok"` series of `ENGINE_FAMILY` in the metrics text, summed over the other
+    labels (one lane per scenario)."""
+    buckets: dict[float, int] = {}
+    total, count = 0.0, 0
+    for line in text.splitlines():
+        m = _SAMPLE.match(line.strip())
+        if m is None or not m["name"].startswith(ENGINE_FAMILY):
+            continue
+        labels = dict(_LABEL.findall(m["labels"]))
+        if labels.get("status") != "ok":
+            continue
+        suffix = m["name"].removeprefix(ENGINE_FAMILY)
+        if suffix == "_bucket" and labels.get("le") not in (None, "+Inf"):
+            le = float(labels["le"])
+            buckets[le] = buckets.get(le, 0) + int(float(m["value"]))
+        elif suffix == "_sum":
+            total += float(m["value"])
+        elif suffix == "_count":
+            count += int(float(m["value"]))
+    return Histogram(dict(sorted(buckets.items())), total, count)
+
+
+def _quantile(q: float, buckets: dict[float, int], count: int) -> float:
+    """Prometheus's `histogram_quantile`: linear inside the bucket that holds the rank; past the
+    last finite bound, that bound."""
+    rank = q * count
+    lower, before = 0.0, 0
+    for upper, cumulative in sorted(buckets.items()):
+        if cumulative >= rank:
+            inside = cumulative - before
+            return lower if inside == 0 else lower + (upper - lower) * (rank - before) / inside
+        lower, before = upper, cumulative
+    return lower
+
+
+def engine_timer(after: Histogram, before: Histogram) -> dict[str, float]:
+    """The measured window, `after` minus `before` (the warm-up is not kept), in milliseconds:
+    the exact mean, and p50 and p95 interpolated inside their bucket."""
+    buckets = {le: n - before.buckets.get(le, 0) for le, n in after.buckets.items()}
+    count = after.count - before.count
+    total = after.total - before.total
+    if count <= 0:
+        return {"count": 0, "mean_ms": 0.0, "p50_ms": 0.0, "p95_ms": 0.0}
+    return {
+        "count": count,
+        "mean_ms": round(total / count * 1000, 2),
+        "p50_ms": round(_quantile(0.5, buckets, count) * 1000, 2),
+        "p95_ms": round(_quantile(0.95, buckets, count) * 1000, 2),
+    }
+
+
+def scrape_engine_histogram() -> Histogram | None:
+    """`GET /metrics` through Traefik; None when the scrape fails (the run goes on without it)."""
+    try:
+        res = httpx.get(f"{URL}/metrics", timeout=5)
+        res.raise_for_status()
+    except httpx.HTTPError as exc:
+        print(f"run_matrix: /metrics not read ({type(exc).__name__}); no chassis-side timer")
+        return None
+    return engine_histogram(res.text)
+
+
 # Locust results ------------------------------------------------------------------------------
 
 
@@ -377,6 +463,7 @@ def run_scenario(s: Scenario, args: argparse.Namespace, venv: Path) -> dict[str,
         write_samples(stats_csv, idle, "idle")
         if args.warmup_s > 0:
             run(locust_cmd(s, args.warmup_s, None, args.locust_processes, venv), s.env)
+        before = scrape_engine_histogram() if s.pairs == 1 else None
         sampler = Sampler(names, SAMPLE_EVERY_S)
         sampler.start()
         try:
@@ -384,9 +471,12 @@ def run_scenario(s: Scenario, args: argparse.Namespace, venv: Path) -> dict[str,
         finally:
             rows = sampler.stop()
             write_samples(stats_csv, rows, "load")
+        after = scrape_engine_histogram() if before is not None else None
     finally:
         run([str(SCALE_SH), "down"])
     result = read_locust(raw / s.name)
+    if before is not None and after is not None:
+        result["engine_run"] = engine_timer(after, before)
     roles = per_role(rows)
     idle_roles = per_role(idle)
     for name, numbers in roles.items():
@@ -433,10 +523,14 @@ def host_info() -> dict[str, Any]:
     return info
 
 
-def diff(a: dict[str, Any] | None, b: dict[str, Any] | None) -> dict[str, float] | None:
+def diff(
+    a: dict[str, Any] | None,
+    b: dict[str, Any] | None,
+    keys: Sequence[str] = ("p50_ms", "p95_ms"),
+) -> dict[str, float] | None:
     if not a or not b:
         return None
-    return {k: round(a[k] - b[k], 2) for k in ("p50_ms", "p95_ms")}
+    return {k: round(a[k] - b[k], 2) for k in keys}
 
 
 def merge(results: dict[str, Any], s: Scenario, run_result: dict[str, Any]) -> None:
@@ -454,6 +548,11 @@ def merge(results: dict[str, Any], s: Scenario, run_result: dict[str, Any]) -> N
         )
     hop = results.get("hop", {})
     hop["hop_ms"] = diff(hop.get("sidecar"), hop.get("inprocess"))
+    hop["chassis_hop_ms"] = diff(
+        hop.get("sidecar", {}).get("engine_run"),
+        hop.get("inprocess", {}).get("engine_run"),
+        keys=("mean_ms", "p50_ms", "p95_ms"),
+    )
     idem = results.get("idempotency")
     if idem is not None:
         keyed = results.get("engines", {}).get("echo-python", {}).get("1")

@@ -45,11 +45,15 @@ __all__ = [
 
 CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 DURATION_BUCKETS: tuple[float, ...] = (
-    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0,
+    0.001, 0.0025, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05, 0.075, 0.1, 0.25, 0.5,
+    1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0,
 )  # fmt: skip
-"""suggested: seconds. A run on a real model takes seconds; the upper bounds cover that."""
+"""suggested: seconds. A run on a real model takes seconds; the upper bounds cover that. The
+bounds below 100 ms are 122 X-5's: the sidecar hop is a few milliseconds on an echo run of
+tens, and `chassis_engine_run_duration_seconds` must resolve it."""
 TIMED_SPANS: Mapping[str, str] = {
     "chassis.run": "interface",
+    "chassis.engine.run": "lane",
     "chassis.model.call": "route",
     "chassis.tool.call": "tool",
     "chassis.evaluator.score": "mode",
@@ -59,6 +63,10 @@ DECLARED: Mapping[str, tuple[str, str]] = {
     "chassis_requests_total": ("counter", "Runs started, by interface."),
     "chassis_run_duration_seconds": ("histogram", "Run latency, by interface and status."),
     "chassis_run_errors_total": ("counter", "Runs that ended with an error, by code."),
+    "chassis_engine_run_duration_seconds": (
+        "histogram",
+        "Engine call latency (the A2A call to the workload), by lane and status.",
+    ),
     "chassis_model_calls_total": ("counter", "Model proxy calls, by the route asked for."),
     "chassis_model_call_duration_seconds": ("histogram", "Model proxy call latency, by route."),
     "chassis_model_tokens_total": ("counter", "Model tokens, by route and direction."),

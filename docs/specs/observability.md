@@ -34,6 +34,7 @@ Any span can carry `error.code`. The guard stages emit counters and logs, not a 
 | `chassis_requests_total` | `interface` |
 | `chassis_run_duration_seconds` (histogram) | `interface`, `status` |
 | `chassis_run_errors_total` | `interface`, `code` |
+| `chassis_engine_run_duration_seconds` (histogram) | `lane`, `status` |
 | `chassis_model_calls_total` | `route` |
 | `chassis_model_call_duration_seconds` (histogram) | `route`, `status` |
 | `chassis_model_tokens_total` | `route`, `direction` |

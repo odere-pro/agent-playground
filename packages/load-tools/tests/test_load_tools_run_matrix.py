@@ -90,6 +90,7 @@ def test_load_tools_merge_computes_the_hop_from_both_lanes() -> None:
         "sidecar": {"p50_ms": 12.0, "p95_ms": 30.0},
         "inprocess": {"p50_ms": 10.0, "p95_ms": 25.0},
         "hop_ms": {"p50_ms": 2.0, "p95_ms": 5.0},
+        "chassis_hop_ms": None,
     }
 
 
@@ -108,3 +109,54 @@ def test_load_tools_per_role_records_the_p95_of_every_sample_next_to_mean_and_ma
     assert chassis["vcpu_p95"] == 0.3
     assert chassis["mib_p95"] == 150.0
     assert chassis["vcpu_max"] == 1.0 and chassis["mib_max"] == 200.0
+
+
+PROM = """# HELP chassis_engine_run_duration_seconds Engine call latency, by lane and status.
+# TYPE chassis_engine_run_duration_seconds histogram
+chassis_engine_run_duration_seconds_bucket{agent="echo",lane="sidecar",status="ok",le="0.01"} 0
+chassis_engine_run_duration_seconds_bucket{agent="echo",lane="sidecar",status="ok",le="0.02"} 5
+chassis_engine_run_duration_seconds_bucket{agent="echo",lane="sidecar",status="ok",le="0.04"} 10
+chassis_engine_run_duration_seconds_bucket{agent="echo",lane="sidecar",status="ok",le="+Inf"} 10
+chassis_engine_run_duration_seconds_sum{agent="echo",lane="sidecar",status="ok"} 0.25
+chassis_engine_run_duration_seconds_count{agent="echo",lane="sidecar",status="ok"} 10
+chassis_engine_run_duration_seconds_bucket{agent="echo",lane="sidecar",status="error",le="+Inf"} 1
+chassis_engine_run_duration_seconds_sum{agent="echo",lane="sidecar",status="error"} 9
+chassis_engine_run_duration_seconds_count{agent="echo",lane="sidecar",status="error"} 1
+"""
+
+
+def test_load_tools_reads_the_engine_run_histogram_of_ok_runs_from_the_metrics_text() -> None:
+    """The chassis-side timer (122 X-5): the ok series of `chassis_engine_run_duration_seconds`,
+    its buckets, sum, and count; errors are left out."""
+    hist = run_matrix.engine_histogram(PROM)
+
+    assert hist == run_matrix.Histogram(buckets={0.01: 0, 0.02: 5, 0.04: 10}, total=0.25, count=10)
+
+
+def test_load_tools_histogram_delta_and_quantiles_give_the_measured_window_in_ms() -> None:
+    """The scrape before the measured run is taken off the one after it (the warm-up is not
+    kept), then the mean is exact and p50 and p95 are interpolated inside their bucket, as
+    Prometheus does, in milliseconds."""
+    before = run_matrix.Histogram(buckets={0.01: 0, 0.02: 1, 0.04: 2}, total=0.05, count=2)
+    after = run_matrix.Histogram(buckets={0.01: 0, 0.02: 6, 0.04: 12}, total=0.30, count=12)
+
+    window = run_matrix.engine_timer(after, before)
+
+    assert window == {"count": 10, "mean_ms": 25.0, "p50_ms": 20.0, "p95_ms": 38.0}
+
+
+def test_load_tools_merge_adds_the_chassis_side_hop_next_to_the_locust_one() -> None:
+    """The hop from the chassis's own timer: sidecar minus inprocess at the mean, p50, and p95."""
+    results: dict[str, object] = {"version": 1}
+    sidecar = run_matrix.Scenario("hop-sidecar", "hop", "echo-python", 1, 1)
+    inprocess = run_matrix.Scenario("hop-inprocess", "hop", "inprocess", 1, 1)
+    timer_s = {"count": 10, "mean_ms": 25.0, "p50_ms": 24.0, "p95_ms": 40.0}
+    timer_i = {"count": 10, "mean_ms": 23.5, "p50_ms": 22.0, "p95_ms": 36.0}
+    run_matrix.merge(results, sidecar, {"p50_ms": 12.0, "p95_ms": 30.0, "engine_run": timer_s})
+
+    run_matrix.merge(results, inprocess, {"p50_ms": 10.0, "p95_ms": 25.0, "engine_run": timer_i})
+
+    hop = results["hop"]
+    assert isinstance(hop, dict)
+    assert hop["hop_ms"] == {"p50_ms": 2.0, "p95_ms": 5.0}
+    assert hop["chassis_hop_ms"] == {"mean_ms": 1.5, "p50_ms": 2.0, "p95_ms": 4.0}
