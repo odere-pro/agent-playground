@@ -175,11 +175,37 @@ async def test_the_engine_call_is_timed_by_lane_as_a_chassis_side_hop_timer() ->
 
     text = telemetry.metrics.render({"agent": "echo"})
 
-    assert (
-        value(text, "chassis_engine_run_duration_seconds_count", lane="inprocess", status="ok") == 2
-    )
-    assert value(text, "chassis_engine_run_duration_seconds_bucket", le="0.001", status="ok") >= 0
-    assert "chassis_engine_run_duration_seconds" in families(text)
+    family = "chassis_engine_run_duration_seconds"
+    assert value(text, f"{family}_count", lane="inprocess", status="ok") == 2
+    assert value(text, f"{family}_bucket", le="+Inf", lane="inprocess", status="ok") == 2
+    bounds = {dict(pairs)["le"] for name, pairs in samples(text) if name == f"{family}_bucket"}
+    assert {"0.001", "0.0025", "0.015", "0.075", "120"} <= bounds, bounds
+
+
+async def _wire_error(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[Any]:
+    yield {"schema_version": "0", "type": "start", "request_id": ctx["request_id"]}
+    yield {"schema_version": "0", "type": "error", "code": "tool_failed", "message": "boom"}
+
+
+async def test_an_engine_error_is_timed_as_an_error_and_counted_by_code() -> None:
+    """An `error` the workload sends ends the `chassis.engine.run` span with `error.code`, so the
+    histogram's `status` is `error` (never `ok`) and `chassis_engine_run_errors_total` counts it."""
+    telemetry = InMemoryTelemetry()
+    connector = InProcessConnector()
+    bundle = _ports(engine=connector, telemetry=telemetry)
+    await connector.setup({"connector": "inprocess", "handle": f"{__name__}:_wire_error"}, bundle)
+    try:
+        request = make_request()
+        [e async for e in connector.run(request, make_context(request))]
+    finally:
+        await connector.close()
+
+    text = telemetry.metrics.render({"agent": "echo"})
+
+    family = "chassis_engine_run_duration_seconds"
+    assert value(text, f"{family}_count", lane="inprocess", status="error") == 1
+    assert value(text, f"{family}_count", lane="inprocess", status="ok") == 0
+    assert value(text, "chassis_engine_run_errors_total", lane="inprocess", code="tool_failed") == 1
 
 
 async def _fails(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:

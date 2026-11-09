@@ -211,6 +211,14 @@ class _Run:
             self.span.attributes["a2a.task_id"] = self.task_id[:SPAN_TASK_ID_CAP]
 
 
+def _marked(span: Span, event: Event) -> Event:
+    """An `Error` the run yields sets `error.code` on the run's span, so the `chassis.engine.run`
+    histogram counts the run as `error`, not `ok` (`chassis.metrics.observe_span`)."""
+    if isinstance(event, Error):
+        span.attributes["error.code"] = event.code
+    return event
+
+
 class A2AConnector:
     """The shared client. Subclasses set `kind` and implement `setup` with `_open`."""
 
@@ -291,25 +299,28 @@ class A2AConnector:
             try:
                 async with aclosing(self._read(aiter(stream), run, deadline)) as events:
                     async for event in events:
-                        yield event
+                        yield _marked(span, event)
             except _DeadlinePassed:
-                yield Error(
-                    code="a2a.timeout",
-                    message=f"the run took longer than its budget of "
-                    f"{request.budget.timeout_ms} ms",
-                    retryable=True,
+                yield _marked(
+                    span,
+                    Error(
+                        code="a2a.timeout",
+                        message=f"the run took longer than its budget of "
+                        f"{request.budget.timeout_ms} ms",
+                        retryable=True,
+                    ),
                 )
             except (httpx.TimeoutException, A2AClientTimeoutError) as exc:
                 text = self._failure_text("a2a.timeout", exc) or "timed out"
-                yield Error(code="a2a.timeout", message=text, retryable=True)
+                yield _marked(span, Error(code="a2a.timeout", message=text, retryable=True))
             except (httpx.TransportError, A2AClientError) as exc:
                 span.attributes["a2a.transport_error"] = type(exc).__name__
                 text = self._failure_text("a2a.transport", exc) or type(exc).__name__
-                yield Error(code="a2a.transport", message=text, retryable=True)
+                yield _marked(span, Error(code="a2a.transport", message=text, retryable=True))
             except self._malformed_stream as exc:
                 span.attributes["a2a.transport_error"] = type(exc).__name__
                 text = self._failure_text("a2a.transport", exc)
-                yield Error(code="a2a.transport", message=text, retryable=True)
+                yield _marked(span, Error(code="a2a.transport", message=text, retryable=True))
             finally:
                 await self._finish(stream, run)
 

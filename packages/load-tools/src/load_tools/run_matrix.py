@@ -549,14 +549,20 @@ def merge(results: dict[str, Any], s: Scenario, run_result: dict[str, Any]) -> N
     hop = results.get("hop", {})
     hop["hop_ms"] = diff(hop.get("sidecar"), hop.get("inprocess"))
     hop["chassis_hop_ms"] = diff(
-        hop.get("sidecar", {}).get("engine_run"),
-        hop.get("inprocess", {}).get("engine_run"),
+        _timed(hop.get("sidecar")),
+        _timed(hop.get("inprocess")),
         keys=("mean_ms", "p50_ms", "p95_ms"),
     )
     idem = results.get("idempotency")
     if idem is not None:
         keyed = results.get("engines", {}).get("echo-python", {}).get("1")
         idem["cost_ms"] = diff(keyed, idem.get("no_key"))
+
+
+def _timed(run_result: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A run's chassis-side timer, or None when it was not read or saw no run."""
+    timer = (run_result or {}).get("engine_run")
+    return timer if timer and timer.get("count") else None
 
 
 def load_results(path: Path) -> dict[str, Any]:

@@ -28,7 +28,7 @@ make load-test ARGS="--only hop"                              # the sidecar hop 
 Scenarios:
 
 - `main`: each engine (`echo-python`, `echo-pydanticai`, `echo-langgraph`, `echo-typescript`) at 1, 2, and 4 pairs, 64 users (suggested).
-- `hop`: `echo-python` at 1 pair, 8 users, in the sidecar lane and in the inprocess lane (`scale.sh up inprocess 1`, `packages/chassis/configs/scale-inprocess.yaml`). The hop is sidecar minus inprocess at p50 and p95, twice: as Locust sees it, and as the chassis's own timer sees it (`chassis_engine_run_duration_seconds` on `/metrics`, read before and after the measured run; since 2026-11-09, 122 X-5).
+- `hop`: `echo-python` at 1 pair, 8 users, in the sidecar lane and in the inprocess lane (`scale.sh up inprocess 1`, `packages/chassis/configs/scale-inprocess.yaml`). The hop is sidecar minus inprocess at p50 and p95, twice: as Locust sees it, and as the chassis's own timer sees it (`chassis_engine_run_duration_seconds` on `/metrics`, read before and after the measured run; since 2026-11-09, 122 X-5). The chassis-side figure is the lane difference as the connector sees it, not the network alone: the inprocess lane runs the workload on the chassis's own event loop, so it can come out slower under load and the hop can read low or negative.
 - `idem`: `echo-python` at 1 pair with `LOAD_NO_KEY=1`. Its p50 and p95, minus those of the keyed `echo-python-1p` run, are the cost of idempotency.
 
 Options: `--engine` and `--pairs` (repeatable) pick a subset. `--only main|hop|idem` (repeatable) picks the kinds. `--duration-s` (60), `--warmup-s` (10), `--users` (64), `--hop-users` (8), and `--locust-processes` (4) are the suggested defaults from the plan.

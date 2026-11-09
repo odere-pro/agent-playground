@@ -160,3 +160,18 @@ def test_load_tools_merge_adds_the_chassis_side_hop_next_to_the_locust_one() -> 
     assert isinstance(hop, dict)
     assert hop["hop_ms"] == {"p50_ms": 2.0, "p95_ms": 5.0}
     assert hop["chassis_hop_ms"] == {"mean_ms": 1.5, "p50_ms": 2.0, "p95_ms": 4.0}
+
+
+def test_load_tools_chassis_hop_is_none_when_a_lane_saw_no_run() -> None:
+    """A lane whose timer read no run (a failed scrape, no completed run) gives no chassis hop."""
+    results: dict[str, object] = {"version": 1}
+    sidecar = run_matrix.Scenario("hop-sidecar", "hop", "echo-python", 1, 1)
+    inprocess = run_matrix.Scenario("hop-inprocess", "hop", "inprocess", 1, 1)
+    empty = {"count": 0, "mean_ms": 0.0, "p50_ms": 0.0, "p95_ms": 0.0}
+    full = {"count": 10, "mean_ms": 25.0, "p50_ms": 24.0, "p95_ms": 40.0}
+    run_matrix.merge(results, sidecar, {"p50_ms": 12.0, "p95_ms": 30.0, "engine_run": full})
+
+    run_matrix.merge(results, inprocess, {"p50_ms": 10.0, "p95_ms": 25.0, "engine_run": empty})
+
+    hop = results["hop"]
+    assert isinstance(hop, dict) and hop["chassis_hop_ms"] is None

@@ -28,3 +28,7 @@ Applied with skill `planning-sync` in the same PR: a dated status bullet under `
 
 - The 502 under load: 3 more, two at 4 pairs and one at 2 pairs, each a single `HTTP 502`, no logs kept. Same proposal as above.
 - `poc06-load.yml` takes `engines` and `only` inputs since this date, so the matrix runs one engine pair per runner, in parallel.
+
+## 2026-11-09: 122 X-5 box 2 ticked
+
+Applied in the same PR: box 2 of 122 X-5 ticked on the rerun section of [the Linux runner note](2026-11-08-x5-linux-runner-load.md) (the `rate` rerun with the p95 per role, run 42625888817; the `hop` rerun with the chassis-side timer, run 42627333030). The chassis gains `chassis_engine_run_duration_seconds{lane,status}` (`chassis.engine.run` timed, bounds every 5 ms below 50 ms), and `run_matrix` reads it before and after every 1-pair run. Still open: box 1 (the host), box 3 (the owner's Revisit call; the chart's requests unchanged), box 4 (no bottleneck issue filed: the first bottleneck on the runner is the host itself), box 5 (the 502's source).
