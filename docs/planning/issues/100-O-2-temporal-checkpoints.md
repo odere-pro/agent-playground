@@ -16,6 +16,7 @@ Run state must live outside the orchestrator process, so any pod can resume any 
 ## What
 
 - Temporal in Docker Compose and on Kubernetes (suggested: the Temporal Helm chart, with persistence on the CloudNativePG Postgres). No epic story owns Temporal itself, so it is set up here.
+- These checkpoints are the orchestrator's execution state. An agent's own state between runs is [ADR-014](../adr/014-langgraph-state-between-runs.md)'s: none by default, else behind the chassis's `StatePort` through chassis tools. The two never stand in for each other.
 - The Temporal worker runs in the orchestrator's chassis, which alone holds the Temporal credential. It calls the workload once per step through the connector (suggested; gap (b) in [the gaps in the backlog plan](000-plan.md#adr-001-follow-ups)). The ADR that 099 O-1 asks for decides this first. Each run is a Temporal workflow with `run_id` as its workflow ID.
 - A run takes an ordered list of steps (agent plus input). Each step is a Temporal activity, with a timeout and a retry policy, that calls the agent through the agent port.
 - A checkpoint after every step, stored by Temporal. Run state: `run_id`, plan, steps, step status, and references to inputs and outputs, not the full text (suggested: object storage references).

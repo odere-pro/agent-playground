@@ -18,6 +18,7 @@ Some steps must wait for a person, and any run must be stoppable. Approval steps
 - Approval steps: the run pauses before a step and waits for an approve or reject decision without holding a worker (a Temporal signal and wait).
 - Triggers from `approvals.require_for` in the orchestrator config: `external_tool` (the step calls a tool or agent whose registry trust level is external) and `cost_above_usd_2` (the run's spend passes $2, from the run budget totals).
 - Suggested: an explicit approval step type in workflow files, added to `workflow.schema.json`.
+- The agent never pauses for the approval itself: [ADR-015](../adr/015-interrupts-end-the-run.md) ends an agent run that asks for input with `error interrupt_unsupported`, so the approval is this issue's step, between runs, with its own API and timeout.
 - An approve and reject API on the orchestrator, behind a write scope (suggested: `POST /v1/runs/{run_id}/approvals/{step_id}`).
 - Approve continues the run from the paused step. Reject stops it.
 - Cancel: a stop control that cancels the Temporal workflow, stops in-flight steps (all parallel branches too), starts no new step, and marks the run `cancelled` (suggested: `POST /v1/runs/{run_id}/cancel`, the backend of `run_cancel`).

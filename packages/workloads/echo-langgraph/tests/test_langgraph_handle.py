@@ -315,3 +315,52 @@ def test_any_other_failure_is_model_error_not_the_pipeline_code() -> None:
     assert error["message"] == "the graph fell over"
     grouped = error_event(BaseExceptionGroup("wrapped", [KeyError("k")]))
     assert grouped["code"] == "model_error"
+
+
+def test_an_interrupt_is_refused_with_a_clear_error() -> None:
+    """ADR-015, decision 2: an `__interrupt__` update (a node called `interrupt()`; with no
+    checkpointer the graph stops there, ADR-014) ends the run with one `error` event, code
+    `interrupt_unsupported`, not retryable, naming the ADR; never a silent `end ok`."""
+    from echo_langgraph.mapping import EventMapper, InterruptUnsupported, error_event
+    from langgraph.types import Interrupt
+
+    mapper = EventMapper("big-default")
+    part = {"__interrupt__": (Interrupt(value={"question": "approve the transfer?"}, id="i1"),)}
+
+    with pytest.raises(InterruptUnsupported) as info:
+        mapper.on_part("updates", part)
+    error = error_event(info.value)
+
+    jsonschema.validate(error, EVENTS_SCHEMA)
+    assert error["code"] == "interrupt_unsupported" and error["retryable"] is False
+    assert "ADR-015" in error["message"] and "approve the transfer?" in error["message"]
+
+
+async def test_a_graph_that_interrupts_ends_with_the_error_after_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-015 end to end on `handle`: a graph whose node calls `interrupt()` yields `start`, then
+    the one `error`, and no `metrics` or `end`."""
+    from langgraph.graph import END, START, MessagesState, StateGraph
+    from langgraph.types import interrupt
+
+    def ask(state: MessagesState) -> dict[str, Any]:
+        interrupt({"question": "approve?"})
+        return {"messages": []}
+
+    graph = StateGraph(MessagesState)
+    graph.add_node("ask", ask)
+    graph.add_edge(START, "ask")
+    graph.add_edge("ask", END)
+    compiled = graph.compile()
+
+    def refuse(request: httpx2.Request) -> httpx2.Response:
+        raise httpx2.ConnectError("refused", request=request)
+
+    monkeypatch.setattr(handle_module, "_graph", lambda model, tools: compiled)
+    monkeypatch.setattr(tools_module, "transport", httpx2.MockTransport(refuse))
+
+    events = [e async for e in handle({"text": "pay"}, CTX)]
+
+    assert [e["type"] for e in events] == ["start", "error"]
+    assert events[-1]["code"] == "interrupt_unsupported"

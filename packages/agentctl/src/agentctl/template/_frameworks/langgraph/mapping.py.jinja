@@ -6,7 +6,10 @@ Input: what `graph.astream(..., stream_mode=["messages", "updates"])` yields, `(
 - `updates`: `{node: {"messages": [...]}}` per finished node. The model node's `AIMessage` gives
   the tool calls it asked for and its `usage_metadata`; the tool node's `ToolMessage` gives each
   result, and the pending call becomes one `tool_call` event.
-Failures become one `error` event with echo-python's codes.
+Failures become one `error` event with echo-python's codes. An `__interrupt__` update (a node
+called `interrupt()`; with no checkpointer the graph stops there, ADR-014) raises
+`InterruptUnsupported`, which `error_event` maps to `error {interrupt_unsupported}`: an agent run
+never waits for a person (ADR-015).
 """
 
 from __future__ import annotations
@@ -22,6 +25,23 @@ SCHEMA_VERSION = "0"
 ERROR_MESSAGE_MAX = 8192
 """Contract v8, C: the v0 schema's bound on `error.message`. A copy: workloads never import the
 chassis. An upstream body can be any size, so the message is cut to it."""
+
+
+INTERRUPT_CODE = "interrupt_unsupported"
+"""suggested: the code of the one `error` event an interrupt ends the run with (ADR-015)."""
+
+
+class InterruptUnsupported(RuntimeError):
+    """A graph node called `interrupt()`. The run ends; a decision is asked for in the answer and
+    carried by the caller's next run (ADR-015, decision 2)."""
+
+    def __init__(self, value: Any) -> None:
+        shown = str(value)[:200]
+        super().__init__(
+            "the graph asked to pause for input, which an agent run never does (ADR-015): "
+            f"return what you need in the answer and let the next run carry the decision; "
+            f"interrupt value: {shown}"
+        )
 
 
 def event(kind: str, **fields: Any) -> dict[str, Any]:
@@ -65,6 +85,8 @@ class EventMapper:
             return [event("delta", text=text)] if text else []
         if mode != "updates" or not isinstance(data, dict):
             return []
+        if "__interrupt__" in data:
+            raise InterruptUnsupported(_interrupt_value(data["__interrupt__"]))
         out: list[dict[str, Any]] = []
         for update in data.values():
             for message in (update or {}).get("messages", []):
@@ -101,6 +123,12 @@ class EventMapper:
         return [metrics, event("end", status="ok")]
 
 
+def _interrupt_value(interrupts: Any) -> Any:
+    """The value the first `Interrupt` carries, for the error message."""
+    first = next(iter(interrupts), None) if isinstance(interrupts, tuple | list) else interrupts
+    return getattr(first, "value", first)
+
+
 def _leaf(exc: BaseException) -> BaseException:
     """The first real error inside the exception groups anyio wraps MCP failures in."""
     while isinstance(exc, BaseExceptionGroup) and exc.exceptions:
@@ -115,6 +143,8 @@ def error_event(exc: BaseException) -> dict[str, Any]:
     """
     exc = _leaf(exc)
     message = (str(exc) or type(exc).__name__)[:ERROR_MESSAGE_MAX]
+    if isinstance(exc, InterruptUnsupported):
+        return event("error", code=INTERRUPT_CODE, message=message, retryable=False)
     status: int | None = None
     if isinstance(exc, openai.APIStatusError):
         status = exc.status_code

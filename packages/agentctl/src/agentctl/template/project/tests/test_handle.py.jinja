@@ -192,6 +192,28 @@ async def test_a_model_failure_is_one_error_event() -> None:
     events = await _run("fail please")
     assert [e["type"] for e in events] == ["start", "error"]
     assert events[-1]["code"] == "http_500" and events[-1]["retryable"] is True
+{%- if framework == 'langgraph' %}
+
+
+def test_an_interrupt_is_refused_with_a_clear_error() -> None:
+    """ADR-015: a node that calls `interrupt()` ends the run with one `error`, code
+    `interrupt_unsupported`, naming the ADR. An agent run never waits for a person; ask for the
+    decision in the answer and let the next run carry it. No checkpointer ships (ADR-014)."""
+    from langgraph.types import Interrupt
+
+    from {{ package_name }}.mapping import EventMapper, InterruptUnsupported, error_event
+
+    mapper = EventMapper("big-default")
+    part = {"__interrupt__": (Interrupt(value={"question": "approve?"}, id="i1"),)}
+
+    with pytest.raises(InterruptUnsupported) as info:
+        mapper.on_part("updates", part)
+    error = error_event(info.value)
+
+    jsonschema.validate(error, EVENTS_SCHEMA)
+    assert error["code"] == "interrupt_unsupported" and error["retryable"] is False
+    assert "ADR-015" in error["message"]
+{%- endif %}
 {%- elif framework == 'smolagents' %}
 
 
