@@ -1,7 +1,7 @@
 ---
 title: "CH-15: Backpressure: a cap on runs in flight per replica, 503 overloaded, and a gauge to scale on"
 labels: ["story", "priority:P1", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
-milestone: "W5 Chassis completion"
+milestone: "Done: delivered by the PoC track"
 index: 135
 epic_id: CH-15
 depends_on: ["017 H-4", "014 H-7"]
@@ -28,11 +28,13 @@ Nothing caps the runs in flight per replica. The HPA scales on CPU only, while t
 
 ## Acceptance criteria
 
-- [ ] With `max_in_flight: 2` and two runs held open, a third call gets 503 `overloaded` with `Retry-After`, and the workload receives no call.
-- [ ] A scrape test shows the refusal in `chassis_requests_refused_total{reason="overloaded"}` and the held runs in `chassis_runs_in_flight`.
-- [ ] `max_in_flight` reloads with no restart, or `docs/guides/chassis-reference.md` says it is restart-only.
-- [ ] A render test shows the HPA on the in-flight gauge when the chart's values ask for it.
-- [ ] The contract lists `overloaded` with the version it was added in.
+- [x] With `max_in_flight: 2` and two runs held open, a third call gets 503 `overloaded` with `Retry-After`, and the workload receives no call. · Delivered by: `packages/chassis/tests/test_backpressure.py::test_a_third_run_past_the_cap_is_503_overloaded_and_never_reaches_the_workload` (native, on a real uvicorn server over a Unix socket; `/ready` stays 200), `::test_the_chat_interfaces_refuse_in_their_own_shape` (the OpenAI and Anthropic interfaces)
+- [x] A scrape test shows the refusal in `chassis_requests_refused_total{reason="overloaded"}` and the held runs in `chassis_runs_in_flight`. · Delivered by: `packages/chassis/tests/test_backpressure.py::test_metrics_show_the_refusal_and_the_runs_in_flight`
+- [x] `max_in_flight` reloads with no restart, or `docs/guides/chassis-reference.md` says it is restart-only. · Delivered by: it reloads with `spec.limits` (`RELOADABLE`), read per call; `packages/chassis/tests/test_backpressure.py::test_max_in_flight_reloads_with_spec_limits_and_no_restart`
+- [x] A render test shows the HPA on the in-flight gauge when the chart's values ask for it. · Delivered by: `pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py::test_hpa_scales_on_the_in_flight_gauge_when_asked` (`hpa.runsInFlight`, a Pods metric on `chassis_runs_in_flight` next to CPU; a metrics adapter must serve it)
+- [x] The contract lists `overloaded` with the version it was added in. · Delivered by: [contract v9](../../contracts/contract-v9.md), section D; the rule in force in [the contract](../../specs/contract.md) (the status table and "Readiness and drain")
+
+Delivered by: the CH-15 PR (2026-11-09). Agent pools on task queues and KEDA (104 O-3) can read the same gauge; the throughput numbers are 122 X-5 and 133 X-5b.
 
 ## Dependencies
 

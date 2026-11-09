@@ -255,6 +255,11 @@ class LimitsSpec(BaseModel):
       fail_open` (a store outage lets the call through and is counted; `fail_closed` answers 503
       `state_unavailable`). Past it, 429 `rate_limited` with `Retry-After`. Reloadable. The
       `cloud` profile's default is `fail_closed` (CH-14, P-26).
+    - `max_in_flight: 32` (CH-15): the most runs in flight on one replica, counted in the run
+      registry. Past it a call on any public interface is refused 503 `overloaded` with
+      `Retry-After: 1` before the workload sees it (`chassis.server.pipeline.Overloaded`). The
+      gauge `chassis_runs_in_flight` is what the chart's HPA can scale on. Reloadable: read per
+      call from the live config.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -267,6 +272,7 @@ class LimitsSpec(BaseModel):
     requests_per_minute: int = Field(default=600, ge=1)
     request_burst: int = Field(default=100, ge=1)
     rate_limit_on_unavailable: Literal["fail_open", "fail_closed"] = "fail_open"
+    max_in_flight: int = Field(default=32, ge=1)
 
 
 TTL_S_MAX = 2_592_000

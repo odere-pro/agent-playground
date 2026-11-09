@@ -19,7 +19,9 @@ A router validates the body (FastAPI does), resolves the ids (`ids.resolve_ids`)
 4. `ids.open_run` with `pipeline.observed_for(headers)` (the session header and the caller's
    `traceparent` on the run span, PoC-7), re-minting the trace id when `ids.may_remint` allows;
    otherwise a trace id in use is `adapter.error("trace_id_in_use", ...)` (native: 409). The
-   claim is released.
+   claim is released. A replica at `spec.limits.max_in_flight` (CH-15) is
+   `adapter.error("overloaded", ...)`, 503 with `Retry-After: 1`, before the engine sees the run;
+   the claim is released.
 5. `chassis.inbound_ignored{interface, param}` (suggested) once per name in `ignored`.
 6. Complete: the whole run, then `adapter.complete(response, meta)`. With `errors_as_http`, a run
    that had an `error` event is `adapter.error(code, message, retryable, meta)` instead. With
@@ -89,7 +91,15 @@ from chassis.server.idempotency import Claim, Refusal, Replay
 from chassis.server.interfaces.hold import hold
 from chassis.server.interfaces.ids import ResolvedIds, id_problem, may_remint, open_run
 from chassis.server.interfaces.limits import enforce_limits
-from chassis.server.pipeline import Run, RunPipeline, RunStream
+from chassis.server.pipeline import (
+    OVERLOADED,
+    OVERLOADED_MESSAGE,
+    RETRY_AFTER_S,
+    Overloaded,
+    Run,
+    RunPipeline,
+    RunStream,
+)
 from chassis.server.security import current_user_id
 
 __all__ = [
@@ -272,8 +282,9 @@ async def _open_or_refuse[BodyT](
     ids: ResolvedIds,
     claim: Claim | None,
 ) -> Run | HTTPResponse:
-    """Step 4 of the module docstring: the opened run, or 409 `trace_id_in_use`. When no run
-    opens, the claim is released."""
+    """Step 4 of the module docstring: the opened run, or 409 `trace_id_in_use`, or 503
+    `overloaded` with `Retry-After` when this replica is at `spec.limits.max_in_flight` (CH-15).
+    When no run opens, the claim is released."""
     interface = adapter.interface
     try:
         return open_run(
@@ -283,6 +294,12 @@ async def _open_or_refuse[BodyT](
             remint=may_remint(ids, interface),
             observed=pipeline.observed_for(headers, user_id=current_user_id()),
         )
+    except Overloaded:
+        if claim is not None:
+            await claim.release()
+        reply = adapter.error(OVERLOADED, OVERLOADED_MESSAGE, True, meta.for_request(request))
+        headers_out = {**reply.headers, "Retry-After": str(RETRY_AFTER_S)}
+        return to_response(replace(reply, headers=headers_out))
     except TraceIdInUse as exc:
         if claim is not None:
             await claim.release()

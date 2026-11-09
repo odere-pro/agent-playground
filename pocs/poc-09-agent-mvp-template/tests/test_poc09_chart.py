@@ -220,6 +220,24 @@ def test_hpa_renders_when_enabled(chart: Charts, tmp_path: Path) -> None:
         "name": RELEASE,
     }
     assert (hpa["spec"]["minReplicas"], hpa["spec"]["maxReplicas"]) == (2, 4)
+    assert [m["type"] for m in hpa["spec"]["metrics"]] == ["Resource"], "CPU only by default"
+
+
+def test_hpa_scales_on_the_in_flight_gauge_when_asked(chart: Charts, tmp_path: Path) -> None:
+    """CH-15: `hpa.runsInFlight.enabled` adds a Pods metric on `chassis_runs_in_flight` next to
+    CPU, with `targetAverageValue` runs per pod (suggested: 24, three quarters of
+    `spec.limits.max_in_flight` 32). The chassis idles on CPU while it waits for the model, so
+    the in-flight gauge is the signal that scales it."""
+    values = values_file(
+        tmp_path,
+        {"hpa": {"enabled": True, "runsInFlight": {"enabled": True, "targetAverageValue": 24}}},
+    )
+    hpa = one(chart.template(values), "HorizontalPodAutoscaler", RELEASE)
+    metrics = hpa["spec"]["metrics"]
+    assert [m["type"] for m in metrics] == ["Resource", "Pods"]
+    pods = metrics[1]["pods"]
+    assert pods["metric"] == {"name": "chassis_runs_in_flight"}
+    assert pods["target"] == {"type": "AverageValue", "averageValue": "24"}
 
 
 # --- the remote lane --------------------------------------------------------------------------
