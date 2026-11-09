@@ -19,6 +19,7 @@ FRAMEWORKS: tuple[str, ...] = (
     "python",
     "pydanticai",
     "langgraph",
+    "langchain",
     "openai-agents",
     "smolagents",
     "claude-agent",

@@ -37,8 +37,10 @@ kind:
 
 framework:
   type: str
-  help: The engine of the business logic (ADR-006); langgraph is the default
-  choices: [python, pydanticai, langgraph, openai-agents, smolagents, claude-agent]
+  help: >-
+    The engine of the business logic (ADR-006); langgraph is the default. langchain is LangChain's
+    create_agent, which runs on LangGraph
+  choices: [python, pydanticai, langgraph, langchain, openai-agents, smolagents, claude-agent]
   default: langgraph
 
 trust:

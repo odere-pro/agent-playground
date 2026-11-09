@@ -1,7 +1,7 @@
-{%- set live = framework in ['python', 'pydanticai', 'langgraph', 'openai-agents'] -%}
+{%- set live = framework in ['python', 'pydanticai', 'langgraph', 'langchain', 'openai-agents'] -%}
 {%- set hooked = framework != 'claude-agent' -%}
 """Unit tests of the business logic: `handle` called directly, no socket, no key, no chassis.
-{%- if framework in ['python', 'pydanticai', 'langgraph', 'openai-agents', 'smolagents'] %}
+{%- if framework in ['python', 'pydanticai', 'langgraph', 'langchain', 'openai-agents', 'smolagents'] %}
 The model is the platform's fake model server, reached through the module's test-only transport
 hook. Replace the example assertions with your own when you change `handle`.
 {%- else %}
@@ -48,7 +48,7 @@ from {{ package_name }}.mapping import error_event
 {%- endif %}
 
 handle_module: Any = importlib.import_module("{{ package_name }}.handle")
-{%- if framework in ['python', 'langgraph', 'openai-agents', 'smolagents'] %}
+{%- if framework in ['python', 'langgraph', 'langchain', 'openai-agents', 'smolagents'] %}
 tools_module: Any = importlib.import_module("{{ package_name }}.tools")
 {%- endif %}
 EVENTS_SCHEMA = json.loads(files("workload_a2a").joinpath("schemas/events.v0.json").read_text())
@@ -134,14 +134,14 @@ async def model(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
     monkeypatch.setattr(handle_module, "tool_transport", httpx2.ASGITransport(app=mcp_app))
     async with _lifespan(mcp_app):
         yield
-{% elif framework in ['langgraph', 'openai-agents'] %}
+{% elif framework in ['langgraph', 'langchain', 'openai-agents'] %}
 
 @pytest.fixture(autouse=True)
 def model(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """The fake model on an in-memory transport; the tool endpoint refuses, so no tools run."""
     monkeypatch.setattr(
         handle_module,
-        "{{ 'model_transport' if framework == 'langgraph' else 'transport' }}",
+        "{{ 'model_transport' if framework in ['langgraph', 'langchain'] else 'transport' }}",
         httpx2.ASGITransport(app=create_app(SCRIPT)),
     )
     monkeypatch.setattr(tools_module, "transport", httpx2.MockTransport(_refuse))
@@ -177,7 +177,7 @@ def test_a_timeout_maps_to_one_schema_valid_error() -> None:
     jsonschema.validate(event, EVENTS_SCHEMA)
     assert event["type"] == "error"
 {%- endif %}
-{%- if framework in ['python', 'pydanticai', 'langgraph', 'openai-agents'] %}
+{%- if framework in ['python', 'pydanticai', 'langgraph', 'langchain', 'openai-agents'] %}
 
 
 async def test_streams_the_reply_then_metrics_and_end() -> None:
@@ -192,7 +192,7 @@ async def test_a_model_failure_is_one_error_event() -> None:
     events = await _run("fail please")
     assert [e["type"] for e in events] == ["start", "error"]
     assert events[-1]["code"] == "http_500" and events[-1]["retryable"] is True
-{%- if framework == 'langgraph' %}
+{%- if framework in ['langgraph', 'langchain'] %}
 
 
 def test_an_interrupt_is_refused_with_a_clear_error() -> None:
