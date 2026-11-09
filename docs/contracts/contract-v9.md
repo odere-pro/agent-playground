@@ -2,7 +2,7 @@
 
 The written contract after 136 CH-16, the model proxy under failure, and 135 CH-15, backpressure (section D, added 2026-11-09 in the CH-15 PR). It is additive over [contract v8](contract-v8.md): v8, and v7 to v1 before it, still hold for everything this document does not name. The rule in force is stated once in [docs/specs/contract.md](../specs/contract.md); this file is the record of what v9 added and why.
 
-Status: **draft, 2026-11-08.** Written with the CH-16 PR. Where this text and the code differ, the code wins. Evidence is a test name. The decision record is [ADR-013](../planning/adr/013-model-call-retries-belong-to-the-router.md).
+Status: **draft, 2026-11-08, section D 2026-11-09.** Written with the CH-16 PR and the CH-15 PR. Where this text and the code differ, the code wins. Evidence is a test name. The decision record is [ADR-013](../planning/adr/013-model-call-retries-belong-to-the-router.md).
 
 Contract v9 is a version of this document, not of the wire:
 - The event schema stays `schema_version: "0"`.
