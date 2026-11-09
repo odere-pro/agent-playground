@@ -108,3 +108,65 @@ Idle, one `docker stats` sample before each `rate` load: chassis 159 to 160 MiB 
 - A chassis-side hop timer: a chassis change, `chassis-architect` to scope (suggested: a span attribute on the connector call, read by `run_matrix.py`).
 - One `rate` rerun after this branch merges, for the p95: `gh workflow run poc06-load.yml -f engines=<all five> -f only=rate`, about 3 minutes per engine.
 - The 502's source: keep the chassis and Traefik logs of a failed scenario in `run_matrix.py`, then read them (the PoC-6a backlog note already proposes it).
+
+## Rerun 2026-11-09: the sidecar at p95, and the hop from a chassis-side timer (box 2)
+
+Two more runs on 4-vCPU `ubuntu-latest` runners, same stack and load shape as above.
+
+| Run | Ref | Inputs | What it adds |
+| --- | --- | ------ | ------------ |
+| [42625888817](https://github.com/odere-pro/agent-playground/actions/runs/42625888817) | `main` `74d7f22` | every engine; `rate` | `vcpu_p95` and `mib_p95` per role (`run_matrix` since #116) |
+| [42627333030](https://github.com/odere-pro/agent-playground/actions/runs/42627333030) | `poc-06/x5-hop-timer` `9b688f6` | `echo-python`; `hop` | `engine_run`, the chassis's own timer, and `chassis_hop_ms` |
+
+Raw results: [load/2026-11-09-x5-rate-p95.json](load/2026-11-09-x5-rate-p95.json), [load/2026-11-09-x5-hop-chassis-timer.json](load/2026-11-09-x5-hop-chassis-timer.json).
+
+```console
+$ gh workflow run poc06-load.yml --ref main \
+    -f engines=echo-python,echo-pydanticai,echo-langgraph,echo-openai-agents,echo-typescript -f only=rate
+$ gh workflow run poc06-load.yml --ref poc-06/x5-hop-timer -f engines=echo-python -f only=hop
+```
+
+### The chassis at 10 RPS, 1 pair, 60 s: mean / p95 / max
+
+```console
+echo-python-1p-rate10: 10.1 rps, p50 240.0 ms, p95 460.0 ms, failures 0/600
+echo-pydanticai-1p-rate10: 10.02 rps, p50 260.0 ms, p95 440.0 ms, failures 0/605
+echo-langgraph-1p-rate10: 10.08 rps, p50 300.0 ms, p95 560.0 ms, failures 0/600
+echo-openai-agents-1p-rate10: 10.08 rps, p50 190.0 ms, p95 390.0 ms, failures 0/600
+echo-typescript-1p-rate10: 10.09 rps, p50 140.0 ms, p95 340.0 ms, failures 0/600
+```
+
+| Engine | Chassis vCPU | Chassis MiB | Workload vCPU p95 / MiB p95 |
+| ------ | ------------ | ----------- | --------------------------- |
+| echo-python | 0.39 / 0.55 / 0.55 | 165 / 173 / 173 | 0.61 / 88 |
+| echo-pydanticai | 0.29 / 0.51 / 0.51 | 164 / 174 / 174 | 0.54 / 138 |
+| echo-langgraph | 0.36 / 0.66 / 0.66 | 165 / 174 / 174 | 0.64 / 125 |
+| echo-openai-agents | 0.29 / 0.67 / 0.67 | 163 / 170 / 170 | 0.51 / 122 |
+| echo-typescript | 0.34 / 0.61 / 0.61 | 167 / 178 / 178 | 0.30 / 79 |
+
+The p95 equals the max in every row. `docker stats --no-stream` takes about 2 s itself, so a 60 s run gives 15 to 30 samples per container, and the nearest-rank p95 of 20 or fewer samples is the top one. Read the p95 column as an upper bound; a longer `rate` run (suggested: 300 s) would separate them.
+
+### The hop, as the chassis sees it (`echo-python`, 1 pair, 1 user, 60 s)
+
+The chassis times its A2A call to the workload (`chassis.engine.run`, both lanes run the same connector) as the histogram `chassis_engine_run_duration_seconds{lane}` on `/metrics`; `run_matrix` reads it before and after the measured run and takes the difference, so Traefik, Locust, and the warm-up are out of it. The mean is exact; p50 and p95 are interpolated inside their bucket (bounds every 5 ms below 50 ms).
+
+```console
+hop-sidecar: 25.58 rps, p50 34.0 ms, p95 76.0 ms, failures 0/1510
+hop-inprocess: 23.25 rps, p50 36.0 ms, p95 89.0 ms, failures 0/1372
+```
+
+| Lane | Runs timed | Engine call mean | p50 | p95 | Chassis vCPU |
+| ---- | ---------- | ---------------- | --- | --- | ------------ |
+| sidecar | 1,527 | 35.63 ms | 33.56 ms | 67.09 ms | 0.63 |
+| inprocess | 1,394 | 39.46 ms | 35.77 ms | 85.65 ms | 0.99 |
+| sidecar minus inprocess (`chassis_hop_ms`) | | -3.83 ms | -2.21 ms | -18.56 ms | |
+
+Locust's view of the same two runs (`hop_ms`): -2.0 ms at p50, -13.0 ms at p95.
+
+### Reading
+
+**Box 2.** The sidecar's p95 CPU and memory at the configured rate are recorded: 0.51 to 0.67 vCPU and 170 to 178 MiB at 10 RPS, an upper bound (the sampling above). Memory is inside ADR-001's 128 to 256 MiB; CPU is above its 0.05 to 0.1 vCPU by 5 to 7 times at p95 and 3 times at the mean on this host, where the Mac gave 0.105 to 0.129 at the mean. The hop is now timed in the chassis, at p50 and p95, next to ADR-001's 1 to 3 ms: it reads negative, 2 to 4 ms in favor of the sidecar lane. The timer isolates the call from Traefik and Locust, not from where the workload runs: the inprocess lane runs echo_python on the chassis's own event loop inside its 1-vCPU cap (0.99 vCPU during the run, against 0.63 for the sidecar chassis), so on this host the sidecar lane is the faster one and the hop is below what the comparison can show. Both figures, the p95 cost and the hop, are the box's numbers, with that reading; the cost at the configured rate is the table above. Box 2 is ticked on this evidence.
+
+**Box 3.** Unchanged: the two hosts disagree on CPU (3 times apart at the mean), so the chart's requests stay at 100m and 128Mi and the Revisit call is the owner's, on the dedicated box. Memory agrees across hosts (155 to 178 MiB) and sits inside the estimate.
+
+**What the chassis gains.** `chassis_engine_run_duration_seconds` next to `chassis_run_duration_seconds` gives the chassis's own share of a run's latency, the figure `docs/specs/metrics.md` calls "the stages' overhead"; its status label now follows the run's `error` event (a review finding, fixed in the same PR after this run; the run above had no error, so its numbers stand).

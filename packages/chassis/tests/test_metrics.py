@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 import pytest
+from chassis.adapters.a2a.inprocess import InProcessConnector
 from chassis.adapters.otel import OtelTelemetry
 from chassis.core.envelope import Context, TaskInput
 from chassis.core.events import Delta, End, Event, Start
@@ -23,9 +24,11 @@ from chassis.fakes.state import InMemoryState
 from chassis.metrics import CONTENT_TYPE, MetricsRegistry
 from chassis.ports.auth import Principal
 from chassis.ports.bundle import PortBundle
+from chassis.ports.engine import EngineConnector
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server import ChassisConfig, create_app
 from chassis.server.proxy_app import create_proxy_app
+from chassis_contracts.helpers import make_context, make_request
 from fastapi import FastAPI
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from poc_harness.promtext import families, samples, value
@@ -44,7 +47,7 @@ def _config(**spec: Any) -> ChassisConfig:
     return ChassisConfig.model_validate({**CONFIG, "spec": {**CONFIG["spec"], **spec}})
 
 
-def _ports(engine: FakeEngine | None = None, **extra: Any) -> PortBundle:
+def _ports(engine: EngineConnector | None = None, **extra: Any) -> PortBundle:
     return PortBundle(
         model=ScriptedModel([ScriptRule(match="simplify", reply="Plain words.")]),
         engine=engine or FakeEngine(handle=echo),
@@ -152,6 +155,58 @@ async def test_a_run_is_counted_by_interface_and_status_with_its_latency() -> No
     assert value(text, "chassis_requests_total", interface="native") == 2
     assert value(text, "chassis_run_duration_seconds_count", interface="native", status="ok") == 2
     assert value(text, "chassis_run_duration_seconds_bucket", le="+Inf", status="ok") == 2
+
+
+async def test_the_engine_call_is_timed_by_lane_as_a_chassis_side_hop_timer() -> None:
+    """122 X-5: the `chassis.engine.run` span (the A2A call to the workload, every lane) is a
+    histogram by lane and status, so the sidecar hop is read in the chassis, not through Traefik
+    and Locust. The inprocess lane runs the same connector, so the two lanes are comparable."""
+    telemetry = InMemoryTelemetry()
+    connector = InProcessConnector()
+    bundle = _ports(engine=connector, telemetry=telemetry)
+    await connector.setup(
+        {"connector": "inprocess", "handle": "chassis.core.handle:echo_wire"}, bundle
+    )
+    try:
+        for _ in range(2):
+            request = make_request()
+            [e async for e in connector.run(request, make_context(request))]
+    finally:
+        await connector.close()
+
+    text = telemetry.metrics.render({"agent": "echo"})
+
+    family = "chassis_engine_run_duration_seconds"
+    assert value(text, f"{family}_count", lane="inprocess", status="ok") == 2
+    assert value(text, f"{family}_bucket", le="+Inf", lane="inprocess", status="ok") == 2
+    bounds = {dict(pairs)["le"] for name, pairs in samples(text) if name == f"{family}_bucket"}
+    assert {"0.001", "0.0025", "0.015", "0.075", "120"} <= bounds, bounds
+
+
+async def _wire_error(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIterator[Any]:
+    yield {"schema_version": "0", "type": "start", "request_id": ctx["request_id"]}
+    yield {"schema_version": "0", "type": "error", "code": "tool_failed", "message": "boom"}
+
+
+async def test_an_engine_error_is_timed_as_an_error_and_counted_by_code() -> None:
+    """An `error` the workload sends ends the `chassis.engine.run` span with `error.code`, so the
+    histogram's `status` is `error` (never `ok`) and `chassis_engine_run_errors_total` counts it."""
+    telemetry = InMemoryTelemetry()
+    connector = InProcessConnector()
+    bundle = _ports(engine=connector, telemetry=telemetry)
+    await connector.setup({"connector": "inprocess", "handle": f"{__name__}:_wire_error"}, bundle)
+    try:
+        request = make_request()
+        [e async for e in connector.run(request, make_context(request))]
+    finally:
+        await connector.close()
+
+    text = telemetry.metrics.render({"agent": "echo"})
+
+    family = "chassis_engine_run_duration_seconds"
+    assert value(text, f"{family}_count", lane="inprocess", status="error") == 1
+    assert value(text, f"{family}_count", lane="inprocess", status="ok") == 0
+    assert value(text, "chassis_engine_run_errors_total", lane="inprocess", code="tool_failed") == 1
 
 
 async def _fails(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
