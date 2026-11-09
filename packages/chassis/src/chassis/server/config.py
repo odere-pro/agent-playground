@@ -205,6 +205,12 @@ class ModelSpec(BaseModel):
             raise ValueError("spec.model.judge_route is empty; set a route or null")
         return self
 
+    def declared_routes(self) -> tuple[str, ...]:
+        """Every route this spec names, once each, in a fixed order: `route`, `routes`,
+        `fallback_route`, `judge_route`. A null judge route (`CHASSIS_JUDGE_ROUTE`) is not here."""
+        named = (self.route, *self.routes.values(), self.fallback_route, self.judge_route)
+        return tuple(dict.fromkeys(r for r in named if r))
+
     def route_for(self, task: str | None) -> str:
         """The route of `task`: `routes[task]` when the map names it, else `route`."""
         if task is not None and task in self.routes:

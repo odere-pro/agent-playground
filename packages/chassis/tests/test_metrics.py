@@ -284,6 +284,32 @@ async def test_gated_runs_and_fallbacks_are_both_counted() -> None:
     assert value(text, "chassis_gate_fallbacks_total") == 1
 
 
+async def test_the_budget_counter_is_zero_for_every_declared_route_before_a_refusal() -> None:
+    """CH-16: the alert `ChassisModelBudgetExhausted` is `increase(...[15m]) > 0`. A series born
+    at its first refusal is scraped at 1, never 0, and `increase()` sees no rise (CI run
+    42634108264). So `/metrics` shows `chassis_model_budget_exhausted_total` at 0 for every
+    route `spec.model` declares, before any call."""
+    config = _config(
+        model={
+            "route": "big-default",
+            "fallback_route": "fallback-route",
+            "routes": {"summarize": "small-route"},
+            "judge_route": "judge",
+        }
+    )
+    text = await _scrape(create_app(config, _ports()))
+    found = {
+        dict(labels)["route"]: number
+        for (name, labels), number in samples(text).items()
+        if name == "chassis_model_budget_exhausted_total"
+    }
+    assert found == dict.fromkeys(("big-default", "fallback-route", "small-route", "judge"), 0.0), (
+        found
+    )
+    budget = 'chassis_model_budget_exhausted_total{agent="echo",route="big-default"} 0'
+    assert budget in text.splitlines(), text
+
+
 # --- Who may read `/metrics` ---
 
 TOKENS = {

@@ -529,3 +529,7 @@ What CH-3 must carry with it: `--drain-delay-s` longer than endpoint removal plu
 idle keep-alive window (10 s here, suggested; a client with a longer idle keep-alive than
 httpx's 5 s needs more), `terminationGracePeriodSeconds` of at least delay + drain timeout +
 margin (50 here), and Valkey sized for rate times TTL.
+
+## Addendum, 2026-11-09: the roles were reversed
+
+ADR-012 ([drain order on rollout](../../../docs/planning/adr/012-drain-order-on-rollout.md)) reversed the roles this note measured on 2026-11-08. The workload is now the native sidecar and the chassis is the main container. The kind drill on the library chart ([kind drain order](../../poc-09-agent-mvp-template/notes/2026-11-08-kind-drain-order.md)) ran a rolling restart under load in both orders. With the chassis as the main container, 0 of 6312 and 0 of 7736 requests failed. With the chassis as the native sidecar, as built here, 515 of 8587 and 464 of 8365 failed. The sections above stay as the record of what PoC-4 measured.

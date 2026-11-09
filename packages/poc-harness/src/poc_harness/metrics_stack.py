@@ -57,6 +57,9 @@ BUDGET_INPUT = "simplify: budget-refusal on purpose."
 fires on the counter it raises."""
 BUDGET_ALERT = "ChassisModelBudgetExhausted"
 BUDGET_COUNTER = "chassis_model_budget_exhausted_total"
+ALERT_WAIT_S = float(os.environ.get("POC08_ALERT_WAIT_S", "180"))
+"""suggested: how long the drill waits for `BUDGET_ALERT` to fire: the rule's `for` (1 m) plus
+scrape and evaluation intervals, with room (`test_poc08_stack_static.py` bounds it)."""
 GATE_BAD = "GATE-BAD-ANSWER"
 """The main route's answer to `GATE_INPUT`; the judge scores it below the threshold."""
 FALLBACK_ANSWER = "Dana Ruiz signed the report."

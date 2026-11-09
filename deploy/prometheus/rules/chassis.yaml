@@ -10,6 +10,10 @@ groups:
       # The chassis answers the workload 429 `service_budget_exhausted` and counts it per route;
       # without this rule the refusal is a 429 nobody sees. One refusal is already the whole
       # service down for its budget period, so the threshold is any increase over 15 minutes.
+      # The chassis creates each declared route's series at 0 from its first scrape
+      # (chassis.server.observability), so a route's first refusal is a rise `increase()` sees.
+      # Limit: a route the workload names that `spec.model` does not declare is not seeded, so
+      # its first refusal is scraped at 1 and this rule misses it (CH-16 review, LOW).
       # suggested: the window, the wait, and the severity; the epic gives no values.
       - alert: ChassisModelBudgetExhausted
         expr: sum by (agent, route) (increase(chassis_model_budget_exhausted_total[15m])) > 0

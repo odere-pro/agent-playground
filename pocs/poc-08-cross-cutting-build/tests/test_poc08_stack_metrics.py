@@ -45,6 +45,7 @@ import pytest
 from poc_harness.drills import gate_is_on
 from poc_harness.metrics_stack import (
     AGENT,
+    ALERT_WAIT_S,
     BUDGET_ALERT,
     BUDGET_COUNTER,
     BUDGET_INPUT,
@@ -268,10 +269,6 @@ def test_the_dashboard_datasource_resolves_to_prometheus(
     [expr] = [e for title, _, e in panel_queries(dashboard_file()) if title == FEEDBACK_PANEL]
     frames = grafana_query(grafana, chosen["uid"], expr)
     assert frames and any(frame_has_values(f) for f in frames), frames
-
-
-ALERT_WAIT_S = float(os.environ.get("POC08_ALERT_WAIT_S", "180"))
-"""suggested: the rule's `for` (1 m) plus scrape and evaluation intervals, with room."""
 
 
 def _alert_state(prom: httpx.Client, name: str) -> str | None:
