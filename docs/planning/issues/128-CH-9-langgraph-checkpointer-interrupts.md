@@ -1,7 +1,7 @@
 ---
 title: "CH-9: LangGraph checkpointer and interrupts: one ADR each"
 labels: ["story", "priority:P2", "phase:0-harness", "area:harness", "size:S", "layer:chassis"]
-milestone: "W5 Chassis completion"
+milestone: "Done: delivered by the PoC track"
 index: 128
 epic_id: CH-9
 depends_on: ["058 CH-8"]
@@ -29,7 +29,9 @@ The default engine for new agents is LangGraph ([ADR-006](../adr/006-agent-engin
 - [x] The checkpointer ADR is accepted and linked from ADR-006. · Delivered by: [ADR-014](../adr/014-langgraph-state-between-runs.md), accepted 2026-11-09 by the user (PR #123); linked from [ADR-006](../adr/006-agent-engines-default-supported-lanes.md) Revisit
 - [x] The interrupt ADR is accepted and linked from ADR-006 and the contract spec. · Delivered by: [ADR-015](../adr/015-interrupts-end-the-run.md), accepted 2026-11-09 by the user (PR #123); linked from [ADR-006](../adr/006-agent-engines-default-supported-lanes.md) Revisit and [the contract](../../specs/contract.md) (`a2a.unsupported_state`)
 - [x] The LangGraph template has a test for the chosen interrupt mapping, or a test that the chassis refuses an interrupt with a clear error. · Delivered by: `packages/agentctl/src/agentctl/template/project/tests/test_handle.py.jinja` `test_an_interrupt_is_refused_with_a_clear_error` (rendered and run by `packages/agentctl/tests/test_agentctl_rendered_checks.py::test_rendered_unit_tests_pass_offline`), and on the workload `packages/workloads/echo-langgraph/tests/test_langgraph_handle.py::test_an_interrupt_is_refused_with_a_clear_error`, `::test_a_graph_that_interrupts_ends_with_the_error_after_start`; the chassis side, `packages/chassis/tests/test_a2a.py` (`a2a.unsupported_state`)
-- [ ] ADR-006's two Revisit triggers are closed or restated with a date. ADR-006's Revisit names the two decisions (the bullet "State between runs, and interrupts", 2026-11-09); its two open triggers for the LangGraph default, the `langchain-mcp-adapters` import and the trace-join test, close with phase C's next pieces, not with these ADRs.
+- [x] ADR-006's two Revisit triggers are closed or restated with a date. · Delivered by: ADR-006's Revisit, the bullet "The LangGraph default" (2026-11-09). The trace join is closed: `packages/chassis/tests/test_langgraph_trace_join.py::test_each_graph_step_is_under_the_run_span`. The adapter import is restated with the date, not closed: 0.3.2, the newest release, requires `mcp<2`; the watch is `packages/workloads/echo-langgraph/tests/test_langgraph_handle.py::test_langchain_mcp_adapters_loads_the_chassis_tools_on_mcp_2` (PR #126). The bullet "State between runs, and interrupts" names ADR-014 and ADR-015.
+
+Delivered by: ADR-014 and ADR-015, accepted (#123, #124); the adapter watch (#126); the LangGraph trace-join test (2026-11-09). The build for session state is 140 CH-20.
 
 ## Dependencies
 

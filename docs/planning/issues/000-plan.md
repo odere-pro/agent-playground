@@ -96,7 +96,7 @@ Waves are GitHub milestones. Each one ends in something that can be shown. The w
 
 | Wave | Issues | Ends with |
 | ---- | ------ | --------- |
-| Done: delivered by the PoC track | 011–136 | 4 issues, 12.5 days of the first estimate, not counted below |
+| Done: delivered by the PoC track | 011–136 | 5 issues, 13.5 days of the first estimate, not counted below |
 | W0 Decisions | 001 | Broker, first cloud, public A2A endpoint, banned words, and metric targets decided. Feeds phases D and E: the primary trace view and the north star |
 | W1 Router and baseline | 002–006 | Every model call goes through the router; token spend is counted and on a dashboard; the baseline clock is running. Feeds phases B and E; the baseline is parked |
 | W2 Chassis MVP | 007–026 | An echo workload runs behind the chassis: in the `sidecar` lane from the shared library chart, locally and in Kubernetes, and over A2A in memory in the chassis's tests. It answers through native, OpenAI, and Anthropic APIs (streaming and complete), is started by events and emits result events, is traced, holds no key, and passes the contract tests over both transports. Feeds phases A, B, E, and F |
@@ -194,8 +194,8 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 
 ## Estimate check
 
-- **Open:** about 284.5 engineer-days (57 weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
-- **Done** (wave `WD`): 12.5 days over 4 of the issues. **Parked** (wave `WP`): 52.5 days over 23. Neither is in the open total.
+- **Open:** about 283.5 engineer-days (57 weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
+- **Done** (wave `WD`): 13.5 days over 5 of the issues. **Parked** (wave `WP`): 52.5 days over 23. Neither is in the open total.
 - **Phases A to F:** 86.5 days against the 8–10 weeks the product plan has left (suggested: 50–60 engineer-days), from [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md#totals). Phases A, B, and E are each about twice the plan's size. The rest of the open total is `later`: no phase needs it.
 - **The epic** says 29–33 weeks for one engineer. Either the epic assumes a lot of reuse, or the phase estimates need a second look with the team. The sizes here are first guesses; re-size in planning.
 
@@ -206,6 +206,7 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
 | 011 | H-2 | [Inbound adapters: native, OpenAI-compatible, Anthropic-compatible, with streaming](011-H-2-inbound-adapters.md) | chassis, agent-profile | P0 | L | [007](007-H-1-harness-library-ports-envelope.md), [008](008-H-14-one-agent-interface.md), [009](009-CH-1-engine-connectors-a2a.md) |
+| 128 | CH-9 | [LangGraph checkpointer and interrupts: one ADR each](128-CH-9-langgraph-checkpointer-interrupts.md) | chassis | P2 | S | [058](058-CH-8-framework-event-mappings.md) |
 | 134 | CH-14 | [Security defaults in the cloud profile: no uncorrelated tokens, unknown tools refused, auth required](134-CH-14-cloud-security-defaults.md) | chassis | P0 | M | [013](013-CH-2-outbound-model-proxy.md), [022](022-H-6-security-middleware.md) |
 | 135 | CH-15 | [Backpressure: a cap on runs in flight per replica, 503 overloaded, and a gauge to scale on](135-CH-15-backpressure.md) | chassis | P1 | M | [017](017-H-4-harness-features.md), [014](014-H-7-observability.md) |
 | 136 | CH-16 | [The model proxy under failure: budget refusal code, per-call timeout, LiteLLM retries and fallbacks](136-CH-16-model-proxy-failures.md) | chassis | P1 | M | [013](013-CH-2-outbound-model-proxy.md), [017](017-H-4-harness-features.md), [003](003-G-1b-named-model-routes.md), [117](117-X-3-slos-alerts.md) |
@@ -282,7 +283,6 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | 060 | H-23 | [More broker adapters behind the event port: Kafka, AWS, GCP](060-H-23-broker-adapters.md) | chassis | P2 | S | [021](021-H-20-event-consumer-adapter.md), [053](053-H-22-event-reliability.md) |
 | 061 | H-5 | [A2A adapter: JSON-RPC endpoint, task states, signed agent card](061-H-5-a2a-adapter.md) | agent-profile | P2 | S | [001](001-DEC-1-resolve-open-decisions.md), [011](011-H-2-inbound-adapters.md) |
 | 062 | H-11 | [Chassis reuse in other projects: the stock image in front of any A2A workload](062-H-11-adapter-package.md) | chassis | P2 | S | [011](011-H-2-inbound-adapters.md), [013](013-CH-2-outbound-model-proxy.md), [058](058-CH-8-framework-event-mappings.md), [025](025-H-10-template-repo.md) |
-| 128 | CH-9 | [LangGraph checkpointer and interrupts: one ADR each](128-CH-9-langgraph-checkpointer-interrupts.md) | chassis | P2 | S | [058](058-CH-8-framework-event-mappings.md) |
 | 129 | CH-10 | [LangSmith as a trace backend: Collector exporter, fake-langsmith, stack tests](129-CH-10-langsmith-trace-backend.md) | chassis | P1 | M | [014](014-H-7-observability.md) |
 | 130 | CH-11 | [LangSmith feedback adapter behind FeedbackPort](130-CH-11-langsmith-feedback-adapter.md) | chassis | P1 | S | [129](129-CH-10-langsmith-trace-backend.md) |
 
