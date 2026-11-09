@@ -328,6 +328,19 @@ class RunPipeline:
         config = self.config
         ctx = context_for(request, config)
         telemetry = self.ports.telemetry
+        limit = config.spec.limits.max_in_flight
+        if len(self.runs) >= limit:
+            # CH-15: the cap per replica, checked with no await before `runs.open`.
+            telemetry.counter("chassis.requests_refused", reason=OVERLOADED)
+            telemetry.log(
+                "warning",
+                "run refused: this replica is at max_in_flight",
+                request_id=request.request_id,
+                trace_id=request.trace_id,
+                in_flight=len(self.runs),
+                max_in_flight=limit,
+            )
+            raise Overloaded(len(self.runs), limit)
         try:
             record = self.runs.open(request, ctx)
         except TraceIdInUse as exc:
@@ -349,6 +362,26 @@ class RunPipeline:
             observed=observed,
             task=mapped_task(request, config),
         )
+
+
+OVERLOADED = "overloaded"
+"""CH-15: the code of a call refused because this replica is at `spec.limits.max_in_flight`."""
+OVERLOADED_MESSAGE = (
+    "this replica has max_in_flight runs in flight; retry after the Retry-After delay"
+)
+"""The fixed text of the refusal; no count or limit reaches the caller."""
+RETRY_AFTER_S = 1
+"""suggested: the `Retry-After` of an `overloaded` refusal, in whole seconds."""
+
+
+class Overloaded(Exception):
+    """This replica is at `spec.limits.max_in_flight`; the run was not opened and the engine
+    never saw it. Counted as `chassis.requests_refused{reason="overloaded"}` by `open`."""
+
+    def __init__(self, in_flight: int, limit: int) -> None:
+        super().__init__(f"{in_flight} runs in flight, max_in_flight is {limit}")
+        self.in_flight = in_flight
+        self.limit = limit
 
 
 class Run:

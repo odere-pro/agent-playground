@@ -227,6 +227,9 @@ the chart's own on the command line, so it is the one the chassis reads; it is c
 {{- if or (lt (int $v.hpa.minReplicas) 1) (lt (int $v.hpa.maxReplicas) (int $v.hpa.minReplicas)) -}}
 {{- fail "agent-lib: hpa needs 1 <= minReplicas <= maxReplicas" -}}
 {{- end -}}
+{{- if and $v.hpa.runsInFlight.enabled (lt (int $v.hpa.runsInFlight.targetAverageValue) 1) -}}
+{{- fail "agent-lib: hpa.runsInFlight.targetAverageValue must be at least 1 run per pod" -}}
+{{- end -}}
 {{- end -}}
 
 {{- /* Egress: default deny, with peers named by labels and ports (026 CH-4). */ -}}

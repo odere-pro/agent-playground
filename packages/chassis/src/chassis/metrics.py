@@ -72,6 +72,7 @@ DECLARED: Mapping[str, tuple[str, str]] = {
     "chassis_gate_retries_total": ("counter", "Evaluator gate retries."),
     "chassis_gate_fallbacks_total": ("counter", "Runs the evaluator gate sent to the fallback."),
     "chassis_feedback_total": ("counter", "Feedback stored on a run's trace, by label."),
+    "chassis_runs_in_flight": ("gauge", "Runs in flight on this replica (CH-15)."),
 }
 _BAD = re.compile(r"[^a-zA-Z0-9_]")
 LabelKey = tuple[tuple[str, str], ...]
@@ -120,13 +121,22 @@ class _Histogram:
 
 
 class MetricsRegistry:
-    """Counters and histograms in memory, rendered in the Prometheus text format 0.0.4."""
+    """Counters, gauges, and histograms in memory, rendered in the Prometheus text format
+    0.0.4. A gauge holds the last value set; `GET /metrics` sets the live ones before it
+    renders (`chassis.server.observability.render_metrics`)."""
 
     def __init__(self, buckets: tuple[float, ...] = DURATION_BUCKETS) -> None:
         self._buckets = buckets
         self._lock = threading.Lock()
         self._counters: dict[str, dict[LabelKey, float]] = {}
+        self._gauges: dict[str, dict[LabelKey, float]] = {}
         self._histograms: dict[str, dict[LabelKey, _Histogram]] = {}
+
+    def gauge(self, name: str, value: float, labels: Mapping[str, Any] | None = None) -> None:
+        """Set the gauge `name` (already a Prometheus name) with `labels` to `value`."""
+        family, key = prom_name(name), _key(labels or {})
+        with self._lock:
+            self._gauges.setdefault(family, {})[key] = value
 
     def count(self, name: str, value: float = 1, labels: Mapping[str, Any] | None = None) -> None:
         """Add `value` to the counter `<name>_total` with `labels`."""
@@ -161,18 +171,24 @@ class MetricsRegistry:
         const = _key(const_labels or {})
         with self._lock:
             counters = {f: dict(s) for f, s in self._counters.items()}
+            gauges = {f: dict(s) for f, s in self._gauges.items()}
             histograms = {f: dict(s) for f, s in self._histograms.items()}
         lines: list[str] = []
-        names = [*DECLARED, *sorted((set(counters) | set(histograms)) - set(DECLARED))]
+        seen = set(counters) | set(gauges) | set(histograms)
+        names = [*DECLARED, *sorted(seen - set(DECLARED))]
         for family in names:
-            found = "histogram" if family in histograms else "counter"
+            if family in histograms:
+                found = "histogram"
+            else:
+                found = "gauge" if family in gauges else "counter"
             kind, text = DECLARED.get(family, (found, ""))
             lines.append(f"# HELP {family} {text or family}")
             lines.append(f"# TYPE {family} {kind}")
             if kind == "histogram":
                 lines.extend(_histogram_lines(family, histograms.get(family, {}), const))
             else:
-                for key, value in sorted(counters.get(family, {}).items()):
+                series = gauges if kind == "gauge" else counters
+                for key, value in sorted(series.get(family, {}).items()):
                     lines.append(f"{family}{_labels(key, const)} {_number(value)}")
         return "\n".join(lines) + "\n"
 

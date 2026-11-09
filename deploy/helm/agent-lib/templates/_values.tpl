@@ -84,6 +84,12 @@ hpa:
   minReplicas: 2
   maxReplicas: 5
   targetCPUUtilizationPercentage: 70
+  # CH-15: scale on the chassis's `chassis_runs_in_flight` gauge too (a Pods metric, average
+  # per pod; needs a metrics adapter that serves it, such as prometheus-adapter). suggested: 24,
+  # three quarters of spec.limits.max_in_flight (32).
+  runsInFlight:
+    enabled: false
+    targetAverageValue: 24
 {{- end -}}
 
 {{- define "agent-lib.values" -}}

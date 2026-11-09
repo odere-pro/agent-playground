@@ -1,6 +1,6 @@
 # Contract v9
 
-The written contract after 136 CH-16, the model proxy under failure. It is additive over [contract v8](contract-v8.md): v8, and v7 to v1 before it, still hold for everything this document does not name. The rule in force is stated once in [docs/specs/contract.md](../specs/contract.md); this file is the record of what v9 added and why.
+The written contract after 136 CH-16, the model proxy under failure, and 135 CH-15, backpressure (section D, added 2026-11-09 in the CH-15 PR). It is additive over [contract v8](contract-v8.md): v8, and v7 to v1 before it, still hold for everything this document does not name. The rule in force is stated once in [docs/specs/contract.md](../specs/contract.md); this file is the record of what v9 added and why.
 
 Status: **draft, 2026-11-08.** Written with the CH-16 PR. Where this text and the code differ, the code wins. Evidence is a test name. The decision record is [ADR-013](../planning/adr/013-model-call-retries-belong-to-the-router.md).
 
@@ -27,3 +27,10 @@ Contract v9 is a version of this document, not of the wire:
 
 9. **The alert.** `ChassisModelBudgetExhausted` in `deploy/prometheus/rules/chassis.yaml` fires on any increase of `chassis_model_budget_exhausted_total` over 15 minutes (`for: 1m`, `severity: critical`; suggested). The PoC-8 Compose stack mounts the file. Evidence: `packages/chassis/tests/test_alert_rules.py`; the fault test `pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_metrics.py::test_a_budget_refusal_raises_the_counter_and_fires_the_alert` (`COMPOSE_STACK=1`).
 10. **The fake model server.** An error rule with a `type` answers in LiteLLM's error shape; a rule with `delay_s` holds the answer and counts a client that leaves in `app.state.aborted`.
+
+## D. Backpressure (135 CH-15)
+
+11. **`spec.limits.max_in_flight`** (32, suggested): the most runs in flight on one replica, counted in the run registry (`len(app.state.runs)`). Reloadable with `spec.limits`; read per call. Evidence: `packages/chassis/tests/test_backpressure.py::test_max_in_flight_reloads_with_spec_limits_and_no_restart`.
+12. **503 `overloaded`.** At the cap, every public interface refuses the next call before the engine sees it: `Retry-After: 1` (suggested), `retryable: true`; native `{"detail": {"code": "overloaded", "message"}}`, OpenAI `server_error` with `x-should-retry: true`, Anthropic `overloaded_error`. `/ready` stays 200; the drain order (ADR-012) is unchanged. Evidence: `test_backpressure.py::test_a_third_run_past_the_cap_is_503_overloaded_and_never_reaches_the_workload`, `::test_the_chat_interfaces_refuse_in_their_own_shape`, on a real uvicorn server over a Unix socket.
+13. **Metrics.** `chassis_requests_refused_total{reason="overloaded"}` and the gauge `chassis_runs_in_flight`, set from the registry at scrape time. Evidence: `test_backpressure.py::test_metrics_show_the_refusal_and_the_runs_in_flight`.
+14. **The chart.** `hpa.runsInFlight.enabled` adds a Pods metric on `chassis_runs_in_flight` (`targetAverageValue` 24, suggested) next to CPU; a metrics adapter must serve the gauge. Evidence: `pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py::test_hpa_scales_on_the_in_flight_gauge_when_asked`.

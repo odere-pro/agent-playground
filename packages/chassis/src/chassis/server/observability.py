@@ -51,13 +51,21 @@ COST = "chassis.model_cost_microusd"
 FORBIDDEN = "the token does not grant the scope this route needs"
 
 
+IN_FLIGHT = "chassis_runs_in_flight"
+"""CH-15: the runs in flight on this replica, a gauge read from the run registry at scrape time.
+The chart's HPA can scale on it (`hpa.runsInFlight`)."""
+
+
 def render_metrics(state: Any) -> str:
-    """The exposition for the app whose `state` this is."""
+    """The exposition for the app whose `state` this is. The live gauges are set first."""
     config: ChassisConfig = state.config
     telemetry = getattr(getattr(state, "ports", None), "telemetry", None)
     registry = getattr(telemetry, "metrics", None)
     if not isinstance(registry, MetricsRegistry):
         registry = MetricsRegistry()
+    runs = getattr(state, "runs", None)
+    if runs is not None:
+        registry.gauge(IN_FLIGHT, len(runs))
     return registry.render({"agent": config.agent.name})
 
 

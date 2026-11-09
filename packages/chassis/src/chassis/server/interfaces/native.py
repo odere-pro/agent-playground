@@ -172,7 +172,9 @@ def _frame(name: str, payload: BaseModel) -> str:
     return f"event: {name}\ndata: {payload.model_dump_json()}\n\n"
 
 
-DETAIL_CODES = frozenset({"trace_id_in_use", "idempotency_conflict", "idempotency_in_progress"})
+DETAIL_CODES = frozenset(
+    {"trace_id_in_use", "idempotency_conflict", "idempotency_in_progress", "overloaded"}
+)
 """The native refusals answered as `{"detail": {code, message}}`."""
 
 
@@ -217,9 +219,10 @@ class NativeInbound:
 
     def error(self, code: str, message: str, retryable: bool, meta: ReplyMeta) -> Reply:
         """Only the refusals before a run reach here: `trace_id_in_use` (409),
-        `idempotency_conflict` (422), and `idempotency_in_progress` (409) are `{"detail": {code,
-        message}}`; any other code is `status_for` with `{"detail": message}` (`not_ready` and
-        `state_unavailable`: 503). No `x-should-retry`: the native wire is contract v1's.
+        `idempotency_conflict` (422), `idempotency_in_progress` (409), and `overloaded` (503,
+        CH-15) are `{"detail": {code, message}}`; any other code is `status_for` with
+        `{"detail": message}` (`not_ready` and `state_unavailable`: 503). No `x-should-retry`:
+        the native wire is contract v1's.
         """
         if code in DETAIL_CODES:
             status = 409 if code == "trace_id_in_use" else status_for(code, retryable)

@@ -222,7 +222,8 @@ Each is built by `from_env()` and loaded lazily.
 - `ChassisConfig` and `load_config`.
 - `spec.interfaces` is `{openai, anthropic, mcp}`. Each is on by default. Unknown keys are refused.
 - `spec.limits` is `LimitsSpec`: `max_tokens_max`, `timeout_ms_max`, `messages_max`, `body_bytes_max`. Each is at least 1.
-  - PoC-8 adds the rate limit: `rate_limit` (`true`), `requests_per_minute` (`600`), `request_burst` (`100`), `rate_limit_on_unavailable` (`fail_open` or `fail_closed`). All reload with `spec.limits`. The `cloud` profile fills `uncorrelated_tokens_per_minute: 0` and `rate_limit_on_unavailable: fail_closed` when the document names none (CH-14, `config.with_cloud_defaults`).
+  - PoC-8 adds the rate limit: `rate_limit` (`true`), `requests_per_minute` (`600`), `request_burst` (`100`), `rate_limit_on_unavailable` (`fail_open` or `fail_closed`). All reload with `spec.limits`.
+  - CH-15 adds `max_in_flight` (`32`): the runs in flight one replica takes; past it, 503 `overloaded` with `Retry-After: 1` on every public interface. Reloads with `spec.limits`, read per call. The `cloud` profile fills `uncorrelated_tokens_per_minute: 0` and `rate_limit_on_unavailable: fail_closed` when the document names none (CH-14, `config.with_cloud_defaults`).
 - `spec.observability` (PoC-7: `session_header`) gains `log_level` (`info`), `metrics_scope` (unset: `/metrics` needs no token; `cloud` fills `spec.security.read_scope`), and `prices` (USD per million tokens per route, `ModelPrice`). Restart-only.
 - `spec.guardrails` (PoC-7: the three stages, `on_unavailable`) gains `stream_secrets` (`true`) and `output_url_allow` (`[]`, default deny; `*` turns it off). Restart-only.
 - `spec.idempotency` is `IdempotencySpec`: `enabled`, `ttl_s`, `lease_s`, `wait_poll_ms`, `max_entry_bytes`.
@@ -312,6 +313,7 @@ Each is built by `from_env()` and loaded lazily.
 - `served` and `to_request`.
 - `task_of(request)` is the caller's `input.data.task` when it is a non-empty string (`TASK_KEY`). `context_for(request, config)` puts `spec.model.route_for(task)` in `ctx.model_route`; `versions.model_route` stays `spec.model.route`. `mapped_task` is the task only when `spec.model.routes` names it.
 - `open(request, *, interface="native")` raises `TraceIdInUse`, which is counted and logged. The run's `RunRecord.model_route` is `ctx.model_route` from here on.
+- `open` raises `Overloaded` first when `len(runs)` is at `spec.limits.max_in_flight` (CH-15), counted `chassis.requests_refused{reason="overloaded"}` and logged; `serve` answers it 503 `overloaded` with `Retry-After: 1` (`OVERLOADED_MESSAGE`, `RETRY_AFTER_S`). The check and `runs.open` have no await between them.
 - `context_for` mints `ctx.run_secret` per run, `secrets.token_urlsafe(RUN_SECRET_BYTES)` with 32 bytes (suggested). Plain mode (`spec.engine.protocol: a2a`) gets None (contract v8, D).
 - `Run.events()` runs in one `chassis.run` span with `route` (the resolved route) and `task` (when the map named it). An engine exception becomes one `engine_error` event, its text cut to `ERROR_MESSAGE_MAX`.
 - `chassis.requests` and the span are labeled `interface`.
@@ -552,7 +554,7 @@ Spec: [contract v7](../contracts/contract-v7.md). Decisions: ADR-007 and ADR-008
 | `chassis/metrics.py` | `MetricsRegistry`: counters and span histograms in memory, the Prometheus text format, the declared families. Both telemetry adapters hold one at `.metrics` | A.3 |
 | `chassis/logs.py` | `configure_logging`, `JsonFormatter`, `run_context`: one redacted JSON line with `request_id` and `trace_id` | B |
 | `chassis/dashboards/` | `python -m chassis.dashboards`: one Grafana dashboard per agent in `agents.txt`, written to `deploy/dashboards/` | B |
-| `chassis/server/observability.py` | `GET /metrics` and `OpenMetrics` (open when no `metrics_scope`); `count_usage` for tokens and cost | A |
+| `chassis/server/observability.py` | `GET /metrics` and `OpenMetrics` (open when no `metrics_scope`); `count_usage` for tokens and cost; the live gauge `chassis_runs_in_flight` from the run registry (CH-15) | A |
 | `chassis/server/rate_limit.py` | The per-caller token bucket in `StatePort`, 429 `rate_limited` with `Retry-After` | C |
 | `chassis/server/stream_guard.py` | The stream secret check and URL masking on every streamed run | D.1 |
 | `chassis/server/output_filter.py` | `find_secret`, `mask_urls`, `mask_answer`: the secret patterns and the URL allow-list | D |
