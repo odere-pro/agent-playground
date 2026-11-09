@@ -38,6 +38,8 @@ from fake_model_server import Script
 from poc08_stack_latency import STAGES_OFF, STAGES_ON, Target, measure, report
 from poc_harness.metrics_stack import (
     AGENT,
+    ALERT_WAIT_S,
+    BUDGET_ALERT,
     BUDGET_INPUT,
     CHASSIS,
     CHASSIS_PLAIN,
@@ -251,6 +253,38 @@ def test_prometheus_scrapes_every_chassis_at_its_metrics_path() -> None:
     mounts = services["prometheus"]["volumes"]
     assert "./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" in mounts
     assert "--config.file=/etc/prometheus/prometheus.yml" in services["prometheus"]["command"]
+
+
+_DURATION = re.compile(r"^(\d+)([smh])$")
+_SECONDS = {"s": 1, "m": 60, "h": 3600}
+
+
+def _seconds(text: str) -> int:
+    found = _DURATION.match(text)
+    assert found, f"not a simple duration: {text!r}"
+    return int(found.group(1)) * _SECONDS[found.group(2)]
+
+
+def test_prometheus_loads_the_rule_file_the_budget_alert_is_in() -> None:
+    config = _yaml(PROMETHEUS_YML)
+    assert config["rule_files"] == ["/etc/prometheus/rules/chassis.yaml"]
+    assert "../../prometheus/rules:/etc/prometheus/rules:ro" in _services()["prometheus"]["volumes"]
+    rules = _yaml(ROOT / "deploy/prometheus/rules/chassis.yaml")
+    assert BUDGET_ALERT in {r.get("alert") for g in rules["groups"] for r in g["rules"]}
+
+
+def test_the_budget_alert_can_fire_inside_the_drills_wait() -> None:
+    """The drill waits `ALERT_WAIT_S` for `firing`: a scrape, an evaluation that turns the alert
+    pending, its `for`, and one more evaluation must fit, with half the wait to spare."""
+    config = _yaml(PROMETHEUS_YML)["global"]
+    rules = _yaml(ROOT / "deploy/prometheus/rules/chassis.yaml")
+    [alert] = [r for g in rules["groups"] for r in g["rules"] if r.get("alert") == BUDGET_ALERT]
+    needed = (
+        _seconds(config["scrape_interval"])
+        + 2 * _seconds(config["evaluation_interval"])
+        + _seconds(alert["for"])
+    )
+    assert needed * 2 <= ALERT_WAIT_S, (needed, ALERT_WAIT_S)
 
 
 def test_grafana_provisions_the_datasource_the_dashboards_name() -> None:

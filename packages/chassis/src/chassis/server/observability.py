@@ -18,6 +18,12 @@ and, when `spec.observability.prices` names the route, `chassis.model_cost_micro
 model proxy calls it once per call that reported usage, on both of its routes. The cost is an
 integer count of micro-USD, so it fits `TelemetryPort.counter`. LiteLLM's response cost header is
 not read: `ModelPort` does not carry it (a port change, not made here).
+
+**Zero series.** Every scrape adds 0 to `chassis_model_budget_exhausted_total{route}` for each
+route `spec.model` declares (CH-16). The chassis otherwise creates a series on its first count,
+so Prometheus would first see a route's budget refusal at 1, never 0, and the alert
+`ChassisModelBudgetExhausted` (`increase(...[15m]) > 0`) would see no rise. Done at scrape time,
+not once at startup, so a route added by a reload gets its 0 too.
 """
 
 from __future__ import annotations
@@ -56,8 +62,13 @@ IN_FLIGHT = "chassis_runs_in_flight"
 The chart's HPA can scale on it (`hpa.runsInFlight`)."""
 
 
+BUDGET_SERIES = "chassis_model_budget_exhausted_total"
+"""The family `model_admission.note_service_budget` counts (`chassis.model_budget_exhausted`)."""
+
+
 def render_metrics(state: Any) -> str:
-    """The exposition for the app whose `state` this is. The live gauges are set first."""
+    """The exposition for the app whose `state` this is. The live gauges are set first, and the
+    budget counter of every declared route is created at 0 (a no-op once it exists)."""
     config: ChassisConfig = state.config
     telemetry = getattr(getattr(state, "ports", None), "telemetry", None)
     registry = getattr(telemetry, "metrics", None)
@@ -66,6 +77,8 @@ def render_metrics(state: Any) -> str:
     runs = getattr(state, "runs", None)
     if runs is not None:
         registry.gauge(IN_FLIGHT, len(runs))
+    for route in config.spec.model.declared_routes():
+        registry.count(BUDGET_SERIES, 0, {"route": route})
     return registry.render({"agent": config.agent.name})
 
 

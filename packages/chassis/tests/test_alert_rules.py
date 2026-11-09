@@ -36,14 +36,18 @@ def _alerts() -> dict[str, dict[str, Any]]:
     return {r["alert"]: r for r in _rules() if "alert" in r}
 
 
-async def _exported() -> dict[str, str]:
+async def _scrape() -> str:
     app = create_app(ChassisConfig.model_validate(CONFIG))
     transport = httpx.ASGITransport(app=app)
     async with (
         httpx.AsyncClient(transport=transport, base_url="http://chassis") as client,
         app.router.lifespan_context(app),
     ):
-        return families((await client.get("/metrics")).text)
+        return (await client.get("/metrics")).text
+
+
+async def _exported() -> dict[str, str]:
+    return families(await _scrape())
 
 
 def _family(name: str, exported: dict[str, str]) -> bool:
@@ -62,6 +66,19 @@ def test_the_budget_refusal_has_an_alert_on_its_counter() -> None:
     assert alert["for"]
     assert "{{ $labels.agent }}" in alert["annotations"]["summary"]
     assert "{{ $labels.route }}" in alert["annotations"]["summary"]
+
+
+async def test_the_budget_alert_has_a_zero_to_rise_from_on_every_declared_route() -> None:
+    """`increase()` needs a sample before the first refusal. A series born at 1 never rises (CI
+    run 42634108264), so the chassis exports the counter at 0 for each `spec.model` route."""
+    assert (
+        "increase(chassis_model_budget_exhausted_total["
+        in _alerts()["ChassisModelBudgetExhausted"]["expr"]
+    )
+    text = await _scrape()
+    assert 'chassis_model_budget_exhausted_total{agent="echo",route="fake-route"} 0' in (
+        text.splitlines()
+    ), text
 
 
 async def test_every_rule_names_a_metric_the_chassis_exports() -> None:
