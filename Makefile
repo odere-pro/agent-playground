@@ -133,7 +133,7 @@ record-cassettes: ## Re-record model cassettes offline, against the fake model s
 quick: ## Iteration gate: format, lint, planning and harness checks, the non-PoC tests of what changed; no mypy, no PoC tests
 	$(MAKE) fmt-check lint planning-check harness-lint
 	@tests=$$( { git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard; } | $(PY) scripts/quick_select.py ) ; \
-	if [ -n "$$tests" ]; then echo "testing:" $$tests; $(PYTEST) $$tests; else echo "no non-PoC test covers the change"; fi ; \
+	if [ -n "$$tests" ]; then echo "testing:" $$tests; $(PYTEST) $$tests || exit 1; else echo "no non-PoC test covers the change"; fi ; \
 	echo "PoC tests are not in quick: make test-poc POC=NN, or dispatch the PoC's CI workflow"
 
 check: ## Boundary gate: what the CI `check` job runs; finished PoCs: make test-pocs-done
