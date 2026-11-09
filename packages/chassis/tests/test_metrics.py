@@ -24,7 +24,7 @@ from chassis.fakes.state import InMemoryState
 from chassis.metrics import CONTENT_TYPE, MetricsRegistry
 from chassis.ports.auth import Principal
 from chassis.ports.bundle import PortBundle
-from chassis.ports.engine import EnginePort
+from chassis.ports.engine import EngineConnector
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server import ChassisConfig, create_app
 from chassis.server.proxy_app import create_proxy_app
@@ -47,7 +47,7 @@ def _config(**spec: Any) -> ChassisConfig:
     return ChassisConfig.model_validate({**CONFIG, "spec": {**CONFIG["spec"], **spec}})
 
 
-def _ports(engine: EnginePort | None = None, **extra: Any) -> PortBundle:
+def _ports(engine: EngineConnector | None = None, **extra: Any) -> PortBundle:
     return PortBundle(
         model=ScriptedModel([ScriptRule(match="simplify", reply="Plain words.")]),
         engine=engine or FakeEngine(handle=echo),
