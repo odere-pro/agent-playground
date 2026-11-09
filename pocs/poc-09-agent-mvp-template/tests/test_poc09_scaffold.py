@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
-SIDECAR_FRAMEWORKS = ("python", "pydanticai", "langgraph", "openai-agents")
+SIDECAR_FRAMEWORKS = ("python", "pydanticai", "langgraph", "langchain", "openai-agents")
 REMOTE_FRAMEWORKS = ("smolagents", "claude-agent")
 FULL_RUN = pytest.mark.skipif(
     os.environ.get("POC09_SCAFFOLD") != "1",

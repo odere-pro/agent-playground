@@ -13,7 +13,7 @@ cd invoice-reader && make setup test run
 | ------ | ------ | ------- |
 | `name` | a DNS label: lower case letters, digits, dashes | required |
 | `--kind` | `transformer`, `evaluator`, `tool` | required |
-| `--framework` | `python`, `pydanticai`, `langgraph`, `openai-agents`, `smolagents`, `claude-agent` | `langgraph` (ADR-006, amended 2026-11-06) |
+| `--framework` | `python`, `pydanticai`, `langgraph`, `langchain` (`create_agent`), `openai-agents`, `smolagents`, `claude-agent` | `langgraph` (ADR-006, amended 2026-11-06) |
 | `--connector` | `sidecar`, `remote` | `sidecar` |
 | `--dest` | the parent folder | `.` |
 | `--platform-path` | the agent-platform checkout | the one agentctl runs from |

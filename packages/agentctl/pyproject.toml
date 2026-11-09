@@ -15,3 +15,9 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-name = "agentctl"
+
+[dependency-groups]
+# The rendered agents' own tests run in the monorepo venv (test_agentctl_rendered_checks.py), so it
+# needs every framework the template offers. `langchain` (create_agent) is the one no workload
+# brings; pinned exactly, as the template pins it (langchain-core stays at the template's pin).
+dev = ["langchain==1.4.3"]
