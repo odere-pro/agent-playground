@@ -364,3 +364,49 @@ async def test_a_graph_that_interrupts_ends_with_the_error_after_start(
 
     assert [e["type"] for e in events] == ["start", "error"]
     assert events[-1]["code"] == "interrupt_unsupported"
+
+
+# ADR-006 decision 1: `tools.py` stands in for `langchain-mcp-adapters` until a release works with
+# `mcp` 2, "with a test that fails the day the adapter is ready". This is that test. The adapter is
+# a dev dependency for it only. Today the lock holds 0.3.1, which imports modules `mcp` 2 removed;
+# the newest release, 0.3.2, requires `mcp<2`. When a lock bump brings a release that works, the
+# test passes, and strict xfail turns the pass into a failure: the swap is due. It is a trigger,
+# not proof of the swap: it loads tools on our own session, not through `MultiServerMCPClient`.
+ADAPTER_NOT_ON_MCP_2 = pytest.mark.xfail(
+    strict=True,
+    raises=ImportError,
+    reason="langchain-mcp-adapters has no release for mcp 2 (0.3.2 requires mcp<2); ADR-006",
+)
+
+
+def _adapter_tools_module() -> Any:
+    """The adapter's `tools` module. Only a missing `mcp` module is the expected failure; any other
+    import error (the adapter not installed, a broken `langchain_core`) fails the test outright."""
+    try:
+        return importlib.import_module("langchain_mcp_adapters.tools")
+    except ImportError as exc:
+        if (exc.name or "").startswith("mcp."):
+            raise
+        pytest.fail(f"langchain-mcp-adapters failed to import for another reason: {exc!r}")
+
+
+@ADAPTER_NOT_ON_MCP_2
+async def test_langchain_mcp_adapters_loads_the_chassis_tools_on_mcp_2(tools: Recording) -> None:
+    adapter = _adapter_tools_module()
+
+    stand_in = await tools_module.load_tools({}, 5.0)
+    async with tools_module._session({}, 5.0) as session:
+        adapted = await adapter.load_mcp_tools(session)
+        result = await adapted[0].ainvoke({"term": "SLM"})
+
+    assert [(t.name, t.description, t.args) for t in adapted] == [
+        (t.name, t.description, t.args) for t in stand_in
+    ]
+    assert STUB_DEFINITION in str(result)
+
+
+def test_the_template_carries_the_same_mcp_stand_in() -> None:
+    """The swap lands in the workload and the template together: one file, two copies."""
+    template = ROOT / "packages/agentctl/src/agentctl/template/_frameworks/langgraph/tools.py.jinja"
+    workload = ROOT / "packages/workloads/echo-langgraph/src/echo_langgraph/tools.py"
+    assert template.read_text() == workload.read_text(), "the template's stand-in has drifted"

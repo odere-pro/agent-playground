@@ -35,6 +35,7 @@ Decided on 2026-11-08: a finished PoC is checked with local tests only, not on e
 | `poc08-evals.yml` (one job: the gate, the regression, the red-team set, every engine) | pull requests and pushes to `main` that touch the eval gate's inputs (evals, eval-kit, engines, chassis source, fake servers) |
 | `poc09-helm.yml` | pull requests and pushes to `main` that touch the charts, the PoC-5 admission rules, poc-harness, or the chart tests |
 | `poc09-scaffold.yml` | pull requests and pushes to `main` that touch what a scaffold is made of |
+| `adapter-watch.yml` | weekly on a schedule, and by hand: moves `langchain-mcp-adapters` to its newest release and runs its watch test (ADR-006); never required |
 | `remote-lane.yml`, `poc06-kind.yml`, `poc06-load.yml`, `poc06-slm.yml`, `poc07-agent-scan.yml`, `poc07-evals.yml`, `poc07-stack.yml`, `poc08-litellm.yml`, `poc08-stack.yml` | by hand only (`workflow_dispatch`): run one with `gh workflow run <file> --ref <branch>` |
 
 Run the finished PoCs' tests before a change that could touch them, and at the end of a review:

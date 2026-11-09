@@ -4,7 +4,10 @@ Why it exists: the locked `langchain-mcp-adapters` 0.3.1 is written for `mcp` 1.
 import against the locked `mcp` 2.2.0 (`mcp.shared.session`, `mcp.shared.context.RequestContext`
 and `mcp.server.fastmcp` are gone, and `streamable_http_client` yields two streams, not three).
 When a release for `mcp` 2 is locked, `load_tools` becomes `MultiServerMCPClient(...).get_tools()`
-and this file goes away; the tool node and the event mapping stay as they are.
+and this file goes away; the tool node and the event mapping stay as they are. The watch is
+echo-langgraph's `test_langchain_mcp_adapters_loads_the_chassis_tools_on_mcp_2`, a strict xfail
+that fails the day the weekly lock bump brings that release (ADR-006). Checked 2026-11-09: the
+newest release, 0.3.2, requires `mcp<2`.
 
 The tool is the chassis's: its name, description, and JSON Schema come from `tools/list`, and
 nothing here defines one. Each MCP operation opens its own short session over streamable HTTP
