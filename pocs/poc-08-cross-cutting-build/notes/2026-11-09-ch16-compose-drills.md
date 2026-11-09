@@ -104,7 +104,7 @@ Dispatch both workflows on a branch that contains `518c585`: `gh workflow run po
 
 ## Reading
 
-Open. Neither drill has run, on this Mac or in CI. The two CH-16 boxes still rest on offline evidence only (`test_alert_rules.py`, `test_litellm_route_resilience.py`, `ModelPortContract::test_a_failed_call_goes_upstream_once`). Line 35 of issue 136 stays as it is until a run passes.
+Both drills have passed on CI (below). The fallback box of 136 CH-16 rests on run 42634113481, the "fires" box on run 42701220591, after the fix in this note. Neither drill has run on this Mac: Docker is down here.
 
 ## Run on CI, 2026-11-09
 
@@ -160,4 +160,36 @@ What did pass in the refusal part: at `e6133ec`, line 297 of the test file is th
 
 - The fallback path holds. A provider error on `big-default` is answered by `local-small`, with one chassis model call. This run is the evidence for the fallback box of 136 CH-16.
 - The budget refusal reaches the counter, and Prometheus scrapes it. `ChassisModelBudgetExhausted` did not reach `firing` within 180 s (`POC08_ALERT_WAIT_S`). The "fires" box stays open.
-- Cause: see the follow-up section.
+- Cause: the chassis created `chassis_model_budget_exhausted_total{route}` on the route's first refusal. Prometheus first saw the series at 1, and `increase(...[15m])` over a series that starts at 1 is 0, so the rule's expression never went above 0. The counter was right; the alert could not see the rise. A route's first refusal was invisible to the alert by construction, on every stack.
+
+## The fix, 2026-11-09
+
+`render_metrics` now writes every route `spec.model` declares (`route`, `routes`, `fallback_route`, `judge_route`) at 0 on each scrape, before the counters are read, so the first refusal is a rise from 0 to 1. The rule's expression and `for: 1m` are unchanged. Offline evidence: `packages/chassis/tests/test_metrics.py::test_the_budget_counter_is_zero_for_every_declared_route_before_a_refusal` and `packages/chassis/tests/test_alert_rules.py::test_the_budget_alert_has_a_zero_to_rise_from_on_every_declared_route`. Limit: a route the workload names that `spec.model` does not declare is not seeded, so its first refusal is still invisible (CH-16 review, LOW). A PromQL-only fix (`unless ... offset 15m`) was tried first and rejected: it fires a false critical after any data gap.
+
+Other counters created on their first count, which blind the error-rate and fallback-rate rules the same way on a quiet agent, are listed in [117 X-3](../../../docs/planning/issues/117-X-3-slos-alerts.md), "What".
+
+## Rerun on CI after the fix, 2026-11-09
+
+`poc08-stack.yml` dispatched on `claude/ch16-compose-drills` at `4d4c8d8` (the fix) at 21:18 UTC. Same runner image, Python 3.12.13, pytest 9.1.1.
+
+Run: [poc08-stack 42701220591](https://github.com/odere-pro/agent-playground/actions/runs/42701220591), conclusion `success`.
+
+```bash
+COMPOSE_STACK=1 uv run pytest -m network -v \
+  pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_metrics.py
+```
+
+```text
+21:19:44 ...::test_the_dashboard_datasource_resolves_to_prometheus PASSED [ 87%]
+21:20:53 ...::test_a_budget_refusal_raises_the_counter_and_fires_the_alert PASSED [ 93%]
+21:20:55 ...::test_a_burst_meets_the_rate_limit_kept_in_valkey PASSED [100%]
+======================== 16 passed in 78.21s (0:01:18) =========================
+```
+
+Trimmed: the 13 earlier test lines, all passed. The budget drill took 69 s from its start to `firing`: one scrape (15 s), a rule evaluation that sees the rise, `for: 1m`, and the next evaluation. That sits inside the 180 s wait with room for one missed scrape, which `test_poc08_stack_static.py` now checks from the rule file: `(scrape + 2 × eval + for) × 2 <= POC08_ALERT_WAIT_S`.
+
+### Reading
+
+- `ChassisModelBudgetExhausted` fires on a route's first refusal. This run is the evidence for the "fires" box of 136 CH-16.
+- The two CH-16 drills both have a passing run. Line 35 of issue 136 cites this note.
+- The litellm drill was not rerun: the fix touches the metrics route only, and its run on `e6133ec` stands.
