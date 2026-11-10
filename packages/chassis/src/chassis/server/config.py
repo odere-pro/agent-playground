@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from chassis.ports.engine import Lane
 from chassis.profiles import DEFAULT_LANE, AdapterSpec, Profile, check_lane
+from chassis.redaction import has_secret
 
 
 class AgentSpec(BaseModel):
@@ -542,16 +543,47 @@ def with_cloud_defaults(spec: Spec) -> Spec:
     )
 
 
+def credential_paths(value: Any, path: str = "") -> list[str]:
+    """The dotted path of every key or string in `value` with a credential's shape (H-12)."""
+    if isinstance(value, str):
+        return [path or "<root>"] if has_secret(value) else []
+    if isinstance(value, Mapping):
+        found: list[str] = []
+        for key, item in value.items():
+            child = f"{path}.{key}" if path else str(key)
+            if isinstance(key, str) and has_secret(key):
+                found.append(f"{path or '<root>'}.<key>")
+                continue
+            found.extend(credential_paths(item, child))
+        return found
+    if isinstance(value, list | tuple):
+        return [p for i, item in enumerate(value) for p in credential_paths(item, f"{path}.{i}")]
+    return []
+
+
 class ChassisConfig(BaseModel):
     """The whole config. `version` is the file's content hash when the file does not name one.
     In the `cloud` profile a document that names a value weaker than a CH-14 default is refused,
     and `with_cloud_defaults` fills the defaults it does not name."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     version: str | None = None
     profile: Profile
     agent: AgentSpec
     spec: Spec = Field(default_factory=Spec)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_credential_values(cls, data: Any) -> Any:
+        # H-12: secrets reach the chassis through the chart (`secretEnv`), never the config.
+        # The message names the paths, never a value.
+        paths = credential_paths(data)
+        if paths:
+            raise ValueError(
+                f"{', '.join(paths)}: a credential-shaped value is refused in the config; "
+                "name an environment variable instead"
+            )
+        return data
 
     @model_validator(mode="after")
     def _cloud_security_defaults(self) -> ChassisConfig:
