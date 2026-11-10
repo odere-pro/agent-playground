@@ -260,11 +260,14 @@ async def _begin_idempotency[BodyT](
         request, wait_ms=request.budget.timeout_ms, subject=current_user_id()
     )
     if isinstance(outcome, Refusal):
-        return to_response(
-            adapter.error(
-                outcome.code, outcome.message, outcome.retryable, meta.for_request(request)
-            )
+        reply = adapter.error(
+            outcome.code, outcome.message, outcome.retryable, meta.for_request(request)
         )
+        if outcome.retry_after_s is not None:
+            reply = replace(
+                reply, headers={**reply.headers, "Retry-After": str(outcome.retry_after_s)}
+            )
+        return to_response(reply)
     if isinstance(outcome, Replay):
         return _replay(adapter, outcome, meta, pipeline, stream=request.stream)
     if outcome.timeout_ms is not None:  # it waited: only what is left of its own budget

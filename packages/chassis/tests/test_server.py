@@ -567,6 +567,7 @@ def test_poc04_spec_blocks_have_their_suggested_defaults() -> None:
         "lease_s": 5,
         "wait_poll_ms": 100,
         "max_entry_bytes": 1_048_576,
+        "new_keys_per_caller": 10_000,
     }
     assert spec.events.result_events is False
     assert spec.events.consume is None

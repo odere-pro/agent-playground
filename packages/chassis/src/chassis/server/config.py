@@ -297,6 +297,9 @@ class IdempotencySpec(BaseModel):
       3600 (one hour).
     - `wait_poll_ms: 100`: how often a duplicate in flight checks for the first result.
     - `max_entry_bytes: 1048576`: a bigger result is not cached.
+    - `new_keys_per_caller: 10000`: the most new keys one checked caller may add per agent in one
+      `ttl_s` window (022 H-6). The next is 429 `rate_limited` with `Retry-After`, before the run
+      opens. With auth off there is no caller to count, so no cap applies. Restart-only.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -305,6 +308,7 @@ class IdempotencySpec(BaseModel):
     lease_s: float = Field(default=5, gt=0, le=LEASE_S_MAX, allow_inf_nan=False)
     wait_poll_ms: int = Field(default=100, ge=1)
     max_entry_bytes: int = Field(default=1_048_576, ge=1)
+    new_keys_per_caller: int = Field(default=10_000, ge=1)
 
 
 class EventsConsumeSpec(BaseModel):
