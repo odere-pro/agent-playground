@@ -228,7 +228,8 @@ def status_for(code: str, retryable: bool) -> int:
 
     Idempotency (PoC-4, 018 H-18; suggested: the statuses): 422 `idempotency_conflict` (the key
     was used with another input), 409 `idempotency_in_progress` (a run with the key is still in
-    flight), 503 `state_unavailable` (the state store failed; a keyed call fails closed).
+    flight), 503 `state_unavailable` (the state store failed; a keyed call fails closed), 429
+    `rate_limited` (the caller is past its cap of new keys, 022 H-6).
     """
     if code in INVALID_BODY_CODES:
         return 400
@@ -238,6 +239,8 @@ def status_for(code: str, retryable: bool) -> int:
         return 422
     if code == "idempotency_in_progress":
         return 409
+    if code == "rate_limited":
+        return 429
     if code in ("not_ready", "state_unavailable"):
         return 503
     if code == "a2a.timeout":
