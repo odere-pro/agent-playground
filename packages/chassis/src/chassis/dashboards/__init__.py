@@ -21,8 +21,19 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
-__all__ = ["AGENTS_FILE", "DASHBOARD_DIR", "agents_in", "dashboard", "main", "panel_exprs"]
+__all__ = [
+    "AGENTS_FILE",
+    "DASHBOARD_DIR",
+    "FALLBACK",
+    "NO_FALLBACK",
+    "RETRY",
+    "agents_in",
+    "dashboard",
+    "main",
+    "panel_exprs",
+]
 
 DASHBOARD_DIR = Path("deploy/dashboards")
 AGENTS_FILE = "agents.txt"
@@ -32,12 +43,69 @@ _AGENT = re.compile(r"[a-z0-9][a-z0-9._-]{0,62}")
 _DATASOURCE = {"type": "prometheus", "uid": "${datasource}"}
 WINDOW = "5m"
 """suggested: the rate window."""
+NO_FALLBACK = "Evaluator gate sync runs with no fallback"
+"""`1 - fallbacks / sync runs`. Not a first-try pass rate: the gate counts each retried attempt
+and, after the last retry, a fallback too, so one run can add to both counters and to retries more
+than once. The counters cannot tell how many runs passed on attempt 1; this share is an upper
+bound on it."""
+RETRY = "Evaluator gate retry rate"
+FALLBACK = "Evaluator gate fallback rate"
+FALLBACK_TARGET = 0.1
+"""The gate fallback rate target from `docs/specs/metrics.md` (below 10%), drawn as a line."""
+_LINK_VARIABLES = (
+    ("langfuse_url", "Langfuse URL"),
+    ("langfuse_project", "Langfuse project id"),
+    ("loki_uid", "Loki datasource uid"),
+)
+"""suggested: per-deploy textbox variables the panel links read, so no host is in the file.
+suggested: the Loki stream label `agent`; nothing in `deploy/` provisions Loki or that label yet.
+suggested: the Langfuse `search` query parameter on the project trace list."""
+
+
+def _links(agent: str) -> list[dict[str, Any]]:
+    """The Langfuse trace list and the Loki logs of `agent`, over the dashboard's time range."""
+    left = quote(
+        json.dumps(
+            {
+                "datasource": "${loki_uid}",
+                "queries": [{"refId": "A", "expr": f'{{agent="{agent}"}}'}],  # suggested: label
+                "range": {"from": "${__from}", "to": "${__to}"},
+            },
+            separators=(",", ":"),
+        ),
+        safe="${}:,",
+    )
+    return [
+        {
+            "title": "Langfuse traces",
+            "url": f"${{langfuse_url}}/project/${{langfuse_project}}/traces?search={agent}",
+            "targetBlank": True,
+        },
+        {"title": "Loki logs", "url": f"/explore?left={left}", "targetBlank": True},
+    ]
+
+
+def _field_defaults(title: str, unit: str) -> dict[str, Any]:
+    defaults: dict[str, Any] = {"unit": unit}
+    if title == FALLBACK:
+        defaults["thresholds"] = {
+            "mode": "absolute",
+            "steps": [
+                {"color": "green", "value": None},
+                {"color": "red", "value": FALLBACK_TARGET},
+            ],
+        }
+        defaults["custom"] = {"thresholdsStyle": {"mode": "line"}}
+    return defaults
 
 
 def _panels(agent: str) -> list[tuple[str, str, list[tuple[str, str]]]]:
     """(title, unit, [(PromQL, legend)]) per panel."""
     a = f'agent="{agent}"'
     w = WINDOW
+    sync_runs = f'sum(rate(chassis_gate_runs_total{{{a},mode="sync"}}[{w}]))'
+    retries = f"sum(rate(chassis_gate_retries_total{{{a}}}[{w}]))"
+    fallbacks = f"sum(rate(chassis_gate_fallbacks_total{{{a}}}[{w}]))"
     return [
         (
             "Requests by interface and status",
@@ -88,17 +156,9 @@ def _panels(agent: str) -> list[tuple[str, str, list[tuple[str, str]]]]:
                 )
             ],
         ),
-        (
-            "Evaluator gate fallback rate",
-            "percentunit",
-            [
-                (
-                    f"sum(rate(chassis_gate_fallbacks_total{{{a}}}[{w}])) / "
-                    f'sum(rate(chassis_gate_runs_total{{{a},mode="sync"}}[{w}]))',
-                    "fallback rate",
-                )
-            ],
-        ),
+        (NO_FALLBACK, "percentunit", [(f"1 - {fallbacks} / {sync_runs}", "no fallback")]),
+        (RETRY, "percentunit", [(f"{retries} / {sync_runs}", "retry rate")]),
+        (FALLBACK, "percentunit", [(f"{fallbacks} / {sync_runs}", "fallback rate")]),
         (
             "User feedback by label",
             "short",
@@ -125,7 +185,8 @@ def dashboard(agent: str) -> dict[str, Any]:
                 "title": title,
                 "datasource": _DATASOURCE,
                 "gridPos": {"h": 8, "w": 12, "x": (index % 2) * 12, "y": (index // 2) * 8},
-                "fieldConfig": {"defaults": {"unit": unit}, "overrides": []},
+                "fieldConfig": {"defaults": _field_defaults(title, unit), "overrides": []},
+                "links": _links(agent),
                 "targets": [
                     {"refId": chr(ord("A") + i), "expr": expr, "legendFormat": legend}
                     for i, (expr, legend) in enumerate(queries)
@@ -142,7 +203,16 @@ def dashboard(agent: str) -> dict[str, Any]:
         "time": {"from": "now-6h", "to": "now"},
         "templating": {
             "list": [
-                {"name": "datasource", "type": "datasource", "query": "prometheus", "label": "Data"}
+                {
+                    "name": "datasource",
+                    "type": "datasource",
+                    "query": "prometheus",
+                    "label": "Data",
+                },
+                *(
+                    {"name": name, "type": "textbox", "query": "", "label": label}
+                    for name, label in _LINK_VARIABLES
+                ),
             ]
         },
         "panels": panels,

@@ -17,7 +17,7 @@ Phase E needs one container dashboard: the north star, its inputs, and the count
 
 - A Grafana dashboard built from code on the Prometheus `/metrics` (014 H-7), with the token and cost input from 006 G-6.
 - Three rows from `docs/specs/metrics.md`: the north star, its inputs, and the counter metrics.
-- Gate panels per agent: first-try pass rate, 1 − (`chassis_gate_retries_total` + `chassis_gate_fallbacks_total`) / `chassis_gate_runs_total`; retry rate; fallback rate with a target line at 10%.
+- Gate panels per agent: first-try pass rate; retry rate; fallback rate with a target line at 10%. 1 − (retries + fallbacks) / runs is not a first-try rate: a run that retries and then falls back adds to both counters, and a run with two retries adds 2.
 - Links from panels to Langfuse traces and Loki logs.
 - A filter by config version and model route version needs a label the metric families do not carry ([contract v7 A.3](../../contracts/contract-v7.md#a3-the-families)). It waits on a contract change.
 
@@ -34,9 +34,9 @@ Phase E needs one container dashboard: the north star, its inputs, and the count
 
 - [ ] The dashboard shows every panel with data, in Docker Compose and on Kubernetes. Open: `pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_metrics.py` (`test_every_panel_query_has_data`, `test_grafana_has_the_agent_dashboard_with_every_panel`) is `network`-marked and waits on run 41011346864; no Kubernetes path exists.
 - [ ] The north star, its inputs, and the counter metrics from `docs/specs/metrics.md` each have a row.
-- [ ] First-try pass rate and retry rate show per agent, from the gate counters.
-- [ ] The fallback rate shows per agent, with a target line at 10%.
-- [ ] Panels link to Langfuse traces and Loki logs.
+- [ ] First-try pass rate and retry rate show per agent, from the gate counters. Open: the counters cannot give runs that passed on attempt 1 (retries count attempts; a fallback run also counts its retries). The dashboard shows "sync runs with no fallback" (1 − fallbacks / sync runs, an upper bound) and retried attempts per sync run, checked by `packages/chassis/tests/test_dashboards.py::test_the_gate_panels_work_out_from_fixed_counter_values`. An exact rate needs a run-level counter by first attempt outcome (a contract change).
+- [x] The fallback rate shows per agent, with a target line at 10%. · Delivered by: Offline, `packages/chassis/tests/test_dashboards.py::test_the_fallback_panel_draws_a_target_line_at_ten_percent`
+- [x] Panels link to Langfuse traces and Loki logs. · Delivered by: Offline, `packages/chassis/tests/test_dashboards.py::test_every_panel_links_to_langfuse_traces_and_loki_logs`; the Langfuse link is `${langfuse_url}/project/${langfuse_project}/traces`, and `langfuse_url`, `langfuse_project`, `loki_uid`, and the Loki label `agent` are suggested: per deploy (nothing in `deploy/` provisions that label yet)
 - [ ] Filtering by config version and model route version splits the numbers, once the metric families carry that label (a contract change).
 - [x] The dashboard is provisioned from code, not built by hand, and a test checks that the file is up to date. · Delivered in PoC-8: `packages/chassis/tests/test_dashboards.py::test_the_generated_files_are_up_to_date`, `pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_static.py::test_grafana_provisions_every_file_of_deploy_dashboards`
 

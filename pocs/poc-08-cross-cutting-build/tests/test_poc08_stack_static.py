@@ -322,7 +322,7 @@ def test_the_drill_asks_every_panel_query_of_the_agents_dashboard() -> None:
     board = dashboard_file()
     queries = panel_queries(board)
     assert [expr for _, _, expr in queries] == panel_exprs(board)
-    assert len({title for title, _, _ in queries}) == len(board["panels"]) == 7
+    assert len({title for title, _, _ in queries}) == len(board["panels"]) == 9
     assert "User feedback by label" in {title for title, _, _ in queries}
 
 
