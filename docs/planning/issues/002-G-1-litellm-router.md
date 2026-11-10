@@ -48,7 +48,7 @@ Every model call must go through one LLM router, so models can be swapped by con
 - [ ] No provider API key appears in the router config, the repo, or the logs.
 - [ ] A call with no key is refused, and no service config holds the master key.
 - [x] Every service calls the router with its own virtual key, minted at deploy. · Delivered in PoC-5: `pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py::test_litellm_refuses_the_workload_without_the_chassis_key`, run in `pocs/poc-05-sandboxed/demo/2026-10-09-demo-sandboxed.md`; PoC-8: `pocs/poc-08-cross-cutting-build/tests/test_poc08_litellm_static.py::test_the_master_key_reaches_litellm_only_and_the_virtual_key_the_chassis_only`
-- [ ] A short guide shows how to point a client at the router.
+- [x] A short guide shows how to point a client at the router. · Delivered by: [point a client at the router](../../guides/point-a-client-at-the-router.md)
 
 ## Dependencies
 
