@@ -10,7 +10,10 @@ sidecar` and `spec.engine.uds` set to the workload's socket, and runs the chassi
 environment (`settings.ChassisSource`): `<source> -I data/chassis_serve.py --uds <sock> serve
 --config <file> --port <p> --proxy-port <q>`. The public listener is on a Unix socket (the offline
 gate refuses TCP in the test process); the model proxy is on loopback TCP, which only the workload
-process calls (`CHASSIS_MODEL_URL`, `CHASSIS_TOOL_URL`).
+process calls (`CHASSIS_MODEL_URL`, `CHASSIS_TOOL_URL`). `model_script` scripts the fake model's
+answers: a list of rules, each `{"match": <text in the last user message>, "reply": ...}` or
+`{"match": ..., "error": <code>, "retryable": ...}` (the chassis's `ScriptRule` fields), written to
+a file and passed as `--model-script`.
 
 Both are stopped with SIGTERM, then SIGKILL after `STOP_TIMEOUT_S`. Each process writes its output
 to a log file next to its socket; a start that fails quotes the log tail.
@@ -326,12 +329,33 @@ def chassis_config(workload: Workload, adapters: Mapping[str, str] | None = None
     return config
 
 
-def chassis_argv(source: ChassisSource, config: Path, uds: str, proxy_port: int) -> list[str]:
+ModelScript = Sequence[Mapping[str, Any]]
+"""The fake model's rules, first match wins; see the module docstring."""
+
+
+def write_model_script(rules: ModelScript, path: Path) -> Path:
+    """Write `rules` as JSON to `path`. A rule that is not a mapping is a `TypeError`."""
+    bad = [rule for rule in rules if not isinstance(rule, Mapping)]
+    if isinstance(rules, (str, bytes, Mapping)) or bad:
+        raise TypeError(f"model_script is a list of rule mappings, not {rules!r}")
+    path.write_text(json.dumps([dict(rule) for rule in rules], indent=2))
+    return path
+
+
+def chassis_argv(
+    source: ChassisSource,
+    config: Path,
+    uds: str,
+    proxy_port: int,
+    model_script: Path | None = None,
+) -> list[str]:
     (public_port,) = free_ports(1)  # never bound: the public listener is on `uds`
+    script = ["--model-script", str(model_script)] if model_script is not None else []
     return [
         *source.command,
         "-I",
         str(CHASSIS_SERVE),
+        *script,
         "--uds",
         uds,
         "serve",
@@ -358,15 +382,20 @@ def start_chassis(
     timeout_s: float = CHASSIS_START_S,
     adapters: Mapping[str, str] | None = None,
     env: Mapping[str, str] | None = None,
+    model_script: ModelScript | None = None,
 ) -> Iterator[Chassis]:
-    """Start the chassis in the `fake` profile in front of `workload`; wait for `/ready`."""
+    """Start the chassis in the `fake` profile in front of `workload`; wait for `/ready`.
+    `model_script` scripts the fake model's answers (module docstring)."""
     with _scratch() as root:
         uds = str(root / "chassis.sock")
         config = root / "chassis.yaml"  # JSON is YAML
         config.write_text(json.dumps(chassis_config(workload, adapters), indent=2))
         child = clean_env(os.environ, drop=("PYTHONPATH", *UV_VARIABLES))
         child.update({"PYTHONUNBUFFERED": "1", **(env or {})})
-        argv = chassis_argv(source, config, uds, workload.proxy_port)
+        script = None
+        if model_script is not None:
+            script = write_model_script(model_script, root / "model-script.json")
+        argv = chassis_argv(source, config, uds, workload.proxy_port, script)
         process = _spawn("chassis", argv, child, root / "chassis.log")
         try:
             _wait_for(process, uds, "/ready", timeout_s)

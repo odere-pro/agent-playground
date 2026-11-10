@@ -284,7 +284,14 @@ def mcp_client(uds: str, headers: Mapping[str, str] | None = None) -> Client[Any
     return Client(transport)
 
 
+ENVELOPE_FIELDS = ("status", "request_id", "trace_id")
+"""Fields `response.v0.json` requires that the suite reads; a missing one is a broken shape and
+fails the cell that reads it with that name."""
+
+
 def _from_envelope(envelope: Mapping[str, Any], text: str | None = None) -> Answer:
+    for name in ENVELOPE_FIELDS:
+        assert name in envelope, f"the envelope has no {name}: {sorted(envelope)}"
     metrics = envelope.get("metrics") or {}
     return Answer(
         text=answer_text(envelope.get("output")) if text is None else text,

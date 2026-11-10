@@ -1,11 +1,18 @@
-"""InMemoryConfig: a ConfigPort held in a dict. `put` bumps the version and notifies subscribers."""
+"""InMemoryConfig: a ConfigPort held in a dict. `put` bumps the version and notifies subscribers.
+`fail_next` scripts one `ConfigUnavailable` on the next `load`."""
 
 from __future__ import annotations
 
 from collections import defaultdict
 from typing import Any
 
-from chassis.ports.config import ConfigCallback, ConfigNotFound, LoadedConfig, Unsubscribe
+from chassis.ports.config import (
+    ConfigCallback,
+    ConfigNotFound,
+    ConfigUnavailable,
+    LoadedConfig,
+    Unsubscribe,
+)
 
 
 class InMemoryConfig:
@@ -14,8 +21,16 @@ class InMemoryConfig:
         self._subs: dict[str, list[ConfigCallback]] = defaultdict(list)
         for name, data in (configs or {}).items():
             self._data[name] = LoadedConfig(name=name, version="1", data=data)
+        self._fail: ConfigUnavailable | None = None
+
+    def fail_next(self, exc: ConfigUnavailable | None = None) -> None:
+        """The next `load` raises `exc` (default: a scripted `ConfigUnavailable`)."""
+        self._fail = exc or ConfigUnavailable("scripted outage")
 
     async def load(self, name: str) -> LoadedConfig:
+        if self._fail is not None:
+            exc, self._fail = self._fail, None
+            raise exc
         try:
             return self._data[name]
         except KeyError as exc:

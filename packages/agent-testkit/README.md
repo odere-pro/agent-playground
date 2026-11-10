@@ -32,6 +32,28 @@ def test_my_logic(chassis):
 - `agent_testkit_chassis_source`: where the chassis comes from.
 - `workload`: `python -m workload_a2a serve --handle <handle> --name <name> --uds <sock>`, with `chassis` and `chassis_contracts` made unimportable on its `PYTHONPATH`. `.url`, `.uds`, `.client()`, `.agent_card()`.
 - `chassis`: the chassis, `profile: fake`, `spec.engine.connector: sidecar`, `spec.engine.uds` = the workload's socket. `.url`, `.uds`, `.client()`, `.post(path, body)`, `.run(input, **kw)` (POST `/v1/run`, returns the envelope).
+- `agent_testkit_model_script`: the fake model's rules for `chassis`; `None` (the default) answers `ok`. Override it to script answers.
+
+## Script the model per case
+
+A rule is the chassis's `ScriptRule` as a dict; the first rule whose `match` is in the last user message wins. A key that is not a rule field stops the chassis at start.
+
+```python
+MODEL_SCRIPT = [
+    {"match": "case alpha", "reply": "Alpha."},
+    {"match": "case gamma", "error": "rate_limited", "retryable": True},
+]
+
+@pytest.fixture(scope="session")
+def agent_testkit_model_script():
+    return MODEL_SCRIPT
+```
+
+`WorkloadContract.model_script` does the same for the contract's own chassis, and `start_chassis(..., model_script=...)` for one you start yourself.
+
+## Event mappings
+
+`agent_testkit.event_mapping.EventMappingContract` checks one framework mapping: bind it with `fixture_stream` (the framework's events for one run) and `map_stream` (the mapping). Every mapped event must match the chassis event schema (`workload_a2a.server.validate_event`), `start` first, one terminal last.
 
 ## `WorkloadContract`
 

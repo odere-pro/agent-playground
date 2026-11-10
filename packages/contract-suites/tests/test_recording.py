@@ -17,6 +17,7 @@ from chassis_contracts.recording import (
     CassetteMiss,
     CassetteSecretError,
     CassetteTransport,
+    RecordRefused,
     default_vcr_config,
 )
 
@@ -402,7 +403,9 @@ async def _record_reply(
     transport = CassetteTransport(FixedReply(reply), path, "rewrite", **kwargs)
     async with httpx.AsyncClient(transport=transport) as client:
         await client.post(
-            "https://x/v1", content=request_body, headers={"content-type": "application/json"}
+            "https://x.invalid/v1",
+            content=request_body,
+            headers={"content-type": "application/json"},
         )
     await transport.aclose()
 
@@ -519,3 +522,76 @@ def test_key_shape_ignores_sk_when_it_ends_a_longer_word(text: str) -> None:
     match = KEY_SHAPED_PATTERN.search(text)
 
     assert match is None
+
+
+class Sent(httpx.AsyncBaseTransport):
+    """A non-ASGI upstream that counts what reaches it, as a real HTTP transport would send it."""
+
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        self.sent.append(str(request.url))
+        return httpx.Response(200, json={"ok": True}, request=request)
+
+
+@pytest.mark.parametrize("mode", ["rewrite", "once", "new_episodes", "all"])
+@pytest.mark.parametrize(
+    "url", ["https://api.example.com/v1", "https://model.invalid.example/v1", "https://x/v1"]
+)
+async def test_recording_is_refused_when_the_host_may_be_real(
+    tmp_path: Path, mode: str, url: str
+) -> None:
+    upstream = Sent()
+    recorder = CassetteTransport(upstream, tmp_path / "c.yaml", mode)
+    async with httpx.AsyncClient(transport=recorder) as client:
+        with pytest.raises(RecordRefused, match=r"not under \.invalid"):
+            await client.post(url, json={"q": "hi"})
+    assert upstream.sent == []
+    assert len(recorder) == 0
+
+
+@pytest.mark.parametrize("url", ["http://model.invalid/v1", "https://A.B.INVALID./v1"])
+async def test_recording_is_allowed_when_the_host_is_under_invalid(
+    tmp_path: Path, url: str
+) -> None:
+    upstream = Sent()
+    recorder = CassetteTransport(upstream, tmp_path / "c.yaml", "rewrite")
+    async with httpx.AsyncClient(transport=recorder) as client:
+        assert (await client.post(url, json={"q": "hi"})).status_code == 200
+    assert len(upstream.sent) == 1
+    assert len(recorder) == 1
+
+
+async def test_recording_is_allowed_when_the_inner_transport_is_asgi(tmp_path: Path) -> None:
+    recorder = CassetteTransport(httpx.ASGITransport(app=Upstream()), tmp_path / "c.yaml", "all")
+    async with httpx.AsyncClient(transport=recorder) as client:
+        response = await client.post("https://api.example.com/v1", json={"q": "hi"})
+    assert response.status_code == 200
+    assert len(recorder) == 1
+
+
+async def test_a_refusal_message_holds_no_key_or_query(tmp_path: Path) -> None:
+    recorder = CassetteTransport(Sent(), tmp_path / "c.yaml", "rewrite")
+    userinfo = "user:hunter2"  # pragma: allowlist secret
+    url = f"https://{userinfo}@api.example.com/v1/{FAKE_SK}?key={FAKE_SK}"
+    async with httpx.AsyncClient(transport=recorder) as client:
+        with pytest.raises(RecordRefused) as refused:
+            await client.post(url, json={"q": "hi"})
+    message = str(refused.value)
+    assert FAKE_SK not in message
+    assert "hunter2" not in message
+    assert "key=" not in message
+
+
+async def test_replay_is_never_refused_whatever_the_host(tmp_path: Path) -> None:
+    path = tmp_path / "c.yaml"
+    recorder = CassetteTransport(httpx.ASGITransport(app=Upstream()), path, "rewrite")
+    async with httpx.AsyncClient(transport=recorder) as client:
+        await client.post("https://api.example.com/v1", json={"q": "hi"})
+    await recorder.aclose()
+    replayer = CassetteTransport(Sent(), path, "none")
+    async with httpx.AsyncClient(transport=replayer) as client:
+        assert (
+            await client.post("https://api.example.com/v1", json={"q": "hi"})
+        ).status_code == 200
