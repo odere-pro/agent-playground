@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from chassis.agent_class import AgentClass, Kind, check_agent_class
 from chassis.ports.engine import Lane
 from chassis.profiles import DEFAULT_LANE, AdapterSpec, Profile, check_lane
 
@@ -480,7 +481,11 @@ class GovernanceSpec(BaseModel):
 
 
 class Spec(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    agent_class: AgentClass | None = Field(default=None, alias="class")
+    """H-14: `spec.class`. Set together with `spec.kind`, or neither (suggested). Restart-only."""
+    kind: Kind | None = None
+    """H-14: `spec.kind`; it must map to `spec.class` (`chassis.agent_class.KIND_CLASS`)."""
     trust: Trust = DEFAULT_TRUST
     """PoC-5: `trusted` or `untrusted`. `untrusted` needs `spec.engine.connector: remote`.
     Defaults to `trusted` in `fake` and `local`; the `cloud` profile must name it. Restart-only."""
@@ -592,6 +597,25 @@ class ChassisConfig(BaseModel):
                     "'cloud'"
                 )
         return self
+
+    @model_validator(mode="after")
+    def _class_fits_kind_and_modules(self) -> ChassisConfig:
+        spec = self.spec
+        if spec.agent_class is None and spec.kind is None:
+            return self
+        if spec.agent_class is None or spec.kind is None:
+            raise ValueError("spec.class and spec.kind are set together, or neither")
+        check_agent_class(spec.agent_class, spec.kind, switched_on_modules(spec))
+        return self
+
+
+def switched_on_modules(spec: Spec) -> frozenset[str]:
+    """The optional B.5 modules the contract flags switch on (contract spec section 12)."""
+    flags = {
+        "evaluator_gate": spec.harness.evaluator_gate,
+        "result_events": spec.events.result_events,
+    }
+    return frozenset(name for name, on in flags.items() if on)
 
 
 RELOADABLE: tuple[str, ...] = (

@@ -28,6 +28,7 @@ All agent classes (stateless, orchestrator, data) must share one interface and o
 - The class, kind, loaded modules, lane, trust value, and chassis version available at run time, so the manifest can report them later.
 - Eight engines run the same three tasks behind one `handle`: plain Python, PydanticAI, LangGraph, OpenAI Agents SDK, TypeScript (`sidecar`), smolagents, the Claude Agent SDK, and `kagent-adk` (`remote`). The `handle` contract is frozen as the first stable line: `schema_version` stays `"0"` ([contract v5](../../contracts/contract-v5.md), part C).
 - Decided in [ADR-006](../adr/006-agent-engines-default-supported-lanes.md) (amended 2026-11-06): LangGraph is the default; PydanticAI stays supported. The hosted-model numbers are on the owner list (the Mac run, [what is left](../poc/011-what-is-left.md) section 1).
+- Note, 2026-11-10: the start-up refusal sees only two of the 12 B.5 rows, `evaluator_gate` and `result_events` (`packages/chassis/src/chassis/server/config.py`, `switched_on_modules`), so the other rows are table-only until their modules exist.
 
 ## Out of scope
 
@@ -48,7 +49,7 @@ All agent classes (stateless, orchestrator, data) must share one interface and o
 - [ ] An optional module whose flag is off is not loaded (tested with a fake module), in a config `agentctl` generates too.
 - [x] Lane, trust value, and chassis version can be read at run time. · Delivered in PoC-5: `packages/chassis/tests/test_manifest.py::test_manifest_matches_the_config_and_the_openapi_spec`, `::test_manifest_agent_trust_shows_untrusted_with_the_remote_lane`.
 - [ ] Class, kind, and loaded modules can be read at run time.
-- [ ] Unit tests cover every row of the B.5 module table.
+- [x] Unit tests cover every row of the B.5 module table. · Delivered by: `packages/chassis/tests/test_agent_class.py::test_every_b5_cell_is_the_rule` (12 rows by 3 classes), `::test_the_table_has_every_b5_row_and_nothing_else`; the rules are `chassis.agent_class.MODULE_TABLE`.
 - [ ] `agentctl new demo --kind <kind>` works for all five kinds, and each result builds and passes the template CI, the stateless check included, with no hand edits.
 
 ## Dependencies
