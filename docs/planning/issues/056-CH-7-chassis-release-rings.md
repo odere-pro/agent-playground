@@ -46,7 +46,7 @@ epic_refs: [G.4]
 - [ ] A canary with a raised error rate stops the rollout before the next ring.
 - [ ] A service pinned to the previous tag keeps it through a rollout, and a rollback is one change.
 - [ ] `/manifest` on every service reports the chassis version it runs.
-- [ ] The chassis version in `/manifest` equals the image tag.
+- [x] The chassis version in `/manifest` equals the image tag. · Delivered by: `agent-lib.chassisContainer` sets `CHASSIS_IMAGE_TAG` from `chassis.image.tag`, and `chassis.chassis_version()` reports it as `versions.chassis` (the package version off the chart; a malformed tag raises). `packages/chassis/tests/test_manifest.py::test_manifest_reports_the_image_tag_the_chart_sets`, `::test_manifest_reports_the_package_version_with_no_image_tag`, `::test_a_malformed_image_tag_is_refused`; `pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py::test_chassis_env_carries_the_image_tag_it_runs` (default tag, a service pinned to `poc08`, and the remote lane). The live check per service on kind is the box above.
 - [ ] Before a ring rollout, the contract suite passes against a pinned workload image built on the previous event schema version.
 - [ ] The urgent-fix path is written down and tried once on the local cluster.
 - [ ] Once the `sign` job is required, admission checks the chassis image's signature, and an unsigned image is refused on kind (gap review, 2026-11-07).

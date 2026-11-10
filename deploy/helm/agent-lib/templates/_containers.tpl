@@ -46,6 +46,11 @@ ENTRYPOINT is `chassis serve`; the chart sets args only, never a command (admiss
       valueFrom:
         fieldRef:
           fieldPath: status.podIP
+    # The tag the rings roll out; `/manifest` reports it as versions.chassis (056 CH-7).
+    {{- if $c.image.tag }}
+    - name: CHASSIS_IMAGE_TAG
+      value: {{ toString $c.image.tag | quote }}
+    {{- end }}
     {{- range $c.env }}
     - name: {{ .name | quote }}
       value: {{ toString .value | quote }}
