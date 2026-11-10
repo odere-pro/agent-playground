@@ -191,6 +191,7 @@ Each is built by `from_env()` and loaded lazily.
   - `build_mcp_server` adds one `PortTool` per definition, with the definition's own schema.
   - Each call gets one `chassis.tool.call` span. The span holds `tool`, the parsed `trace_id`, and `request_id` when the run is in flight. Nothing is charged.
   - It counts `chassis.tool_calls` per tool.
+  - A refused call is counted in `chassis.tool_errors` per tool and code, and logged at warning with the code.
   - A `ToolError` becomes an MCP tool error.
 - `agent.py` serves the agent as one MCP tool.
   - `build_agent_mcp` runs `FastMCP.from_openapi` over the `/v1/run` operation's spec.

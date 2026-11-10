@@ -11,6 +11,8 @@ Schema, so what a workload lists over MCP is the port's definition, not a schema
 Python signature. A call opens one `chassis.tool.call` span, counts `chassis.tool_calls` per tool,
 and turns a `ToolError` into an MCP tool error result (`isError: true`), never a transport failure:
 its text is `public_message(code)` (PoC-5), never the error's own message.
+A `ToolError` is also counted in `chassis.tool_errors{tool, code}` and logged at warning with
+the tool, the code, and the run's `request_id`, never the message (054 H-16).
 The span has `tool`; `trace_id` and `traceparent` (checked and cut by
 `chassis.core.trace.continued`, so the span continues the workload's call, PoC-7) when the
 inbound MCP HTTP request carried a valid `traceparent` (an invalid one records nothing, so a raw
@@ -57,6 +59,8 @@ if TYPE_CHECKING:
 
 SPAN = "chassis.tool.call"
 COUNTER = "chassis.tool_calls"
+TOOL_ERRORS = "chassis.tool_errors"
+"""Counted per tool and code for each refused or failed call; the code is never the message."""
 
 
 RunOf = Callable[[str], str | None]
@@ -163,6 +167,15 @@ class PortTool(Tool):
             )
         return tool_key(run_key, self.name, arguments, nonce)
 
+    def _refused(self, exc: ToolError, request_id: str | None) -> None:
+        """Count and log a refused call by its code. `exc.message` stays out: an adapter may fill
+        it from an upstream body (054 H-16)."""
+        self._telemetry.counter(TOOL_ERRORS, tool=self.name, code=exc.code)
+        fields: dict[str, Any] = {"tool": self.name, "code": exc.code}
+        if request_id is not None:
+            fields["request_id"] = request_id
+        self._telemetry.log("warning", "tool call refused", **fields)
+
     async def run(self, arguments: dict[str, Any]) -> MCPToolResult:
         attributes: dict[str, Any] = {"tool": self.name}
         header = _inbound_traceparent()
@@ -180,6 +193,7 @@ class PortTool(Tool):
                 key = self._key(trace_id, arguments)
                 result = await self._port.call(self.name, arguments, idempotency_key=key)
             except ToolError as exc:
+                self._refused(exc, attributes.get("request_id"))
                 return _error(exc)
         content = result.content
         text = content if isinstance(content, str) else json.dumps(content)
