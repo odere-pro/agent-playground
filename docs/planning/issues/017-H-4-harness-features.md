@@ -52,8 +52,8 @@ The gate's cost, a second model call per gated request, is decided in [ADR-010](
 - [x] Retries and fallbacks show in metrics as a fallback rate. · Delivered in PoC-8: `packages/chassis/tests/test_metrics.py::test_gated_runs_and_fallbacks_are_both_counted`, [contract v7 A.3](../../contracts/contract-v7.md#a3-the-families) (`chassis_gate_fallbacks_total` over `gate_runs`)
 - [x] With `evaluator_gate` off, no evaluator call is made. · Delivered in PoC-7: `packages/chassis/tests/test_evaluator_gate.py::test_gate_off_makes_no_evaluator_call_and_does_not_wrap`, `pocs/poc-07-cross-cutting-decisions/tests/test_poc07_evals_gate.py::test_poc07_evals_gate_off_makes_no_evaluator_call`
 - [ ] A scripted model error is retried up to `retries` times, then falls back to `fallback_route`, in both lanes, and the retry and fallback are counted.
-- [ ] Across attempts the run keeps one `timeout_ms` and one `max_tokens`: each attempt gets what is left, and the judge's tokens count against the budget.
-- [ ] Retry, fallback, timeout, and budget paths are tested offline with the fake `EvaluatorPort` and scripted model errors.
+- [x] Across attempts the run keeps one `timeout_ms` and one `max_tokens`: each attempt gets what is left, and the judge's tokens count against the budget. · Delivered by: `packages/chassis/tests/test_evaluator_gate_budget.py::test_each_attempt_gets_the_tokens_left_and_the_judge_tokens_count`, `::test_each_attempt_gets_the_time_left`, `::test_no_tokens_left_stops_before_the_retry_with_budget_exhausted`, `::test_no_time_left_stops_before_the_retry_with_a2a_timeout` (`chassis.server.evaluator_gate.Allowance`)
+- [x] Retry, fallback, timeout, and budget paths are tested offline with the fake `EvaluatorPort` and scripted model errors. · Delivered in PoC-7 (retry, fallback: `packages/chassis/tests/test_evaluator_gate.py`) and by: `packages/chassis/tests/test_evaluator_gate_budget.py` (timeout, budget, and `::test_a_scripted_model_error_is_not_retried_by_the_gate`, the ADR-013 side of a scripted `ModelError`), offline with `ScriptedEvaluator` and `ScriptedModel`
 
 ## Dependencies
 
