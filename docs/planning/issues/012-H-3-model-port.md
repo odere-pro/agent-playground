@@ -49,7 +49,7 @@ Agents call models only through the LLM router, so any model is swapped by route
 - [ ] The router's usage records put the spend on the calling service's virtual key, even when the request metadata names another agent (tested with two virtual keys created by the test).
 - [ ] Request metadata carries the trace and request IDs, and nothing that picks whose spend it is.
 - [x] The route version appears in the response `versions` field. Delivered in PoC-1: `pocs/poc-01-walking-skeleton/tests/test_serve.py::test_stream_and_complete_carry_the_same_output`.
-- [ ] Temperature is 0 when the config does not set it.
+- [x] Temperature is 0 when the config does not set it. · Delivered by: `packages/chassis/tests/test_litellm.py::test_temperature_is_0_when_no_caller_sets_it`, `packages/chassis/tests/test_model_proxy.py::test_temperature_is_0_when_the_body_names_none`. No `spec.model.temperature` field exists yet; the default is 0 at the port, the adapter, and the model proxy.
 - [x] The router adapter and the fake sit behind `ModelPort`, are picked by `spec.adapters.model`, and pass the same contract suite. · Delivered in PoC-1: `packages/chassis/tests/test_contracts.py::TestLiteLLMModel`, `::TestScriptedModel`.
 - [x] `ChassisConfig` holds a route map per task (`ModelSpec.routes`) and a `judge_route`, checked by the schema. · Delivered by: PR #78, `packages/chassis/tests/test_model_routes.py::test_the_published_config_schema_has_the_map_and_the_judge_route`, `::test_model_spec_resolves_a_task_through_the_map_else_the_route`, `::test_model_spec_refuses_an_empty_task_or_route_name`.
 - [ ] Admission enforces the resolved route and refuses another with 403 `model_route_denied`.
