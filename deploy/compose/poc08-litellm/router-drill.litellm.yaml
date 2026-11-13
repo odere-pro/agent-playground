@@ -10,6 +10,7 @@ model_list:
       route_version: 1
     litellm_params:
       model: openai/fake-model
+      num_retries: 2
       api_base: http://fake-model-server:8081/v1
       api_key: fake  # pragma: allowlist secret (a placeholder; the fake takes no key)
       # suggested: a price per route, so a call has a cost (G-2). Not a real provider's price.
@@ -22,10 +23,18 @@ model_list:
       route_version: 1
     litellm_params:
       model: openai/fake-model-fallback
+      num_retries: 2
       api_base: http://fake-model-server:8081/v1
       api_key: fake  # pragma: allowlist secret (a placeholder; the fake takes no key)
       input_cost_per_token: 0.0
       output_cost_per_token: 0.0
+
+# CH-16: the same retries and two-way fallbacks as litellm.yaml, so every LiteLLM config under
+# deploy/ states them (test_litellm_route_resilience.py).
+router_settings:
+  fallbacks:
+    - big-default: [local-small]
+    - local-small: [big-default]
 
 litellm_settings:
   callbacks: ["prometheus"]

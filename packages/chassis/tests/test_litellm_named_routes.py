@@ -60,6 +60,7 @@ def test_the_scan_finds_every_config_that_serves_a_named_route() -> None:
     assert {_rel(p) for p in OTHER_CONFIGS} == {
         "deploy/compose/poc06/litellm.config.yaml",
         "deploy/compose/poc08-litellm/litellm.yaml",
+        "deploy/compose/poc08-litellm/router-drill.litellm.yaml",
         "deploy/kind/poc06/hosted/litellm-config.yaml",
     }
 
