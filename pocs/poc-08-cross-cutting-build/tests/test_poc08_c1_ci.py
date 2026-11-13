@@ -54,7 +54,11 @@ SUPPORTED = {
 """ADR-006's supported engines that run offline. `kagent-adk` runs only on kind (poc06-kind.yml);
 both baselines record it as skipped."""
 FULL_SHA = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
-GATED_DRILLS = {"test_poc08_stack_metrics.py", "test_poc08_stack_litellm.py"}
+GATED_DRILLS = {
+    "test_poc08_stack_metrics.py",
+    "test_poc08_stack_litellm.py",
+    "test_poc08_router_live.py",
+}
 """`network` drills against a running stack, collected only with their variable (conftest.py)."""
 
 
