@@ -60,7 +60,7 @@ Tool agents answer by calling tools. Small models call tools less reliably than 
 - [x] Code sent to the code-execution tool runs in its sandbox, not in the workload or chassis container. · Delivered in PoC-5: `pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py::test_code_runs_on_gvisor_with_no_egress`, `pocs/poc-05-sandboxed/tests/test_poc05_kind_code_runner.py::test_files_do_not_cross_calls` (kind, `remote-lane.yml`).
 - [x] The MCP adapter and the fake tools pass the same `ToolPort` contract suite, and are picked by `spec.adapters.tools`. · Delivered in PoC-5: `packages/chassis/tests/test_contracts.py::TestInMemoryTools`, `packages/chassis/tests/test_tool_gateway_contract.py::TestMcpGatewayTools`, `packages/chassis/tests/test_tool_endpoint.py::test_fake_profile_builds_the_fake_tools`.
 - [ ] The tool proxy passes the `ToolPortContract` bound through `/mcp` in the `inprocess` and `sidecar` lanes.
-- [ ] A tool description that changes between refreshes is caught: the chassis hashes each description, counts a change in `chassis_tool_description_changed_total{tool}`, and logs which tool changed (gap review, 2026-11-07).
+- [x] A tool description that changes between refreshes is caught: the chassis hashes each description, counts a change in `chassis_tool_description_changed_total{tool}`, and logs which tool changed (gap review, 2026-11-07). · Delivered by: `packages/chassis/tests/test_tool_description_change.py::test_a_changed_description_is_counted_and_logged_once_by_tool` (`McpGatewayTools` over the fake MCP server, started by the `/mcp` lifespan: one change is +1 on the counter for that tool and one warning line that names it).
 
 ## Dependencies
 

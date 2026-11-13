@@ -66,6 +66,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -410,6 +411,10 @@ class McpGatewayTools:
         # Called once per failed refresh; the tool endpoint sets it to count
         # `chassis.tools.refresh_failed` on the telemetry port.
         self.on_refresh_failed: Callable[[], None] | None = None
+        # Called once per tool whose description hash changed since the last refresh; the tool
+        # endpoint counts `chassis.tool_description_changed{tool}` (054 H-16).
+        self.on_description_changed: Callable[[str], None] | None = None
+        self._description_hashes: dict[str, str] = {}
         self._auth_header = auth_header
         self._api_key = api_key
         self._factory: ClientFactory = httpx_client_factory or httpx2.AsyncClient
@@ -476,7 +481,34 @@ class McpGatewayTools:
             self._refresh_failed()
             return error
         self._tools = {t.name: _definition(t) for t in tools}
+        self._watch_descriptions()
         return None
+
+    def _watch_descriptions(self) -> None:
+        """Hash each description; log and report each listed tool whose hash changed. A tool
+        seen for the first time is not a change. The log names the tool, never the text."""
+        hashes = {
+            name: hashlib.sha256(tool.description.encode()).hexdigest()
+            for name, tool in self._tools.items()
+        }
+        changed = [
+            name
+            for name, digest in hashes.items()
+            if name in self._description_hashes and self._description_hashes[name] != digest
+        ]
+        self._description_hashes = {**self._description_hashes, **hashes}
+        for name in changed:
+            log.warning("tool gateway: the description of tool %r changed", name)
+            self._description_changed(name)
+
+    def _description_changed(self, name: str) -> None:
+        """Call `on_description_changed`; a failing callback is logged, never raised."""
+        if self.on_description_changed is None:
+            return
+        try:
+            self.on_description_changed(name)
+        except Exception as exc:
+            log.warning("tool gateway: description callback raised %s", type(exc).__name__)
 
     def _refresh_failed(self) -> None:
         """Call `on_refresh_failed`; a failing callback (telemetry) is logged, never raised."""
