@@ -11,12 +11,13 @@ from typing import Any, Literal
 from urllib.parse import urlsplit
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from chassis.agent_class import AgentClass, Kind, check_agent_class
 from chassis.ports.engine import Lane
 from chassis.profiles import DEFAULT_LANE, AdapterSpec, Profile, check_lane, merge_adapters
 from chassis.redaction import has_secret
+from chassis.rubrics import DEFAULT_RUBRIC, RUBRICS
 
 
 class AgentSpec(BaseModel):
@@ -420,6 +421,12 @@ class HarnessSpec(BaseModel):
       `error {code: evaluator_gate_failed}` (not retryable, as in contract v6) and sends none of
       the attempt's events.
       Async mode ignores it. Reloadable.
+    - `rubric: judge-facts-v1` (138 CH-18): the judge's rubric, a name with its version
+      (`chassis.rubrics`). An unknown name is refused at load. The gate's score is written to
+      `FeedbackPort` under this name.
+    - `shadow_evaluator: null` (138 CH-18): a second evaluator adapter (`spec.adapters.evaluator`
+      names) that scores a sample of attempts next to the main one and never gates.
+    - `shadow_sample_rate: 0.0`: the share of scored attempts the shadow also scores.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -429,6 +436,16 @@ class HarnessSpec(BaseModel):
     evaluator_sample_rate: float = Field(default=1.0, ge=0, le=1)
     evaluator_mode: Literal["sync", "async"] = "sync"
     evaluator_on_error: Literal["fail_open", "fail_closed"] = "fail_open"
+    rubric: str = DEFAULT_RUBRIC
+    shadow_evaluator: str | None = None
+    shadow_sample_rate: float = Field(default=0.0, ge=0, le=1)
+
+    @field_validator("rubric")
+    @classmethod
+    def _known_rubric(cls, name: str) -> str:
+        if name not in RUBRICS:
+            raise ValueError(f"unknown rubric {name!r}; one of {', '.join(sorted(RUBRICS))}")
+        return name
 
 
 class FeedbackSpec(BaseModel):

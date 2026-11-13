@@ -287,7 +287,9 @@ def describe_run(agent: str, version: str, limits: LimitsSpec | None = None) -> 
             f" Limits: `budget.max_tokens` at most {limits.max_tokens_max}, "
             f"`budget.timeout_ms` at most {limits.timeout_ms_max}, both at least 1; at most "
             f"{limits.messages_max} turns (`input.data.history` plus the input); a body of at "
-            f"most {limits.body_bytes_max} bytes. A call over a limit is refused, not clamped."
+            f"most {limits.body_bytes_max} bytes. A call over a limit is refused, not clamped. "
+            "These are the values this service started with: a config reload may lower a limit, "
+            "never raise it, and a call is checked against the limits in force."
         )
     return summary, description
 

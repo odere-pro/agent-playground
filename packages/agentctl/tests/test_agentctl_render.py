@@ -214,6 +214,20 @@ def test_tests_bind_the_kit_contract(tmp_path: Path, framework: str, connector: 
     assert "class TestWorkloadContract(WorkloadContract):" in contract
 
 
+NO_INPUT_AS_DATA = {"smolagents"}
+"""Engines whose offline output does not carry the fake model's reply (025 H-10)."""
+
+
+@pytest.mark.parametrize(("framework", "connector"), COMBOS)
+def test_contract_turns_off_input_as_data_only_where_the_reply_never_reaches_output(
+    tmp_path: Path, framework: str, connector: str
+) -> None:
+    agent = _render(tmp_path, framework, connector)
+    contract = (agent / "tests/test_contract.py").read_text()
+    is_off = "checks_input_as_data = False" in contract
+    assert is_off == (framework in NO_INPUT_AS_DATA), contract
+
+
 @pytest.mark.parametrize(("framework", "connector"), COMBOS)
 def test_makefile_runs_tests_offline_and_dockerfile_is_hardened(
     tmp_path: Path, framework: str, connector: str

@@ -192,7 +192,7 @@ async def serve[BodyT](
     request = _request_or_refuse(adapter, body, headers, meta, pipeline, ids)
     if isinstance(request, HTTPResponse):
         return request
-    begun = await _begin_idempotency(adapter, request, meta, pipeline, ids)
+    begun = await _begin_idempotency(adapter, request, headers, meta, pipeline, ids)
     if isinstance(begun, HTTPResponse):
         return begun
     request, claim = begun
@@ -247,17 +247,25 @@ def _request_or_refuse[BodyT](
 async def _begin_idempotency[BodyT](
     adapter: InboundAdapter[BodyT],
     request: Request,
+    headers: Mapping[str, str],
     meta: ReplyMeta,
     pipeline: RunPipeline,
     ids: ResolvedIds,
 ) -> tuple[Request, Claim | None] | HTTPResponse:
     """Step 3 of the module docstring: the request to run and its claim (None with no client
-    key), or the answer when there is nothing to run (a `Refusal`, or a `Replay`)."""
+    key), or the answer when there is nothing to run (a `Refusal`, or a `Replay`). With session
+    memory on, the run's `session.id` scopes the key and the fingerprint (CH-20)."""
     idempotency = pipeline.idempotency
     if not idempotency.applies(ids.key_from):
         return request, None
+    session_id = None
+    if pipeline.config.spec.memory.enabled:
+        session_id = pipeline.observed_for(headers).session_id
     outcome = await idempotency.begin(
-        request, wait_ms=request.budget.timeout_ms, subject=current_user_id()
+        request,
+        wait_ms=request.budget.timeout_ms,
+        subject=current_user_id(),
+        session_id=session_id,
     )
     if isinstance(outcome, Refusal):
         reply = adapter.error(

@@ -19,7 +19,9 @@ Four groups of cases:
 1. The agent's workload over A2A: the agent card, and one run of `contract_input` (start first
    with the request id, one terminal event last, every event valid against the vendored event
    schema), a schema version the server does not speak, and an input that is not a JSON object.
-2. The agent through the chassis: `/ready`, and `/v1/run` gives an envelope with the caller's ids.
+2. The agent through the chassis: `/ready`, `/v1/run` gives an envelope with the caller's ids,
+   and the input is data: the input text reaches the model as its own user message, never merged
+   into the system prompt (025 H-10; `checks_input_as_data`).
 3. The lane cases over A2A (`agent_testkit.lane_cases`, vendored from `chassis_contracts.lane`),
    served by the same `workload-a2a` the agent ships with: the event types per case, and the
    stream equals the handle called directly.
@@ -58,6 +60,13 @@ TRACEPARENT = re.compile(r"00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})")
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
 
 
+INPUT_AS_DATA_TEXT = "agent-testkit input-as-data probe"
+"""The input of the input-as-data case (025 H-10). The fake model answers `INPUT_AS_DATA_REPLY`
+only when this text is in the last user message of the model call."""
+INPUT_AS_DATA_REPLY = "Input-as-data probe reply."
+INPUT_AS_DATA_SCRIPT: ModelScript = [{"match": INPUT_AS_DATA_TEXT, "reply": INPUT_AS_DATA_REPLY}]
+"""The rule every contract chassis gets ahead of the agent's own `model_script`."""
+
 MCP_PATH = "/v1/mcp"
 MCP_HEADERS = {"accept": "application/json, text/event-stream"}
 MCP_VERSION = "2025-06-18"
@@ -92,7 +101,10 @@ class WorkloadContract:
     """The envelope statuses the agent's run of `contract_input` may have."""
     model_script: ClassVar[ModelScript | None] = None
     """The fake model's rules for the agent's chassis (`processes.ModelScript`); `None` answers
-    `ok` to every call."""
+    `ok` to every call. The contract puts `INPUT_AS_DATA_SCRIPT` ahead of it."""
+    checks_input_as_data: ClassVar[bool] = True
+    """Set `False` for an agent that never sends its input text to the model, or whose run output
+    does not carry the model's reply (smolagents offline ends in `tool_loop_exceeded`)."""
 
     # --- Fixtures: one pair of processes for the agent, one for the lane cases, per class ---
 
@@ -107,9 +119,8 @@ class WorkloadContract:
     def chassis(
         cls, workload: Workload, agent_testkit_chassis_source: ChassisSource
     ) -> Iterator[Chassis]:
-        with start_chassis(
-            workload, agent_testkit_chassis_source, model_script=cls.model_script
-        ) as started:
+        script = [*INPUT_AS_DATA_SCRIPT, *(cls.model_script or ())]
+        with start_chassis(workload, agent_testkit_chassis_source, model_script=script) as started:
             yield started
 
     @pytest.fixture(scope="class")
@@ -208,6 +219,19 @@ class WorkloadContract:
         assert envelope["status"] in self.run_statuses, envelope
         assert isinstance(envelope["output"], dict), envelope
         assert envelope["versions"]["chassis"], envelope
+
+    def test_the_input_reaches_the_model_as_its_own_message(self, chassis: Chassis) -> None:
+        """Input is data (025 H-10): the input text is the last user message of the model call,
+        never merged into the system prompt. The fake model answers `INPUT_AS_DATA_REPLY` only
+        when it finds the text there, and the answer must reach the run's output."""
+        if not self.checks_input_as_data:
+            pytest.skip("checks_input_as_data is off for this agent")
+        envelope = chassis.run({"text": INPUT_AS_DATA_TEXT})
+        assert envelope["status"] in self.run_statuses, envelope
+        assert INPUT_AS_DATA_REPLY in json.dumps(envelope["output"]), (
+            "input-as-data: the model call did not carry the input text as its own user message"
+            f" (merged into the system prompt?): {envelope}"
+        )
 
     # --- 3. The lane cases over A2A ---
 

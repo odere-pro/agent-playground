@@ -221,6 +221,25 @@ async def test_a_changed_body_is_a_miss(tmp_path: Path) -> None:
     assert len(replayer.misses) == 1
 
 
+async def test_the_run_ids_in_the_request_metadata_do_not_break_a_match(tmp_path: Path) -> None:
+    """012 H-3: every run sends new `metadata.trace_id` and `request_id`, so the body matcher
+    ignores their values; any other metadata or body change is still a miss."""
+    path = tmp_path / "c.yaml"
+    recorded = {"q": "hi", "metadata": {"trace_id": "a" * 32, "request_id": "req-1"}}
+    await _record(path, recorded)
+    replayer = CassetteTransport(None, path, "none")
+
+    rerun = {"q": "hi", "metadata": {"trace_id": "b" * 32, "request_id": "req-2"}}
+    assert (await _post(replayer, rerun)).status_code == 200
+    for changed in (
+        {"q": "other", "metadata": {"trace_id": "b" * 32, "request_id": "req-2"}},
+        {"q": "hi", "metadata": {"tags": ["agent:x"]}},
+        {"q": "hi"},
+    ):
+        with pytest.raises(CassetteMiss, match="body"):
+            await _post(replayer, changed)
+
+
 async def test_a_missing_cassette_is_a_miss_that_says_how_to_record(tmp_path: Path) -> None:
     replayer = CassetteTransport(None, tmp_path / "absent.yaml", "none")
     with pytest.raises(CassetteMiss, match="--record-mode=rewrite"):

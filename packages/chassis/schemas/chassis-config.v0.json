@@ -453,7 +453,7 @@
     },
     "HarnessSpec": {
       "additionalProperties": false,
-      "description": "`spec.harness` (PoC-7, 017 H-4): the evaluator gate. suggested: every name and default.\n\n- `evaluator_gate: false`: off makes no evaluator call.\n- `threshold: 0.7`: a score below it fails the attempt.\n- `retries: 1`: attempts after the first, before the fallback.\n- `evaluator_sample_rate: 1.0`: the share of calls that are gated. Reloadable.\n- `evaluator_mode: sync`: `sync` scores before the answer leaves, then retries or falls back;\n  `async` scores after, never changes the answer, and records the score. A stream is async.\n- `evaluator_on_error: fail_open` (finding R7-17): what a sync-mode evaluator outage does.\n  `fail_open` sends the attempt as it is and counts it; `fail_closed` ends the run with one\n  `error {code: evaluator_gate_failed}` (not retryable, as in contract v6) and sends none of\n  the attempt's events.\n  Async mode ignores it. Reloadable.",
+      "description": "`spec.harness` (PoC-7, 017 H-4): the evaluator gate. suggested: every name and default.\n\n- `evaluator_gate: false`: off makes no evaluator call.\n- `threshold: 0.7`: a score below it fails the attempt.\n- `retries: 1`: attempts after the first, before the fallback.\n- `evaluator_sample_rate: 1.0`: the share of calls that are gated. Reloadable.\n- `evaluator_mode: sync`: `sync` scores before the answer leaves, then retries or falls back;\n  `async` scores after, never changes the answer, and records the score. A stream is async.\n- `evaluator_on_error: fail_open` (finding R7-17): what a sync-mode evaluator outage does.\n  `fail_open` sends the attempt as it is and counts it; `fail_closed` ends the run with one\n  `error {code: evaluator_gate_failed}` (not retryable, as in contract v6) and sends none of\n  the attempt's events.\n  Async mode ignores it. Reloadable.\n- `rubric: judge-facts-v1` (138 CH-18): the judge's rubric, a name with its version\n  (`chassis.rubrics`). An unknown name is refused at load. The gate's score is written to\n  `FeedbackPort` under this name.\n- `shadow_evaluator: null` (138 CH-18): a second evaluator adapter (`spec.adapters.evaluator`\n  names) that scores a sample of attempts next to the main one and never gates.\n- `shadow_sample_rate: 0.0`: the share of scored attempts the shadow also scores.",
       "properties": {
         "evaluator_gate": {
           "default": false,
@@ -491,6 +491,30 @@
           "minimum": 0,
           "title": "Retries",
           "type": "integer"
+        },
+        "rubric": {
+          "default": "judge-facts-v1",
+          "title": "Rubric",
+          "type": "string"
+        },
+        "shadow_evaluator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shadow Evaluator"
+        },
+        "shadow_sample_rate": {
+          "default": 0.0,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Shadow Sample Rate",
+          "type": "number"
         },
         "threshold": {
           "default": 0.7,

@@ -52,7 +52,7 @@ Every service is built from one template, so a new service gets its workload ske
 
 - [ ] CI runs unit tests and the contract suite over A2A on localhost and in memory, and a failing test fails the build.
 - [ ] CI signs the workload image.
-- [ ] The input-as-data contract test fails for a workload that merges the input into the system prompt.
+- [x] The input-as-data contract test fails for a workload that merges the input into the system prompt. · Delivered by: `packages/agent-testkit/tests/test_agent_testkit_input_as_data.py::test_the_case_fails_when_the_input_is_merged_into_the_system_prompt`, `packages/agent-testkit/tests/test_agent_testkit_input_as_data.py::test_the_case_passes_when_the_input_is_its_own_message` (the case `WorkloadContract.test_the_input_reaches_the_model_as_its_own_message`, offline with the fake model)
 - [x] A new agent repo made from the template passes CI with only its name changed. · Delivered in PoC-9: `pocs/poc-09-agent-mvp-template/tests/test_poc09_scaffold.py::test_c4_ci_steps_pass_from_a_fresh_clone`, `pocs/poc-09-agent-mvp-template/notes/2026-10-30-open-items.md` (hosted run 41087571278, all eight jobs)
 - [x] The generated repo carries a chart on `agent-lib`. · Delivered by: `packages/agentctl/tests/test_agentctl_chart.py::test_the_chart_depends_on_agent_lib_through_the_platform_link`, `packages/agentctl/tests/test_agentctl_chart.py::test_the_chart_renders_the_chassis_from_the_library` (sidecar and remote lanes, offline `helm template`)
 - [ ] The template pins a published platform release, not the `.platform` link.

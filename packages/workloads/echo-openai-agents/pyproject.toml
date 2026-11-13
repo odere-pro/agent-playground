@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["fake-mcp-server", "fake-model-server", "fastmcp"]
+dev = ["agent-testkit", "fake-mcp-server", "fake-model-server", "fastmcp"]
 
 [build-system]
 requires = ["uv_build>=0.8,<0.12"]

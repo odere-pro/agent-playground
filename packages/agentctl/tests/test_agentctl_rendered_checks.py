@@ -31,7 +31,8 @@ def _agent(tmp_path: Path, framework: str) -> Path:
 
 
 def _env(agent: Path) -> dict[str, str]:
-    keep = ("PATH", "HOME", "TMPDIR", "LANG")
+    # UV_CACHE_DIR: the chassis starts with `uv --offline`, and CI's cache is not under HOME.
+    keep = ("PATH", "HOME", "TMPDIR", "LANG", "UV_CACHE_DIR")
     env = {k: v for k, v in os.environ.items() if k in keep}
     return env | {"PYTHONPATH": str(agent / "src")}
 
@@ -80,7 +81,13 @@ def test_rendered_contract_test_passes_offline(tmp_path: Path, framework: str) -
     done = _pytest(agent, "test_contract.py", plugins=("agent_testkit.plugin",))
     assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-2000:]
     assert " passed" in done.stdout
-    assert " skipped" not in done.stdout
+    expected_skips = " 1 skipped" if framework in NO_INPUT_AS_DATA else " skipped"
+    assert (expected_skips in done.stdout) == (framework in NO_INPUT_AS_DATA), done.stdout[-3000:]
+
+
+NO_INPUT_AS_DATA = {"smolagents"}
+"""The template turns off the kit's input-as-data case (025 H-10) only for these; it is their one
+allowed skip."""
 
 
 IN_PROCESS_STATELESS = tuple(f for f in rules.FRAMEWORKS if f != "claude-agent")

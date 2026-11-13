@@ -1,5 +1,9 @@
 {
   "schema": "eval-baseline.v0",
+  "dataset": [
+    "packages/eval-kit/src/eval_kit/golden/cases.yaml",
+    "packages/eval-kit/src/eval_kit/golden/cases-gate.yaml"
+  ],
   "cases": 50,
   "agents": {
     "simplifier": {

@@ -11,7 +11,9 @@ first result.
 `ManagedToolPort` is a `ToolPort` with a lifecycle (the gateway adapter, plan section 2.7). The
 tool endpoint (`chassis.server.tool_endpoint`) checks for it with `isinstance` and drives it:
 it sets `on_refresh_failed`, awaits the first `refresh()`, calls `start()`, and on shutdown awaits
-`aclose()`. A port without all four members is served as is.
+`aclose()`. A port without all four members is served as is. A port that is also a
+`DescriptionWatch` gets `on_description_changed`, called with a tool's name when its description
+hash differs from the last refresh.
 """
 
 from __future__ import annotations
@@ -92,6 +94,15 @@ class ManagedToolPort(ToolPort, Protocol):
     async def aclose(self) -> None:
         """Stop the background refresh."""
         ...
+
+
+@runtime_checkable
+class DescriptionWatch(Protocol):
+    """A tools port that hashes each tool description per refresh (054 H-16)."""
+
+    on_description_changed: Callable[[str], None] | None
+    """Called once per tool whose description changed since the last refresh, with its name;
+    the tool endpoint counts it on telemetry."""
 
 
 class NoTools:

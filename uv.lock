@@ -853,6 +853,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "agent-testkit" },
     { name = "fake-model-server" },
     { name = "fastmcp" },
 ]
@@ -865,6 +866,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "agent-testkit", editable = "packages/agent-testkit" },
     { name = "fake-model-server", editable = "packages/fake-model-server" },
     { name = "fastmcp" },
 ]
@@ -886,6 +888,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "agent-testkit" },
     { name = "fake-model-server" },
     { name = "fastmcp" },
     { name = "langchain-mcp-adapters" },
@@ -905,6 +908,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "agent-testkit", editable = "packages/agent-testkit" },
     { name = "fake-model-server", editable = "packages/fake-model-server" },
     { name = "fastmcp" },
     { name = "langchain-mcp-adapters" },
@@ -925,6 +929,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "agent-testkit" },
     { name = "fake-mcp-server" },
     { name = "fake-model-server" },
     { name = "fastmcp" },
@@ -942,6 +947,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "agent-testkit", editable = "packages/agent-testkit" },
     { name = "fake-mcp-server", editable = "packages/fake-mcp-server" },
     { name = "fake-model-server", editable = "packages/fake-model-server" },
     { name = "fastmcp" },
@@ -960,6 +966,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "agent-testkit" },
     { name = "fake-model-server" },
     { name = "fastmcp" },
 ]
@@ -974,6 +981,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "agent-testkit", editable = "packages/agent-testkit" },
     { name = "fake-model-server", editable = "packages/fake-model-server" },
     { name = "fastmcp" },
 ]
@@ -1021,6 +1029,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "agent-testkit" },
     { name = "fake-model-server" },
     { name = "fastmcp" },
 ]
@@ -1036,6 +1045,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "agent-testkit", editable = "packages/agent-testkit" },
     { name = "fake-model-server", editable = "packages/fake-model-server" },
     { name = "fastmcp" },
 ]
@@ -1070,6 +1080,11 @@ dependencies = [
     { name = "uvicorn" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "fake-langsmith" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "bakeoff", editable = "packages/bakeoff" },
@@ -1083,6 +1098,9 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6" },
     { name = "uvicorn", specifier = ">=0.54" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "fake-langsmith", editable = "packages/fake-langsmith" }]
 
 [[package]]
 name = "exceptiongroup"
