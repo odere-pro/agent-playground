@@ -450,11 +450,11 @@ async def test_h29_a_route_outside_the_key_is_refused_and_an_in_scope_call_is_20
     every commit."
 
     Exit criterion 1 (offline), H29, route scope, in two halves. First: inside a run, with its
-    own token, the remote calls the chassis's model proxy with a route the service does not
-    list. Admission refuses it with 403 `model_route_denied` before the model is called (012
-    H-3, 2026-11-13: refused, never rewritten; the config's routes stand in for the key's), so
-    the key never sees the remote's route; the control in-scope call is 200, and the run ends
-    `ok`. Second: the run's own route is outside the key
+    own token, the remote calls the chassis's model proxy with a route that is not the run's.
+    Admission refuses it with 403 `model_route_denied` before the model is called (012 H-3,
+    user decision 2026-11-13: a run's call may name only the run's route, never redirected), so
+    the key never sees the remote's route; the control call on the run's route is 200, and the
+    run ends `ok`. Second: the run's own route is outside the key
     (`spec.model.route` reloaded to it, no restart). The key's refusal reaches the remote as the
     fixed `model_route_denied` text, not retryable, with no completion, and the run ends in
     `error`. The workload streams, so it sees the stream's error frame; the 403 of a plain call
@@ -484,7 +484,6 @@ async def test_h29_a_route_outside_the_key_is_refused_and_an_in_scope_call_is_20
         assert in_scope[1]["choices"][0]["message"]["content"] == REPLY
         assert scoped[0].refused == [], scoped[0].refused
         assert lane.counter_total("chassis.model_route_refused") == 1
-        assert lane.counter_total("chassis.model_route_forced") == 0
         # The run's route outside the key: `spec.model.route` reloads, the next run uses it.
         document = lane.app.state.config.model_dump(mode="json")
         document["spec"]["model"]["route"] = OUT_OF_SCOPE

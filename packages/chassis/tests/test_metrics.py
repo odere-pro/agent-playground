@@ -238,8 +238,8 @@ async def test_model_tokens_and_cost_come_from_the_proxy_usage() -> None:
         assert (await proxy.post("/v1/chat/completions", json=CHAT)).status_code == 200
         streamed = await proxy.post("/v1/chat/completions", json={**CHAT, "stream": True})
         assert streamed.status_code == 200
-        # A run's call keeps the route it names; an uncorrelated one would be pinned (R6).
-        async with app.state.runs.register(*run_request(max_tokens=1000)):
+        # A run's call on its own route `other`; an uncorrelated one would be pinned (R6).
+        async with app.state.runs.register(*run_request(max_tokens=1000, model_route="other")):
             unpriced = await proxy.post(
                 "/v1/chat/completions",
                 json={**CHAT, "model": "other"},

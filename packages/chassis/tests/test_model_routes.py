@@ -1,10 +1,10 @@
 """The route map per task (`docs/specs/models.md`, "The route map per task"). `spec.model.routes`
 picks the route for the task the caller names in `input.data.task`, else `spec.model.route`; the
-pipeline puts it in `ctx.model_route` and on the `chassis.run` span; the model proxy forces a
-workload call that names another route to the run's route (`chassis.model_route_forced`), and the
-gate's fallback route still replaces it; the judge runs on `spec.model.judge_route`. The last test
-is the demo: a `config/agent.yaml` with a `routes` map, two tasks, two routes, through the fake
-model server. Offline.
+pipeline puts it in `ctx.model_route` and on the `chassis.run` span; the model proxy refuses a
+workload call that names another route with 403 `model_route_denied` (012 H-3), and the gate's
+fallback route replaces the run's route for its attempt; the judge runs on
+`spec.model.judge_route`. The last test is the demo: a `config/agent.yaml` with a `routes` map,
+two tasks, two routes, through the fake model server. Offline.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from chassis.ports.model import ModelMessage, ModelResult, ToolSpec
 from chassis.schemas import SCHEMA_DIR
 from chassis.server import ChassisConfig, create_app
 from chassis.server.config import RELOADABLE, ModelSpec, load_config
-from chassis.server.model_admission import FORCED, ROUTE_SPAN
+from chassis.server.model_admission import ROUTE_REFUSED, ROUTE_SPAN
 from chassis.server.pipeline import context_for, task_of
 from chassis.server.proxy_app import create_proxy_app
 from fake_model_server import Script
@@ -120,6 +120,8 @@ class ProxyWorkload(FakeEngine):
         super().__init__(handle=self._handle_)
         self.asks = asks
         self.proxy: Any = None
+        self.answers: list[tuple[int, Any]] = []
+        """The model proxy's status and body, per call."""
 
     async def _handle_(self, input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
         yield Start(request_id=ctx.request_id)
@@ -130,7 +132,11 @@ class ProxyWorkload(FakeEngine):
         }
         async with _client(self.proxy) as c:
             res = await c.post("/v1/chat/completions", json=body, headers=headers)
-        assert res.status_code == 200, res.text
+        self.answers.append((res.status_code, res.json()))
+        if res.status_code != 200:
+            yield Delta(text=f"refused: {res.json()['error']['code']}")
+            yield End()
+            return
         yield Delta(text=res.json()["choices"][0]["message"]["content"])
         yield End()
 
@@ -294,20 +300,17 @@ async def _run_through_proxy(
     return res, app
 
 
-async def test_the_proxy_forces_a_call_that_names_another_route_to_the_resolved_route() -> None:
+async def test_the_proxy_refuses_a_call_that_names_another_route() -> None:
+    """012 H-3 (user decision 2026-11-13): `big-default` is listed in the config but is not the
+    run's route, so the call is 403 `model_route_denied`, never redirected."""
     engine, model = ProxyWorkload(asks="big-default"), RouteModel()
     res, app = await _run_through_proxy(_config(), engine, model)
     assert res.status_code == 200, res.text
-    assert model.routes == ["small-default"]
+    assert [(s, b["error"]["code"]) for s, b in engine.answers] == [(403, "model_route_denied")]
+    assert model.routes == []
     telemetry = _telemetry(app)
-    assert telemetry.counter_value(FORCED, route="small-default") == 1
-    (span,) = [s for s in telemetry.spans if s.name == ROUTE_SPAN]
-    choice = (
-        span.attributes["route.requested"],
-        span.attributes["route"],
-        span.attributes["route.forced"],
-    )
-    assert choice == ("big-default", "small-default", True)
+    assert telemetry.counter_value(ROUTE_REFUSED, route="small-default") == 1
+    assert not [s for s in telemetry.spans if s.name == ROUTE_SPAN]
 
 
 async def test_the_proxy_leaves_a_call_on_the_resolved_route_alone() -> None:
@@ -316,24 +319,37 @@ async def test_the_proxy_leaves_a_call_on_the_resolved_route_alone() -> None:
     assert res.status_code == 200, res.text
     assert model.routes == ["small-default"]
     telemetry = _telemetry(app)
-    assert telemetry.counter_value(FORCED, route="small-default") == 0
+    assert telemetry.counter_value(ROUTE_REFUSED, route="small-default") == 0
     (span,) = [s for s in telemetry.spans if s.name == ROUTE_SPAN]
     assert span.attributes["route.forced"] is False
 
 
 async def test_the_gates_fallback_route_still_replaces_the_mapped_route() -> None:
-    """Two attempts forced to the task's route, then the fallback attempt forced to the fallback
-    route: the gate's override is the stronger rule."""
-    engine = ProxyWorkload(asks="big-default")
+    """Two attempts on the task's route, then the fallback attempt on the fallback route: the
+    gate puts it in `ctx.model_route`, the workload sends it, and admission lets it through."""
+    engine = ProxyWorkload()  # sends `ctx.model_route`
     model = RouteModel([ScriptRule(match="simplify", reply=BAD)])
     evaluator = ScriptedEvaluator([ScoreRule(match=BAD, score=0.2)], default=0.9)
     config = _config({"fallback_route": "fallback-route"}, harness={"evaluator_gate": True})
     res, app = await _run_through_proxy(config, engine, model, evaluator)
     assert res.json()["status"] == "fallback", res.text
     assert model.routes == ["small-default", "small-default", "fallback-route"]
+    assert [s for s, _ in engine.answers] == [200, 200, 200]
     telemetry = _telemetry(app)
-    assert telemetry.counter_value(FORCED, route="small-default") == 2
-    assert telemetry.counter_value(FORCED, route="fallback-route") == 1
+    assert all(v == 0 for (name, _), v in telemetry.counters.items() if name == ROUTE_REFUSED)
+
+
+async def test_a_fallback_attempt_that_names_the_first_route_is_refused() -> None:
+    """A workload that ignores `ctx.model_route` in the fallback attempt is refused there."""
+    engine = ProxyWorkload(asks="small-default")
+    model = RouteModel([ScriptRule(match="simplify", reply=BAD)])
+    evaluator = ScriptedEvaluator([ScoreRule(match=BAD, score=0.2)], default=0.9)
+    config = _config({"fallback_route": "fallback-route"}, harness={"evaluator_gate": True})
+    res, app = await _run_through_proxy(config, engine, model, evaluator)
+    assert model.routes == ["small-default", "small-default"]
+    assert [s for s, _ in engine.answers] == [200, 200, 403]
+    assert _telemetry(app).counter_value(ROUTE_REFUSED, route="fallback-route") == 1
+    assert res.status_code == 200, res.text
 
 
 # --- 4. The judge ---------------------------------------------------------------------------------
@@ -408,7 +424,7 @@ async def test_agent_yaml_sends_each_task_to_its_route_through_the_fake_model_se
     tmp_path: Path,
 ) -> None:
     """The demo: `simplify` goes to `small-default`, `lookup` to `big-default`, `classify` to
-    `decision-small`, no task to `route`; the workload sends `ctx.model_route`, nothing is forced,
+    `decision-small`, no task to `route`; the workload sends `ctx.model_route`, nothing is refused,
     and the fake model server answers by route."""
     path = tmp_path / "agent.yaml"
     path.write_text(AGENT_YAML)
@@ -427,5 +443,5 @@ async def test_agent_yaml_sends_each_task_to_its_route_through_the_fake_model_se
             assert body["output"]["text"].startswith(answer), (task, body)
             rows.append(f"task={task or '-':<9} route={route:<15} answer={body['output']['text']}")
     assert [call["model"] for call in models.state.calls] == [r[2] for r in DEMO_RUNS]
-    assert all(v == 0 for (name, _), v in _telemetry(app).counters.items() if name == FORCED)
+    assert all(v == 0 for (name, _), v in _telemetry(app).counters.items() if name == ROUTE_REFUSED)
     print("\n" + "\n".join(rows))  # the demo's record, shown with `pytest -s`
