@@ -69,7 +69,8 @@ def _config(url: str, uds: str) -> ChassisConfig:
             "spec": {
                 "engine": {"connector": "sidecar", "url": url, "uds": uds},
                 "model": {"route": ROUTE},
-                "events": {"result_events": True},
+                # `include_input`: the email is in the input, redacted on the event (019 H-17).
+                "events": {"result_events": True, "include_input": True},
                 "governance": {"risk_class": "limited"},
             },
         }
