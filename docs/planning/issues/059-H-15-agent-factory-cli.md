@@ -22,7 +22,7 @@ Every new agent should start from the same template, with only the parts its cla
   - the template A2A server that wraps `handle` (009 CH-1);
   - the event mapping for the chosen framework (058 CH-8);
   - a Dockerfile for the workload image;
-  - a Helm chart that includes the shared library chart (024 CH-3), from the chart template and the platform pin in 025 H-10. Not built yet: the generated repo has no chart;
+  - a Helm chart that includes the shared library chart (024 CH-3), from the chart template and the platform pin in 025 H-10 (`deploy/helm/` in the template);
   - the CI that runs the contract suite over both transports.
 - The inbound adapters, the pipeline, and the ports live in the chassis image, not in the generated repo.
 - `--connector sidecar|remote`, default `sidecar`. The generated tests run the chassis in the `fake` profile as a separate process and drive the workload over A2A; `inprocess` is for the chassis's own tests and is never deployed. A `remote` agent gets no Compose file, because Compose is the sidecar shape.
@@ -52,8 +52,8 @@ Every new agent should start from the same template, with only the parts its cla
 - [ ] A generated transformer runs in Docker Compose in the `sidecar` lane, as two containers, and answers through the native, OpenAI, Anthropic, and MCP APIs. The proof is a `demo.sh --live` rerun on the LangGraph default that calls `/v1/messages`, recorded as a dated note. The PoC-9 run showed native, OpenAI, and MCP only, with `pydanticai` (`pocs/poc-09-agent-mvp-template/notes/2026-11-05-machine-checks.md`, section 1).
 - [ ] `--trust untrusted` produces a `remote` chart: the workload runs in its own pod with the gVisor RuntimeClass and default-deny egress, and the chassis pod stays outside the sandbox.
 - [ ] `--trust untrusted --connector sidecar` fails with a clear error.
-- [ ] Each `--framework` choice gives a repo whose event mapping passes its contract test.
-- [ ] The generated repo holds no chassis code. The chassis image and tag come from the library chart.
+- [x] Each `--framework` choice gives a repo whose event mapping passes its contract test. · Delivered by: `packages/agentctl/tests/test_agentctl_rendered_checks.py::test_rendered_contract_test_passes_offline` (every framework in `rules.FRAMEWORKS`, `remote` for untrusted ones; runs the rendered `tests/test_contract.py`, `agent_testkit.contract.WorkloadContract` with the chassis in the `fake` profile as its own process, sockets disabled but Unix); run on 2026-11-13
+- [x] The generated repo holds no chassis code. The chassis image and tag come from the library chart. · Delivered by: `packages/agentctl/tests/test_agentctl_render.py::test_the_rendered_tree_holds_no_chassis_code` and `::test_pyproject_names_the_kit_and_never_the_chassis`; `packages/agentctl/tests/test_agentctl_chart.py::test_the_chart_depends_on_agent_lib_through_the_platform_link` (no `chassis.image` in values) and `::test_the_chart_renders_the_chassis_from_the_library` (local helm, `file://` dependency; the chassis container image is the `agent-lib` default); run on 2026-11-13
 - [x] The generated `governance` block holds the fields the chassis schema has (`risk_class`, `ai_generated_marking`), with a placeholder for each; 077 C-1 adds the rest of E.4. · Delivered by: `packages/agentctl/src/agentctl/template/project/config/agent.yaml.jinja` (`spec.governance`, a `fill in:` note per field); `packages/agentctl/tests/test_agentctl_config.py::test_the_starter_config_names_each_governance_field_with_a_placeholder` (both fields set, equal to `GovernanceSpec.model_fields`, loaded by `load_config`); run on 2026-11-10
 - [ ] `agentctl` refuses a generated route that the service's key does not list.
 - [ ] A person new to the code goes from `agentctl new` to a demo in under a day, recorded in a dated note.

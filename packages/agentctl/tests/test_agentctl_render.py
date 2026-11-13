@@ -161,6 +161,28 @@ def test_pyproject_names_the_kit_and_never_the_chassis(
     assert project["tool"]["uv"]["build-backend"]["module-name"] == "my_agent"
 
 
+def _imports(tree: ast.Module) -> set[str]:
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names |= {alias.name.split(".")[0] for alias in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            names.add(node.module.split(".")[0])
+    return names
+
+
+@pytest.mark.parametrize(("framework", "connector"), COMBOS)
+def test_the_rendered_tree_holds_no_chassis_code(
+    tmp_path: Path, framework: str, connector: str
+) -> None:
+    """059 H-15 box 5: no chassis package in the tree and no Python file imports one (ADR-001)."""
+    agent = _render(tmp_path, framework, connector)
+    assert not [p for p in agent.rglob("chassis*") if p.is_dir()]
+    for path in agent.rglob("*.py"):
+        found = _imports(ast.parse(path.read_text(), filename=str(path)))
+        assert not {n for n in found if n.startswith("chassis")}, path
+
+
 @pytest.mark.parametrize(("framework", "connector"), COMBOS)
 def test_answers_file_lets_copier_update_later(
     tmp_path: Path, framework: str, connector: str
