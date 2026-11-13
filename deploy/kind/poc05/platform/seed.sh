@@ -235,7 +235,7 @@ make_keys() {
 }
 
 seed_keys() {
-  local entry svc fake code name value pending=()
+  local entry svc fake code name to_workload to_chassis pending=()
   for entry in "${SERVICES[@]}"; do
     IFS='|' read -r svc fake code <<<"$entry"
     secret_exists "$AGENTS" "chassis-$svc-litellm" || pending+=("$entry")
@@ -247,11 +247,17 @@ seed_keys() {
     if secret_exists "$AGENTS" "remote-$name-token" && secret_exists "$REMOTE" "remote-$name-token"; then
       continue
     fi
-    value=$(new_secret)
-    printf '%s' "$value" | put_secret "$AGENTS" "remote-$name-token" token
-    printf '%s' "$value" | put_secret "$REMOTE" "remote-$name-token" token
-    unset value
-    log "made remote-$name-token in $AGENTS and $REMOTE"
+    # Two keys, one per direction (055 CH-6): the chassis sends chassis-to-workload and its
+    # remote listener accepts only workload-to-chassis. Two random values, never equal.
+    to_workload=$(new_secret)
+    to_chassis=$(new_secret)
+    [[ $to_workload != "$to_chassis" ]] || die "remote-$name-token: the two keys came out equal"
+    printf 'chassis-to-workload=%s\nworkload-to-chassis=%s\n' "$to_workload" "$to_chassis" |
+      put_env_secret "$AGENTS" "remote-$name-token"
+    printf 'chassis-to-workload=%s\nworkload-to-chassis=%s\n' "$to_workload" "$to_chassis" |
+      put_env_secret "$REMOTE" "remote-$name-token"
+    unset to_workload to_chassis
+    log "made remote-$name-token (two keys) in $AGENTS and $REMOTE"
   done
 }
 

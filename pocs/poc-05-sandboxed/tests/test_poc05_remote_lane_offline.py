@@ -24,7 +24,14 @@ import yaml
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 from chassis.server.cli import parse_args
 from chassis.server.remote_auth import AUTH_FAILED
-from poc_harness.lane_tokens import TOKEN_ENV, Tokens, new_token, new_trace_id, traceparent
+from poc_harness.lane_tokens import (
+    PROXY_TOKEN_ENV,
+    TOKEN_ENV,
+    Tokens,
+    new_token,
+    new_trace_id,
+    traceparent,
+)
 from poc_harness.remote_lane import REPLY, RemoteLane, remote_lane
 from poc_harness.scenario import ROUTE
 
@@ -186,12 +193,15 @@ async def test_the_token_is_in_no_log_span_or_event(
 
 
 ROTATIONS = {
-    # The chassis swapped first: it sends the new token, the workload still sends the old one.
-    "chassis-first": ("new", "old", "old", "new", "old"),
-    # The workload swapped first: it sends the new token, the chassis still sends the old one.
-    "workload-first": ("old", "new", "new", "old", "new"),
+    # The chassis swapped first: it sends the new key and its listener takes the new one first;
+    # the workload still takes the old key first and sends the old one.
+    "chassis-first": ("new", "new", "old", "old", "new", "old"),
+    # The workload swapped first: the reverse.
+    "workload-first": ("old", "old", "new", "new", "old", "new"),
 }
-"""(chassis current, chassis previous, workload current, workload previous, workload sends)."""
+"""(chassis sends, listener current, listener previous, workload current, workload previous,
+workload sends). One key per direction (055 CH-6): the chassis sends and the workload takes
+chassis-to-workload keys; the workload sends and the listener takes workload-to-chassis keys."""
 
 
 @pytest.mark.parametrize("order", list(ROTATIONS))
@@ -202,33 +212,45 @@ async def test_h17_a_rotation_accepts_the_previous_token_on_both_sides(
     its own credential." 1: "The hostile suites run in CI; the parts that need no cluster run
     offline on every commit."
 
-    Exit criteria 6 and 1 (offline), H17 during a token rotation (plan section 2.2): with one
-    side swapped and the other not, a run through the lane ends `ok`; the remote listener (in a
-    run) and the workload's server each accept both the old and the new token (the controls),
-    and each refuses a third token with 401.
+    Exit criteria 6 and 1 (offline), H17 during a token rotation (plan section 2.2), each
+    direction's key rotated (055 CH-6): with one side swapped and the other not, a run through
+    the lane ends `ok`; the remote listener (in a run) accepts both the old and the new
+    workload-to-chassis key, the workload's server both chassis-to-workload keys (the
+    controls), and each refuses a third token and the other direction's keys with 401.
     """
-    values = {"old": new_token(), "new": new_token()}
-    chassis, chassis_prev, workload, workload_prev, sends = (values[k] for k in ROTATIONS[order])
+    to_workload = {"old": new_token(), "new": new_token()}
+    to_chassis = {"old": new_token(), "new": new_token()}
+    sends_out, proxy, proxy_prev, workload, workload_prev, sends = ROTATIONS[order]
     tokens = Tokens(
-        chassis=chassis,
-        chassis_previous=chassis_prev,
-        workload=workload,
-        workload_previous=workload_prev,
-        sends=sends,
+        chassis=to_workload[sends_out],
+        workload=to_workload[workload],
+        workload_previous=to_workload[workload_prev],
+        sends=to_chassis[sends],
+        proxy=to_chassis[proxy],
+        proxy_previous=to_chassis[proxy_prev],
     )
     third = new_token()
     listener: dict[str, int] = {}
     server: dict[str, int] = {}
     async with remote_lane(monkeypatch, tokens=tokens) as lane:
         async with lane.held_run() as run:
-            for name, token in (*values.items(), ("third", third)):
+            for name, token in (*to_chassis.items(), ("third", third)):
                 listener[name] = (await _chat(lane, token, run.traceparent))[0]
-        for name, token in (*values.items(), ("third", third)):
-            async with lane.workload_client(token) as client:
-                server[name] = (await client.get(AGENT_CARD_WELL_KNOWN_PATH)).status_code
+            for name, token in to_workload.items():
+                listener[f"other-{name}"] = (await _chat(lane, token, run.traceparent))[0]
+        for name, token in (*to_workload.items(), ("third", third)):
+            server[name] = await _card(lane, token)
+        for name, token in to_chassis.items():
+            server[f"other-{name}"] = await _card(lane, token)
     assert run.response is not None and run.response.json()["status"] == "ok", run.response
-    assert listener == {"old": 200, "new": 200, "third": 401}, listener
-    assert server == {"old": 200, "new": 200, "third": 401}, server
+    refused = {"third": 401, "other-old": 401, "other-new": 401}
+    assert listener == {"old": 200, "new": 200, **refused}, listener
+    assert server == {"old": 200, "new": 200, **refused}, server
+
+
+async def _card(lane: RemoteLane, token: str) -> int:
+    async with lane.workload_client(token) as client:
+        return (await client.get(AGENT_CARD_WELL_KNOWN_PATH)).status_code
 
 
 # --- H13: the chassis CLI's bind rules, through its argument checking ---
@@ -244,7 +266,11 @@ def _remote_config(tmp_path: Path) -> str:
             "engine": {
                 "connector": "remote",
                 "url": "http://echo-remote:9000",
-                "auth": {"scheme": "bearer", "token_env": TOKEN_ENV},
+                "auth": {
+                    "scheme": "bearer",
+                    "token_env": TOKEN_ENV,
+                    "proxy_token_env": PROXY_TOKEN_ENV,
+                },
             },
         },
     }
@@ -272,7 +298,7 @@ def test_h13_cli_refuses_a_wildcard_or_loopback_remote_proxy_host(
     control, the pod IP with the same config and token, is accepted. Argument checking only;
     nothing binds.
     """
-    monkeypatch.setenv(TOKEN_ENV, new_token())
+    monkeypatch.setenv(PROXY_TOKEN_ENV, new_token())
     config = _remote_config(tmp_path)
     base = ["serve", "--config", config]
     allowed = parse_args([*base, "--remote-proxy-host", POD_IP])
@@ -294,7 +320,7 @@ def test_h13_cli_refuses_a_proxy_host_off_loopback(
     auth) refuses `0.0.0.0` and the pod IP with status 2; the control, `127.0.0.1`, is accepted.
     The remote lane's listener also needs its token variable: unset, the pod IP is refused.
     """
-    monkeypatch.setenv(TOKEN_ENV, new_token())
+    monkeypatch.setenv(PROXY_TOKEN_ENV, new_token())
     config = _remote_config(tmp_path)
     base = ["serve", "--config", config]
     allowed = parse_args([*base, "--proxy-host", "127.0.0.1", "--remote-proxy-host", POD_IP])
@@ -303,10 +329,10 @@ def test_h13_cli_refuses_a_proxy_host_off_loopback(
         with pytest.raises(SystemExit) as refused:
             parse_args([*base, "--proxy-host", host])
         codes.append(refused.value.code)
-    monkeypatch.delenv(TOKEN_ENV)
+    monkeypatch.delenv(PROXY_TOKEN_ENV)
     with pytest.raises(SystemExit) as no_token:
         parse_args([*base, "--remote-proxy-host", POD_IP])
     assert allowed.proxy_host == "127.0.0.1" and allowed.remote_proxy_host == POD_IP
     assert codes == [2, 2], codes
     assert no_token.value.code == 2
-    assert TOKEN_ENV in capsys.readouterr().err
+    assert PROXY_TOKEN_ENV in capsys.readouterr().err

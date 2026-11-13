@@ -228,6 +228,7 @@ def cold_start(engine: Engine, cleanup: Cleanup, samples: int) -> list[float]:
                 model_url="http://127.0.0.1:9/v1",
                 tool_url="http://127.0.0.1:9/mcp",
                 token="",
+                proxy_token="",
             ),
         )
         argv = workload_argv(engine, "sidecar", port=port, main_js=str(ROOT / TS_MAIN))
