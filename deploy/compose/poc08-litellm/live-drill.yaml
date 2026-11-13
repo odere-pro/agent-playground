@@ -1,0 +1,129 @@
+# Live drill overlay on the PoC-8 LiteLLM stack. Run through stack.sh, never by hand:
+#
+#   POC08_LITELLM_PROJECT=<name> POC08_LITELLM_OVERLAYS=live-drill.yaml \
+#     deploy/compose/poc08-litellm/stack.sh up
+#
+# The drill: pocs/poc-08-cross-cutting-build/tests/test_poc08_live_drill.py (LIVE_DRILL=1).
+# What it adds to docker-compose.yaml:
+# - the `sidecar` lane: the chassis runs chassis-drill.yaml and serves a workload container,
+#   `workload` (sdk-workload.Dockerfile: echo-python plus the stock openai and anthropic SDKs), in
+#   its network namespace. From the workload, 127.0.0.1:8090 is the chassis's model proxy (CH-2).
+# - Prometheus scraping the chassis, and Grafana loading every file of deploy/dashboards/ with the
+#   PoC-8 provisioning (deploy/compose/poc08/grafana/provisioning), no manual step (G-6).
+# - network names from the project, so a second project does not share the base's networks.
+# No key goes to any new service; Grafana's admin password comes from stack.sh's env file.
+# Images: Prometheus and Grafana are deploy/compose/poc08's pins.
+
+services:
+  workload-base:
+    # Built only, as the `service:` build context of `workload`; never started.
+    profiles: [build-only]
+    build:
+      context: ../../..
+      dockerfile: packages/workloads/echo-python/Dockerfile
+    image: agent-platform/echo-python:poc08-live
+
+  workload:
+    build:
+      context: ../../..
+      dockerfile: deploy/compose/poc08-litellm/sdk-workload.Dockerfile
+      additional_contexts:
+        workload-base: service:workload-base
+    image: agent-platform/echo-python-sdk:poc08-live
+    network_mode: "service:chassis"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: [/tmp]
+    user: "10002:10002"
+    volumes:
+      # The drill's stock-client script; the image's own code is untouched.
+      - ./sdk_clients.py:/opt/drill/sdk_clients.py:ro
+    # The only four variables a workload gets (deploy/compose/SECURITY.md, 6). No key.
+    environment:
+      CHASSIS_MODEL_URL: http://127.0.0.1:8090/v1
+      CHASSIS_TOOL_URL: http://127.0.0.1:8090/mcp
+      HOST: 127.0.0.1
+      PORT: "9000"
+    depends_on:
+      chassis:
+        condition: service_started
+
+  chassis:
+    volumes:
+      # Replaces chassis.yaml at the same path.
+      - ./chassis-drill.yaml:/etc/chassis/config.yaml:ro
+    # As deploy/compose/docker-compose.sidecar.yaml: the public port binds the container's own
+    # address, so loopback carries only the proxies the workload calls.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -eu
+        addr=$$(python -c 'import socket; print(socket.gethostbyname(socket.gethostname()))')
+        exec chassis serve --host "$$addr" "$$@"
+      - "--"
+    command: ["--config", "/etc/chassis/config.yaml", "--port", "8080"]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket,urllib.request,sys; a=socket.gethostbyname(socket.gethostname()); sys.exit(0 if urllib.request.urlopen(f'http://{a}:8080/ready', timeout=2).status == 200 else 1)"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 150s
+
+  prometheus:
+    image: docker.io/prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    user: "65534:65534"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=1h
+      - --web.listen-address=:9090
+    tmpfs:
+      - /tmp
+      - /prometheus:uid=65534,gid=65534
+    volumes:
+      - ./prometheus-drill.yml:/etc/prometheus/prometheus.yml:ro
+    networks: [edge]
+    ports:
+      - 127.0.0.1:19090:9090
+
+  grafana:
+    image: docker.io/grafana/grafana:12.1.0@sha256:6ac590e7cabc2fbe8d7b8fc1ce9c9f0582177b334e0df9c927ebd9670469440f
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    user: "472:0"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_LOG_MODE: console
+    volumes:
+      - ../poc08/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../dashboards:/etc/grafana/dashboards:ro
+    networks: [edge]
+    depends_on:
+      prometheus:
+        condition: service_started
+    ports:
+      - 127.0.0.1:13000:3000
+
+networks:
+  edge:
+    name: ${POC08_LITELLM_PROJECT:-poc08-litellm}-edge
+  platform:
+    name: ${POC08_LITELLM_PROJECT:-poc08-litellm}-platform
+    internal: true

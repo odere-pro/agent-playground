@@ -30,11 +30,11 @@ The epic goal is to cut token use and cost, and this dashboard is where that sho
 
 ## Acceptance criteria
 
-- [ ] The dashboard shows token spend and cost from live router traffic.
-- [ ] A test call through the router shows on the dashboard within one minute.
+- [x] The dashboard shows token spend and cost from live router traffic. · Delivered by: `pocs/poc-08-cross-cutting-build/tests/test_poc08_live_drill.py::test_the_dashboard_shows_token_spend_and_cost_from_live_router_traffic`, `pocs/poc-08-cross-cutting-build/notes/2026-11-13-live-drill.md`
+- [x] A test call through the router shows on the dashboard within one minute. · Delivered by: `pocs/poc-08-cross-cutting-build/tests/test_poc08_live_drill.py::test_a_test_call_through_the_router_shows_on_the_dashboard_within_one_minute`, `pocs/poc-08-cross-cutting-build/notes/2026-11-13-live-drill.md`
 - [ ] Spend can be filtered by agent, user, and route.
   - Open. Agent and route are proven offline: one dashboard per agent, and an ad hoc filter on the Prometheus datasource narrows the token and cost panels by `route` (`packages/chassis/tests/test_dashboards.py::test_token_and_cost_spend_can_be_filtered_by_route`). `user` is not a metric label by design (004 G-2: it is in the usage record only), so a user filter needs the usage record store, not Prometheus. That Grafana applies the filter is a live check, not yet run.
-- [ ] The PoC-8 stack loads every dashboard with no manual steps.
+- [x] The PoC-8 stack loads every dashboard with no manual steps. · Delivered by: `pocs/poc-08-cross-cutting-build/tests/test_poc08_live_drill.py::test_grafana_loads_every_dashboard_file_with_no_manual_step`, `pocs/poc-08-cross-cutting-build/notes/2026-11-13-live-drill.md`
 
 ## Dependencies
 

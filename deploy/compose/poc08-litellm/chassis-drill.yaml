@@ -1,0 +1,30 @@
+# The chassis config of the live drill (live-drill.yaml mounts it over chassis.yaml). The same
+# agent, adapters, and route as chassis.yaml, with two changes:
+# - `connector: sidecar`: the workload is its own container (`workload`, sdk-workload.Dockerfile)
+#   in the chassis's network namespace, served over A2A on loopback (CH-2, 013).
+# - `spec.observability.prices`: so the dashboard's cost panel has a number (G-6, 006).
+#   suggested: the prices; LiteLLM's own spend stays the bill.
+profile: local
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  adapters:
+    model: litellm
+    guardrails: litellm
+    telemetry: otel
+    config: memory
+    tools: fake
+    state: memory
+  engine:
+    connector: sidecar
+    url: http://127.0.0.1:9000
+  model:
+    route: big-default
+  prompt:
+    version: simplifier-v1
+  observability:
+    prices:
+      big-default:
+        input_per_mtok: 3.0
+        output_per_mtok: 15.0

@@ -20,9 +20,18 @@ receivers:
 processors:
   batch:
     timeout: 1s
-  # Policies are ORed: a trace is kept when any policy samples it.
+  # suggested: the limits. Refuses data before the Collector runs out of memory; first in the
+  # traces pipeline (core processor, in the contrib image at v0.163.2).
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+  # Policies are ORed: a trace is kept when any policy samples it. suggested: decision_wait 45s,
+  # above the default run timeout (30 s) plus the SDK batch delay (5 s), so an errored run's
+  # `chassis.run` span (it ends last) arrives before the decision; num_traces 50000 held at once.
   tail_sampling:
-    decision_wait: 10s
+    decision_wait: 45s
+    num_traces: 50000
     policies:
       - name: keep-errors
         type: status_code
@@ -44,5 +53,5 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [tail_sampling, batch]
+      processors: [memory_limiter, tail_sampling, batch]
       exporters: [otlp/jaeger]
