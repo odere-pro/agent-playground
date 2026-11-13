@@ -41,6 +41,7 @@ Any span can carry `error.code`. The guard stages emit counters and logs, not a 
 | `chassis_model_cost_microusd_total` | `route` |
 | `chassis_tool_calls_total`, `chassis_tool_call_duration_seconds` | `tool` (`status` on the histogram) |
 | `chassis_gate_runs_total` | `mode` |
+| `chassis_gate_first_attempt_passes_total` | `mode`; one per gated run that passed the gate on attempt 1 (046 A-5; suggested: the name) |
 | `chassis_gate_retries_total`, `chassis_gate_fallbacks_total` | |
 | `chassis_evaluator_score_duration_seconds` (histogram) | `mode`, `status` |
 | `chassis_feedback_total` | `label` |
@@ -55,7 +56,7 @@ One redacted JSON line per record, with `request_id` and `trace_id` inside a run
 
 ## Dashboards
 
-`python -m chassis.dashboards` writes one Grafana dashboard per agent to `deploy/dashboards/`, a 5-minute window, seven panels: requests by interface and status, latency p50 and p95, errors by code, model tokens by direction, model cost per hour, the evaluator gate fallback rate, user feedback by label. The container dashboard that shows the [key metrics](metrics.md) is specified there.
+`python -m chassis.dashboards` writes one Grafana dashboard per agent to `deploy/dashboards/`, a 5-minute window, nine panels: requests by interface and status, latency p50 and p95, errors by code, model tokens by direction, model cost per hour, the evaluator gate's first-try pass rate (`chassis_gate_first_attempt_passes_total` over gate runs, both `mode="sync"`), retry rate, and fallback rate (a target line at 10%), user feedback by label. The container dashboard that shows the [key metrics](metrics.md) is specified there.
 
 ## Feedback
 

@@ -539,7 +539,7 @@ Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 
 | `chassis/server/guard.py` | The `input`, `tool_output`, and `output` guard stages | D.2 |
 | `chassis/server/marking.py` | `MarkOutputs`: `X-AI-Generated` and `X-AI-Disclosure-Required` on every run interface | E |
 | `chassis/server/feedback.py` | `POST /v1/feedback`, the request-to-trace lookup in `StatePort`, the event `agents.feedback.received.v1` | B, C |
-| `chassis/server/evaluator_gate.py` | `GatedEngine`: sync and async gating, retry, fallback, sample rate (salted per process, R7-17), `evaluator_on_error` (`fail_open` or `fail_closed`); 138 CH-18: the score goes to `FeedbackPort` under `spec.harness.rubric`, and suggested: `spec.harness.shadow_evaluator` at `shadow_sample_rate` scores next to the main judge, counted as `chassis.evaluator_agreement{pair, agree}` | G |
+| `chassis/server/evaluator_gate.py` | `GatedEngine`: sync and async gating, retry, fallback, sample rate (salted per process, R7-17), `evaluator_on_error` (`fail_open` or `fail_closed`); 138 CH-18: the score goes to `FeedbackPort` under `spec.harness.rubric`, and suggested: `spec.harness.shadow_evaluator` at `shadow_sample_rate` scores next to the main judge, counted as `chassis.evaluator_agreement{pair, agree}`; 046 A-5: suggested: `chassis.gate_first_attempt_passes{mode}`, one per gated run that passed on attempt 1 (sync: attempt 1 scored at or over `threshold`; async: the one background score passed), so the first-try pass rate is it over `chassis.gate_runs{mode}` | G |
 | `chassis/rubrics.py` | The judge's rubrics by versioned name; `spec.harness.rubric` names one, an unknown name is refused at load (138 CH-18) | G |
 | `chassis/redaction.py` | Regex redaction of the chassis's logs and events: `<SECRET>` first (`SECRET_PREFIXES`, assignments), then emails, Luhn-valid cards, and phones with a `+` or a separator. Never a named-entity model | B.6, ADR-008 item 6 |
 | `chassis/core/trace.py` (`continued`, `parent_span_id`) | A checked inbound `traceparent` for the model proxy and the tool endpoint to continue | A.5 |
@@ -558,8 +558,8 @@ Spec: [contract v7](../contracts/contract-v7.md). Decisions: ADR-007 and ADR-008
 | ------ | ------------ | ----------- |
 | `chassis/metrics.py` | `MetricsRegistry`: counters and span histograms in memory, the Prometheus text format, the declared families. Both telemetry adapters hold one at `.metrics` | A.3 |
 | `chassis/logs.py` | `configure_logging`, `JsonFormatter`, `run_context`: one redacted JSON line with `request_id` and `trace_id` | B |
-| `chassis/dashboards/` | `python -m chassis.dashboards`: one Grafana dashboard per agent in `agents.txt`, written to `deploy/dashboards/` | B |
-| `chassis/server/observability.py` | `GET /metrics` and `OpenMetrics` (open when no `metrics_scope`); `count_usage` for tokens and cost; the live gauge `chassis_runs_in_flight` from the run registry (CH-15) | A |
+| `chassis/dashboards/` | `python -m chassis.dashboards`: one Grafana dashboard per agent in `agents.txt`, written to `deploy/dashboards/`; the gate panels are the first-try pass rate (`chassis_gate_first_attempt_passes_total` over sync gate runs, 046 A-5), the retry rate, and the fallback rate | B |
+| `chassis/server/observability.py` | `GET /metrics` and `OpenMetrics` (open when no `metrics_scope`); `count_usage` for tokens and cost; the live gauge `chassis_runs_in_flight` from the run registry (CH-15); with the gate on, every gate counter at 0, `chassis_gate_runs_total` and `chassis_gate_first_attempt_passes_total` for both modes | A |
 | `chassis/server/rate_limit.py` | The per-caller token bucket in `StatePort`, 429 `rate_limited` with `Retry-After` | C |
 | `chassis/server/stream_guard.py` | The stream secret check and URL masking on every streamed run | D.1 |
 | `chassis/server/output_filter.py` | `find_secret`, `mask_urls`, `mask_answer`: the secret patterns and the URL allow-list | D |
