@@ -13,8 +13,8 @@ a complete call is bounded by `asyncio.timeout`, and a stream checks its deadlin
 Past the deadline the call raises `timeout` and leaves the `httpx` response, which closes the
 connection: the upstream sees the client go and stops generating.
 
-The agent name, when set, rides along as a LiteLLM tag in
-both the `x-litellm-tags` header and `metadata.tags`, so per-agent cost shows up in the router.
+Request metadata (012 H-3) is the trace and request IDs of the call's run (`CALL_IDS`), and
+nothing else: no tag picks whose spend it is. The router binds spend to the virtual key.
 The httpx client ignores the environment (`trust_env=False`), as the sidecar connector's does: no
 proxy variable can route the key elsewhere.
 
@@ -38,6 +38,7 @@ import httpx
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from chassis.ports.model import (
+    CALL_IDS,
     SERVICE_BUDGET_EXHAUSTED,
     TIMEOUT,
     ModelChunk,
@@ -256,8 +257,6 @@ class LiteLLMModel:
         headers: dict[str, str] = {}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
-        if agent:
-            headers["x-litellm-tags"] = f"agent:{agent}"
         # trust_env=False: `HTTP(S)_PROXY`, `ALL_PROXY`, and `SSL_CERT_*` in the chassis
         # environment cannot route the bearer key through a proxy or swap the trust roots.
         self._client = httpx.AsyncClient(
@@ -309,8 +308,9 @@ class LiteLLMModel:
             body["max_tokens"] = max_tokens
         if tools:
             body["tools"] = [_tool_schema(t) for t in tools]
-        if self.agent:
-            body["metadata"] = {"tags": [f"agent:{self.agent}"]}
+        ids = CALL_IDS.get()
+        if ids is not None:
+            body["metadata"] = ids.metadata()
         return body
 
     async def complete(

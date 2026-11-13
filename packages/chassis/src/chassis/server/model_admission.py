@@ -46,6 +46,7 @@ from chassis.ports.model import (
     ModelResult,
     ToolSpec,
     Usage,
+    call_ids,
 )
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server.correlation import RunRecord, RunRegistry, parse_traceparent
@@ -255,7 +256,8 @@ class BoundModel:
         )
         if self._record is None:
             return await call
-        return await until_run_ends(self._record, call)
+        with call_ids(self._record.trace_id, self._record.request_id):
+            return await until_run_ends(self._record, call)
 
     async def stream(
         self,
@@ -280,7 +282,8 @@ class BoundModel:
                     yield chunk
                 return
             while True:
-                nxt = await until_run_ends(self._record, _next_chunk(chunks))
+                with call_ids(self._record.trace_id, self._record.request_id):
+                    nxt = await until_run_ends(self._record, _next_chunk(chunks))
                 if nxt is None:
                     return
                 yield nxt

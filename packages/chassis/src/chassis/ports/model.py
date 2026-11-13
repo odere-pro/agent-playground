@@ -12,11 +12,17 @@ config), so a chassis retry would multiply them.
 `timeout_s` is the wall clock of the whole call, in seconds: the proxy passes what the run has
 left of `budget.timeout_ms`. Past it the adapter raises `TIMEOUT` and ends the upstream call, so a
 run that is over keeps paying for nothing. `None` is the adapter's own default.
+
+Request metadata (012 H-3). An adapter sends the trace and request IDs of the call's run, read
+from `CALL_IDS`, and nothing that picks whose spend it is: the service's virtual key binds spend.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
+import contextlib
+from collections.abc import AsyncIterator, Iterator, Sequence
+from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import Any, Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -102,6 +108,31 @@ TIMEOUT = "timeout"
 """The call passed its `timeout_s`, or a transport timeout. Retryable."""
 RUN_ENDED = "run_ended"
 """The run this call belongs to ended before the model answered. Not retryable."""
+
+
+@dataclass(frozen=True)
+class CallIds:
+    """The run a model call belongs to: what an adapter puts in the request metadata."""
+
+    trace_id: str
+    request_id: str
+
+    def metadata(self) -> dict[str, str]:
+        return {"trace_id": self.trace_id, "request_id": self.request_id}
+
+
+CALL_IDS: ContextVar[CallIds | None] = ContextVar("chassis_model_call_ids", default=None)
+"""The IDs of the run the current model call belongs to; None for an uncorrelated call."""
+
+
+@contextlib.contextmanager
+def call_ids(trace_id: str, request_id: str) -> Iterator[None]:
+    """Set `CALL_IDS` for the calls made (and the tasks created) inside the block."""
+    token = CALL_IDS.set(CallIds(trace_id=trace_id, request_id=request_id))
+    try:
+        yield
+    finally:
+        CALL_IDS.reset(token)
 
 
 class ModelError(Exception):

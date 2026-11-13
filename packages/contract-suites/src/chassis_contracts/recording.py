@@ -99,6 +99,34 @@ REDACTED = "[redacted]"
 # suggested: 2000 characters of the unmatched body in a miss message; enough to see what changed.
 MISS_BODY_CAP = 2000
 
+RUN_BODY = "run_body"
+"""The body matcher of `default_vcr_config`: vcrpy's `body`, with the values of the run IDs in
+the request metadata (012 H-3) set aside, since every run makes new ones."""
+RUN_ID_FIELDS = ("trace_id", "request_id")
+_RUN_ID = "<run id>"
+
+
+def _run_body(body: bytes | str | None) -> Any:
+    """The body to compare: parsed JSON with `metadata.trace_id` and `request_id` replaced by one
+    placeholder when present, else the raw bytes."""
+    raw = body.encode() if isinstance(body, str) else (body or b"")
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return raw
+    metadata = data.get("metadata") if isinstance(data, dict) else None
+    if not isinstance(metadata, dict):
+        return data
+    kept = {k: (_RUN_ID if k in RUN_ID_FIELDS else v) for k, v in metadata.items()}
+    return {**data, "metadata": kept}
+
+
+def run_body_matcher(r1: Any, r2: Any) -> None:
+    """vcrpy matcher: raise unless the two bodies match with the run IDs set aside."""
+    if _run_body(r1.body) != _run_body(r2.body):
+        raise AssertionError("body differs")
+
+
 _CASSETTE_KWARGS = (
     "serializer",
     "persister",
@@ -187,13 +215,14 @@ def _keep_response(response: dict[str, Any]) -> dict[str, Any]:
 
 
 def default_vcr_config() -> dict[str, Any]:
-    """The shared config: match on everything but headers, store only `content-type`, drop auth
+    """The shared config: match on everything but headers (the body with `RUN_BODY`, which sets
+    the run IDs in the request metadata aside), store only `content-type`, drop auth
     headers as a second guard, drop `KEY_FIELDS` query parameters, scrub `KEY_FIELDS` in a JSON
     request or response body, and redact `KEY_SHAPED` strings in a response body. Return it from
     a `vcr_config` fixture or pass it directly.
     """
     return {
-        "match_on": ["method", "scheme", "host", "port", "path", "query", "body"],
+        "match_on": ["method", "scheme", "host", "port", "path", "query", RUN_BODY],
         "allow_playback_repeats": True,
         "decode_compressed_response": True,
         "before_record_request": _keep_request_headers,
@@ -375,7 +404,9 @@ class CassetteTransport(httpx.AsyncBaseTransport):
         self._inner = inner
         config = dict(default_vcr_config() if vcr_config is None else vcr_config)
         vcr_mode = RecordMode.ALL if record_mode == "rewrite" else RecordMode(record_mode)
-        merged = VCR().get_merged_config(path=str(self.path), record_mode=vcr_mode, **config)
+        vcr = VCR()
+        vcr.register_matcher(RUN_BODY, run_body_matcher)
+        merged = vcr.get_merged_config(path=str(self.path), record_mode=vcr_mode, **config)
         kwargs = {k: merged[k] for k in _CASSETTE_KWARGS}
         if record_mode == "rewrite":
             self._cassette: Any = Cassette(str(self.path), record_mode=vcr_mode, **kwargs)
