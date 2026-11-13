@@ -44,10 +44,10 @@ Agents scale by adding pods, so no agent may keep data on disk or in memory betw
 
 ## Acceptance criteria
 
-- [ ] A test agent that writes a file during a call fails the build, and the message names the container and the path.
-- [ ] A test agent that keeps the last request in a module variable, so a second call differs, fails the build.
+- [x] A test agent that writes a file during a call fails the build, and the message names the container and the path. · Delivered by: `agent_testkit.stateless`, in process: `packages/agent-testkit/tests/test_agent_testkit_stateless.py::test_a_call_that_writes_a_file_fails_naming_the_workload_and_the_path`, `::test_a_write_fails_naming_the_chassis_when_the_call_runs_as_the_chassis`, `::test_a_write_the_agent_hides_still_fails_the_check`, `::test_a_write_from_another_thread_fails_the_check`. The template CI step is the last box.
+- [x] A test agent that keeps the last request in a module variable, so a second call differs, fails the build. · Delivered by: `agent_testkit.stateless`, in process: `packages/agent-testkit/tests/test_agent_testkit_stateless.py::test_an_agent_that_keeps_the_last_request_in_a_module_variable_fails`, `::test_a_module_cache_fails_even_when_every_output_matches`.
 - [ ] The template's workload for each supported framework passes.
-- [ ] Shuffled request order against fresh and reused pods gives the same outputs for the simplifier.
+- [x] Shuffled request order against fresh and reused pods gives the same outputs for the simplifier. · Delivered by: `agent_testkit.stateless`, in process (fresh imports stand in for pods, the fake model server for the model): `packages/agent-testkit/tests/test_agent_testkit_stateless.py::test_the_simplifier_gives_the_same_outputs_on_fresh_and_reused_pods`. The `sidecar` lane process run, with a reused chassis container, comes with the template CI step.
 - [x] Both containers of a pod deployed with the Helm chart run with a read-only root file system. · Delivered in PoC-9: `pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py::test_sidecar_lane_containers_are_hardened`, `pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py::test_remote_lane_renders_the_chassis_pod_and_a_gvisor_workload_pod` (render tests; `poc09-helm.yml`).
 - [ ] The check runs by default in the template CI, with no extra setup per agent.
 

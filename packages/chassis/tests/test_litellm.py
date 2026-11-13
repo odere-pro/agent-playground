@@ -84,6 +84,22 @@ async def test_request_carries_route_messages_and_options() -> None:
     assert (result.usage.input_tokens, result.usage.output_tokens) == (3, 2)
 
 
+async def test_temperature_is_0_when_no_caller_sets_it() -> None:
+    """012 H-3: a call that names no temperature sends 0, in `complete` and in `stream`."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if json.loads(request.content).get("stream"):
+            return httpx.Response(200, content=_sse(_chunk({"content": "hi"}, finish="stop")))
+        return httpx.Response(200, json=_completion())
+
+    model = LiteLLMModel("http://router/v1", transport=httpx.MockTransport(handler))
+    await model.complete(MESSAGES, route="big-default")
+    _ = [chunk async for chunk in model.stream(MESSAGES, route="big-default")]
+    assert [json.loads(r.content)["temperature"] for r in seen] == [0.0, 0.0]
+
+
 async def test_agent_tag_goes_in_header_and_metadata() -> None:
     seen, transport = _capture()
     model = LiteLLMModel("http://router/v1", agent="simplifier", transport=transport)

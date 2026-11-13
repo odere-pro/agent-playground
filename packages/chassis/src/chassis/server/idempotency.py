@@ -49,6 +49,9 @@ release answers the other's entry with a final 409.
   over 422.
 - `Refusal("state_unavailable")` (503): the store failed (`StateUnavailable`) or holds an entry
   that cannot be read. suggested: a keyed call fails closed.
+- `Refusal("rate_limited")` (429, with `retry_after_s` for `Retry-After`): the checked caller has
+  added `new_keys_per_caller` new keys in this `ttl_s` window (`chassis.server.idempotency_quota`,
+  022 H-6). The entry this call had just created is freed again, so no run opens.
 
 `Refusal.status`, `.retryable`, and `.message` come from `chassis.core.inbound`.
 
@@ -140,6 +143,7 @@ from chassis.core.inbound import public_message, status_for
 from chassis.ports.state import StatePort, StateUnavailable
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server.config import IdempotencySpec
+from chassis.server.idempotency_quota import NewKeyQuota, QuotaFull
 
 __all__ = [
     "KEY_PREFIX",
@@ -180,13 +184,21 @@ MAX_WAITERS_PER_KEY = 16
 WAITERS_FULL = "chassis.idempotency.waiters_full"
 """suggested: a duplicate refused because its key already had `MAX_WAITERS_PER_KEY` waiters."""
 
-RefusalCode = Literal["idempotency_conflict", "idempotency_in_progress", "state_unavailable"]
+RefusalCode = Literal[
+    "idempotency_conflict", "idempotency_in_progress", "state_unavailable", "rate_limited"
+]
 
 _RETRYABLE: dict[str, bool] = {
     "idempotency_conflict": False,
     "idempotency_in_progress": True,
     "state_unavailable": True,
+    "rate_limited": True,
 }
+
+NEW_KEYS_FULL_MESSAGE = (
+    "this caller has added too many new Idempotency-Keys; retry after the Retry-After delay"
+)
+"""The fixed text of the 429 past `new_keys_per_caller`; no count or cap reaches the caller."""
 
 Sleep = Callable[[float], Awaitable[None]]
 
@@ -248,6 +260,8 @@ class Refusal:
     code: RefusalCode
     final: bool = False
     detail: str | None = None
+    retry_after_s: int | None = None
+    """Set for `rate_limited`: the `Retry-After` of the answer, in whole seconds."""
 
     @property
     def retryable(self) -> bool:
@@ -457,8 +471,11 @@ class Idempotency:
         clock: Callable[[], float] = time.monotonic,
         sleep: Sleep = asyncio.sleep,
         renew_sleep: Sleep | None = None,
+        wall_clock: Callable[[], float] = time.time,
     ) -> None:
         self.state = state
+        self.quota = NewKeyQuota(state, clock=wall_clock)
+        """The per-caller cap on new keys; on the wall clock, which replicas share."""
         self.spec = spec
         self.telemetry = telemetry
         self.replica_id = replica_id or socket.gethostname()
@@ -506,7 +523,9 @@ class Idempotency:
                 sent = self.clock()
                 if waited and sent >= deadline:
                     return self._refuse("idempotency_in_progress")
-                claim = await self._try_claim(request, key, running, sent, deadline, waited)
+                claim = await self._try_claim(
+                    request, key, running, sent, deadline, waited, subject=subject
+                )
                 if claim is not None:
                     return claim
                 found = self._classify(await self.state.get(key), key, mine, request)
@@ -545,12 +564,25 @@ class Idempotency:
             self._waiters.pop(key, None)
 
     async def _try_claim(
-        self, request: Request, key: str, running: bytes, sent: float, deadline: float, waited: bool
-    ) -> Claim | None:
+        self,
+        request: Request,
+        key: str,
+        running: bytes,
+        sent: float,
+        deadline: float,
+        waited: bool,
+        *,
+        subject: str | None,
+    ) -> Claim | Refusal | None:
         """Claim the key when it is absent; a claim after a wait is a takeover with what is left
-        of the deadline as its budget. None when the key is held."""
+        of the deadline as its budget. None when the key is held; a `rate_limited` refusal when
+        the caller is past its cap of new keys."""
         if not await self.state.set_if_absent(key, running, ttl_s=self.spec.lease_s):
             return None
+        if subject is not None:
+            full = await self._count_new_key(request.agent, subject, key, running)
+            if full is not None:
+                return full
         self.telemetry.counter("chassis.idempotency.claimed")
         claim = Claim(self, request, key, running, since=sent)
         if waited:
@@ -559,6 +591,34 @@ class Idempotency:
             claim.timeout_ms = max(left_ms, MIN_RUN_MS)
         claim._start_renewing()
         return claim
+
+    async def _count_new_key(
+        self, agent: str, subject: str, key: str, running: bytes
+    ) -> Refusal | None:
+        """Count the entry this call just created against the caller's cap. Past the cap, or on
+        a store failure, the entry is freed again first, so the key stays free."""
+        spec = self.spec
+        try:
+            outcome = await self.quota.take(
+                agent, subject, cap=spec.new_keys_per_caller, window_s=spec.ttl_s
+            )
+        except StateUnavailable:
+            await self._free_quietly(key, running)
+            raise
+        if not isinstance(outcome, QuotaFull):
+            return None
+        await self._free_quietly(key, running)
+        self.telemetry.counter("chassis.idempotency.refused", code="rate_limited")
+        return Refusal(
+            "rate_limited", detail=NEW_KEYS_FULL_MESSAGE, retry_after_s=outcome.retry_after_s
+        )
+
+    async def _free_quietly(self, key: str, running: bytes) -> None:
+        """Remove this call's own `running` entry; a store failure leaves it to its lease."""
+        try:
+            await self.state.compare_and_set(key, running, None)
+        except StateUnavailable as exc:
+            self.log("idempotency release failed", key, exc)
 
     def _classify(
         self, raw: bytes | None, key: str, mine: str, request: Request

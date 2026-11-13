@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from chassis.agent_class import AgentClass, Kind, check_agent_class
 from chassis.ports.engine import Lane
 from chassis.profiles import DEFAULT_LANE, AdapterSpec, Profile, check_lane
+from chassis.redaction import has_secret
 
 
 class AgentSpec(BaseModel):
@@ -298,6 +299,9 @@ class IdempotencySpec(BaseModel):
       3600 (one hour).
     - `wait_poll_ms: 100`: how often a duplicate in flight checks for the first result.
     - `max_entry_bytes: 1048576`: a bigger result is not cached.
+    - `new_keys_per_caller: 10000`: the most new keys one checked caller may add per agent in one
+      `ttl_s` window (022 H-6). The next is 429 `rate_limited` with `Retry-After`, before the run
+      opens. With auth off there is no caller to count, so no cap applies. Restart-only.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -306,6 +310,7 @@ class IdempotencySpec(BaseModel):
     lease_s: float = Field(default=5, gt=0, le=LEASE_S_MAX, allow_inf_nan=False)
     wait_poll_ms: int = Field(default=100, ge=1)
     max_entry_bytes: int = Field(default=1_048_576, ge=1)
+    new_keys_per_caller: int = Field(default=10_000, ge=1)
 
 
 class EventsConsumeSpec(BaseModel):
@@ -547,16 +552,47 @@ def with_cloud_defaults(spec: Spec) -> Spec:
     )
 
 
+def credential_paths(value: Any, path: str = "") -> list[str]:
+    """The dotted path of every key or string in `value` with a credential's shape (H-12)."""
+    if isinstance(value, str):
+        return [path or "<root>"] if has_secret(value) else []
+    if isinstance(value, Mapping):
+        found: list[str] = []
+        for key, item in value.items():
+            child = f"{path}.{key}" if path else str(key)
+            if isinstance(key, str) and has_secret(key):
+                found.append(f"{path or '<root>'}.<key>")
+                continue
+            found.extend(credential_paths(item, child))
+        return found
+    if isinstance(value, list | tuple):
+        return [p for i, item in enumerate(value) for p in credential_paths(item, f"{path}.{i}")]
+    return []
+
+
 class ChassisConfig(BaseModel):
     """The whole config. `version` is the file's content hash when the file does not name one.
     In the `cloud` profile a document that names a value weaker than a CH-14 default is refused,
     and `with_cloud_defaults` fills the defaults it does not name."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     version: str | None = None
     profile: Profile
     agent: AgentSpec
     spec: Spec = Field(default_factory=Spec)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_credential_values(cls, data: Any) -> Any:
+        # H-12: secrets reach the chassis through the chart (`secretEnv`), never the config.
+        # The message names the paths, never a value.
+        paths = credential_paths(data)
+        if paths:
+            raise ValueError(
+                f"{', '.join(paths)}: a credential-shaped value is refused in the config; "
+                "name an environment variable instead"
+            )
+        return data
 
     @model_validator(mode="after")
     def _cloud_security_defaults(self) -> ChassisConfig:

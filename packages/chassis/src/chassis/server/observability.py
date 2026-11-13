@@ -24,6 +24,22 @@ route `spec.model` declares (CH-16). The chassis otherwise creates a series on i
 so Prometheus would first see a route's budget refusal at 1, never 0, and the alert
 `ChassisModelBudgetExhausted` (`increase(...[15m]) > 0`) would see no rise. Done at scrape time,
 not once at startup, so a route added by a reload gets its 0 too.
+
+The same holds for the evaluator gate (117 X-3): with `spec.harness.evaluator_gate` on, each
+scrape adds 0 to `chassis_gate_runs_total{mode}` for both modes (a streaming request counts
+`mode="async"` even when the configured mode is sync), and to `chassis_gate_retries_total`,
+`chassis_gate_fallbacks_total`, `chassis_gate_failed_open_total`, and
+`chassis_gate_failed_closed_total`, so a future `increase()` or `rate()` rule on any of them has a
+0 to rise from. With the gate off they stay
+absent: there is no gate to report on. Not seeded, because the label set is not known up front:
+`chassis_run_errors_total{interface, code}` (the error codes are open: a workload's own codes pass
+through) and `chassis_tool_calls_total{tool}` (the tools are the tool server's, not in the
+config). An alert on either must not need the first sample at 0 (for example a ratio over
+`chassis_requests_total`, or `chassis_run_duration_seconds_count{status="error"}`).
+
+**Build info.** `chassis_build_info{version, agent_version}` is a gauge at 1: `version` is the
+chassis release (`chassis.CHASSIS_VERSION`), `agent_version` is `agent.version` (restart-only, so
+one series per process). An alert rule joins it to carry the chassis version (117 X-3).
 """
 
 from __future__ import annotations
@@ -35,10 +51,18 @@ from fastapi import Request as HTTPRequest
 from fastapi.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from chassis import CHASSIS_VERSION
 from chassis.metrics import CONTENT_TYPE, MetricsRegistry
 from chassis.ports.model import Usage
 from chassis.ports.telemetry import TelemetryPort
-from chassis.server.config import ChassisConfig, ModelPrice
+from chassis.server.config import ChassisConfig, HarnessSpec, ModelPrice
+from chassis.server.evaluator_gate import (
+    GATE_FAILED_CLOSED,
+    GATE_FAILED_OPEN,
+    GATE_FALLBACKS,
+    GATE_RETRIES,
+    GATE_RUNS,
+)
 from chassis.server.security import principal_of
 
 __all__ = [
@@ -65,10 +89,19 @@ The chart's HPA can scale on it (`hpa.runsInFlight`)."""
 BUDGET_SERIES = "chassis_model_budget_exhausted_total"
 """The family `model_admission.note_service_budget` counts (`chassis.model_budget_exhausted`)."""
 
+BUILD_INFO = "chassis_build_info"
+"""A gauge at 1 whose labels name the chassis release and the agent version (117 X-3)."""
+
+GATE_SERIES: tuple[str, ...] = (GATE_RETRIES, GATE_FALLBACKS, GATE_FAILED_OPEN, GATE_FAILED_CLOSED)
+"""The gate counters with no label of their own, created at 0 when the gate is on."""
+
+GATE_MODES: tuple[str, ...] = ("sync", "async")
+"""Every `mode` the gate counts runs under, whatever `evaluator_mode` is: streaming is async."""
+
 
 def render_metrics(state: Any) -> str:
     """The exposition for the app whose `state` this is. The live gauges are set first, and the
-    budget counter of every declared route is created at 0 (a no-op once it exists)."""
+    counters whose label set the config declares are created at 0 (a no-op once they exist)."""
     config: ChassisConfig = state.config
     telemetry = getattr(getattr(state, "ports", None), "telemetry", None)
     registry = getattr(telemetry, "metrics", None)
@@ -79,7 +112,21 @@ def render_metrics(state: Any) -> str:
         registry.gauge(IN_FLIGHT, len(runs))
     for route in config.spec.model.declared_routes():
         registry.count(BUDGET_SERIES, 0, {"route": route})
+    _seed_gate(registry, config.spec.harness)
+    registry.gauge(
+        BUILD_INFO, 1, {"version": CHASSIS_VERSION, "agent_version": config.agent.version}
+    )
     return registry.render({"agent": config.agent.name})
+
+
+def _seed_gate(registry: MetricsRegistry, harness: HarnessSpec) -> None:
+    """The gate counters at 0, so `increase()` sees the first run, retry, fallback, or fail."""
+    if not harness.evaluator_gate:
+        return
+    for mode in GATE_MODES:
+        registry.count(GATE_RUNS, 0, {"mode": mode})
+    for name in GATE_SERIES:
+        registry.count(name, 0)
 
 
 def _metrics_scope(state: Any) -> str | None:
