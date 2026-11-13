@@ -15,6 +15,7 @@ the engines from `bakeoff.registry`. `bakeoff` never imports it (R6-14,
 | `evalcheck.py` | PoC-8: the offline reference scorer, for tests |
 | `dialects.py` | a fake-model script rewritten for the engines that read it another way |
 | `redteam.py` | PoC-8: the PoC-7 red-team set on both guardrail stacks |
+| `simplifier_metrics.py` | S-3 (028): `facts_kept` (the judge, `judge-facts-v1`) and banned words per case and in aggregate; `--judge offline` is a stand-in for tests |
 
 The old `python -m bakeoff.<module>` commands still run (`packages/bakeoff/README.md`, "Evals").
 

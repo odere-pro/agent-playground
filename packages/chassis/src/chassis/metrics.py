@@ -79,8 +79,17 @@ DECLARED: Mapping[str, tuple[str, str]] = {
     "chassis_gate_runs_total": ("counter", "Runs the evaluator gate checked, by mode."),
     "chassis_gate_retries_total": ("counter", "Evaluator gate retries."),
     "chassis_gate_fallbacks_total": ("counter", "Runs the evaluator gate sent to the fallback."),
+    "chassis_gate_failed_open_total": (
+        "counter",
+        "Gated runs sent out unscored because the evaluator failed (fail_open).",
+    ),
+    "chassis_gate_failed_closed_total": (
+        "counter",
+        "Gated runs refused because the evaluator failed (fail_closed).",
+    ),
     "chassis_feedback_total": ("counter", "Feedback stored on a run's trace, by label."),
     "chassis_runs_in_flight": ("gauge", "Runs in flight on this replica (CH-15)."),
+    "chassis_build_info": ("gauge", "Always 1; the labels name the chassis and agent versions."),
 }
 _BAD = re.compile(r"[^a-zA-Z0-9_]")
 LabelKey = tuple[tuple[str, str], ...]

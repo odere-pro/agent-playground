@@ -110,6 +110,18 @@ async def test_complete_maps_the_openai_shape_both_ways() -> None:
     assert telemetry.counter_value("chassis.model_calls", route="big-default") == 1
 
 
+async def test_temperature_is_0_when_the_body_names_none() -> None:
+    """012 H-3: a chat body with no `temperature` reaches the port at 0, both call shapes."""
+    model = RecordingModel(CHAT_RULES)
+    app = create_app(ChassisConfig.model_validate(CONFIG), proxy_ports(model))
+    body = {k: v for k, v in BODY.items() if k != "temperature"}
+    async with asgi_client(create_proxy_app(app)) as client, app.router.lifespan_context(app):
+        done = await client.post("/v1/chat/completions", json=body)
+        streamed = await client.post("/v1/chat/completions", json={**body, "stream": True})
+    assert (done.status_code, streamed.status_code) == (200, 200), done.text
+    assert model.temperatures == [0.0, 0.0]
+
+
 async def test_stream_ends_with_usage_and_done() -> None:
     app = create_app(ChassisConfig.model_validate(CONFIG), _chat_ports())
     async with asgi_client(create_proxy_app(app)) as client, app.router.lifespan_context(app):

@@ -31,7 +31,7 @@ The whole platform must run locally with `docker compose up`; this is an epic ac
 
 ## Acceptance criteria
 
-- [ ] `docker compose up` from a generated repo starts the chassis and the workload.
+- [x] `docker compose up` from a generated repo starts the chassis and the workload. · Delivered in PoC-9: `pocs/poc-09-agent-mvp-template/notes/2026-11-05-machine-checks.md` section 1 (`demo.sh --live` on a rendered agent, `--profile fake up -d --wait --build`: `chassis-fake` and `workload-fake` Healthy, `/v1/run` `status: ok`); `pocs/poc-09-agent-mvp-template/tests/test_poc09_template_ops.py::test_each_profile_runs_the_chassis_and_the_workload_as_sidecar`, `::test_docker_compose_config_accepts_each_profile`. A profile is required: `fake` or `local`.
 - [x] The workload's A2A port is not published on the host. · Delivered in PoC-9: `pocs/poc-09-agent-mvp-template/tests/test_poc09_template_ops.py::test_workload_is_hardened_keyless_and_unpublished`, `::test_every_published_port_is_on_loopback_and_only_on_the_chassis`.
 - [x] The chassis reads the config from MinIO and answers on `/v1/run` through the echo workload. · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/notes/2026-10-01-drills.md` section 4 (the Compose scale stack, through the echo workload).
 - [ ] A code change in the workload is live without a rebuild or a restart of the stack.

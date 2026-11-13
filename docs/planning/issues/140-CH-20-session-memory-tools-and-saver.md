@@ -35,6 +35,7 @@ epic_refs: [F.1, B.5]
 - [ ] With auth off in `cloud`, `spec.memory.enabled: true` is refused at config load; `local` allows it.
 - [ ] The template renders the saver on opt-in; a rendered LangGraph agent keeps a thread across two runs with the same `x-session-id` and not across two sessions; the lane contract still passes.
 - [ ] The saver's cost per super-step is measured in the `sidecar` lane and recorded against ADR-014's suggested 10 ms p50, in a dated note.
+- [ ] Text a memory tool returns passes the `tool_output` guard stage, and a test shows a planted instruction in a saved memory is flagged (from [132 CH-13](132-CH-13-owasp-agentic-map.md), ASI06).
 
 ## Dependencies
 

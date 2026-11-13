@@ -404,6 +404,8 @@ def _error_body(
 ) -> dict[str, Any]:
     # 409 `idempotency_in_progress` is the server's state, not a bad request (PoC-4 plan, sec. 4)
     kind = "invalid_request_error" if status < 500 and status != 409 else "server_error"
+    if status == 429:  # the cap on new idempotency keys: the rate limit's own type
+        kind = "rate_limit_error"
     error = OpenAIError(code=code, message=message, param=param, type=kind, retryable=retryable)
     return OpenAIErrorResponse(error=error).model_dump(mode="json", exclude_unset=True)
 

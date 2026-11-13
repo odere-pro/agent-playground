@@ -505,7 +505,7 @@
     },
     "IdempotencySpec": {
       "additionalProperties": false,
-      "description": "`spec.idempotency` (PoC-4, 018 H-18): the cache of a finished run under a key the client\nsent, in `StatePort`. suggested: every name and default.\n- `enabled: true`. Restart-only.\n- `ttl_s: 86400`: a cached result lives one day. Reloadable. At most 2592000 (30 days).\n- `lease_s: 5`: a claim expires 5 s after its owner stops renewing it. Restart-only. At most\n  3600 (one hour).\n- `wait_poll_ms: 100`: how often a duplicate in flight checks for the first result.\n- `max_entry_bytes: 1048576`: a bigger result is not cached.",
+      "description": "`spec.idempotency` (PoC-4, 018 H-18): the cache of a finished run under a key the client\nsent, in `StatePort`. suggested: every name and default.\n- `enabled: true`. Restart-only.\n- `ttl_s: 86400`: a cached result lives one day. Reloadable. At most 2592000 (30 days).\n- `lease_s: 5`: a claim expires 5 s after its owner stops renewing it. Restart-only. At most\n  3600 (one hour).\n- `wait_poll_ms: 100`: how often a duplicate in flight checks for the first result.\n- `max_entry_bytes: 1048576`: a bigger result is not cached.\n- `new_keys_per_caller: 10000`: the most new keys one checked caller may add per agent in one\n  `ttl_s` window (022 H-6). The next is 429 `rate_limited` with `Retry-After`, before the run\n  opens. With auth off there is no caller to count, so no cap applies. Restart-only.",
       "properties": {
         "enabled": {
           "default": true,
@@ -523,6 +523,12 @@
           "default": 1048576,
           "minimum": 1,
           "title": "Max Entry Bytes",
+          "type": "integer"
+        },
+        "new_keys_per_caller": {
+          "default": 10000,
+          "minimum": 1,
+          "title": "New Keys Per Caller",
           "type": "integer"
         },
         "ttl_s": {

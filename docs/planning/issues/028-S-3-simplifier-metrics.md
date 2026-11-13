@@ -31,12 +31,12 @@ The score decides what "good" means for an answer. The SLM data track that used 
 
 ## Acceptance criteria
 
-- [ ] One command scores a golden case file and writes per-case and aggregate results for `facts_kept` and banned words.
-- [ ] `facts_kept` is 1.0 for an identical pair and drops for a pair with a removed number or name (unit tests with fixed fixtures).
-- [ ] Banned words use the case's `banned:` list.
-- [ ] Scoring the same input twice gives the same scores.
+- [x] One command scores a golden case file and writes per-case and aggregate results for `facts_kept` and banned words. · Delivered by: `uv run python -m eval_kit.simplifier_metrics --cases <file> --answers <json> --judge offline|litellm --out <json>` (`simplifier-metrics.v0`); `packages/eval-kit/tests/test_eval_kit_simplifier_metrics.py::test_command_scores_a_case_file_and_writes_per_case_and_aggregate`, `::test_command_defaults_to_the_50_gate_cases`
+- [x] `facts_kept` is 1.0 for an identical pair and drops for a pair with a removed number or name (unit tests with fixed fixtures). · Delivered by: `packages/eval-kit/tests/test_eval_kit_simplifier_metrics.py::test_facts_kept_is_one_for_an_identical_pair`, `::test_facts_kept_drops_when_a_number_is_removed`, `::test_facts_kept_drops_when_a_name_is_removed`, `::test_a_changed_number_is_not_kept`; offline, through `JudgeEvaluator` on the deterministic stand-in `FactsModel`, not the real judge
+- [x] Banned words use the case's `banned:` list. · Delivered by: `packages/eval-kit/tests/test_eval_kit_simplifier_metrics.py::test_banned_words_use_the_case_banned_list`, `::test_banned_hits_is_case_insensitive`
+- [x] Scoring the same input twice gives the same scores. · Delivered by: `packages/eval-kit/tests/test_eval_kit_simplifier_metrics.py::test_scoring_the_same_input_twice_gives_the_same_scores`; the command writes byte-identical reports (`::test_command_scores_a_case_file_and_writes_per_case_and_aggregate`). Offline judge only; the real judge runs at temperature 0
 - [ ] The judge's `facts_kept` agrees with the 50 hand labels of the gate set, and the agreement is reported from the Mac run. The label of g08 is settled first.
-- [ ] The judge route and the rubric version are in the report. (`packages/chassis/tests/test_evaluators.py` `test_judge_reports_usage_cost_and_route` covers the route, not the rubric version.)
+- [x] The judge route and the rubric version are in the report. (`packages/chassis/tests/test_evaluators.py` `test_judge_reports_usage_cost_and_route` covers the route, not the rubric version.) · Delivered by: `packages/eval-kit/tests/test_eval_kit_simplifier_metrics.py::test_report_names_the_judge_route_and_the_rubric_version` (`judge.route`, `judge.rubric_version` `judge-facts-v1`, `judge.temperature` 0)
 
 ## Dependencies
 

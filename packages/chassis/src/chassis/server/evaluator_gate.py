@@ -28,8 +28,9 @@ latency, `model_route` = the evaluator's route, e.g. the judge route), then the 
 each `metrics` with its `attempt`. So the response's `metrics` count every attempt and the gate,
 `attempts` is the number of attempts, and `model_route` is the route of the answer.
 
-An attempt that ends with an `error` event is sent as it is, not scored and not retried: retry on a
-model error is the H-4 retry stage, not this gate. An evaluator outage (`EvaluatorError`) follows
+An attempt that ends with an `error` event is sent as it is, not scored and not retried. A model
+error in particular is never retried here: the model router already retried it and took its
+fallback route (ADR-013). An evaluator outage (`EvaluatorError`) follows
 `spec.harness.evaluator_on_error` (reloadable, read per call). `fail_open` (the default,
 suggested): the attempt goes out as it is, counted as `chassis.gate_failed_open` and logged.
 `fail_closed`: the run ends with its `start`, the `metrics` so far, and one
@@ -49,14 +50,22 @@ inner connector.
 
 **Counters** (suggested names): `chassis.evaluator_calls{evaluator, mode, outcome}` with outcome
 `pass`, `fail`, or `error`; `chassis.gate_retries`; `chassis.gate_fallbacks`;
-`chassis.gate_failed_open`; `chassis.gate_failed_closed`; `chassis.gate_runs{mode}` (PoC-8), each
-sampled call, so the fallback rate is `chassis.gate_fallbacks` over
-`chassis.gate_runs{mode="sync"}`.
+`chassis.gate_failed_open`; `chassis.gate_failed_closed`; `chassis.gate_stopped{reason}`;
+`chassis.gate_runs{mode}` (PoC-8), each sampled call, so the fallback rate is
+`chassis.gate_fallbacks` over `chassis.gate_runs{mode="sync"}`.
 
-**Known gaps.** The gate does not shrink `budget.timeout_ms` across attempts: each attempt gets the
-whole budget (the H-4 timeout stage). The judge's tokens are in `metrics` but not charged to the
-run's `budget.max_tokens`. A rerun reruns the agent, tool calls included; write tools are deduped
-by the run's idempotency key (the record's `keyed_run_key` is the same for every attempt).
+**One budget for every attempt** (017 H-4, `Allowance`). The run keeps one `budget.timeout_ms`
+and one `budget.max_tokens` across its attempts and the fallback: each attempt runs with
+`request.budget` and `ctx.budget` set to what is left (the A2A connector's run deadline reads the
+first, a workload the second), and the judge's tokens count against it (charged to the run's
+`RunRecord`, so the model proxy also gives the next attempt only what is left). A rerun (a retry
+or the fallback) starts only with time and tokens left; else the run ends with the attempt's
+`start`, the `metrics` so far, and one `error`: `a2a.timeout` (retryable) with no time left,
+`budget_exhausted` (not retryable) with no tokens left, counted as
+`chassis.gate_stopped{reason}` (`timeout` or `budget`, suggested).
+
+A rerun reruns the agent, tool calls included; write tools are deduped by the run's idempotency
+key (the record's `keyed_run_key` is the same for every attempt).
 """
 
 from __future__ import annotations
@@ -67,33 +76,39 @@ import dataclasses
 import hashlib
 import json
 import secrets
+import time
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from chassis.core.envelope import Context, Request
+from chassis.core.envelope import Budget, Context, Request
 from chassis.core.events import Delta, End, Error, Event, Metrics, Start
 from chassis.core.trace import trace_id_hex
 from chassis.ports.engine import EngineConnector, Lane
 from chassis.ports.evaluator import EvalCase, EvaluatorError, EvaluatorPort, NoEvaluator, Score
+from chassis.ports.model import Usage
 from chassis.ports.telemetry import TelemetryPort
 
 if TYPE_CHECKING:
     from chassis.ports.bundle import PortBundle
     from chassis.server.config import ChassisConfig
-    from chassis.server.correlation import RunRegistry
+    from chassis.server.correlation import RunRecord, RunRegistry
 
 __all__ = [
     "ASYNC_MAX_PENDING",
     "EVALUATOR_CALLS",
+    "GATE_BUDGET",
     "GATE_FAILED",
     "GATE_FAILED_CLOSED",
     "GATE_FAILED_OPEN",
     "GATE_FALLBACKS",
     "GATE_RETRIES",
     "GATE_RUNS",
+    "GATE_STOPPED",
+    "GATE_TIMEOUT",
     "SALT_BYTES",
     "SCORE_SPAN",
     "SHUTDOWN_WAIT_S",
+    "Allowance",
     "GateNotConfigured",
     "GatedEngine",
     "sampled",
@@ -111,6 +126,12 @@ EVALUATOR_ABANDONED = "chassis.evaluator_abandoned"
 SCORE_SPAN = "chassis.evaluator.score"
 GATE_FAILED = "evaluator_gate_failed"
 """The error code of a run whose every attempt failed the gate and that has no fallback route."""
+GATE_STOPPED = "chassis.gate_stopped"
+"""suggested: a rerun the gate did not start, by `reason` (`timeout` or `budget`)."""
+GATE_TIMEOUT = "a2a.timeout"
+"""The error code of a run with no time left for a rerun: the lane's own timeout code (504)."""
+GATE_BUDGET = "budget_exhausted"
+"""The error code of a run with no tokens left for a rerun: the model proxy's own code."""
 ASYNC_MAX_PENDING = 64
 """suggested: background scores in flight per replica; one more is dropped and counted."""
 SHUTDOWN_WAIT_S = 5.0
@@ -330,12 +351,21 @@ class GatedEngine:
     async def _sync(self, request: Request, ctx: Context) -> AsyncGenerator[Event]:
         config = self._config()
         harness, fallback = config.spec.harness, config.spec.model.fallback_route
+        record = self._runs.lookup(trace_id_hex(ctx.trace_id)) if self._runs else None
+        allowance = Allowance(request.budget, record)
         before: list[Event] = []  # metrics of earlier attempts and of each scoring
         input_text = _input_text(request)
         events: list[Event] = []
         attempts = harness.retries + 1
         for attempt in range(1, attempts + 1):
-            events = await self._attempt(request, ctx)
+            if attempt > 1:  # a retry starts only with time and tokens left
+                if (stop := self._stopped(allowance, events, before)) is not None:
+                    for event in stop:
+                        yield event
+                    return
+                self._telemetry.counter(GATE_RETRIES)
+            events = await self._attempt(*allowance.bounded(request, ctx))
+            allowance.spend(_tokens(events))
             if _failed(events):
                 for event in _emit(events, attempt, before):
                     yield event
@@ -355,38 +385,133 @@ class GatedEngine:
                 for event in _emit(events, attempt, before):
                     yield event
                 return
+            allowance.charge_judge(score)
             before.append(self._cost_metrics(score, attempt))
             if score.value >= harness.threshold:
                 for event in _emit(events, attempt, before):
                     yield event
                 return
             before.extend(_metrics_of(events, attempt))
-            if attempt < attempts:
-                self._telemetry.counter(GATE_RETRIES)
         if fallback is None:
             message = f"the answer scored below {harness.threshold} on {attempts} attempts"
             for event in _closing(events, before, message):
                 yield event
             return
+        if (stop := self._stopped(allowance, events, before)) is not None:
+            for event in stop:
+                yield event
+            return
         self._telemetry.counter(GATE_FALLBACKS)
-        record = self._runs.lookup(trace_id_hex(ctx.trace_id)) if self._runs else None
         if record is not None:
             record.model_route = fallback
         fallback_ctx = ctx.model_copy(update={"model_route": fallback})
-        events = await self._attempt(request, fallback_ctx)
+        events = await self._attempt(*allowance.bounded(request, fallback_ctx))
         for event in _emit(events, attempts + 1, before, status="fallback"):
             yield event
+
+    def _stopped(
+        self, allowance: Allowance, events: list[Event], before: list[Event]
+    ) -> list[Event] | None:
+        """The closing events when the run has no time or no tokens left for a rerun, else
+        None. Counted as `chassis.gate_stopped{reason}`."""
+        reason = allowance.spent_reason()
+        if reason is None:
+            return None
+        self._telemetry.counter(GATE_STOPPED, reason=reason)
+        if reason == "timeout":
+            message = "the run has no time left for another attempt"
+            return _closing(events, before, message, code=GATE_TIMEOUT, retryable=True)
+        message = "the run has no tokens left for another attempt"
+        return _closing(events, before, message, code=GATE_BUDGET, retryable=False)
+
+
+class Allowance:
+    """One run's `budget` across the gate's attempts (017 H-4): one `timeout_ms` and one
+    `max_tokens` for all of them, the judge's tokens included.
+
+    Time is what the run has left: `RunRecord.remaining_s` when the run is registered (from the
+    run's start), else `timeout_ms` from when the allowance was made. Tokens are `max_tokens` less
+    the larger of two counts of the same spend: the `metrics` tokens of each attempt plus each
+    judge call (`spend`), and the record's charged tokens (the model proxy's calls, and the judge
+    calls `charge_judge` adds, since the judge calls `ModelPort` directly, not the proxy). The
+    larger count, never their sum, so a proxy call that a workload also reports is not counted
+    twice.
+    """
+
+    def __init__(self, budget: Budget, record: RunRecord | None) -> None:
+        self.budget = budget
+        self.record = record
+        self.started = time.monotonic()
+        self.spent = 0
+
+    def spend(self, tokens: int) -> None:
+        """Count tokens the gate saw: an attempt's `metrics`."""
+        self.spent += max(tokens, 0)
+
+    def charge_judge(self, score: Score) -> None:
+        """Count one scoring's tokens, and charge them to the run's record, so the model proxy
+        gives the next attempt only what is left. An evaluator with no tokens (the encoder, the
+        fake) charges nothing."""
+        tokens = score.input_tokens + score.output_tokens
+        if tokens <= 0:
+            return
+        self.spend(tokens)
+        if self.record is not None:
+            self.record.charge(
+                Usage(input_tokens=score.input_tokens, output_tokens=score.output_tokens)
+            )
+
+    def left_ms(self) -> int:
+        if self.record is not None:
+            return int(self.record.remaining_s() * 1000)
+        elapsed_ms = (time.monotonic() - self.started) * 1000
+        return max(0, int(self.budget.timeout_ms - elapsed_ms))
+
+    def left_tokens(self) -> int:
+        left = self.budget.max_tokens - self.spent
+        if self.record is not None:
+            left = min(left, self.record.remaining_tokens)
+        return max(0, left)
+
+    def spent_reason(self) -> str | None:
+        """`timeout` or `budget` when nothing is left for another attempt, else None."""
+        if self.left_ms() < 1:
+            return "timeout"
+        if self.left_tokens() < 1:
+            return "budget"
+        return None
+
+    def bounded(self, request: Request, ctx: Context) -> tuple[Request, Context]:
+        """The request and context of the next attempt, with `budget` set to what is left: the
+        A2A connector's run deadline reads `request.budget`, a workload reads `ctx.budget`."""
+        budget = Budget(max_tokens=max(self.left_tokens(), 1), timeout_ms=max(self.left_ms(), 1))
+        return (
+            request.model_copy(update={"budget": budget}),
+            ctx.model_copy(update={"budget": budget}),
+        )
+
+
+def _tokens(events: list[Event]) -> int:
+    return sum(e.input_tokens + e.output_tokens for e in events if isinstance(e, Metrics))
 
 
 def _metrics_of(events: list[Event], attempt: int) -> list[Event]:
     return [e.model_copy(update={"attempt": attempt}) for e in events if isinstance(e, Metrics)]
 
 
-def _closing(events: list[Event], before: list[Event], message: str) -> list[Event]:
+def _closing(
+    events: list[Event],
+    before: list[Event],
+    message: str,
+    *,
+    code: str = GATE_FAILED,
+    retryable: bool = False,
+) -> list[Event]:
     """A run the gate ends with no answer: the attempt's `start`, `before`, and one
-    `error {code: evaluator_gate_failed}`. The attempt's other events are not sent."""
+    `error {code}` (`evaluator_gate_failed` by default). The attempt's other events are not
+    sent."""
     start = [e for e in events if isinstance(e, Start)][:1]
-    return [*start, *before, Error(code=GATE_FAILED, message=message, retryable=False)]
+    return [*start, *before, Error(code=code, message=message, retryable=retryable)]
 
 
 def _emit(
