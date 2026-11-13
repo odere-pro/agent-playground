@@ -102,7 +102,8 @@ def test_the_cli_writes_one_file_per_agent(tmp_path: Path) -> None:
 
 
 def _panel(board: dict[str, Any], title: str) -> dict[str, Any]:
-    [panel] = [p for p in board["panels"] if p["title"] == title]
+    matches: list[dict[str, Any]] = [p for p in board["panels"] if p["title"] == title]
+    [panel] = matches
     return panel
 
 
