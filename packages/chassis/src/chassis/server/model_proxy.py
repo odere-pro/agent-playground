@@ -87,6 +87,13 @@ model router refuses a route the key does not list) answers 403 `model_route_den
 both routes. On the OpenAI route only the complete call changes status; a stream keeps its 200 and
 its error frame. The call is counted as `chassis.model_upstream_denied{route}` and logged once.
 
+A route the service does not list (012 H-3). A call of a run whose `model` is not among the
+routes the config names (`ModelSpec.declared_routes`, read per call) is refused by `admit` with
+the same 403 `model_route_denied` body, before any budget is held or the model is called; a
+chat stream gets the 403 as its status, with one error frame and `[DONE]`. It is counted as
+`chassis.model_route_refused{route}` by the run's route. A listed route is still sent to the
+run's route.
+
 The router span and usage (PoC-8, 014 H-7). Every admitted call opens `chassis.model.route` with
 the call's span attributes plus `route.requested` (the `model` the workload named), `route` (the
 one called), and `route.forced` (the run's fallback route won, or an uncorrelated call was pinned

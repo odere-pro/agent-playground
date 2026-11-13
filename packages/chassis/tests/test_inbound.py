@@ -71,6 +71,12 @@ def test_the_idempotency_codes_have_a_fixed_public_message(code: str) -> None:
     assert public_message(code) == PUBLIC_MESSAGES[code] != RUN_FAILED
 
 
+def test_a_jsonrpc_error_from_the_workload_is_502_with_a_fixed_public_message() -> None:
+    """P-9: `a2a.rpc_error` is not retryable, so 502, and it has its own fixed client text."""
+    assert status_for("a2a.rpc_error", False) == 502
+    assert public_message("a2a.rpc_error") == PUBLIC_MESSAGES["a2a.rpc_error"] != RUN_FAILED
+
+
 def test_refused_carries_its_reply() -> None:
     """A Refused exception carries its status, headers, and body, and gives them back as a Reply."""
     refused = Refused(400, {"x-should-retry": "false"}, {"detail": "no"})

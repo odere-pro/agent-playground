@@ -1,4 +1,4 @@
-"""What `agentctl new` accepts: names, kinds, frameworks, lanes, and the trust rule.
+"""What `agentctl new` accepts: names, kinds, frameworks, lanes, trust, and the key's routes.
 
 The trust rule mirrors the chassis config loader (`ChassisConfig._lane_fits_profile` in
 `packages/chassis/src/chassis/server/config.py`): `spec.trust: untrusted` needs
@@ -31,6 +31,16 @@ DEFAULT_CONNECTOR = "sidecar"
 """ADR-001 item 4: the default lane."""
 UNTRUSTED: frozenset[str] = frozenset({"smolagents", "claude-agent"})
 """ADR-006 decision 2: the model's code or shell runs in the workload, so `remote` only."""
+TRUSTS: tuple[Trust, ...] = ("trusted", "untrusted")
+"""suggested: the `--trust` values (P-15, decided 2026-11-13); the chassis's `spec.trust` values."""
+
+GENERATED_ROUTES: tuple[str, ...] = ("big-default",)
+"""Every model route the template's keyed configs name (`config/agent.yaml` and the chart's
+chassis config). The `fake` profile's route is left out: it calls no key."""
+DEFAULT_KEY_ROUTES: tuple[str, ...] = GENERATED_ROUTES
+"""suggested: the routes the service's LiteLLM key lists when `--key-route` is not given.
+agentctl has no offline source for the real key (it is minted at deploy, `seed.sh`), so the
+default is the route the template already names; `--key-route` states the key's real list."""
 
 NAME_MAX = 63
 """A DNS label: the agent name is also the image, Service, and Helm release name."""
@@ -97,13 +107,53 @@ def check_choice(value: str, choices: tuple[str, ...], what: str) -> str:
     return value
 
 
-def check_lane(framework: str, connector: str) -> None:
+def resolve_trust(framework: str, trust: str | None) -> Trust:
+    """`--trust` may lower trust, never raise it: an untrusted engine stays untrusted (ADR-006).
+    No `--trust` means the framework decides."""
+    if trust is None:
+        return trust_of(framework)
+    check_choice(trust, TRUSTS, "trust")
+    if trust == "trusted" and trust_of(framework) == "untrusted":
+        raise UsageError(
+            f"framework {framework!r} is untrusted (the model's code or shell runs in the "
+            "workload); --trust trusted cannot change that (ADR-006 decision 2)"
+        )
+    return "untrusted" if trust == "untrusted" else "trusted"
+
+
+def default_connector(trust: str | None) -> str:
+    """No `--connector`: `--trust untrusted` picks `remote`; otherwise the default lane."""
+    return "remote" if trust == "untrusted" else DEFAULT_CONNECTOR
+
+
+def check_lane(framework: str, connector: str, trust: str | None = None) -> None:
     """The trust rule. Untrusted engines run only in `remote`; trusted engines in either lane."""
     check_choice(framework, FRAMEWORKS, "framework")
     check_choice(connector, CONNECTORS, "connector")
-    if trust_of(framework) == "untrusted" and connector != "remote":
+    if resolve_trust(framework, trust) == "trusted" or connector == "remote":
+        return
+    if trust == "untrusted":
         raise UsageError(
-            f"framework {framework!r} is untrusted (the model's code or shell runs in the "
-            f"workload), so it runs only with --connector remote, not {connector!r} "
-            "(spec.trust, ADR-001 item 5, ADR-006)"
+            f"--trust untrusted runs only with --connector remote, not {connector!r}: an "
+            "untrusted workload never shares the chassis's pod (spec.trust, ADR-001 item 5); "
+            "nothing was written"
+        )
+    raise UsageError(
+        f"framework {framework!r} is untrusted (the model's code or shell runs in the "
+        f"workload), so it runs only with --connector remote, not {connector!r} "
+        "(spec.trust, ADR-001 item 5, ADR-006)"
+    )
+
+
+def check_routes(generated: tuple[str, ...], key_routes: tuple[str, ...]) -> None:
+    """Refuse, never rewrite, a generated route the service's key does not list (012 H-3)."""
+    if not key_routes:
+        raise UsageError("--key-route: the service's key must list at least one route")
+    missing = [route for route in generated if route not in key_routes]
+    if missing:
+        raise UsageError(
+            f"the generated config names route(s) {', '.join(map(repr, missing))}, which the "
+            f"service's key does not list ({', '.join(key_routes)}); add the route to the key "
+            "and pass it with --key-route, or change the route after scaffolding "
+            "(a call outside the key's list answers 403 model_route_denied); nothing was written"
         )

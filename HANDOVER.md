@@ -69,7 +69,7 @@ Read an issue's acceptance criteria before you start; they are the done-when.
 ## Only the user can do these
 
 - **Decisions:**
-  - 009 CH-1: P-7, the scope of the cancel box; P-9, the JSON-RPC error code (suggested: `a2a.rpc_error`).
+  - 009 CH-1: P-7, the scope of the cancel box. (P-9 decided 2026-11-13: `a2a.rpc_error`.)
   - 055 CH-6: the two-key workload token Secret, a default proxy key or opt-in.
   - 012 H-3: refuse a route the key does not list, or force the allowed one.
   - 017 H-4: retry a scripted model error. This contradicts ADR-013.

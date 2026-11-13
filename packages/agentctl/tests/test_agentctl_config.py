@@ -75,6 +75,46 @@ def test_agentctl_refuses_what_the_chassis_refuses(framework: str, connector: st
     assert agentctl_ok == chassis_ok
 
 
+@pytest.mark.parametrize("connector", rules.CONNECTORS)
+def test_trust_untrusted_matches_the_chassis_on_a_trusted_framework(connector: str) -> None:
+    """`--trust untrusted` on langgraph: agentctl refuses `sidecar` exactly when the loader does."""
+    data = {
+        "profile": "local",
+        "agent": {"name": "x", "version": "0.1.0"},
+        "spec": {
+            "trust": "untrusted",
+            "engine": {"connector": connector, "url": "http://127.0.0.1:9000"}
+            | ({"auth": {"token_env": "REMOTE_TOKEN"}} if connector == "remote" else {}),
+        },
+    }
+    try:
+        load_config(data)
+        chassis_ok = True
+    except ValueError:
+        chassis_ok = False
+    try:
+        rules.check_lane("langgraph", connector, "untrusted")
+        agentctl_ok = True
+    except rules.UsageError:
+        agentctl_ok = False
+    assert agentctl_ok == chassis_ok == (connector == "remote")
+
+
+def test_a_trust_untrusted_render_loads_in_the_chassis(tmp_path: Path) -> None:
+    answers = Answers(
+        agent_name="my-agent",
+        kind="tool",
+        framework="langgraph",
+        connector="remote",
+        platform_path=ROOT,
+        trust="untrusted",
+    )
+    agent = render(answers, tmp_path)
+    for name in ("agent.yaml", "fake.yaml"):
+        config = load_config(agent / "config" / name)
+        assert (config.spec.trust, config.spec.engine.connector) == ("untrusted", "remote")
+
+
 # One trusted lane and one untrusted: the governance block does not depend on the framework.
 @pytest.mark.parametrize("framework", ["langgraph", "smolagents"])
 def test_the_starter_config_names_each_governance_field_with_a_placeholder(

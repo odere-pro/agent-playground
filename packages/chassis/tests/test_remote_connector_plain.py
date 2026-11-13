@@ -279,33 +279,32 @@ def _sse_error(stub_app_: Any, payload: bytes) -> ASGIApp:
     return app
 
 
+def _jsonrpc_error(code: int) -> bytes:
+    """One JSON-RPC error answer whose message is the remote's own words (`MARKER`)."""
+    error = {"code": code, "message": (MARKER + " ") * 30}
+    return json.dumps({"jsonrpc": "2.0", "id": "x", "error": error}).encode()
+
+
 @pytest.mark.parametrize(
-    ("payload", "quoted"),
+    ("payload", "quoted", "code"),
     [
-        (
-            json.dumps(
-                {
-                    "jsonrpc": "2.0",
-                    "id": "x",
-                    "error": {"code": -32000, "message": (MARKER + " ") * 30},
-                }
-            ).encode(),
-            True,
-        ),
-        (((MARKER + " ") * 30).encode(), False),
+        (_jsonrpc_error(-32000), True, "a2a.rpc_error"),
+        (_jsonrpc_error(-32603), True, "a2a.rpc_error"),
+        (((MARKER + " ") * 30).encode(), False, "a2a.transport"),
     ],
-    ids=["jsonrpc-error", "not-json"],
+    ids=["jsonrpc-error-unmapped", "jsonrpc-error-mapped", "not-json"],
 )
 async def test_the_remote_words_in_a_transport_error_stay_in_the_log(
-    token: str, payload: bytes, quoted: bool
+    token: str, payload: bytes, quoted: bool, code: str
 ) -> None:
-    """A transport error has fixed text; the remote's words stay in the log."""
+    """A JSON-RPC error answer is `a2a.rpc_error` (P-9) and a stream the SDK cannot parse is
+    `a2a.transport`; both have fixed text, and the remote's words stay in the log."""
     inner = RequireBearer(_sse_error(stub_app(PlainStub(kagent_script)), payload), token)
     async with serve_uds(inner) as path:
         connector, telemetry = await _remote(path)
         response = await _response(connector, make_request())
     assert response.status == "error"
-    assert response.output["error"]["code"] == "a2a.transport"
+    assert response.output["error"]["code"] == code
     assert response.output["error"]["message"] == "the remote failed"
     assert MARKER not in response.model_dump_json()
     assert MARKER not in json.dumps([s.attributes for s in telemetry.spans], default=str)
@@ -315,6 +314,25 @@ async def test_the_remote_words_in_a_transport_error_stay_in_the_log(
     # The SDK quotes a JSON-RPC error message; a parse failure does not quote the payload.
     assert (MARKER in logged[0]["remote_text"]) is quoted
     assert MARKER not in json.dumps([e for e in telemetry.logs if e not in logged], default=str)
+
+
+async def test_a_jsonrpc_error_answer_is_rpc_error_in_chassis_mode_too(token: str) -> None:
+    """P-9 in the `remote` lane's chassis mode: a mapped JSON-RPC error (-32603) is one
+    `a2a.rpc_error`, not retryable, never an exception from `run`."""
+    inner = RequireBearer(
+        _sse_error(stub_app(PlainStub(kagent_script)), _jsonrpc_error(-32603)), token
+    )
+    async with serve_uds(inner) as path:
+        config = _config(path)
+        for key in ("protocol", "a2a"):
+            del config[key]
+        connector = RemoteConnector()
+        await connector.setup(config, _bundle(connector))
+        events = await _events(connector, make_request())
+    assert len(events) == 1, events
+    error = events[0]
+    assert isinstance(error, Error) and error.code == "a2a.rpc_error", error
+    assert error.retryable is False
 
 
 async def test_a_timeout_error_has_fixed_text_in_plain_mode(token: str) -> None:
