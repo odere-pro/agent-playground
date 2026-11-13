@@ -276,6 +276,9 @@ Built per request. suggested: the whole shape.
 | `agent` | `{name, version, trust}`; `trust` is `spec.trust` (default `trusted`) |
 | `versions` | As on every response |
 | `lane` | `spec.engine.connector` |
+| `agent_class` | `spec.class`, or null when the config names none (008 H-14) |
+| `kind` | `spec.kind`, or null when the config names none (008 H-14) |
+| `modules` | The optional B.5 modules the flags switch on, sorted (today `evaluator_gate`, `result_events`); the always-on modules of the class are implied, not listed (008 H-14) |
 | `event_schema_versions` | `SUPPORTED_SCHEMA_VERSIONS` |
 | `interfaces` | Native first, then each switched-on OpenAPI operation `{name, method, path, operation_id, streaming, model}`, then MCP `{name: "mcp", path: "/v1/mcp", transport: "streamable-http", streaming: false, tools}` |
 | `openapi` | `{path, version, sha256}`; the sha256 of the spec as sorted-key JSON with no spaces |
