@@ -291,6 +291,7 @@ class GatedEngine:
         """One scoring in its span. Raises `EvaluatorError` after counting it."""
         threshold = self._config().spec.harness.threshold
         evaluator = self.evaluator.name
+        route = self.route  # read before the call: a reload mid-call must not move the tokens
         with self._telemetry.span(
             SCORE_SPAN,
             request_id=request.request_id,
@@ -329,7 +330,22 @@ class GatedEngine:
                 mode=mode,
                 outcome="pass" if passed else "fail",
             )
+        self._count_judge_usage(score, route)
         return score
+
+    def _count_judge_usage(self, score: Score, route: str) -> None:
+        """042 A-2: the judge calls `ModelPort` directly, not through the model proxy, so its
+        tokens and cost are counted here, under the judge's route, in sync and async mode.
+
+        The metric's price comes from `spec.observability.prices[route]`, like every other
+        model call. `JudgeEvaluator` prices `Score.cost_usd` from `CHASSIS_JUDGE_PRICE_*`
+        instead, so the two can disagree when the two sources are set apart."""
+        # Imported here: `observability` imports this module's counter names.
+        from chassis.server.observability import count_usage
+
+        price = self._config().spec.observability.prices.get(route)
+        usage = Usage(input_tokens=score.input_tokens, output_tokens=score.output_tokens)
+        count_usage(self._telemetry, route, usage, price)
 
     async def _attempt(self, request: Request, ctx: Context) -> list[Event]:
         stream = self.inner.run(request, ctx)
