@@ -1,10 +1,10 @@
 """One Grafana dashboard per agent, from one template (PoC-8, 014 H-7, epic G.2).
 
 `dashboard(agent)` is the dashboard JSON: requests, latency, errors, tokens, cost, the
-evaluator gate's fallback rate, and user feedback by label, each query filtered on
-`agent="<agent>"`, the label every sample of `GET /metrics` carries. Every metric a query names
-is one the chassis exports (`chassis.metrics`); `tests/test_dashboards.py` checks it against a
-real scrape.
+evaluator gate's first-try pass rate, retry rate, and fallback rate, and user feedback by label,
+each query filtered on `agent="<agent>"`, the label every sample of `GET /metrics` carries.
+Every metric a query names is one the chassis exports (`chassis.metrics`);
+`tests/test_dashboards.py` checks it against a real scrape.
 
 `python -m chassis.dashboards [--out DIR] [AGENT ...]` writes `<agent>.json` per agent into
 `DASHBOARD_DIR` (run it from the repository root), by default for the agents listed in its
@@ -27,7 +27,7 @@ __all__ = [
     "AGENTS_FILE",
     "DASHBOARD_DIR",
     "FALLBACK",
-    "NO_FALLBACK",
+    "FIRST_TRY",
     "RETRY",
     "agents_in",
     "dashboard",
@@ -43,11 +43,11 @@ _AGENT = re.compile(r"[a-z0-9][a-z0-9._-]{0,62}")
 _DATASOURCE = {"type": "prometheus", "uid": "${datasource}"}
 WINDOW = "5m"
 """suggested: the rate window."""
-NO_FALLBACK = "Evaluator gate sync runs with no fallback"
-"""`1 - fallbacks / sync runs`. Not a first-try pass rate: the gate counts each retried attempt
-and, after the last retry, a fallback too, so one run can add to both counters and to retries more
-than once. The counters cannot tell how many runs passed on attempt 1; this share is an upper
-bound on it."""
+FIRST_TRY = "Evaluator gate first-try pass rate"
+"""046 A-5: sync runs that passed the gate on attempt 1 over sync gate runs, from the run-level
+counter `chassis_gate_first_attempt_passes_total`. Exact, unlike `1 - (retries + fallbacks) /
+runs`: the gate counts each retried attempt and, after the last retry, a fallback too, so one run
+can add to both counters and to retries more than once."""
 RETRY = "Evaluator gate retry rate"
 FALLBACK = "Evaluator gate fallback rate"
 FALLBACK_TARGET = 0.1
@@ -113,6 +113,7 @@ def _panels(agent: str) -> list[tuple[str, str, list[tuple[str, str]]]]:
     a = f'agent="{agent}"'
     w = WINDOW
     sync_runs = f'sum(rate(chassis_gate_runs_total{{{a},mode="sync"}}[{w}]))'
+    first_try = f'sum(rate(chassis_gate_first_attempt_passes_total{{{a},mode="sync"}}[{w}]))'
     retries = f"sum(rate(chassis_gate_retries_total{{{a}}}[{w}]))"
     fallbacks = f"sum(rate(chassis_gate_fallbacks_total{{{a}}}[{w}]))"
     return [
@@ -165,7 +166,7 @@ def _panels(agent: str) -> list[tuple[str, str, list[tuple[str, str]]]]:
                 )
             ],
         ),
-        (NO_FALLBACK, "percentunit", [(f"1 - {fallbacks} / {sync_runs}", "no fallback")]),
+        (FIRST_TRY, "percentunit", [(f"{first_try} / {sync_runs}", "first-try pass rate")]),
         (RETRY, "percentunit", [(f"{retries} / {sync_runs}", "retry rate")]),
         (FALLBACK, "percentunit", [(f"{fallbacks} / {sync_runs}", "fallback rate")]),
         (
