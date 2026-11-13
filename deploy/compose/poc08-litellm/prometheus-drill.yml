@@ -1,0 +1,14 @@
+# Prometheus of the live drill (live-drill.yaml): scrapes the chassis's `GET /metrics` on the
+# `edge` network. `/metrics` needs no token (`spec.observability.metrics_scope` unset).
+# suggested: 5 s, as deploy/compose/poc08/prometheus/prometheus.yml, so a call shows in seconds.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: chassis
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+          - chassis:8080
