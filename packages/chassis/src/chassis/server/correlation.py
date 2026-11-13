@@ -73,8 +73,9 @@ class RunRecord:
     model_route: str | None = None
     """The run's route: `ctx.model_route` at `open` (the task's route through `spec.model.routes`,
     else `spec.model.route`), replaced by the fallback route when the evaluator gate makes its
-    fallback attempt (`chassis.server.evaluator_gate`). The model proxy sends every model call of
-    the run to this route, whatever route the workload names (`chassis.model_route_forced`)."""
+    fallback attempt (`chassis.server.evaluator_gate`). The model proxy admits a call of the run
+    only on this route; any other is 403 `model_route_denied`, never redirected (012 H-3). None
+    fails closed: every route is refused."""
     run_secret: str | None = field(default=None, repr=False)
     """Contract v8 (R2-02): the run's secret, copied from `ctx.run_secret` by `open`. The remote
     listener's `RequireRun` compares it with the `x-chassis-run-secret` header. None in plain

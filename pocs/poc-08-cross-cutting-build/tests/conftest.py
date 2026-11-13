@@ -15,6 +15,7 @@ from poc_harness.drills import gate_is_on
 GATED_DRILLS = {
     "test_poc08_stack_metrics.py": "COMPOSE_STACK",
     "test_poc08_stack_litellm.py": "COMPOSE_STACK",
+    "test_poc08_router_live.py": "ROUTER_DRILL",
     "test_poc08_live_drill.py": "LIVE_DRILL",
 }
 """A `network` drill against a running stack, to the variable that must be `1` to collect it."""

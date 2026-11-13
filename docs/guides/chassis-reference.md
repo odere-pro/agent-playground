@@ -47,6 +47,8 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
   - `answer_text` is the answer a chat format shows. `rest_of_answer` is what a stream sends after its deltas.
 - `manifest.py` is `Manifest` v0: `ManifestAgent`, `HttpInterface`, `McpInterface`, `OpenAPIRef`. suggested: the whole shape.
 - `results.py` is `TaskResult`, the result-event payload.
+  - `input` is optional: absent unless `spec.events.include_input` is true.
+  - The model-source field is defined here, once. Its meaning is in `docs/specs/contract.md`, section 6.
   - `TASK_COMPLETED` is `agents.task.completed.v1`.
   - `TASK_FAILED` is `agents.task.failed.v1`.
 
@@ -230,7 +232,7 @@ Each is built by `from_env()` and loaded lazily.
 - `spec.observability` (PoC-7: `session_header`) gains `log_level` (`info`), `metrics_scope` (unset: `/metrics` needs no token; `cloud` fills `spec.security.read_scope`), and `prices` (USD per million tokens per route, `ModelPrice`). Restart-only.
 - `spec.guardrails` (PoC-7: the three stages, `on_unavailable`) gains `stream_secrets` (`true`) and `output_url_allow` (`[]`, default deny; `*` turns it off). Restart-only.
 - `spec.idempotency` is `IdempotencySpec`: `enabled`, `ttl_s`, `lease_s`, `wait_poll_ms`, `max_entry_bytes`.
-- `spec.events` is `EventsSpec` with `result_events`. A non-null `consume` is refused at load until event-triggered runs exist.
+- `spec.events` is `EventsSpec` with `result_events` and `include_input` (false: result events carry no `input`). A non-null `consume` is refused at load until event-triggered runs exist.
 - `spec.engine.protocol` is `chassis` (the default) or `a2a`. `a2a` is for `connector: remote` only. `spec.engine.a2a` is `{usage_key: null, context_id: omit | trace_id}`. It needs `protocol: a2a`. Both are restart-only. `as_mapping()` leaves them out for `sidecar` and `inprocess`. suggested: the names and defaults.
 - `spec.model` is `ModelSpec`: `route`, `fallback_route`, `routes` (the route per task, `{}`), `judge_route` (null: `CHASSIS_JUDGE_ROUTE`). `route_for(task)` is `routes[task]`, else `route`. A task name matches `TASK_NAME` (printable, no space, at most 64 characters; suggested); an empty route name is refused. A route outside the service's key is not checked at load (suggested, needs the key). `route`, `routes`, and `judge_route` reload; `fallback_route` is restart-only.
 - `RELOADABLE` lists the field paths a reload may change. Every other path is restart-only.
@@ -297,6 +299,7 @@ Each is built by `from_env()` and loaded lazily.
 - The publish runs in the background. The request never awaits it.
 - `id` is `event_id(request_id, type)`, a uuid5.
 - The key fields hold `key_hash(key)`, never the raw key.
+- `input` goes in only with `spec.events.include_input: true`, read from `state.config` per publish.
 - Metrics: `chassis.events.published`, `.publish_failed`, `.publish_abandoned`.
 - Shutdown waits up to `SHUTDOWN_WAIT_S` 5.
 
@@ -398,8 +401,7 @@ The model proxy (proxy port) is the OpenAI-compatible pass-through a workload ca
   - They always go to `spec.model.route`, whatever `model` they name. When the name differs, `chassis.model_route_pinned{route}` is counted (suggested) and the span has `route.forced`.
   - The rule is in `admit`, so both routes follow it (contract v8, I).
 - `admit(...)` is the one admission step both routes use: count the call, find the run, refuse with 429, else reserve.
-- A correlated call whose `model` is not the run's `RunRecord.model_route` (the task's route through `spec.model.routes`, else `spec.model.route`; the gate's fallback route for its fallback attempt) is sent to the run's route and counted `chassis.model_route_forced{route}`. The `chassis.model.route` span records the choice.
-- 012 H-3: a correlated call whose `model` is not a route the live config names (`ModelSpec.declared_routes`: `route`, `fallback_route`, `judge_route`, the values of `routes`) is refused at admission with 403 `model_route_denied`, the same body as an upstream refusal, before anything is held or called. It is never rewritten. It counts `chassis.model_route_refused{route}` by the run's route (suggested). A chat stream gets the 403 as its status. Tests: `tests/test_model_route_denied.py`.
+- 012 H-3 (user decision 2026-11-13): a correlated call may name only the run's `RunRecord.model_route` (the task's route through `spec.model.routes`, else `spec.model.route`; the gate's fallback route for its fallback attempt). Any other route, a listed one included, is refused at admission with 403 `model_route_denied`, the same body as an upstream refusal, before anything is held or called. It is never redirected. It counts `chassis.model_route_refused{route}` by the run's route (suggested; `unresolved` for a record with no route, which fails closed). The run's route passes even after a reload drops it. A chat stream gets the 403 as its status. The `chassis.model.route` span records each admitted call. Tests: `tests/test_model_route_denied.py`.
 - An upstream 401 or 403 answers 403 `model_route_denied` on both routes (it was 500 `http_401`). It counts `chassis.model_upstream_denied{route}` and logs once. A chat stream keeps its 200 and its error frame.
 - CH-16: `Admission.model` is a `BoundModel`, the port bound to the call. It passes the run's remaining time (`RunRecord.remaining_s`) as the port's `timeout_s` (None for an uncorrelated call), and it races a correlated call against `RunRecord.ended`: when the run closes first the port call is cancelled and the call raises `run_ended`, answered 403 `permission_error` on both routes.
 - CH-16: `service_budget_exhausted` is 429 on both routes with `x-should-retry: false`, counted `chassis.model_budget_exhausted{route}` (`note_service_budget`). The alert on it is `deploy/prometheus/rules/chassis.yaml`, mounted by the PoC-8 Compose stack's Prometheus.
@@ -533,7 +535,7 @@ Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 
 | ------ | ------------ | ----------- |
 | `chassis/ports/{auth,guardrail,evaluator,feedback}.py` | The four new ports, each with a no-op default in `PortBundle` | A.1 to A.4 |
 | `chassis/fakes/{auth,guardrail,evaluator,feedback}.py` | `StaticTokens`, `KeywordGuardrails`, `ScriptedEvaluator`, `InMemoryFeedback` | A.1 to A.4 |
-| `chassis/adapters/otel` | `OtelTelemetry`: OTLP over HTTP, the run span on the request's W3C trace id, `user.id` and `session.id` as baggage | A.5, F |
+| `chassis/adapters/otel` | `OtelTelemetry`: OTLP over HTTP, the run span on the request's W3C trace id, `user.id` and `session.id` as baggage. The sampler is `ALWAYS_ON`: every span is exported, `OTEL_TRACES_SAMPLER` and a caller's unsampled `traceparent` are ignored, and the Collector samples (014 H-7; `tests/test_trace_sampling.py`) | A.5, F |
 | `chassis/adapters/oidc` | `OidcAuth`: a JWT checked against the IdP's JWKS (pyjwt). `OIDC_JWKS_URL` must be `https` unless its host is loopback; else a `ValueError` at construction (R5a-12) | A.1, D.1 |
 | `chassis/adapters/litellm/guardrails.py` | `LiteLLMGuardrails`: LiteLLM's `POST /guardrails/apply_guardrail`, guardrail names per stage | A.2, D.3 |
 | `chassis/adapters/langfuse` | `LangfuseFeedback`: Langfuse `POST /api/public/scores`, plain httpx | A.4 |
@@ -547,7 +549,7 @@ Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 
 | `chassis/redaction.py` | Regex redaction of the chassis's logs and events: `<SECRET>` first (`SECRET_PREFIXES`, assignments), then emails, Luhn-valid cards, and phones with a `+` or a separator. Never a named-entity model | B.6, ADR-008 item 6 |
 | `chassis/core/trace.py` (`continued`, `parent_span_id`) | A checked inbound `traceparent` for the model proxy and the tool endpoint to continue | A.5 |
 
-- The model proxy also sends every call of the gate's fallback attempt to the fallback route (`chassis.model_route_forced`), the same rule that holds every call of a run to the run's route (see [model_proxy.py](#model_proxypy)). `with_gate` binds the judge's route to the live `spec.model.judge_route`, so a reload changes it.
+- The gate puts the fallback route in `ctx.model_route` and the run's `RunRecord.model_route` for its fallback attempt, so the workload sends it and the model proxy admits it; a call of that attempt on another route is 403 `model_route_denied`, the same rule that holds every call of a run to the run's route (see [model_proxy.py](#model_proxypy)). `with_gate` binds the judge's route to the live `spec.model.judge_route`, so a reload changes it.
 - Feedback (contract v8, G):
   - The lookup holds `subject_sha256`, a hash of the run's caller subject, null with auth off. A caller whose subject hashes otherwise gets 404 `unknown_request`. A null lookup, or one written before the field, is open to any caller.
   - `chassis.feedback{label}` counts a label by name only from `FEEDBACK_LABELS` (`good`, `bad`, `wrong`, `unsafe`, `slow`; suggested), else `none` or `other`.
@@ -571,7 +573,8 @@ Spec: [contract v7](../contracts/contract-v7.md). Decisions: ADR-007 and ADR-008
 - The model proxy opens `chassis.model.route` per admitted call and counts tokens and cost (B, A.3).
 - `server/marking.py` adds `Access-Control-Expose-Headers`; `server/results.py` sets the `aigenerated` CloudEvent extension (E.2, E.3).
 - `chassis serve` calls `configure_logging` and gives uvicorn `log_config=None`, so every line is JSON.
-- Tests: `test_metrics.py`, `test_json_logs.py`, `test_router_span.py`, `test_dashboards.py`, `test_collector_log_redaction.py`, `test_rate_limit.py`, `test_output_filter.py`, `test_marking_body.py`. The red-team controls: `packages/contract-suites/tests/test_redteam_controls.py`. The scenarios are in `pocs/poc-08-cross-cutting-build/tests/`.
+- Trace sampling is the Collector's `tail_sampling` processor, its rate from `TRACE_SAMPLE_RATE` (the epic's `trace_sample_rate`). The chassis has no sampling setting. Spec: [observability, "Sampling"](../specs/observability.md#sampling).
+- Tests: `test_metrics.py`, `test_json_logs.py`, `test_router_span.py`, `test_dashboards.py`, `test_collector_log_redaction.py`, `test_trace_sampling.py`, `test_rate_limit.py`, `test_output_filter.py`, `test_marking_body.py`. The red-team controls: `packages/contract-suites/tests/test_redteam_controls.py`. The scenarios are in `pocs/poc-08-cross-cutting-build/tests/`.
 
 ## profiles.py
 

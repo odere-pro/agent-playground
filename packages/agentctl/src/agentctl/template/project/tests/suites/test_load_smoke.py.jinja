@@ -4,7 +4,7 @@ from agent_testkit.suites import LoadSmoke
 
 
 class TestLoadSmoke(LoadSmoke):
-{%- if trust == 'untrusted' %}
+{%- if framework in ['smolagents', 'claude-agent'] %}
     # This engine can end in an error offline, not an answer (see tests/test_contract.py).
     run_statuses = ("ok", "fallback", "error")
 {%- else %}

@@ -37,7 +37,8 @@ def _config() -> ChassisConfig:
             "agent": {"name": "echo", "version": "0.0.1"},
             "spec": {
                 "engine": {"connector": "inprocess", "handle": "chassis.core.handle:echo_wire"},
-                "events": {"result_events": True},
+                # `include_input`: so the redaction of `input` is checked too (019 H-17).
+                "events": {"result_events": True, "include_input": True},
             },
         }
     )
@@ -92,6 +93,7 @@ async def test_a_completed_runs_event_holds_no_pii() -> None:
         "text": "mail <EMAIL_ADDRESS> or call <PHONE_NUMBER>",
         "parts": ["mail <EMAIL_ADDRESS> or call <PHONE_NUMBER>"],
     }
+    assert result.input is not None
     assert result.input.text == "mail <EMAIL_ADDRESS> or call <PHONE_NUMBER>"
 
 

@@ -33,11 +33,11 @@ Token and cost numbers are the core measurement of the epic. The baseline (005 G
 
 ## Acceptance criteria
 
-- [ ] Every call through the router makes one usage record with input tokens, output tokens, cost, route, user, agent, and time.
+- [x] Every call through the router makes one usage record with input tokens, output tokens, cost, route, user, agent, and time. · Delivered by: `pocs/poc-08-cross-cutting-build/tests/test_poc08_router_live.py::test_every_call_makes_one_usage_record`, `pocs/poc-08-cross-cutting-build/notes/2026-11-13-router-live.md`
 - [ ] Token counts match the usage the provider reports, on a sample of calls to each big model.
 - [x] A streamed call makes a usage record with real token counts, not zero. · Delivered in PoC-1: `pocs/poc-01-walking-skeleton/demo/2026-09-29-demo-fake-variant.md` (streamed runs on both routes, each with a `metrics` event of 42 input and 9 output tokens); `packages/chassis/tests/test_metrics.py::test_model_tokens_and_cost_come_from_the_proxy_usage` (fake model)
-- [ ] One query returns totals per request, per user, and per agent for a date range.
-- [ ] Calls with no `user` tag show under `unknown`.
+- [x] One query returns totals per request, per user, and per agent for a date range. · Delivered by: `pocs/poc-08-cross-cutting-build/tests/test_poc08_router_live.py::test_one_query_returns_totals_per_request_user_and_agent_for_a_date_range` (the query: `deploy/compose/poc08-litellm/usage_totals.sql`; a range in 2000 returns no rows), `pocs/poc-08-cross-cutting-build/notes/2026-11-13-router-live.md`
+- [x] Calls with no `user` tag show under `unknown`. · Delivered by: `pocs/poc-08-cross-cutting-build/tests/test_poc08_router_live.py::test_calls_with_no_user_tag_show_under_unknown`, `pocs/poc-08-cross-cutting-build/notes/2026-11-13-router-live.md`
 - [ ] A call that sends another agent's name in its metadata is still counted under the agent of its key.
 - [ ] Prometheus scrapes the token and cost metrics, labeled by agent and route; `user` is in the usage record only.
   - Open. Only the chassis `GET /metrics` side is proven (fake model): `packages/chassis/tests/test_metrics.py::test_token_and_cost_series_are_labeled_by_agent_and_route_never_by_user` shows no `user` label or value in the scrape. The LiteLLM side, and the positive half (`user` is in the usage record), stay open and need a real router.

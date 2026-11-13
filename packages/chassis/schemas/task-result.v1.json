@@ -93,7 +93,22 @@
       "type": "string"
     },
     "input": {
-      "$ref": "#/$defs/TaskInput"
+      "$ref": "#/$defs/TaskInput",
+      "default": null,
+      "title": "Input"
+    },
+    "original_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The model that produced the original text the agent worked on, for example the text a simplifier was given. Provider terms can restrict training on it. Null when unknown. Not the route that served this run: that is `versions.model_route`.",
+      "title": "Original Model"
     },
     "output": {
       "additionalProperties": true,
@@ -129,7 +144,6 @@
     "request_id",
     "idempotency_key",
     "status",
-    "input",
     "versions"
   ],
   "title": "TaskResult",
