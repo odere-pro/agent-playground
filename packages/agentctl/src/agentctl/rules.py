@@ -122,7 +122,8 @@ def resolve_trust(framework: str, trust: str | None) -> Trust:
 
 
 def default_connector(trust: str | None) -> str:
-    """No `--connector`: `--trust untrusted` picks `remote`; otherwise the default lane."""
+    """No `--connector`: an untrusted agent (pass the resolved trust) gets `remote`; otherwise
+    the default lane. The same rule as `connector`'s default in `copier.yml`."""
     return "remote" if trust == "untrusted" else DEFAULT_CONNECTOR
 
 

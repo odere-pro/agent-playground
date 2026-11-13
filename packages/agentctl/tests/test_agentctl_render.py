@@ -10,6 +10,7 @@ import subprocess
 import tomllib
 from pathlib import Path
 
+import copier
 import pytest
 import yaml
 from agentctl import rules
@@ -331,3 +332,82 @@ def test_the_generated_routes_are_the_ones_agentctl_checks(
     named = _model_routes(config["spec"]["model"])
     named |= _model_routes(chart["chassis"]["config"]["spec"]["model"])
     assert named == set(rules.GENERATED_ROUTES)
+
+
+ERROR_TOLERANT_SUITES = (
+    "tests/test_remote_lane.py",
+    "tests/suites/test_load_smoke.py",
+    "tests/suites/test_redteam.py",
+)
+"""The generated suites that let an engine end in `error` offline."""
+
+
+@pytest.mark.parametrize(
+    ("framework", "trust", "tolerant"),
+    [("langgraph", "untrusted", False), ("smolagents", None, True), ("claude-agent", None, True)],
+)
+def test_only_the_untrusted_engines_may_end_in_error(
+    tmp_path: Path, framework: str, trust: str | None, tolerant: bool
+) -> None:
+    """`--trust untrusted` moves the lane, not what the engine does: a langgraph run must still
+    answer `ok`, so a broken workload fails its suites."""
+    answers = Answers(
+        agent_name="my-agent",
+        kind="transformer",
+        framework=framework,
+        connector="remote",
+        platform_path=ROOT,
+        trust=trust,
+    )
+    agent = render(answers, tmp_path)
+    for suite in ERROR_TOLERANT_SUITES:
+        allows_error = '"error"' in (agent / suite).read_text()
+        assert allows_error == tolerant, suite
+
+
+@pytest.mark.parametrize(
+    ("framework", "trust", "comment"),
+    [
+        ("langgraph", "untrusted", "# trust: untrusted (set by --trust)"),
+        ("langgraph", None, "# langgraph is trusted (ADR-006)"),
+        ("smolagents", None, "# smolagents is untrusted (ADR-006)"),
+    ],
+)
+def test_the_trust_comment_says_where_the_trust_came_from(
+    tmp_path: Path, framework: str, trust: str | None, comment: str
+) -> None:
+    """A trust set by `--trust` is not the framework's: the comment must not blame ADR-006."""
+    answers = Answers(
+        agent_name="my-agent",
+        kind="transformer",
+        framework=framework,
+        connector="remote",
+        platform_path=ROOT,
+        trust=trust,
+    )
+    text = (render(answers, tmp_path) / "config/agent.yaml").read_text()
+    assert comment in text
+    if trust is not None:
+        assert f"{framework} is {trust}" not in text
+
+
+@pytest.mark.parametrize(
+    ("framework", "connector"),
+    [("langgraph", "sidecar"), ("langgraph", "remote"), ("smolagents", "remote")],
+)
+def test_an_answers_file_with_no_trust_keeps_its_trust_and_lane(
+    tmp_path: Path, framework: str, connector: str
+) -> None:
+    """Agents made before `trust` was a question have no `trust` in `.copier-answers.yml`. A
+    `copier update` replays the old answers and gives a new question its default; this replays
+    them the same way (`run_copy`, offline). A real `copier update` is not run: it needs the
+    template as its own git repository at a recorded commit."""
+    old = _render(tmp_path / "old", framework, connector)
+    answers = yaml.safe_load((old / ".copier-answers.yml").read_text())
+    replay = {k: v for k, v in answers.items() if not k.startswith("_") and k != "trust"}
+    assert "trust" in answers and "trust" not in replay
+    new = tmp_path / "new"
+    copier.run_copy(str(TEMPLATE), str(new), data=replay, defaults=True, quiet=True, unsafe=False)
+    again = yaml.safe_load((new / ".copier-answers.yml").read_text())
+    assert (again["trust"], again["connector"]) == (answers["trust"], answers["connector"])
+    assert again["trust"] == rules.trust_of(framework)

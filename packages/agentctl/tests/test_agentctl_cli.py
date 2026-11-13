@@ -60,10 +60,32 @@ def test_an_unknown_framework_is_refused(tmp_path: Path, platform: Path) -> None
 def test_an_untrusted_framework_is_refused_in_the_sidecar_lane(
     tmp_path: Path, platform: Path, capsys: pytest.CaptureFixture[str], framework: str
 ) -> None:
-    code = _new(tmp_path, platform, "coder", "--kind", "tool", "--framework", framework)
+    args = ("--framework", framework, "--connector", "sidecar")
+    code = _new(tmp_path, platform, "coder", "--kind", "tool", *args)
     assert code == 2
     err = capsys.readouterr().err
     assert "untrusted" in err and "--connector remote" in err
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("framework", sorted(rules.UNTRUSTED))
+def test_an_untrusted_framework_with_no_connector_gets_the_remote_lane(
+    tmp_path: Path, platform: Path, framework: str
+) -> None:
+    """The lane default follows the resolved trust, as `copier.yml` does: no `--connector` on an
+    untrusted framework means `remote`, not a refusal."""
+    assert _new(tmp_path, platform, "coder", "--kind", "tool", "--framework", framework) == 0
+    answers = yaml.safe_load((tmp_path / "coder/.copier-answers.yml").read_text())
+    assert (answers["trust"], answers["connector"]) == ("untrusted", "remote")
+
+
+def test_trust_trusted_on_an_untrusted_framework_with_no_connector_is_refused(
+    tmp_path: Path, platform: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The lane default is worked out inside the refusal path: a bad `--trust` still exits 2."""
+    args = ("--framework", "smolagents", "--trust", "trusted")
+    assert _new(tmp_path, platform, "coder", "--kind", "tool", *args) == 2
+    assert "untrusted" in capsys.readouterr().err
     assert list(tmp_path.iterdir()) == []
 
 
