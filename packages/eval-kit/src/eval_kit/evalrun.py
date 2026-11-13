@@ -26,11 +26,12 @@ from pathlib import Path
 
 import yaml
 from bakeoff.procs import Cleanup, install_signal_handlers
-from bakeoff.registry import LANES, engine_names, get_engine, lanes_for
+from bakeoff.registry import LANES, ROOT, engine_names, get_engine, lanes_for
 from bakeoff.stack import StackError
 
+from eval_kit.evalgate import BASELINE, load_baseline
 from eval_kit.evaltrial import Golden, Tool, run_one
-from eval_kit.golden import gate_data
+from eval_kit.golden import dataset_data, dataset_paths
 from eval_kit.golden.generate import GATE_JUDGE_SCRIPT, GATE_SCRIPTS
 from eval_kit.golden.logic import LOGICS
 
@@ -57,11 +58,14 @@ def plan(
     return targets, skipped
 
 
-def gate_golden(logic: str, work: Path) -> Golden:
-    """The gate files for `logic`; the 50 cases are written to `work` as the one file the tool
-    reads (`GOLDEN_CASES`)."""
+def gate_golden(logic: str, work: Path, *, baseline: Path = BASELINE) -> Golden:
+    """The gate files for `logic`; the cases of the files `baseline` names in `dataset` (the
+    packaged 50 when it names none) are written to `work` as the one file the tool reads
+    (`GOLDEN_CASES`), so the run and the gate read the same cases."""
+    names = load_baseline(baseline).get("dataset") if baseline.is_file() else None
+    data = dataset_data(dataset_paths(names, ROOT))
     cases_file = work / "gate-cases.yaml"
-    cases_file.write_text(yaml.safe_dump(gate_data(), sort_keys=False), encoding="utf-8")
+    cases_file.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     return Golden(
         cases_file=cases_file,
         model_script=GATE_SCRIPTS[logic],

@@ -7,7 +7,7 @@
 It reads `eval-report.v0` files (`eval_kit.evalreport`; `meta.lane` names the lane) and the
 committed baseline `evals/gate/baseline.json` (`eval-baseline.v0`):
 
-    {"schema": "eval-baseline.v0", "cases": 50,
+    {"schema": "eval-baseline.v0", "dataset": [case files], "cases": 50,
      "agents": {"simplifier": {"must_pass": [ids], "must_fail": [ids],
                                "engines": {"echo-python": {"inprocess": 0.78, ...}, ...}}},
      "skipped": {"echo-smolagents": "why it does not run in CI"}}
@@ -42,15 +42,17 @@ import jsonschema
 from bakeoff.registry import LANES, ROOT
 
 from eval_kit.evalreport import SCHEMA_ID, validate_report
-from eval_kit.golden import load_gate_cases
+from eval_kit.golden import Case, dataset_data, dataset_paths, parse_cases
 
 __all__ = [
     "BASELINE",
     "BASELINE_SCHEMA",
     "DEFAULT_AGENT",
+    "GATE_DATASET",
     "GateError",
     "Result",
     "check",
+    "dataset_cases",
     "load_baseline",
     "load_reports",
     "main",
@@ -61,6 +63,12 @@ BASELINE = ROOT / "evals/gate/baseline.json"
 BASELINE_ID = "eval-baseline.v0"
 DEFAULT_AGENT = "simplifier"
 """Every echo engine runs the simplifier agent: one prompt, one golden set."""
+GATE_DATASET = (
+    "packages/eval-kit/src/eval_kit/golden/cases.yaml",
+    "packages/eval-kit/src/eval_kit/golden/cases-gate.yaml",
+)
+"""The packaged gate set's case files, relative to the repo root, as the committed baseline names
+them. A baseline that names none reads the packaged files themselves (`dataset_paths`)."""
 
 _IDS = {"type": "array", "items": {"type": "string"}, "uniqueItems": True}
 BASELINE_SCHEMA: dict[str, Any] = {
@@ -69,6 +77,11 @@ BASELINE_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
     "properties": {
         "schema": {"const": BASELINE_ID},
+        "dataset": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "minItems": 1,
+        },
         "cases": {"type": "integer", "minimum": 1},
         "agents": {
             "type": "object",
@@ -133,6 +146,26 @@ def load_baseline(path: Path) -> dict[str, Any]:
     return data
 
 
+def dataset_cases(baseline: dict[str, Any]) -> list[Case]:
+    """The cases of the files the baseline's `dataset` names (repo-relative or absolute paths),
+    joined in order; the packaged gate set when it names none (`dataset_paths`)."""
+    paths = dataset_paths(baseline.get("dataset"), ROOT)
+    try:
+        return parse_cases(dataset_data(paths), size=None)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise GateError(f"dataset {', '.join(map(str, paths))}: {exc}") from exc
+
+
+def _check_dataset(baseline: dict[str, Any], cases: Sequence[Case]) -> None:
+    if len(cases) != baseline["cases"]:
+        raise GateError(f"the dataset has {len(cases)} cases, the baseline {baseline['cases']}")
+    ids = {c.id for c in cases}
+    for agent, row in baseline["agents"].items():
+        unknown = sorted((set(row["must_pass"]) | set(row["must_fail"])) - ids)
+        if unknown:
+            raise GateError(f"{agent}: cases not in the dataset: {', '.join(unknown)}")
+
+
 def _report_files(path: Path) -> list[Path]:
     if path.is_dir():
         return sorted(p for p in path.glob("*.json") if not p.name.endswith(".raw.json"))
@@ -169,7 +202,9 @@ def _targets(baseline: dict[str, Any]) -> dict[tuple[str, str], tuple[str, float
     return out
 
 
-def _judge(result: Result, report: dict[str, Any], baseline: dict[str, Any]) -> None:
+def _judge(
+    result: Result, report: dict[str, Any], baseline: dict[str, Any], ids: frozenset[str]
+) -> None:
     agent = baseline["agents"][result.agent]
     verdicts = {c["id"]: bool(c["pass"]) for c in report["cases"]}
     result.passed = sum(verdicts.values())
@@ -179,6 +214,9 @@ def _judge(result: Result, report: dict[str, Any], baseline: dict[str, Any]) -> 
         result.problems.append(
             f"the report has {result.total} cases, the baseline {baseline['cases']}"
         )
+    elif verdicts.keys() != ids:
+        extra = sorted(verdicts.keys() - ids)
+        result.problems.append(f"the report's case ids are not the dataset's: {', '.join(extra)}")
     assert result.baseline_rate is not None
     if result.rate < result.baseline_rate:
         result.problems.append(f"pass rate {result.rate:.3f} < {result.baseline_rate:.3f}")
@@ -205,6 +243,9 @@ def check(
     def wanted(engine: str, lane: str) -> bool:
         return (engines is None or engine in engines) and (lanes is None or lane in lanes)
 
+    cases = dataset_cases(baseline)
+    _check_dataset(baseline, cases)
+    ids = frozenset(c.id for c in cases)
     targets = _targets(baseline)
     by_target: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for report in reports:
@@ -221,7 +262,7 @@ def check(
         elif len(found) > 1:
             result.problems.append(f"{len(found)} reports for one target")
         else:
-            _judge(result, found[0], baseline)
+            _judge(result, found[0], baseline, ids)
         results.append(result)
     for (engine, lane), found in by_target.items():
         if (engine, lane) not in targets and wanted(engine, lane):
@@ -234,14 +275,20 @@ def check(
 
 
 def record(
-    reports: Sequence[dict[str, Any]], *, agent: str, skipped: dict[str, str]
+    reports: Sequence[dict[str, Any]],
+    *,
+    agent: str,
+    skipped: dict[str, str],
+    dataset: Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    """A baseline from `reports`. Raises `GateError` when they disagree on the case ids, or when a
-    case labelled `fail` passes in one of them."""
+    """A baseline from `reports`, with the labels of `dataset` (default the gate set). Raises
+    `GateError` when they disagree on the case ids, or when a case labelled `fail` passes in one
+    of them."""
     if not reports:
         raise GateError("no report to record")
     ids = [c["id"] for c in reports[0]["cases"]]
-    labels = {c.id: c.label for c in load_gate_cases()}
+    named = {"dataset": list(dataset)} if dataset else {}
+    labels = {c.id: c.label for c in dataset_cases(named)}
     engines: dict[str, dict[str, float]] = {}
     passing_everywhere = set(ids)
     for report in reports:
@@ -263,6 +310,7 @@ def record(
     }
     return {
         "schema": BASELINE_ID,
+        **named,
         "cases": len(ids),
         "agents": {
             agent: {
@@ -282,8 +330,13 @@ def _csv(value: str) -> set[str]:
 def _run(args: argparse.Namespace) -> int:
     reports = load_reports(args.report)
     if args.record:
-        skipped = load_baseline(args.baseline)["skipped"] if args.baseline.is_file() else {}
-        data = record(reports, agent=args.agent, skipped=skipped)
+        old = load_baseline(args.baseline) if args.baseline.is_file() else {}
+        data = record(
+            reports,
+            agent=args.agent,
+            skipped=old.get("skipped", {}),
+            dataset=old.get("dataset"),
+        )
         args.baseline.parent.mkdir(parents=True, exist_ok=True)
         args.baseline.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         print(f"wrote {args.baseline}")
