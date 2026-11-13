@@ -13,7 +13,8 @@ the merged values; prints nothing; fails the render with an "agent-lib:" message
   next to it, never latest (ADR-001 item 9; admission rule 9); the workload by tag or digest.
 - The remote lane: one replica (the remote listener answers only for a run in this process), no
   HPA, a fixed ClusterIP for the remote proxy (the remote pod has no DNS), gVisor. The token
-  Secret is named by the chart (admission rule 7c), not by a value.
+  Secret is named by the chart (admission rule 7c), not by a value, and holds two different
+  keys, one per direction; one key both ways (remote.tokenSecret.key) is refused (055 CH-6).
 - Egress rules name a peer by namespace and pod labels and a port; no ipBlock, no rule without a
   `to`, no empty selector (deploy/CLAUDE.md; 026 CH-4: default-deny egress).
 - The service's raw values (agent-lib.validateServiceValues): a key the chart does not read is
@@ -35,6 +36,9 @@ the merged values; prints nothing; fails the render with an "agent-lib:" message
 {{- end -}}
 {{- if dig "remote" "tokenSecret" "name" "" . -}}
 {{- fail "agent-lib: remote.tokenSecret.name is not a value: the chart names the remote's one Secret after its pod, <name>-workload-token (ADR-005 decision 1; admission rule 7c)" -}}
+{{- end -}}
+{{- if hasKey (dig "remote" "tokenSecret" (dict) .) "key" -}}
+{{- fail "agent-lib: remote.tokenSecret.key is one key both ways, which is refused: the workload token Secret holds one key per direction, remote.tokenSecret.keys.toWorkload and .toChassis (055 CH-6)" -}}
 {{- end -}}
 {{- end -}}
 
@@ -71,7 +75,7 @@ and argparse accepts abbreviations, so a deny-list cannot hold. */ -}}
 {{- fail (printf "agent-lib: workload.%s is not a workload value. The workload gets no Secret, envFrom, volume, or security context; only the chassis holds credentials (ADR-001 hard requirement 1). Allowed: %s" $k (join ", " $workloadKeys)) -}}
 {{- end -}}
 {{- end -}}
-{{- $reserved := list "HOST" "PORT" "POD_IP" "CHASSIS_MODEL_URL" "CHASSIS_TOOL_URL" "CHASSIS_API_TOKEN" -}}
+{{- $reserved := list "HOST" "PORT" "POD_IP" "CHASSIS_MODEL_URL" "CHASSIS_TOOL_URL" "CHASSIS_API_TOKEN" "CHASSIS_A2A_TOKEN" -}}
 {{- range $i, $e := $v.workload.env -}}
 {{- if not (and (kindIs "map" $e) (kindIs "string" $e.name)) -}}
 {{- fail (printf "agent-lib: workload.env[%d] needs a name and a value" $i) -}}
@@ -105,7 +109,7 @@ and argparse accepts abbreviations, so a deny-list cannot hold. */ -}}
 {{- fail (printf "agent-lib: chassis.%s is not a chassis value (no command: admission rule 6b). Allowed: %s" $k (join ", " $chassisKeys)) -}}
 {{- end -}}
 {{- end -}}
-{{- $chassisReserved := list "POD_IP" "REMOTE_TOKEN" -}}
+{{- $chassisReserved := list "POD_IP" "REMOTE_TOKEN" "REMOTE_PROXY_TOKEN" -}}
 {{- range $i, $e := $v.chassis.env -}}
 {{- if not (and (kindIs "map" $e) (kindIs "string" $e.name)) -}}
 {{- fail (printf "agent-lib: chassis.env[%d] needs a name and a value" $i) -}}
@@ -204,8 +208,12 @@ the chart's own on the command line, so it is the one the chassis reads; it is c
 {{- if $v.hpa.enabled -}}
 {{- fail "agent-lib: hpa.enabled in the remote lane; it runs one replica (run_required)" -}}
 {{- end -}}
-{{- if not $v.remote.tokenSecret.key -}}
-{{- fail "agent-lib: remote.tokenSecret.key is empty" -}}
+{{- $keys := dig "tokenSecret" "keys" (dict) $v.remote -}}
+{{- if not (and $keys.toWorkload $keys.toChassis) -}}
+{{- fail "agent-lib: remote.tokenSecret.keys needs toWorkload and toChassis, one key per direction (055 CH-6)" -}}
+{{- end -}}
+{{- if eq (toString $keys.toWorkload) (toString $keys.toChassis) -}}
+{{- fail "agent-lib: remote.tokenSecret.keys.toWorkload and .toChassis are the same key; the workload token Secret holds one key per direction (055 CH-6)" -}}
 {{- end -}}
 {{- if not (regexMatch "^([0-9]{1,3}\\.){3}[0-9]{1,3}$" (toString $v.remote.proxyClusterIP)) -}}
 {{- fail "agent-lib: the remote lane needs remote.proxyClusterIP, a fixed IPv4 ClusterIP inside the cluster's Service range: the remote pod has no DNS" -}}
@@ -219,6 +227,9 @@ the chart's own on the command line, so it is the one the chassis reads; it is c
 {{- $auth := dig "spec" "engine" "auth" (dict) $v.chassis.config -}}
 {{- if and $auth.token_env (ne $auth.token_env "REMOTE_TOKEN") -}}
 {{- fail (printf "agent-lib: spec.engine.auth.token_env %s: the chart puts the remote token in REMOTE_TOKEN" $auth.token_env) -}}
+{{- end -}}
+{{- if and $auth.proxy_token_env (ne $auth.proxy_token_env "REMOTE_PROXY_TOKEN") -}}
+{{- fail (printf "agent-lib: spec.engine.auth.proxy_token_env %s: the chart puts the listener's own key in REMOTE_PROXY_TOKEN, one key per direction (055 CH-6)" $auth.proxy_token_env) -}}
 {{- end -}}
 {{- end -}}
 

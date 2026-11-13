@@ -216,6 +216,7 @@ def test_h13_the_public_port_binds_the_pod_ip_and_the_proxy_loopback(
     auth = source["spec"]["engine"].get("auth")
     if auth is not None:
         monkeypatch.setenv(auth["token_env"], new_token())
+        monkeypatch.setenv(auth["proxy_token_env"], new_token())  # one key per direction
     args = parse_args(
         ["serve", *_with_config(_chassis_args(manifest), _offline_config(config, tmp_path))]
     )
@@ -267,6 +268,7 @@ async def test_h14_a_taken_public_port_leaves_no_ready_marker(
     auth = source["spec"]["engine"].get("auth")
     if auth is not None:
         monkeypatch.setenv(auth["token_env"], new_token())
+        monkeypatch.setenv(auth["proxy_token_env"], new_token())  # one key per direction
     marker = tmp_path / "chassis-ready"
     marker.write_text("", encoding="utf-8")  # the previous container's, in the kept emptyDir
     argv = _with_config(_chassis_args(manifest), _offline_config(config, tmp_path))

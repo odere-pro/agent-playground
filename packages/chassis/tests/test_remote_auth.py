@@ -38,6 +38,13 @@ from starlette.types import Receive, Scope, Send
 
 CURRENT = "c" * 64  # test values, not secrets
 PREVIOUS = "p" * 64
+LISTENER_AUTH = {
+    "scheme": "bearer",
+    "token_env": "REMOTE_TOKEN",
+    "proxy_token_env": "REMOTE_PROXY_TOKEN",
+    "proxy_previous_token_env": "REMOTE_PROXY_OLD",
+}
+"""One key per direction (055 CH-6): the listener reads the proxy pair, never `token_env`."""
 SECRET = "s" * 43  # the run secret of the default run (R2-02)
 SECRET_B = "b" * 43
 CONFIG: dict[str, Any] = {
@@ -395,17 +402,17 @@ def test_bearer_auth_needs_a_token() -> None:
 def test_remote_tokens_reads_the_named_variables_and_never_shows_a_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`remote_tokens` reads the named variables and never shows a value."""
-    auth = {"scheme": "bearer", "token_env": "REMOTE_TOKEN", "previous_token_env": "REMOTE_OLD"}
-    monkeypatch.setenv("REMOTE_TOKEN", CURRENT)
-    monkeypatch.setenv("REMOTE_OLD", PREVIOUS)
+    """`remote_tokens` reads the listener's named variables and never shows a value."""
+    auth = LISTENER_AUTH
+    monkeypatch.setenv("REMOTE_PROXY_TOKEN", CURRENT)
+    monkeypatch.setenv("REMOTE_PROXY_OLD", PREVIOUS)
     assert remote_tokens(auth) == (CURRENT, PREVIOUS)
-    monkeypatch.setenv("REMOTE_OLD", "")
+    monkeypatch.setenv("REMOTE_PROXY_OLD", "")
     assert remote_tokens(auth) == (CURRENT,), "an empty previous token is not accepted"
-    monkeypatch.delenv("REMOTE_OLD")
+    monkeypatch.delenv("REMOTE_PROXY_OLD")
     assert remote_tokens(auth) == (CURRENT,)
-    monkeypatch.setenv("REMOTE_TOKEN", "")
-    with pytest.raises(LookupError, match="REMOTE_TOKEN") as exc:
+    monkeypatch.setenv("REMOTE_PROXY_TOKEN", "")
+    with pytest.raises(LookupError, match="REMOTE_PROXY_TOKEN") as exc:
         remote_tokens(auth)
     assert PREVIOUS not in str(exc.value)
     with pytest.raises(LookupError, match=r"spec\.engine\.auth"):
@@ -419,13 +426,12 @@ def test_remote_tokens_refuses_a_short_token_naming_only_the_variable(
     """R2-31: a set token shorter than 32 characters is refused, current or previous; the error
     names the variable, never the value."""
     short = "x" * 31  # a test value, not a secret
-    auth = {"scheme": "bearer", "token_env": "REMOTE_TOKEN", "previous_token_env": "REMOTE_OLD"}
-    monkeypatch.setenv("REMOTE_TOKEN", short if slot == "current" else CURRENT)
-    monkeypatch.setenv("REMOTE_OLD", short if slot == "previous" else PREVIOUS)
-    name = "REMOTE_TOKEN" if slot == "current" else "REMOTE_OLD"
+    monkeypatch.setenv("REMOTE_PROXY_TOKEN", short if slot == "current" else CURRENT)
+    monkeypatch.setenv("REMOTE_PROXY_OLD", short if slot == "previous" else PREVIOUS)
+    name = "REMOTE_PROXY_TOKEN" if slot == "current" else "REMOTE_PROXY_OLD"
 
     with pytest.raises(ValueError, match="shorter than 32 characters") as exc:
-        remote_tokens(auth)
+        remote_tokens(LISTENER_AUTH)
 
     assert name in str(exc.value)
     assert short not in str(exc.value) and "31" not in str(exc.value)
@@ -436,9 +442,10 @@ def test_remote_tokens_accepts_a_token_of_exactly_32_characters(
 ) -> None:
     """R2-31: 32 characters is the minimum, and it is enough."""
     token = "y" * 32  # a test value, not a secret
-    monkeypatch.setenv("REMOTE_TOKEN", token)
+    monkeypatch.setenv("REMOTE_PROXY_TOKEN", token)
+    monkeypatch.delenv("REMOTE_PROXY_OLD", raising=False)
 
-    assert remote_tokens({"scheme": "bearer", "token_env": "REMOTE_TOKEN"}) == (token,)
+    assert remote_tokens(LISTENER_AUTH) == (token,)
 
 
 class _Recorder:

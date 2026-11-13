@@ -38,11 +38,12 @@ class EngineAuthSpec(BaseModel):
     """`spec.engine.auth` (PoC-5, plan section 2.2): the per-remote credential, by reference.
 
     The token is read from `os.environ[token_env]` at connector setup; the config never holds it.
-    The connector sends `token_env` to the remote. The chassis's remote listener accepts
-    `proxy_token_env` and, during a rotation, `proxy_previous_token_env` (R2-09), so the remote
-    never holds the token the listener accepts. With `proxy_token_env` unset, the listener falls
-    back to `token_env` and `previous_token_env` (one token both ways, as before). suggested:
-    every name; `scheme` leaves room for `sigv4` and `google` (PoC-6), only `bearer` now.
+    One key per direction (R2-09; the default since 055 CH-6): the connector sends `token_env`
+    to the remote, and the chassis's remote listener accepts only `proxy_token_env` and, during a
+    rotation, `proxy_previous_token_env`. The remote listener does not start without
+    `proxy_token_env` (`chassis.server.remote_auth.remote_tokens`); the connector alone does not
+    need it. A proxy variable may not name an outbound one. suggested: every name; `scheme` leaves
+    room for `sigv4` and `google` (PoC-6), only `bearer` now.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -50,7 +51,8 @@ class EngineAuthSpec(BaseModel):
     token_env: str = Field(pattern=ENV_NAME)
     previous_token_env: str | None = Field(default=None, pattern=ENV_NAME)
     proxy_token_env: str | None = Field(default=None, pattern=ENV_NAME)
-    """The remote listener's own bearer (R2-09). Null: the listener accepts `token_env`."""
+    """The remote listener's own bearer, the workload-to-chassis key (R2-09, 055 CH-6). Required
+    to start the remote listener; never the same variable as `token_env`."""
     proxy_previous_token_env: str | None = Field(default=None, pattern=ENV_NAME)
     """The listener's token being rotated out. Needs `proxy_token_env`."""
 
@@ -58,6 +60,14 @@ class EngineAuthSpec(BaseModel):
     def _proxy_pair(self) -> EngineAuthSpec:
         if self.proxy_previous_token_env is not None and self.proxy_token_env is None:
             raise ValueError("spec.engine.auth.proxy_previous_token_env needs proxy_token_env")
+        outbound = {n for n in (self.token_env, self.previous_token_env) if n}
+        listener = {n for n in (self.proxy_token_env, self.proxy_previous_token_env) if n}
+        shared = outbound & listener
+        if shared:
+            raise ValueError(
+                f"spec.engine.auth: {', '.join(sorted(shared))} is named for both directions; "
+                "the workload token Secret holds one key per direction (055 CH-6)"
+            )
         return self
 
 

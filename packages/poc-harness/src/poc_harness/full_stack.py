@@ -55,7 +55,7 @@ from fastapi import FastAPI
 
 from poc_harness.bakeoff_tasks import ENGINES
 from poc_harness.engine_wiring import wire_engine
-from poc_harness.lane_tokens import WORKLOAD_TOKEN_ENV, Tokens
+from poc_harness.lane_tokens import PROXY_TOKEN_ENV, TOKEN_ENV, WORKLOAD_TOKEN_ENV, Tokens
 from poc_harness.servers import a2a_on_unix_socket
 from poc_harness.stage_model import BAD, FALLBACK_ROUTE, ROUTE, StageModel
 from poc_harness.stage_ports import RecordingGuardrails, ToolBox, litellm_guardrails
@@ -80,7 +80,6 @@ TOKENS = {
     OTHER: Principal("user-other", frozenset({"agent:run", "agent:feedback"})),
 }
 REMOTE_URL = "http://echo-remote:9000"
-REMOTE_TOKEN_ENV = "POC05_REMOTE_TOKEN"
 START_TIMEOUT_S = 15.0
 
 
@@ -194,7 +193,8 @@ def _engine_spec(
         return {"connector": "sidecar", "url": url, "uds": uds}, SidecarConnector()
     if lane == "remote":
         uds = stack.enter_context(_remote_workload(handle, folder))
-        auth = {"scheme": "bearer", "token_env": REMOTE_TOKEN_ENV}
+        # One key per direction (055 CH-6); `Tokens.one()` sets both variables.
+        auth = {"scheme": "bearer", "token_env": TOKEN_ENV, "proxy_token_env": PROXY_TOKEN_ENV}
         spec = {"connector": "remote", "url": REMOTE_URL, "uds": uds, "auth": auth}
         return spec, RemoteConnector()
     raise ValueError(f"unknown lane {lane!r}; one of {LANES}")

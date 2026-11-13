@@ -149,7 +149,7 @@
     },
     "EngineAuthSpec": {
       "additionalProperties": false,
-      "description": "`spec.engine.auth` (PoC-5, plan section 2.2): the per-remote credential, by reference.\n\nThe token is read from `os.environ[token_env]` at connector setup; the config never holds it.\nThe connector sends `token_env` to the remote. The chassis's remote listener accepts\n`proxy_token_env` and, during a rotation, `proxy_previous_token_env` (R2-09), so the remote\nnever holds the token the listener accepts. With `proxy_token_env` unset, the listener falls\nback to `token_env` and `previous_token_env` (one token both ways, as before). suggested:\nevery name; `scheme` leaves room for `sigv4` and `google` (PoC-6), only `bearer` now.",
+      "description": "`spec.engine.auth` (PoC-5, plan section 2.2): the per-remote credential, by reference.\n\nThe token is read from `os.environ[token_env]` at connector setup; the config never holds it.\nOne key per direction (R2-09; the default since 055 CH-6): the connector sends `token_env`\nto the remote, and the chassis's remote listener accepts only `proxy_token_env` and, during a\nrotation, `proxy_previous_token_env`. The remote listener does not start without\n`proxy_token_env` (`chassis.server.remote_auth.remote_tokens`); the connector alone does not\nneed it. A proxy variable may not name an outbound one. suggested: every name; `scheme` leaves\nroom for `sigv4` and `google` (PoC-6), only `bearer` now.",
       "properties": {
         "previous_token_env": {
           "anyOf": [

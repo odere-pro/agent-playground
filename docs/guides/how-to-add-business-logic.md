@@ -154,7 +154,7 @@ The rule is checked twice ([ADR-005](../planning/adr/005-remote-lane-auth-and-tr
 - At config load: `spec.trust: untrusted` needs `spec.engine.connector: remote`. The `cloud` profile must name `spec.trust`.
 - At admission: a ValidatingAdmissionPolicy rejects an `untrusted` pod in the `sidecar` lane.
 
-In the `remote` lane the workload holds one bearer token, `CHASSIS_API_TOKEN`. It sends it on every model and tool call and requires it on its own A2A server ([ADR-005](../planning/adr/005-remote-lane-auth-and-trust-admission.md), item 1). It is not a provider key. Rotation: [workload-a2a](../../packages/workload-a2a/README.md), "Remote lane".
+In the `remote` lane the workload holds two keys, one per direction (055 CH-6): it sends `CHASSIS_API_TOKEN` on every model and tool call, and requires `CHASSIS_A2A_TOKEN`, the key the chassis sends, on its own A2A server. The chassis accepts only the first and sends only the second ([ADR-005](../planning/adr/005-remote-lane-auth-and-trust-admission.md), item 1). It is not a provider key. Rotation: [workload-a2a](../../packages/workload-a2a/README.md), "Remote lane".
 
 ## 6. Config
 
