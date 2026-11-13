@@ -30,7 +30,8 @@ section 2.7) is started here: the first `await refresh()` fills its cached list 
 `start()` begins the background refresh, and `aclose()` stops it on shutdown. A failed first
 refresh does not stop the chassis; `/mcp` opens with the last list (empty at start),
 `chassis.tools.refresh_failed` is counted, as it is for every later failed refresh, and the tools
-appear on `/mcp` after the next refresh that succeeds.
+appear on `/mcp` after the next refresh that succeeds. A port that is also a `DescriptionWatch`
+counts each changed tool description in `chassis.tool_description_changed{tool}` (054 H-16).
 """
 
 from __future__ import annotations
@@ -48,13 +49,15 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from chassis.adapters.mcp import build_mcp_server
 from chassis.ports.bundle import PortBundle
 from chassis.ports.telemetry import TelemetryPort
-from chassis.ports.tool import ManagedToolPort, ToolPort
+from chassis.ports.tool import DescriptionWatch, ManagedToolPort, ToolPort
 from chassis.server import guard
 from chassis.server.correlation import RunRecord, RunRegistry
 from chassis.server.guard import GuardedTools
 
 PATH = "/mcp"
 REFRESH_FAILED = "chassis.tools.refresh_failed"
+DESCRIPTION_CHANGED = "chassis.tool_description_changed"
+"""`chassis_tool_description_changed_total{tool}`: a description changed between refreshes."""
 
 log = logging.getLogger(__name__)
 
@@ -83,6 +86,12 @@ async def _start_tools(tools: ToolPort, telemetry: TelemetryPort) -> None:
         telemetry.counter(REFRESH_FAILED)
 
     tools.on_refresh_failed = count_failure  # a False refresh counts through this hook
+    if isinstance(tools, DescriptionWatch):
+
+        def count_change(tool: str) -> None:
+            telemetry.counter(DESCRIPTION_CHANGED, tool=tool)
+
+        tools.on_description_changed = count_change
     try:
         await tools.refresh()
     except Exception as exc:  # a failed first refresh never stops startup
