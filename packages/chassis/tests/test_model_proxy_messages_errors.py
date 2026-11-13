@@ -97,8 +97,9 @@ async def test_the_route_answers_403_model_route_denied_when_the_upstream_answer
         "message": "model_route_denied: this model route is not allowed for this service",
     }
     assert "sk-abcdef" not in res.text
+    # Counted by the route the call was sent to: uncorrelated, so `spec.model.route` (012 H-3).
     assert (
-        telemetry_of(ports).counter_value("chassis.model_upstream_denied", route="big-default") == 1
+        telemetry_of(ports).counter_value("chassis.model_upstream_denied", route="fake-route") == 1
     )
 
 
