@@ -429,3 +429,53 @@ async def test_a_reload_changes_the_route_map_and_the_judge_route() -> None:
     assert telemetry.counter_value("chassis.config.reloaded") == 1
     assert restart_required(load_config(DOC), config) == []
     await loader.stop()
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        ("spec.limits", {"max_tokens_max": 8001}),
+        ("spec.limits", {"body_bytes_max": 2_000_000}),
+        ("spec.idempotency", {"ttl_s": 86_401}),
+    ],
+)
+async def test_a_reload_past_a_bootstrap_ceiling_is_refused_and_the_last_good_stays(
+    path: str, value: dict[str, Any]
+) -> None:
+    """H-12: the bootstrap file's `spec.limits` and `spec.idempotency.ttl_s` are ceilings. A
+    reload may lower them, never raise them."""
+    # Arrange
+    loader, state, port, telemetry = reloader()
+    await loader.start()
+    good = state.config
+    # Act
+    await port.put("echo", doc(version="cfg-2", **{path: value}))
+    # Assert
+    assert state.config is good
+    assert telemetry.counter_value("chassis.config.rejected", reason="over_ceiling") == 1
+    logged = [e for e in telemetry.logs if e["message"] == "chassis.config.rejected"]
+    (field,) = value
+    assert logged[-1]["paths"] == [f"{path}.{field}"]
+    await loader.stop()
+
+
+async def test_a_reload_at_or_under_the_bootstrap_ceiling_is_taken() -> None:
+    # Arrange
+    loader, state, port, telemetry = reloader()
+    await loader.start()
+    # Act
+    await port.put("echo", doc(**{"spec.limits": {"max_tokens_max": 8000, "body_bytes_max": 10}}))
+    # Assert
+    assert state.config.spec.limits.body_bytes_max == 10
+    assert telemetry.counter_value("chassis.config.reloaded") == 1
+    await loader.stop()
+
+
+async def test_a_start_document_past_a_bootstrap_ceiling_fails_startup() -> None:
+    store = InMemoryConfig({"echo": doc(**{"spec.limits": {"max_tokens_max": 9000}})})
+    loader, state, _, _ = reloader(from_store=True, store=store)
+    with pytest.raises(ConfigRejected) as caught:
+        await loader.start()
+    assert caught.value.reason == "over_ceiling"
+    assert caught.value.paths == ["spec.limits.max_tokens_max"]
+    assert state.config_loaded is False

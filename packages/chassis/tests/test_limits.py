@@ -382,3 +382,26 @@ def test_live_messages_max_reads_the_config_when_there_is_one() -> None:
 
     assert live_messages_max(config) == 3
     assert live_messages_max(None) is None
+
+
+async def test_openapi_says_it_shows_the_start_limits_after_a_reload() -> None:
+    """H-12: `/openapi.json` is built once, so it says it states the start values. A reload can
+    only lower a limit (the bootstrap is the ceiling), and `/v1/run` enforces the live one."""
+    # Arrange
+    app = _app(max_tokens_max=500)
+    lowered = {**CONFIG, "spec": {**CONFIG["spec"], "limits": {"max_tokens_max": 100}}}
+    async with _client(app) as client:
+        await client.get("/openapi.json")  # build and cache the spec before the reload
+        await app.state.ports.config.put(AGENT, lowered)
+        assert app.state.config.spec.limits.max_tokens_max == 100
+        # Act
+        spec = (await client.get("/openapi.json")).json()
+        refused = await client.post(
+            "/v1/run", json={"input": {"text": "hi"}, "budget": {"max_tokens": 200}}
+        )
+    # Assert
+    description = spec["paths"]["/v1/run"]["post"]["description"]
+    assert "`budget.max_tokens` at most 500" in description
+    assert "the values this service started with" in description
+    assert refused.status_code == 400, refused.text
+    assert "100" in refused.json()["detail"]
