@@ -80,6 +80,16 @@ def fault_rules() -> list[dict[str, Any]]:
     ]
 
 
+SWAP_TEXT = "Which deployment answers this route?"
+"""G-1b (router-drill.sh swap): the fake names the deployment LiteLLM sent the call to."""
+
+
+def swap_rules() -> list[dict[str, Any]]:
+    """G-1b: each deployment answers `SWAP_TEXT` with its own name."""
+    deployments = (MAIN_DEPLOYMENT, FALLBACK_DEPLOYMENT)
+    return [{"match": SWAP_TEXT, "model": d, "reply": f"answered-by-{d}"} for d in deployments]
+
+
 def script() -> dict[str, Any]:
     from chassis_contracts.redteam import load_cases
     from chassis_contracts.redteam.live import model_script
@@ -88,7 +98,7 @@ def script() -> dict[str, Any]:
     redteam = model_script(cases)
     return {
         "model": redteam["model"],
-        "rules": [*fault_rules(), *pii_rules(), *redteam["rules"]],
+        "rules": [*fault_rules(), *swap_rules(), *pii_rules(), *redteam["rules"]],
         "default_reply": "ok",
     }
 
