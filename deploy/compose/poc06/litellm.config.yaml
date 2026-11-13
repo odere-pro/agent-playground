@@ -8,6 +8,12 @@
 
 model_list:
   - model_name: big-default
+    # G-1b: the same declaration as deploy/compose/litellm/ (route table: deploy/compose/README.md).
+    # suggested: owner `platform`; bump `route_version` on every change to this route's target.
+    model_info:
+      owner: platform
+      supports_function_calling: true
+      route_version: 1
     litellm_params:
       # POC06_HOSTED_MODEL is a LiteLLM model string (suggested: openai/gpt-4o-mini, the PoC-1
       # example). An OpenAI-compatible provider needs OPENAI_API_BASE in the container, which
@@ -16,6 +22,11 @@ model_list:
       num_retries: 2
       api_key: os.environ/POC06_HOSTED_API_KEY  # pragma: allowlist secret
   - model_name: local-small
+    # G-1b: llama.cpp runs without `--jinja`: no native tool calls (suggested).
+    model_info:
+      owner: platform
+      supports_function_calling: false
+      route_version: 1
     litellm_params:
       model: openai/local-small
       num_retries: 2

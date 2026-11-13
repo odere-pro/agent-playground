@@ -24,6 +24,12 @@ model_list:
   # hosted.sh from POC06_HOSTED_MODEL; the key is read from the environment, which the Deployment
   # fills from the Secret `litellm-provider`. No credential is in this file.
   - model_name: big-default
+    # G-1b: the same declaration as deploy/compose/litellm/ (route table: deploy/compose/README.md).
+    # suggested: owner `platform`; bump `route_version` on every change to this route's target.
+    model_info:
+      owner: platform
+      supports_function_calling: true
+      route_version: 1
     litellm_params:
       model: __POC06_HOSTED_MODEL__
       num_retries: 2

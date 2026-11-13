@@ -26,8 +26,10 @@ Langfuse is the only `FeedbackPort` backend today (the [product plan](../../plan
 ## Acceptance criteria
 
 - [ ] The adapter passes the `FeedbackPort` contract suite against `fake-langsmith`.
+  - Half done: `LangSmithFeedback` (`chassis.adapters.langsmith`) passes `FeedbackPortContract` against an in-test stand-in of the feedback route (`packages/chassis/tests/test_langsmith_feedback.py::TestLangSmithFeedback`). Open: `fake-langsmith` is 129 CH-10's package and does not exist yet.
 - [ ] `POST /v1/feedback` with the adapter selected writes one score that shows on the run's trace.
 - [ ] The adapter is picked by `spec.adapters` only, and the key stays in the chassis.
+  - Half done: `REGISTRY["feedback"]["langsmith"]` builds it from `LANGSMITH_ENDPOINT` and `LANGSMITH_API_KEY`, and the key is in no `repr` or error (`packages/chassis/tests/test_langsmith_feedback.py::test_spec_adapters_feedback_langsmith_builds_the_adapter`, `::test_a_transport_error_is_unavailable_and_holds_no_key`). Open: a stack test that the workload and the logs hold no key.
 - [ ] With both backends on, the score goes where 001 DEC-1 says, and a test shows it.
 
 ## Dependencies

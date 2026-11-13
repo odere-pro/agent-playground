@@ -1,0 +1,83 @@
+"""The stateless check (057 H-19): this agent keeps nothing on disk or in memory between calls.
+
+The same requests run on fresh pods and on one reused pod, in shuffled order, each call under a
+read-only file system check (`agent_testkit.stateless`). In process, a pod is a fresh import of
+`{{ package_name }}`. A write, an output that differs on the reused pod, or a module global that
+moves fails the test and names the container. Keep what must outlive a call behind the chassis
+(`StatePort`), never in a module global or on local disk.
+"""
+
+from __future__ import annotations
+
+import importlib
+from typing import Any
+
+{% if framework == 'python' -%}
+import httpx
+{% endif -%}
+import httpx2
+from agent_testkit.stateless import Pods, check_kept_data
+{%- if framework != 'smolagents' %}
+from fake_model_server import Script, create_app
+{%- endif %}
+
+PACKAGE = "{{ package_name }}"
+# `tools.list_failures` counts failed tool listings and holds no request data (057 H-19, out of
+# scope), so it is not compared.
+IGNORED = frozenset({f"{PACKAGE}.tools.list_failures"})
+REQUESTS: list[dict[str, Any]] = [
+    {"text": "simplify: the quick brown fox", "data": {}},
+    {"text": "something else", "data": {}},
+    {"text": "please fail", "data": {}},
+    {"text": "simplify: a second text", "data": {}},
+]
+{%- if framework != 'smolagents' %}
+SCRIPT = Script.model_validate(
+    {
+        "rules": [
+            {"match": "fail", "error": {"status": 500, "message": "scripted failure"}},
+            {"match": "simplify", "reply": "Plain words. Short sentences. Same facts."},
+        ]
+    }
+)
+{%- endif %}
+
+
+def _refuse(request: httpx2.Request) -> httpx2.Response:
+    raise httpx2.ConnectError("refused", request=request)
+
+
+def _fake_model() -> None:
+    """Point a fresh pod at the fake model; the tool endpoint refuses, so no tools run."""
+    handle_module: Any = importlib.import_module(f"{PACKAGE}.handle")
+{%- if framework == 'python' %}
+    tools: Any = importlib.import_module(f"{PACKAGE}.tools")
+    handle_module.transport = httpx.ASGITransport(app=create_app(SCRIPT))
+    tools.client_factory = lambda headers, timeout: httpx2.AsyncClient(
+        transport=httpx2.MockTransport(_refuse), headers=headers, timeout=timeout
+    )
+{%- elif framework == 'pydanticai' %}
+    handle_module.model_transport = httpx2.ASGITransport(app=create_app(SCRIPT))
+    handle_module.tool_transport = httpx2.MockTransport(_refuse)
+{%- elif framework in ['langgraph', 'langchain'] %}
+    tools: Any = importlib.import_module(f"{PACKAGE}.tools")
+    handle_module.model_transport = httpx2.ASGITransport(app=create_app(SCRIPT))
+    tools.transport = httpx2.MockTransport(_refuse)
+{%- elif framework == 'openai-agents' %}
+    tools: Any = importlib.import_module(f"{PACKAGE}.tools")
+    handle_module.transport = httpx2.ASGITransport(app=create_app(SCRIPT))
+    tools.transport = httpx2.MockTransport(_refuse)
+{%- elif framework == 'smolagents' %}
+    tools: Any = importlib.import_module(f"{PACKAGE}.tools")
+    handle_module.transport = httpx2.MockTransport(_refuse)
+    tools.transport = httpx2.MockTransport(_refuse)
+{%- endif %}
+
+
+async def test_no_data_is_kept_on_disk_or_between_calls() -> None:
+    pods = Pods(f"{PACKAGE}.handle:handle", setup=_fake_model)
+
+    report = await check_kept_data(pods, REQUESTS, seed=1, ignore_globals=IGNORED)
+
+    assert len(report.outputs) == len(REQUESTS)
+    assert report.reused_order != report.fresh_order

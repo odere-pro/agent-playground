@@ -54,7 +54,7 @@ Every service is built from one template, so a new service gets its workload ske
 - [ ] CI signs the workload image.
 - [ ] The input-as-data contract test fails for a workload that merges the input into the system prompt.
 - [x] A new agent repo made from the template passes CI with only its name changed. · Delivered in PoC-9: `pocs/poc-09-agent-mvp-template/tests/test_poc09_scaffold.py::test_c4_ci_steps_pass_from_a_fresh_clone`, `pocs/poc-09-agent-mvp-template/notes/2026-10-30-open-items.md` (hosted run 41087571278, all eight jobs)
-- [ ] The generated repo carries a chart on `agent-lib`.
+- [x] The generated repo carries a chart on `agent-lib`. · Delivered by: `packages/agentctl/tests/test_agentctl_chart.py::test_the_chart_depends_on_agent_lib_through_the_platform_link`, `packages/agentctl/tests/test_agentctl_chart.py::test_the_chart_renders_the_chassis_from_the_library` (sidecar and remote lanes, offline `helm template`)
 - [ ] The template pins a published platform release, not the `.platform` link.
 
 ## Dependencies

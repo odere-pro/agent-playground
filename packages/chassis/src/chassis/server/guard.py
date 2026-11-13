@@ -26,7 +26,8 @@ A port that cannot answer (`GuardrailError`) is `guardrail_unavailable` (retryab
 `chassis.guardrail_unavailable{stage}` is counted; that pass carries the reason `UNCHECKED`, so a
 stream can skip the port for the rest of the run. A block is counted as
 `chassis.guardrail_blocked{stage, reason}` (suggested names) and logged with the ids and the
-reasons, never the text.
+reasons, never the text. Each check is one `chassis.guard` span (014 H-7) with the stage and the
+outcome; under `Run` it is a child of `chassis.run`.
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ __all__ = [
     "BLOCKED_CODE",
     "GUARDRAIL_BLOCKED",
     "GUARDRAIL_UNAVAILABLE",
+    "GUARD_SPAN",
     "UNAVAILABLE_CODE",
     "UNCHECKED",
     "GuardedTools",
@@ -63,6 +65,9 @@ BLOCKED_CODE = "guardrail_blocked"
 UNAVAILABLE_CODE = "guardrail_unavailable"
 UNCHECKED = "unchecked"
 """The reason on a `Verdict` that passed unchecked: the port was down and `fail_open` let it by."""
+GUARD_SPAN = "chassis.guard"
+"""suggested: one span per guard check, with `stage` and `outcome` (allowed, masked, blocked,
+unavailable, unchecked)."""
 
 
 def enabled(ports: PortBundle, spec: GuardrailsSpec, stage: Stage) -> bool:
@@ -90,7 +95,28 @@ def input_text(task: TaskInput) -> str:
 async def _check(
     ports: PortBundle, spec: GuardrailsSpec, text: str, stage: Stage, **ids: str
 ) -> Verdict | Error:
-    """The port's verdict, or the `Error` event a block or a closed outage becomes."""
+    """The port's verdict, or the `Error` event a block or a closed outage becomes, inside one
+    `chassis.guard` span (014 H-7). Under `Run` it is a child of `chassis.run`. It names the stage
+    and the outcome, never the text."""
+    with ports.telemetry.span(GUARD_SPAN, stage=stage, **ids) as span:
+        outcome = await _verdict(ports, spec, text, stage, **ids)
+        span.attributes["outcome"] = _outcome(outcome, text)
+        if isinstance(outcome, Error):
+            span.attributes["error.code"] = outcome.code
+        return outcome
+
+
+def _outcome(outcome: Verdict | Error, text: str) -> str:
+    if isinstance(outcome, Error):
+        return "blocked" if outcome.code == BLOCKED_CODE else "unavailable"
+    if UNCHECKED in outcome.reasons:
+        return UNCHECKED
+    return "allowed" if outcome.text == text else "masked"
+
+
+async def _verdict(
+    ports: PortBundle, spec: GuardrailsSpec, text: str, stage: Stage, **ids: str
+) -> Verdict | Error:
     telemetry = ports.telemetry
     try:
         verdict = await ports.guardrails.check(text, stage)

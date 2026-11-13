@@ -25,6 +25,7 @@ COPY packages/eval-kit/pyproject.toml packages/eval-kit/
 COPY packages/fake-mcp-server/pyproject.toml packages/fake-mcp-server/
 COPY packages/code-runner/pyproject.toml packages/code-runner/
 COPY packages/fake-langfuse/pyproject.toml packages/fake-langfuse/
+COPY packages/fake-langsmith/pyproject.toml packages/fake-langsmith/
 COPY packages/guardrail-server/pyproject.toml packages/guardrail-server/
 COPY packages/agentctl/pyproject.toml packages/agentctl/
 COPY packages/agent-testkit/pyproject.toml packages/agent-testkit/

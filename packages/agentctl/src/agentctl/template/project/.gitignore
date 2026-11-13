@@ -9,3 +9,6 @@ dist/
 # A link to the platform checkout; `make` creates it from PLATFORM_PATH.
 .platform
 reports/
+# `helm dependency update` writes these from .platform; never commit them.
+deploy/helm/charts/
+deploy/helm/Chart.lock

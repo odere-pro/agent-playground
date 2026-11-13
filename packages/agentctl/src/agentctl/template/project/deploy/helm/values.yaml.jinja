@@ -1,0 +1,65 @@
+# {{ agent_name }} values. Only what differs from the library's defaults (agent-lib.defaults in
+# the platform's deploy/helm/agent-lib/templates/_values.tpl; every key is in its README).
+#
+# No secret value is in this file, and none may be: the chassis reads its credentials from
+# Secrets made outside the chart (External Secrets). The workload gets no Secret; the library
+# fails the render if a value tries to give it one.
+
+# The workload image, built by `make image` and signed by CI. Its uid is 10002.
+# suggested: the registry path, and a pin by digest once CI has pushed the image.
+workload:
+  image: ghcr.io/example/{{ agent_name }}:0.1.0
+
+chassis:
+  # The chassis tag is set once, in the library chart. Do not set chassis.image here.
+  env:
+    - name: LITELLM_BASE_URL
+      value: http://litellm.platform.svc.cluster.local:4000/v1
+  # The chassis's scoped LiteLLM key, from a Secret made outside the chart.
+  secretEnv:
+    - name: LITELLM_API_KEY
+      secretName: {{ agent_name }}-litellm  # pragma: allowlist secret (a Secret name, no value)
+      key: LITELLM_API_KEY
+  # The chassis config, mounted at /etc/chassis/config.yaml; the same lane and trust as
+  # config/agent.yaml. The chart fills spec.engine.url (and, remote, spec.engine.auth).
+  config:
+    profile: local
+    agent:
+      name: {{ agent_name }}
+      version: 0.1.0
+    spec:
+      trust: {{ trust }}
+      adapters:
+        model: litellm
+        config: memory
+        state: memory
+        telemetry: memory
+        tools: fake
+        events: none
+      engine:
+        connector: {{ connector }}
+      model:
+        route: big-default
+{%- if connector == 'remote' %}
+
+# The remote lane: the workload pod runs under gVisor in its own namespace, with its own token
+# only (the Secret <name>-workload-token, made outside the chart). The pod has no DNS, so it
+# reaches the chassis proxy at a fixed ClusterIP.
+remote:
+  namespace: {{ agent_name }}-remote  # suggested:
+  proxyClusterIP: 10.96.0.92  # suggested: a free IPv4 inside the cluster's Service range
+{%- endif %}
+
+# What the chassis pod may reach besides DNS: peers by label, never an ipBlock.
+networkPolicy:
+  chassisEgress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: platform
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
+      ports:
+        - port: 4000
+          protocol: TCP

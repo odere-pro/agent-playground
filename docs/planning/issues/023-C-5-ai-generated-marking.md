@@ -43,6 +43,8 @@ Agents with `limited` risk and above must mark every output as AI-generated (E.4
 - [ ] A contract test checks the marking on every endpoint.
 - [x] The marking holds in the `inprocess` and `sidecar` lanes, with the same flags for the same input. · Delivered in PoC-7: `packages/chassis/tests/test_marking.py::test_inprocess_and_sidecar_give_the_same_flags`
 - [ ] A test workload that sends its own marking, in the headers or in the `ai_marking` body field, still gets the chassis's marking on a `limited` agent's output, because the chassis sets it on the way out.
+  - Proven so far in `packages/chassis/tests/test_marking_override.py`: `true` headers on every run interface, `/v1/mcp` included (`::test_a_workload_that_sends_its_own_marking_still_gets_the_chassis_marking`, `::test_a_workload_with_its_own_marking_still_gets_true_headers_over_mcp`); `false` headers already on the response are replaced (`::test_mark_outputs_replaces_false_headers_already_on_the_response`); a `false` top-level `ai_marking` in the OpenAI and Anthropic bodies is replaced (`::test_with_marking_replaces_a_false_top_level_ai_marking`).
+  - Open: native `/v1/run` passes the workload's own `output.ai_marking: false` through, next to `X-AI-Generated: true`. Overwriting or stripping it changes the frozen contract-v5 envelope, so it needs a chassis-architect decision; the other path is to narrow this box to "the native marking is the headers only".
 - [ ] A consumer on a chassis older than PoC-8 reads an event with `aigenerated`.
 
 ## Dependencies

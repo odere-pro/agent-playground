@@ -4,6 +4,12 @@
 
 model_list:
   - model_name: big-default
+    # G-1b: what a client may rely on, the same in every variant (route table: ../README.md).
+    # suggested: owner `platform`; bump `route_version` on every change to this route's target.
+    model_info:
+      owner: platform
+      supports_function_calling: true
+      route_version: 1
     litellm_params:
       # `openai/<name>` is LiteLLM's prefix for any OpenAI-compatible endpoint.
       model: openai/fake-model
@@ -11,6 +17,11 @@ model_list:
       api_base: http://fake-model-server:8081/v1
       api_key: fake
   - model_name: local-small
+    # llama.cpp runs without `--jinja` in the local variant: no native tool calls (suggested).
+    model_info:
+      owner: platform
+      supports_function_calling: false
+      route_version: 1
     litellm_params:
       model: openai/fake-model
       num_retries: 2

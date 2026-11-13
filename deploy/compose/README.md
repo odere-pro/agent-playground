@@ -16,6 +16,17 @@ The Compose stacks for the PoCs. The PoC-1 stack (chassis, LiteLLM, fake model s
 | `scale.sh` | The one entry point for the scale stack: `build`, `up`, `down`, `ps`, `logs` |
 | `poc07/` | PoC-7 stack, project `poc07`: Langfuse v4, an OTel Collector, Jaeger v2 (`stack.sh`) |
 
+## Model routes (G-1b)
+
+Agents name a route, never a model. The routes live in `litellm/config.yaml` (`fake`) and `litellm/config.local.yaml` (`local`); `model_info` declares the last three columns, the same in both and in every other LiteLLM config under `deploy/` that serves these route names (`poc06/`, `poc08-litellm/`, `../kind/poc06/hosted/`). To swap a model, edit the route's target in the config, bump `route_version`, and restart LiteLLM. `packages/chassis/tests/test_litellm_named_routes.py` checks every column of this table against `config.yaml` and `config.local.yaml`, and the `model_info` of every other config against them. Its `HISTORY` pins each route version's targets, so a swap without a version bump fails the test.
+
+The owner, native tool-call, and version values are suggested: the epic does not give them.
+
+| Route | Model (`fake`) | Model (`local`) | Owner | Native tool calls | Version |
+| ----- | -------------- | --------------- | ----- | ----------------- | ------- |
+| `big-default` | `openai/fake-model` | `os.environ/BIG_DEFAULT_MODEL`, set in `.env` (suggested: `openai/gpt-4o-mini`) | `platform` | yes | 1 |
+| `local-small` | `openai/fake-model` | `openai/local-small`, llama.cpp's alias | `platform` | no | 1 |
+
 ## Sidecar variant (PoC-2)
 
 The chassis mounts `packages/chassis/configs/sidecar.yaml` (`spec.engine.connector: sidecar`, `url: http://127.0.0.1:9000`, model `litellm`, tools `fake`). One workload runs next to it, picked by a Compose profile, in the chassis's network namespace (`network_mode: "service:chassis"`):

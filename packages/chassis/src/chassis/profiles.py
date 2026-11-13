@@ -41,8 +41,8 @@ named, so an unused SDK (valkey, aiokafka, minio) is never loaded. A missing mod
 
 PoC-7 adds four ports, each with `none` (off, the `fake` and `local` default) and a fake: `auth`
 (`static`, `oidc`), `guardrails` (`fake`, `litellm`), `evaluator` (`fake`, `judge`, `encoder`),
-`feedback` (`memory`, `langfuse`). `telemetry: otel` is `OtelTelemetry.from_env`. The real ones
-are lazy.
+`feedback` (`memory`, `langfuse`, `langsmith`). `telemetry: otel` is `OtelTelemetry.from_env`.
+The real ones are lazy.
 """
 
 from __future__ import annotations
@@ -329,6 +329,11 @@ REGISTRY: dict[str, dict[str, Factory | str]] = {
             "feedback",
             "langfuse",
             "chassis.adapters.langfuse:LangfuseFeedback.from_env",
+        ),
+        "langsmith": lazy(
+            "feedback",
+            "langsmith",
+            "chassis.adapters.langsmith:LangSmithFeedback.from_env",
         ),
     },
 }

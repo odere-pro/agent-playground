@@ -641,6 +641,32 @@
       "title": "LimitsSpec",
       "type": "object"
     },
+    "MemorySpec": {
+      "additionalProperties": false,
+      "description": "`spec.memory` (CH-20, ADR-014): session memory behind `StatePort`, reached through the\nchassis's memory tools. suggested: every name and default. Restart-only.\n- `enabled: false`. With auth off, the `cloud` profile refuses `true` at config load.\n- `ttl_s: 86400`: at most `TTL_S_MAX`.\n- `max_bytes: 262144`: the cap on one session's saved value.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "max_bytes": {
+          "default": 262144,
+          "minimum": 1,
+          "title": "Max Bytes",
+          "type": "integer"
+        },
+        "ttl_s": {
+          "default": 86400,
+          "exclusiveMinimum": 0,
+          "maximum": 2592000,
+          "title": "Ttl S",
+          "type": "number"
+        }
+      },
+      "title": "MemorySpec",
+      "type": "object"
+    },
     "ModelPrice": {
       "additionalProperties": false,
       "description": "One route's price in USD per million tokens (PoC-8). suggested: the unit. LiteLLM's own\nspend stays the bill; this is the dashboard's estimate.",
@@ -895,6 +921,9 @@
         },
         "limits": {
           "$ref": "#/$defs/LimitsSpec"
+        },
+        "memory": {
+          "$ref": "#/$defs/MemorySpec"
         },
         "model": {
           "$ref": "#/$defs/ModelSpec"
