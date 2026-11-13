@@ -1080,6 +1080,11 @@ dependencies = [
     { name = "uvicorn" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "fake-langsmith" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "bakeoff", editable = "packages/bakeoff" },
@@ -1093,6 +1098,9 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6" },
     { name = "uvicorn", specifier = ">=0.54" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "fake-langsmith", editable = "packages/fake-langsmith" }]
 
 [[package]]
 name = "exceptiongroup"
