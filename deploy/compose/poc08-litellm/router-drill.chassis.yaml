@@ -1,0 +1,31 @@
+# The chassis config for the router drill (router-drill.yaml). The plain PoC-8 shape: the
+# in-process echo workload with a model step on `big-default`, no guard stage (the drill is about
+# the router, not the guardrails). LITELLM_BASE_URL and LITELLM_API_KEY (a virtual key that
+# router-drill.sh mints) come from the container env.
+profile: local
+agent:
+  name: echo
+  version: 0.0.1
+spec:
+  adapters:
+    model: litellm
+    config: memory
+    telemetry: memory
+    tools: fake
+    state: memory
+    events: none
+    auth: none
+    guardrails: none
+    evaluator: none
+    feedback: none
+  engine:
+    connector: inprocess
+    handle: echo_python:handle
+  model:
+    route: big-default
+  prompt:
+    version: simplifier-v1
+  limits:
+    rate_limit: false
+  governance:
+    risk_class: minimal
