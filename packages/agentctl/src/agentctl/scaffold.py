@@ -41,11 +41,17 @@ class Answers:
     framework: str
     connector: str
     platform_path: Path
+    trust: str | None = None
+    """`--trust`; None leaves it to the framework (`rules.resolve_trust`)."""
+    key_routes: tuple[str, ...] = rules.DEFAULT_KEY_ROUTES
+    """`--key-route`: the routes the service's LiteLLM key lists."""
 
     def check(self) -> None:
+        """Every refusal comes before anything is written."""
         rules.check_name(self.agent_name)
         rules.check_choice(self.kind, rules.KINDS, "kind")
-        rules.check_lane(self.framework, self.connector)
+        rules.check_lane(self.framework, self.connector, self.trust)
+        rules.check_routes(rules.GENERATED_ROUTES, self.key_routes)
         check_platform(self.platform_path)
 
     def data(self) -> dict[str, str]:
@@ -53,6 +59,7 @@ class Answers:
             "agent_name": self.agent_name,
             "kind": self.kind,
             "framework": self.framework,
+            "trust": rules.resolve_trust(self.framework, self.trust),
             "connector": self.connector,
             "platform_path": str(self.platform_path),
             "platform_ref": _platform_ref(self.platform_path),

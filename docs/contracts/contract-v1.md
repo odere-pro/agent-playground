@@ -210,7 +210,7 @@ Every code below is an `error` event, the last event of the run. The server-side
 | `a2a.timeout` | Connector | The run passed its deadline, `budget.timeout_ms` after the send, in every lane; or an HTTP read, connect, write, or pool wait took longer than `budget.timeout_ms` | true |
 | `a2a.transport` | Connector | The connection failed or dropped (`httpx.TransportError`), or the a2a-sdk client failed (`A2AClientError`: an HTTP error status, a bad SSE frame, a network error). The sidecar died mid-stream, say. Also a stream that ends with no `end` or `error`; the task is then cancelled. suggested: the code name. The span gets `a2a.transport_error` with the exception type | true |
 | `a2a.canceled`, `a2a.failed`, `a2a.unsupported_state` | Connector | See the table above | false |
-| `engine_error` | Pipeline (`chassis.server.app`) | The connector raised instead of yielding an `error`, for example a JSON-RPC error answer, which a2a-sdk raises as an `A2AError` that is not an `A2AClientError` | false |
+| `engine_error` | Pipeline (`chassis.server.app`) | The connector raised instead of yielding an `error`, for example a JSON-RPC error answer, which a2a-sdk raises as an `A2AError` that is not an `A2AClientError` (that one is `a2a.rpc_error` since contract v9, E) | false |
 
 A workload's own failures use its own codes; they are a convention, not in the schema. All four workloads use `timeout`, `connect_error`, `http_<status>` (a budget refusal from the proxy is `http_429`), and `model_error` (in `echo-langgraph`, the catch-all for anything else). `echo-python`, `echo-pydanticai`, and `echo-typescript` add `bad_response`; `echo-python` adds `tool_error` and `tool_loop_exceeded` (suggested: at most 3 tool rounds). No workload uses `engine_error`, which is the pipeline's.
 
@@ -364,4 +364,4 @@ This document follows the code. These are the places where the decided text, or 
 - **ADR-002 item 4, "`a2a_server.py` in the workload container":** it is the `workload_a2a` package (change 9). ADR-002 was amended on 2026-10-01 to say so ("Amendment (2026-10-01)").
 - **The TypeScript vendored `events.v0.json`** equals the chassis's today, but no test checks it; only `mapping.py` and the `workload_a2a` schema copy have a diff test.
 - **`a2a.unsupported_state`'s message** still says "not in contract v0".
-- **A JSON-RPC error answer from a server** is not mapped by the connector; it becomes the pipeline's `engine_error`, not an `a2a.*` code.
+- **A JSON-RPC error answer from a server** is not mapped by the connector; it becomes the pipeline's `engine_error`, not an `a2a.*` code. Superseded by [contract v9, E](contract-v9.md#e-a-json-rpc-error-from-the-workload-009-ch-1-p-9): it is `a2a.rpc_error` since 2026-11-13.
