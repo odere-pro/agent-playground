@@ -26,10 +26,12 @@ from chassis.server.config import EngineAuthSpec
 from chassis.server.remote_auth import remote_tokens
 from poc_harness.lane_tokens import new_token
 from poc_harness.remote_lane import REPLY, RemoteLane, remote_lane
+from poc_harness.scenario import ROUTE
 from pydantic import ValidationError
 
 BODY: dict[str, Any] = {
-    "model": "fake-route",
+    # The run's own route: any other is 403 `model_route_denied` (012 H-3).
+    "model": ROUTE,
     "messages": [{"role": "user", "content": "simplify: x"}],
     "max_tokens": 16,
 }
