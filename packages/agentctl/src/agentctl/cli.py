@@ -27,7 +27,7 @@ def _parser() -> argparse.ArgumentParser:
     new.add_argument(
         "--connector",
         choices=rules.CONNECTORS,
-        help="the lane (default: sidecar, or remote with --trust untrusted); "
+        help="the lane (default: sidecar, or remote when the agent is untrusted); "
         "smolagents and claude-agent need remote",
     )
     new.add_argument(
@@ -53,22 +53,31 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _answers(args: argparse.Namespace, platform: Path) -> Answers:
+    """No `--connector`: the lane follows the resolved trust, as `copier.yml` does. Resolving it
+    raises `UsageError` for `--trust trusted` on an untrusted framework."""
+    connector = args.connector or rules.default_connector(
+        rules.resolve_trust(args.framework, args.trust)
+    )
+    return Answers(
+        agent_name=args.name,
+        kind=args.kind,
+        framework=args.framework,
+        connector=connector,
+        platform_path=platform.resolve() if platform.is_absolute() else platform,
+        trust=args.trust,
+        key_routes=tuple(args.key_routes or rules.DEFAULT_KEY_ROUTES),
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     platform = args.platform_path or find_platform(Path(__file__).resolve(), Path.cwd())
     if platform is None:
         print("agentctl: no agent-platform checkout found; pass --platform-path", file=sys.stderr)
         return 2
-    answers = Answers(
-        agent_name=args.name,
-        kind=args.kind,
-        framework=args.framework,
-        connector=args.connector or rules.default_connector(args.trust),
-        platform_path=platform.resolve() if platform.is_absolute() else platform,
-        trust=args.trust,
-        key_routes=tuple(args.key_routes or rules.DEFAULT_KEY_ROUTES),
-    )
     try:
+        answers = _answers(args, platform)
         target = new_agent(answers, args.dest.resolve(), lock=not args.no_lock)
     except rules.UsageError as exc:
         print(f"agentctl: {exc}", file=sys.stderr)

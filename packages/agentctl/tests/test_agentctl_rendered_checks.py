@@ -18,14 +18,23 @@ ROOT = Path(__file__).resolve().parents[3]
 pytestmark = pytest.mark.slow
 
 
-def _agent(tmp_path: Path, framework: str) -> Path:
-    connector = "remote" if framework in rules.UNTRUSTED else "sidecar"
+LANES: list[tuple[str, str | None]] = [
+    *((framework, None) for framework in rules.FRAMEWORKS),
+    ("langgraph", "untrusted"),
+]
+"""(framework, --trust). None leaves trust to the framework; `langgraph` with `--trust untrusted`
+is a trusted engine in the remote lane (P-15)."""
+
+
+def _agent(tmp_path: Path, framework: str, trust: str | None = None) -> Path:
+    resolved = rules.resolve_trust(framework, trust)
     answers = Answers(
         agent_name="my-agent",
         kind="transformer",
         framework=framework,
-        connector=connector,
+        connector=rules.default_connector(resolved),
         platform_path=ROOT,
+        trust=trust,
     )
     return render(answers, tmp_path)
 
@@ -67,17 +76,21 @@ def _pytest(
     )
 
 
-@pytest.mark.parametrize("framework", rules.FRAMEWORKS)
-def test_rendered_unit_tests_pass_offline(tmp_path: Path, framework: str) -> None:
-    done = _pytest(_agent(tmp_path, framework), "test_handle.py")
+@pytest.mark.parametrize(("framework", "trust"), LANES)
+def test_rendered_unit_tests_pass_offline(
+    tmp_path: Path, framework: str, trust: str | None
+) -> None:
+    done = _pytest(_agent(tmp_path, framework, trust), "test_handle.py")
     assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-2000:]
 
 
-@pytest.mark.parametrize("framework", rules.FRAMEWORKS)
-def test_rendered_contract_test_passes_offline(tmp_path: Path, framework: str) -> None:
+@pytest.mark.parametrize(("framework", "trust"), LANES)
+def test_rendered_contract_test_passes_offline(
+    tmp_path: Path, framework: str, trust: str | None
+) -> None:
     """059 H-15 box 4: each framework's event mapping passes the lane contract over A2A, with the
     chassis in the `fake` profile as its own process (agent-testkit), on Unix sockets only."""
-    agent = _agent(tmp_path, framework)
+    agent = _agent(tmp_path, framework, trust)
     done = _pytest(agent, "test_contract.py", plugins=("agent_testkit.plugin",))
     assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-2000:]
     assert " passed" in done.stdout
@@ -107,9 +120,9 @@ def test_the_stateless_check_is_not_rendered_for_claude_agent(tmp_path: Path) ->
     assert not (_agent(tmp_path, "claude-agent") / "tests/test_stateless.py").exists()
 
 
-@pytest.mark.parametrize("framework", rules.FRAMEWORKS)
-def test_rendered_code_is_ruff_clean(tmp_path: Path, framework: str) -> None:
-    agent = _agent(tmp_path, framework)
+@pytest.mark.parametrize(("framework", "trust"), LANES)
+def test_rendered_code_is_ruff_clean(tmp_path: Path, framework: str, trust: str | None) -> None:
+    agent = _agent(tmp_path, framework, trust)
     for args in (["check", "--no-cache", "."], ["format", "--check", "--no-cache", "."]):
         done = subprocess.run(
             [sys.executable, "-m", "ruff", *args],
@@ -119,3 +132,12 @@ def test_rendered_code_is_ruff_clean(tmp_path: Path, framework: str) -> None:
             timeout=120,
         )
         assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_rendered_remote_lane_suite_passes_offline_for_trust_untrusted(tmp_path: Path) -> None:
+    """`--trust untrusted` on langgraph: the generated remote-lane suite runs and every run must
+    answer `ok` or `fallback`, as for any trusted engine (no `error` allowance)."""
+    agent = _agent(tmp_path, "langgraph", "untrusted")
+    done = _pytest(agent, "test_remote_lane.py", plugins=("agent_testkit.plugin",))
+    assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-2000:]
+    assert " passed" in done.stdout and " skipped" not in done.stdout, done.stdout[-3000:]
