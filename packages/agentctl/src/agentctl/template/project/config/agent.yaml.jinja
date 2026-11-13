@@ -34,3 +34,8 @@ spec:
     route: big-default
   prompt:
     version: simplifier-v1
+  # Governance (023 C-5): the fields the chassis schema has today; 077 C-1 adds the rest of E.4.
+  # `limited` or `high` turns AI-generated marking on, and refuses `ai_generated_marking: false`.
+  governance:
+    risk_class: minimal  # fill in: minimal, limited, or high
+    ai_generated_marking: null  # fill in: true, false, or null to follow risk_class

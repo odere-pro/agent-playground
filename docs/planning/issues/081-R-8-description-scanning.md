@@ -46,6 +46,7 @@ A tool description is read by a model, so an attacker can hide instructions in i
 - [ ] Hidden Unicode in a schema field description is flagged.
 - [ ] The scan runs again when a description changes, and the result is stored with the entry.
 - [ ] Scan time per entry without the model check is measured and stays under 50 ms (suggested target).
+- [ ] A real Snyk Agent Scan run on `deploy/agent-scan/` (needs `SNYK_TOKEN`) is recorded in a dated note in PoC-7 `notes/`, with its findings (from [132 CH-13](132-CH-13-owasp-agentic-map.md), ASI04).
 
 ## Dependencies
 

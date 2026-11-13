@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 import pytest
+from chassis import CHASSIS_VERSION
 from chassis.adapters.a2a.inprocess import InProcessConnector
 from chassis.adapters.otel import OtelTelemetry
 from chassis.core.envelope import Context, TaskInput
@@ -255,6 +256,30 @@ async def test_model_tokens_and_cost_come_from_the_proxy_usage() -> None:
     assert value(text, cost, route="other") == 0, "a route with no price has no cost"
 
 
+async def test_token_and_cost_series_are_labeled_by_agent_and_route_never_by_user() -> None:
+    """004 G-2: Prometheus sees tokens and cost by `agent` and `route`. The caller's `user` (the
+    OpenAI field and request metadata) is unbounded, so it is in the usage record only."""
+    prices = {"big-default": {"input_per_mtok": 1.5, "output_per_mtok": 4.0}}
+    config = _config(observability={"prices": prices}, model={"route": "big-default"})
+    app = create_app(config, _ports())
+    body = {**CHAT, "user": "dana@example.test", "metadata": {"user": "dana@example.test"}}
+    async with (
+        _client(create_proxy_app(app)) as proxy,
+        _client(app) as client,
+        app.router.lifespan_context(app),
+    ):
+        assert (await proxy.post("/v1/chat/completions", json=body)).status_code == 200
+        text = (await client.get("/metrics")).text
+    usage = {"chassis_model_tokens_total", "chassis_model_cost_microusd_total"}
+    found = [(name, dict(labels)) for (name, labels) in samples(text) if name in usage]
+    assert {name for name, _ in found} == usage
+    for name, labels in found:
+        assert labels["agent"] == "echo", name
+        assert labels["route"] == "big-default", name
+        assert "user" not in labels, f"{name} has a user label: {labels}"
+    assert "dana@example.test" not in text, "no user value anywhere in the scrape"
+
+
 # --- The evaluator gate's fallback rate ---
 
 BAD, GOOD, FALLBACK = "The report was signed.", "Dana signed it in May.", "fallback-route"
@@ -308,6 +333,70 @@ async def test_the_budget_counter_is_zero_for_every_declared_route_before_a_refu
     )
     budget = 'chassis_model_budget_exhausted_total{agent="echo",route="big-default"} 0'
     assert budget in text.splitlines(), text
+
+
+GATE_ZEROS = (
+    "chassis_gate_retries_total",
+    "chassis_gate_fallbacks_total",
+    "chassis_gate_failed_open_total",
+    "chassis_gate_failed_closed_total",
+)
+
+
+async def test_the_gate_counters_are_zero_before_a_gated_run_when_the_gate_is_on() -> None:
+    """117 X-3: an alert on `increase()` or `rate()` of a gate counter needs a 0 to rise from; a
+    series born at its first count never rises. So with the gate on `/metrics` shows each gate
+    counter at 0, and `chassis_gate_runs_total` at 0 for both modes: a streaming request counts
+    `mode="async"` even when the configured mode is sync."""
+    config = _config(harness={"evaluator_gate": True, "evaluator_mode": "sync"})
+    app = create_app(config, _ports(evaluator=ScriptedEvaluator([], default=0.9)))
+    lines = (await _scrape(app)).splitlines()
+    for name in GATE_ZEROS:
+        assert f'{name}{{agent="echo"}} 0' in lines, name
+    for mode in ("sync", "async"):
+        assert f'chassis_gate_runs_total{{agent="echo",mode="{mode}"}} 0' in lines, mode
+
+
+async def test_the_gate_counters_have_no_series_when_the_gate_is_off() -> None:
+    text = await _scrape(create_app(_config(), _ports()))
+    names = {name for name, _ in samples(text)}
+    assert names.isdisjoint({*GATE_ZEROS, "chassis_gate_runs_total"}), names
+
+
+async def test_a_seeded_gate_counter_counts_on_from_zero() -> None:
+    evaluator = ScriptedEvaluator([ScoreRule(match=BAD, score=0.2)], default=0.9)
+    config = _config(
+        model={"route": "big-default", "fallback_route": FALLBACK},
+        harness={"evaluator_gate": True, "retries": 0, "threshold": 0.7},
+    )
+    app = create_app(config, _ports(_RouteEngine(), evaluator=evaluator))
+    lines = (await _scrape(app, {"input": {"text": "simplify: x"}})).splitlines()
+    assert 'chassis_gate_fallbacks_total{agent="echo"} 1' in lines
+    assert 'chassis_gate_retries_total{agent="echo"} 0' in lines
+    assert 'chassis_gate_failed_open_total{agent="echo"} 0' in lines
+    assert 'chassis_gate_failed_closed_total{agent="echo"} 0' in lines
+
+
+async def test_build_info_is_one_with_the_chassis_and_agent_versions() -> None:
+    """117 X-3: an alert carries the chassis version by joining `chassis_build_info`."""
+    text = await _scrape(create_app(_config(), _ports()))
+    info = {
+        labels: number
+        for (name, labels), number in samples(text).items()
+        if name == "chassis_build_info"
+    }
+    assert list(info.values()) == [1.0], info
+    (labels,) = info
+    assert dict(labels) == {"agent": "echo", "version": CHASSIS_VERSION, "agent_version": "0.0.1"}
+    assert families(text)["chassis_build_info"] == "gauge"
+
+
+async def test_run_errors_and_tool_calls_are_not_seeded() -> None:
+    """Their label sets (`code`, `tool`) are not in the config, so they stay absent until the
+    first count (`chassis.server.observability`, "Zero series")."""
+    text = await _scrape(create_app(_config(), _ports()))
+    names = {name for name, _ in samples(text)}
+    assert names.isdisjoint({"chassis_run_errors_total", "chassis_tool_calls_total"}), names
 
 
 # --- Who may read `/metrics` ---

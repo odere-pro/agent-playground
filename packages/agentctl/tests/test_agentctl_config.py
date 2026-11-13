@@ -70,3 +70,22 @@ def test_agentctl_refuses_what_the_chassis_refuses(framework: str, connector: st
     except rules.UsageError:
         agentctl_ok = False
     assert agentctl_ok == chassis_ok
+
+
+# One trusted lane and one untrusted: the governance block does not depend on the framework.
+@pytest.mark.parametrize("framework", ["langgraph", "smolagents"])
+def test_the_starter_config_names_each_governance_field_with_a_placeholder(
+    tmp_path: Path, framework: str
+) -> None:
+    """059 H-15: `spec.governance` holds the chassis schema's fields, each marked to fill in."""
+    connector = "remote" if rules.trust_of(framework) == "untrusted" else "sidecar"
+    agent = _agent(tmp_path, framework, connector)
+    config = load_config(agent / "config/agent.yaml")
+    assert "governance" in config.spec.model_fields_set
+    schema_fields = set(type(config.spec.governance).model_fields)
+    assert schema_fields == {"risk_class", "ai_generated_marking"}
+    assert config.spec.governance.model_fields_set == schema_fields
+    lines = (agent / "config/agent.yaml").read_text().splitlines()
+    for field in sorted(schema_fields):
+        line = next(line for line in lines if line.strip().startswith(f"{field}:"))
+        assert "fill in" in line, f"{field} has no placeholder note: {line!r}"

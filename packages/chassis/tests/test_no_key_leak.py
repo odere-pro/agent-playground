@@ -7,10 +7,16 @@ labels, what the workload's `handle` received (`ctx` and `input`), and every rep
 header: complete, streamed, and error replies. Two engines: a `FakeEngine` probe that records
 `ctx` and `input` as objects, and the real in-process A2A lane with the contract suite's probe,
 which echoes them into the reply.
+
+The canary is also looked for as LiteLLM's 401 quotes a refused key (contract v4, Known gaps):
+its last 4 characters (`Received API Key = sk-...<4>`) and its sha256 hex (`Key Hash (Token)`),
+whole or as the 12-character prefix a log might keep (022 H-6). The last 4 are a fixed suffix
+outside the hex and base64 alphabets, so they cannot appear by chance in an id or a trace.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import secrets
 from collections.abc import AsyncIterator
@@ -63,8 +69,18 @@ class Probe:
         yield End(status="ok", output={"text": "ok done"})
 
 
+CANARY_SUFFIX = "q~Z7"
+"""The canary's last 4 characters: `~` is in neither the hex nor the base64 alphabet."""
+
+
 def _canary() -> str:
-    return f"sk-canary-{secrets.token_hex(12)}"
+    return f"sk-canary-{secrets.token_hex(12)}{CANARY_SUFFIX}"
+
+
+def _forms(canary: str) -> dict[str, str]:
+    """Each form of the key that must not leak: whole, its last 4, its sha256 hex, a prefix."""
+    digest = hashlib.sha256(canary.encode()).hexdigest()
+    return {"key": canary, "last 4": canary[-4:], "hash": digest, "hash prefix": digest[:12]}
 
 
 def _headers(canary: str) -> dict[str, str]:
@@ -158,7 +174,20 @@ async def _exercise(app: FastAPI, canary: str) -> list[str]:
 
 
 def _assert_absent(canary: str, where: str, value: Any) -> None:
-    assert canary not in repr(value), f"the canary leaked into {where}"
+    text = repr(value)
+    for form, needle in _forms(canary).items():
+        assert needle not in text, f"the canary's {form} leaked into {where}"
+
+
+def test_the_canary_check_finds_the_last_4_and_the_hash() -> None:
+    """Paired control: a LiteLLM-style 401 echo of the canary fails the check."""
+    canary = _canary()
+    digest = hashlib.sha256(canary.encode()).hexdigest()
+    echoes = [f"Received API Key = sk-...{canary[-4:]}", f"Key Hash (Token) = {digest}"]
+    for echo in [*echoes, f"hash {digest[:12]}..."]:
+        with pytest.raises(AssertionError, match="leaked"):
+            _assert_absent(canary, "a probe", echo)
+    _assert_absent(canary, "a clean reply", "Received API Key = [redacted]")
 
 
 @pytest.mark.parametrize("fail", [False, True], ids=["ok", "engine-error"])

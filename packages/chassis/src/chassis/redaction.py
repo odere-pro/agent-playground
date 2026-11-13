@@ -190,6 +190,14 @@ def redact(text: str) -> str:
     return text
 
 
+def has_secret(text: str) -> bool:
+    """True when `text` holds a `SECRET_PREFIXES` shape or a password in a URL (H-12: the config
+    load check). A `password=`-style assignment is not checked here: config text names keys."""
+    if _SECRET_START.search(text) and _SECRET.search(text):
+        return True
+    return SECRET_USERINFO.search(text) is not None
+
+
 def redact_value(value: Any) -> Any:
     """`redact` applied to every string inside `value` (dicts, lists, and tuples, deeply)."""
     if isinstance(value, str):
