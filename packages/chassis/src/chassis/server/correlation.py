@@ -134,9 +134,9 @@ RUN_KEY_PREFIX = "run1|"
 """The version of the keyed run-key derivation. A change to it bumps the prefix."""
 
 
-def keyed_run_key(request: Request) -> str:
+def keyed_run_key(request: Request, *, session_id: str | None = None) -> str:
     """The run key of a request's idempotency key (review M1): the sha256 hex of
-    `run1|agent|key_hash(idempotency_key)|fingerprint(request)`.
+    `run1|agent|key_hash(idempotency_key)|fingerprint(request, session_id=session_id)`.
 
     - The agent scopes it: two agents behind one tool server never share a key for one client key.
     - The PoC-4 fingerprint (`agent`, `input`, `context_ref`) ties it to the request: a reused key
@@ -144,12 +144,21 @@ def keyed_run_key(request: Request) -> str:
       carries the same fingerprint, or PoC-4 refuses it, so it gets the same run key.
     - The pipeline always fills `idempotency_key`; a key it minted is a fresh uuid4, so its run key
       is as unique as the `request_id`.
+    - With session memory on, `session_id` is the run's `session.id` (CH-20): two sessions under
+      one client key get their own run key, so one never dedupes the other's write-tool call.
+      With no session the run key is as before.
     """
     # Imported here: `results` and `idempotency` import the pipeline, which imports this module.
     from chassis.server.idempotency import fingerprint
     from chassis.server.results import key_hash
 
-    payload = "|".join((request.agent, key_hash(request.idempotency_key), fingerprint(request)))
+    payload = "|".join(
+        (
+            request.agent,
+            key_hash(request.idempotency_key),
+            fingerprint(request, session_id=session_id),
+        )
+    )
     return hashlib.sha256((RUN_KEY_PREFIX + payload).encode("utf-8")).hexdigest()
 
 
@@ -164,9 +173,10 @@ class RunRegistry:
     def __len__(self) -> int:
         return len(self._runs)
 
-    def open(self, request: Request, ctx: Context) -> RunRecord:
+    def open(self, request: Request, ctx: Context, *, session_id: str | None = None) -> RunRecord:
         """A fresh record for the run, held until `close`. Raises `TraceIdInUse` when another
         in-flight run holds the trace id. No await, so check and insert are one step.
+        `session_id` scopes the run key when session memory is on (CH-20), else None.
         """
         trace_id = trace_id_hex(ctx.trace_id)
         holder = self._runs.get(trace_id)
@@ -177,7 +187,7 @@ class RunRegistry:
             agent=request.agent,
             trace_id=trace_id,
             budget=request.budget.model_copy(),
-            keyed_run_key=keyed_run_key(request),
+            keyed_run_key=keyed_run_key(request, session_id=session_id),
             model_route=ctx.model_route,
             run_secret=ctx.run_secret,
         )
