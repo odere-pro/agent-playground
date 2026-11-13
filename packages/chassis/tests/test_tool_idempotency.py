@@ -18,7 +18,7 @@ from typing import Any
 import httpx2
 import pytest
 from chassis import CHASSIS_VERSION
-from chassis.adapters.mcp.server import tool_key
+from chassis.adapters.mcp.server import TOOL_ERRORS, tool_key
 from chassis.core.envelope import Budget, Context, Request, TaskInput, Versions
 from chassis.core.handle import echo
 from chassis.core.inbound import public_message
@@ -504,6 +504,31 @@ async def test_an_unlisted_tool_is_not_served_over_mcp() -> None:
     assert result.is_error is True
     assert UNLISTED_MARKER not in json.dumps(result.structured_content or {})
     assert _tools(ports).calls == []
+
+
+async def test_a_denied_call_in_a_run_is_logged_and_counted_with_tool_denied() -> None:
+    """054 H-16 box 1: the refusal leaves a log line and a counter carrying `tool_denied`, and
+    the denied tool never runs."""
+    ports = _ports()
+    request, ctx = _run("req-a", TRACE_A)
+    async with (
+        _serving(ports) as app,
+        app.state.runs.register(request, ctx),
+        _mcp_client(app, {"traceparent": _traceparent(TRACE_A)}) as client,
+    ):
+        result = await client.call_tool("unlisted_probe", {}, raise_on_error=False)
+    assert result.structured_content is not None
+    assert result.structured_content["code"] == "tool_denied"
+    assert _tools(ports).effects == []
+    telemetry = ports.telemetry
+    assert isinstance(telemetry, InMemoryTelemetry)
+    assert telemetry.counter_value(TOOL_ERRORS, tool="unlisted_probe", code="tool_denied") == 1
+    denied = [line for line in telemetry.logs if line.get("code") == "tool_denied"]
+    assert len(denied) == 1
+    assert denied[0]["level"] == "warning"
+    assert denied[0]["tool"] == "unlisted_probe"
+    assert denied[0]["request_id"] == "req-a"
+    assert UNLISTED_MARKER not in json.dumps(telemetry.logs)
 
 
 @pytest.mark.parametrize(
