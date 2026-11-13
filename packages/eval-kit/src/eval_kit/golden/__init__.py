@@ -7,7 +7,8 @@ file, and the Langfuse dataset, so every tool and every engine sees the same cas
 
 PoC-8: `load_gate_cases()` is the CI eval gate's set, `cases.yaml` then `cases-gate.yaml` (30
 more), 50 cases. `cases.yaml` is not changed, so the PoC-7 trial keeps its 20. `gate_data()` is the
-same 50 as one mapping, for the eval tool that reads one file (`GOLDEN_CASES`).
+same 50 as one mapping, for the eval tool that reads one file (`GOLDEN_CASES`). `dataset_data()`
+joins any list of case files the same way: the gate reads the list its baseline names (`dataset`).
 """
 
 from __future__ import annotations
@@ -29,6 +30,8 @@ __all__ = [
     "GOLDEN_SIZE",
     "Case",
     "ToolCallSpec",
+    "dataset_data",
+    "dataset_paths",
     "gate_data",
     "load_cases",
     "load_gate_cases",
@@ -202,10 +205,29 @@ def _read(path: Path) -> dict[str, Any]:
     return data
 
 
+def dataset_paths(names: Sequence[str] | None, root: Path) -> list[Path]:
+    """The case files a baseline's `dataset` names (relative to `root`, or absolute); the packaged
+    gate set (`CASES_FILE`, `GATE_FILE`) when it names none."""
+    if not names:
+        return [CASES_FILE, GATE_FILE]
+    return [Path(name) if Path(name).is_absolute() else root / name for name in names]
+
+
+def dataset_data(paths: Sequence[Path]) -> dict[str, Any]:
+    """The cases of `paths`, in order, as one parsed YAML mapping. Raises `ValueError` when no
+    file is given or the files have different versions."""
+    if not paths:
+        raise ValueError("no case file")
+    parts = [_read(path) for path in paths]
+    versions = sorted({str(p["version"]) for p in parts})
+    if len(versions) > 1:
+        raise ValueError(f"case files of different versions: {', '.join(versions)}")
+    return {"version": parts[0]["version"], "cases": [c for p in parts for c in p["cases"]]}
+
+
 def gate_data() -> dict[str, Any]:
     """The 50 gate cases as one parsed YAML mapping: the PoC-7 cases, then the PoC-8 ones."""
-    first, extra = _read(CASES_FILE), _read(GATE_FILE)
-    return {"version": first["version"], "cases": [*first["cases"], *extra["cases"]]}
+    return dataset_data((CASES_FILE, GATE_FILE))
 
 
 def load_gate_cases() -> list[Case]:

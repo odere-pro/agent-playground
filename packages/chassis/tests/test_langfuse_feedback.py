@@ -79,6 +79,12 @@ async def test_the_score_name_comes_from_the_spec(fake: FakeLangfuse) -> None:
     assert fake.scores[feedback.feedback_id]["name"] == "thumbs"
 
 
+async def test_a_named_score_overrides_the_spec_score_name(fake: FakeLangfuse) -> None:
+    feedback = make_feedback(name="judge-facts-v1")
+    await adapter_for(fake, score_name="thumbs").submit(feedback)
+    assert fake.scores[feedback.feedback_id]["name"] == "judge-facts-v1"
+
+
 async def test_a_timestamp_is_sent_so_a_repeat_updates_the_same_score(fake: FakeLangfuse) -> None:
     at = datetime(2026, 10, 28, 12, 0, tzinfo=UTC)
     feedback = make_feedback(timestamp=at)

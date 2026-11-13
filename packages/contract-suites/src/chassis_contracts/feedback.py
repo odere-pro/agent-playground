@@ -75,6 +75,14 @@ class FeedbackPortContract:
         await feedback_port.submit(feedback)
         assert read_feedback(feedback.feedback_id) == feedback
 
+    async def test_a_named_score_keeps_its_name(
+        self, feedback_port: FeedbackPort, read_feedback: ReadFeedback
+    ) -> None:
+        # 138 CH-18: the gate writes its score under the rubric version, apart from users' thumbs
+        feedback = make_feedback(name="judge-facts-v1")
+        await feedback_port.submit(feedback)
+        assert read_feedback(feedback.feedback_id) == feedback
+
     async def test_same_id_twice_is_one_record(
         self,
         feedback_port: FeedbackPort,

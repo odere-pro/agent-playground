@@ -128,4 +128,5 @@ async def test_a_workloads_guardrails_key_never_reaches_litellm(
     sent = router.bodies[0]
     assert not {k for k in _keys(sent) if "guardrail" in k}, sent
     assert MARK not in json.dumps(sent)
-    assert sent["metadata"] == {"tags": ["agent:echo"]}  # the adapter's own, nothing merged in
+    # The adapter's own run IDs (012 H-3), nothing merged in.
+    assert sent["metadata"] == {"trace_id": ctx.trace_id, "request_id": request.request_id}

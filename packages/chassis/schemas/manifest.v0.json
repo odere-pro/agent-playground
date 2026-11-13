@@ -204,6 +204,23 @@
     "agent": {
       "$ref": "#/$defs/ManifestAgent"
     },
+    "agent_class": {
+      "anyOf": [
+        {
+          "enum": [
+            "stateless",
+            "orchestrator",
+            "data"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Agent Class"
+    },
     "event_schema_versions": {
       "items": {
         "type": "string"
@@ -225,6 +242,25 @@
       "title": "Interfaces",
       "type": "array"
     },
+    "kind": {
+      "anyOf": [
+        {
+          "enum": [
+            "transformer",
+            "evaluator",
+            "tool",
+            "orchestrator",
+            "data"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Kind"
+    },
     "lane": {
       "title": "Lane",
       "type": "string"
@@ -234,6 +270,14 @@
       "default": "0",
       "title": "Manifest Version",
       "type": "string"
+    },
+    "modules": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Modules",
+      "type": "array"
     },
     "openapi": {
       "$ref": "#/$defs/OpenAPIRef"

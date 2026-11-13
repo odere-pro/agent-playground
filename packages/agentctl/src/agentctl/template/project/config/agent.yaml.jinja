@@ -6,6 +6,10 @@ agent:
   name: {{ agent_name }}
   version: 0.1.0
 spec:
+  # 008 H-14: the class and kind; the chassis refuses a kind that is not of its class at start.
+  # Every kind this template offers (transformer, evaluator, tool) is of the stateless class.
+  class: stateless
+  kind: {{ kind }}
   # {{ framework }} is {{ trust }} (ADR-006). `untrusted` runs only with connector `remote`.
   trust: {{ trust }}
   # Merged over the `local` profile defaults per field. Those name services this file does not

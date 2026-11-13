@@ -9,7 +9,8 @@ One feedback is one LangSmith feedback record:
 - `id`: `langsmith_feedback_id(feedback_id)`, a uuid5, so a repeat is one record (suggested).
 - `run_id`, `trace_id`: `trace_id` as a UUID. suggested: LangSmith keys the root run of an OTLP
   trace by that trace id (ADR-009 item 3a).
-- `key`: `spec.feedback.score_name` (default `user-feedback`).
+- `key`: `feedback.name` (the gate's rubric, 138 CH-18), else `spec.feedback.score_name`
+  (default `user-feedback`).
 - `score`, `comment` (omitted when None), `created_at` (`timestamp` when set).
 - `feedback_source`: `{type: api, metadata: {feedback_id, request_id, label, subject}}`, None
   values omitted.
@@ -79,7 +80,7 @@ def feedback_body(feedback: Feedback, score_name: str = DEFAULT_SCORE_NAME) -> d
         "id": langsmith_feedback_id(feedback.feedback_id),
         "run_id": run,
         "trace_id": run,
-        "key": score_name,
+        "key": feedback.name or score_name,
         "score": feedback.score,
         "feedback_source": {"type": "api", "metadata": metadata},
     }
@@ -99,6 +100,7 @@ def feedback_from_record(record: Mapping[str, Any]) -> Feedback:
         request_id=metadata["request_id"],
         trace_id=uuid.UUID(record["trace_id"]).hex,
         score=record["score"],
+        name=None if record["key"] == DEFAULT_SCORE_NAME else record["key"],
         label=metadata.get("label"),
         comment=record.get("comment"),
         subject=metadata.get("subject"),

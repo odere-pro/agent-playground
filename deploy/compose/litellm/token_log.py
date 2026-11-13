@@ -1,4 +1,6 @@
-"""One log line per model call: route, tokens, cost, and tags. Never the prompt or the reply.
+"""One log line per model call: route, tokens, cost, tags, and the run IDs. Never the prompt or
+the reply. The chassis sends no tag (012 H-3): tags come from the virtual key's metadata, and the
+request metadata holds only `trace_id` and `request_id`.
 
 LiteLLM loads it through `litellm_settings.callbacks: token_log.handler` from the config's folder.
 PoC-1 runs LiteLLM without a database, so `/spend/logs` is not available; this line in
@@ -15,7 +17,8 @@ from litellm.integrations.custom_logger import CustomLogger
 
 def _tags(kwargs: dict[str, Any]) -> list[str]:
     metadata = (kwargs.get("litellm_params") or {}).get("metadata") or {}
-    tags = metadata.get("tags") or metadata.get("request_tags") or []
+    key = metadata.get("user_api_key_metadata") or {}
+    tags = metadata.get("tags") or metadata.get("request_tags") or key.get("tags") or []
     return [str(t) for t in tags]
 
 
@@ -28,7 +31,8 @@ def _line(kwargs: dict[str, Any], response: Any, status: str) -> str:
     return (
         f"token_log status={status} route={metadata.get('model_group', kwargs.get('model'))} "
         f"model={kwargs.get('model')} prompt_tokens={prompt} completion_tokens={completion} "
-        f"total_tokens={prompt + completion} cost_usd={cost:.6f} tags={','.join(_tags(kwargs))}"
+        f"total_tokens={prompt + completion} cost_usd={cost:.6f} tags={','.join(_tags(kwargs))} "
+        f"trace_id={metadata.get('trace_id')} request_id={metadata.get('request_id')}"
     )
 
 

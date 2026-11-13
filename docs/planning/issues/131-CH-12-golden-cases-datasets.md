@@ -27,8 +27,7 @@ epic_refs: [E.5, principles]
 
 ## Acceptance criteria
 
-- [ ] The 20 cases and one run per engine land in a LangSmith dataset through `fake-langsmith`.
-  - Open: `fake-langsmith` does not exist yet (129 CH-10). `STORES` in `eval_kit.langfuse_datasets` takes `langsmith` when it lands.
+- [x] The 20 cases and one run per engine land in a LangSmith dataset through `fake-langsmith`. · Delivered by: `packages/eval-kit/tests/test_eval_kit_langsmith_datasets.py::test_eval_kit_langsmith_golden_cases_and_one_run_per_engine_land_in_the_fake`, `::test_eval_kit_langsmith_is_a_known_store`, `::test_eval_kit_langsmith_a_second_upload_to_the_same_dataset_fails_on_409`, `::test_eval_kit_langfuse_main_refuses_a_langsmith_environment`, `packages/fake-langsmith/tests/test_fake_langsmith_datasets.py` (`eval_kit.langsmith_datasets`, `STORES` takes `langsmith`; suggested: the fake's LangSmith field names are not checked against a real LangSmith)
 - [ ] The verdicts match on two engines (the ADR-010 note of 2026-11-06).
 - [ ] A stack test covers the Langfuse dataset and its runs (`eval_kit.langfuse_datasets`).
   - Open: needs the Langfuse v4 stack (`deploy/compose/poc07`, Docker). Offline, `test_eval_kit_langfuse_datasets.py` covers it against an ASGI stub only.

@@ -11,7 +11,7 @@ One feedback is one score:
 | ----------- | ---- |
 | `id` | `feedback_id`: Langfuse upserts by id, so a repeat is one score |
 | `traceId` | `trace_id`, 32 hex: Langfuse's trace id is the OTel trace id it ingested |
-| `name` | `spec.feedback.score_name` (default `user-feedback`) |
+| `name` | `feedback.name` (the gate's rubric), else `spec.feedback.score_name` |
 | `value`, `dataType` | `score`, `NUMERIC` |
 | `comment` | `comment`, as the user wrote it (omitted when None) |
 | `metadata` | `{request_id, label, subject}` (None values omitted) |
@@ -76,7 +76,7 @@ def score_body(feedback: Feedback, score_name: str = DEFAULT_SCORE_NAME) -> dict
     body: dict[str, Any] = {
         "id": feedback.feedback_id,
         "traceId": feedback.trace_id,
-        "name": score_name,
+        "name": feedback.name or score_name,
         "value": feedback.score,
         "dataType": "NUMERIC",
         "metadata": metadata,
@@ -102,6 +102,7 @@ def feedback_from_score(score: Mapping[str, Any]) -> Feedback:
         request_id=metadata["request_id"],
         trace_id=trace_id,
         score=score["value"],
+        name=None if score.get("name", DEFAULT_SCORE_NAME) == DEFAULT_SCORE_NAME else score["name"],
         label=metadata.get("label"),
         comment=score.get("comment"),
         subject=metadata.get("subject"),

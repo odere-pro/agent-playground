@@ -56,6 +56,14 @@ inner connector.
 `chassis.gate_runs{mode}` (PoC-8), each sampled call, so the fallback rate is
 `chassis.gate_fallbacks` over `chassis.gate_runs{mode="sync"}`.
 
+**Per agent** (138 CH-18). Each scoring is written to `FeedbackPort` (when one is set) as a
+score named `spec.harness.rubric`, on the run's trace, so escapes are one query
+(`chassis.gate_feedback_failed{code}` when the store fails). With `spec.harness.shadow_evaluator`
+set, a sampled scoring (`shadow_sample_rate`) is also scored by the shadow, inline, after the
+main one, so a sampled sync attempt waits one more judge call; only the main score gates. The
+shadow's tokens count under its own route. `chassis.evaluator_agreement{pair, agree}` counts whether
+both passed or both failed.
+
 **One budget for every attempt** (017 H-4, `Allowance`). The run keeps one `budget.timeout_ms`
 and one `budget.max_tokens` across its attempts and the fallback: each attempt runs with
 `request.budget` and `ctx.budget` set to what is left (the A2A connector's run deadline reads the
@@ -87,6 +95,7 @@ from chassis.core.events import Delta, End, Error, Event, Metrics, Start
 from chassis.core.trace import trace_id_hex
 from chassis.ports.engine import EngineConnector, Lane
 from chassis.ports.evaluator import EvalCase, EvaluatorError, EvaluatorPort, NoEvaluator, Score
+from chassis.ports.feedback import Feedback, FeedbackError, FeedbackPort, NoFeedback
 from chassis.ports.model import Usage
 from chassis.ports.telemetry import TelemetryPort
 
@@ -97,12 +106,14 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ASYNC_MAX_PENDING",
+    "EVALUATOR_AGREEMENT",
     "EVALUATOR_CALLS",
     "GATE_BUDGET",
     "GATE_FAILED",
     "GATE_FAILED_CLOSED",
     "GATE_FAILED_OPEN",
     "GATE_FALLBACKS",
+    "GATE_FEEDBACK_FAILED",
     "GATE_RETRIES",
     "GATE_RUNS",
     "GATE_STOPPED",
@@ -125,6 +136,10 @@ GATE_FAILED_OPEN = "chassis.gate_failed_open"
 GATE_FAILED_CLOSED = "chassis.gate_failed_closed"
 EVALUATOR_DROPPED = "chassis.evaluator_dropped"
 EVALUATOR_ABANDONED = "chassis.evaluator_abandoned"
+EVALUATOR_AGREEMENT = "chassis.evaluator_agreement"
+"""suggested (138 CH-18): one per shadow scoring, by `pair` (`main:shadow`) and `agree`."""
+GATE_FEEDBACK_FAILED = "chassis.gate_feedback_failed"
+"""suggested (138 CH-18): a gate score `FeedbackPort` did not store, by `code`."""
 SCORE_SPAN = "chassis.evaluator.score"
 GATE_FAILED = "evaluator_gate_failed"
 """The error code of a run whose every attempt failed the gate and that has no fallback route."""
@@ -200,8 +215,12 @@ class GatedEngine:
         runs: RunRegistry | None = None,
         max_pending: int = ASYNC_MAX_PENDING,
         salt: bytes | None = None,
+        feedback: FeedbackPort | None = None,
+        shadow: EvaluatorPort | None = None,
     ) -> None:
         """`salt` is for tests; unset, a fresh secret salt is drawn for this process."""
+        self._feedback = feedback
+        self._shadow = shadow
         self.inner = inner
         self.kind: Lane = inner.kind
         self.capabilities: frozenset[str] = inner.capabilities
@@ -229,6 +248,9 @@ class GatedEngine:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             self._telemetry.counter(EVALUATOR_ABANDONED, len(tasks))
+        shadow_close = getattr(self._shadow, "aclose", None)
+        if shadow_close is not None:
+            await shadow_close()
         await self.inner.close()
 
     async def wait(self, timeout_s: float) -> int:
@@ -247,8 +269,7 @@ class GatedEngine:
     @property
     def route(self) -> str:
         """The `model_route` of the evaluator's own `metrics`."""
-        route = getattr(self.evaluator, "route", None)
-        return str(route) if route else f"evaluator:{self.evaluator.name}"
+        return _route_of(self.evaluator)
 
     def run(self, request: Request, ctx: Context) -> AsyncIterator[Event]:
         config = self._config()
@@ -309,7 +330,9 @@ class GatedEngine:
         self, request: Request, ctx: Context, case: EvalCase, *, mode: str, attempt: int
     ) -> Score:
         """One scoring in its span. Raises `EvaluatorError` after counting it."""
-        threshold = self._config().spec.harness.threshold
+        harness = self._config().spec.harness
+        threshold = harness.threshold
+        rubric = harness.rubric  # read before the call: the score is stored under what was used
         evaluator = self.evaluator.name
         route = self.route  # read before the call: a reload mid-call must not move the tokens
         with self._telemetry.span(
@@ -351,7 +374,65 @@ class GatedEngine:
                 outcome="pass" if passed else "fail",
             )
         self._count_judge_usage(score, route)
+        await self._record(request, ctx, score, rubric, attempt)
+        await self._shadow_score(request, case, passed, threshold)
         return score
+
+    async def _record(
+        self, request: Request, ctx: Context, score: Score, rubric: str, attempt: int
+    ) -> None:
+        """138 CH-18: the score goes to `FeedbackPort` on the run's trace, named after the
+        rubric the judge used. A store failure of any kind is counted and logged, never raised:
+        `chassis.gate_feedback_failed{code}`, `internal` for an exception that is not a
+        `FeedbackError`."""
+        if self._feedback is None or isinstance(self._feedback, NoFeedback):
+            return
+        record = Feedback(
+            feedback_id=f"{request.request_id}:{rubric}:{attempt}",
+            request_id=request.request_id,
+            trace_id=trace_id_hex(ctx.trace_id),
+            score=score.value,
+            name=rubric,
+        )
+        try:
+            await self._feedback.submit(record)
+        except Exception as exc:  # a store bug must never fail the run
+            code = exc.code if isinstance(exc, FeedbackError) else "internal"
+            self._telemetry.counter(GATE_FEEDBACK_FAILED, code=code)
+            self._telemetry.log(
+                "warning", "gate score not stored", request_id=request.request_id, code=code
+            )
+
+    async def _shadow_score(
+        self, request: Request, case: EvalCase, passed: bool, threshold: float
+    ) -> None:
+        """138 CH-18: the shadow judge scores a sampled attempt and never gates. Agreement on
+        pass or fail is counted as `chassis.evaluator_agreement{pair, agree}`. Its tokens and
+        cost are counted under its own route, as the main judge's are (042 A-2). It runs inline,
+        so a sampled sync attempt waits one more judge call: keep `shadow_sample_rate` low."""
+        if self._shadow is None:
+            return
+        rate = self._config().spec.harness.shadow_sample_rate
+        if not sampled(request.request_id + ":shadow", rate, self._salt):
+            return
+        route = _route_of(self._shadow)
+        try:
+            shadow = await self._shadow.score(case)
+        except EvaluatorError as exc:
+            self._telemetry.counter(
+                EVALUATOR_CALLS, evaluator=self._shadow.name, mode="shadow", outcome="error"
+            )
+            self._telemetry.log(
+                "warning", "shadow evaluator failed", request_id=request.request_id, code=exc.code
+            )
+            return
+        self._count_judge_usage(shadow, route)
+        agree = (shadow.value >= threshold) == passed
+        self._telemetry.counter(
+            EVALUATOR_AGREEMENT,
+            pair=f"{self.evaluator.name}:{self._shadow.name}",
+            agree="true" if agree else "false",
+        )
 
     def _count_judge_usage(self, score: Score, route: str) -> None:
         """042 A-2: the judge calls `ModelPort` directly, not through the model proxy, so its
@@ -580,6 +661,27 @@ async def _aclose(stream: AsyncIterator[Event]) -> None:
         await closer()
 
 
+def _route_of(evaluator: EvaluatorPort) -> str:
+    """An evaluator's `model_route`: its own route when it has one, else `evaluator:<name>`."""
+    route = getattr(evaluator, "route", None)
+    return str(route) if route else f"evaluator:{evaluator.name}"
+
+
+def _shadow(config: ChassisConfig, state: Any) -> EvaluatorPort | None:
+    """The shadow evaluator `spec.harness.shadow_evaluator` names (an `evaluator` adapter in
+    `chassis.profiles.REGISTRY`), with the same rubric binding as the main judge, or None."""
+    name = config.spec.harness.shadow_evaluator
+    if name is None:
+        return None
+    from chassis.profiles import resolve  # here: profiles is heavy and imports adapters lazily
+
+    shadow: EvaluatorPort = resolve("evaluator", name)  # type: ignore[assignment]
+    bind_rubric = getattr(shadow, "bind_rubric", None)
+    if callable(bind_rubric):
+        bind_rubric(lambda: state.config.spec.harness.rubric)
+    return shadow
+
+
 def with_gate(bundle: PortBundle, state: Any) -> PortBundle:
     """The bundle with its engine behind the gate when `spec.harness.evaluator_gate` is on (read
     from `state.config`, the first config), else the same bundle. Raises `GateNotConfigured` when
@@ -597,11 +699,16 @@ def with_gate(bundle: PortBundle, state: Any) -> PortBundle:
     bind_route = getattr(bundle.evaluator, "bind_route", None)
     if callable(bind_route):
         bind_route(lambda: state.config.spec.model.judge_route)
+    bind_rubric = getattr(bundle.evaluator, "bind_rubric", None)
+    if callable(bind_rubric):
+        bind_rubric(lambda: state.config.spec.harness.rubric)
     gate = GatedEngine(
         bundle.engine,
         bundle.evaluator,
         config=lambda: state.config,
         telemetry=bundle.telemetry,
         runs=state.runs,
+        feedback=bundle.feedback,
+        shadow=_shadow(config, state),
     )
     return dataclasses.replace(bundle, engine=gate)

@@ -28,6 +28,9 @@ class Feedback(BaseModel):
     """The W3C trace id of the call (`chassis.core.trace.trace_id_hex`)."""
     score: float = Field(ge=0, le=1)
     """suggested: 0 is bad, 1 is good; a thumbs down is 0, a thumbs up is 1."""
+    name: str | None = Field(default=None, max_length=64)
+    """The score's name (138 CH-18: the gate writes its score under the rubric version). None:
+    the store's own name for user feedback (`spec.feedback.score_name`)."""
     label: str | None = Field(default=None, max_length=64)
     comment: str | None = Field(default=None, max_length=COMMENT_MAX)
     subject: str | None = None
