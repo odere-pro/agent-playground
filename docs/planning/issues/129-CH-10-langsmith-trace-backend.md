@@ -28,7 +28,7 @@ The [product plan](../../plans/2026-11-06-agent-container-product.md) puts LangC
 ## Acceptance criteria
 
 - [ ] `deploy` holds the exporter behind a profile switch; the default stack runs without it.
-- [ ] `fake-langsmith` (a package beside `fake-langfuse`) records an OTLP trace, and an offline test reads it back.
+- [x] `fake-langsmith` (a package beside `fake-langfuse`) records an OTLP trace, and an offline test reads it back · Delivered by: `uv run pytest packages/fake-langsmith -q` gives `8 passed`; `packages/fake-langsmith/tests/test_fake_langsmith_server.py` posts OTLP protobuf and OTLP/JSON (hex ids) and reads the spans back by trace id, parent links included.
 - [ ] A stack test: one run is one trace in `fake-langsmith`, with the graph steps under the run span.
 - [ ] A stack test: the LangSmith key is in the Collector only; the chassis, the workload, and the logs hold none.
 - [ ] The primary trace view per environment is written where 001 DEC-1 records it.
