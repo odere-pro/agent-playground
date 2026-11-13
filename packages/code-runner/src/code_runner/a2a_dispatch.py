@@ -21,10 +21,14 @@ Per engine path `/<engine>`:
 
 No inbound bearer here: each chassis sends its own remote token, which only its remote checks
 (`--require-token-env`). The door holds no remote token and never reads the caller's. Network
-policy limits who reaches the door. A claim that fails is `UNAVAILABLE_CODE`, which the a2a-sdk
-raises as `A2AClientError`, so the chassis connector reports a retryable `a2a.transport`.
-Errors have fixed text: never an upstream body, a header value, or the token. The log line has
-the engine, the outcome, sizes, and timing.
+policy limits who reaches the door. A platform fault before the stream started (no free slot, a
+failed claim, a pod that never answers, a pod 5xx) is HTTP 503 with a fixed body
+(`PLATFORM_FAULT_STATUS`), so the chassis connector reports a retryable `a2a.transport`. A fault
+once the pod's stream began (an encoded stream, a lost or late stream) and a failed cancel are
+the JSON-RPC error `UNAVAILABLE_CODE`, which the chassis reports as `a2a.rpc_error`, not
+retryable (P-9): a retry could repeat side effects. Errors have fixed text: never an
+upstream body, a header value, or the token. The log line has the engine, the outcome, sizes,
+and timing.
 
 The claim lifecycle, the API client, and the pod address check are `code_runner.dispatch`'s.
 """
@@ -57,7 +61,18 @@ from code_runner.runner import DEFAULT_LIMITS, RunnerError
 
 STREAM_METHODS = frozenset({"SendStreamingMessage", "message/stream"})
 CANCEL_METHODS = frozenset({"CancelTask", "tasks/cancel"})
-UNAVAILABLE_CODE = -32000  # not an A2A code: the client raises A2AClientError (retryable)
+# The door's own JSON-RPC error answer. Since P-9 the chassis connector reports any JSON-RPC
+# error answer as `a2a.rpc_error`, not retryable (contract v9, E.15).
+UNAVAILABLE_CODE = -32000
+# A platform fault before the stream started (no free slot, a failed claim, a pod that never
+# answers, a pod 5xx) is not the workload's answer: HTTP 503 with a fixed body, which the a2a-sdk
+# raises as a plain `A2AClientError` ("HTTP Error 503") and the chassis connector reports as a
+# retryable `a2a.transport`. No stream byte reached the caller, so a retry repeats nothing
+# (contract v9, E, decided 2026-11-13).
+PLATFORM_FAULT_STATUS = 503
+PLATFORM_FAULT_BODY = {"error": "sandbox_unavailable"}  # suggested: the fixed body
+PLATFORM_FAULT_RETRY_AFTER_S = 1  # suggested: as the chassis's 503 `overloaded` (contract v9, D.12)
+POD_FAULT_STATUSES = range(500, 600)  # a pod 5xx before the stream: the platform fault answer
 # The pod refused the caller's credential (401, 403) before the stream: the door answers with the
 # same HTTP status and a fixed body, as the pod did before the door existed. The a2a-sdk raises an
 # HTTP error status as A2AClientHTTPError, which the chassis connector reports as `a2a.transport`.
@@ -190,6 +205,16 @@ def _rpc_error(rpc_id: object, code: int, message: str) -> JSONResponse:
 
 def _unavailable(rpc_id: object, message: str) -> JSONResponse:
     return _rpc_error(rpc_id, UNAVAILABLE_CODE, f"sandbox_unavailable: {message}")
+
+
+def _platform_fault() -> JSONResponse:
+    """The one answer to a fault before the stream started: no request id, no claim name, no
+    error text, no pod header."""
+    return JSONResponse(
+        dict(PLATFORM_FAULT_BODY),
+        status_code=PLATFORM_FAULT_STATUS,
+        headers={"Retry-After": str(PLATFORM_FAULT_RETRY_AFTER_S)},
+    )
 
 
 def _connection_named(values: list[str]) -> frozenset[str]:
@@ -372,15 +397,17 @@ class RunDispatcher:
             async with asyncio.timeout(self.config.claim_timeout_s):
                 await self._slots.acquire()
         except TimeoutError:
-            return _unavailable(rpc_id, "no free sandbox slot")
+            log.warning("a2a-dispatch no_free_slot engine=%s", engine.name)
+            return _platform_fault()
         claim = _Claim(f"run-{uuid.uuid4().hex}", engine.name, len(body))
         try:
             host = await self._claim(engine, claim)
             upstream = await self._open(host, body, _forward_headers(request))
         except RunnerError as exc:
+            # No claim, or the claimed pod never answered: no stream byte went to the caller.
             claim.outcome = exc.code
             await self._release(claim)
-            return _unavailable(rpc_id, exc.message)
+            return _platform_fault()
         except BaseException:
             claim.outcome = "error"
             await self._release(claim)
@@ -394,6 +421,8 @@ class RunDispatcher:
                 await self._release(claim)
             if status in REFUSED_STATUSES:
                 return JSONResponse({"error": "sandbox_refused"}, status_code=status)
+            if status in POD_FAULT_STATUSES:
+                return _platform_fault()
             return _unavailable(rpc_id, f"the sandbox refused the run (HTTP {status})")
         if _encoded(upstream):
             claim.outcome = "encoded"
@@ -431,7 +460,7 @@ class RunDispatcher:
         self, upstream: httpx.Response, run: _Run, claim: _Claim, rpc_id: object
     ) -> AsyncIterator[bytes]:
         """The pod's bytes, unchanged, until the stream ends. On the run deadline or a lost pod,
-        one last SSE event: the door's own retryable JSON-RPC error. The deadline is one for the
+        one last SSE event: the door's own JSON-RPC error. The deadline is one for the
         whole run, applied to each read, never across a `yield`."""
         deadline = asyncio.get_running_loop().time() + self.config.run_deadline_s
         chunks = upstream.aiter_raw()

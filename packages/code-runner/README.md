@@ -106,8 +106,23 @@ Two `httpx` clients, never shared, and no Kubernetes SDK:
 - One `<engine>.json` agent card per engine in `--cards-dir`; the pool is `<pool-prefix><engine>`. A card fetch never claims.
 - One port per engine, one process (`cli.run_servers`, one uvicorn server per port; a stop signal or the end of one stops all). A port serves only its engine: any other engine path there is 404 `unknown_engine`, with no claim. The NetworkPolicy lets each chassis reach its own port only.
 - Per streaming run: claim a pod, forward the body and the caller's headers to the pod on 9000, stream the answer back unchanged, delete the claim on every exit path. A cancel goes to the run's pod.
-- Timeouts (suggested): the pod's response headers 30 s, a cancel 10 s, the whole run 600 s (applied per read). A lost or late run ends with one last SSE event, a JSON-RPC error `-32000` `sandbox_lost`, which the chassis reports as a retryable `a2a.transport`.
-- Codes: `-32000` `sandbox_unavailable` (retryable: no slot, no claim, no answer, a pod 5xx); `-32600` `sandbox_refused` for a pod 401 or 403 (the caller's credential; not retryable); `-32001` for a cancel of an unknown task.
+- Timeouts (suggested): the pod's response headers 30 s, a cancel 10 s, the whole run 600 s (applied per read). A lost or late run ends with one last SSE event, a JSON-RPC error `-32000` `sandbox_lost`.
+- Errors split at one line: did the pod's stream start (contract v9, section E, decided 2026-11-13)? Before it, no byte reached the caller, so a retry repeats nothing. After it, a retry could repeat side effects.
+
+  | Fault | Answer | Chassis reports |
+  | ----- | ------ | --------------- |
+  | No free slot within the claim timeout | HTTP 503 | `a2a.transport`, retryable |
+  | Claim not created, or not Ready in time | HTTP 503 | `a2a.transport`, retryable |
+  | Claimed pod never answers (port never opens, no response headers) | HTTP 503 | `a2a.transport`, retryable |
+  | Pod 5xx (before any stream byte) | HTTP 503 | `a2a.transport`, retryable |
+  | Pod 401 or 403 (the caller's credential) | same status, `{"error": "sandbox_refused"}` | `a2a.transport` |
+  | Any other pod status | `-32000` `sandbox_unavailable` | `a2a.rpc_error`, not retryable |
+  | Encoded pod stream | `-32000` `sandbox_unavailable` | `a2a.rpc_error`, not retryable |
+  | Stream breaks, or passes the run deadline | last SSE event `-32000` `sandbox_lost` | `a2a.rpc_error`, not retryable |
+  | Cancel that does not reach the pod | `-32000` `sandbox_unavailable` | `a2a.rpc_error`, not retryable |
+  | Cancel of an unknown task | `-32001` | `a2a.rpc_error`, not retryable |
+
+  Every 503 is the same: body `{"error": "sandbox_unavailable"}` and `Retry-After: 1` (both suggested). It never carries the error text, the claim name, the request id, or a pod header.
 
 ## Limits recorded
 

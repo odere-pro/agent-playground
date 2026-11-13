@@ -18,6 +18,8 @@ import httpx
 import pytest
 from code_runner.a2a_dispatch import (
     CANCEL_METHODS,
+    PLATFORM_FAULT_BODY,
+    PLATFORM_FAULT_STATUS,
     STREAM_METHODS,
     TASK_NOT_FOUND,
     UNAVAILABLE_CODE,
@@ -288,19 +290,46 @@ async def test_code_runner_a2a_dispatch_over_the_body_cap_is_413_without_a_claim
     assert api.created == []
 
 
-async def test_code_runner_a2a_dispatch_claim_timeout_is_retryable_and_leaks_nothing(
+async def test_code_runner_a2a_dispatch_claim_timeout_is_503_and_leaks_nothing(
     token_file: Path,
 ) -> None:
+    """A claim not Ready in time is a platform fault, not the workload's answer: HTTP 503, which
+    the chassis connector maps to a retryable `a2a.transport` (contract v9, E, 2026-11-13)."""
     api, pods = FakeApi(ready=False), FakePods()
     response = await _post(_door(api, pods, token_file), _stream_body("r9"))
-    answer = response.json()
-    # -32000 is not an A2A error code: the a2a-sdk raises A2AClientError, which the chassis
-    # connector maps to a retryable `a2a.transport`.
-    assert response.status_code == 200
-    assert answer["id"] == "r9" and answer["error"]["code"] == UNAVAILABLE_CODE
-    assert answer["error"]["message"].startswith("sandbox_unavailable")
+    _assert_platform_fault(response, "r9", "Ready")
     assert pods.requests == []
     assert api.live() == set() and len(api.deleted) == 1
+
+
+def _assert_platform_fault(response: httpx.Response, rpc_id: str, *leaks: str) -> None:
+    """A fault before the stream started (contract v9, E, decided 2026-11-13): HTTP 503, the
+    fixed body, `Retry-After: 1` as the chassis's own 503 (contract v9, D.12), and nothing
+    else: no request id, no claim name, no error text, no JSON-RPC envelope."""
+    assert response.status_code == PLATFORM_FAULT_STATUS == 503
+    assert response.json() == PLATFORM_FAULT_BODY == {"error": "sandbox_unavailable"}
+    assert response.headers["retry-after"] == "1"
+    for word in (rpc_id, "run-", "jsonrpc", "sandbox_lost", "did not", *leaks):
+        assert word not in response.text, word
+
+
+class _RefusingApi(FakeApi):
+    """Answers every claim create with a 500 whose body holds words that must not leak."""
+
+    async def __call__(self, request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(500, json={"message": "etcd-leader-lost sandbox-xyz"})
+        return await super().__call__(request)
+
+
+async def test_code_runner_a2a_dispatch_failed_claim_is_503_with_a_fixed_body(
+    token_file: Path,
+) -> None:
+    """A refused claim create: the platform fault answer, no exception text, no API words."""
+    api, pods = _RefusingApi(), FakePods()
+    response = await _post(_door(api, pods, token_file), _stream_body("r3"))
+    _assert_platform_fault(response, "r3", "no sandbox could be claimed", "etcd", "sandbox-xyz")
+    assert pods.requests == [] and api.live() == set()
 
 
 async def test_code_runner_a2a_dispatch_upstream_refusal_never_echoes_its_body(
@@ -570,14 +599,33 @@ async def test_code_runner_a2a_dispatch_pod_auth_refusal_is_the_same_http_status
     assert api.live() == set() and len(api.deleted) == 1
 
 
-async def test_code_runner_a2a_dispatch_pod_5xx_stays_the_retryable_rpc_error(
-    token_file: Path,
+@pytest.mark.parametrize("status", [500, 502, 503])
+async def test_code_runner_a2a_dispatch_pod_5xx_before_the_stream_is_503(
+    token_file: Path, status: int
 ) -> None:
-    """The control: any other refusal is still 200 with the retryable -32000."""
+    """A pod 5xx comes before any stream byte went to the caller: a platform fault, 503. A pod
+    cannot send a status after its 200; a break after that is `sandbox_lost` (the -32000 test
+    `..._lost_upstream_mid_stream_ends_with_an_error_line`)."""
     api, pods = FakeApi(), FakePods()
 
     async def refused(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(503, json={"detail": "busy"})
+        return httpx.Response(status, json={"detail": "pod-words busy"}, headers={"x-pod": "p"})
+
+    pods.answer = refused
+    response = await _post(_door(api, pods, token_file), _stream_body("r5"))
+    _assert_platform_fault(response, "r5", "pod-words", "busy", f"HTTP {status}")
+    assert "x-pod" not in response.headers
+    assert api.live() == set() and len(api.deleted) == 1
+
+
+async def test_code_runner_a2a_dispatch_pod_4xx_other_than_401_403_stays_the_rpc_error(
+    token_file: Path,
+) -> None:
+    """The control: a pod status that is neither 401, 403, nor 5xx is still 200 with -32000."""
+    api, pods = FakeApi(), FakePods()
+
+    async def refused(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"detail": "nope"})
 
     pods.answer = refused
     response = await _post(_door(api, pods, token_file), _stream_body())
@@ -610,7 +658,8 @@ async def test_code_runner_a2a_dispatch_refusal_whose_close_fails_still_releases
 async def test_code_runner_a2a_dispatch_pod_that_never_sends_headers_frees_the_claim(
     token_file: Path,
 ) -> None:
-    """(b) A pod that accepts the connection and never answers: the header timeout ends it."""
+    """(b) A pod that accepts the connection and never answers: the header timeout ends it.
+    No stream byte went to the caller yet, so it is the platform fault answer, 503."""
     api, pods = FakeApi(), FakePods()
     never = asyncio.Event()
 
@@ -620,8 +669,42 @@ async def test_code_runner_a2a_dispatch_pod_that_never_sends_headers_frees_the_c
 
     pods.answer = silent
     door = _door_with(api, pods, token_file, headers_timeout_s=0.1)
-    answer = (await asyncio.wait_for(_post(door, _stream_body()), timeout=5)).json()
-    assert answer["error"]["code"] == UNAVAILABLE_CODE
+    response = await asyncio.wait_for(_post(door, _stream_body("r6")), timeout=5)
+    _assert_platform_fault(response, "r6")
+    assert api.live() == set()
+
+
+async def test_code_runner_a2a_dispatch_pod_that_cannot_be_reached_is_503(
+    token_file: Path,
+) -> None:
+    """A claimed pod whose port never opens within the connect retry: 503, no error text."""
+    api, pods = FakeApi(), FakePods()
+
+    async def refused(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused to 10.244.0.11")
+
+    pods.answer = refused
+    response = await asyncio.wait_for(_post(_door(api, pods, token_file), _stream_body()), 5)
+    _assert_platform_fault(response, "r1", "refused", "10.244")
+    assert api.live() == set() and len(api.deleted) == 1
+
+
+async def test_code_runner_a2a_dispatch_pod_silent_after_the_stream_started_stays_rpc_error(
+    token_file: Path,
+) -> None:
+    """The other side of the line: one whole event reached the caller, then the pod went
+    silent. A retry could repeat side effects, so it stays 200 with the -32000 `sandbox_lost`
+    line (contract v9, E, decided 2026-11-13); never a 503."""
+    first = SSE.split(b"\n\n")[0] + b"\n\n"
+    api, pods = FakeApi(), FakePods([first])
+    pods.hold = asyncio.Event()
+    door = _door_with(api, pods, token_file, run_deadline_s=0.2)
+    response = await asyncio.wait_for(_post(door, _stream_body()), timeout=5)
+    assert response.status_code == 200 and "retry-after" not in response.headers
+    assert response.text.startswith(first.decode())
+    error = _final_error(response.text)
+    assert error["error"]["code"] == UNAVAILABLE_CODE == -32000
+    assert error["error"]["message"].startswith("sandbox_lost")
     assert api.live() == set()
 
 
@@ -650,7 +733,7 @@ async def test_code_runner_a2a_dispatch_cancel_that_hangs_times_out(token_file: 
 async def test_code_runner_a2a_dispatch_run_deadline_ends_with_an_error_line_and_frees(
     token_file: Path,
 ) -> None:
-    """(c) The run deadline: the stream ends with the door's own retryable JSON-RPC error."""
+    """(c) The run deadline: the stream ends with the door's own JSON-RPC error."""
     api, pods = FakeApi(), FakePods([SSE[:40]])  # half an event, then silence
     pods.hold = asyncio.Event()
     door = _door_with(api, pods, token_file, run_deadline_s=0.2)
@@ -683,18 +766,17 @@ async def test_code_runner_a2a_dispatch_lost_upstream_mid_stream_ends_with_an_er
     assert api.live() == set()
 
 
-async def test_code_runner_a2a_dispatch_no_free_slot_is_retryable_and_claims_nothing(
+async def test_code_runner_a2a_dispatch_no_free_slot_is_503_and_claims_nothing(
     token_file: Path,
 ) -> None:
-    """max_claims exhausted: the next run waits claim_timeout_s, then -32000, no claim made."""
+    """max_claims exhausted: the next run waits claim_timeout_s, then 503, no claim made."""
     api, pods = FakeApi(), FakePods()
     pods.hold = asyncio.Event()
     door = _door_with(api, pods, token_file, max_claims=1, claim_timeout_s=0.1)
     run = asyncio.create_task(_post(door, _stream_body()))
     await _wait_for_run(door)
-    answer = (await _post(door, _stream_body("r2"))).json()
-    assert answer["error"]["code"] == UNAVAILABLE_CODE
-    assert "slot" in answer["error"]["message"]
+    response = await _post(door, _stream_body("r2"))
+    _assert_platform_fault(response, "r2", "slot")
     assert len(api.created) == 1
     pods.hold.set()
     await run
@@ -722,18 +804,20 @@ async def test_code_runner_a2a_dispatch_asks_the_pod_for_no_encoding_and_drops_h
     assert sent.headers["authorization"] == CALLER_BEARER
 
 
-async def test_code_runner_a2a_dispatch_encoded_pod_stream_is_retryable_and_frees(
+async def test_code_runner_a2a_dispatch_encoded_pod_stream_is_the_rpc_error_and_frees(
     token_file: Path,
 ) -> None:
     """A pod that encodes its stream anyway: the door cannot scan it for the task id, and the
-    chassis caps no decoded bytes, so the run is the retryable error and the claim is freed."""
+    chassis caps no decoded bytes, so the run is the JSON-RPC error and the claim is freed."""
     api, pods = FakeApi(), FakePods()
 
     async def encoded(request: httpx.Request) -> httpx.Response:
+        # A stream, as a real transport gives: a `content=` body is decoded inside `send`, so
+        # the run would never reach the door's own encoding check.
         return httpx.Response(
             200,
             headers={"content-type": "text/event-stream", "content-encoding": "gzip"},
-            content=b"\x1f\x8b-not-read",
+            stream=_Chunks([b"\x1f\x8b-not-read"]),
         )
 
     pods.answer = encoded
