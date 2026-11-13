@@ -4,15 +4,18 @@
   false): until topic ACLs per service are in (020 X-8), caller data stays off a shared broker.
   Checked in the `inprocess` and `sidecar` lanes, through `InMemoryBus`.
 - The model-source field (which model produced the original text) is `original_model`. It is
-  defined once in code (`TaskResult`), sits in the published schema and on every published
-  event (null until 043 A-3 fills it), and is documented once in `docs/specs/contract.md`.
+  declared once in code (`TaskResult`), sits in the published schema and on every published
+  event (null until 043 A-3 fills it), and is defined in the result-events section of
+  `docs/specs/contract.md`. `TaskResult` never serializes a null `input`.
 
-The change to `task-result.v1.json` is additive: a payload in the previous v1 shape (with `input`,
-without `original_model`) still validates. Offline: Unix sockets only, no TCP, no keys.
+The change to `task-result.v1.json` is a break made in place by user decision, before any consumer
+exists (ADR-016): a new default event fails the previous v1 shape, which a test records. The new
+schema still reads a payload in the previous v1 shape. Offline: Unix sockets only, no TCP, no keys.
 """
 
 from __future__ import annotations
 
+import ast
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -26,6 +29,7 @@ from a2a_uds import SIDECAR_URL, serve_uds
 from chassis.adapters.a2a import InProcessConnector, SidecarConnector
 from chassis.adapters.a2a.inprocess import load_handle
 from chassis.adapters.a2a.server import build_agent_card, build_app
+from chassis.core.envelope import TaskInput, Versions
 from chassis.core.results import TASK_COMPLETED, TaskResult
 from chassis.fakes import InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.events import InMemoryBus
@@ -136,28 +140,97 @@ async def test_the_published_event_carries_original_model(lane: str) -> None:
     assert data[FIELD] is None  # filled for the simplifier by 043 A-3, null until then
 
 
+def _field_declarations(name: str) -> list[str]:
+    """Every annotated `name: ...` in a class body under `chassis/`, as `file:Class`."""
+    found = []
+    for path in sorted(CHASSIS_SRC.rglob("*.py")):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            for item in node.body:
+                target = item.target if isinstance(item, ast.AnnAssign) else None
+                if isinstance(target, ast.Name) and target.id == name:
+                    found.append(f"{path.relative_to(CHASSIS_SRC).as_posix()}:{node.name}")
+    return found
+
+
 def test_original_model_is_defined_once_in_code_and_in_the_schema() -> None:
     assert FIELD in TaskResult.model_fields
     schema = _payload_schema()
     assert FIELD in schema["properties"]
     assert schema["properties"][FIELD].get("description"), "the schema documents the field"
-    holders = sorted(
-        path.relative_to(CHASSIS_SRC).as_posix()
-        for path in CHASSIS_SRC.rglob("*.py")
-        if FIELD in path.read_text()
-    )
-    assert holders == ["core/results.py"], holders
-    assert (CHASSIS_SRC / "core" / "results.py").read_text().count(f"{FIELD}:") == 1
+    assert _field_declarations(FIELD) == ["core/results.py:TaskResult"]
 
 
-def test_original_model_is_documented_once_in_the_specs() -> None:
-    holders = sorted(path.name for path in SPEC_DOCS.glob("*.md") if FIELD in path.read_text())
-    assert holders == ["contract.md"], holders
+def _result_events_section() -> str:
     contract = (SPEC_DOCS / "contract.md").read_text()
-    assert contract.count(f"`{FIELD}`") == 1
+    (section,) = [part for part in contract.split("\n\n") if part.startswith("**Result events**")]
+    return section
 
 
-def test_a_previous_v1_payload_still_validates() -> None:
+def test_original_model_is_documented_in_the_result_events_section() -> None:
+    section = _result_events_section()
+    assert f"`{FIELD}` is the model-source field: the model that produced the original text" in (
+        section
+    )
+
+
+def _minimal_result(**fields: Any) -> TaskResult:
+    return TaskResult(
+        agent=AGENT,
+        agent_version="0.0.1",
+        request_id="req-1",
+        idempotency_key="0" * 64,
+        status="ok",
+        versions=Versions(chassis="0.0.0"),
+        **fields,
+    )
+
+
+def test_a_task_result_never_serializes_a_null_input() -> None:
+    unset = _minimal_result().model_dump(mode="json")
+    assert "input" not in unset
+    assert unset[FIELD] is None
+    jsonschema.validate(unset, _payload_schema())
+    given = _minimal_result(input=TaskInput(text=TEXT)).model_dump(mode="json")
+    assert given["input"] == {"text": TEXT, "data": {}}
+    jsonschema.validate(given, _payload_schema())
+
+
+PREVIOUS_V1_REQUIRED = (
+    "agent",
+    "agent_version",
+    "request_id",
+    "idempotency_key",
+    "status",
+    "input",
+    "versions",
+)
+PREVIOUS_V1_PROPERTIES = (*PREVIOUS_V1_REQUIRED, "output", "usage")
+"""Frozen from `task-result.v1.json` before 2026-11-13: closed, `input` required."""
+
+
+def _previous_v1_schema() -> dict[str, Any]:
+    """The previous v1 shape: the current field schemas, cut back to the old set and rules."""
+    current = _payload_schema()
+    return {
+        **current,
+        "properties": {name: current["properties"][name] for name in PREVIOUS_V1_PROPERTIES},
+        "required": list(PREVIOUS_V1_REQUIRED),
+        "additionalProperties": False,
+    }
+
+
+async def test_a_new_default_event_breaks_the_previous_v1_shape_known_and_decided() -> None:
+    """ADR-016: the break of the v1 payload is known and decided, made before any consumer."""
+    data = await _published_data("inprocess", {})
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(data, _previous_v1_schema())
+
+
+def test_an_older_v1_payload_is_still_readable() -> None:
+    """Read-side only: the new schema and model accept a payload in the earlier v1 shape."""
     previous = {
         "agent": AGENT,
         "agent_version": "0.0.1",

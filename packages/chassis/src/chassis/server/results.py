@@ -127,7 +127,6 @@ async def result_event(
         usage=response.metrics,
         versions=response.versions,
     )
-    left_out = None if include_input else {"input"}
     event = CloudEvent(
         id=event_id(request.request_id, topic),
         source=f"/agents/{request.agent}",
@@ -135,7 +134,7 @@ async def result_event(
         subject=request.request_id,
         time=datetime.now(UTC),
         dataschema=DATASCHEMA,
-        data=result.model_dump(mode="json", exclude=left_out),
+        data=result.model_dump(mode="json"),  # `TaskResult` leaves an unset `input` out
         traceparent=run.ctx.traceparent or traceparent_for(run.ctx),
         idempotencykey=hashed,
         configversion=response.versions.config,
