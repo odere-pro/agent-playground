@@ -256,6 +256,30 @@ async def test_model_tokens_and_cost_come_from_the_proxy_usage() -> None:
     assert value(text, cost, route="other") == 0, "a route with no price has no cost"
 
 
+async def test_token_and_cost_series_are_labeled_by_agent_and_route_never_by_user() -> None:
+    """004 G-2: Prometheus sees tokens and cost by `agent` and `route`. The caller's `user` (the
+    OpenAI field and request metadata) is unbounded, so it is in the usage record only."""
+    prices = {"big-default": {"input_per_mtok": 1.5, "output_per_mtok": 4.0}}
+    config = _config(observability={"prices": prices}, model={"route": "big-default"})
+    app = create_app(config, _ports())
+    body = {**CHAT, "user": "dana@example.test", "metadata": {"user": "dana@example.test"}}
+    async with (
+        _client(create_proxy_app(app)) as proxy,
+        _client(app) as client,
+        app.router.lifespan_context(app),
+    ):
+        assert (await proxy.post("/v1/chat/completions", json=body)).status_code == 200
+        text = (await client.get("/metrics")).text
+    usage = {"chassis_model_tokens_total", "chassis_model_cost_microusd_total"}
+    found = [(name, dict(labels)) for (name, labels) in samples(text) if name in usage]
+    assert {name for name, _ in found} == usage
+    for name, labels in found:
+        assert labels["agent"] == "echo", name
+        assert labels["route"] == "big-default", name
+        assert "user" not in labels, f"{name} has a user label: {labels}"
+    assert "dana@example.test" not in text, "no user value anywhere in the scrape"
+
+
 # --- The evaluator gate's fallback rate ---
 
 BAD, GOOD, FALLBACK = "The report was signed.", "Dana signed it in May.", "fallback-route"
