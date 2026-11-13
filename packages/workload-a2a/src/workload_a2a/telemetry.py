@@ -9,6 +9,9 @@ Never imports the chassis (ADR-002). The OpenTelemetry SDK is the optional extra
   with the OTLP/HTTP exporter when `OTEL_EXPORTER_OTLP_ENDPOINT` or
   `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set (the standard variables pick the endpoint and the
   headers), and does nothing otherwise. `build_app` calls it. `shutdown()` undoes all of it.
+- **Sampling (014 H-7).** The provider pins `ParentBased(ALWAYS_ON)`, never the SDK default that
+  reads `OTEL_TRACES_SAMPLER`: every span under the chassis's sampled `traceparent` is exported,
+  and the OTel Collector samples (ADR-007 item 8).
 - **Engines.** An engine calls `register_instrumentor(fn)` at import. `fn(tracer_provider)` turns
   its OpenInference instrumentor on and returns how to turn it off. It runs when telemetry is
   configured (at once when it already is). Nothing engine-specific lives here.
@@ -41,6 +44,7 @@ try:
         SimpleSpanProcessor,
         SpanExporter,
     )
+    from opentelemetry.sdk.trace.sampling import ALWAYS_ON, ParentBased
     from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
     AVAILABLE = True
@@ -114,7 +118,9 @@ def configure(
         return None
     shutdown()
     name = service_name or os.environ.get("OTEL_SERVICE_NAME") or DEFAULT_SERVICE_NAME
-    provider = TracerProvider(resource=Resource.create({SERVICE_NAME: name}))
+    provider = TracerProvider(
+        resource=Resource.create({SERVICE_NAME: name}), sampler=ParentBased(ALWAYS_ON)
+    )
     provider.add_span_processor(BaggageAttributes())
     for exporter in span_exporters:
         provider.add_span_processor(SimpleSpanProcessor(exporter))

@@ -27,6 +27,8 @@ from typing import Any
 import pytest
 import yaml
 from chassis.adapters.otel import OtelTelemetry
+from chassis.core.envelope import Budget
+from opentelemetry.sdk.trace.export import _DEFAULT_SCHEDULE_DELAY_MILLIS
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -58,6 +60,21 @@ PROCESSOR_KEYS = frozenset(
 )
 """`tailsamplingprocessor.Config`'s top-level keys at v0.163.0 (`tail_storage` left out: it is
 behind a feature gate)."""
+MEMORY_LIMITER_KEYS = frozenset(
+    {
+        "check_interval",
+        "min_gc_interval_when_soft_limited",
+        "min_gc_interval_when_hard_limited",
+        "max_gc_interval_when_soft_limited",
+        "max_gc_interval_when_hard_limited",
+        "limit_mib",
+        "spike_limit_mib",
+        "limit_percentage",
+        "spike_limit_percentage",
+    }
+)
+"""`memorylimiter.Config`'s keys at v0.163.0 (core `internal/memorylimiter/config.go`). The
+contrib manifest at `v0.163.2` lists `processor/memorylimiterprocessor v0.163.0`."""
 POLICY_KEYS = {
     "probabilistic": {"hash_salt", "sampling_percentage"},
     "status_code": {"status_codes"},
@@ -176,10 +193,40 @@ def test_an_unset_rate_keeps_every_trace() -> None:
 
 @pytest.mark.parametrize("stack", STACKS)
 def test_the_traces_pipeline_samples_first(stack: str) -> None:
-    """Sampling runs before redaction and the batch: a dropped trace costs neither."""
+    """The memory limit first, then sampling, before redaction and the batch: a dropped trace
+    costs neither."""
     processors = _yaml(COLLECTORS[stack])["service"]["pipelines"]["traces"]["processors"]
-    assert processors[0] == "tail_sampling"
+    assert processors[:2] == ["memory_limiter", "tail_sampling"]
     assert processors[-1] == "batch"
+
+
+@pytest.mark.parametrize("stack", STACKS)
+def test_the_memory_limiter_uses_only_keys_the_pinned_processor_has(stack: str) -> None:
+    limiter = _yaml(COLLECTORS[stack])["processors"]["memory_limiter"]
+    assert set(limiter) <= MEMORY_LIMITER_KEYS
+    assert limiter["check_interval"]
+    assert limiter["spike_limit_percentage"] < limiter["limit_percentage"]
+
+
+@pytest.mark.parametrize("stack", STACKS)
+def test_the_traces_held_are_bounded(stack: str) -> None:
+    """suggested: `num_traces`, so a burst evicts old traces instead of growing the heap."""
+    num_traces = _sampling(stack)["num_traces"]
+    assert isinstance(num_traces, int) and num_traces > 0
+
+
+def _seconds(duration: str) -> float:
+    assert duration.endswith("s") and duration[:-1].isdigit(), duration
+    return float(duration[:-1])
+
+
+@pytest.mark.parametrize("stack", STACKS)
+def test_the_decision_waits_for_a_default_run_and_the_export_delay(stack: str) -> None:
+    """The error status lands on `chassis.run` when it ends, last. The wait must outlast the
+    default run timeout plus the SDK batch delay, or an errored run is decided before its error
+    span arrives."""
+    longest_s = Budget().timeout_ms / 1000 + _DEFAULT_SCHEDULE_DELAY_MILLIS / 1000
+    assert _seconds(_sampling(stack)["decision_wait"]) > longest_s
 
 
 @pytest.mark.parametrize("stack", STACKS)

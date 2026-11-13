@@ -1,9 +1,11 @@
 # packages/agentctl
 
-The PoC-9 agent factory: `agentctl new <name> --kind ... --framework ... --connector ...` renders the Copier template in `src/agentctl/template/` into a new folder, then runs `git init -b main` and one commit. Usage is in `README.md`.
+The PoC-9 agent factory: `agentctl new <name> --kind ... --framework ... --connector ... [--trust trusted|untrusted] [--key-route ROUTE ...]` renders the Copier template in `src/agentctl/template/` into a new folder, then runs `git init -b main` and one commit. Usage is in `README.md`.
 
 - agentctl never imports `chassis` (import-linter). Its only dependency is `copier`, pinned exactly. Tests may import the chassis to check the rendered config loads.
 - The trust rule lives in `rules.py` and mirrors `ChassisConfig._lane_fits_profile`; `test_agentctl_config.py` checks the two agree. ADR-006 names the untrusted engines.
+- `--trust` can lower trust, never raise it. With no flag, trust follows the framework. `trust` is an asked Copier question, so `.copier-answers.yml` records it. With no `--connector`, the lane follows the resolved trust: untrusted gets `remote`.
+- `--key-route` states the routes the service's key lists; a generated route outside that list is refused, never rewritten. `rules.GENERATED_ROUTES` must match the routes the keyed configs name (`test_the_generated_routes_are_the_ones_agentctl_checks`). Decided 2026-11-13: the list will come from a key manifest written at deploy; that is not built yet.
 - The template variables are fixed, other PoC-9 parts rely on them: `agent_name`, `package_name`, `kind`, `framework`, `connector`, `trust`, `platform_path`.
 - `template/_frameworks/<framework>/` is the example business logic: byte copies of `packages/workloads/echo-<framework>/src` with the module name replaced by `{{ package_name }}`. `test_agentctl_render.py` fails when they drift; copy the echo file again.
 - Every Python file in the template ends in `.jinja`, so the monorepo's ruff, mypy, and pytest never read it. `test_agentctl_rendered_checks.py` runs ruff and the rendered unit tests on each framework instead.
