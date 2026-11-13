@@ -10,6 +10,7 @@ from chassis.agent_class import (
     KIND_CLASS,
     KINDS,
     MODULE_TABLE,
+    Kind,
     check_agent_class,
     module_rule,
 )
@@ -55,8 +56,8 @@ def test_kind_maps_to_its_class() -> None:
 
 
 @pytest.mark.parametrize("kind", KINDS)
-def test_each_kind_with_its_own_class_passes(kind: str) -> None:
-    check_agent_class(KIND_CLASS[kind], kind, frozenset())  # type: ignore[arg-type]
+def test_each_kind_with_its_own_class_passes(kind: Kind) -> None:
+    check_agent_class(KIND_CLASS[kind], kind, frozenset())
 
 
 @pytest.mark.parametrize(
