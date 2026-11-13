@@ -1,0 +1,8 @@
+{
+  "schema": "eval-datasets.v0",
+  "note": "suggested: one store and one dataset per environment (CH-12, 131). The cases come from packages/eval-kit/src/eval_kit/golden/cases.yaml only.",
+  "environments": {
+    "dev": {"store": "langfuse", "dataset": "poc07-golden"},
+    "ci": {"store": "langfuse", "dataset": "poc07-golden"}
+  }
+}
