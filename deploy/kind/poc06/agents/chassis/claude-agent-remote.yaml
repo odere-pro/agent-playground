@@ -21,5 +21,6 @@ spec:
     auth:
       scheme: bearer
       token_env: REMOTE_TOKEN
+      proxy_token_env: REMOTE_PROXY_TOKEN
   model:
     route: fake-chat

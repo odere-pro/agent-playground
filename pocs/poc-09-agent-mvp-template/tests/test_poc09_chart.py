@@ -277,13 +277,69 @@ def test_remote_lane_the_workload_holds_only_its_own_token(chart: Charts, tmp_pa
     by_name = {e["name"]: e for e in workload["env"]}
     assert by_name["CHASSIS_API_TOKEN"]["valueFrom"]["secretKeyRef"]["name"] == token
     secret_env = [e["name"] for e in workload["env"] if "secretKeyRef" in e.get("valueFrom", {})]
-    assert secret_env == ["CHASSIS_API_TOKEN"]
+    assert secret_env == ["CHASSIS_A2A_TOKEN", "CHASSIS_API_TOKEN"]
     assert "--remote-proxy-host" in chassis["args"]
     config = yaml.safe_load(one(docs, "ConfigMap", f"{RELEASE}-chassis")["data"]["config.yaml"])
     assert config["spec"]["engine"]["url"] == (
         f"http://{RELEASE}-workload.{REMOTE_NAMESPACE}.svc.cluster.local:{WORKLOAD_PORT}"
     )
-    assert config["spec"]["engine"]["auth"] == {"scheme": "bearer", "token_env": "REMOTE_TOKEN"}
+    assert config["spec"]["engine"]["auth"] == {
+        "scheme": "bearer",
+        "token_env": "REMOTE_TOKEN",
+        "proxy_token_env": "REMOTE_PROXY_TOKEN",
+    }
+
+
+def _token_refs(docs: list[Doc], token: str) -> set[tuple[str, str, str]]:
+    """Every reference to the token Secret: (container, env name, key). An `envFrom` or a volume
+    of it is a bare (container, "*", "*"), which no key mapping allows."""
+    refs: set[tuple[str, str, str]] = set()
+    for doc in docs:
+        pod = doc.get("spec", {}).get("template", {}).get("spec")
+        if not pod:
+            continue
+        for name, container in containers(pod).items():
+            for env in container.get("env", []):
+                ref = env.get("valueFrom", {}).get("secretKeyRef", {})
+                if ref.get("name") == token:
+                    refs.add((name, env["name"], ref["key"]))
+            if token in secret_names(container, pod) - {r["name"] for r in _env_refs(container)}:
+                refs.add((name, "*", "*"))
+    return refs
+
+
+def _env_refs(container: Doc) -> list[Doc]:
+    return [
+        e["valueFrom"]["secretKeyRef"]
+        for e in container.get("env", [])
+        if "secretKeyRef" in e.get("valueFrom", {})
+    ]
+
+
+def test_remote_lane_the_token_secret_holds_two_keys_one_per_direction(
+    chart: Charts, tmp_path: Path
+) -> None:
+    """055 CH-6, by default: `<name>-workload-token` holds two distinct keys, one per direction,
+    and each is mapped only where its direction needs it. The chassis sends the
+    chassis-to-workload key (`REMOTE_TOKEN`, `token_env`) and the workload requires it
+    (`CHASSIS_A2A_TOKEN`, `--require-token-env`). The workload sends the workload-to-chassis key
+    (`CHASSIS_API_TOKEN`) and the chassis's remote listener accepts only it
+    (`REMOTE_PROXY_TOKEN`, `proxy_token_env`). No other container, env, or volume reads it."""
+    docs = chart.template(values_file(tmp_path, REMOTE_VALUES))
+    token = f"{RELEASE}-workload-token"
+    to_workload, to_chassis = "chassis-to-workload", "workload-to-chassis"
+    assert _token_refs(docs, token) == {
+        ("chassis", "REMOTE_TOKEN", to_workload),
+        ("chassis", "REMOTE_PROXY_TOKEN", to_chassis),
+        ("workload", "CHASSIS_A2A_TOKEN", to_workload),
+        ("workload", "CHASSIS_API_TOKEN", to_chassis),
+    }
+    workload_pod = one(docs, "Deployment", f"{RELEASE}-workload")["spec"]["template"]["spec"]
+    args = containers(workload_pod)["workload"]["args"]
+    assert args[args.index("--require-token-env") + 1] == "CHASSIS_A2A_TOKEN"
+    config = yaml.safe_load(one(docs, "ConfigMap", f"{RELEASE}-chassis")["data"]["config.yaml"])
+    auth = config["spec"]["engine"]["auth"]
+    assert (auth["token_env"], auth["proxy_token_env"]) == ("REMOTE_TOKEN", "REMOTE_PROXY_TOKEN")
 
 
 def test_remote_lane_services_and_policies(chart: Charts, tmp_path: Path) -> None:
@@ -405,6 +461,48 @@ REFUSED: dict[str, tuple[dict[str, Any], str]] = {
             }
         },
         "remote.tokenSecret.name",
+    ),
+    "remote token Secret with one key both ways": (
+        REMOTE_VALUES
+        | {
+            "remote": {
+                "namespace": REMOTE_NAMESPACE,
+                "proxyClusterIP": "10.96.0.92",
+                "tokenSecret": {"key": "token"},
+            }
+        },
+        "remote.tokenSecret.key",
+    ),
+    "remote token keys the same both ways": (
+        REMOTE_VALUES
+        | {
+            "remote": {
+                "namespace": REMOTE_NAMESPACE,
+                "proxyClusterIP": "10.96.0.92",
+                "tokenSecret": {"keys": {"toWorkload": "token", "toChassis": "token"}},
+            }
+        },
+        "one key per direction",
+    ),
+    "remote listener on the outbound key": (
+        {
+            "chassis": {
+                "config": {
+                    "spec": {
+                        "trust": "untrusted",
+                        "engine": {
+                            "connector": "remote",
+                            "auth": {
+                                "token_env": "REMOTE_TOKEN",
+                                "proxy_token_env": "REMOTE_TOKEN",
+                            },
+                        },
+                    }
+                }
+            },
+            "remote": REMOTE_VALUES["remote"],
+        },
+        "proxy_token_env",
     ),
 }
 

@@ -63,7 +63,7 @@ spec:
         - name: workload
           image: kind.local/agent-platform/echo-claude-agent:kind
           imagePullPolicy: Never
-          args: ["--require-token-env", "CHASSIS_API_TOKEN", "--drain-timeout-s", "30"]
+          args: ["--require-token-env", "CHASSIS_A2A_TOKEN", "--drain-timeout-s", "30"]
           env:
             - name: POD_IP
               valueFrom:
@@ -83,11 +83,16 @@ spec:
               value: /tmp
             - name: HOME
               value: /tmp
+            - name: CHASSIS_A2A_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: remote-claude-agent-token
+                  key: chassis-to-workload
             - name: CHASSIS_API_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: remote-claude-agent-token
-                  key: token
+                  key: workload-to-chassis
           ports:
             - name: a2a
               containerPort: 9000

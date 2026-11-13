@@ -101,7 +101,12 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: remote-echo-token
-                  key: token
+                  key: chassis-to-workload
+            - name: REMOTE_PROXY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: remote-echo-token
+                  key: workload-to-chassis
           ports:
             - name: http
               containerPort: 8080

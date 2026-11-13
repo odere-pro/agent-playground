@@ -98,8 +98,28 @@ KAGENT_COMMIT = (
 Doc = dict[str, Any]
 
 
+class _ComposeSafeLoader(yaml.SafeLoader):
+    """SafeLoader that reads Compose's merge tags (`!override`, `!reset`) as their plain value.
+
+    The deploy scan below walks every YAML file, and Compose overlays such as
+    `deploy/compose/poc08-litellm/router-drill.yaml` use these tags; the value is still scanned.
+    """
+
+
+def _compose_tag(loader: yaml.SafeLoader, _suffix: str, node: yaml.Node) -> Any:
+    if isinstance(node, yaml.MappingNode):
+        return loader.construct_mapping(node, deep=True)
+    if isinstance(node, yaml.SequenceNode):
+        return loader.construct_sequence(node, deep=True)
+    return loader.construct_scalar(node)  # type: ignore[arg-type]
+
+
+_ComposeSafeLoader.add_multi_constructor("!override", _compose_tag)
+_ComposeSafeLoader.add_multi_constructor("!reset", _compose_tag)
+
+
 def _load_all(path: Path) -> list[Doc]:
-    return [d for d in yaml.safe_load_all(path.read_text()) if d]
+    return [d for d in yaml.load_all(path.read_text(), Loader=_ComposeSafeLoader) if d]
 
 
 # --- loading the manifests --------------------------------------------------------------------
@@ -703,13 +723,18 @@ def test_a_remote_probe_is_tcp_only(name: str, probe: str) -> None:
 
 @pytest.mark.parametrize("name", TOKEN_REMOTES)
 def test_a_remote_requires_its_token_when_it_is_not_kagent(name: str) -> None:
-    """The workload demands its token from the Secret and binds the pod IP."""
+    """The workload demands the chassis-to-workload key from its Secret, sends the other key,
+    and binds the pod IP (one key per direction, 055 CH-6)."""
     c = _pod(name).containers()[0]
 
     env = _env(c)
+    args = [str(a) for a in c["args"]]
 
-    assert "--require-token-env" in [str(a) for a in c["args"]], name
-    assert env["CHASSIS_API_TOKEN"]["valueFrom"]["secretKeyRef"]["key"] == "token"
+    assert args[args.index("--require-token-env") + 1] == "CHASSIS_A2A_TOKEN", name
+    required = env["CHASSIS_A2A_TOKEN"]["valueFrom"]["secretKeyRef"]
+    sent = env["CHASSIS_API_TOKEN"]["valueFrom"]["secretKeyRef"]
+    assert (required["key"], sent["key"]) == ("chassis-to-workload", "workload-to-chassis")
+    assert required["name"] == sent["name"] == f"{name}-token", name
     assert env["HOST"]["value"] == "$(POD_IP)"
 
 

@@ -1,9 +1,9 @@
 """R2-09: the remote listener's own token, apart from the token the chassis sends to the remote.
 
 `spec.engine.auth.proxy_token_env` (and `proxy_previous_token_env` for a rotation) names the
-bearer the remote listener accepts. Unset, the listener falls back to `token_env` and
-`previous_token_env`, so today's configs keep working. With both set, a plain-A2A agent that
-receives the outbound token cannot replay it against the model proxy or `/mcp`.
+bearer the remote listener accepts. Since 055 CH-6 it is required: unset, the listener does not
+start (no fall back to `token_env`). A plain-A2A agent that receives the outbound token cannot
+replay it against the model proxy or `/mcp`.
 
 Driven with `httpx.ASGITransport`, no socket.
 """
@@ -132,11 +132,14 @@ def test_remote_tokens_reads_the_proxy_variables_when_set() -> None:
 
 
 @pytest.mark.usefixtures("split_env")
-def test_remote_tokens_falls_back_to_token_env_when_the_proxy_variable_is_unset() -> None:
-    """With only `token_env` (and `previous_token_env`), the behavior is unchanged."""
+def test_remote_tokens_never_falls_back_to_token_env() -> None:
+    """055 CH-6: with only `token_env` (and `previous_token_env`), the listener does not start;
+    one key both ways is refused, naming no value."""
     auth = {k: v for k, v in SPLIT.items() if not k.startswith("proxy_")}
-    assert remote_tokens(auth) == (OUTBOUND, OUTBOUND_OLD)
-    assert remote_tokens({**auth, "proxy_token_env": None}) == (OUTBOUND, OUTBOUND_OLD)
+    for config in (auth, {**auth, "proxy_token_env": None}):
+        with pytest.raises(LookupError, match="proxy_token_env") as exc:
+            remote_tokens(config)
+        assert OUTBOUND not in str(exc.value) and OUTBOUND_OLD not in str(exc.value)
 
 
 def test_an_unset_proxy_variable_is_refused_naming_only_the_variable(

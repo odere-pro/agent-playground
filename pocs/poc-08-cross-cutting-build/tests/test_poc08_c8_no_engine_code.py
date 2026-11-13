@@ -65,10 +65,6 @@ ALLOWED: dict[tuple[str, str], str] = {
     ): "attribute docstring: the baggage keys follow the OpenInference naming standard, which "
     "Langfuse reads; a span convention, not an engine",
     (
-        "packages/chassis/src/chassis/adapters/litellm/client.py",
-        "echo_python",
-    ): "comment: points to the workload that caps its own call time today (013 CH-2)",
-    (
         "packages/chassis/src/chassis/adapters/a2a/server.py",
         "pydanticai",
     ): "attribute docstring: an example of a handle that holds an anyio cancel scope",
