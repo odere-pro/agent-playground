@@ -29,9 +29,13 @@ The judge has not been calibrated against people. The gate set has 10 `fail` cas
 ## Acceptance criteria
 
 - [ ] The gate set holds at least 30 `fail` cases, each with a reason.
+  - Open (2026-11-13): `load_gate_cases()` holds 10 `fail` of 50. Adding cases changes `GATE_SIZE`, the generated scripts, and `evals/gate/baseline.json` (`cases: 50`), which is rewritten only from a real run.
 - [ ] A second person labels 20% of the gate set, and Cohen's kappa is recorded in a dated note in `pocs/poc-07-cross-cutting-decisions/notes/`.
+  - Half done: `eval_kit.calibration.cohen_kappa` computes kappa (`packages/eval-kit/tests/test_eval_kit_calibration.py`). The second labeler and the dated note are still open.
 - [ ] The judge's TPR and TNR against the labels are recorded from the Mac run. Both are at or above 0.85 (suggested), or the shortfall and the next step are written down.
+  - Half done: `eval_kit.calibration.tpr_tnr` and `TARGET_RATE = 0.85` (`test_eval_kit_calibration.py`). The Mac run and its numbers are still open.
 - [ ] Until both are met, no profile sets `evaluator_mode: sync`, and a profile test holds it.
+  - Open: `chassis.profiles` sets no harness field, but `HarnessConfig.evaluator_mode` defaults to `sync` (`server/config.py`) and `deploy/compose/poc08/chassis/drill.yaml` sets it. Whether the default flips to `async` is a decision for the chassis owner.
 - [ ] After the first Mac run, the cases added per failure type carry `source`, and `golden/` stays the only source of cases.
 
 ## Dependencies
