@@ -56,6 +56,8 @@ A route is the `model` name a client sends. The router config maps it to a backe
 
 Each config lives in `deploy/compose/litellm/` (`config.yaml` for `fake`, `config.local.yaml` for `local`). The PoC stacks have their own under `deploy/compose/poc06`, `deploy/compose/poc08-litellm`, and `deploy/kind`.
 
+Every route's model, owner, native tool-call support, and version are in the route table: [deploy/compose/README.md, "Model routes (G-1b)"](../../deploy/compose/README.md#model-routes-g-1b).
+
 ## The rules
 
 - A service uses its own virtual key. It names the routes the service may use, a budget, and a rate limit. Never share one.
@@ -66,6 +68,6 @@ Each config lives in `deploy/compose/litellm/` (`config.yaml` for `fake`, `confi
 
 ## What the guide does not cover
 
-- Named routes per task and the keys' route scopes: [003 G-1b](../planning/issues/003-G-1b-named-model-routes.md).
+- A live answer from each named route, a model swap shown by a test call, the keys' route scopes, and an unknown route's error: still open in [003 G-1b](../planning/issues/003-G-1b-named-model-routes.md).
 - Token and cost counts: [004 G-2](../planning/issues/004-G-2-token-cost-counting.md).
 - A live call to Claude, Gemini, and OpenAI. It needs provider keys and has not been run.
