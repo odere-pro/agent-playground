@@ -7,8 +7,9 @@ the OpenAPI spec, and the agent MCP server's tools.
 `interfaces` lists native first, then each other interface that is mounted and switched on, in
 the spec's order, then MCP. An HTTP interface is one OpenAPI operation; `model` is the value a
 chat format's `model` must hold (the agent's name), None for native. `ManifestAgent.trust` is the
-agent's `spec.trust` (PoC-5). Image digests, scopes, events, governance, class, kind, and task
-arrive later (051 H-13).
+agent's `spec.trust` (PoC-5). `agent_class`, `kind`, and `modules` are `spec.class`, `spec.kind`,
+and the switched-on optional modules (008 H-14). Image digests, scopes, events, governance, and
+task arrive later (051 H-13).
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from chassis.agent_class import AgentClass, Kind
 from chassis.core.envelope import Versions
 
 __all__ = [
@@ -81,6 +83,13 @@ class Manifest(BaseModel):
     versions: Versions
     lane: str
     """`spec.engine.connector`."""
+    agent_class: AgentClass | None = None
+    """`spec.class` (008 H-14); None when the config names no class."""
+    kind: Kind | None = None
+    """`spec.kind` (008 H-14); None when the config names no kind."""
+    modules: list[str] = []
+    """The optional B.5 modules the config's flags switch on, sorted (008 H-14). The always-on
+    modules for the class are implied by `agent_class` and not listed."""
     event_schema_versions: list[str]
     """The event `schema_version`s this chassis accepts."""
     interfaces: list[HttpInterface | McpInterface]

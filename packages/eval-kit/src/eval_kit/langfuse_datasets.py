@@ -71,8 +71,8 @@ ENV_PUBLIC = "LANGFUSE_PUBLIC_KEY"
 ENV_SECRET = "LANGFUSE_SECRET_KEY"  # pragma: allowlist secret
 
 DATASETS_CONFIG = ROOT / "evals/datasets.json"
-# The stores an environment may name. LangSmith joins when `fake-langsmith` lands (129 CH-10).
-STORES = ("langfuse",)
+# The stores an environment may name. LangSmith uploads through `eval_kit.langsmith_datasets`.
+STORES = ("langfuse", "langsmith")
 
 
 @dataclass(frozen=True)
@@ -228,6 +228,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         target = load_target(args.env, args.config)
+        if target.store != "langfuse":
+            raise ValueError(f"{args.env}: store is {target.store!r}; use its own uploader")
         settings = Settings.from_env()
     except ValueError as exc:
         print(f"langfuse_datasets: {exc}", file=sys.stderr)

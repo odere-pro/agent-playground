@@ -14,19 +14,22 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from bakeoff.registry import ROOT
 from eval_kit.evalcheck import offline_report
 from eval_kit.evalgate import (
     BASELINE,
+    GATE_DATASET,
     GateError,
     check,
+    dataset_cases,
     load_baseline,
     load_reports,
     main,
     record,
 )
 from eval_kit.evalreport import validate_report
-from eval_kit.golden import load_cases, load_gate_cases
+from eval_kit.golden import CASES_FILE, dataset_data, load_cases, load_gate_cases
 
 POC07_REPORTS = ROOT / "pocs/poc-07-cross-cutting-decisions/notes/evals"
 
@@ -222,3 +225,76 @@ def test_a_run_below_the_floor_fails_with_no_previous_report(
     assert "FAIL simplifier echo-python sidecar 39/50 0.780 (baseline 0.800)" in out
     assert "pass rate 0.780 < 0.800" in out
     assert "must-pass" not in out
+
+
+def _dataset_file(tmp_path: Path) -> Path:
+    """Three PoC-7 cases as another dataset version; g01 is labelled fail here, pass in the
+    package."""
+    rows = yaml.safe_load(CASES_FILE.read_text(encoding="utf-8"))["cases"][:3]
+    rows = [{**row, "label": "fail"} if row["id"] == "g01" else row for row in rows]
+    path = tmp_path / "cases-v2.yaml"
+    path.write_text(yaml.safe_dump({"version": 1, "cases": rows}), encoding="utf-8")
+    return path
+
+
+def test_evalgate_reads_the_dataset_named_in_the_baseline(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The golden set location is config: a baseline that names another cases file makes the gate
+    take its case ids, labels, and case count from that file, with no code change (037 M-2)."""
+    dataset = [str(_dataset_file(tmp_path))]
+    report = offline_report("echo-python", "sidecar", cases=dataset_cases({"dataset": dataset}))
+    assert [c["id"] for c in report["cases"]] == ["g01", "g02", "g03"]
+
+    # record: the labels come from the named file.
+    for case in report["cases"]:
+        case["pass"] = case["id"] != "g01"
+    baseline = record([report], agent="simplifier", skipped={}, dataset=dataset)
+    assert baseline["dataset"] == dataset and baseline["cases"] == 3
+    assert baseline["agents"]["simplifier"]["must_fail"] == ["g01"]
+    passing = copy.deepcopy(report)
+    passing["cases"][0]["pass"] = True
+    with pytest.raises(GateError, match="g01"):
+        record([passing], agent="simplifier", skipped={}, dataset=dataset)
+
+    # check, through the CLI: the 3-case report passes against the 3-case dataset.
+    baseline_file = tmp_path / "baseline.json"
+    baseline_file.write_text(json.dumps(baseline))
+    reports = tmp_path / "reports"
+    _write(reports, [report])
+    assert main(["--baseline", str(baseline_file), "--report", str(reports)]) == 0
+    assert "PASS simplifier echo-python sidecar 2/3" in capsys.readouterr().out
+
+    # The baseline's case count must match the named file.
+    baseline_file.write_text(json.dumps({**baseline, "cases": 50}))
+    assert main(["--baseline", str(baseline_file), "--report", str(reports)]) == 2
+    assert "3 cases" in capsys.readouterr().err
+
+    # The committed baseline names the packaged gate set: the 50 cases the CI gate runs.
+    committed = load_baseline(BASELINE)
+    assert committed["dataset"] == list(GATE_DATASET)
+    assert [c.id for c in dataset_cases(committed)] == [c.id for c in load_gate_cases()]
+
+
+def test_evalgate_fails_a_report_whose_case_ids_are_not_the_dataset() -> None:
+    """Same count and every must id present, but one other id: the report is from another
+    dataset, so the gate fails it (037 M-2)."""
+    baseline = load_baseline(BASELINE)
+    report = offline_report("echo-python", "sidecar", cases=load_gate_cases())
+    row = baseline["agents"]["simplifier"]
+    must = set(row["must_pass"]) | set(row["must_fail"])
+    other = next(c for c in report["cases"] if c["id"] not in must)
+    other["id"] = "zz-not-in-the-dataset"
+    (result,) = check(baseline, [report], engines={"echo-python"}, lanes={"sidecar"})
+    assert any("not the dataset's" in p for p in result.problems)
+
+
+def test_dataset_data_rejects_mixed_versions_and_no_file(tmp_path: Path) -> None:
+    rows = yaml.safe_load(CASES_FILE.read_text(encoding="utf-8"))["cases"]
+    first, second = tmp_path / "a.yaml", tmp_path / "b.yaml"
+    first.write_text(yaml.safe_dump({"version": 1, "cases": rows[:1]}), encoding="utf-8")
+    second.write_text(yaml.safe_dump({"version": 2, "cases": rows[1:2]}), encoding="utf-8")
+    with pytest.raises(ValueError, match="version"):
+        dataset_data([first, second])
+    with pytest.raises(ValueError, match="no case file"):
+        dataset_data([])

@@ -1,7 +1,7 @@
 """`GET /manifest` v0 (PoC-3 open note, section 8): what this chassis serves, built on each request.
 
-- From the config: the agent, the versions, the lane (`spec.engine.connector`), and which
-  interfaces `spec.interfaces` switches on.
+- From the config: the agent, the versions, the lane (`spec.engine.connector`), the class, kind,
+  and switched-on modules (008 H-14), and which interfaces `spec.interfaces` switches on.
 - From the OpenAPI spec (`app.openapi()["paths"]`, not `app.routes`: FastAPI 0.141 keeps an
   included router as one lazy entry): one entry per operation carrying `x-chassis-interface`.
   An operation is listed only when its interface is native or switched on; `streaming` is a
@@ -30,7 +30,7 @@ from chassis.core.manifest import (
     McpInterface,
     OpenAPIRef,
 )
-from chassis.server.config import ChassisConfig
+from chassis.server.config import ChassisConfig, switched_on_modules
 from chassis.server.interfaces.errors import INTERFACE_KEY
 from chassis.server.interfaces.mcp import MCP_PATH, STATE_KEY
 from chassis.server.pipeline import versions_for
@@ -91,6 +91,9 @@ async def build_manifest(app: FastAPI) -> Manifest:
         ),
         versions=versions_for(config),
         lane=config.spec.engine.connector,
+        agent_class=config.spec.agent_class,
+        kind=config.spec.kind,
+        modules=sorted(switched_on_modules(config.spec)),
         event_schema_versions=list(SUPPORTED_SCHEMA_VERSIONS),
         interfaces=interfaces,
         openapi=OpenAPIRef(

@@ -11,6 +11,7 @@ the engines from `bakeoff.registry`. `bakeoff` never imports it (R6-14,
 | `evalreport.py` | `eval-report.v0`: each tool's report, normalized |
 | `evaltrial.py` | PoC-7: promptfoo or DeepEval through the chassis, per engine |
 | `langfuse_datasets.py` | PoC-7: the golden set and the reports as Langfuse datasets and runs; store and dataset name per environment in `evals/datasets.json` (CH-12), `make eval-datasets` |
+| `langsmith_datasets.py` | CH-12: the same golden set and one experiment per report in a LangSmith dataset, for an environment whose store is `langsmith`; tested on `fake-langsmith` |
 | `evalrun.py`, `evalgate.py` | PoC-8: DeepEval on the 50 gate cases, then the gate against the baseline |
 | `evalcheck.py` | PoC-8: the offline reference scorer, for tests |
 | `dialects.py` | a fake-model script rewritten for the engines that read it another way |

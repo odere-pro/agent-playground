@@ -1,6 +1,6 @@
 # fake-langsmith
 
-A fake of the LangSmith OTLP trace route, for offline tests (CH-10). It runs in process: a test builds `create_app(FakeLangSmith(api_key))` and reaches it through an ASGI transport, so no port opens.
+A fake of the LangSmith OTLP trace route (CH-10) and of its dataset and experiment routes (CH-12), for offline tests. It runs in process: a test builds `create_app(FakeLangSmith(api_key))` and reaches it through an ASGI transport, so no port opens.
 
 | Route | What it does |
 | ----- | ------------ |
@@ -10,5 +10,11 @@ A fake of the LangSmith OTLP trace route, for offline tests (CH-10). It runs in 
 | `GET /fake/feedback/{id}` | One feedback record, or 404. Not a LangSmith route. |
 | `GET /fake/runs/{run_id}/feedback` | `{"feedback": [...]}` on one run; the run id as a UUID or 32 hex. Not a LangSmith route. |
 | `GET /health` | No auth. |
+| `POST /api/v1/datasets`, `GET /api/v1/datasets?name=` | Create a dataset (409 on a taken name), or list by name (CH-12). |
+| `POST /api/v1/examples` | One example of a dataset; 404 for an unknown dataset. |
+| `POST /api/v1/sessions` | An experiment: a session with `reference_dataset_id`, metadata in `extra.metadata`. |
+| `POST /api/v1/runs` | One run of an experiment on an example of its dataset; 202. |
 
-Both POST routes need the `x-api-key` header; a missing or wrong key is 401. `FakeLangSmith.trace_ids()`, `FakeLangSmith.spans(trace_id)`, and `FakeLangSmith.feedback_on(run_id)` read the record back in a test.
+suggested: the `/api/v1` paths and field names are written from memory of the `langsmith` client, not checked against a real LangSmith yet. An empty value such as `inputs: {}` is accepted; a null one is 422. A second example with the same `id` is 409, so a rerun of `eval_kit.langsmith_datasets` on the same dataset stops there.
+
+Every route but `/health` and the `/fake/` read-backs needs the `x-api-key` header; a missing or wrong key is 401 and stores nothing. A missing field is 422. `FakeLangSmith.trace_ids()`, `FakeLangSmith.spans(trace_id)`, and `FakeLangSmith.feedback_on(run_id)` read the spans and feedback back in a test; `dataset_by_name`, `examples_of`, `experiments_of`, and `runs_of` read the datasets (`fake_langsmith/datasets.py`).

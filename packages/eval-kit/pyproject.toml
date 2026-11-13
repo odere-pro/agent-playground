@@ -16,6 +16,10 @@ dependencies = [
   "uvicorn>=0.54",
 ]
 
+[dependency-groups]
+# Only the tests import the fake (CH-12): it is not a runtime dependency.
+dev = ["fake-langsmith"]
+
 [build-system]
 requires = ["uv_build>=0.8,<0.12"]
 build-backend = "uv_build"

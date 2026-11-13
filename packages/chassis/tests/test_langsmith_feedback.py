@@ -95,6 +95,13 @@ async def test_the_score_name_comes_from_the_spec(route: FakeLangSmith) -> None:
     assert [r["key"] for r in route.feedback.values()] == ["thumbs"]
 
 
+async def test_a_named_score_overrides_the_spec_score_name(route: FakeLangSmith) -> None:
+    port = adapter_for(route)
+    bind_score_name(port, "thumbs")
+    await port.submit(make_feedback(name="judge-facts-v1"))
+    assert [r["key"] for r in route.feedback.values()] == ["judge-facts-v1"]
+
+
 async def test_a_wrong_key_is_rejected_and_never_echoed(route: FakeLangSmith) -> None:
     wrong = "lsv2-wrong-not-a-secret"
     with pytest.raises(FeedbackError) as info:

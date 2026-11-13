@@ -13,8 +13,9 @@ LangSmith takes OTLP over HTTP at `POST /otel/v1/traces`, with the key in the `x
 - `GET /fake/feedback/{id}`: one feedback record, or 404. `GET /fake/runs/{run_id}/feedback`: the
   records on one run, the run id as a UUID or 32 hex. Not LangSmith routes: read-backs for tests.
 - `GET /health`: no auth.
+- The dataset, example, and experiment routes of CH-12: `fake_langsmith.datasets`.
 
-A missing or wrong `x-api-key` on a POST is 401 and stores nothing.
+A missing or wrong `x-api-key` on an `/otel` or `/api` route is 401 and stores nothing.
 """
 
 from __future__ import annotations
@@ -34,6 +35,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
+from fake_langsmith.datasets import DatasetStore, dataset_routes
+
 __all__ = ["FakeLangSmith", "RecordedSpan", "create_app"]
 
 
@@ -49,9 +52,9 @@ class RecordedSpan:
 
 
 @dataclass
-class FakeLangSmith:
-    """The fake's state: the one accepted API key, the spans in arrival order, and the feedback
-    records by id. `unavailable` makes the feedback route answer 503."""
+class FakeLangSmith(DatasetStore):
+    """The fake's state: the one accepted API key, the spans in arrival order, the feedback
+    records by id, and the datasets. `unavailable` makes the feedback route answer 503."""
 
     api_key: str
     recorded: list[RecordedSpan] = field(default_factory=list)
@@ -213,5 +216,6 @@ def create_app(state: FakeLangSmith) -> Starlette:
             Route("/fake/feedback/{feedback_id}", read_feedback, methods=["GET"]),
             Route("/fake/runs/{run_id}/feedback", read_run_feedback, methods=["GET"]),
             Route("/health", health, methods=["GET"]),
+            *dataset_routes(state, state.api_key),
         ]
     )
