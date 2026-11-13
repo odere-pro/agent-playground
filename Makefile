@@ -16,7 +16,7 @@ OPEN_POCS := $(filter-out $(DONE_POCS),$(POC_DIRS))
 GATE_TESTS := packages scripts/tests $(wildcard $(addsuffix /tests,$(OPEN_POCS)))
 DONE_POC_TESTS := $(wildcard $(addsuffix /tests,$(DONE_POCS)))
 
-.PHONY: help setup evals evals-regression redteam fmt fmt-check lint lint-extra type \
+.PHONY: help setup evals evals-regression redteam eval-datasets fmt fmt-check lint lint-extra type \
 	test test-gate test-poc test-pocs-done gate-paths test-integration load-test \
 	kind-poc04 kind-poc05 kind-poc06 kind-chart bakeoff poc06-mac record-cassettes \
 	quick check planning-sync planning-check planning-check-strict progress schemas harness-lint \
@@ -122,6 +122,15 @@ evals-regression: ## PoC-8 demo: business logic that drops facts must fail the e
 
 redteam: ## PoC-8 red-team set on every engine, lane, and guardrail config, against the recorded baseline
 	$(PY) -m eval_kit.redteam --out $(EVAL_OUT)/redteam.json $(REDTEAM_ARGS)
+
+# CH-12: the golden cases and one run per report into the store `evals/datasets.json` names.
+# Needs LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY in the environment.
+EVAL_DATASET_ENV ?= dev
+EVAL_DATASET_REPORTS ?= pocs/poc-07-cross-cutting-decisions/notes/evals/deepeval-echo-python.json \
+	pocs/poc-07-cross-cutting-decisions/notes/evals/deepeval-echo-langgraph.json
+
+eval-datasets: ## CH-12: upload the golden cases and runs to the dataset store named in evals/datasets.json
+	$(PY) -m eval_kit.langfuse_datasets --env $(EVAL_DATASET_ENV) --report $(EVAL_DATASET_REPORTS)
 
 # The tests that own model cassettes. Add a file here when it records through `CassetteTransport`.
 CASSETTE_TESTS ?= packages/chassis/tests/test_recorded_model.py \

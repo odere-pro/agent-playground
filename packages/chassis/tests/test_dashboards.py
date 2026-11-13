@@ -162,3 +162,17 @@ def test_every_panel_links_to_langfuse_traces_and_loki_logs() -> None:
         assert "echo" in links["Langfuse traces"]
         assert links["Loki logs"].startswith("/explore?")
         assert "${loki_uid}" in links["Loki logs"] and "echo" in links["Loki logs"]
+
+
+def test_token_and_cost_spend_can_be_filtered_by_route() -> None:
+    """006 G-6: an ad hoc filter on the Prometheus datasource narrows every query by label, so
+    the token and cost series (labeled `agent` and `route`, never `user`) filter by route. The
+    agent is the dashboard itself: one file per agent. The query text stays plain PromQL, so the
+    PoC-8 live check still sends it to Prometheus as the file has it."""
+    board = dashboard("echo")
+    [adhoc] = [v for v in board["templating"]["list"] if v["type"] == "adhoc"]
+    assert adhoc["datasource"] == {"type": "prometheus", "uid": "${datasource}"}
+    for title in ("Model tokens by direction", "Model cost (USD per hour)"):
+        [expr] = panel_exprs({"panels": [_panel(board, title)]})
+        assert 'agent="echo"' in expr, expr
+        assert "$" not in expr, expr

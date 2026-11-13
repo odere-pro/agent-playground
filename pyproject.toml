@@ -52,6 +52,7 @@ members = [
   "packages/fake-mcp-server",
   "packages/code-runner",
   "packages/fake-langfuse",
+  "packages/fake-langsmith",
   "packages/guardrail-server",
   "packages/agentctl",
   "packages/agent-testkit",
@@ -75,6 +76,7 @@ eval-kit = { workspace = true }
 fake-mcp-server = { workspace = true }
 code-runner = { workspace = true }
 fake-langfuse = { workspace = true }
+fake-langsmith = { workspace = true }
 guardrail-server = { workspace = true }
 agentctl = { workspace = true }
 agent-testkit = { workspace = true }
@@ -136,6 +138,7 @@ root_packages = [
   "fake_mcp_server",
   "code_runner",
   "fake_langfuse",
+  "fake_langsmith",
   "guardrail_server",
   "agentctl",
   "agent_testkit",
@@ -169,6 +172,12 @@ forbidden_modules = ["chassis", "chassis_contracts"]
 name = "the fake Langfuse API never imports the chassis (PoC-7)"
 type = "forbidden"
 source_modules = ["fake_langfuse"]
+forbidden_modules = ["chassis", "chassis_contracts"]
+
+[[tool.importlinter.contracts]]
+name = "the fake LangSmith OTLP route never imports the chassis (CH-10)"
+type = "forbidden"
+source_modules = ["fake_langsmith"]
 forbidden_modules = ["chassis", "chassis_contracts"]
 
 [[tool.importlinter.contracts]]
@@ -220,6 +229,7 @@ forbidden_modules = [
   "fake_mcp_server",
   "code_runner",
   "fake_langfuse",
+  "fake_langsmith",
   "guardrail_server",
   "agentctl",
   "agent_testkit",
@@ -285,6 +295,7 @@ source_modules = [
   "fake_mcp_server",
   "code_runner",
   "fake_langfuse",
+  "fake_langsmith",
   "guardrail_server",
   "agentctl",
   "agent_testkit",

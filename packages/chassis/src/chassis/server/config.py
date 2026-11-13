@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from chassis.agent_class import AgentClass, Kind, check_agent_class
 from chassis.ports.engine import Lane
-from chassis.profiles import DEFAULT_LANE, AdapterSpec, Profile, check_lane
+from chassis.profiles import DEFAULT_LANE, AdapterSpec, Profile, check_lane, merge_adapters
 from chassis.redaction import has_secret
 
 
@@ -313,6 +313,26 @@ class IdempotencySpec(BaseModel):
     new_keys_per_caller: int = Field(default=10_000, ge=1)
 
 
+MEMORY_TTL_S_DEFAULT = 86_400
+"""suggested (CH-20): a session's checkpoint lives one day."""
+MEMORY_MAX_BYTES_DEFAULT = 262_144
+"""suggested (CH-20): 256 KiB per session; a bigger write is a tool error."""
+
+
+class MemorySpec(BaseModel):
+    """`spec.memory` (CH-20, ADR-014): session memory behind `StatePort`, reached through the
+    chassis's memory tools. suggested: every name and default. Restart-only.
+    - `enabled: false`. With auth off, the `cloud` profile refuses `true` at config load.
+    - `ttl_s: 86400`: at most `TTL_S_MAX`.
+    - `max_bytes: 262144`: the cap on one session's saved value.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = False
+    ttl_s: float = Field(default=MEMORY_TTL_S_DEFAULT, gt=0, le=TTL_S_MAX, allow_inf_nan=False)
+    max_bytes: int = Field(default=MEMORY_MAX_BYTES_DEFAULT, ge=1)
+
+
 class EventsConsumeSpec(BaseModel):
     """`spec.events.consume`: event-triggered runs (PoC-4 P9, optional). suggested: the names."""
 
@@ -502,6 +522,7 @@ class Spec(BaseModel):
     interfaces: InterfacesSpec = Field(default_factory=InterfacesSpec)
     limits: LimitsSpec = Field(default_factory=LimitsSpec)
     idempotency: IdempotencySpec = Field(default_factory=IdempotencySpec)
+    memory: MemorySpec = Field(default_factory=MemorySpec)
     events: EventsSpec = Field(default_factory=EventsSpec)
     security: SecuritySpec = Field(default_factory=SecuritySpec)
     guardrails: GuardrailsSpec = Field(default_factory=GuardrailsSpec)
@@ -606,6 +627,19 @@ class ChassisConfig(BaseModel):
                 "refuses it (CH-14)"
             )
         return self.model_copy(update={"spec": with_cloud_defaults(self.spec)})
+
+    @model_validator(mode="after")
+    def _memory_needs_auth_in_cloud(self) -> ChassisConfig:
+        # CH-20 (suggested; platform-security to confirm): with auth off every caller is the
+        # anonymous principal, so session memory would be shared. `fake` and `local` allow it.
+        if self.profile != "cloud" or not self.spec.memory.enabled:
+            return self
+        if merge_adapters(self.profile, self.spec.adapters).auth == "none":
+            raise ValueError(
+                "spec.memory.enabled: true is refused with auth: 'none' in profile 'cloud'; "
+                "session memory needs a real authenticator (CH-20)"
+            )
+        return self
 
     @model_validator(mode="after")
     def _lane_fits_profile(self) -> ChassisConfig:

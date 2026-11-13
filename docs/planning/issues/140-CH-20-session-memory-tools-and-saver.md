@@ -32,7 +32,7 @@ epic_refs: [F.1, B.5]
 
 - [ ] The three memory tools are on the workload's tool proxy, behind a port with an in-memory fake, and the fake and the Valkey adapter pass one contract suite: a principal cannot read or write another principal's session, a write past the cap is refused, the TTL holds.
 - [ ] The idempotency fingerprint includes `session.id` when session memory is on; a test shows two sessions with the same input and client key get their own answers.
-- [ ] With auth off in `cloud`, `spec.memory.enabled: true` is refused at config load; `local` allows it.
+- [x] With auth off in `cloud`, `spec.memory.enabled: true` is refused at config load; `local` allows it. · Delivered by: `packages/chassis/tests/test_memory_config.py::test_cloud_with_auth_off_refuses_memory_enabled_at_config_load`, `::test_local_and_fake_with_auth_off_allow_memory`, `::test_cloud_with_a_real_authenticator_allows_memory`, `::test_memory_defaults_are_off_one_day_and_256_kib` (`spec.memory` in `chassis.server.config.MemorySpec`; the refusal is suggested, `platform-security` to confirm)
 - [ ] The template renders the saver on opt-in; a rendered LangGraph agent keeps a thread across two runs with the same `x-session-id` and not across two sessions; the lane contract still passes.
 - [ ] The saver's cost per super-step is measured in the `sidecar` lane and recorded against ADR-014's suggested 10 ms p50, in a dated note.
 - [ ] Text a memory tool returns passes the `tool_output` guard stage, and a test shows a planted instruction in a saved memory is flagged (from [132 CH-13](132-CH-13-owasp-agentic-map.md), ASI06).

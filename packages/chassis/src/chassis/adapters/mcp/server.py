@@ -4,7 +4,12 @@ The tools come from a FastMCP provider that reads the port on every request (rev
 `tools/list` shows what the port lists now: a gateway list filled by a later refresh, a tool
 granted later, and not a tool removed since. A call to a name the port does not list right now
 still goes to the port, as a write tool with an open schema (fail safe: it needs a key), so the
-port, the gateway for `McpGatewayTools`, decides it; the cached list is not a control.
+port, the gateway for `McpGatewayTools`, decides it; the cached list is not a control. Outside a
+run such a name answers `unknown_tool`, since a write could not run there anyway (054 H-16).
+
+A bare name the port does not list resolves to its one `<server>-<name>` match, the LiteLLM
+gateway's naming, and the call, its span, and its key use the full name. Two or more matches are
+refused with `unknown_tool` before the port is called (054 H-16).
 
 Each tool is a `fastmcp.tools.Tool` subclass whose `parameters` is the definition's own JSON
 Schema, so what a workload lists over MCP is the port's definition, not a schema re-derived from a
@@ -128,6 +133,8 @@ class PortTool(Tool):
     _run_of: RunOf | None = PrivateAttr(default=None)
     _run_key_of: RunKeyOf | None = PrivateAttr(default=None)
     _read_only: bool = PrivateAttr(default=True)
+    _listed: bool = PrivateAttr(default=True)
+    _refusal: ToolError | None = PrivateAttr(default=None)
 
     @classmethod
     def of(
@@ -161,6 +168,8 @@ class PortTool(Tool):
         run_key = None
         if trace_id is not None and self._run_key_of is not None:
             run_key = self._run_key_of(trace_id)
+        if run_key is None and not self._listed:
+            raise ToolError("unknown_tool", f"{self.name} is not listed; no run is in flight")
         if run_key is None:
             raise ToolError(
                 "idempotency_key_required", f"{self.name} is a write tool; call it inside a run"
@@ -190,6 +199,8 @@ class PortTool(Tool):
         with self._telemetry.span(SPAN, **attributes):
             self._telemetry.counter(COUNTER, tool=self.name)
             try:
+                if self._refusal is not None:
+                    raise self._refusal
                 key = self._key(trace_id, arguments)
                 result = await self._port.call(self.name, arguments, idempotency_key=key)
             except ToolError as exc:
@@ -229,14 +240,23 @@ class PortTools(Provider):
         return [self._tool(d) for d in self._port.list_tools()]
 
     async def _get_tool(self, name: str, version: VersionSpec | None = None) -> Tool | None:
-        for definition in self._port.list_tools():
+        listed = self._port.list_tools()
+        for definition in listed:
             if definition.name == name:
                 return self._tool(definition)
+        # A bare name: its one `<server>-<name>` match, the LiteLLM gateway's naming.
+        matches = [d for d in listed if d.name.endswith(f"-{name}")]
+        if len(matches) == 1:
+            return self._tool(matches[0])
         # Not listed now: the port decides, as for a write (a key is needed).
         unlisted = ToolDefinition(
             name=name, description=name, parameters=_OPEN_SCHEMA, read_only=False
         )
-        return self._tool(unlisted)
+        tool = self._tool(unlisted)
+        tool._listed = False
+        if matches:
+            tool._refusal = ToolError("unknown_tool", f"{name} matches {len(matches)} tools")
+        return tool
 
 
 def build_mcp_server(

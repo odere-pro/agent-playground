@@ -1,0 +1,15 @@
+# {{ agent_name }}'s chart, on the platform's library chart `agent-lib` (backlog 024 CH-3). The
+# library adds the chassis container with its pinned tag (ADR-001); this repo holds no chassis code.
+# The library is read through the `.platform` link (`make platform`), as pyproject.toml does.
+# Build the dependency first, offline (file:// only):
+#   make platform && helm dependency update --skip-refresh deploy/helm
+apiVersion: v2
+name: {{ agent_name }}
+description: {{ agent_name }}, the chassis and this workload in the {{ connector }} lane.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: agent-lib
+    version: 0.1.0
+    repository: file://../../.platform/deploy/helm/agent-lib

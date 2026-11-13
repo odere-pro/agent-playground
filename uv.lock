@@ -23,6 +23,7 @@ members = [
     "echo-smolagents",
     "eval-kit",
     "fake-langfuse",
+    "fake-langsmith",
     "fake-mcp-server",
     "fake-model-server",
     "guardrail-server",
@@ -1105,6 +1106,21 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "starlette", specifier = ">=0.40" }]
+
+[[package]]
+name = "fake-langsmith"
+version = "0.1.0"
+source = { editable = "packages/fake-langsmith" }
+dependencies = [
+    { name = "opentelemetry-proto" },
+    { name = "starlette" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "opentelemetry-proto", specifier = ">=1.45" },
+    { name = "starlette", specifier = ">=0.40" },
+]
 
 [[package]]
 name = "fake-mcp-server"

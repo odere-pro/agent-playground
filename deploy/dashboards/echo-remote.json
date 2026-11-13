@@ -37,6 +37,15 @@
         "type": "textbox",
         "query": "",
         "label": "Loki datasource uid"
+      },
+      {
+        "name": "filters",
+        "type": "adhoc",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "label": "Filters"
       }
     ]
   },

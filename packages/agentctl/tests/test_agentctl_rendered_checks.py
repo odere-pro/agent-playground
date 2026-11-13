@@ -36,10 +36,8 @@ def _env(agent: Path) -> dict[str, str]:
     return env | {"PYTHONPATH": str(agent / "src")}
 
 
-@pytest.mark.parametrize("framework", rules.FRAMEWORKS)
-def test_rendered_unit_tests_pass_offline(tmp_path: Path, framework: str) -> None:
-    agent = _agent(tmp_path, framework)
-    done = subprocess.run(
+def _pytest(agent: Path, test_file: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
         [
             sys.executable,
             "-m",
@@ -54,7 +52,7 @@ def test_rendered_unit_tests_pass_offline(tmp_path: Path, framework: str) -> Non
             str(agent / "pyproject.toml"),
             "--rootdir",
             str(agent),
-            str(agent / "tests/test_handle.py"),
+            str(agent / "tests" / test_file),
         ],
         cwd=agent,
         env=_env(agent),
@@ -62,7 +60,29 @@ def test_rendered_unit_tests_pass_offline(tmp_path: Path, framework: str) -> Non
         text=True,
         timeout=300,
     )
+
+
+@pytest.mark.parametrize("framework", rules.FRAMEWORKS)
+def test_rendered_unit_tests_pass_offline(tmp_path: Path, framework: str) -> None:
+    done = _pytest(_agent(tmp_path, framework), "test_handle.py")
     assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-2000:]
+
+
+IN_PROCESS_STATELESS = tuple(f for f in rules.FRAMEWORKS if f != "claude-agent")
+"""The claude-agent example runs its own CLI with a fresh HOME on disk per run (an emptyDir in
+the pod), so the in-process stateless check (057 H-19) is not rendered for it."""
+
+
+@pytest.mark.parametrize("framework", IN_PROCESS_STATELESS)
+def test_rendered_stateless_check_passes_offline(tmp_path: Path, framework: str) -> None:
+    """057 H-19: the template's example workload keeps nothing on disk or between calls."""
+    done = _pytest(_agent(tmp_path, framework), "test_stateless.py")
+    assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-2000:]
+    assert " passed" in done.stdout
+
+
+def test_the_stateless_check_is_not_rendered_for_claude_agent(tmp_path: Path) -> None:
+    assert not (_agent(tmp_path, "claude-agent") / "tests/test_stateless.py").exists()
 
 
 @pytest.mark.parametrize("framework", rules.FRAMEWORKS)

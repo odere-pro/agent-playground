@@ -22,6 +22,10 @@ project. A run item links the item to the trace of the `/v1/run` that answered i
 32-hex form of the response's `trace_id` (`chassis.core.trace.trace_id_hex`), the id the chassis
 spans carry. The run's name is `<engine>-<tool>`, its metadata the pass counts.
 
+The dataset name and the store come from `evals/datasets.json` (`eval-datasets.v0`), one entry
+per environment with exactly one store (CH-12): `--env ci` picks it, so another dataset version is
+a config change only. `--dataset` still overrides the name for a dated note's command.
+
 Credentials come from the environment only and are never printed or logged; an error names the
 HTTP status and the path, never a header.
 """
@@ -39,20 +43,25 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from bakeoff.registry import ROOT
 from chassis.core.trace import trace_id_hex
 
 from eval_kit.evalreport import validate_report
 from eval_kit.golden import Case, load_cases
 
 __all__ = [
+    "DATASETS_CONFIG",
     "ENV_HOST",
     "ENV_PUBLIC",
     "ENV_SECRET",
+    "STORES",
+    "DatasetTarget",
     "LangfuseDatasets",
     "LangfuseError",
     "Settings",
     "item_body",
     "item_id",
+    "load_target",
     "main",
     "run_item_body",
 ]
@@ -60,6 +69,37 @@ __all__ = [
 ENV_HOST = "LANGFUSE_HOST"
 ENV_PUBLIC = "LANGFUSE_PUBLIC_KEY"
 ENV_SECRET = "LANGFUSE_SECRET_KEY"  # pragma: allowlist secret
+
+DATASETS_CONFIG = ROOT / "evals/datasets.json"
+# The stores an environment may name. LangSmith joins when `fake-langsmith` lands (129 CH-10).
+STORES = ("langfuse",)
+
+
+@dataclass(frozen=True)
+class DatasetTarget:
+    """Where one environment writes the golden cases and its runs: one store, one dataset."""
+
+    env: str
+    store: str
+    dataset: str
+
+
+def load_target(env: str, path: Path | None = None) -> DatasetTarget:
+    """The `env` entry of `eval-datasets.v0`. Raises `ValueError` on a bad or missing entry."""
+    data = json.loads((path or DATASETS_CONFIG).read_text(encoding="utf-8"))
+    if data.get("schema") != "eval-datasets.v0":
+        raise ValueError(f"schema is {data.get('schema')!r}, want 'eval-datasets.v0'")
+    entry = data.get("environments", {}).get(env)
+    if not isinstance(entry, dict):
+        raise ValueError(f"no environment {env!r} in the dataset config")
+    store, dataset = entry.get("store"), entry.get("dataset")
+    if isinstance(store, list):
+        raise ValueError(f"{env}: name one store, not {len(store)}")
+    if store not in STORES:
+        raise ValueError(f"{env}: store {store!r} is not one of {', '.join(STORES)}")
+    if not isinstance(dataset, str) or not dataset:
+        raise ValueError(f"{env}: set a dataset name")
+    return DatasetTarget(env, store, dataset)
 
 
 class LangfuseError(RuntimeError):
@@ -181,19 +221,24 @@ async def _upload(client: LangfuseDatasets, dataset: str, reports: Sequence[Path
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m eval_kit.langfuse_datasets")
-    parser.add_argument("--dataset", default="poc07-golden")
+    parser.add_argument("--env", default="dev", help="the entry in the dataset config")
+    parser.add_argument("--config", type=Path, default=DATASETS_CONFIG)
+    parser.add_argument("--dataset", default=None, help="override the configured name")
     parser.add_argument("--report", type=Path, nargs="*", default=[])
     args = parser.parse_args(argv)
     try:
+        target = load_target(args.env, args.config)
         settings = Settings.from_env()
     except ValueError as exc:
         print(f"langfuse_datasets: {exc}", file=sys.stderr)
         return 2
 
+    dataset = args.dataset or target.dataset
+
     async def go() -> None:
         client = LangfuseDatasets(settings)
         try:
-            await _upload(client, args.dataset, args.report)
+            await _upload(client, dataset, args.report)
         finally:
             await client.close()
 

@@ -56,7 +56,7 @@ Every call must be traced, and the Phase 0 done-when says the echo agent appears
 - [x] The core package has no OpenTelemetry import; it uses `TelemetryPort`. · Delivered in PoC-7: `pocs/poc-01-walking-skeleton/tests/test_day0.py::test_import_rules_hold` (`opentelemetry` is forbidden in `chassis.core` and `chassis.ports`, and allowed only under `chassis.adapters`, `pyproject.toml`).
 - [x] Tests assert on spans with the in-memory span exporter, and switching the OpenTelemetry exporter needs config only. · Delivered in PoC-7: `pocs/poc-07-cross-cutting-decisions/tests/test_poc07_obs_telemetry_swap.py::test_switching_the_backend_is_exporter_config_only`; `packages/chassis/tests/test_otel_telemetry.py::test_traceparent_continues_the_callers_trace`.
 - [ ] Trace sampling is a Collector policy (ADR-007 item 8), and `trace_sample_rate` sets it.
-- [ ] The guard stage emits its own span under the run span.
+- [x] The guard stage emits its own span under the run span. · Delivered by: `packages/chassis/tests/test_guard_span.py::test_input_and_output_checks_are_guard_spans_under_the_run_span`, `::test_a_blocked_input_is_a_blocked_guard_span_under_the_run_span`, `::test_streamed_output_windows_are_guard_spans_under_the_run_span` (`chassis.guard`, suggested name, with `stage` and `outcome`).
 - [ ] The OTel SDK's CPU and latency cost is measured on the PoC-8 stack and recorded in a dated note.
 
 ## Dependencies

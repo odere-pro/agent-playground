@@ -221,7 +221,8 @@ async def test_a_tool_granted_or_removed_later_follows_the_port_list() -> None:
 
 async def test_a_call_to_a_tool_no_longer_listed_still_goes_to_the_port() -> None:
     """The cache is not a control: the port (the gateway) decides every call it is asked. An
-    unlisted name counts as a write tool, so it needs a run; outside one it never leaves."""
+    unlisted name counts as a write tool, so it needs a run; outside one it never leaves and
+    answers `unknown_tool` (054 H-16)."""
     tools = StubGateway()
     async with _serving(_ports(tools, InMemoryTelemetry())) as app:
         tools.serves = ()
@@ -238,7 +239,7 @@ async def test_a_call_to_a_tool_no_longer_listed_still_goes_to_the_port() -> Non
         ):
             inside = await client.call_tool_mcp("gateway_lookup", {})
     assert outside.is_error and outside.structured_content is not None
-    assert outside.structured_content["code"] == "idempotency_key_required"
+    assert outside.structured_content["code"] == "unknown_tool"
     assert not inside.is_error
     assert "call:gateway_lookup" in tools.calls
 

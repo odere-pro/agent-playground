@@ -23,6 +23,7 @@ COMBOS = [
     for connector in rules.CONNECTORS
     if rules.trust_of(framework) == "trusted" or connector == "remote"
 ]
+CHART_TEMPLATES = ("configmap", "deployment", "hpa", "networkpolicy", "service", "serviceaccount")
 COMMON = {
     ".copier-answers.yml",
     ".editorconfig",
@@ -51,6 +52,10 @@ COMMON = {
     "deploy/compose/debug/requirements.txt",
     "deploy/compose/debug/sitecustomize.py",
     "deploy/compose/docker-compose.yaml",
+    # The chart on the platform's library chart agent-lib (025 H-10), in both lanes.
+    "deploy/helm/Chart.yaml",
+    "deploy/helm/values.yaml",
+    *(f"deploy/helm/templates/{name}.tpl" for name in CHART_TEMPLATES),
     # The business-logic guide and the decisions it rests on.
     "docs/decisions.md",
     "docs/how-to-add-business-logic.md",
@@ -91,7 +96,7 @@ def _render(tmp_path: Path, framework: str, connector: str, name: str = "my-agen
 
 
 def _sidecar_only(path: str) -> bool:
-    return path.startswith(("deploy/", ".vscode/"))
+    return path.startswith(("deploy/compose/", ".vscode/"))
 
 
 def _files(path: Path) -> set[str]:
@@ -107,6 +112,8 @@ def test_the_tree_holds_the_framework_files_and_nothing_else(
     common = COMMON if connector == "sidecar" else {f for f in COMMON if not _sidecar_only(f)}
     if connector == "remote":
         common = common | {"tests/test_remote_lane.py"}
+    if framework != "claude-agent":
+        common = common | {"tests/test_stateless.py"}  # 057 H-19, in process
     assert _files(agent) == common | src
 
 
@@ -118,7 +125,11 @@ def test_every_rendered_file_is_final(tmp_path: Path, framework: str, connector:
             text = path.read_text()
             # A Jinja leftover is `{{ name` or `{%`. Not leftovers: `{{.Field}}` (a Go
             # template, docker inspect) and `${{ github.sha }}` (a GitHub Actions expression).
-            assert not LEFTOVER.search(text), path
+            # The chart's `templates/*.tpl` are Helm (Go) templates, copied as they are.
+            if path.suffix != ".tpl":
+                assert not LEFTOVER.search(text), path
+            else:
+                assert text == f'{{{{ include "agent-lib.{path.stem}" . }}}}\n', path
             assert not path.name.endswith(".jinja"), path
             if path.suffix == ".py":
                 ast.parse(text, filename=str(path))
