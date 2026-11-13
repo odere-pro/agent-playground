@@ -1,6 +1,12 @@
 # PoC-8 drill Collector (otel/opentelemetry-collector-contrib, the PoC-7 version): the chassis and
 # LiteLLM export OTLP/HTTP on 4318; every span goes to Jaeger. Traces only: the chassis runs with
 # OTEL_METRICS_EXPORTER=none, and log redaction is PoC-7's stack, not this drill's.
+#
+# Sampling (014 H-7, ADR-007 item 8): the same `tail_sampling` block as
+# ../poc07/otel-collector.yaml, which says why. Error traces are kept at any rate (decided by
+# the user, 2026-11-13). stack.sh makes TRACE_SAMPLE_PERCENT from
+# TRACE_SAMPLE_RATE (default 1.0, so the drill keeps every trace). Offline check:
+# packages/chassis/tests/test_trace_sampling.py.
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
@@ -14,6 +20,18 @@ receivers:
 processors:
   batch:
     timeout: 1s
+  # Policies are ORed: a trace is kept when any policy samples it.
+  tail_sampling:
+    decision_wait: 10s
+    policies:
+      - name: keep-errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: trace-sample-rate
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: ${env:TRACE_SAMPLE_PERCENT}
 
 exporters:
   otlp/jaeger:
@@ -26,5 +44,5 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
+      processors: [tail_sampling, batch]
       exporters: [otlp/jaeger]

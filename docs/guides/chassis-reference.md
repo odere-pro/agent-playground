@@ -47,6 +47,8 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
   - `answer_text` is the answer a chat format shows. `rest_of_answer` is what a stream sends after its deltas.
 - `manifest.py` is `Manifest` v0: `ManifestAgent`, `HttpInterface`, `McpInterface`, `OpenAPIRef`. suggested: the whole shape.
 - `results.py` is `TaskResult`, the result-event payload.
+  - `input` is optional: absent unless `spec.events.include_input` is true.
+  - The model-source field is defined here, once. Its meaning is in `docs/specs/contract.md`, section 6.
   - `TASK_COMPLETED` is `agents.task.completed.v1`.
   - `TASK_FAILED` is `agents.task.failed.v1`.
 
@@ -230,7 +232,7 @@ Each is built by `from_env()` and loaded lazily.
 - `spec.observability` (PoC-7: `session_header`) gains `log_level` (`info`), `metrics_scope` (unset: `/metrics` needs no token; `cloud` fills `spec.security.read_scope`), and `prices` (USD per million tokens per route, `ModelPrice`). Restart-only.
 - `spec.guardrails` (PoC-7: the three stages, `on_unavailable`) gains `stream_secrets` (`true`) and `output_url_allow` (`[]`, default deny; `*` turns it off). Restart-only.
 - `spec.idempotency` is `IdempotencySpec`: `enabled`, `ttl_s`, `lease_s`, `wait_poll_ms`, `max_entry_bytes`.
-- `spec.events` is `EventsSpec` with `result_events`. A non-null `consume` is refused at load until event-triggered runs exist.
+- `spec.events` is `EventsSpec` with `result_events` and `include_input` (false: result events carry no `input`). A non-null `consume` is refused at load until event-triggered runs exist.
 - `spec.engine.protocol` is `chassis` (the default) or `a2a`. `a2a` is for `connector: remote` only. `spec.engine.a2a` is `{usage_key: null, context_id: omit | trace_id}`. It needs `protocol: a2a`. Both are restart-only. `as_mapping()` leaves them out for `sidecar` and `inprocess`. suggested: the names and defaults.
 - `spec.model` is `ModelSpec`: `route`, `fallback_route`, `routes` (the route per task, `{}`), `judge_route` (null: `CHASSIS_JUDGE_ROUTE`). `route_for(task)` is `routes[task]`, else `route`. A task name matches `TASK_NAME` (printable, no space, at most 64 characters; suggested); an empty route name is refused. A route outside the service's key is not checked at load (suggested, needs the key). `route`, `routes`, and `judge_route` reload; `fallback_route` is restart-only.
 - `RELOADABLE` lists the field paths a reload may change. Every other path is restart-only.
@@ -297,6 +299,7 @@ Each is built by `from_env()` and loaded lazily.
 - The publish runs in the background. The request never awaits it.
 - `id` is `event_id(request_id, type)`, a uuid5.
 - The key fields hold `key_hash(key)`, never the raw key.
+- `input` goes in only with `spec.events.include_input: true`, read from `state.config` per publish.
 - Metrics: `chassis.events.published`, `.publish_failed`, `.publish_abandoned`.
 - Shutdown waits up to `SHUTDOWN_WAIT_S` 5.
 
@@ -532,7 +535,7 @@ Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 
 | ------ | ------------ | ----------- |
 | `chassis/ports/{auth,guardrail,evaluator,feedback}.py` | The four new ports, each with a no-op default in `PortBundle` | A.1 to A.4 |
 | `chassis/fakes/{auth,guardrail,evaluator,feedback}.py` | `StaticTokens`, `KeywordGuardrails`, `ScriptedEvaluator`, `InMemoryFeedback` | A.1 to A.4 |
-| `chassis/adapters/otel` | `OtelTelemetry`: OTLP over HTTP, the run span on the request's W3C trace id, `user.id` and `session.id` as baggage | A.5, F |
+| `chassis/adapters/otel` | `OtelTelemetry`: OTLP over HTTP, the run span on the request's W3C trace id, `user.id` and `session.id` as baggage. The sampler is `ALWAYS_ON`: every span is exported, `OTEL_TRACES_SAMPLER` and a caller's unsampled `traceparent` are ignored, and the Collector samples (014 H-7; `tests/test_trace_sampling.py`) | A.5, F |
 | `chassis/adapters/oidc` | `OidcAuth`: a JWT checked against the IdP's JWKS (pyjwt). `OIDC_JWKS_URL` must be `https` unless its host is loopback; else a `ValueError` at construction (R5a-12) | A.1, D.1 |
 | `chassis/adapters/litellm/guardrails.py` | `LiteLLMGuardrails`: LiteLLM's `POST /guardrails/apply_guardrail`, guardrail names per stage | A.2, D.3 |
 | `chassis/adapters/langfuse` | `LangfuseFeedback`: Langfuse `POST /api/public/scores`, plain httpx | A.4 |
@@ -570,7 +573,8 @@ Spec: [contract v7](../contracts/contract-v7.md). Decisions: ADR-007 and ADR-008
 - The model proxy opens `chassis.model.route` per admitted call and counts tokens and cost (B, A.3).
 - `server/marking.py` adds `Access-Control-Expose-Headers`; `server/results.py` sets the `aigenerated` CloudEvent extension (E.2, E.3).
 - `chassis serve` calls `configure_logging` and gives uvicorn `log_config=None`, so every line is JSON.
-- Tests: `test_metrics.py`, `test_json_logs.py`, `test_router_span.py`, `test_dashboards.py`, `test_collector_log_redaction.py`, `test_rate_limit.py`, `test_output_filter.py`, `test_marking_body.py`. The red-team controls: `packages/contract-suites/tests/test_redteam_controls.py`. The scenarios are in `pocs/poc-08-cross-cutting-build/tests/`.
+- Trace sampling is the Collector's `tail_sampling` processor, its rate from `TRACE_SAMPLE_RATE` (the epic's `trace_sample_rate`). The chassis has no sampling setting. Spec: [observability, "Sampling"](../specs/observability.md#sampling).
+- Tests: `test_metrics.py`, `test_json_logs.py`, `test_router_span.py`, `test_dashboards.py`, `test_collector_log_redaction.py`, `test_trace_sampling.py`, `test_rate_limit.py`, `test_output_filter.py`, `test_marking_body.py`. The red-team controls: `packages/contract-suites/tests/test_redteam_controls.py`. The scenarios are in `pocs/poc-08-cross-cutting-build/tests/`.
 
 ## profiles.py
 

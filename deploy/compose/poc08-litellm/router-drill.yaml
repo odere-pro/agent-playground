@@ -1,0 +1,58 @@
+# The router drill (2026-11-13): an overlay on docker-compose.yaml for the keyless router boxes
+# of G-1, G-1b, G-2, H-3 (issues 002, 003, 004, 012). Run only through ./router-drill.sh.
+#
+#   chassis (model: litellm, guardrails: none) -> LiteLLM 1.103.0 (auth on, Postgres spend logs,
+#   `prometheus` callback, router-drill.litellm.yaml) -> the fake model server
+#   Prometheus -> LiteLLM /metrics
+#
+# It reuses the base file's images and pins and starts only postgres, fake-model-server, litellm,
+# chassis, and prometheus: Presidio, the guardrail server, and the Collector are cut from
+# `depends_on`. Ports move off the base file's, so the two stacks never take the same port.
+# No secret here: router-drill.sh makes every value into .run/ (git-ignored, mode 600).
+services:
+  litellm:
+    volumes: !override
+      # A copy of router-drill.litellm.yaml; `router-drill.sh swap` edits the copy, never the file.
+      - ./.run/router-litellm.yaml:/etc/litellm/config.yaml:ro
+    environment: !override
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?}
+      DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD:?}@postgres:5432/litellm
+      LITELLM_LOG: INFO
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      DISABLE_ADMIN_UI: "True"
+    ports: !override
+      - 127.0.0.1:4013:4000
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+      fake-model-server:
+        condition: service_healthy
+
+  chassis:
+    volumes: !override
+      - ./router-drill.chassis.yaml:/etc/chassis/config.yaml:ro
+    ports: !override
+      - 127.0.0.1:8013:8080
+    depends_on: !override
+      litellm:
+        condition: service_healthy
+
+  prometheus:
+    # The PoC-8 pin (deploy/compose/poc08/docker-compose.yaml).
+    image: docker.io/prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes:
+      - ./router-drill.prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - 127.0.0.1:9013:9090
+    networks: [edge]
+    depends_on:
+      litellm:
+        condition: service_healthy
+
+networks:
+  edge:
+    name: router1113-edge
+  platform:
+    name: router1113-platform
+    internal: true

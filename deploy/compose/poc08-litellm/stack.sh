@@ -23,6 +23,10 @@ env_file="$here/.env.poc08-litellm"
 run_dir="$here/.run"
 key_file="$run_dir/chassis.env"
 compose=(docker compose -p poc08-litellm --env-file "$env_file" -f "$here/docker-compose.yaml")
+# The Collector's tail sampling percent from TRACE_SAMPLE_RATE (0 to 1, default 1.0; 014 H-7).
+# A bad rate stops here, before any compose call.
+TRACE_SAMPLE_PERCENT="$(python3 -I "$here/../trace_sample_percent.py")"
+export TRACE_SAMPLE_PERCENT
 # Everything but the chassis: it starts once its key exists.
 platform=(postgres fake-model-server guardrail-server presidio-analyzer presidio-anonymizer
   litellm jaeger otel-collector)

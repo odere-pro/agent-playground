@@ -41,6 +41,11 @@ pipeline, never here). The record goes to `log_sink`, by default one JSON line o
 logger. The record rides on the log record as `chassis_record`, so the chassis's JSON formatter
 (`chassis.logs`) writes its fields as fields, not JSON inside `message` (PoC-8).
 
+**Sampling (014 H-7).** The SDK records and exports every span: the default sampler is
+`ALWAYS_ON`, never the SDK's own default, which reads `OTEL_TRACES_SAMPLER` and follows a caller's
+unsampled `traceparent`. Sampling is a Collector policy (ADR-007 item 8; `tail_sampling`, its rate
+from `trace_sample_rate`), so the Collector sees whole traces. A test may pass its own `sampler`.
+
 **Metrics (PoC-8).** `metrics` is the chassis's `MetricsRegistry`: every counter and every timed
 span feeds it as well as the OTel meter, and `GET /metrics` renders it (`chassis.metrics`).
 """
@@ -67,7 +72,7 @@ from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SimpleSpanProcessor, SpanExporter
 from opentelemetry.sdk.trace.id_generator import RandomIdGenerator
-from opentelemetry.sdk.trace.sampling import Sampler
+from opentelemetry.sdk.trace.sampling import ALWAYS_ON, Sampler
 from opentelemetry.trace import Status, StatusCode
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
@@ -178,7 +183,9 @@ class OtelTelemetry:
         )
         resource = Resource.create({SERVICE_NAME: self.service_name})
         self.tracer_provider = TracerProvider(
-            resource=resource, sampler=sampler, id_generator=_RunTraceIds()
+            resource=resource,
+            sampler=ALWAYS_ON if sampler is None else sampler,
+            id_generator=_RunTraceIds(),
         )
         self.exporters: list[SpanExporter] = list(span_exporters)
         for exporter in span_exporters:
