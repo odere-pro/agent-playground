@@ -1,4 +1,4 @@
-"""A fake of the LangSmith OTLP trace route, as one Starlette app (CH-10).
+"""A fake of the LangSmith OTLP trace and feedback routes, as one Starlette app (CH-10, CH-11).
 
 LangSmith takes OTLP over HTTP at `POST /otel/v1/traces`, with the key in the `x-api-key` header
 (the LangSmith OpenTelemetry guide). The Collector's `otlphttp/langsmith` exporter sends there.
@@ -7,16 +7,22 @@ LangSmith takes OTLP over HTTP at `POST /otel/v1/traces`, with the key in the `x
   and kept by trace id; the answer is an empty 200. A body that is not OTLP is 400.
 - `GET /fake/traces/{trace_id}`: the recorded spans of one trace, or 404. Not a LangSmith route:
   a stack test reads the fake back through it.
+- `POST /api/v1/feedback`: one feedback record, upserted by its `id` (130 CH-11). suggested: the
+  path and fields follow `LangSmithFeedback`; the answer echoes the record. A body that is not a
+  JSON object with an `id` and a UUID `run_id` is 422. `FakeLangSmith.unavailable` makes it 503.
+- `GET /fake/feedback/{id}`: one feedback record, or 404. `GET /fake/runs/{run_id}/feedback`: the
+  records on one run, the run id as a UUID or 32 hex. Not LangSmith routes: read-backs for tests.
 - `GET /health`: no auth.
 - The dataset, example, and experiment routes of CH-12: `fake_langsmith.datasets`.
 
-A missing or wrong `x-api-key` is 401 and stores nothing.
+A missing or wrong `x-api-key` on an `/otel` or `/api` route is 401 and stores nothing.
 """
 
 from __future__ import annotations
 
 import base64
 import json
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -47,10 +53,18 @@ class RecordedSpan:
 
 @dataclass
 class FakeLangSmith(DatasetStore):
-    """The fake's state: the one accepted API key, the spans in arrival order, and the datasets."""
+    """The fake's state: the one accepted API key, the spans in arrival order, the feedback
+    records by id, and the datasets. `unavailable` makes the feedback route answer 503."""
 
     api_key: str
     recorded: list[RecordedSpan] = field(default_factory=list)
+    feedback: dict[str, dict[str, Any]] = field(default_factory=dict)
+    unavailable: bool = False
+
+    def feedback_on(self, run_id: str) -> list[dict[str, Any]]:
+        """The feedback records on one run; `run_id` is a UUID in any form uuid.UUID reads."""
+        run = _uuid(run_id)
+        return [r for r in self.feedback.values() if run is not None and _uuid(r["run_id"]) == run]
 
     def trace_ids(self) -> list[str]:
         """Each trace id once, in the order it first arrived."""
@@ -132,6 +146,24 @@ def _decode(content_type: str, body: bytes) -> ExportTraceServiceRequest | None:
     return request
 
 
+def _uuid(value: object) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(value))
+    except ValueError:
+        return None
+
+
+def _feedback_record(body: bytes) -> dict[str, Any] | None:
+    """The feedback record in `body`, or None when it has no `id` or no UUID `run_id`."""
+    try:
+        data = json.loads(body)
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or not data.get("id") or _uuid(data.get("run_id")) is None:
+        return None
+    return data
+
+
 def create_app(state: FakeLangSmith) -> Starlette:
     """The fake route over `state`."""
 
@@ -150,6 +182,29 @@ def create_app(state: FakeLangSmith) -> Starlette:
             return JSONResponse({"detail": "Trace not found"}, status_code=404)
         return JSONResponse({"spans": [vars(s) for s in spans]})
 
+    async def post_feedback(request: Request) -> Response:
+        if request.headers.get("x-api-key") != state.api_key:
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        if state.unavailable:
+            return JSONResponse({"detail": "Service unavailable"}, status_code=503)
+        record = _feedback_record(await request.body())
+        if record is None:
+            return JSONResponse({"detail": "a feedback needs an id and a run_id"}, status_code=422)
+        state.feedback[str(record["id"])] = record
+        return JSONResponse(record)
+
+    async def read_feedback(request: Request) -> Response:
+        record = state.feedback.get(request.path_params["feedback_id"])
+        if record is None:
+            return JSONResponse({"detail": "Feedback not found"}, status_code=404)
+        return JSONResponse(record)
+
+    async def read_run_feedback(request: Request) -> Response:
+        run_id = request.path_params["run_id"]
+        if _uuid(run_id) is None:
+            return JSONResponse({"detail": "Run not found"}, status_code=404)
+        return JSONResponse({"feedback": state.feedback_on(run_id)})
+
     async def health(request: Request) -> Response:
         return JSONResponse({"status": "ok"})
 
@@ -157,6 +212,9 @@ def create_app(state: FakeLangSmith) -> Starlette:
         routes=[
             Route("/otel/v1/traces", otel_traces, methods=["POST"]),
             Route("/fake/traces/{trace_id}", read_trace, methods=["GET"]),
+            Route("/api/v1/feedback", post_feedback, methods=["POST"]),
+            Route("/fake/feedback/{feedback_id}", read_feedback, methods=["GET"]),
+            Route("/fake/runs/{run_id}/feedback", read_run_feedback, methods=["GET"]),
             Route("/health", health, methods=["GET"]),
             *dataset_routes(state, state.api_key),
         ]

@@ -1,92 +1,81 @@
 """`LangSmithFeedback` (130 CH-11, ADR-009 item 3a): the LangSmith feedback adapter passes the
 same `FeedbackPortContract` as `InMemoryFeedback` and `LangfuseFeedback`, offline.
 
-`fake-langsmith` (129 CH-10) does not exist yet, so the binding here answers the feedback route
-with a small in-test stand-in over `httpx.MockTransport`. No key, no network.
+The binding talks to `fake-langsmith` (its feedback route) in process over an ASGI transport.
+No key, no network.
 """
 
 from __future__ import annotations
 
-import json
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
 import pytest
 from chassis.adapters.langsmith import (
-    FEEDBACK_PATH,
     LangSmithFeedback,
     feedback_body,
     feedback_from_record,
     langsmith_feedback_id,
 )
+from chassis.core.handle import echo
+from chassis.core.trace import trace_id_hex
+from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
+from chassis.fakes.events import InMemoryBus
+from chassis.fakes.state import InMemoryState
+from chassis.ports.auth import NoAuth
+from chassis.ports.bundle import PortBundle
 from chassis.ports.feedback import Feedback, FeedbackError
 from chassis.profiles import AdapterNotAvailable, resolve
+from chassis.server import ChassisConfig, create_app
+from chassis.server.feedback import FEEDBACK_PATH as ROUTE
 from chassis.server.feedback import bind_score_name
 from chassis_contracts import FeedbackPortContract, make_feedback
+from fake_langsmith import FakeLangSmith
+from fake_langsmith import create_app as create_fake
+from fastapi import FastAPI
 
-KEY = "lsv2-test-not-a-secret"
-
-
-class FeedbackRouteStandIn:
-    """The LangSmith feedback route, in memory: upsert by `id`, `x-api-key` auth, a scripted
-    outage. A stand-in until `fake-langsmith` lands (129 CH-10)."""
-
-    def __init__(self, key: str = KEY) -> None:
-        self.key = key
-        self.records: dict[str, dict[str, Any]] = {}
-        self.unavailable = False
-
-    def __call__(self, request: httpx.Request) -> httpx.Response:
-        if self.unavailable:
-            return httpx.Response(503)
-        if request.headers.get("x-api-key") != self.key:
-            return httpx.Response(401, json={"detail": "Invalid token"})
-        if (request.method, request.url.path) != ("POST", FEEDBACK_PATH):
-            return httpx.Response(404)
-        body = json.loads(request.content)
-        self.records[body["id"]] = body
-        return httpx.Response(200, json=body)
+KEY = "lsv2-test-not-a-secret"  # pragma: allowlist secret
 
 
 @pytest.fixture
-def route() -> FeedbackRouteStandIn:
-    return FeedbackRouteStandIn()
+def route() -> FakeLangSmith:
+    return FakeLangSmith(api_key=KEY)
 
 
-def adapter_for(route: FeedbackRouteStandIn, key: str = KEY, **kwargs: Any) -> LangSmithFeedback:
-    return LangSmithFeedback(
-        "http://langsmith", key, transport=httpx.MockTransport(route), **kwargs
-    )
+def adapter_for(route: FakeLangSmith, key: str = KEY, **kwargs: Any) -> LangSmithFeedback:
+    transport = httpx.ASGITransport(app=create_fake(route))
+    return LangSmithFeedback("http://langsmith", key, transport=transport, **kwargs)
 
 
 class TestLangSmithFeedback(FeedbackPortContract):
     @pytest.fixture
-    def feedback_port(self, route: FeedbackRouteStandIn) -> LangSmithFeedback:
+    def feedback_port(self, route: FakeLangSmith) -> LangSmithFeedback:
         return adapter_for(route)
 
     @pytest.fixture
-    def read_feedback(self, route: FeedbackRouteStandIn) -> Callable[[str], Feedback | None]:
+    def read_feedback(self, route: FakeLangSmith) -> Callable[[str], Feedback | None]:
         def read(feedback_id: str) -> Feedback | None:
-            record = route.records.get(langsmith_feedback_id(feedback_id))
+            record = route.feedback.get(langsmith_feedback_id(feedback_id))
             return None if record is None else feedback_from_record(record)
 
         return read
 
     @pytest.fixture
-    def count_feedback(self, route: FeedbackRouteStandIn) -> Callable[[str], int]:
-        return lambda fid: int(langsmith_feedback_id(fid) in route.records)
+    def count_feedback(self, route: FakeLangSmith) -> Callable[[str], int]:
+        return lambda fid: int(langsmith_feedback_id(fid) in route.feedback)
 
     @pytest.fixture
-    def make_unavailable(self, route: FeedbackRouteStandIn) -> Callable[[], None]:
+    def make_unavailable(self, route: FakeLangSmith) -> Callable[[], None]:
         return lambda: setattr(route, "unavailable", True)
 
 
-async def test_the_score_lands_on_the_run_of_the_trace(route: FeedbackRouteStandIn) -> None:
+async def test_the_score_lands_on_the_run_of_the_trace(route: FakeLangSmith) -> None:
     feedback = make_feedback(label="helpful", comment="Clear.", subject="user-1")
     await adapter_for(route).submit(feedback)
-    (record,) = route.records.values()
+    (record,) = route.feedback.values()
     run = str(uuid.UUID(feedback.trace_id))
     assert (record["run_id"], record["trace_id"]) == (run, run)
     assert (record["key"], record["score"], record["comment"]) == ("user-feedback", 1.0, "Clear.")
@@ -99,21 +88,21 @@ async def test_the_score_lands_on_the_run_of_the_trace(route: FeedbackRouteStand
     }
 
 
-async def test_the_score_name_comes_from_the_spec(route: FeedbackRouteStandIn) -> None:
+async def test_the_score_name_comes_from_the_spec(route: FakeLangSmith) -> None:
     port = adapter_for(route)
     bind_score_name(port, "thumbs")
     await port.submit(make_feedback())
-    assert [r["key"] for r in route.records.values()] == ["thumbs"]
+    assert [r["key"] for r in route.feedback.values()] == ["thumbs"]
 
 
-async def test_a_named_score_overrides_the_spec_score_name(route: FeedbackRouteStandIn) -> None:
+async def test_a_named_score_overrides_the_spec_score_name(route: FakeLangSmith) -> None:
     port = adapter_for(route)
     bind_score_name(port, "thumbs")
     await port.submit(make_feedback(name="judge-facts-v1"))
-    assert [r["key"] for r in route.records.values()] == ["judge-facts-v1"]
+    assert [r["key"] for r in route.feedback.values()] == ["judge-facts-v1"]
 
 
-async def test_a_wrong_key_is_rejected_and_never_echoed(route: FeedbackRouteStandIn) -> None:
+async def test_a_wrong_key_is_rejected_and_never_echoed(route: FakeLangSmith) -> None:
     wrong = "lsv2-wrong-not-a-secret"
     with pytest.raises(FeedbackError) as info:
         await adapter_for(route, key=wrong).submit(make_feedback())
@@ -190,3 +179,62 @@ def test_spec_adapters_feedback_langsmith_without_a_key_is_not_configured(
     monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
     with pytest.raises(AdapterNotAvailable, match="not configured"):
         resolve("feedback", "langsmith")
+
+
+def _langsmith_app(feedback: LangSmithFeedback) -> FastAPI:
+    config = ChassisConfig.model_validate(
+        {
+            "version": "cfg-1",
+            "profile": "fake",
+            "agent": {"name": "echo", "version": "0.0.1"},
+            "spec": {
+                "adapters": {"feedback": "langsmith"},
+                "engine": {"connector": "inprocess", "handle": "chassis.core.handle:echo_wire"},
+            },
+        }
+    )
+    ports = PortBundle(
+        model=ScriptedModel(),
+        engine=FakeEngine(handle=echo),
+        config=InMemoryConfig(),
+        telemetry=InMemoryTelemetry(),
+        state=InMemoryState(),
+        events=InMemoryBus(),
+        feedback=feedback,
+        auth=NoAuth(),
+    )
+    return create_app(config, ports)
+
+
+@asynccontextmanager
+async def _chassis(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://chassis") as client:
+            yield client
+
+
+async def test_post_v1_feedback_writes_one_score_on_the_runs_langsmith_trace(
+    route: FakeLangSmith,
+) -> None:
+    """`spec.adapters.feedback: langsmith`: a run, then `POST /v1/feedback`, is one score in
+    fake-langsmith on that run's trace, read back over the fake's run route."""
+    async with _chassis(_langsmith_app(adapter_for(route))) as client:
+        run = await client.post("/v1/run", json={"input": {"text": "hello"}})
+        assert run.status_code == 200
+        answer = await client.post(
+            ROUTE, json={"request_id": run.json()["request_id"], "score": 1, "label": "helpful"}
+        )
+    assert answer.status_code == 202
+    trace = trace_id_hex(run.json()["trace_id"])
+    assert answer.json()["trace_id"] == trace
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=create_fake(route)), base_url="http://langsmith"
+    ) as fake:
+        read = await fake.get(f"/fake/runs/{trace}/feedback")
+    (score,) = read.json()["feedback"]
+    run_uuid = str(uuid.UUID(trace))
+    assert (score["run_id"], score["trace_id"]) == (run_uuid, run_uuid)
+    assert (score["key"], score["score"]) == ("user-feedback", 1.0)
+    assert score["feedback_source"]["metadata"]["request_id"] == run.json()["request_id"]
+    assert score["id"] == langsmith_feedback_id(answer.json()["feedback_id"])
