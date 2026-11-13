@@ -45,8 +45,8 @@ Stateless agents never store records: they send a one-way result event, and a da
 ## Acceptance criteria
 
 - [x] With `result_events` on, one echo call publishes one `agents.task.completed.v1` event, and a failed call publishes `agents.task.failed.v1`. · Delivered in PoC-4: `packages/chassis/tests/test_result_events.py::test_a_completed_run_publishes_one_valid_cloudevent`, `::test_a_failed_run_publishes_the_failed_type`
-- [ ] Every event passes CloudEvents 1.0 validation and its payload schema, and carries all four extensions.
-- [ ] The event's `idempotencykey` matches `key_hash` of the call's key ([contract v3](../../contracts/contract-v3.md#result-events)), and `traceparent` continues the call's trace.
+- [x] Every event passes CloudEvents 1.0 validation and its payload schema, and carries all four extensions. · Delivered by: `packages/chassis/tests/test_result_events_wire.py::test_every_result_event_passes_cloudevents_its_payload_schema_and_has_four_extensions` (completed and failed, against `packages/chassis/schemas/task-result.v1.json`)
+- [x] The event's `idempotencykey` matches `key_hash` of the call's key ([contract v3](../../contracts/contract-v3.md#result-events)), and `traceparent` continues the call's trace. · Delivered by: `packages/chassis/tests/test_result_events_wire.py::test_the_idempotencykey_is_the_key_hash_and_the_traceparent_continues_the_call`
 - [x] A broker outage does not fail the agent's response, and the failed publish shows in a metric. · Delivered in PoC-4: `packages/chassis/tests/test_result_events.py::test_a_failing_broker_does_not_fail_the_run` (`chassis.events.publish_failed`)
 - [x] The core has no broker client import; switching to the in-memory fake needs config only. · Delivered in PoC-4, PoC-5: `pocs/poc-05-sandboxed/tests/test_poc05_events_agnostic.py::test_the_events_port_and_core_import_no_broker_client_in_source`, `pocs/poc-04-stateless-scalable/tests/test_swap_drill.py::test_event_port_swaps_by_config_only`
 - [ ] The DEC-1 adapter passes a publish test against a real broker started by the test.
@@ -55,7 +55,7 @@ Stateless agents never store records: they send a one-way result event, and a da
 - [ ] A workload's events reach the broker only through the chassis, with the same payload in the `inprocess` and `sidecar` lanes.
 - [ ] A real result event carries `traceparent` and `modelroute`, checked on the published event.
 - [ ] `input` is left out of a result event unless `spec.events.include_input` is true (suggested name).
-- [ ] One result event per call on the native, OpenAI, and Anthropic interfaces, and none for a replayed idempotent call. Open: `packages/chassis/tests/test_result_events.py::test_a_completed_run_publishes_one_valid_cloudevent` covers native only; `::test_a_replayed_idempotent_call_publishes_nothing_new` covers the replay.
+- [x] One result event per call on the native, OpenAI, and Anthropic interfaces, and none for a replayed idempotent call. · Delivered by: `packages/chassis/tests/test_result_events_wire.py::test_one_result_event_per_call_and_none_for_a_replay` (`[native]`, `[openai]`, `[anthropic]`)
 - [ ] The model-source field of a result event is named once and documented (suggested: `original_model`).
 
 ## Dependencies
