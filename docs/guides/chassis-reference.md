@@ -43,7 +43,7 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
   - `Interface`.
   - `status_for(code, retryable)` holds the PoC-3 status table. It maps `engine_error` and `internal_error` to 500.
   - PoC-4 adds 422 `idempotency_conflict`, 409 `idempotency_in_progress`, and 503 `state_unavailable`.
-  - `PUBLIC_MESSAGES` and `public_message(code)` are the fixed client-facing error text, on every interface since contract v8. suggested: the text. It includes `a2a.stream_too_large`.
+  - `PUBLIC_MESSAGES` and `public_message(code)` are the fixed client-facing error text, on every interface since contract v8. suggested: the text. It includes `a2a.stream_too_large` and `a2a.rpc_error`.
   - `answer_text` is the answer a chat format shows. `rest_of_answer` is what a stream sends after its deltas.
 - `manifest.py` is `Manifest` v0: `ManifestAgent`, `HttpInterface`, `McpInterface`, `OpenAPIRef`. suggested: the whole shape.
 - `results.py` is `TaskResult`, the result-event payload.
@@ -155,6 +155,8 @@ Each is built by `from_env()` and loaded lazily.
   - A timeout or transport `Error` keeps the exception text, cut to `ERROR_MESSAGE_MAX`.
   - `budget.timeout_ms` is both the per-read timeout and a whole-run deadline, in every lane. Running out is `a2a.timeout`, retryable.
   - A transport failure is `a2a.transport`. So is a stream with no `end` or `error`.
+  - A JSON-RPC error answer from the workload, any code, is `a2a.rpc_error`, not retryable (P-9, decided 2026-11-13). Before, a mapped code escaped `run` as `engine_error`, and an unmapped one was `a2a.transport`.
+    - `is_jsonrpc_error_answer` decides it. A code outside a2a-sdk's map comes as a plain `A2AClientError` with the `JSON-RPC Error ` prefix, so the helper reads that prefix (SDK-pinned by a test).
   - It cancels even when closing the stream raises.
   - It opens one span per run.
   - It has two hooks a lane can override: `_message_for` builds the A2A request and `_translator_for` makes the run's `EventTranslator`. The default `ChassisTranslator` reads `chassis.event`. The translator also reports the remote's `task_id` and whether the task is finished there. The connector cancels only a task that is not finished.
@@ -400,6 +402,7 @@ The model proxy (proxy port) is the OpenAI-compatible pass-through a workload ca
   - The rule is in `admit`, so both routes follow it (contract v8, I).
 - `admit(...)` is the one admission step both routes use: count the call, find the run, refuse with 429, else reserve.
 - A correlated call whose `model` is not the run's `RunRecord.model_route` (the task's route through `spec.model.routes`, else `spec.model.route`; the gate's fallback route for its fallback attempt) is sent to the run's route and counted `chassis.model_route_forced{route}`. The `chassis.model.route` span records the choice.
+- 012 H-3: a correlated call whose `model` is not a route the live config names (`ModelSpec.declared_routes`: `route`, `fallback_route`, `judge_route`, the values of `routes`) is refused at admission with 403 `model_route_denied`, the same body as an upstream refusal, before anything is held or called. It is never rewritten. It counts `chassis.model_route_refused{route}` by the run's route (suggested). A chat stream gets the 403 as its status. Tests: `tests/test_model_route_denied.py`.
 - An upstream 401 or 403 answers 403 `model_route_denied` on both routes (it was 500 `http_401`). It counts `chassis.model_upstream_denied{route}` and logs once. A chat stream keeps its 200 and its error frame.
 - CH-16: `Admission.model` is a `BoundModel`, the port bound to the call. It passes the run's remaining time (`RunRecord.remaining_s`) as the port's `timeout_s` (None for an uncorrelated call), and it races a correlated call against `RunRecord.ended`: when the run closes first the port call is cancelled and the call raises `run_ended`, answered 403 `permission_error` on both routes.
 - CH-16: `service_budget_exhausted` is 429 on both routes with `x-should-retry: false`, counted `chassis.model_budget_exhausted{route}` (`note_service_budget`). The alert on it is `deploy/prometheus/rules/chassis.yaml`, mounted by the PoC-8 Compose stack's Prometheus.

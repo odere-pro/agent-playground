@@ -72,7 +72,7 @@ Next, in order: the user's decisions, one small build per answer; the live Compo
 
 ### 2. Needs a user decision
 
-- 009 CH-1: P-7 (cancel and streaming in `inprocess`) and P-9 (a JSON-RPC error from the workload), and the error code name.
+- 009 CH-1: P-7 (cancel and streaming in `inprocess`). P-9 was decided on 2026-11-13: a JSON-RPC error from the workload is `a2a.rpc_error`.
 - 055 CH-6: a default proxy key, or opt-in, for the two-key workload token Secret.
 - 012 H-3: refuse a route that is not allowed, or force the allowed one.
 - 010 H-12: which bootstrap fields act as ceilings, and what `/openapi.json` shows after a reload.

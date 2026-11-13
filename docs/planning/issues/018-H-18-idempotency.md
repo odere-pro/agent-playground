@@ -1,7 +1,7 @@
 ---
 title: "H-18: Idempotency: key check, optional Valkey result cache, key passed to write tools"
 labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
-milestone: "W2 Chassis MVP"
+milestone: "Done: delivered by the PoC track"
 index: 18
 epic_id: H-18
 depends_on: ["007 H-1", "016 H-9", "009 CH-1"]
@@ -38,14 +38,14 @@ A repeated call with the same `idempotency_key` must return the same result and 
 
 ## Acceptance criteria
 
+Delivered by: PoC-4, PoC-5, PR #89, and, on 2026-11-13, the sidecar `ctx` test (PR #173)
+
 - [x] Two calls with the same key and input return the same result, and with the cache on, the second makes no model call. · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/tests/test_idempotency_replicas.py::test_a_repeated_key_returns_the_same_result_on_any_replica`, `::test_a_repeated_key_makes_no_second_model_call`
 - [x] The same key with a different input returns a conflict error. · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/tests/test_idempotency_replicas.py::test_same_key_other_input_is_a_conflict` (422)
 - [x] Two concurrent calls with the same key make one model call. · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/tests/test_idempotency_replicas.py::test_concurrent_duplicates_run_once`, `pocs/poc-04-stateless-scalable/tests/test_idempotency_valkey.py::test_concurrent_duplicates_run_once_through_valkey`
 - [x] A cached result is returned as a stream when the second call sets `stream: true`. · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/tests/test_idempotency_replicas.py::test_a_cached_result_replays_as_a_stream`
-- [ ] The key is on `Context` for later use by events and write tools, and reaches the workload in `ctx` in the `sidecar` lane.
-  - Proven offline by `packages/chassis/tests/test_idempotency_sidecar_ctx.py::test_the_openai_idempotency_key_header_reaches_the_workload_ctx_in_sidecar`, `::test_the_native_envelope_key_reaches_the_workload_ctx_in_sidecar`, `::test_a_minted_key_reaches_the_workload_ctx_and_the_envelope_in_sidecar`; the `Context` and write-tool half by `packages/chassis/tests/test_tool_idempotency.py::test_a_write_in_a_run_gets_the_derived_key`, `::test_the_same_write_twice_in_one_run_is_one_effect`.
+- [x] The key is on `Context` for later use by events and write tools, and reaches the workload in `ctx` in the `sidecar` lane. · Delivered by: PR #173, `packages/chassis/tests/test_idempotency_sidecar_ctx.py::test_the_openai_idempotency_key_header_reaches_the_workload_ctx_in_sidecar`, `::test_the_native_envelope_key_reaches_the_workload_ctx_in_sidecar`, `::test_a_minted_key_reaches_the_workload_ctx_and_the_envelope_in_sidecar`; the `Context` and write-tool half by `packages/chassis/tests/test_tool_idempotency.py::test_a_write_in_a_run_gets_the_derived_key`, `::test_the_same_write_twice_in_one_run_is_one_effect`
   - The template A2A server (`packages/workload-a2a`) with a ctx-echo workload stands in for "the echo workload": it crosses the real A2A hop on Unix sockets and checks `ctx.idempotency_key` equals the envelope key.
-  - Open only because ticking the last box needs the `WD` retirement in `docs/planning/tools/backlog.py` (`check.py --strict`), a separate planning change.
 - [x] Only the chassis is given the Valkey credential. The workload container has none. · Delivered in PoC-4, PoC-5: `pocs/poc-04-stateless-scalable/tests/test_read_only_compose.py::test_no_key_in_any_workload_env`, `pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py::test_valkey_refuses_the_workload_without_the_chassis_password` (`pocs/poc-05-sandboxed/notes/2026-10-08-sidecar-suite.md`)
 - [x] Cache entries expire after the configured time. · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/tests/test_idempotency_replicas.py::test_the_cache_expires_after_ttl`, `packages/chassis/tests/test_idempotency.py::test_a_cached_result_lives_ttl_s`
 - [x] The Valkey adapter and the in-memory fake pass the same `StatePort` contract suite, and are picked by `spec.adapters.state`. · Delivered in PoC-4: `packages/chassis/tests/test_state_contract.py::TestInMemoryState`, `packages/chassis/tests/integration/test_valkey_state_contract.py::TestValkeyState`, `packages/chassis/tests/test_profiles.py::test_overrides_pick_the_adapter_per_port`

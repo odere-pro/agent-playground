@@ -183,9 +183,11 @@ class ModelSpec(BaseModel):
       Restart-only.
     - `routes: {}`: the route per task, keyed by the task the caller names in `input.data.task`.
       The pipeline resolves `routes[task]`, else `route`, into `ctx.model_route`, and the model
-      proxy forces every call of the run to it. A route the service's LiteLLM key does not list
-      is 403 `model_route_denied` at the first call; suggested: a check at load, which needs the
-      key and is not built. An empty task or route name is refused here.
+      proxy forces every call of the run to it. A call of a run that names a route this spec
+      does not list (`declared_routes`) is refused at admission with 403 `model_route_denied`
+      (012 H-3). A listed route the LiteLLM key does not list is 403 `model_route_denied` at
+      the first call; suggested: a check at load, which needs the key and is not built. An
+      empty task or route name is refused here.
     - `judge_route: null`: the judge evaluator's route. Null: `CHASSIS_JUDGE_ROUTE`.
     """
 

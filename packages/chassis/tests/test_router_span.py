@@ -31,6 +31,15 @@ CONFIG: dict[str, Any] = {
 TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"  # pragma: allowlist secret
 PARENT = "00f067aa0ba902b7"
 TRACEPARENT = f"00-{TRACE}-{PARENT}-01"
+ROUTED: dict[str, Any] = {
+    **CONFIG,
+    "spec": {
+        **CONFIG["spec"],
+        "model": {"route": "big-default", "fallback_route": "fallback-route"},
+    },
+}
+"""`CONFIG` naming the routes a run's calls use: a call of a run that names a route the config
+does not list is refused (012 H-3)."""
 CHAT = {"model": "big-default", "messages": [{"role": "user", "content": "hello"}]}
 MESSAGES = {**CHAT, "max_tokens": 64}
 
@@ -80,7 +89,7 @@ async def test_every_proxied_model_call_has_a_route_span_in_the_run_trace(
     path: str, body: dict[str, Any], fmt: str, forced: bool
 ) -> None:
     ports = _ports()
-    app = create_app(ChassisConfig.model_validate(CONFIG), ports)
+    app = create_app(ChassisConfig.model_validate(ROUTED), ports)
     request, ctx = _run()
     async with (
         _client(create_proxy_app(app)) as client,

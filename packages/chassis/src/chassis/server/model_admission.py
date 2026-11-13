@@ -33,7 +33,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi import Request as HTTPRequest
 
-from chassis.adapters.anthropic_compat.model_wire import BODY_CAP_BYTES
+from chassis.adapters.anthropic_compat.model_wire import BODY_CAP_BYTES, DENIED_TEXT
 from chassis.core.trace import continued
 from chassis.ports.bundle import PortBundle
 from chassis.ports.model import (
@@ -58,6 +58,10 @@ ROUTE_SPAN = "chassis.model.route"  # suggested: the routing choice (PoC-8)
 DENIED = "chassis.model_upstream_denied"  # suggested
 FORCED = "chassis.model_route_forced"  # suggested: a call sent to the run's route, not its own
 PINNED = "chassis.model_route_pinned"  # suggested: an uncorrelated call sent to `spec.model.route`
+ROUTE_REFUSED = "chassis.model_route_refused"
+"""suggested (012 H-3): a call of a run refused at admission for a route the service does not
+list, counted by the run's route (never the one asked for, which the workload picks)."""
+REQUESTED_LOG_CHARS = 64  # suggested: how much of an unlisted route name the warning keeps
 BUDGET_EXHAUSTED = "chassis.model_budget_exhausted"
 """suggested (CH-16): the router refused a call for the service's budget, by route. Exported as
 `chassis_model_budget_exhausted_total`."""
@@ -130,19 +134,22 @@ class UncorrelatedCap:
 
 @dataclass(frozen=True)
 class Refusal:
-    """A call refused at admission, before the model is called: 429 `budget_exhausted`, or 403
-    `uncorrelated_refused` under an uncorrelated cap of `0`. `status` is the HTTP status."""
+    """A call refused at admission, before the model is called: 429 `budget_exhausted`, 403
+    `uncorrelated_refused` under an uncorrelated cap of `0`, or 403 `model_route_denied` for a
+    route the service does not list. `status` is the HTTP status. `kind` is the chat body's
+    `type`, else the code."""
 
     code: str
     message: str
     retryable: bool
     status: int = 429
+    kind: str | None = None
 
     def chat_body(self) -> dict[str, Any]:
         return {
             "error": {
                 "message": self.message,
-                "type": self.code,
+                "type": self.kind or self.code,
                 "code": self.code,
                 "retryable": self.retryable,
             }
@@ -434,6 +441,31 @@ def _uncorrelated_error(limit: int, worst: int) -> Refusal:
     return Refusal("budget_exhausted", message, worst <= limit)
 
 
+ROUTE_DENIED = Refusal(
+    "model_route_denied", DENIED_TEXT, False, status=403, kind="permission_error"
+)
+"""012 H-3: the same code and fixed text as an upstream 401 or 403 (contract v5, A.9), so the
+caller sees one refusal for one cause. The body names no route and no key."""
+
+
+def _route_refused(
+    telemetry: TelemetryPort, record: RunRecord, requested: str, listed: Sequence[str]
+) -> Refusal | None:
+    """`ROUTE_DENIED` when a call of a run names a route the service does not list, else None.
+    The list is the live config's (`ModelSpec.declared_routes`); the LiteLLM key's own list is
+    not known to the chassis, so the config stands in for it."""
+    if not record.model_route or requested in listed:
+        return None
+    telemetry.counter(ROUTE_REFUSED, route=record.model_route)
+    log.warning(
+        "model route not listed for this service: run_route=%s requested=%r request_id=%s",
+        record.model_route,
+        requested[:REQUESTED_LOG_CHARS],
+        record.request_id,
+    )
+    return ROUTE_DENIED
+
+
 def _span_attributes(
     route: str, trace_id: str | None, record: RunRecord | None, fmt: str, traceparent: str | None
 ) -> dict[str, Any]:
@@ -457,10 +489,11 @@ def admit(
     app: FastAPI, *, route: str, wanted: int | None, traceparent: str | None, fmt: str
 ) -> Admission | Refusal:
     """Steps 3 to 7 of the shared admission (contract v5, A.6): count the call, find its run,
-    pick the route, refuse a spent run or a full uncorrelated cap with 429, else reserve. A run's
-    fallback route wins over the `model` named; an uncorrelated call always gets
-    `spec.model.route`. `fmt` is `openai` or `anthropic`. The caller has checked
-    `app.state.ready` and parsed the body.
+    pick the route, refuse a spent run or a full uncorrelated cap with 429, else reserve. A call
+    of a run that names a route the service does not list is refused with 403
+    `model_route_denied` (012 H-3), never rewritten. A listed route goes to the run's route (a
+    run's fallback route wins); an uncorrelated call always gets `spec.model.route`. `fmt` is
+    `openai` or `anthropic`. The caller has checked `app.state.ready` and parsed the body.
     """
     bundle: PortBundle = app.state.ports
     telemetry = bundle.telemetry
@@ -469,6 +502,11 @@ def admit(
     trace_id = parse_traceparent(traceparent)
     runs: RunRegistry = app.state.runs
     record = runs.lookup(trace_id) if trace_id is not None else None
+    if record is not None:
+        listed = app.state.config.spec.model.declared_routes()
+        refused = _route_refused(telemetry, record, requested, listed)
+        if refused is not None:
+            return refused
     if record is not None and record.model_route and record.model_route != route:
         # The run's route wins: the task's route through `spec.model.routes`, else
         # `spec.model.route`, or the gate's fallback route for its fallback attempt (PoC-7).
@@ -515,6 +553,9 @@ __all__ = [
     "DENIED",
     "FORCED",
     "PINNED",
+    "REQUESTED_LOG_CHARS",
+    "ROUTE_DENIED",
+    "ROUTE_REFUSED",
     "ROUTE_SPAN",
     "SPAN",
     "UNCORRELATED_REFUSED",
