@@ -153,7 +153,8 @@ Each is built by `from_env()` and loaded lazily.
   - A timeout or transport `Error` keeps the exception text, cut to `ERROR_MESSAGE_MAX`.
   - `budget.timeout_ms` is both the per-read timeout and a whole-run deadline, in every lane. Running out is `a2a.timeout`, retryable.
   - A transport failure is `a2a.transport`. So is a stream with no `end` or `error`.
-  - A JSON-RPC error answer from the workload is `a2a.rpc_error`, not retryable (P-9, decided 2026-11-13). Before, it escaped `run` and became `engine_error`.
+  - A JSON-RPC error answer from the workload, any code, is `a2a.rpc_error`, not retryable (P-9, decided 2026-11-13). Before, a mapped code escaped `run` as `engine_error`, and an unmapped one was `a2a.transport`.
+    - `is_jsonrpc_error_answer` decides it. A code outside a2a-sdk's map comes as a plain `A2AClientError` with the `JSON-RPC Error ` prefix, so the helper reads that prefix (SDK-pinned by a test).
   - It cancels even when closing the stream raises.
   - It opens one span per run.
   - It has two hooks a lane can override: `_message_for` builds the A2A request and `_translator_for` makes the run's `EventTranslator`. The default `ChassisTranslator` reads `chassis.event`. The translator also reports the remote's `task_id` and whether the task is finished there. The connector cancels only a task that is not finished.

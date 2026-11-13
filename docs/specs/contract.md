@@ -106,7 +106,7 @@ Source: `core/events.py`; `events.v0.json`. A discriminated union on `type`. Eve
 | `a2a.request_mismatch` | connector | `start.request_id` is not the request's | false |
 | `a2a.timeout` | connector | The run deadline passed, or one read, connect, write, or pool wait took longer than `budget.timeout_ms` | true |
 | `a2a.transport` | connector | The connection failed or dropped, the a2a-sdk client failed, or the stream ended with no `end` or `error` | true |
-| `a2a.rpc_error` | connector | The workload answered a JSON-RPC error (an `A2AError` that is not an `A2AClientError`); P-9, decided 2026-11-13 | false |
+| `a2a.rpc_error` | connector | The workload answered a JSON-RPC error, any code, in every lane (a mapped `A2AError`, or an `A2AClientError` with the SDK's `JSON-RPC Error ` prefix); P-9, decided 2026-11-13 | false |
 | `a2a.canceled` | connector | The task reached `CANCELED` by another hand | false |
 | `a2a.failed` | connector | A terminal `FAILED` or `REJECTED` with no `chassis.event` | false |
 | `a2a.unsupported_state` | connector | `INPUT_REQUIRED` (an agent run never waits for a person, [ADR-015](../planning/adr/015-interrupts-end-the-run.md)) or `AUTH_REQUIRED` (the workload holds no credential and never needs one from a caller, ADR-001 hard requirement 1) | false |

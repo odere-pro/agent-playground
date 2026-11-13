@@ -16,8 +16,12 @@ from typing import Any
 
 import httpx
 import pytest
+from a2a.client import A2AClientError
+from a2a.client.transports.jsonrpc import JsonRpcTransport
+from a2a.utils.errors import InternalError
 from a2a_uds import SIDECAR_URL, Recorder, serve_uds
 from chassis.adapters.a2a import InProcessConnector, SidecarConnector
+from chassis.adapters.a2a.connector import is_jsonrpc_error_answer
 from chassis.adapters.a2a.server import BASE_URL, WireHandle, build_agent_card, build_app
 from chassis.core.envelope import Budget, Request
 from chassis.core.events import Error, Event
@@ -151,7 +155,13 @@ async def _rpc_error_events(lane: str, code: int, message: str) -> list[Event]:
 
 @pytest.mark.parametrize("lane", ["inprocess", "sidecar"])
 @pytest.mark.parametrize(
-    ("code", "name"), [(-32603, "InternalError"), (-32001, "TaskNotFoundError")]
+    ("code", "name"),
+    [
+        (-32603, "InternalError"),
+        (-32001, "TaskNotFoundError"),
+        (-32000, "ServerError"),
+        (42, "CustomError"),
+    ],
 )
 async def test_a_jsonrpc_error_answer_is_an_a2a_code(lane: str, code: int, name: str) -> None:
     """P-9: a JSON-RPC error answer ends the run with one `a2a.rpc_error`, not retryable, never
@@ -161,3 +171,29 @@ async def test_a_jsonrpc_error_answer_is_an_a2a_code(lane: str, code: int, name:
     error = events[0]
     assert isinstance(error, Error), error
     assert error.code == "a2a.rpc_error" and error.retryable is False, error
+
+
+def _sdk_error_for(code: int) -> Exception:
+    """What a2a-sdk's JSON-RPC transport raises for an error answer with `code`."""
+    transport = JsonRpcTransport.__new__(JsonRpcTransport)
+    return transport._create_jsonrpc_error({"code": code, "message": "from the workload"})
+
+
+@pytest.mark.parametrize("code", [-32000, -32099, 42])
+def test_the_sdk_still_builds_an_unmapped_code_as_a_prefixed_client_error(code: int) -> None:
+    """Pins a2a-sdk 1.2: a code outside its map is a plain `A2AClientError` whose text starts
+    with `JSON-RPC Error `, the one sign `is_jsonrpc_error_answer` reads. If the SDK changes
+    this, this test fails before the lane tests do."""
+    exc = _sdk_error_for(code)
+    assert type(exc) is A2AClientError
+    assert str(exc).startswith(f"JSON-RPC Error {code}: ")
+    assert is_jsonrpc_error_answer(exc)
+
+
+def test_a_mapped_code_is_an_a2a_error_and_other_client_errors_are_not_answers() -> None:
+    """A mapped code is its own `A2AError` subclass; an SSE or HTTP failure is not an answer."""
+    assert isinstance(_sdk_error_for(-32603), InternalError)
+    assert is_jsonrpc_error_answer(_sdk_error_for(-32603))
+    assert not is_jsonrpc_error_answer(A2AClientError("SSE stream error: not json"))
+    assert not is_jsonrpc_error_answer(A2AClientError("HTTP Error 503: unavailable"))
+    assert not is_jsonrpc_error_answer(httpx.ConnectError("refused"))
