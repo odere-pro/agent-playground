@@ -126,7 +126,7 @@ async def test_a_completed_run_publishes_one_valid_cloudevent() -> None:
         assert result.request_id == body["request_id"]
         assert result.idempotency_key == KEY_HASH
         assert KEY not in json.dumps(wire, default=str)  # the raw key is nowhere in the event
-        assert result.input.text == "hello"
+        assert "input" not in event.data  # off unless spec.events.include_input (019 H-17)
         assert result.output == body["output"]
         assert _telemetry(app).counter_value(PUBLISHED, topic=TASK_COMPLETED) == 1
 

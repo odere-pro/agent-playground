@@ -32,6 +32,10 @@ data). Regex only (emails, phone numbers, card numbers, IBANs, US social securit
 match becomes `<ENTITY>`. The answer to the caller is not redacted: it is not a record. Ids,
 hashes, versions, and usage counts are not free text and stay as they are.
 
+**No input by default (019 H-17, decided 2026-11-13).** `input` is left out of the payload
+unless `spec.events.include_input` is true: until topic ACLs per service are in (020 X-8),
+caller data must not go on a shared broker. When it is in, it is redacted as above.
+
 **Marked (PoC-8, 023 C-5).** With `spec.governance` marking on, the event carries the CloudEvent
 extension `aigenerated: true`, so a stored record keeps the flag.
 
@@ -97,24 +101,33 @@ DATASCHEMA = "task-result.v1.json"
 """suggested: the `dataschema` of a result event (`schemas/task-result.v1.json`)."""
 
 
-async def result_event(run: Run, *, marked: bool = False) -> tuple[str, CloudEvent]:
+async def result_event(
+    run: Run, *, marked: bool = False, include_input: bool = False
+) -> tuple[str, CloudEvent]:
     """The topic and the CloudEvent for a finished run, its free text redacted (module
-    docstring). The run must be `done`. `marked`: the `aigenerated` extension is `true`."""
+    docstring). The run must be `done`. `marked`: the `aigenerated` extension is `true`.
+    `include_input`: the payload carries the redacted `input`; otherwise the key is left out."""
     response = await run.response()
     request = run.request
     topic = TASK_FAILED if response.status == "error" else TASK_COMPLETED
     hashed = key_hash(request.idempotency_key)
+    task_input = (
+        TaskInput.model_validate(redact_value(request.input.model_dump(mode="json")))
+        if include_input
+        else None
+    )
     result = TaskResult(
         agent=request.agent,
         agent_version=request.agent_version,
         request_id=request.request_id,
         idempotency_key=hashed,
         status=response.status,
-        input=TaskInput.model_validate(redact_value(request.input.model_dump(mode="json"))),
+        input=task_input,
         output=redact_value(response.output),
         usage=response.metrics,
         versions=response.versions,
     )
+    left_out = None if include_input else {"input"}
     event = CloudEvent(
         id=event_id(request.request_id, topic),
         source=f"/agents/{request.agent}",
@@ -122,7 +135,7 @@ async def result_event(run: Run, *, marked: bool = False) -> tuple[str, CloudEve
         subject=request.request_id,
         time=datetime.now(UTC),
         dataschema=DATASCHEMA,
-        data=result.model_dump(mode="json"),
+        data=result.model_dump(mode="json", exclude=left_out),
         traceparent=run.ctx.traceparent or traceparent_for(run.ctx),
         idempotencykey=hashed,
         configversion=response.versions.config,
@@ -154,8 +167,12 @@ class ResultPublisher:
     async def __call__(self, run: Run) -> None:
         if not run.done:
             return  # the run did not finish: there is no result to report
-        marked = bool(self._state.config.spec.governance.marking)
-        topic, event = await result_event(run, marked=marked)
+        spec = self._state.config.spec
+        topic, event = await result_event(
+            run,
+            marked=bool(spec.governance.marking),
+            include_input=spec.events.include_input,
+        )
         task = asyncio.create_task(self._publish(topic, event), name=f"result-event:{event.id}")
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)

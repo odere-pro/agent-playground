@@ -347,6 +347,8 @@ class EventsSpec(BaseModel):
     """`spec.events` (PoC-4, 019 H-17). Restart-only. The adapter is `spec.adapters.events`.
     - `result_events: false`: publish `agents.task.completed.v1` or `agents.task.failed.v1` after
       each run.
+    - `include_input: false`: put the caller's (redacted) input into the result event. Off by
+      default: caller data stays off a shared broker until topic ACLs per service are in (020 X-8).
     - `consume`: run each event from a topic. Not built yet (PoC-4 P9 was optional and was not
       done): a non-null value is refused, never ignored. The type stays so the published schema
       does not change when the consumer arrives (019 H-17).
@@ -354,6 +356,7 @@ class EventsSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     result_events: bool = False
+    include_input: bool = False
     consume: EventsConsumeSpec | None = None
 
     @model_validator(mode="after")
