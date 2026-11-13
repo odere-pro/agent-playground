@@ -59,14 +59,20 @@ SRC_FILES = {
     "python": {"handle.py", "tools.py"},
     "pydanticai": {"handle.py", "mapping.py"},
     "langgraph": {"handle.py", "mapping.py", "telemetry.py", "tools.py"},
+    "langchain": {"handle.py", "mapping.py", "telemetry.py", "tools.py"},
     "openai-agents": {"handle.py", "mapping.py", "telemetry.py", "tools.py"},
     "smolagents": {"agent.py", "handle.py", "mapping.py", "tools.py"},
     "claude-agent": {"handle.py", "mapping.py"},
 }
+ECHO = {"langchain": "echo-langgraph"}
+"""A variant with no echo workload of its own, and the workload its shared files come from."""
+NO_ECHO = {"langchain": {"handle.py"}}
+"""Files with no echo copy: `create_agent`'s handle (ADR-006 decision 1)."""
 SDK = {
     "python": "mcp==",
     "pydanticai": "pydantic-ai-slim[openai,mcp]==",
     "langgraph": "langgraph==",
+    "langchain": "langchain==",
     "openai-agents": "openai-agents==",
     "smolagents": "smolagents[mcp]==",
     "claude-agent": "claude-agent-sdk==",
@@ -197,13 +203,14 @@ def test_makefile_runs_tests_offline_and_dockerfile_is_hardened(
 def test_the_example_logic_is_the_echo_workload(tmp_path: Path, framework: str) -> None:
     """Drift check: rendered as `echo-<framework>`, each source file equals the echo workload's
     (ADR-002's copy rule). On a failure, copy the echo file into `_frameworks/<framework>/` with
-    the module name replaced by `{{ package_name }}`."""
-    name = f"echo-{framework}"
+    the module name replaced by `{{ package_name }}`. `langchain` has no workload of its own: its
+    shared files are echo-langgraph's, and its `handle.py` is checked by its rendered unit tests."""
+    name = ECHO.get(framework, f"echo-{framework}")
     connector = "remote" if framework in rules.UNTRUSTED else "sidecar"
     agent = _render(tmp_path, framework, connector, name=name)
     module = name.replace("-", "_")
     echo = ROOT / "packages/workloads" / name / "src" / module
-    for file in sorted(SRC_FILES[framework]):
+    for file in sorted(SRC_FILES[framework] - NO_ECHO.get(framework, set())):
         rendered = (agent / "src" / module / file).read_text()
         assert rendered == (echo / file).read_text(), f"{file} drifted from {echo / file}"
     partials = {
@@ -228,3 +235,26 @@ def test_every_target_the_ci_calls_is_in_the_makefile(tmp_path: Path) -> None:
             text=True,
         )
         assert done.returncode == 0, (target, done.stderr)
+
+
+def test_the_langchain_variant_is_create_agent_on_the_langgraph_pieces(tmp_path: Path) -> None:
+    """ADR-006 decision 1: a `create_agent` variant next to the `StateGraph` one. It builds the
+    graph with `create_agent` and shares the LangGraph variant's mapping, tools, and tracing."""
+    chain = _render(tmp_path / "chain", "langchain", "sidecar") / "src/my_agent"
+    graph = _render(tmp_path / "graph", "langgraph", "sidecar") / "src/my_agent"
+
+    handle = (chain / "handle.py").read_text()
+    assert "create_agent(model, tools, system_prompt=SYSTEM_PROMPT)" in handle
+    assert "StateGraph(" not in handle
+    for shared in ("mapping.py", "tools.py", "telemetry.py"):
+        assert (chain / shared).read_text() == (graph / shared).read_text(), shared
+
+
+def test_the_langchain_pin_is_agentctls_dev_pin(tmp_path: Path) -> None:
+    """The template's `langchain==` pin and agentctl's dev pin move together: the rendered agent's
+    tests run on the monorepo venv, which has the dev pin."""
+    agent = _render(tmp_path, "langchain", "sidecar")
+    rendered = re.findall(r'"langchain==([^"]+)"', (agent / "pyproject.toml").read_text())
+    agentctl = (ROOT / "packages/agentctl/pyproject.toml").read_text()
+    dev = re.findall(r'"langchain==([^"]+)"', agentctl)
+    assert rendered == dev and len(dev) == 1

@@ -54,7 +54,7 @@ Every new agent should start from the same template, with only the parts its cla
 - [ ] `--trust untrusted --connector sidecar` fails with a clear error.
 - [ ] Each `--framework` choice gives a repo whose event mapping passes its contract test.
 - [ ] The generated repo holds no chassis code. The chassis image and tag come from the library chart.
-- [ ] The generated `governance` block holds the fields the chassis schema has (`risk_class`, `ai_generated_marking`), with a placeholder for each; 077 C-1 adds the rest of E.4.
+- [x] The generated `governance` block holds the fields the chassis schema has (`risk_class`, `ai_generated_marking`), with a placeholder for each; 077 C-1 adds the rest of E.4. · Delivered by: `packages/agentctl/src/agentctl/template/project/config/agent.yaml.jinja` (`spec.governance`, a `fill in:` note per field); `packages/agentctl/tests/test_agentctl_config.py::test_the_starter_config_names_each_governance_field_with_a_placeholder` (both fields set, equal to `GovernanceSpec.model_fields`, loaded by `load_config`); run on 2026-11-10
 - [ ] `agentctl` refuses a generated route that the service's key does not list.
 - [ ] A person new to the code goes from `agentctl new` to a demo in under a day, recorded in a dated note.
 - [ ] `agentctl new` renders `evals/cases.yaml` in the `eval_kit` schema with at least one judged case, and `make eval` in the generated repo runs the judge on the per-case fake model (gap review, 2026-11-07).

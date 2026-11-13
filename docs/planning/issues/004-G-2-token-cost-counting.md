@@ -40,6 +40,7 @@ Token and cost numbers are the core measurement of the epic. The baseline (005 G
 - [ ] Calls with no `user` tag show under `unknown`.
 - [ ] A call that sends another agent's name in its metadata is still counted under the agent of its key.
 - [ ] Prometheus scrapes the token and cost metrics, labeled by agent and route; `user` is in the usage record only.
+  - Open. Only the chassis `GET /metrics` side is proven (fake model): `packages/chassis/tests/test_metrics.py::test_token_and_cost_series_are_labeled_by_agent_and_route_never_by_user` shows no `user` label or value in the scrape. The LiteLLM side, and the positive half (`user` is in the usage record), stay open and need a real router.
 
 ## Dependencies
 

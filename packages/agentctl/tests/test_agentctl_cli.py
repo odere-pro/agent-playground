@@ -71,7 +71,7 @@ def test_the_trust_table_matches_adr_006() -> None:
     assert rules.DEFAULT_FRAMEWORK == "langgraph"  # amended 2026-11-06
     assert rules.DEFAULT_CONNECTOR == "sidecar"
     trusted = {f for f in rules.FRAMEWORKS if rules.trust_of(f) == "trusted"}
-    assert trusted == {"python", "pydanticai", "langgraph", "openai-agents"}
+    assert trusted == {"python", "pydanticai", "langgraph", "langchain", "openai-agents"}
     for framework in rules.FRAMEWORKS:
         rules.check_lane(framework, "remote")  # every engine may run remote
     for framework in trusted:

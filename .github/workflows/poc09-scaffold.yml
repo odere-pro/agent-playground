@@ -54,4 +54,4 @@ jobs:
           set -euo pipefail
           scripts/check_offline.sh -q -k "c1_scaffolded or c4_ci" \
             pocs/poc-09-agent-mvp-template/tests/test_poc09_scaffold.py | tee scaffold.log
-          grep -q "10 passed" scaffold.log
+          grep -q "12 passed" scaffold.log

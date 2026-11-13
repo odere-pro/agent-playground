@@ -59,6 +59,10 @@ def agent_testkit_model_script():
 
 Its own `workload` and `chassis` are class-scoped, so a binder can override `agent_handle_ref` with `@pytest.fixture(scope="class")` and get its own pair of processes. Cases: the agent card; one run of `contract_input` over A2A (start first, one terminal last, every event valid against the schema); an unsupported schema version; an input that is not a JSON object; `/ready` and `/v1/run` through the chassis; and the lane cases vendored from `chassis_contracts.lane` (`lane_cases.py`) over A2A and through the chassis, including JSON values, the run's `traceparent`, and the run deadline.
 
+## The stateless check (`agent_testkit.stateless`)
+
+In process, no socket (057 H-19). `run_call(handle, input, ctx, container=...)` runs one call with every file system write refused, as a read-only root would; a write fails it with `StatelessError`, naming the container and the path. `check_kept_data(Pods("my_agent:handle", setup=...), requests)` runs the requests on fresh pods (a fresh import of the agent's packages per request) and on one reused pod, each in a shuffled order, every call under the disk check. An output that differs, or a plain-data module global that moves, fails it, naming the call or the global. `setup` points each fresh import at the fake model adapter. The real read-only root and the chassis container need the `sidecar` lane process run.
+
 ## Where the chassis comes from
 
 First match: `$AGENT_TESTKIT_CHASSIS`, `[tool.agent-testkit] chassis`, `platform_path`, then the platform checkout the kit sits in.

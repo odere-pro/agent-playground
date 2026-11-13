@@ -63,7 +63,7 @@ from starlette.datastructures import State
 from starlette.responses import ContentStream, StreamingResponse
 from starlette.types import Receive, Scope, Send
 
-from chassis import CHASSIS_VERSION
+from chassis import chassis_version
 from chassis.core.collector import collect
 from chassis.core.envelope import Budget, Context, Request, Response, TaskInput, Versions
 from chassis.core.events import ERROR_MESSAGE_MAX, Error, Event
@@ -139,7 +139,7 @@ class Observed:
 
 def versions_for(config: ChassisConfig) -> Versions:
     return Versions(
-        chassis=CHASSIS_VERSION,
+        chassis=chassis_version(),
         config=config.version,
         prompt=config.spec.prompt.version,
         model_route=config.spec.model.route,

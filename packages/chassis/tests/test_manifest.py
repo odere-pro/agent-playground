@@ -13,7 +13,8 @@ from typing import Any
 
 import httpx
 import jsonschema
-from chassis import CHASSIS_VERSION
+import pytest
+from chassis import CHASSIS_VERSION, IMAGE_TAG_ENV, chassis_version
 from chassis.core.handle import echo
 from chassis.core.manifest import MANIFEST_VERSION, Manifest
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
@@ -279,3 +280,29 @@ async def test_manifest_agent_trust_shows_untrusted_with_the_remote_lane() -> No
     manifest = await _manifest(_stub_app(config))
     assert manifest["agent"]["trust"] == "untrusted"
     assert manifest["lane"] == "remote"
+
+
+# --- the image tag (056 CH-7) -----------------------------------------------------------------
+
+
+async def test_manifest_reports_the_image_tag_the_chart_sets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(IMAGE_TAG_ENV, "poc09")
+    manifest = await _manifest(create_app(_config(), _ports()))
+    assert manifest["versions"]["chassis"] == "poc09", "the rings roll out the image tag"
+
+
+async def test_manifest_reports_the_package_version_with_no_image_tag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(IMAGE_TAG_ENV, raising=False)
+    manifest = await _manifest(create_app(_config(), _ports()))
+    assert manifest["versions"]["chassis"] == CHASSIS_VERSION == chassis_version()
+
+
+@pytest.mark.parametrize("tag", ["", "a b", "-lead", "x" * 129, "tag\n"])
+def test_a_malformed_image_tag_is_refused(monkeypatch: pytest.MonkeyPatch, tag: str) -> None:
+    monkeypatch.setenv(IMAGE_TAG_ENV, tag)
+    with pytest.raises(ValueError, match=IMAGE_TAG_ENV):
+        chassis_version()

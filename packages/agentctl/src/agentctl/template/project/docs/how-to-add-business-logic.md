@@ -17,7 +17,8 @@ cd ~/work/my-agent && make setup test
 ```
 
 - `--kind` is `transformer` (text in, text out), `evaluator` (scores or labels an input), or `tool` (answers by calling tools). These are the stateless kinds of the epic.
-- `--framework` is `python`, `pydanticai`, `langgraph`, `openai-agents`, `smolagents`, or `claude-agent`. The default is `langgraph` ([ADR-006](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/006-agent-engines-default-supported-lanes.md), item 1, amended 2026-11-06); `pydanticai` stays supported.
+- `--framework` is `python`, `pydanticai`, `langgraph`, `langchain`, `openai-agents`, `smolagents`, or `claude-agent`. `langchain` is LangChain's `create_agent`, which runs on LangGraph: pick it for LangChain's agent and middleware, and `langgraph` to draw the graph yourself. Both share the event mapping, the MCP tools, and the tracing. The default is `langgraph` ([ADR-006](https://github.com/odere-pro/agent-playground/blob/main/docs/planning/adr/006-agent-engines-default-supported-lanes.md), item 1, amended 2026-11-06); `pydanticai` stays supported.
+- The `langchain` variant's mapping streams every model token as a `delta`, whichever node made it. If you add `create_agent` middleware that calls a model, its tokens reach the caller too.
 - `--connector` is `sidecar` (the default) or `remote`. `smolagents` and `claude-agent` are allowed only with `remote` (section 5).
 - `--dest DIR` is the parent folder of the new repo (default: the current folder). `--platform-path PATH` is the platform checkout (default: the one `agentctl` runs from).
 - `--no-lock` skips pinning the agent to the platform's tested versions. Without it, `agentctl` writes a `uv.lock` into the first commit.
@@ -30,7 +31,7 @@ What you get, and what you edit:
 | -------------------- | ---- | ----------- |
 | `src/<package>/handle.py` | The business logic | Yes |
 | `src/<package>/mapping.py` | Framework events to chassis events | Only if you change frameworks |
-| `src/<package>/telemetry.py` | OpenTelemetry setup; `langgraph` and `openai-agents` only | Rarely |
+| `src/<package>/telemetry.py` | OpenTelemetry setup; `langgraph`, `langchain`, and `openai-agents` only | Rarely |
 | `evals/cases.yaml` | Your golden cases for `make eval` (section 9) | Yes |
 | `config/agent.yaml` | The chassis config: lane, trust, adapters | Yes |
 | `config/fake.yaml` | The chassis config for offline tests | Rarely |

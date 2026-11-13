@@ -449,3 +449,21 @@ def test_the_kind_values_pull_nothing_and_hold_no_secret(chart: Charts) -> None:
     assert {c["imagePullPolicy"] for c in every} == {"Never"}
     assert "secretKeyRef" not in yaml.safe_dump(docs)
     assert one(docs, "HorizontalPodAutoscaler", RELEASE)["spec"]["minReplicas"] == 2
+
+
+PINNED: dict[str, Any] = {"chassis": {"image": {"tag": "poc08"}}}
+
+
+@pytest.mark.parametrize("values", [None, PINNED, REMOTE_VALUES], ids=["default", "pin", "remote"])
+def test_chassis_env_carries_the_image_tag_it_runs(
+    chart: Charts, tmp_path: Path, values: dict[str, Any] | None
+) -> None:
+    """056 CH-7: `/manifest` reports `CHASSIS_IMAGE_TAG`, so the chart sets it from the tag."""
+    path = values_file(tmp_path, values) if values is not None else None
+    pod = one(chart.template(path), "Deployment", RELEASE)["spec"]["template"]["spec"]
+    chassis = containers(pod)["chassis"]
+    tag = chassis["image"].split("@")[0].rsplit(":", 1)[1]
+    env = {e["name"]: e.get("value") for e in chassis["env"]}
+    assert env["CHASSIS_IMAGE_TAG"] == tag
+    if values is PINNED:
+        assert tag == "poc08", "a service pinned to the previous tag reports that tag"
