@@ -257,7 +257,8 @@ def test_stack_sh_can_stop_and_start_only_the_allowed_guardrail_services() -> No
     }
     assert re.search(r"^\s*stop\)", script, re.M) and re.search(r"^\s*start\)", script, re.M)
     assert script.count("docker compose") == 1, "every call goes through the one `compose` array"
-    assert "docker compose -p poc08-litellm" in script
+    assert 'docker compose -p "$project"' in script
+    assert 'project="${POC08_LITELLM_PROJECT:-poc08-litellm}"' in script
     drill = _code(ROOT / DRILL)
     assert "docker" not in drill.replace("docker-compose", "")
 
