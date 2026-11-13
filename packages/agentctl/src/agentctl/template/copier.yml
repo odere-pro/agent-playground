@@ -43,20 +43,27 @@ framework:
   choices: [python, pydanticai, langgraph, langchain, openai-agents, smolagents, claude-agent]
   default: langgraph
 
+# suggested: the values (P-15, decided 2026-11-13). The default follows the framework. A trusted
+# framework may be run as untrusted; smolagents and the Claude Agent SDK run model-written code,
+# so they are never trusted (ADR-006 decision 2).
 trust:
   type: str
-  help: Derived from framework. smolagents and the Claude Agent SDK run model-written code
+  help: spec.trust. untrusted runs only in the remote lane
+  choices: [trusted, untrusted]
   default: "{{ 'untrusted' if framework in ['smolagents', 'claude-agent'] else 'trusted' }}"
-  when: false
+  validator: >-
+    {% if framework in ['smolagents', 'claude-agent'] and trust != 'untrusted' %}
+    {{ framework }} is untrusted (ADR-006 decision 2); trust cannot be trusted
+    {% endif %}
 
 connector:
   type: str
-  help: The lane (ADR-001). An untrusted framework runs only in remote
+  help: The lane (ADR-001). An untrusted agent runs only in remote
   choices: [sidecar, remote]
-  default: "{{ 'remote' if framework in ['smolagents', 'claude-agent'] else 'sidecar' }}"
+  default: "{{ 'remote' if trust == 'untrusted' else 'sidecar' }}"
   validator: >-
-    {% if framework in ['smolagents', 'claude-agent'] and connector != 'remote' %}
-    {{ framework }} is untrusted: it runs only with connector remote (spec.trust, ADR-001 item 5)
+    {% if trust == 'untrusted' and connector != 'remote' %}
+    the agent is untrusted: it runs only with connector remote (spec.trust, ADR-001 item 5)
     {% endif %}
 
 platform_path:
