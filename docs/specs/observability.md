@@ -87,7 +87,7 @@ Trace sampling is a Collector policy (ADR-007 item 8), and `trace_sample_rate` s
   | Policy | Keeps |
   | ------ | ----- |
   | `trace-sample-rate` (`probabilistic`) | `sampling_percentage: ${env:TRACE_SAMPLE_PERCENT}` of traces, by trace id hash |
-  | `keep-errors` (`status_code: [ERROR]`) | suggested: every trace with an error span, at any rate. ADR-007 names no exemption. A run that ends in an error (an evaluator gate that fails closed included) has `error.code`, so its span status is error |
+  | `keep-errors` (`status_code: [ERROR]`) | Every trace with an error span, at any rate, 0 included. Decided by the user, 2026-11-13. A run that ends in an error (an evaluator gate that fails closed included) has `error.code`, so its span status is error |
 
   suggested: `decision_wait: 10s`, the time the Collector holds a trace for its late spans.
 - **The one source.** `TRACE_SAMPLE_RATE` is the epic's `trace_sample_rate`, from 0 to 1. suggested: 1.0 when unset, so every trace is kept. `deploy/compose/trace_sample_percent.py` turns it into `TRACE_SAMPLE_PERCENT` (0 to 100), the only conversion; a value outside 0 to 1 stops `stack.sh` before any compose call. Each `stack.sh` exports the percent, and Compose passes it to the Collector as `${TRACE_SAMPLE_PERCENT:?}`. Both Compose Collectors (`poc07`, `poc08-litellm`) carry the same block.

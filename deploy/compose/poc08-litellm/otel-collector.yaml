@@ -3,7 +3,8 @@
 # OTEL_METRICS_EXPORTER=none, and log redaction is PoC-7's stack, not this drill's.
 #
 # Sampling (014 H-7, ADR-007 item 8): the same `tail_sampling` block as
-# ../poc07/otel-collector.yaml, which says why. stack.sh makes TRACE_SAMPLE_PERCENT from
+# ../poc07/otel-collector.yaml, which says why. Error traces are kept at any rate (decided by
+# the user, 2026-11-13). stack.sh makes TRACE_SAMPLE_PERCENT from
 # TRACE_SAMPLE_RATE (default 1.0, so the drill keeps every trace). Offline check:
 # packages/chassis/tests/test_trace_sampling.py.
 extensions:

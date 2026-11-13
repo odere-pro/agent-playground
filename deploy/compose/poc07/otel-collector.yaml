@@ -43,8 +43,9 @@
 # Sampling (014 H-7, ADR-007 item 8): a Collector policy, so one decision covers the chassis, the
 # workload, and LiteLLM. The SDKs export every span. `tail_sampling` runs first in the traces
 # pipeline. Its rate is `trace_sample_rate`: stack.sh turns TRACE_SAMPLE_RATE (0 to 1, default
-# 1.0) into TRACE_SAMPLE_PERCENT with ../trace_sample_percent.py, the one conversion. suggested:
-# a trace with an error span is kept at any rate, and the decision waits 10 s for late spans.
+# 1.0) into TRACE_SAMPLE_PERCENT with ../trace_sample_percent.py, the one conversion. A trace
+# with an error span is kept at any rate, 0 included (decided by the user, 2026-11-13).
+# suggested: the decision waits 10 s for late spans.
 # The block is the same in ../poc08-litellm/otel-collector.yaml. The processor ships in the
 # contrib image (manifest at v0.163.2), not in the core one. Offline check:
 # packages/chassis/tests/test_trace_sampling.py.

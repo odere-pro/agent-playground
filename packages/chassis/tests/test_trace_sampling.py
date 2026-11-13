@@ -9,7 +9,7 @@ Decided by the user on 2026-11-13. Two halves, both offline:
   `tail_sampling` first in its traces pipeline. Its rate policy reads `TRACE_SAMPLE_PERCENT`;
   `stack.sh` makes that from `TRACE_SAMPLE_RATE` (the epic's `trace_sample_rate`, 0 to 1,
   default 1.0) with `deploy/compose/trace_sample_percent.py`, the one conversion.
-  suggested: traces with an error span are kept at any rate (ADR-007 does not say).
+  A trace with an error span is kept at any rate, 0 included (decided by the user, 2026-11-13).
 
 The processor keys are checked against `tailsamplingprocessor` v0.163.0's `config.go`, the module
 the pinned `otel/opentelemetry-collector-contrib:0.163.2` image ships (the contrib distribution's
@@ -190,7 +190,7 @@ def test_the_rate_policy_reads_the_percent_from_the_environment(stack: str) -> N
 
 @pytest.mark.parametrize("stack", STACKS)
 def test_error_traces_are_kept_at_any_rate(stack: str) -> None:
-    """suggested: an error span keeps its trace (ADR-007 item 8 names no exemption)."""
+    """An error span keeps its trace at any rate (decided by the user, 2026-11-13)."""
     (errors,) = _policies(_sampling(stack), "status_code")
     assert errors["status_code"]["status_codes"] == ["ERROR"]
 
@@ -217,7 +217,8 @@ def test_the_policy_uses_only_keys_the_pinned_processor_has(stack: str) -> None:
 def test_the_rate_decides_which_traces_are_kept(
     stack: str, rate: str, keeps_ok: bool, keeps_error: bool
 ) -> None:
-    """Rate 1.0 keeps every trace. Rate 0 keeps only error traces (suggested exemption)."""
+    """Rate 1.0 keeps every trace. Rate 0 keeps only error traces (decided by the user,
+    2026-11-13)."""
     percent = _converter().percent(rate)
     text = COLLECTORS[stack].read_text().replace(f"${{env:{PERCENT_VAR}}}", percent)
     block = _sampling(stack, text)
