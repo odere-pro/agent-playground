@@ -60,6 +60,15 @@ _LINK_VARIABLES = (
 """suggested: per-deploy textbox variables the panel links read, so no host is in the file.
 suggested: the Loki stream label `agent`; nothing in `deploy/` provisions Loki or that label yet.
 suggested: the Langfuse `search` query parameter on the project trace list."""
+_FILTERS: dict[str, Any] = {
+    "name": "filters",
+    "type": "adhoc",
+    "datasource": _DATASOURCE,
+    "label": "Filters",
+}
+"""An ad hoc filter (006 G-6): Grafana adds each label pair to every query, so the token and cost
+panels narrow by `route`. The query text stays plain PromQL. The agent is the dashboard itself.
+`user` is not a metric label (004 G-2), so it is not a filter here."""
 
 
 def _links(agent: str) -> list[dict[str, Any]]:
@@ -213,6 +222,7 @@ def dashboard(agent: str) -> dict[str, Any]:
                     {"name": name, "type": "textbox", "query": "", "label": label}
                     for name, label in _LINK_VARIABLES
                 ),
+                _FILTERS,
             ]
         },
         "panels": panels,

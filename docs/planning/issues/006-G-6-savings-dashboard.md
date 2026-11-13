@@ -33,6 +33,7 @@ The epic goal is to cut token use and cost, and this dashboard is where that sho
 - [ ] The dashboard shows token spend and cost from live router traffic.
 - [ ] A test call through the router shows on the dashboard within one minute.
 - [ ] Spend can be filtered by agent, user, and route.
+  - Open. Agent and route are proven offline: one dashboard per agent, and an ad hoc filter on the Prometheus datasource narrows the token and cost panels by `route` (`packages/chassis/tests/test_dashboards.py::test_token_and_cost_spend_can_be_filtered_by_route`). `user` is not a metric label by design (004 G-2: it is in the usage record only), so a user filter needs the usage record store, not Prometheus. That Grafana applies the filter is a live check, not yet run.
 - [ ] The PoC-8 stack loads every dashboard with no manual steps.
 
 ## Dependencies
