@@ -186,6 +186,9 @@ services:
   otel-collector:
     image: docker.io/otel/opentelemetry-collector-contrib:0.163.2@sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849
     command: ["--config=/etc/otelcol/config.yaml"]
+    environment:
+      # The tail sampling rate (014 H-7): stack.sh makes it from TRACE_SAMPLE_RATE.
+      TRACE_SAMPLE_PERCENT: ${TRACE_SAMPLE_PERCENT:?}
     volumes:
       - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
     ports:

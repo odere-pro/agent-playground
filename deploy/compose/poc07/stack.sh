@@ -10,6 +10,10 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 env_file="$here/.env.poc07"
 compose=(docker compose -p poc07 --env-file "$env_file" -f "$here/docker-compose.yaml")
+# The Collector's tail sampling percent from TRACE_SAMPLE_RATE (0 to 1, default 1.0; 014 H-7).
+# A bad rate stops here, before any compose call.
+TRACE_SAMPLE_PERCENT="$(python3 -I "$here/../trace_sample_percent.py")"
+export TRACE_SAMPLE_PERCENT
 
 make_env() {
   umask 077
