@@ -8,7 +8,8 @@ the charts (`agent-lib.defaults` in `_values.tpl`), and both services are render
   nothing else in the pod: no workload image changes, so no service image is rebuilt. A changed
   pod template is what makes a Deployment roll out; the rollout itself on a cluster is not run here.
 - A service holds the previous tag with one value, `chassis.image.tag`, while the other service
-  takes the new one.
+  takes the new one (056 CH-7, render half). The chart also sets `CHASSIS_IMAGE_TAG` from that
+  value, so the comparisons strip it with the image.
 
 Skipped, with the reason, when `helm` is not on PATH.
 """
@@ -28,9 +29,9 @@ pytestmark = NEEDS_HELM
 REPOSITORY = "kind.local/agent-platform/chassis"
 CURRENT_TAG = "poc09"
 NEW_TAG = "poc10"
-TAG_ENV = "CHASSIS_IMAGE_TAG"
 TAG_LINE = f"    tag: {CURRENT_TAG}\n"
 SUPPORTED_LINE = f"    supportedTags: [{CURRENT_TAG}, poc08]\n"
+TAG_ENV = "CHASSIS_IMAGE_TAG"
 SERVICES = {
     "example-agent": "kind.local/agent-platform/echo-python:poc09",
     "other-agent": "kind.local/agent-platform/echo-other:poc09",
@@ -70,6 +71,19 @@ def _image(pod: Doc, name: str) -> str:
     (container,) = [c for c in every if c["name"] == name]
     image: str = container["image"]
     return image
+
+
+def _chassis(pod: Doc) -> Doc:
+    every = [*pod.get("initContainers", []), *pod.get("containers", [])]
+    (container,) = [c for c in every if c["name"] == "chassis"]
+    chassis: Doc = container
+    return chassis
+
+
+def _tag_env(pod: Doc) -> str:
+    """The tag the chassis reports in `/manifest` (056 CH-7), set from the same value."""
+    (value,) = [e["value"] for e in _chassis(pod).get("env", []) if e["name"] == TAG_ENV]
+    return str(value)
 
 
 def _without_chassis_image(pod: Doc) -> Doc:
@@ -112,6 +126,7 @@ def test_a_service_pins_the_previous_chassis_tag_with_one_value(
     moved = _render(after, "other-agent", tmp_path / "moved", {})
     assert _image(pinned, "chassis") == f"{REPOSITORY}:{CURRENT_TAG}"
     assert _image(moved, "chassis") == f"{REPOSITORY}:{NEW_TAG}"
+    assert (_tag_env(pinned), _tag_env(moved)) == (CURRENT_TAG, NEW_TAG), "each reports its tag"
     # The pin is the one value that differs from the unpinned render of the same service.
     unpinned = _render(after, "example-agent", tmp_path / "unpinned", {})
     assert _without_chassis_image(pinned) == _without_chassis_image(unpinned)
