@@ -111,15 +111,30 @@ _TERM = re.compile(r"sum\(rate\((chassis_[a-z_]+)\{([^}]*)\}\[5m\]\)\)")
 _ARITHMETIC = re.compile(r"[0-9.+\-*/() ]+")
 
 
-def _value(expr: str, counters: dict[str, float]) -> float:
-    """`expr` with each `sum(rate(...))` term set to its counter in `counters`, worked out."""
+_LABEL = re.compile(r'(\w+)="([^"]*)"')
+FIRST_ATTEMPTS = "chassis_gate_first_attempts_total"
+Series = tuple[str, str, str]
+"""(family, mode, outcome); "" for a label the family does not carry."""
+
+
+def _value(expr: str, counters: dict[Series, float]) -> float:
+    """`expr` with each `sum(rate(...))` term set to the sum of the series in `counters` its
+    label selector matches, worked out."""
 
     def term(match: re.Match[str]) -> str:
-        name, labels = match.groups()
-        assert 'agent="echo"' in labels, expr
-        if name in ("chassis_gate_runs_total", "chassis_gate_first_attempt_passes_total"):
-            assert 'mode="sync"' in labels, expr
-        return repr(counters[name])
+        name, selector = match.groups()
+        labels = dict(_LABEL.findall(selector))
+        assert labels.pop("agent") == "echo", expr
+        if name in ("chassis_gate_runs_total", FIRST_ATTEMPTS):
+            assert labels.get("mode") in ("sync", "async"), expr
+        total = sum(
+            value
+            for (family, mode, outcome), value in counters.items()
+            if family == name
+            and labels.get("mode", mode) == mode
+            and labels.get("outcome", outcome) == outcome
+        )
+        return repr(total)
 
     arithmetic = _TERM.sub(term, expr)
     assert _ARITHMETIC.fullmatch(arithmetic), arithmetic
@@ -127,26 +142,34 @@ def _value(expr: str, counters: dict[str, float]) -> float:
 
 
 def test_the_gate_panels_work_out_from_fixed_counter_values() -> None:
-    """046 A-5: per agent, the first-try pass rate is the run-level counter over sync gate runs,
-    exact; the retry rate is retried attempts per sync run. 10 sync runs: 8 passed on attempt 1,
-    1 passed on its retry, and 1 retried twice and went to the fallback (3 retried attempts).
-    The old estimate `1 - (retries + fallbacks) / runs` would read 0.6, not 0.8."""
-    counters = {
-        "chassis_gate_runs_total": 10.0,
-        "chassis_gate_first_attempt_passes_total": 8.0,
-        "chassis_gate_retries_total": 3.0,
-        "chassis_gate_fallbacks_total": 1.0,
+    """046 A-5: per agent, the first-try pass rate is first attempts that passed over first
+    attempts scored, one query per mode; the retry and fallback rates are over sync gate runs.
+    10 sync runs: 8 scored attempts 1 passed, 2 failed (1 passed on its retry, 1 retried twice
+    and went to the fallback: 3 retried attempts). Async: 3 passed, 1 failed. The old estimate
+    `1 - (retries + fallbacks) / runs` would read 0.6, not 0.8."""
+    counters: dict[Series, float] = {
+        ("chassis_gate_runs_total", "sync", ""): 10.0,
+        ("chassis_gate_runs_total", "async", ""): 4.0,
+        (FIRST_ATTEMPTS, "sync", "pass"): 8.0,
+        (FIRST_ATTEMPTS, "sync", "fail"): 2.0,
+        (FIRST_ATTEMPTS, "async", "pass"): 3.0,
+        (FIRST_ATTEMPTS, "async", "fail"): 1.0,
+        ("chassis_gate_retries_total", "", ""): 3.0,
+        ("chassis_gate_fallbacks_total", "", ""): 1.0,
     }
     board = dashboard("echo")
-    expected = {FIRST_TRY: 0.8, RETRY: 0.3, FALLBACK: 0.1}
-    for title, value in expected.items():
+    expected = {FIRST_TRY: [0.8, 0.75], RETRY: [0.3], FALLBACK: [0.1]}
+    for title, values in expected.items():
         panel = _panel(board, title)
-        [expr] = panel_exprs({"panels": [panel]})
-        assert _value(expr, counters) == pytest.approx(value), title
+        exprs = panel_exprs({"panels": [panel]})
+        assert [_value(e, counters) for e in exprs] == pytest.approx(values), title
         assert panel["fieldConfig"]["defaults"]["unit"] == "percentunit"
-    [first_try] = panel_exprs({"panels": [_panel(board, FIRST_TRY)]})
-    assert "chassis_gate_first_attempt_passes_total" in first_try
-    assert "retries" not in first_try and "fallbacks" not in first_try
+    first_try = _panel(board, FIRST_TRY)
+    legends = [t["legendFormat"] for t in first_try["targets"]]
+    assert legends == ["first-try pass rate", "first-try pass rate (async)"]
+    for expr in panel_exprs({"panels": [first_try]}):
+        assert FIRST_ATTEMPTS in expr and "chassis_gate_runs_total" not in expr
+        assert "retries" not in expr and "fallbacks" not in expr
     assert not [p for p in board["panels"] if "no fallback" in p["title"].lower()]
 
 

@@ -26,9 +26,10 @@ so Prometheus would first see a route's budget refusal at 1, never 0, and the al
 not once at startup, so a route added by a reload gets its 0 too.
 
 The same holds for the evaluator gate (117 X-3): with `spec.harness.evaluator_gate` on, each
-scrape adds 0 to `chassis_gate_runs_total{mode}` and to
-`chassis_gate_first_attempt_passes_total{mode}` (046 A-5) for both modes (a streaming request
-counts `mode="async"` even when the configured mode is sync), and to `chassis_gate_retries_total`,
+scrape adds 0 to `chassis_gate_runs_total{mode}` for both modes, to
+`chassis_gate_first_attempts_total{mode, outcome}` (046 A-5) for both modes and both outcomes
+(`pass`, `fail`; a streaming request counts `mode="async"` even when the configured mode is
+sync), and to `chassis_gate_retries_total`,
 `chassis_gate_fallbacks_total`, `chassis_gate_failed_open_total`, and
 `chassis_gate_failed_closed_total`, so a future `increase()` or `rate()` rule on any of them has a
 0 to rise from. With the gate off they stay absent: there is no gate to report on. Not seeded,
@@ -58,10 +59,11 @@ from chassis.ports.model import Usage
 from chassis.ports.telemetry import TelemetryPort
 from chassis.server.config import ChassisConfig, HarnessSpec, ModelPrice
 from chassis.server.evaluator_gate import (
+    FIRST_ATTEMPT_OUTCOMES,
     GATE_FAILED_CLOSED,
     GATE_FAILED_OPEN,
     GATE_FALLBACKS,
-    GATE_FIRST_ATTEMPT_PASSES,
+    GATE_FIRST_ATTEMPTS,
     GATE_RETRIES,
     GATE_RUNS,
 )
@@ -100,9 +102,6 @@ GATE_SERIES: tuple[str, ...] = (GATE_RETRIES, GATE_FALLBACKS, GATE_FAILED_OPEN, 
 GATE_MODES: tuple[str, ...] = ("sync", "async")
 """Every `mode` the gate counts runs under, whatever `evaluator_mode` is: streaming is async."""
 
-GATE_MODE_SERIES: tuple[str, ...] = (GATE_RUNS, GATE_FIRST_ATTEMPT_PASSES)
-"""The gate counters labeled `mode`, created at 0 for every mode when the gate is on."""
-
 
 def render_metrics(state: Any) -> str:
     """The exposition for the app whose `state` this is. The live gauges are set first, and the
@@ -129,9 +128,10 @@ def _seed_gate(registry: MetricsRegistry, harness: HarnessSpec) -> None:
     fallback, or fail."""
     if not harness.evaluator_gate:
         return
-    for name in GATE_MODE_SERIES:
-        for mode in GATE_MODES:
-            registry.count(name, 0, {"mode": mode})
+    for mode in GATE_MODES:
+        registry.count(GATE_RUNS, 0, {"mode": mode})
+        for outcome in FIRST_ATTEMPT_OUTCOMES:
+            registry.count(GATE_FIRST_ATTEMPTS, 0, {"mode": mode, "outcome": outcome})
     for name in GATE_SERIES:
         registry.count(name, 0)
 

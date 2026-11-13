@@ -77,9 +77,9 @@ DECLARED: Mapping[str, tuple[str, str]] = {
     ),
     "chassis_tool_calls_total": ("counter", "Tool proxy calls, by tool."),
     "chassis_gate_runs_total": ("counter", "Runs the evaluator gate checked, by mode."),
-    "chassis_gate_first_attempt_passes_total": (
+    "chassis_gate_first_attempts_total": (
         "counter",
-        "Gated runs that passed the evaluator gate on attempt 1, by mode.",
+        "Gated runs whose attempt 1 the evaluator gate scored, by mode and outcome.",
     ),
     "chassis_gate_retries_total": ("counter", "Evaluator gate retries."),
     "chassis_gate_fallbacks_total": ("counter", "Runs the evaluator gate sent to the fallback."),

@@ -44,10 +44,11 @@ _DATASOURCE = {"type": "prometheus", "uid": "${datasource}"}
 WINDOW = "5m"
 """suggested: the rate window."""
 FIRST_TRY = "Evaluator gate first-try pass rate"
-"""046 A-5: sync runs that passed the gate on attempt 1 over sync gate runs, from the run-level
-counter `chassis_gate_first_attempt_passes_total`. Exact, unlike `1 - (retries + fallbacks) /
-runs`: the gate counts each retried attempt and, after the last retry, a fallback too, so one run
-can add to both counters and to retries more than once."""
+"""046 A-5: first attempts that passed over first attempts scored, one query per mode, from the
+run-level counter `chassis_gate_first_attempts_total{mode, outcome}`. Its outcomes are only
+`pass` and `fail`, so the sum over the mode is the scored runs. Not over gate runs, which also
+count runs never scored, and not `1 - (retries + fallbacks) / runs`: the gate counts each retried
+attempt and, after the last retry, a fallback too, so one run can add to both."""
 RETRY = "Evaluator gate retry rate"
 FALLBACK = "Evaluator gate fallback rate"
 FALLBACK_TARGET = 0.1
@@ -113,7 +114,14 @@ def _panels(agent: str) -> list[tuple[str, str, list[tuple[str, str]]]]:
     a = f'agent="{agent}"'
     w = WINDOW
     sync_runs = f'sum(rate(chassis_gate_runs_total{{{a},mode="sync"}}[{w}]))'
-    first_try = f'sum(rate(chassis_gate_first_attempt_passes_total{{{a},mode="sync"}}[{w}]))'
+
+    def first_try(mode: str) -> str:
+        """Passed first attempts over scored first attempts (046 A-5)."""
+        selector = f'{a},mode="{mode}"'
+        passed = f'sum(rate(chassis_gate_first_attempts_total{{{selector},outcome="pass"}}[{w}]))'
+        scored = f"sum(rate(chassis_gate_first_attempts_total{{{selector}}}[{w}]))"
+        return f"{passed} / {scored}"
+
     retries = f"sum(rate(chassis_gate_retries_total{{{a}}}[{w}]))"
     fallbacks = f"sum(rate(chassis_gate_fallbacks_total{{{a}}}[{w}]))"
     return [
@@ -166,7 +174,14 @@ def _panels(agent: str) -> list[tuple[str, str, list[tuple[str, str]]]]:
                 )
             ],
         ),
-        (FIRST_TRY, "percentunit", [(f"{first_try} / {sync_runs}", "first-try pass rate")]),
+        (
+            FIRST_TRY,
+            "percentunit",
+            [
+                (first_try("sync"), "first-try pass rate"),
+                (first_try("async"), "first-try pass rate (async)"),
+            ],
+        ),
         (RETRY, "percentunit", [(f"{retries} / {sync_runs}", "retry rate")]),
         (FALLBACK, "percentunit", [(f"{fallbacks} / {sync_runs}", "fallback rate")]),
         (

@@ -1,7 +1,8 @@
 """138 CH-18: a structured answer (`end.output` with no `text`, and no `delta` text) is not
 judged. The gate makes no evaluator call and counts it as
-`chassis.evaluator_calls{outcome="skipped"}` (suggested), in sync and in async mode. Also: the
-metrics spec gives the first-attempt pass rate formula."""
+`chassis.evaluator_calls{outcome="skipped"}` (suggested), in sync and in async mode. The metrics
+spec check of the first-attempt pass rate formula moved to `test_evaluator_gate_first_attempt.py`
+(046 A-5)."""
 
 from __future__ import annotations
 
@@ -48,13 +49,3 @@ async def test_a_structured_answer_makes_no_judge_call_and_counts_as_skipped(mod
     assert t.counter_value(EVALUATOR_CALLS, evaluator="fake", mode=mode, outcome="skipped") == 1
     assert t.counter_value(EVALUATOR_CALLS, evaluator="fake", mode=mode, outcome="fail") == 0
     assert t.counter_value(GATE_RETRIES) == 0
-
-
-def test_the_metrics_spec_gives_the_first_attempt_pass_rate_formula() -> None:
-    text = METRICS_SPEC.read_text(encoding="utf-8")
-    row = next(line for line in text.splitlines() if line.startswith("| First-attempt pass rate"))
-    formula = (
-        '1 \N{MINUS SIGN} `evaluator_calls{outcome="fail"}` / '
-        "`evaluator_calls{outcome in pass, fail}`"
-    )
-    assert formula in row

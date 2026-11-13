@@ -290,8 +290,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(chassis_gate_first_attempt_passes_total{agent=\"echo-typescript\",mode=\"sync\"}[5m])) / sum(rate(chassis_gate_runs_total{agent=\"echo-typescript\",mode=\"sync\"}[5m]))",
+          "expr": "sum(rate(chassis_gate_first_attempts_total{agent=\"echo-typescript\",mode=\"sync\",outcome=\"pass\"}[5m])) / sum(rate(chassis_gate_first_attempts_total{agent=\"echo-typescript\",mode=\"sync\"}[5m]))",
           "legendFormat": "first-try pass rate"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(chassis_gate_first_attempts_total{agent=\"echo-typescript\",mode=\"async\",outcome=\"pass\"}[5m])) / sum(rate(chassis_gate_first_attempts_total{agent=\"echo-typescript\",mode=\"async\"}[5m]))",
+          "legendFormat": "first-try pass rate (async)"
         }
       ]
     },

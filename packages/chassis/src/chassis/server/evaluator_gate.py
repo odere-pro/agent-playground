@@ -55,11 +55,13 @@ inner connector.
 `chassis.gate_failed_open`; `chassis.gate_failed_closed`; `chassis.gate_stopped{reason}`;
 `chassis.gate_runs{mode}` (PoC-8), each sampled call, so the fallback rate is
 `chassis.gate_fallbacks` over `chassis.gate_runs{mode="sync"}`.
-`chassis.gate_first_attempt_passes{mode}` (046 A-5): one per gated run whose first attempt passed,
-so the first-try pass rate is exact: it over `chassis.gate_runs{mode}`. Sync counts it when the
-gate sends attempt 1 for its score; a retry that passes, a fallback, a fail-open, an engine error,
-and a structured answer never count. Async counts it when the run's one background score passes
-(async never retries); a dropped or failed score does not.
+`chassis.gate_first_attempts{mode, outcome}` (046 A-5): one per gated run whose attempt 1 was
+scored, `outcome` `pass` or `fail`, so the first-try pass rate is `pass / (pass + fail)` over the
+runs the gate scored. Not over `chassis.gate_runs`, which also counts sampled runs never scored.
+It is counted in the scoring, right after the verdict and before the score is stored, so a
+cancel cannot lose it. Retries and the fallback never count; nor do runs never scored: a
+fail-open or fail-closed outage, an engine error, a structured answer, an async score dropped.
+Async (never retried) counts its one background score.
 
 **Per agent** (138 CH-18). Each scoring is written to `FeedbackPort` (when one is set) as a
 score named `spec.harness.rubric`, on the run's trace, so escapes are one query
@@ -113,13 +115,14 @@ __all__ = [
     "ASYNC_MAX_PENDING",
     "EVALUATOR_AGREEMENT",
     "EVALUATOR_CALLS",
+    "FIRST_ATTEMPT_OUTCOMES",
     "GATE_BUDGET",
     "GATE_FAILED",
     "GATE_FAILED_CLOSED",
     "GATE_FAILED_OPEN",
     "GATE_FALLBACKS",
     "GATE_FEEDBACK_FAILED",
-    "GATE_FIRST_ATTEMPT_PASSES",
+    "GATE_FIRST_ATTEMPTS",
     "GATE_RETRIES",
     "GATE_RUNS",
     "GATE_STOPPED",
@@ -140,8 +143,11 @@ GATE_FALLBACKS = "chassis.gate_fallbacks"
 GATE_RUNS = "chassis.gate_runs"
 GATE_FAILED_OPEN = "chassis.gate_failed_open"
 GATE_FAILED_CLOSED = "chassis.gate_failed_closed"
-GATE_FIRST_ATTEMPT_PASSES = "chassis.gate_first_attempt_passes"
-"""suggested (046 A-5): one per gated run that passed the gate on attempt 1, by `mode`."""
+GATE_FIRST_ATTEMPTS = "chassis.gate_first_attempts"
+"""suggested (046 A-5): one per gated run whose attempt 1 was scored, by `mode` and `outcome`
+(`pass` or `fail`)."""
+FIRST_ATTEMPT_OUTCOMES: tuple[str, ...] = ("pass", "fail")
+"""The `outcome` values of `chassis.gate_first_attempts`."""
 EVALUATOR_DROPPED = "chassis.evaluator_dropped"
 EVALUATOR_ABANDONED = "chassis.evaluator_abandoned"
 EVALUATOR_AGREEMENT = "chassis.evaluator_agreement"
@@ -331,13 +337,17 @@ class GatedEngine:
         task.add_done_callback(self._pending.discard)
 
     async def _score_async(self, request: Request, ctx: Context, case: EvalCase) -> None:
-        threshold = self._config().spec.harness.threshold
+        harness = self._config().spec.harness  # one read: the threshold and the rubric
         with contextlib.suppress(EvaluatorError):  # counted and logged in `_score`
-            score = await self._score(
-                request, ctx, case, mode="async", attempt=1, threshold=threshold
+            await self._score(
+                request,
+                ctx,
+                case,
+                mode="async",
+                attempt=1,  # async never retries: its one score is attempt 1
+                threshold=harness.threshold,
+                rubric=harness.rubric,
             )
-            if score.value >= threshold:  # async never retries: its one score is attempt 1
-                self._telemetry.counter(GATE_FIRST_ATTEMPT_PASSES, mode="async")
 
     async def _score(
         self,
@@ -348,11 +358,13 @@ class GatedEngine:
         mode: str,
         attempt: int,
         threshold: float,
+        rubric: str,
     ) -> Score:
-        """One scoring in its span, judged against the caller's `threshold`, so the span, the
-        counter, and the gate's decision agree. Raises `EvaluatorError` after counting it."""
-        # Read before the call: the score is stored under the rubric that was used.
-        rubric = self._config().spec.harness.rubric
+        """One scoring in its span, judged against the caller's `threshold` and stored under the
+        caller's `rubric` (one config read), so the span, the counters, the stored score, and
+        the gate's decision agree. Attempt 1 is counted as `chassis.gate_first_attempts{mode,
+        outcome}` right after the verdict, before any await, so a cancel while the score is
+        stored cannot lose it. Raises `EvaluatorError` after counting it."""
         evaluator = self.evaluator.name
         route = self.route  # read before the call: a reload mid-call must not move the tokens
         with self._telemetry.span(
@@ -387,12 +399,12 @@ class GatedEngine:
                     "evaluator.latency_ms": score.latency_ms,
                 }
             )
+            outcome = "pass" if passed else "fail"
             self._telemetry.counter(
-                EVALUATOR_CALLS,
-                evaluator=evaluator,
-                mode=mode,
-                outcome="pass" if passed else "fail",
+                EVALUATOR_CALLS, evaluator=evaluator, mode=mode, outcome=outcome
             )
+            if attempt == 1:
+                self._telemetry.counter(GATE_FIRST_ATTEMPTS, mode=mode, outcome=outcome)
         self._count_judge_usage(score, route)
         await self._record(request, ctx, score, rubric, attempt)
         await self._shadow_score(request, case, passed, threshold)
@@ -515,7 +527,13 @@ class GatedEngine:
             case = EvalCase(input=input_text, output=_answer(events))
             try:
                 score = await self._score(
-                    request, ctx, case, mode="sync", attempt=attempt, threshold=harness.threshold
+                    request,
+                    ctx,
+                    case,
+                    mode="sync",
+                    attempt=attempt,
+                    threshold=harness.threshold,
+                    rubric=harness.rubric,
                 )
             except EvaluatorError:
                 if harness.evaluator_on_error == "fail_closed":
@@ -532,8 +550,6 @@ class GatedEngine:
             allowance.charge_judge(score)
             before.append(self._cost_metrics(score, attempt))
             if score.value >= harness.threshold:
-                if attempt == 1:
-                    self._telemetry.counter(GATE_FIRST_ATTEMPT_PASSES, mode="sync")
                 for event in _emit(events, attempt, before):
                     yield event
                 return
