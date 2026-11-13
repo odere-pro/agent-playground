@@ -47,7 +47,7 @@ spec:
   engine:
     connector: remote
     url: http://remote-echo:9000
-    auth: {token_env: REMOTE_TOKEN}
+    auth: {token_env: REMOTE_TOKEN, proxy_token_env: REMOTE_PROXY_TOKEN}
 """
 CONFIG: dict[str, Any] = {
     "profile": "fake",
@@ -70,7 +70,7 @@ def test_remote_proxy_host_is_refused_outside_the_remote_lane(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`--remote-proxy-host` is a usage error outside the `remote` lane."""
-    monkeypatch.setenv("REMOTE_TOKEN", TOKEN)
+    monkeypatch.setenv("REMOTE_PROXY_TOKEN", TOKEN)
     with pytest.raises(SystemExit) as exc:
         cli.parse_args(["serve", "--config", FAKE_YAML, "--remote-proxy-host", "10.0.0.5"])
     assert exc.value.code == 2
@@ -85,13 +85,13 @@ def test_remote_proxy_host_is_refused_without_the_token_variable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`--remote-proxy-host` is a usage error when the token variable is unset or empty."""
-    monkeypatch.delenv("REMOTE_TOKEN", raising=False)
+    monkeypatch.delenv("REMOTE_PROXY_TOKEN", raising=False)
     if value is not None:
-        monkeypatch.setenv("REMOTE_TOKEN", value)
+        monkeypatch.setenv("REMOTE_PROXY_TOKEN", value)
     with pytest.raises(SystemExit) as exc:
         cli.parse_args(["serve", "--config", remote_yaml, "--remote-proxy-host", "10.0.0.5"])
     assert exc.value.code == 2
-    assert "REMOTE_TOKEN is not set" in capsys.readouterr().err
+    assert "REMOTE_PROXY_TOKEN is not set" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -104,7 +104,7 @@ def test_remote_proxy_host_must_be_one_address_off_loopback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`--remote-proxy-host` must be one address, not loopback and not a wildcard."""
-    monkeypatch.setenv("REMOTE_TOKEN", TOKEN)
+    monkeypatch.setenv("REMOTE_PROXY_TOKEN", TOKEN)
     with pytest.raises(SystemExit) as exc:
         cli.parse_args(["serve", "--config", remote_yaml, "--remote-proxy-host", host])
     assert exc.value.code == 2
@@ -119,7 +119,7 @@ def test_remote_proxy_port_must_differ_from_the_other_two(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`--remote-proxy-port` must differ from the public and proxy ports."""
-    monkeypatch.setenv("REMOTE_TOKEN", TOKEN)
+    monkeypatch.setenv("REMOTE_PROXY_TOKEN", TOKEN)
     base = ["serve", "--config", remote_yaml, "--remote-proxy-host", "10.0.0.5"]
     with pytest.raises(SystemExit, match=r"^2$"):
         cli.parse_args([*base, "--remote-proxy-port", port])
@@ -140,7 +140,7 @@ def test_serve_builds_the_remote_listener_on_the_pod_ip(
     remote_yaml: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`serve` builds the remote listener on the pod IP behind `BearerAuth`."""
-    monkeypatch.setenv("REMOTE_TOKEN", TOKEN)
+    monkeypatch.setenv("REMOTE_PROXY_TOKEN", TOKEN)
     args = cli.parse_args(["serve", "--config", remote_yaml, "--remote-proxy-host", "10.0.0.5"])
     servers = cli.build_all(args)
     assert servers.remote is not None
@@ -407,14 +407,14 @@ def test_serve_exits_naming_the_variable_when_the_remote_token_is_short(
     remote_yaml: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """R2-31: an 8-character token variable stops the start, naming the variable only."""
-    monkeypatch.setenv("REMOTE_TOKEN", SHORT)
+    monkeypatch.setenv("REMOTE_PROXY_TOKEN", SHORT)
 
     with pytest.raises(SystemExit) as exc:
         cli.parse_args(["serve", "--config", remote_yaml, "--remote-proxy-host", "10.0.0.5"])
 
     err = capsys.readouterr().err
     assert exc.value.code == 2
-    assert "REMOTE_TOKEN" in err and "shorter than 32 characters" in err
+    assert "REMOTE_PROXY_TOKEN" in err and "shorter than 32 characters" in err
     assert SHORT not in err
 
 
@@ -453,7 +453,7 @@ def test_allow_any_proxy_host_is_refused_for_untrusted_code(
     remote_yaml: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """R5a-22: the flag is refused when `spec.trust` is `untrusted`, in any profile."""
-    monkeypatch.setenv("REMOTE_TOKEN", TOKEN)
+    monkeypatch.setenv("REMOTE_PROXY_TOKEN", TOKEN)
     argv = ["serve", "--config", remote_yaml, "--proxy-host", "0.0.0.0", "--allow-any-proxy-host"]
 
     with pytest.raises(SystemExit) as exc:

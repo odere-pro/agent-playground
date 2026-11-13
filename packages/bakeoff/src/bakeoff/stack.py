@@ -153,6 +153,7 @@ def _spawn_workload(
     port: int,
     urls: tuple[str, str],
     token: str,
+    proxy_token: str,
 ) -> Spawned:
     model_url, tool_url = urls
     main_js = str(ROOT / TS_MAIN)
@@ -168,6 +169,7 @@ def _spawn_workload(
                 model_url=model_url,
                 tool_url=tool_url,
                 token=token,
+                proxy_token=proxy_token,
             ),
         ),
         ROOT / TS_MAIN.parents[2] if engine.runner == "node" else ROOT,
@@ -183,11 +185,12 @@ def _spawn_chassis(
     ports: tuple[int, int, int, int],
     remote_ip: str | None,
     fake: FakeModel | None,
-    token: str,
+    tokens: tuple[str, str],
     hosted: Hosted | None,
     extras: Extras,
 ) -> Spawned:
     port, proxy_port, remote_port, workload_port = ports
+    token, proxy_token = tokens
     config = chassis_config(
         engine,
         lane,
@@ -213,6 +216,7 @@ def _spawn_chassis(
                 fake_port=fake.port if fake else 0,
                 proxy_port=proxy_port,
                 token=token,
+                proxy_token=proxy_token,
                 hosted=hosted,
             )
             | dict(extras.chassis_env),
@@ -240,7 +244,8 @@ def running_stack(
     remote_ip = _remote_ip(lane)
     work = cleanup.tempdir()
     (work / "home").mkdir()
-    token = secrets.token_hex(16)
+    # One key per direction (055 CH-6): chassis-to-workload, then workload-to-chassis.
+    token, proxy_token = secrets.token_hex(16), secrets.token_hex(16)
     extras = extras or Extras()
     fake = None if hosted else FakeModel(ROOT / engine.script, free_port(), extras.wrap)
     children: list[Spawned] = []
@@ -252,15 +257,32 @@ def running_stack(
             urls = _endpoints(remote_ip, proxy_port, remote_port)
             children.append(
                 _spawn_workload(
-                    engine, lane, cleanup, work, port=workload_port, urls=urls, token=token
+                    engine,
+                    lane,
+                    cleanup,
+                    work,
+                    port=workload_port,
+                    urls=urls,
+                    token=token,
+                    proxy_token=proxy_token,
                 )
             )
         ports = (port, proxy_port, remote_port, workload_port)
         chassis = _spawn_chassis(
-            engine, lane, cleanup, work, ports, remote_ip, fake, token, hosted, extras
+            engine,
+            lane,
+            cleanup,
+            work,
+            ports,
+            remote_ip,
+            fake,
+            (token, proxy_token),
+            hosted,
+            extras,
         )
         children.append(chassis)
-        _wait_ready(f"http://127.0.0.1:{port}", children, [token, hosted.key if hosted else ""])
+        secrets_seen = [token, proxy_token, hosted.key if hosted else ""]
+        _wait_ready(f"http://127.0.0.1:{port}", children, secrets_seen)
         yield Stack(f"http://127.0.0.1:{port}", fake)
     finally:
         for child in reversed(children):

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from bakeoff.config import (
+    CHASSIS_PROXY_TOKEN_ENV,
     CHASSIS_TOKEN_ENV,
     WORKLOAD_TOKEN_ENV,
     chassis_config,
@@ -93,7 +94,11 @@ def test_the_config_names_the_lane_the_handle_and_the_token_variable() -> None:
     side = chassis_config(engine, "sidecar", workload_port=9123)["spec"]["engine"]
     assert side == {"connector": "sidecar", "url": "http://127.0.0.1:9123"}
     remote = chassis_config(engine, "remote", workload_port=9123)["spec"]["engine"]
-    assert remote["auth"] == {"scheme": "bearer", "token_env": CHASSIS_TOKEN_ENV}
+    assert remote["auth"] == {
+        "scheme": "bearer",
+        "token_env": CHASSIS_TOKEN_ENV,
+        "proxy_token_env": CHASSIS_PROXY_TOKEN_ENV,
+    }
     assert "token" not in {k for k in remote if k != "auth"}
     with pytest.raises(ValueError, match="needs the workload's port"):
         chassis_config(engine, "sidecar", workload_port=None)
@@ -120,11 +125,23 @@ def test_workload_commands_carry_the_token_flag_only_in_the_remote_lane() -> Non
 def test_the_workload_env_is_an_allow_list() -> None:
     engine = get_engine("echo-smolagents")
     side = workload_env_vars(
-        engine, "sidecar", port=1, model_url="http://m/v1", tool_url="http://m/mcp", token="t"
+        engine,
+        "sidecar",
+        port=1,
+        model_url="http://m/v1",
+        tool_url="http://m/mcp",
+        token="t",
+        proxy_token="p",
     )
     assert set(side) == {"CHASSIS_MODEL_URL", "CHASSIS_TOOL_URL"}
     remote = workload_env_vars(
-        engine, "remote", port=1, model_url="http://m/v1", tool_url="http://m/mcp", token="t"
+        engine,
+        "remote",
+        port=1,
+        model_url="http://m/v1",
+        tool_url="http://m/mcp",
+        token="t",
+        proxy_token="p",
     )
     assert set(remote) == {
         "CHASSIS_MODEL_URL",
@@ -139,22 +156,32 @@ def test_the_workload_env_is_an_allow_list() -> None:
         model_url="u",
         tool_url="u",
         token="t",
+        proxy_token="p",
     )
     assert node["PORT"] == "7"
     assert node["HOST"] == "127.0.0.1"
 
 
 def test_the_chassis_env_holds_a_dummy_model_key_and_no_token_outside_remote() -> None:
-    side = chassis_env_vars("sidecar", fake_port=5, proxy_port=6, token="t")
+    side = chassis_env_vars("sidecar", fake_port=5, proxy_port=6, token="t", proxy_token="p")
     assert side == {
         "LITELLM_BASE_URL": "http://127.0.0.1:5/v1",
         "LITELLM_API_KEY": "bakeoff-dummy-key",  # pragma: allowlist secret
     }
-    inproc = chassis_env_vars("inprocess", fake_port=5, proxy_port=6, token="t")
+    inproc = chassis_env_vars("inprocess", fake_port=5, proxy_port=6, token="t", proxy_token="p")
     assert inproc["CHASSIS_MODEL_URL"] == "http://127.0.0.1:6/v1"
-    assert (
-        chassis_env_vars("remote", fake_port=5, proxy_port=6, token="t")[CHASSIS_TOKEN_ENV] == "t"
+    remote = chassis_env_vars("remote", fake_port=5, proxy_port=6, token="t", proxy_token="p")
+    assert (remote[CHASSIS_TOKEN_ENV], remote[CHASSIS_PROXY_TOKEN_ENV]) == ("t", "p")
+
+
+def test_the_remote_lane_gives_each_direction_its_own_key() -> None:
+    """055 CH-6: the workload requires the key the chassis sends and sends the other one, the
+    only key the chassis's remote listener accepts."""
+    engine = get_engine("echo-python")
+    work = workload_env_vars(
+        engine, "remote", port=1, model_url="u", tool_url="u", token="t", proxy_token="p"
     )
+    assert (work[WORKLOAD_TOKEN_ENV], work["CHASSIS_API_TOKEN"]) == ("t", "p")
 
 
 def test_the_env_builder_never_copies_the_parent(
@@ -190,8 +217,10 @@ def test_every_stack_env_is_free_of_the_parent_session(
     for engine in ENGINES:
         for lane in lanes_for(engine):
             pieces = [
-                chassis_env_vars(lane, fake_port=1, proxy_port=2, token="t"),
-                workload_env_vars(engine, lane, port=3, model_url="u", tool_url="u", token="t"),
+                chassis_env_vars(lane, fake_port=1, proxy_port=2, token="t", proxy_token="p"),
+                workload_env_vars(
+                    engine, lane, port=3, model_url="u", tool_url="u", token="t", proxy_token="p"
+                ),
             ]
             for extra in pieces:
                 env = build_env(tmp_path, extra)

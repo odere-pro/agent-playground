@@ -56,7 +56,7 @@ spec:
         - name: workload
           image: kind.local/agent-platform/echo-typescript:poc05
           imagePullPolicy: Never
-          args: ["--require-token-env", "CHASSIS_API_TOKEN"]
+          args: ["--require-token-env", "CHASSIS_A2A_TOKEN"]
           env:
             - name: POD_IP
               valueFrom:
@@ -72,11 +72,16 @@ spec:
               value: http://10.96.0.94:8091/mcp
             - name: DRAIN_TIMEOUT_MS
               value: "30000"
+            - name: CHASSIS_A2A_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: remote-typescript-token
+                  key: chassis-to-workload
             - name: CHASSIS_API_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: remote-typescript-token
-                  key: token
+                  key: workload-to-chassis
           ports:
             - name: a2a
               containerPort: 9000

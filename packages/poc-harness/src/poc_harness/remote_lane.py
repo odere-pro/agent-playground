@@ -8,6 +8,7 @@ The whole `remote` lane in one process, with no TCP socket (`make test` allows U
       -> the workload's template A2A server, built by its own CLI (`workload-a2a serve --uds ...
          --require-token-env ...`), so the bearer check is the one a remote pod runs
       -> `echo_python:handle`, whose model and MCP calls carry `CHASSIS_API_TOKEN` as a bearer
+         (the workload-to-chassis key, apart from the key the chassis sent; 055 CH-6)
       -> the chassis's remote proxy listener (`create_remote_proxy_app`: `BearerAuth`, then
          `RequireRun`), served on its own Unix socket
       -> the model port (a scripted fake) and the tool port (the fake `glossary_lookup`)
@@ -47,6 +48,8 @@ from chassis.server.remote_auth import RUN_SECRET, create_remote_proxy_app, remo
 from poc_harness.apps import bundle_for, running
 from poc_harness.lane_tokens import (
     PREVIOUS_TOKEN_ENV,
+    PROXY_PREVIOUS_ENV,
+    PROXY_TOKEN_ENV,
     REMOTE_PROXY_URL,
     REMOTE_URL,
     TOKEN_ENV,
@@ -152,13 +155,21 @@ class GatedTools:
         return await self.inner.call(name, arguments, idempotency_key=idempotency_key)
 
 
-def remote_config(uds: str, *, previous: bool = False) -> ChassisConfig:
-    """`spec.engine.connector: remote` over `uds`, with the bearer by variable name, and
-    `spec.trust: untrusted` (only the remote lane may run it).
+def remote_config(
+    uds: str, *, previous: bool = False, proxy_previous: bool = False
+) -> ChassisConfig:
+    """`spec.engine.connector: remote` over `uds`, with one key per direction by variable name
+    (055 CH-6), and `spec.trust: untrusted` (only the remote lane may run it).
     """
-    auth: dict[str, Any] = {"scheme": "bearer", "token_env": TOKEN_ENV}
+    auth: dict[str, Any] = {
+        "scheme": "bearer",
+        "token_env": TOKEN_ENV,
+        "proxy_token_env": PROXY_TOKEN_ENV,
+    }
     if previous:
         auth["previous_token_env"] = PREVIOUS_TOKEN_ENV
+    if proxy_previous:
+        auth["proxy_previous_token_env"] = PROXY_PREVIOUS_ENV
     return ChassisConfig.model_validate(
         {
             "version": "cfg-poc5",
@@ -299,10 +310,11 @@ async def remote_lane(
 ) -> AsyncIterator[RemoteLane]:
     """The whole remote lane, running (see the module docstring). The workload's server accepts
     a previous token when `tokens.workload_previous` is set; the remote listener when
-    `tokens.chassis_previous` is set.
+    `tokens.proxy_previous` is set. The listener needs `tokens.proxy` (055 CH-6).
     """
     tokens = tokens or Tokens.one()
     tokens.apply(monkeypatch)
+    proxy_previous = tokens.proxy_previous is not None
     model, tools, telemetry = scripted_model(), GatedTools(), InMemoryTelemetry()
     connector = RemoteConnector()
     ports = PortBundle(
@@ -315,7 +327,11 @@ async def remote_lane(
     )
     previous = tokens.workload_previous is not None
     async with workload_server(handle, previous=previous) as workload_uds:
-        config = remote_config(workload_uds, previous=tokens.chassis_previous is not None)
+        config = remote_config(
+            workload_uds,
+            previous=tokens.chassis_previous is not None,
+            proxy_previous=proxy_previous,
+        )
         app = create_app(config, ports)
         async with _remote_listener(app, config, monkeypatch) as (remote, remote_uds):
             lane = RemoteLane(
