@@ -25,12 +25,15 @@ from chassis.core.inbound import public_message
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.state import InMemoryState
 from chassis.fakes.tool import (
+    GLOSSARY_LOOKUP,
     NOTE_WRITE,
     UNLISTED_MARKER,
     UNLISTED_PROBE,
     InMemoryTools,
+    NoteStore,
     WriteModeTools,
     default_tools,
+    glossary_lookup,
     write_mode_tools,
 )
 from chassis.ports.bundle import PortBundle
@@ -414,6 +417,29 @@ async def test_two_runs_never_share_a_key() -> None:
     assert len(set(tools.idempotency_keys)) == 2
 
 
+async def test_a_replayed_run_with_one_client_key_is_one_write_effect() -> None:
+    """054 H-16 box 4, the proxy half: the retry's run has a new `request_id` and trace but the
+    same client key and input, so its write reaches the fake with the same key: one effect."""
+    ports = _ports()
+    first, first_ctx = _run("req-a", TRACE_A, "order-42")
+    retry, retry_ctx = _run("req-b", TRACE_B, "order-42")
+    async with _serving(ports) as app:
+        async with (
+            app.state.runs.register(first, first_ctx),
+            _mcp_client(app, {"traceparent": _traceparent(TRACE_A)}) as client,
+        ):
+            before = await client.call_tool("note_write", {"text": "x"})
+        async with (
+            app.state.runs.register(retry, retry_ctx),
+            _mcp_client(app, {"traceparent": _traceparent(TRACE_B)}) as client,
+        ):
+            after = await client.call_tool("note_write", {"text": "x"})
+    tools = _tools(ports)
+    assert tools.notes == ["x"]
+    assert len(set(tools.idempotency_keys)) == 1
+    assert after.structured_content == before.structured_content
+
+
 async def test_two_agents_with_the_same_client_key_are_two_effects() -> None:
     """Review M1 (a) end to end: two runs of two agents, one client key, one write each."""
     ports = _ports()
@@ -564,3 +590,84 @@ async def test_an_upstream_message_never_reaches_the_workload() -> None:
     text = "".join(getattr(part, "text", "") for part in result.content)
     assert "sk-secret" not in text and "10.0.0.7" not in text
     assert public_message("tool_unavailable") in text
+
+
+# Bare tool names (054 H-16 box 5). The LiteLLM gateway names tools `<server>-<tool>`.
+
+
+def _prefixed_tools() -> tuple[InMemoryTools, NoteStore]:
+    store = NoteStore()
+    twin = UNLISTED_PROBE.model_copy(update={"read_only": True})
+    tools = InMemoryTools(
+        [
+            (GLOSSARY_LOOKUP.model_copy(update={"name": "docs-glossary_lookup"}), glossary_lookup),
+            (NOTE_WRITE.model_copy(update={"name": "notes-note_write"}), store),
+            (twin.model_copy(update={"name": "a-twin"}), lambda: "a"),
+            (twin.model_copy(update={"name": "b-twin"}), lambda: "b"),
+        ]
+    )
+    return tools, store
+
+
+async def test_a_bare_name_resolves_to_its_one_prefixed_match() -> None:
+    tools, _ = _prefixed_tools()
+    async with _serving(_ports(tools)) as app, _mcp_client(app) as client:
+        result = await client.call_tool("glossary_lookup", {"term": "SLM"})
+    assert result.is_error is False
+    assert tools.calls == [("docs-glossary_lookup", {"term": "SLM"})]
+
+
+async def test_a_write_by_its_bare_name_gets_the_key_of_its_full_name() -> None:
+    tools, store = _prefixed_tools()
+    request, ctx = _run("req-a", TRACE_A)
+    async with (
+        _serving(_ports(tools)) as app,
+        app.state.runs.register(request, ctx),
+        _mcp_client(app, {"traceparent": _traceparent(TRACE_A)}) as client,
+    ):
+        result = await client.call_tool("note_write", {"text": "a"})
+    assert result.is_error is False
+    assert store.notes == ["a"]
+    run_key = run_key_of(RunRegistry().open(request, ctx), idempotency=True)
+    assert tools.idempotency_keys == [tool_key(run_key, "notes-note_write", {"text": "a"})]
+
+
+@pytest.mark.parametrize("in_run", [False, True], ids=["outside-a-run", "in-a-run"])
+async def test_an_ambiguous_bare_name_is_refused_as_unknown_tool(in_run: bool) -> None:
+    tools, _ = _prefixed_tools()
+    request, ctx = _run("req-a", TRACE_A)
+    headers = {"traceparent": _traceparent(TRACE_A)} if in_run else None
+    async with (
+        _serving(_ports(tools)) as app,
+        app.state.runs.register(request, ctx),
+        _mcp_client(app, headers) as client,
+    ):
+        result = await client.call_tool("twin", {}, raise_on_error=False)
+    assert result.structured_content is not None
+    assert result.structured_content["code"] == "unknown_tool"
+    assert tools.calls == []
+
+
+async def test_an_unknown_name_outside_a_run_is_unknown_tool() -> None:
+    tools, _ = _prefixed_tools()
+    async with _serving(_ports(tools)) as app, _mcp_client(app) as client:
+        result = await client.call_tool("no_such_tool", {}, raise_on_error=False)
+    assert result.structured_content is not None
+    assert result.structured_content["code"] == "unknown_tool"
+    assert tools.calls == []
+
+
+async def test_an_unknown_name_in_a_run_still_goes_to_the_port() -> None:
+    """In a run the port, the gateway for `McpGatewayTools`, decides: here the fake's
+    `tool_denied` for `unlisted_probe`, so the cached list is never the control."""
+    ports = _ports()
+    request, ctx = _run("req-a", TRACE_A)
+    async with (
+        _serving(ports) as app,
+        app.state.runs.register(request, ctx),
+        _mcp_client(app, {"traceparent": _traceparent(TRACE_A)}) as client,
+    ):
+        result = await client.call_tool("unlisted_probe", {}, raise_on_error=False)
+    assert result.structured_content is not None
+    assert result.structured_content["code"] == "tool_denied"
+    assert [name for name, _ in _tools(ports).calls] == ["unlisted_probe"]
