@@ -48,7 +48,7 @@ In the `sidecar` lane the workload holds no key ([ADR-001](../adr/001-chassis-de
 
 ## Acceptance criteria
 
-- [ ] A stock OpenAI client and a stock Anthropic client in the workload container, pointed at the proxy, get streamed and complete answers.
+- [ ] A stock OpenAI client and a stock Anthropic client in the workload container, pointed at the proxy, get streamed and complete answers. The SDK half is proven in process (`packages/chassis/tests/test_model_proxy_stock_clients.py::test_a_stock_openai_client_gets_a_complete_and_a_streamed_answer`, `::test_a_stock_anthropic_client_gets_a_complete_and_a_streamed_answer`). Open: the same clients in the workload container.
 - [x] The workload container holds no LiteLLM key. The proxy adds the service's key. Delivered in PoC-2: `pocs/poc-02-two-engines-one-contract/tests/test_boundaries.py::test_no_workload_service_holds_a_key`, `::test_python_engine_sends_no_key_and_calls_only_the_proxy[*]`; `packages/chassis/tests/test_model_proxy.py::test_inbound_authorization_is_never_forwarded`; live, four workload containers with no key-like variable in [the demo](../../../pocs/poc-02-two-engines-one-contract/demo/2026-10-01-demo-sidecar.md). The key is not yet scoped per service (Out of scope).
 - [x] A call that would go over the request's budget is refused, and the workload gets a clear error. Delivered in PoC-2: `packages/chassis/tests/test_model_proxy.py::test_an_exhausted_run_is_refused_with_429_complete_and_streamed`, `::test_the_forwarded_max_tokens_is_capped_at_the_remainder`.
 - [x] Two concurrent requests in one workload replica each get their own budget: the one that goes over is refused, the other completes. Delivered in PoC-2: `pocs/poc-02-two-engines-one-contract/tests/test_run_correlation.py::test_two_concurrent_requests_in_one_replica_each_get_their_own_budget`; `packages/chassis/tests/test_model_proxy.py::test_a_concurrent_call_cannot_be_given_tokens_another_call_holds`.
@@ -56,7 +56,7 @@ In the `sidecar` lane the workload holds no key ([ADR-001](../adr/001-chassis-de
 - [ ] Token counts from the proxy match the router's counts for the same calls. suggested: within 1%.
 - [x] Every model call shows as a span in the request's trace. Delivered in PoC-2: `packages/chassis/tests/test_model_proxy.py::test_a_call_of_an_in_flight_run_gets_a_span_and_is_charged`; `pocs/poc-02-two-engines-one-contract/tests/test_run_correlation.py::test_a_forwarded_traceparent_charges_every_model_call_to_its_run[*]`.
 - [x] In the `fake` profile, the proxy answers from the fake `ModelPort` adapter, with no network. · Delivered in PoC-1: `packages/chassis/tests/test_model_proxy.py::test_complete_maps_the_openai_shape_both_ways`, `::test_stream_ends_with_usage_and_done`.
-- [ ] A model call's timeout is capped at what its run's budget has left, so no call outlives its run.
+- [x] A model call's timeout is capped at what its run's budget has left, so no call outlives its run. · Delivered by: CH-16 (136): `packages/chassis/tests/test_model_proxy_failures.py::test_a_correlated_call_gets_the_runs_remaining_time[*]`, `::test_a_chat_call_whose_run_ends_is_cut_and_answered_403_run_ended`, `::test_an_anthropic_call_whose_run_ends_is_cut_and_answered_403_run_ended[*]`; `packages/chassis/tests/test_model_proxy_messages_upstream.py::test_a_correlated_stream_ends_with_a_timeout_frame_when_the_runs_deadline_passes`; `packages/chassis/tests/test_litellm_failures.py::test_timeout_s_caps_the_httpx_timeout_sent_with_the_request`.
 
 ## Dependencies
 
