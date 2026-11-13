@@ -530,7 +530,7 @@ Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 
 | ------ | ------------ | ----------- |
 | `chassis/ports/{auth,guardrail,evaluator,feedback}.py` | The four new ports, each with a no-op default in `PortBundle` | A.1 to A.4 |
 | `chassis/fakes/{auth,guardrail,evaluator,feedback}.py` | `StaticTokens`, `KeywordGuardrails`, `ScriptedEvaluator`, `InMemoryFeedback` | A.1 to A.4 |
-| `chassis/adapters/otel` | `OtelTelemetry`: OTLP over HTTP, the run span on the request's W3C trace id, `user.id` and `session.id` as baggage | A.5, F |
+| `chassis/adapters/otel` | `OtelTelemetry`: OTLP over HTTP, the run span on the request's W3C trace id, `user.id` and `session.id` as baggage. The sampler is `ALWAYS_ON`: every span is exported, `OTEL_TRACES_SAMPLER` and a caller's unsampled `traceparent` are ignored, and the Collector samples (014 H-7; `tests/test_trace_sampling.py`) | A.5, F |
 | `chassis/adapters/oidc` | `OidcAuth`: a JWT checked against the IdP's JWKS (pyjwt). `OIDC_JWKS_URL` must be `https` unless its host is loopback; else a `ValueError` at construction (R5a-12) | A.1, D.1 |
 | `chassis/adapters/litellm/guardrails.py` | `LiteLLMGuardrails`: LiteLLM's `POST /guardrails/apply_guardrail`, guardrail names per stage | A.2, D.3 |
 | `chassis/adapters/langfuse` | `LangfuseFeedback`: Langfuse `POST /api/public/scores`, plain httpx | A.4 |
@@ -568,7 +568,8 @@ Spec: [contract v7](../contracts/contract-v7.md). Decisions: ADR-007 and ADR-008
 - The model proxy opens `chassis.model.route` per admitted call and counts tokens and cost (B, A.3).
 - `server/marking.py` adds `Access-Control-Expose-Headers`; `server/results.py` sets the `aigenerated` CloudEvent extension (E.2, E.3).
 - `chassis serve` calls `configure_logging` and gives uvicorn `log_config=None`, so every line is JSON.
-- Tests: `test_metrics.py`, `test_json_logs.py`, `test_router_span.py`, `test_dashboards.py`, `test_collector_log_redaction.py`, `test_rate_limit.py`, `test_output_filter.py`, `test_marking_body.py`. The red-team controls: `packages/contract-suites/tests/test_redteam_controls.py`. The scenarios are in `pocs/poc-08-cross-cutting-build/tests/`.
+- Trace sampling is the Collector's `tail_sampling` processor, its rate from `TRACE_SAMPLE_RATE` (the epic's `trace_sample_rate`). The chassis has no sampling setting. Spec: [observability, "Sampling"](../specs/observability.md#sampling).
+- Tests: `test_metrics.py`, `test_json_logs.py`, `test_router_span.py`, `test_dashboards.py`, `test_collector_log_redaction.py`, `test_trace_sampling.py`, `test_rate_limit.py`, `test_output_filter.py`, `test_marking_body.py`. The red-team controls: `packages/contract-suites/tests/test_redteam_controls.py`. The scenarios are in `pocs/poc-08-cross-cutting-build/tests/`.
 
 ## profiles.py
 
