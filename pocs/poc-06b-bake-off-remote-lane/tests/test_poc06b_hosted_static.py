@@ -50,6 +50,8 @@ UNTRUSTED = sorted(e.name for e in ENGINES if not e.trusted)
 
 NEW_ENTRY = {
     "model_name": "big-default",
+    # G-1b (issue 003): the declaration every `big-default` route carries.
+    "model_info": {"owner": "platform", "supports_function_calling": True, "route_version": 1},
     "litellm_params": {
         "model": "__POC06_HOSTED_MODEL__",
         "num_retries": 2,  # CH-16: every route sets it (test_litellm_route_resilience.py)
