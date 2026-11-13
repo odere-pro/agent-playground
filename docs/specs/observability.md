@@ -82,24 +82,25 @@ Which backends an environment lists is a deploy choice in the Collector's export
 
 Trace sampling is a Collector policy (ADR-007 item 8), and `trace_sample_rate` sets it. Decided by the user on 2026-11-13.
 
-- **The SDK keeps every span.** `OtelTelemetry` samples with `ALWAYS_ON`. It ignores `OTEL_TRACES_SAMPLER` and a caller's unsampled `traceparent` (flags `00`), so the Collector sees whole traces. The `traceparent` the chassis sends to the workload is always sampled (`01`).
-- **The Collector decides.** `tail_sampling` is the first processor of the traces pipeline, before redaction and the batch. Its policies are ORed: a trace is kept when any policy samples it.
+- **The SDKs keep every span.** `OtelTelemetry` samples with `ALWAYS_ON`. It ignores `OTEL_TRACES_SAMPLER` and a caller's unsampled `traceparent` (flags `00`), so the Collector sees whole traces. The `traceparent` the chassis sends to the workload is always sampled (`01`). The workload's provider (`workload_a2a.telemetry`) pins `ParentBased(ALWAYS_ON)`, so `OTEL_TRACES_SAMPLER` cannot drop a span under that parent (`packages/workload-a2a/tests/test_workload_a2a_sampling.py`).
+- **The Collector decides.** The traces pipeline runs `memory_limiter` first, then `tail_sampling`, before redaction and the batch. Its policies are ORed: a trace is kept when any policy samples it.
 
   | Policy | Keeps |
   | ------ | ----- |
   | `trace-sample-rate` (`probabilistic`) | `sampling_percentage: ${env:TRACE_SAMPLE_PERCENT}` of traces, by trace id hash |
   | `keep-errors` (`status_code: [ERROR]`) | Every trace with an error span, at any rate, 0 included. Decided by the user, 2026-11-13. A run that ends in an error (an evaluator gate that fails closed included) has `error.code`, so its span status is error |
 
-  suggested: `decision_wait: 10s`, the time the Collector holds a trace for its late spans.
+  suggested: `decision_wait: 45s`, the time the Collector holds a trace before it decides. It must outlast the default run timeout (`Budget.timeout_ms`, 30 s) plus the SDK batch delay (5 s): the error status is set on `chassis.run` when it ends, last, and the first child span starts the timer. A test ties the three numbers. suggested: `num_traces: 50000` traces held at once, and `memory_limiter` at 80 % of memory with a 20 % spike margin, checked every second.
+- **Late spans.** A span that arrives after the decision follows the cached decision for its trace. So a run longer than `decision_wait` (a raised per-request timeout) can lose its error trace at any rate below 1.
 - **The one source.** `TRACE_SAMPLE_RATE` is the epic's `trace_sample_rate`, from 0 to 1. suggested: 1.0 when unset, so every trace is kept. `deploy/compose/trace_sample_percent.py` turns it into `TRACE_SAMPLE_PERCENT` (0 to 100), the only conversion; a value outside 0 to 1 stops `stack.sh` before any compose call. Each `stack.sh` exports the percent, and Compose passes it to the Collector as `${TRACE_SAMPLE_PERCENT:?}`. Both Compose Collectors (`poc07`, `poc08-litellm`) carry the same block.
-- **The image.** `tail_sampling` is in the contrib distribution only. The pinned image is `otel/opentelemetry-collector-contrib:0.163.2`, whose manifest lists `tailsamplingprocessor v0.163.0`. The keys used are checked against that version's `config.go`.
+- **The image.** `tail_sampling` is in the contrib distribution only. The pinned image is `otel/opentelemetry-collector-contrib:0.163.2`, whose manifest lists `tailsamplingprocessor v0.163.0` and the core `memorylimiterprocessor v0.163.0`. The keys used are checked against those versions' `config.go`.
 - **Helm.** The charts in `deploy/helm/` render agents, not the Collector, so no chart carries the rate yet. A Collector chart would render `TRACE_SAMPLE_PERCENT` from one value, for example `{{ mulf .Values.traceSampleRate 100 }}`. suggested: that shape; not built.
 - **One Collector per trace.** Tail sampling needs every span of a trace in the same Collector. With more than one replica, a `loadbalancing` exporter keyed by trace id goes in front. Not built.
 
-Offline check: `packages/chassis/tests/test_trace_sampling.py` (the SDK, the conversion, both configs, and the decision at rate 1.0 and 0). Still to show on a live Collector: that a rate of 0 drops an ok trace and keeps an error trace. The command, on the Mac or in CI:
+Offline check: `packages/chassis/tests/test_trace_sampling.py` (the SDK, the conversion, both configs, the wait, and the decision at rate 1.0 and 0). Its decision model, `_keeps`, is a limited stand-in: ORed policies at 0 and 100 percent only, with no timing, no late spans, and no batches split across decisions. The real decision is the live check. Still to show on a live Collector: that a rate of 0 drops an ok trace and keeps an error trace. The command, on the Mac or in CI:
 
 ```bash
 TRACE_SAMPLE_RATE=0 deploy/compose/poc07/stack.sh up && deploy/compose/poc07/stack.sh wait
 ```
 
-Then send one run that ends `end` and one that ends `error`, and assert that Jaeger's `GET /api/traces/<trace id>` finds the error run's trace within `SPAN_WAIT_S` and never finds the ok run's.
+Then send one run that ends `end` and one that ends `error`, and assert that Jaeger's `GET /api/traces/<trace id>` finds the error run's trace within `SPAN_WAIT_S` and never finds the ok run's. Second case: a run that errors only after the default timeout window (it spends the whole default 30 s `timeout_ms` and ends in an error, longer than the old 10 s wait) is still found at rate 0.
