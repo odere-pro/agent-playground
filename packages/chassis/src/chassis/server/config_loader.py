@@ -41,7 +41,7 @@ from starlette.datastructures import State
 from chassis.ports.config import ConfigPort, LoadedConfig, PollingConfig, Unsubscribe
 from chassis.ports.telemetry import TelemetryPort
 from chassis.profiles import merge_adapters
-from chassis.server.config import RELOADABLE, ChassisConfig, content_hash
+from chassis.server.config import RELOADABLE, ChassisConfig, content_hash, credential_paths
 
 __all__ = [
     "REJECTED",
@@ -98,6 +98,10 @@ def parse_document(data: Mapping[str, Any]) -> ChassisConfig:
         raise ConfigRejected("invalid", [])
     try:
         digest = content_hash(data)
+        secret_paths = credential_paths(data)
+        if secret_paths:
+            # H-12: refused before validation, so the paths name the field, never the value.
+            raise ConfigRejected("invalid", secret_paths)
         doc = dict(data)
         named = doc.get("version")
         doc["version"] = digest if named is None else f"{named}+{digest}"
