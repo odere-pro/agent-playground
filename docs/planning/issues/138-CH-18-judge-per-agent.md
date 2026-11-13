@@ -30,9 +30,9 @@ One module-constant rubric judges every agent and every task, with no code check
 ## Acceptance criteria
 
 - [ ] `spec.harness.rubric` names a rubric and its version, an unknown name is refused at load, and the judge uses the named rubric in a test with the fake model.
-- [ ] An answer with `end.output` and no `text` makes no judge call and counts as skipped (suggested: `evaluator_calls{outcome="skipped"}`).
+- [x] An answer with `end.output` and no `text` makes no judge call and counts as skipped (suggested: `evaluator_calls{outcome="skipped"}`). · Delivered by: `packages/chassis/tests/test_evaluator_gate_skip.py::test_a_structured_answer_makes_no_judge_call_and_counts_as_skipped` (sync and async)
 - [ ] The gate score reaches the fake `FeedbackPort` as a score named after the rubric version, and a test reads it back.
-- [ ] `docs/specs/metrics.md` gives the first-attempt pass rate formula above.
+- [x] `docs/specs/metrics.md` gives the first-attempt pass rate formula above. · Delivered by: `packages/chassis/tests/test_evaluator_gate_skip.py::test_the_metrics_spec_gives_the_first_attempt_pass_rate_formula`
 - [ ] With `shadow_evaluator` set and `shadow_sample_rate: 1.0`, both judges score each attempt, only the main one gates, and `evaluator_agreement{pair, agree}` counts the result.
 
 ## Dependencies
