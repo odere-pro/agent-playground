@@ -129,8 +129,8 @@ Since 2026-11-06 the [product plan](../../plans/2026-11-06-agent-container-produ
 
 ## Critical path
 
-- **To template GA (H-15):** 002 G-1 → 003 G-1b → 012 H-3 → 015 H-8 → 025 H-10 → 057 H-19 → 059 H-15. About 22.5 working days. Template GA is phase F. The baseline ([005 G-3](005-G-3-baseline-report.md)) and the SLM steps are parked, so no baseline wait sits on this path.
-- **Longest chain overall:** 002 G-1 → 003 G-1b → 012 H-3 → 015 H-8 → 025 H-10 → 057 H-19 → 059 H-15 → 076 R-1 → 090 R-13 → 091 R-11 → 092 R-12 → 099 O-1 → 100 O-2 → 103 O-11 → 107 O-6 → 109 O-8 → 110 C-6 → 115 O-15. The registry search and the orchestrator engine are the long pole.
+- **To template GA (H-15):** 009 CH-1 → 016 H-9 → 024 CH-3 → 026 CH-4 → 055 CH-6 → 059 H-15. About 18 working days. Template GA is phase F. The baseline ([005 G-3](005-G-3-baseline-report.md)) and the SLM steps are parked, so no baseline wait sits on this path.
+- **Longest chain overall:** 009 CH-1 → 016 H-9 → 024 CH-3 → 026 CH-4 → 055 CH-6 → 059 H-15 → 076 R-1 → 090 R-13 → 091 R-11 → 092 R-12 → 099 O-1 → 100 O-2 → 103 O-11 → 107 O-6 → 109 O-8 → 110 C-6 → 115 O-15. The registry search and the orchestrator engine are the long pole.
 
 ## Open decisions and what they block
 
@@ -239,7 +239,6 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | 012 | H-3 | [Model port to the LLM router, with a route map per task](012-H-3-model-port.md) | agent-profile | P0 | L | [003](003-G-1b-named-model-routes.md), [007](007-H-1-harness-library-ports-envelope.md), [004](004-G-2-token-cost-counting.md) |
 | 013 | CH-2 | [Outbound model proxy: an OpenAI- and Anthropic-compatible URL for workloads, forwarded with the service's scoped key](013-CH-2-outbound-model-proxy.md) | chassis, agent-profile | P0 | M | [012](012-H-3-model-port.md), [009](009-CH-1-engine-connectors-a2a.md) |
 | 014 | H-7 | [Observability: logs, traces, metrics, Langfuse](014-H-7-observability.md) | chassis | P0 | M | [007](007-H-1-harness-library-ports-envelope.md), [009](009-CH-1-engine-connectors-a2a.md) |
-| 015 | H-8 | [Testing kit: fake adapters, contract tests per API, record and replay](015-H-8-testing-kit.md) | chassis | P0 | M | [011](011-H-2-inbound-adapters.md), [012](012-H-3-model-port.md), [009](009-CH-1-engine-connectors-a2a.md) |
 | 016 | H-9 | [Local debug profile: Docker Compose, hot reload, debugger port](016-H-9-local-debug-profile.md) | chassis | P0 | S | [011](011-H-2-inbound-adapters.md), [009](009-CH-1-engine-connectors-a2a.md) |
 | 017 | H-4 | [Harness features: schema check, evaluator gate, retry, fallback, timeout, budget](017-H-4-harness-features.md) | chassis, agent-profile | P0 | M | [010](010-H-12-config-loader.md), [012](012-H-3-model-port.md), [009](009-CH-1-engine-connectors-a2a.md), [013](013-CH-2-outbound-model-proxy.md) |
 | 019 | H-17 | [Event port: one-way CloudEvents result events to the broker](019-H-17-event-port.md) | chassis | P0 | M | [001](001-DEC-1-resolve-open-decisions.md), [007](007-H-1-harness-library-ports-envelope.md), [009](009-CH-1-engine-connectors-a2a.md) |
