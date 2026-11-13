@@ -55,9 +55,13 @@ Each finding id is assigned here once, in bold. P-24 has no id: it carries two i
 - **P-29:** option 1, in [ADR-012](../../planning/adr/012-drain-order-on-rollout.md): the chassis is the main container and the workload the native sidecar in the `sidecar` pod.
 - **P-27:** option 1. `user.id` in baggage is the `sha256[:32]` of the subject, the hash the rate limit uses, in every lane. Option 2 (no `user.id` to an `untrusted` remote) can follow. Built in 134 CH-14.
 
+## Decided by the user, 2026-11-13
+
+- **P-9:** option 1. A JSON-RPC error answer from the workload is the new code `a2a.rpc_error`, not retryable (not `a2a.failed`, not `engine_error`). Built in 009 CH-1; recorded in [contract v9, E](../../contracts/contract-v9.md#e-a-json-rpc-error-from-the-workload-009-ch-1-p-9).
+
 Done by a merged PR: **P-16.** Rule 9, the minimum chassis version, landed in `agent-lib` in PR #79; `docs/specs/architecture.md` and `docs/specs/security.md` name it.
 
-The other proposals, P-3, P-5, P-7 to P-15, P-17 to P-25, P-28, and P-30 to P-34, stay open. Each one's owner agent advises; a pick that changes code is its own PR after PR-R.
+The other proposals, P-3, P-5, P-7, P-8, P-10 to P-15, P-17 to P-25, P-28, and P-30 to P-34, stay open. Each one's owner agent advises; a pick that changes code is its own PR after PR-R.
 
 ## P-1: An evaluator outage: fail open or fail closed
 
@@ -176,7 +180,7 @@ The other proposals, P-3, P-5, P-7 to P-15, P-17 to P-25, P-28, and P-30 to P-34
 - Options:
   1. Map JSON-RPC error codes to `a2a.*` codes in the connector, as the remote plain mode does, with a stronger cancel case.
   2. Keep it, and document `engine_error` as the code.
-- suggested: option 1.
+- Decided 2026-11-13 by the user: option 1, with the new code `a2a.rpc_error`, not retryable.
 - Owner: `chassis-architect`.
 - In the backlog: 009 CH-1: add the open box "a JSON-RPC error answer from the workload surfaces as an `a2a.*` code"; drop the fixed `a2a.unsupported_state` item.
 

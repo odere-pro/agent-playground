@@ -106,6 +106,7 @@ Source: `core/events.py`; `events.v0.json`. A discriminated union on `type`. Eve
 | `a2a.request_mismatch` | connector | `start.request_id` is not the request's | false |
 | `a2a.timeout` | connector | The run deadline passed, or one read, connect, write, or pool wait took longer than `budget.timeout_ms` | true |
 | `a2a.transport` | connector | The connection failed or dropped, the a2a-sdk client failed, or the stream ended with no `end` or `error` | true |
+| `a2a.rpc_error` | connector | The workload answered a JSON-RPC error (an `A2AError` that is not an `A2AClientError`); P-9, decided 2026-11-13 | false |
 | `a2a.canceled` | connector | The task reached `CANCELED` by another hand | false |
 | `a2a.failed` | connector | A terminal `FAILED` or `REJECTED` with no `chassis.event` | false |
 | `a2a.unsupported_state` | connector | `INPUT_REQUIRED` (an agent run never waits for a person, [ADR-015](../planning/adr/015-interrupts-end-the-run.md)) or `AUTH_REQUIRED` (the workload holds no credential and never needs one from a caller, ADR-001 hard requirement 1) | false |
@@ -237,7 +238,7 @@ OpenAI body: `{"error": {"message", "type", "param", "code", "retryable"}}`. Ant
 | 429 | `rate_limited` | Past the caller's token bucket; `Retry-After: <seconds>` | `rate_limit_error` | `rate_limit_error` |
 | 499 | | The client left a complete call; empty body | | |
 | 500 | `engine_error`, `internal_error` | The connector raised; the chassis failed after the run opened (`x-should-retry: false`) | `server_error` | `api_error` |
-| 502 | any other non-retryable run code (`guardrail_blocked`, `evaluator_gate_failed`, `a2a.failed`, ...) | | `server_error` | `api_error` |
+| 502 | any other non-retryable run code (`guardrail_blocked`, `evaluator_gate_failed`, `a2a.failed`, `a2a.rpc_error`, ...) | | `server_error` | `api_error` |
 | 503 | `not_ready`, `state_unavailable`, `auth_unavailable`, `guardrail_unavailable`, any other retryable code | Not ready; the store failed on a keyed call; the IdP's keys; `Retry-After: 1` on auth | `server_error` | `overloaded_error` |
 | 503 | `overloaded` | This replica is at `spec.limits.max_in_flight` runs in flight (CH-15); `Retry-After: 1`; the workload never saw the call; native: `{"detail": {"code", "message"}}` | `server_error` | `overloaded_error` |
 | 504 | `a2a.timeout` | The run passed its deadline | `server_error` | `timeout_error` |

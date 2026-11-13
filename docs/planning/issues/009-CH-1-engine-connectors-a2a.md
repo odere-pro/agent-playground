@@ -24,7 +24,7 @@ epic_refs: [F.1, F.2, G.1]
 - `traceparent` and `ctx` (request ID, budget, idempotency key, config versions) passed over A2A.
 - A timeout or a client disconnect cancels the A2A task. `budget.timeout_ms` is also a deadline for the whole run in every lane.
 - Open connections and events streamed straight through, so the local hop stays small. suggested: 1–3 ms, as in the ADR.
-- A workload that does not answer, or sends an event that fails the schema, gives an `error` event and a clear status. A sidecar that dies mid-stream gives `a2a.transport` (suggested). A JSON-RPC error answer from the workload still surfaces as `engine_error`, not an `a2a.*` code ([contract v1](../../contracts/contract-v1.md#where-the-code-differs-from-the-decisions-text)).
+- A workload that does not answer, or sends an event that fails the schema, gives an `error` event and a clear status. A sidecar that dies mid-stream gives `a2a.transport` (suggested). A JSON-RPC error answer from the workload gives `a2a.rpc_error`, not retryable (decided 2026-11-13, P-9; [contract v9, E](../../contracts/contract-v9.md#e-a-json-rpc-error-from-the-workload-009-ch-1-p-9)). Before, it escaped `run` as the pipeline's `engine_error`.
 
 ## Reuse
 
@@ -52,7 +52,7 @@ epic_refs: [F.1, F.2, G.1]
 - [x] One trace ID links the logs of the chassis and the workload. · Delivered in PoC-8: `pocs/poc-08-cross-cutting-build/tests/test_poc08_workload_logs.py::test_the_workload_logs_json_with_the_chassis_runs_trace_id`, `pocs/poc-08-cross-cutting-build/tests/test_poc08_c3_trace.py::test_every_call_has_metrics_and_json_logs_with_the_trace_id`.
 - [x] `inprocess` opens no socket: the suite passes with networking disabled. Delivered in PoC-1: `make test` runs with sockets disabled; evidence `pocs/poc-01-walking-skeleton/tests/test_a2a_inprocess.py::test_plugin_answers_over_a2a_in_memory`.
 - [x] The extra latency of the local hop is measured and recorded (p50 and p95), with the overhead per streamed delta and the time to first token. Delivered in PoC-2: `pocs/poc-02-two-engines-one-contract/tests/test_records.py::test_measurements_are_recorded`; [the measurements](../../../pocs/poc-02-two-engines-one-contract/notes/2026-10-01-measurements.md).
-- [ ] A JSON-RPC error answer from the workload surfaces as an `a2a.*` code. Open: it escapes `run` as `engine_error` (strict xfail `packages/chassis/tests/test_a2a_cancel_rpc.py::test_a_jsonrpc_error_answer_is_an_a2a_code`); the code name waits on `chassis-architect`.
+- [x] A JSON-RPC error answer from the workload surfaces as an `a2a.*` code. The code is `a2a.rpc_error`, not retryable (user decision 2026-11-13, proposals.md P-9; [contract v9, E](../../contracts/contract-v9.md#e-a-json-rpc-error-from-the-workload-009-ch-1-p-9)). · Delivered by: `packages/chassis/tests/test_a2a_cancel_rpc.py::test_a_jsonrpc_error_answer_is_an_a2a_code[*]`, `packages/chassis/tests/test_inbound.py::test_a_jsonrpc_error_from_the_workload_is_502_with_a_fixed_public_message`
 
 ## Dependencies
 
