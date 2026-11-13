@@ -45,7 +45,7 @@
 # pipeline. Its rate is `trace_sample_rate`: stack.sh turns TRACE_SAMPLE_RATE (0 to 1, default
 # 1.0) into TRACE_SAMPLE_PERCENT with ../trace_sample_percent.py, the one conversion. A trace
 # with an error span is kept at any rate, 0 included (decided by the user, 2026-11-13).
-# suggested: the decision waits 10 s for late spans.
+# suggested: the decision waits 45 s for late spans, and `memory_limiter` runs first.
 # The block is the same in ../poc08-litellm/otel-collector.yaml. The processor ships in the
 # contrib image (manifest at v0.163.2), not in the core one. Offline check:
 # packages/chassis/tests/test_trace_sampling.py.
@@ -67,9 +67,18 @@ receivers:
 processors:
   batch:
     timeout: 1s
-  # Policies are ORed: a trace is kept when any policy samples it.
+  # suggested: the limits. Refuses data before the Collector runs out of memory; first in the
+  # traces pipeline (core processor, in the contrib image at v0.163.2).
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+  # Policies are ORed: a trace is kept when any policy samples it. suggested: decision_wait 45s,
+  # above the default run timeout (30 s) plus the SDK batch delay (5 s), so an errored run's
+  # `chassis.run` span (it ends last) arrives before the decision; num_traces 50000 held at once.
   tail_sampling:
-    decision_wait: 10s
+    decision_wait: 45s
+    num_traces: 50000
     policies:
       - name: keep-errors
         type: status_code
@@ -186,7 +195,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [tail_sampling, transform/redact_spans, batch]
+      processors: [memory_limiter, tail_sampling, transform/redact_spans, batch]
       exporters: [otlphttp/langfuse, otlp/jaeger]
     logs:
       receivers: [otlp]
