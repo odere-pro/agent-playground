@@ -12,6 +12,8 @@ class TestWorkloadContract(WorkloadContract):
     # real run needs a model that does (ADR-006); the platform's remote-lane suites run one.
     terminal_types = ("error",)
     run_statuses = ("ok", "fallback", "error")
+    # The same loop means the model's reply never reaches `output`, so input-as-data cannot pass.
+    checks_input_as_data = False
 {%- elif framework == 'claude-agent' %}
     # Offline it answers through the fake model. In a shell that holds Claude Code's own settings
     # the guard in `handle.py` stops it first (`env_not_clean`), which is the safe answer.

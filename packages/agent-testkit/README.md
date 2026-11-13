@@ -57,7 +57,7 @@ def agent_testkit_model_script():
 
 ## `WorkloadContract`
 
-Its own `workload` and `chassis` are class-scoped, so a binder can override `agent_handle_ref` with `@pytest.fixture(scope="class")` and get its own pair of processes. Cases: the agent card; one run of `contract_input` over A2A (start first, one terminal last, every event valid against the schema); an unsupported schema version; an input that is not a JSON object; `/ready` and `/v1/run` through the chassis; and the lane cases vendored from `chassis_contracts.lane` (`lane_cases.py`) over A2A and through the chassis, including JSON values, the run's `traceparent`, and the run deadline.
+Its own `workload` and `chassis` are class-scoped, so a binder can override `agent_handle_ref` with `@pytest.fixture(scope="class")` and get its own pair of processes. Cases: the agent card; one run of `contract_input` over A2A (start first, one terminal last, every event valid against the schema); an unsupported schema version; an input that is not a JSON object; `/ready` and `/v1/run` through the chassis; the input reaches the model as its own user message (input-as-data, `checks_input_as_data`; set it `False` for an agent whose output does not carry the model's reply); and the lane cases vendored from `chassis_contracts.lane` (`lane_cases.py`) over A2A and through the chassis, including JSON values, the run's `traceparent`, and the run deadline.
 
 ## The stateless check (`agent_testkit.stateless`)
 
