@@ -1,7 +1,7 @@
 ---
 title: "CH-18: The judge per agent: rubric by name, escapes on the trace, a shadow judge"
-labels: ["story", "priority:P1", "phase:3-simplifier-agent", "area:evaluator", "size:M", "layer:chassis", "layer:agent-profile"]
-milestone: "W6 Golden set and evaluator SLM"
+labels: ["story", "priority:P1", "phase:0-harness", "area:evaluator", "size:M", "layer:chassis", "layer:agent-profile"]
+milestone: "Done: delivered by the PoC track"
 index: 138
 epic_id: CH-18
 depends_on: ["042 A-2"]
@@ -29,11 +29,13 @@ One module-constant rubric judges every agent and every task, with no code check
 
 ## Acceptance criteria
 
-- [ ] `spec.harness.rubric` names a rubric and its version, an unknown name is refused at load, and the judge uses the named rubric in a test with the fake model.
+Delivered by: the structured-answer skip (PR 160) and, on 2026-11-13, the rubric, score feedback, and shadow judge tests named on each box
+
+- [x] `spec.harness.rubric` names a rubric and its version, an unknown name is refused at load, and the judge uses the named rubric in a test with the fake model. · Delivered by: `packages/chassis/tests/test_evaluator_gate_rubric.py::test_an_unknown_rubric_is_refused_at_load`, `::test_the_judge_sends_the_named_rubric_with_the_fake_model`
 - [x] An answer with `end.output` and no `text` makes no judge call and counts as skipped (suggested: `evaluator_calls{outcome="skipped"}`). · Delivered by: `packages/chassis/tests/test_evaluator_gate_skip.py::test_a_structured_answer_makes_no_judge_call_and_counts_as_skipped` (sync and async)
-- [ ] The gate score reaches the fake `FeedbackPort` as a score named after the rubric version, and a test reads it back.
+- [x] The gate score reaches the fake `FeedbackPort` as a score named after the rubric version, and a test reads it back. · Delivered by: `packages/chassis/tests/test_evaluator_gate_rubric.py::test_the_gate_score_reaches_feedback_named_after_the_rubric_version`, `packages/contract-suites/src/chassis_contracts/feedback.py::test_a_named_score_keeps_its_name` (fake, Langfuse, LangSmith)
 - [x] `docs/specs/metrics.md` gives the first-attempt pass rate formula above. · Delivered by: `packages/chassis/tests/test_evaluator_gate_skip.py::test_the_metrics_spec_gives_the_first_attempt_pass_rate_formula`
-- [ ] With `shadow_evaluator` set and `shadow_sample_rate: 1.0`, both judges score each attempt, only the main one gates, and `evaluator_agreement{pair, agree}` counts the result.
+- [x] With `shadow_evaluator` set and `shadow_sample_rate: 1.0`, both judges score each attempt, only the main one gates, and `evaluator_agreement{pair, agree}` counts the result. · Delivered by: `packages/chassis/tests/test_evaluator_gate_rubric.py::test_a_shadow_judge_scores_every_attempt_but_only_the_main_one_gates`, `::test_the_shadow_scores_each_attempt_of_a_retried_run`
 
 ## Dependencies
 
@@ -42,6 +44,6 @@ One module-constant rubric judges every agent and every task, with no code check
 
 ## References
 
-- Source: [ADR-001](../adr/001-chassis-delivery-model.md), not an epic story. Epic phase: [Phase 3](../slm-agent-platform-epic-v3.md#phase-3-simplifier-agent)
+- Source: [ADR-001](../adr/001-chassis-delivery-model.md), not an epic story. Epic phase: [Phase 0](../slm-agent-platform-epic-v3.md#phase-0-agent-harness)
 - Epic context: [B.2](../slm-agent-platform-epic-v3.md#b2) · [G.2](../slm-agent-platform-epic-v3.md#g2)
 - Backlog plan: [000-plan.md](000-plan.md)

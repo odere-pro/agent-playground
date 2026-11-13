@@ -100,6 +100,14 @@ SESSION_ID_MAX = 128
 """suggested: the longest session id kept; a longer or non-printable one is dropped."""
 
 
+def _memory_session(config: ChassisConfig, observed: Observed | None) -> str | None:
+    """The run's `session.id` when session memory is on, else None: it scopes the run key
+    (CH-20), as it scopes the idempotency key in `serve`."""
+    if observed is None or not config.spec.memory.enabled:
+        return None
+    return observed.session_id
+
+
 def _printable(value: str | None, limit: int = SESSION_ID_MAX) -> str | None:
     """`value` stripped when it is printable ASCII of at most `limit` characters, else None."""
     if not isinstance(value, str):
@@ -342,7 +350,7 @@ class RunPipeline:
             )
             raise Overloaded(len(self.runs), limit)
         try:
-            record = self.runs.open(request, ctx)
+            record = self.runs.open(request, ctx, session_id=_memory_session(config, observed))
         except TraceIdInUse as exc:
             telemetry.counter("chassis.requests_refused", reason="trace_id_in_use")
             telemetry.log(

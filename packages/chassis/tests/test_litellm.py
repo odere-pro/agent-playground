@@ -100,13 +100,14 @@ async def test_temperature_is_0_when_no_caller_sets_it() -> None:
     assert [json.loads(r.content)["temperature"] for r in seen] == [0.0, 0.0]
 
 
-async def test_agent_tag_goes_in_header_and_metadata() -> None:
+async def test_the_agent_name_picks_no_spend_tag() -> None:
+    """012 H-3: the virtual key binds spend; no tag header or metadata tag goes out."""
     seen, transport = _capture()
     model = LiteLLMModel("http://router/v1", agent="simplifier", transport=transport)
     await model.complete(MESSAGES, route="big-default")
     body = json.loads(seen[0].content)
-    assert seen[0].headers["x-litellm-tags"] == "agent:simplifier"
-    assert body["metadata"] == {"tags": ["agent:simplifier"]}
+    assert "x-litellm-tags" not in seen[0].headers
+    assert "metadata" not in body
 
 
 async def test_key_goes_in_the_bearer_header_only_and_is_not_in_repr() -> None:

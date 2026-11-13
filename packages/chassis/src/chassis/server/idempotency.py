@@ -91,8 +91,14 @@ reload, call `idempotency.reload(spec)` with the new spec (only `ttl_s` reloads)
 After `to_request` and `enforce_limits`, and before `open_run`:
 
     if idempotency.applies(ids.key_from):
+        session_id = None  # CH-20: the session scopes the key only with memory on
+        if config.spec.memory.enabled:
+            session_id = pipeline.observed_for(headers).session_id
         outcome = await idempotency.begin(
-            request, wait_ms=request.budget.timeout_ms, subject=current_user_id()
+            request,
+            wait_ms=request.budget.timeout_ms,
+            subject=current_user_id(),
+            session_id=session_id,
         )
 
 - `Refusal`: answer `adapter.error(outcome.code, outcome.message, outcome.retryable, meta)`.
@@ -207,11 +213,22 @@ def _nothing() -> None:
     return None
 
 
-def store_key(agent: str, idempotency_key: str, *, subject: str | None = None) -> str:
+def store_key(
+    agent: str,
+    idempotency_key: str,
+    *,
+    subject: str | None = None,
+    session_id: str | None = None,
+) -> str:
     """`chassis:idem:v1:<agent>:<digest>`: scoped by agent and caller, and hashed, so a long or
     odd key cannot shape the store key. With `subject` None (auth off) the digest is
     `sha256(idempotency_key) hex`, as before. With a subject it is the sha256 hex of the
-    canonical JSON of `[subject, idempotency_key]`, which no other pair gives."""
+    canonical JSON of `[subject, idempotency_key]`, which no other pair gives. With a
+    `session_id` (session memory on, CH-20) it is the sha256 hex of the canonical JSON of
+    `{"key", "session", "subject"}`, so each session holds its own entry."""
+    if session_id is not None:
+        scoped = {"key": idempotency_key, "session": session_id, "subject": subject}
+        return f"{KEY_PREFIX}{agent}:{hashlib.sha256(_canonical(scoped)).hexdigest()}"
     if subject is None:
         return f"{KEY_PREFIX}{agent}:{_key_digest(idempotency_key)}"
     # `_canonical` escapes every non-ASCII character, a lone surrogate too, so it never fails.
@@ -231,13 +248,16 @@ def _canonical(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def fingerprint(request: Request) -> str:
-    """The sha256 hex of the canonical JSON of `{agent, input, context_ref}`."""
-    body = {
+def fingerprint(request: Request, *, session_id: str | None = None) -> str:
+    """The sha256 hex of the canonical JSON of `{agent, input, context_ref}`, plus `session_id`
+    when session memory is on (CH-20, suggested). With no session it is as before."""
+    body: dict[str, Any] = {
         "agent": request.agent,
         "input": request.input.model_dump(mode="json"),
         "context_ref": request.context_ref,
     }
+    if session_id is not None:
+        body["session_id"] = session_id
     return hashlib.sha256(_canonical(body)).hexdigest()
 
 
@@ -280,13 +300,20 @@ class Claim:
     """This call holds the key. Call `finish` or `release` once the run is over."""
 
     def __init__(
-        self, owner: Idempotency, request: Request, key: str, entry: bytes, *, since: float
+        self,
+        owner: Idempotency,
+        request: Request,
+        key: str,
+        entry: bytes,
+        *,
+        since: float,
+        session_id: str | None = None,
     ) -> None:
         self._idem = owner
         self.request = request
         self.key = key
         self._entry = entry
-        self._fingerprint = fingerprint(request)
+        self._fingerprint = fingerprint(request, session_id=session_id)
         self._closed = False
         self._lost = False
         self._last_ok = since
@@ -503,13 +530,22 @@ class Idempotency:
         return Refusal(code, final=detail is not None, detail=detail)
 
     async def begin(
-        self, request: Request, *, wait_ms: int, subject: str | None = None
+        self,
+        request: Request,
+        *,
+        wait_ms: int,
+        subject: str | None = None,
+        session_id: str | None = None,
     ) -> Claim | Replay | Refusal:
         """Claim the key, replay its cached result, or refuse. `wait_ms` bounds the wait for a
         duplicate in flight; pass the caller's own `budget.timeout_ms`. `subject` is the checked
-        caller's subject (`current_user_id()`), None with auth off: it scopes the store key."""
-        key = store_key(request.agent, request.idempotency_key, subject=subject)
-        mine = fingerprint(request)
+        caller's subject (`current_user_id()`), None with auth off: it scopes the store key.
+        `session_id` is the run's `session.id` when session memory is on (CH-20), else None: it
+        scopes the store key and the fingerprint, so one session never replays another's answer."""
+        key = store_key(
+            request.agent, request.idempotency_key, subject=subject, session_id=session_id
+        )
+        mine = fingerprint(request, session_id=session_id)
         owner = f"{self.replica_id}:{uuid.uuid4().hex}"
         running = _canonical(
             {"v": ENTRY_VERSION, "state": "running", "owner": owner, "fingerprint": mine}
@@ -524,7 +560,14 @@ class Idempotency:
                 if waited and sent >= deadline:
                     return self._refuse("idempotency_in_progress")
                 claim = await self._try_claim(
-                    request, key, running, sent, deadline, waited, subject=subject
+                    request,
+                    key,
+                    running,
+                    sent,
+                    deadline,
+                    waited,
+                    subject=subject,
+                    session_id=session_id,
                 )
                 if claim is not None:
                     return claim
@@ -573,6 +616,7 @@ class Idempotency:
         waited: bool,
         *,
         subject: str | None,
+        session_id: str | None = None,
     ) -> Claim | Refusal | None:
         """Claim the key when it is absent; a claim after a wait is a takeover with what is left
         of the deadline as its budget. None when the key is held; a `rate_limited` refusal when
@@ -584,7 +628,7 @@ class Idempotency:
             if full is not None:
                 return full
         self.telemetry.counter("chassis.idempotency.claimed")
-        claim = Claim(self, request, key, running, since=sent)
+        claim = Claim(self, request, key, running, since=sent, session_id=session_id)
         if waited:
             self.telemetry.counter("chassis.idempotency.taken_over")
             left_ms = int((deadline - self.clock()) * 1000)

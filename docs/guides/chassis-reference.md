@@ -539,7 +539,8 @@ Spec: [contract v6](../contracts/contract-v6.md). Decisions: ADR-007 to ADR-010 
 | `chassis/server/guard.py` | The `input`, `tool_output`, and `output` guard stages | D.2 |
 | `chassis/server/marking.py` | `MarkOutputs`: `X-AI-Generated` and `X-AI-Disclosure-Required` on every run interface | E |
 | `chassis/server/feedback.py` | `POST /v1/feedback`, the request-to-trace lookup in `StatePort`, the event `agents.feedback.received.v1` | B, C |
-| `chassis/server/evaluator_gate.py` | `GatedEngine`: sync and async gating, retry, fallback, sample rate (salted per process, R7-17), `evaluator_on_error` (`fail_open` or `fail_closed`) | G |
+| `chassis/server/evaluator_gate.py` | `GatedEngine`: sync and async gating, retry, fallback, sample rate (salted per process, R7-17), `evaluator_on_error` (`fail_open` or `fail_closed`); 138 CH-18: the score goes to `FeedbackPort` under `spec.harness.rubric`, and suggested: `spec.harness.shadow_evaluator` at `shadow_sample_rate` scores next to the main judge, counted as `chassis.evaluator_agreement{pair, agree}` | G |
+| `chassis/rubrics.py` | The judge's rubrics by versioned name; `spec.harness.rubric` names one, an unknown name is refused at load (138 CH-18) | G |
 | `chassis/redaction.py` | Regex redaction of the chassis's logs and events: `<SECRET>` first (`SECRET_PREFIXES`, assignments), then emails, Luhn-valid cards, and phones with a `+` or a separator. Never a named-entity model | B.6, ADR-008 item 6 |
 | `chassis/core/trace.py` (`continued`, `parent_span_id`) | A checked inbound `traceparent` for the model proxy and the tool endpoint to continue | A.5 |
 

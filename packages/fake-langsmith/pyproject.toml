@@ -1,7 +1,7 @@
 [project]
 name = "fake-langsmith"
 version = "0.1.0"
-description = "A fake of the LangSmith OTLP trace route, in process for offline tests; records and decodes spans; never imported by the chassis (CH-10)"
+description = "A fake of the LangSmith OTLP trace route (CH-10) and dataset routes (CH-12), in process for offline tests; never imported by the chassis"
 requires-python = ">=3.12,<3.13"
 dependencies = ["starlette>=0.40", "opentelemetry-proto>=1.45"]
 
