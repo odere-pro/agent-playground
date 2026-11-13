@@ -12,6 +12,8 @@ Session fixtures:
 - `chassis`: the chassis in the `fake` profile, `spec.engine.connector: sidecar`, pointed at
   `workload`, in its own process from its own environment. Has `.url`, `.uds`, `.client()`, and
   `.run(input, **kw)`, which POSTs `/v1/run` and returns the envelope.
+- `agent_testkit_model_script`: the fake model's rules for `chassis` (`processes.ModelScript`);
+  `None`, the default, answers `ok` to every call. Override it (session scope) to script answers.
 
 Nothing here imports `chassis`.
 """
@@ -22,7 +24,13 @@ from collections.abc import Iterator
 
 import pytest
 
-from agent_testkit.processes import Chassis, Workload, start_chassis, start_workload
+from agent_testkit.processes import (
+    Chassis,
+    ModelScript,
+    Workload,
+    start_chassis,
+    start_workload,
+)
 from agent_testkit.settings import AgentRef, ChassisSource, agent_ref, chassis_source
 
 
@@ -43,6 +51,17 @@ def workload(agent_handle_ref: AgentRef | str) -> Iterator[Workload]:
 
 
 @pytest.fixture(scope="session")
-def chassis(workload: Workload, agent_testkit_chassis_source: ChassisSource) -> Iterator[Chassis]:
-    with start_chassis(workload, agent_testkit_chassis_source) as started:
+def agent_testkit_model_script() -> ModelScript | None:
+    return None
+
+
+@pytest.fixture(scope="session")
+def chassis(
+    workload: Workload,
+    agent_testkit_chassis_source: ChassisSource,
+    agent_testkit_model_script: ModelScript | None,
+) -> Iterator[Chassis]:
+    with start_chassis(
+        workload, agent_testkit_chassis_source, model_script=agent_testkit_model_script
+    ) as started:
         yield started

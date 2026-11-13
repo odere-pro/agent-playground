@@ -14,6 +14,7 @@ KIT_MODULES = (
     "agent_testkit",
     "agent_testkit.plugin",
     "agent_testkit.contract",
+    "agent_testkit.event_mapping",
     "agent_testkit.wire",
     "agent_testkit.lane_cases",
     "agent_testkit.processes",

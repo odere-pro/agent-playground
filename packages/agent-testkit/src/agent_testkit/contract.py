@@ -43,7 +43,14 @@ import pytest
 from workload_a2a.server import validate_event
 
 from agent_testkit import lane_cases, wire
-from agent_testkit.processes import Chassis, Workload, start_chassis, start_workload
+from agent_testkit.event_mapping import check_sequence
+from agent_testkit.processes import (
+    Chassis,
+    ModelScript,
+    Workload,
+    start_chassis,
+    start_workload,
+)
 from agent_testkit.settings import AgentRef, ChassisSource
 
 LANE_AGENT = AgentRef(handle=lane_cases.LANE_HANDLE, name="agent-testkit-lane")
@@ -73,18 +80,6 @@ def assert_same(got: Any, want: Any, what: str) -> None:
     assert canonical(got) == canonical(want), f"{what}:\n got  {got!r}\n want {want!r}"
 
 
-def _check_sequence(
-    events: list[dict[str, Any]], request_id: str, terminal: tuple[str, ...]
-) -> None:
-    assert events, "the workload streamed no event"
-    first, last = events[0], events[-1]
-    assert first["type"] == "start", f"the first event is not start: {first!r}"
-    assert first.get("request_id") == request_id, f"start names another request: {first!r}"
-    assert last["type"] in terminal, f"the last event is not one of {terminal}: {last!r}"
-    middle = [e["type"] for e in events[1:-1]]
-    assert not set(middle) & {"start", "end", "error"}, f"start or a terminal mid-stream: {middle}"
-
-
 class WorkloadContract:
     """The contract cases; see the module docstring."""
 
@@ -95,6 +90,9 @@ class WorkloadContract:
     model. Add `"error"` for an agent that is meant to fail on it."""
     run_statuses: ClassVar[tuple[str, ...]] = ("ok", "fallback")
     """The envelope statuses the agent's run of `contract_input` may have."""
+    model_script: ClassVar[ModelScript | None] = None
+    """The fake model's rules for the agent's chassis (`processes.ModelScript`); `None` answers
+    `ok` to every call."""
 
     # --- Fixtures: one pair of processes for the agent, one for the lane cases, per class ---
 
@@ -109,7 +107,9 @@ class WorkloadContract:
     def chassis(
         cls, workload: Workload, agent_testkit_chassis_source: ChassisSource
     ) -> Iterator[Chassis]:
-        with start_chassis(workload, agent_testkit_chassis_source) as started:
+        with start_chassis(
+            workload, agent_testkit_chassis_source, model_script=cls.model_script
+        ) as started:
             yield started
 
     @pytest.fixture(scope="class")
@@ -151,7 +151,7 @@ class WorkloadContract:
         self, agent_run: tuple[dict[str, Any], list[dict[str, Any]]]
     ) -> None:
         ctx, events = agent_run
-        _check_sequence(events, ctx["request_id"], self.terminal_types)
+        check_sequence(events, ctx["request_id"], self.terminal_types)
 
     def test_every_event_is_valid_against_the_event_schema(
         self, agent_run: tuple[dict[str, Any], list[dict[str, Any]]]

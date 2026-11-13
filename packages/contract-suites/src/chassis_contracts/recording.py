@@ -13,6 +13,10 @@ Record modes are pytest-recording's (`--record-mode`, its session fixture `recor
   file on `save()`.
 - `once`, `new_episodes`, `all`: vcrpy's meaning.
 
+Recording is refused (`RecordRefused`) unless the inner transport is `httpx.ASGITransport` or the
+request's host is `.invalid` or ends in `.invalid` (RFC 2606: it never resolves), so a cassette is
+never recorded from a real provider by mistake. Replay is never refused.
+
 A streamed response is recorded as it passes through (the caller still sees it chunk by chunk)
 and is stored once it has been closed. On replay a `text/event-stream` body is handed out one SSE
 frame per chunk.
@@ -48,6 +52,7 @@ __all__ = [
     "CassetteMiss",
     "CassetteSecretError",
     "CassetteTransport",
+    "RecordRefused",
     "default_vcr_config",
     "request_json",
 ]
@@ -210,6 +215,30 @@ class CassetteSecretError(RuntimeError):
     written."""
 
 
+class RecordRefused(RuntimeError):
+    """A request would be recorded from a host that may be real: the inner transport is not ASGI
+    and the host is not `.invalid`. Nothing is sent."""
+
+
+INVALID_TLD = "invalid"
+"""RFC 2606: a name under `.invalid` never resolves, so a request to it never leaves the host."""
+
+
+def _check_record_target(inner: httpx.AsyncBaseTransport, request: httpx.Request) -> None:
+    """Raise `RecordRefused` unless `inner` is ASGI or the request's host is under `.invalid`."""
+    if isinstance(inner, httpx.ASGITransport):
+        return
+    host = request.url.host.rstrip(".").lower()
+    if host == INVALID_TLD or host.endswith(f".{INVALID_TLD}"):
+        return
+    url = _redact(str(request.url.copy_with(userinfo=b"", query=None, fragment=None)))
+    raise RecordRefused(
+        f"refusing to record {request.method} {url}:"
+        f" the inner transport is {type(inner).__name__}, not ASGI, and the host {host!r} is"
+        " not under .invalid; record against the fake model server over ASGI"
+    )
+
+
 class CassetteMiss(httpx.TransportError):
     """A request the cassette cannot answer in this record mode. The message names the body."""
 
@@ -370,6 +399,7 @@ class CassetteTransport(httpx.AsyncBaseTransport):
             miss = CassetteMiss(self.path, request, body, _nearest(self._cassette, vcr_request))
             self.misses.append(miss)
             raise miss
+        _check_record_target(self._inner, request)
         response = await self._inner.handle_async_request(request)
 
         def record(content: bytes) -> None:
