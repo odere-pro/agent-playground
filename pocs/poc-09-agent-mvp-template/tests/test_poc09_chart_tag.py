@@ -28,6 +28,7 @@ pytestmark = NEEDS_HELM
 REPOSITORY = "kind.local/agent-platform/chassis"
 CURRENT_TAG = "poc09"
 NEW_TAG = "poc10"
+TAG_ENV = "CHASSIS_IMAGE_TAG"
 TAG_LINE = f"    tag: {CURRENT_TAG}\n"
 SUPPORTED_LINE = f"    supportedTags: [{CURRENT_TAG}, poc08]\n"
 SERVICES = {
@@ -72,10 +73,17 @@ def _image(pod: Doc, name: str) -> str:
 
 
 def _without_chassis_image(pod: Doc) -> Doc:
+    """The pod with the chassis image removed: the image and `CHASSIS_IMAGE_TAG`, the same tag
+    the chart passes to `/manifest` (056 CH-7). The env var must match the image's tag."""
     stripped = copy.deepcopy(pod)
     for container in [*stripped.get("initContainers", []), *stripped.get("containers", [])]:
-        if container["name"] == "chassis":
-            container.pop("image")
+        if container["name"] != "chassis":
+            continue
+        image = container.pop("image")
+        env = container.get("env", [])
+        tags = [e for e in env if e["name"] == TAG_ENV]
+        assert [e["value"] for e in tags] == [image.rsplit(":", 1)[1]], (image, tags)
+        container["env"] = [e for e in env if e["name"] != TAG_ENV]
     return stripped
 
 
