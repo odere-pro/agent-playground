@@ -6,7 +6,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+)
 from pydantic.json_schema import SkipJsonSchema
 
 from chassis.core.envelope import Status, TaskInput, Versions
@@ -44,3 +50,11 @@ class TaskResult(BaseModel):
         ),
     )
     """The model-source field (019 H-17). Filled for the simplifier by 043 A-3; null until then."""
+
+    @model_serializer(mode="wrap")
+    def _no_null_input(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """An unset `input` is left out of every dump: the schema refuses `"input": null`."""
+        data: dict[str, Any] = handler(self)
+        if self.input is None:
+            return {key: value for key, value in data.items() if key != "input"}
+        return data

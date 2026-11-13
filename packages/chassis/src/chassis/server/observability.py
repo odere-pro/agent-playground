@@ -26,12 +26,13 @@ so Prometheus would first see a route's budget refusal at 1, never 0, and the al
 not once at startup, so a route added by a reload gets its 0 too.
 
 The same holds for the evaluator gate (117 X-3): with `spec.harness.evaluator_gate` on, each
-scrape adds 0 to `chassis_gate_runs_total{mode}` for both modes (a streaming request counts
-`mode="async"` even when the configured mode is sync), and to `chassis_gate_retries_total`,
+scrape adds 0 to `chassis_gate_runs_total{mode}` and to
+`chassis_gate_first_attempt_passes_total{mode}` (046 A-5) for both modes (a streaming request
+counts `mode="async"` even when the configured mode is sync), and to `chassis_gate_retries_total`,
 `chassis_gate_fallbacks_total`, `chassis_gate_failed_open_total`, and
 `chassis_gate_failed_closed_total`, so a future `increase()` or `rate()` rule on any of them has a
-0 to rise from. With the gate off they stay
-absent: there is no gate to report on. Not seeded, because the label set is not known up front:
+0 to rise from. With the gate off they stay absent: there is no gate to report on. Not seeded,
+because the label set is not known up front:
 `chassis_run_errors_total{interface, code}` (the error codes are open: a workload's own codes pass
 through) and `chassis_tool_calls_total{tool}` (the tools are the tool server's, not in the
 config). An alert on either must not need the first sample at 0 (for example a ratio over
@@ -60,6 +61,7 @@ from chassis.server.evaluator_gate import (
     GATE_FAILED_CLOSED,
     GATE_FAILED_OPEN,
     GATE_FALLBACKS,
+    GATE_FIRST_ATTEMPT_PASSES,
     GATE_RETRIES,
     GATE_RUNS,
 )
@@ -98,6 +100,9 @@ GATE_SERIES: tuple[str, ...] = (GATE_RETRIES, GATE_FALLBACKS, GATE_FAILED_OPEN, 
 GATE_MODES: tuple[str, ...] = ("sync", "async")
 """Every `mode` the gate counts runs under, whatever `evaluator_mode` is: streaming is async."""
 
+GATE_MODE_SERIES: tuple[str, ...] = (GATE_RUNS, GATE_FIRST_ATTEMPT_PASSES)
+"""The gate counters labeled `mode`, created at 0 for every mode when the gate is on."""
+
 
 def render_metrics(state: Any) -> str:
     """The exposition for the app whose `state` this is. The live gauges are set first, and the
@@ -120,11 +125,13 @@ def render_metrics(state: Any) -> str:
 
 
 def _seed_gate(registry: MetricsRegistry, harness: HarnessSpec) -> None:
-    """The gate counters at 0, so `increase()` sees the first run, retry, fallback, or fail."""
+    """The gate counters at 0, so `increase()` sees the first run, first-attempt pass, retry,
+    fallback, or fail."""
     if not harness.evaluator_gate:
         return
-    for mode in GATE_MODES:
-        registry.count(GATE_RUNS, 0, {"mode": mode})
+    for name in GATE_MODE_SERIES:
+        for mode in GATE_MODES:
+            registry.count(name, 0, {"mode": mode})
     for name in GATE_SERIES:
         registry.count(name, 0)
 

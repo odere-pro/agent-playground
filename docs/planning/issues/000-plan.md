@@ -57,7 +57,7 @@ New chassis issues from the ADR:
 
 How the OpenAI, Anthropic, and MCP formats map onto the one canonical request ([011 H-2](011-H-2-inbound-adapters.md), [051 H-13](051-H-13-openapi-mcp-tools.md)) is proposed in [ADR-003](../adr/003-chat-formats-onto-the-canonical-request.md), from PoC-3.
 
-That result events leave through a broker client in the chassis, not Dapr ([019 H-17](019-H-17-event-port.md)), is decided in [ADR-004](../adr/004-events-through-a-broker-client.md), from PoC-4, accepted 2026-10-08. The broker product stays open in [001 DEC-1](001-DEC-1-resolve-open-decisions.md).
+That result events leave through a broker client in the chassis, not Dapr ([019 H-17](019-H-17-event-port.md)), is decided in [ADR-004](../adr/004-events-through-a-broker-client.md), from PoC-4, accepted 2026-10-08. The broker product stays open in [001 DEC-1](001-DEC-1-resolve-open-decisions.md). That a result-event payload schema may break in place until the first consumer ships, and needs a new major and new topics after that, is decided in [ADR-016](../adr/016-result-event-payload-breaks-before-first-consumer.md), accepted 2026-11-13.
 
 How a remote workload authenticates to the chassis (one bearer token per remote, a separate listener) and how admission enforces the trust rule ([026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), a ValidatingAdmissionPolicy) is decided in [ADR-005](../adr/005-remote-lane-auth-and-trust-admission.md), from PoC-5, accepted 2026-10-09.
 
