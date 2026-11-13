@@ -16,13 +16,23 @@
 #
 # `stop <service>` and `start <service>` are for the fail-closed drill: they act on one service of
 # `faultable` only, always in project poc08-litellm. `start` waits for the service's health.
+#
+# Live drills add services with an overlay (POC08_LITELLM_OVERLAYS, file names in this folder,
+# space separated; live-drill.yaml) and may run under another project (POC08_LITELLM_PROJECT,
+# default poc08-litellm). Every verb then acts on that project only.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
 env_file="$here/.env.poc08-litellm"
 run_dir="$here/.run"
 key_file="$run_dir/chassis.env"
-compose=(docker compose -p poc08-litellm --env-file "$env_file" -f "$here/docker-compose.yaml")
+project="${POC08_LITELLM_PROJECT:-poc08-litellm}"
+overlays=()
+for overlay in ${POC08_LITELLM_OVERLAYS:-}; do
+  overlays+=(-f "$here/$overlay")
+done
+compose=(docker compose -p "$project" --env-file "$env_file" -f "$here/docker-compose.yaml"
+  ${overlays[@]+"${overlays[@]}"})
 # Everything but the chassis: it starts once its key exists.
 platform=(postgres fake-model-server guardrail-server presidio-analyzer presidio-anonymizer
   litellm jaeger otel-collector)
@@ -39,6 +49,8 @@ make_env() {
     # An env file from before the guardrail server took a token: add one, keep the rest.
     grep -q '^GUARDRAIL_TOKEN=' "$env_file" ||
       echo "GUARDRAIL_TOKEN=$(openssl rand -hex 24)" >>"$env_file"
+    grep -q '^GRAFANA_ADMIN_PASSWORD=' "$env_file" ||
+      echo "GRAFANA_ADMIN_PASSWORD=$(openssl rand -hex 24)" >>"$env_file"
     return 0
   fi
   {
@@ -46,6 +58,8 @@ make_env() {
     echo "LITELLM_MASTER_KEY=sk-$(openssl rand -hex 24)"
     echo "LITELLM_DB_PASSWORD=$(openssl rand -hex 16)"
     echo "GUARDRAIL_TOKEN=$(openssl rand -hex 24)"
+    # Grafana's admin, for the live drill's overlay (live-drill.yaml); the base stack ignores it.
+    echo "GRAFANA_ADMIN_PASSWORD=$(openssl rand -hex 24)"
   } >"$env_file"
 }
 
@@ -187,7 +201,9 @@ case "${1:-}" in
     make_script
     "${compose[@]}" up -d --wait --quiet-pull --build "${platform[@]}"
     mint_key
-    "${compose[@]}" up -d --wait --build chassis
+    # The chassis and any overlay service. All at once: a sidecar workload (live-drill.yaml)
+    # joins the chassis's namespace, and the chassis is ready only once the workload answers.
+    "${compose[@]}" up -d --wait --build
     ;;
   wait)
     wait_ready
