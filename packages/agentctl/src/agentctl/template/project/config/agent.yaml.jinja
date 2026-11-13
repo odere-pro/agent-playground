@@ -33,7 +33,7 @@ spec:
     # suggested: the remote workload's address; `https` in the `cloud` profile.
     url: http://127.0.0.1:9000
     # The per-remote bearer token, by variable name. The value lives in the chassis's env only;
-    # the workload checks it with `workload-a2a serve --require-token-env CHASSIS_API_TOKEN`.
+    # the workload checks it with `workload-a2a serve --require-token-env CHASSIS_A2A_TOKEN`.
     auth:
       scheme: bearer
       token_env: REMOTE_TOKEN

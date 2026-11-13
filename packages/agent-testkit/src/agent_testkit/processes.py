@@ -68,8 +68,10 @@ _GUARD = """raise ImportError(
 """
 
 
-REMOTE_WORKLOAD_TOKEN = "CHASSIS_API_TOKEN"
-"""What `workload-a2a serve --require-token-env` reads in the remote lane."""
+REMOTE_WORKLOAD_TOKEN = "CHASSIS_A2A_TOKEN"
+"""What `workload-a2a serve --require-token-env` reads in the remote lane: the
+chassis-to-workload key (one key per direction, 055 CH-6). The kit starts no remote listener, so
+the workload-to-chassis key, `CHASSIS_API_TOKEN`, is not set here."""
 REMOTE_CHASSIS_TOKEN = "REMOTE_TOKEN"
 """What `spec.engine.auth.token_env` names; the chassis sends it to the workload."""
 

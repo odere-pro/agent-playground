@@ -54,6 +54,14 @@ new_secret() { openssl rand -hex "${1:-32}"; }
 secret_exists() { kctl -n "$1" get secret "$2" >/dev/null 2>&1; }
 drop_secret() { kctl -n "$1" delete secret "$2" --ignore-not-found >/dev/null; }
 
+# token_keys_ok NS NAME: the remote token Secret holds both keys, one per direction (055 CH-6).
+# The template prints key names only, never a value.
+token_keys_ok() {
+  local keys
+  keys=" $(kctl -n "$1" get secret "$2" -o 'go-template={{range $k, $_ := .data}}{{$k}} {{end}}') "
+  [[ $keys == *" chassis-to-workload "* && $keys == *" workload-to-chassis "* ]]
+}
+
 # put_secret NS NAME KEY: one key, its value on stdin.
 put_secret() {
   kctl -n "$1" create secret generic "$2" --from-file="$3"=/dev/stdin --dry-run=client -o yaml |
@@ -245,7 +253,10 @@ seed_keys() {
   fi
   for name in "${REMOTES[@]}"; do
     if secret_exists "$AGENTS" "remote-$name-token" && secret_exists "$REMOTE" "remote-$name-token"; then
-      continue
+      if token_keys_ok "$AGENTS" "remote-$name-token" && token_keys_ok "$REMOTE" "remote-$name-token"; then
+        continue
+      fi
+      die "remote-$name-token is the old one-key Secret; run: $0 rotate remote-$name-token"
     fi
     # Two keys, one per direction (055 CH-6): the chassis sends chassis-to-workload and its
     # remote listener accepts only workload-to-chassis. Two random values, never equal.

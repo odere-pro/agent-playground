@@ -8,7 +8,8 @@
 #   so it gets this IP as plain env (remote/remote-kagent-adk.yaml). If it changes, change both files.
 # - One replica: the remote listener answers only for a run in flight in this process.
 # - Secrets, chassis container only: its LiteLLM virtual key, the Valkey password, and REMOTE_TOKEN
-#   from `remote-kagent-adk-token` (the same value the remote holds as CHASSIS_API_TOKEN).
+#   from `remote-kagent-adk-token` (key chassis-to-workload) and
+#   REMOTE_PROXY_TOKEN (key workload-to-chassis), one key per direction (055 CH-6).
 apiVersion: v1
 kind: ServiceAccount
 metadata:

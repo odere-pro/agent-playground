@@ -6,7 +6,8 @@
 #
 #   seed.sh keys      one LiteLLM virtual key per new chassis (chassis-<svc>-litellm), each with an
 #                     MCP allow-list of glossary_lookup and acronym_expand on the gateway server
-#                     `fake_tools`; one token per new remote (remote-<name>-token)
+#                     `fake_tools`; one token Secret per new remote (remote-<name>-token, two keys)
+#   seed.sh rotate remote-<name>-token   drop and remake it (also the fix for an old one-key one)
 #   seed.sh status    which Secrets exist (names only)
 #
 # Rules (checked by pocs/poc-06b-bake-off-remote-lane/tests/test_poc06b_kind_static.py):
@@ -55,6 +56,15 @@ source "$HERE/../lib.sh"
 new_secret() { openssl rand -hex "${1:-32}"; }
 
 secret_exists() { kctl -n "$1" get secret "$2" >/dev/null 2>&1; }
+drop_secret() { kctl -n "$1" delete secret "$2" --ignore-not-found >/dev/null; }
+
+# token_keys_ok NS NAME: the remote token Secret holds both keys, one per direction (055 CH-6).
+# The template prints key names only, never a value.
+token_keys_ok() {
+  local keys
+  keys=" $(kctl -n "$1" get secret "$2" -o 'go-template={{range $k, $_ := .data}}{{$k}} {{end}}') "
+  [[ $keys == *" chassis-to-workload "* && $keys == *" workload-to-chassis "* ]]
+}
 
 # put_secret NS NAME KEY: one key, its value on stdin.
 put_secret() {
@@ -178,7 +188,10 @@ seed_keys() {
   fi
   for name in "${REMOTES[@]}"; do
     if secret_exists "$AGENTS" "remote-$name-token" && secret_exists "$REMOTE" "remote-$name-token"; then
-      continue
+      if token_keys_ok "$AGENTS" "remote-$name-token" && token_keys_ok "$REMOTE" "remote-$name-token"; then
+        continue
+      fi
+      die "remote-$name-token is the old one-key Secret; run: $0 rotate remote-$name-token"
     fi
     # Two keys, one per direction (055 CH-6): two random values, never equal.
     to_workload=$(new_secret)
@@ -192,7 +205,10 @@ seed_keys() {
     log "made remote-$name-token (two keys) in $AGENTS and $REMOTE"
   done
   for name in "${CHASSIS_ONLY_REMOTES[@]}"; do
-    secret_exists "$AGENTS" "remote-$name-token" && continue
+    if secret_exists "$AGENTS" "remote-$name-token"; then
+      token_keys_ok "$AGENTS" "remote-$name-token" && continue
+      die "remote-$name-token is the old one-key Secret; run: $0 rotate remote-$name-token"
+    fi
     to_workload=$(new_secret)
     to_chassis=$(new_secret)
     [[ $to_workload != "$to_chassis" ]] || die "remote-$name-token: the two keys came out equal"
@@ -211,11 +227,25 @@ status() {
   done
 }
 
-usage() { sed -n '2,10p' "$0"; }
+rotate() {
+  local name=${1:-}
+  case $name in
+    remote-*-token)
+      drop_secret "$AGENTS" "$name"
+      drop_secret "$REMOTE" "$name"
+      seed_keys
+      ;;
+    *) die "rotate: unknown Secret '$name'" ;;
+  esac
+  log "rotated $name; restart its chassis pod and its remote pods"
+}
+
+usage() { sed -n '2,11p' "$0"; }
 
 (($# > 0)) || { usage; exit 0; }
 case $1 in
   keys) preflight; seed_keys ;;
+  rotate) preflight; rotate "${2:-}" ;;
   status) status ;;
   *) usage; exit 2 ;;
 esac

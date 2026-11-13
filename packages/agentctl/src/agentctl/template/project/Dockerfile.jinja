@@ -28,7 +28,7 @@ COPY --from=build /app/.venv /app/.venv
 # No key, ever: the model URL and the tool URL are the chassis's proxies, which hold the
 # credentials. 127.0.0.1: the chassis reaches the workload on localhost (sidecar lane).
 {%- if connector == 'remote' %}
-# Remote lane: the deploy sets HOST=0.0.0.0 and passes `--require-token-env CHASSIS_API_TOKEN`;
+# Remote lane: the deploy sets HOST=0.0.0.0 and passes `--require-token-env CHASSIS_A2A_TOKEN`;
 # the token is mounted at run time, never baked in.
 {%- endif %}
 ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOME=/tmp \

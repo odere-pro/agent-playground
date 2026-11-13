@@ -71,7 +71,13 @@ from poc_harness.kind import (
     tcp_check,
     unpoliced_caller,
 )
-from poc_harness.kind_controls import secret_sources, traceparent_headers
+from poc_harness.kind_controls import (
+    REMOTE_TOKEN_KEYS,
+    remote_token_sources,
+    secret_keys,
+    secret_sources,
+    traceparent_headers,
+)
 
 pytestmark = KIND_BAKEOFF
 
@@ -81,7 +87,7 @@ TOKEN_ENV = "CHASSIS_API_TOKEN"
 OUTSIDE_IP = "1.1.1.1"  # a literal public address: no DNS involved
 POC05_PROXY_IP = "10.96.0.91"  # the PoC-5 remote's chassis proxy
 NAME_LABEL = "app.kubernetes.io/name"
-CHASSIS_CREDENTIALS = {"LITELLM_API_KEY", "VALKEY_PASSWORD", "REMOTE_TOKEN"}
+CHASSIS_CREDENTIALS = {"LITELLM_API_KEY", "VALKEY_PASSWORD", "REMOTE_TOKEN", "REMOTE_PROXY_TOKEN"}
 
 
 FRONT_DOOR = "remote-run-dispatch"
@@ -148,16 +154,19 @@ ENGINE_IDS = [e.id for e in REMOTES]
 
 @pytest.mark.parametrize("engine", REMOTES, ids=ENGINE_IDS)
 def test_remote_holds_one_secret_its_own_token(engine: KindEngine) -> None:
-    """Criterion 4: the control refuses every other Secret. The pod spec takes exactly one value
-    from a Secret, `CHASSIS_API_TOKEN` from `remote-<name>-token` in the workload container (none
-    for kagent-adk); no `envFrom` Secret, no Secret or projected volume, no service account token
-    (`automountServiceAccountToken: false`, the token directory absent). Its live env holds no
-    chassis credential name. The allowed control: the live env does hold `CHASSIS_API_TOKEN`
-    (names only), and the path check sees `/etc/hosts`."""
+    """Criterion 4: the control refuses every other Secret. The pod spec takes exactly two values
+    from a Secret, both from its own `remote-<name>-token` in the workload container, one key
+    per direction (055 CH-6): `CHASSIS_A2A_TOKEN` reads `chassis-to-workload` and
+    `CHASSIS_API_TOKEN` reads `workload-to-chassis` (none for kagent-adk); no `envFrom` Secret,
+    no Secret or projected volume, no service account token (`automountServiceAccountToken:
+    false`, the token directory absent). Its live env holds no chassis credential name. The
+    allowed control: the live env does hold both token names (names only), and the path check
+    sees `/etc/hosts`."""
     remote = remote_pod(engine)
     spec = remote["spec"]
-    want = [(WORKLOAD, TOKEN_ENV, engine.token_secret)] if engine.token_secret else []
+    want = remote_token_sources(WORKLOAD, engine.token_secret) if engine.token_secret else []
     assert secret_sources(spec) == want, secret_sources(spec)
+    assert secret_keys(spec) == (REMOTE_TOKEN_KEYS if engine.token_secret else {})
     assert spec["automountServiceAccountToken"] is False
 
     names, sa_dir, hosts = in_remote(
@@ -170,7 +179,7 @@ def test_remote_holds_one_secret_its_own_token(engine: KindEngine) -> None:
         ],
     )
     if engine.token_secret:
-        assert TOKEN_ENV in names["names"], names
+        assert set(REMOTE_TOKEN_KEYS) <= set(names["names"]), names
     assert not CHASSIS_CREDENTIALS & set(names["names"]), names
     assert not [n for n in names["names"] if n.endswith(("_API_KEY", "_PASSWORD", "_SECRET"))]
     assert sa_dir == {"exists": False}, sa_dir
