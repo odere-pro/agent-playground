@@ -61,7 +61,9 @@ async def claims_not_ai(input: dict[str, Any], ctx: dict[str, Any]) -> AsyncIter
 def with_false_headers(app: ASGI) -> ASGI:
     """The workload's A2A server, sending its own `false` marking headers on every response."""
 
-    async def wrapped(scope: Message, receive: Any, send: Callable[[Message], Awaitable[None]]):
+    async def wrapped(
+        scope: Message, receive: Any, send: Callable[[Message], Awaitable[None]]
+    ) -> None:
         async def send_false(message: Message) -> None:
             if message["type"] == "http.response.start":
                 headers = [
