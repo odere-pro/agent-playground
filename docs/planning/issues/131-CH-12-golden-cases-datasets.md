@@ -28,11 +28,13 @@ epic_refs: [E.5, principles]
 ## Acceptance criteria
 
 - [ ] The 20 cases and one run per engine land in a LangSmith dataset through `fake-langsmith`.
+  - Open: `fake-langsmith` does not exist yet (129 CH-10). `STORES` in `eval_kit.langfuse_datasets` takes `langsmith` when it lands.
 - [ ] The verdicts match on two engines (the ADR-010 note of 2026-11-06).
 - [ ] A stack test covers the Langfuse dataset and its runs (`eval_kit.langfuse_datasets`).
-- [ ] A workflow or a Makefile target calls the upload.
-- [ ] The dataset name comes from config, as in 037 M-2 box 6.
-- [ ] The YAML in `packages/eval-kit/src/eval_kit/golden/` stays the only source of cases, and each environment writes results to one store, named in config (gap review, 2026-11-07).
+  - Open: needs the Langfuse v4 stack (`deploy/compose/poc07`, Docker). Offline, `test_eval_kit_langfuse_datasets.py` covers it against an ASGI stub only.
+- [x] A workflow or a Makefile target calls the upload. · Delivered by: `packages/eval-kit/tests/test_eval_kit_dataset_config.py::test_eval_kit_make_eval_datasets_calls_the_upload_with_the_config_env` (`make eval-datasets` runs `python -m eval_kit.langfuse_datasets --env $(EVAL_DATASET_ENV)`)
+- [x] The dataset name comes from config, as in 037 M-2 box 6. · Delivered by: `packages/eval-kit/tests/test_eval_kit_dataset_config.py::test_eval_kit_dataset_name_and_store_come_from_the_committed_config`, `::test_eval_kit_another_dataset_needs_a_config_change_only`, `::test_eval_kit_main_reads_the_dataset_name_from_config` (`evals/datasets.json`, `eval-datasets.v0`)
+- [x] The YAML in `packages/eval-kit/src/eval_kit/golden/` stays the only source of cases, and each environment writes results to one store, named in config (gap review, 2026-11-07). · Delivered by: `packages/eval-kit/tests/test_eval_kit_dataset_config.py::test_eval_kit_dataset_items_come_from_the_golden_yaml_only`, `::test_eval_kit_each_environment_names_exactly_one_known_store`, `::test_eval_kit_an_unknown_environment_is_refused`
 
 ## Dependencies
 
