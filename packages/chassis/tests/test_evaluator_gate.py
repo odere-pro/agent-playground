@@ -387,20 +387,27 @@ class RouteModel(ScriptedModel):
 
 
 class ProxyCallingEngine(FakeEngine):
-    """Calls the model proxy once per run with the route the workload would pick by mistake."""
+    """Calls the model proxy on both routes once per attempt with `ctx.model_route`, as every
+    workload does, or with `asks` when set (a workload that picks its own route)."""
 
-    def __init__(self, proxy: Any) -> None:
+    def __init__(self, proxy: Any, asks: str | None = None) -> None:
         super().__init__(handle=self._handle_)
         self.proxy = proxy
+        self.asks = asks
+        self.statuses: list[int] = []
 
     async def _handle_(self, input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
         yield Start(request_id=ctx.request_id)
         trace = ctx.trace_id
         headers = {"traceparent": f"00-{trace}-00f067aa0ba902b7-01"}
-        body = {"model": "big-default", "messages": [{"role": "user", "content": "simplify: x"}]}
+        route = self.asks or ctx.model_route
+        body = {"model": route, "messages": [{"role": "user", "content": "simplify: x"}]}
         async with client(self.proxy) as c:
-            await c.post("/v1/chat/completions", json=body, headers=headers)
-            await c.post("/v1/messages", json={**body, "max_tokens": 16}, headers=headers)
+            chat = await c.post("/v1/chat/completions", json=body, headers=headers)
+            messages = await c.post(
+                "/v1/messages", json={**body, "max_tokens": 16}, headers=headers
+            )
+        self.statuses += [chat.status_code, messages.status_code]
         yield Delta(text=BAD)
         yield End()
 
@@ -415,8 +422,26 @@ async def test_the_proxy_sends_every_call_of_the_fallback_attempt_to_the_fallbac
     async with client(app) as c, app.router.lifespan_context(app):
         res = await c.post("/v1/run", json={"input": {"text": INPUT}, "trace_id": trace})
     assert res.json()["status"] == "fallback"
-    # Two attempts on the route the workload names, then both calls of the fallback attempt
-    # forced to the fallback route, even though the workload still asked for big-default.
+    # Two attempts on the run's route, then both calls of the fallback attempt on the fallback
+    # route: the gate puts it in `ctx.model_route` and the run's record, so admission passes it.
     assert model.routes == ["big-default"] * 4 + [FALLBACK] * 2
+    assert engine.statuses == [200] * 6
     t = telemetry(bundle)
-    assert t.counter_value("chassis.model_route_forced", route=FALLBACK) == 2
+    assert t.counter_value("chassis.model_route_refused", route=FALLBACK) == 0
+
+
+async def test_a_fallback_attempt_on_the_first_route_is_refused_not_redirected() -> None:
+    """012 H-3 (user decision 2026-11-13): a workload that keeps naming `big-default` in the
+    fallback attempt gets 403 `model_route_denied` on both routes; nothing is redirected."""
+    model = RouteModel()
+    engine = ProxyCallingEngine(None, asks="big-default")
+    bundle = ports(engine, evaluator(), model)
+    app = create_app(config(), bundle)
+    engine.proxy = create_proxy_app(app)
+    async with client(app) as c, app.router.lifespan_context(app):
+        res = await c.post("/v1/run", json={"input": {"text": INPUT}, "trace_id": "b" * 32})
+    assert res.json()["status"] == "fallback"
+    assert model.routes == ["big-default"] * 4
+    assert engine.statuses == [200] * 4 + [403] * 2
+    t = telemetry(bundle)
+    assert t.counter_value("chassis.model_route_refused", route=FALLBACK) == 2

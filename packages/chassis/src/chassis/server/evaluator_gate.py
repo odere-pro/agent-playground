@@ -16,8 +16,9 @@ buffered. The answer (the `delta` texts) is scored with `EvaluatorPort.score(Eva
 answer))`; it passes when `score >= threshold`. A failed answer is retried, up to `retries` more
 attempts on the same route; the events of a failed attempt are never sent. After the last failed
 retry, one fallback attempt runs with `ctx.model_route = spec.model.fallback_route`, and the run's
-`RunRecord.model_route` is set, so the model proxy sends every model call of that attempt to the
-fallback route even when the workload names another (`chassis.server.model_proxy.admit`). The
+`RunRecord.model_route` is set, so the model proxy admits the attempt's calls only on the
+fallback route; a call that names another is 403 `model_route_denied` (012 H-3,
+`chassis.server.model_admission.admit`). The
 fallback answer is not scored (it is the last resort; scoring it would add a judge call to the
 worst path); its `end` has `status: fallback`. With no fallback route, the run ends with one
 `error {code: evaluator_gate_failed}` (suggested) and no answer.
