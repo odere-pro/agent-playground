@@ -5,10 +5,13 @@ the chassis's. A monorepo test may import the chassis; agentctl's own code may n
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
+import yaml
 from agentctl import rules
 from agentctl.scaffold import Answers, render
+from chassis.agent_class import KIND_CLASS
 from chassis.server.config import load_config
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -89,3 +92,50 @@ def test_the_starter_config_names_each_governance_field_with_a_placeholder(
     for field in sorted(schema_fields):
         line = next(line for line in lines if line.strip().startswith(f"{field}:"))
         assert "fill in" in line, f"{field} has no placeholder note: {line!r}"
+
+
+# --- 008 H-14: class and kind in a rendered config ---------------------------------------------
+
+
+def _rendered_data(tmp_path: Path, kind: str) -> dict[str, Any]:
+    answers = Answers(
+        agent_name="my-agent",
+        kind=kind,
+        framework="langgraph",
+        connector="sidecar",
+        platform_path=ROOT,
+    )
+    text = (render(answers, tmp_path) / "config/agent.yaml").read_text()
+    data: dict[str, Any] = yaml.safe_load(text)
+    return data
+
+
+@pytest.mark.parametrize("kind", rules.KINDS)
+def test_the_rendered_config_names_its_class_and_kind(tmp_path: Path, kind: str) -> None:
+    data = _rendered_data(tmp_path, kind)
+    config = load_config(data)
+    assert config.spec.kind == kind
+    assert config.spec.agent_class == KIND_CLASS[kind] == "stateless"
+    assert {"class", "kind"} <= set(data["spec"]), "both are written, not defaulted"
+
+
+def test_a_rendered_config_refuses_a_kind_that_does_not_match_its_class(tmp_path: Path) -> None:
+    data = _rendered_data(tmp_path, "tool")
+    data["spec"]["class"] = "data"
+    with pytest.raises(ValueError, match=r"spec\.kind: tool needs spec\.class: stateless"):
+        load_config(data)
+
+
+@pytest.mark.parametrize(
+    ("block", "flag"), [("harness", "evaluator_gate"), ("events", "result_events")]
+)
+def test_a_rendered_data_config_refuses_a_module_b5_marks_no(
+    tmp_path: Path, block: str, flag: str
+) -> None:
+    data = _rendered_data(tmp_path, "tool")
+    data["spec"]["class"] = "data"
+    data["spec"]["kind"] = "data"
+    load_config(data)  # the data class with every flag off starts
+    data["spec"].setdefault(block, {})[flag] = True
+    with pytest.raises(ValueError, match=rf"module {flag} is not allowed for spec\.class: data"):
+        load_config(data)

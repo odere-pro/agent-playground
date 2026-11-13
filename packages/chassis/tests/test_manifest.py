@@ -15,6 +15,7 @@ import httpx
 import jsonschema
 import pytest
 from chassis import CHASSIS_VERSION, IMAGE_TAG_ENV, chassis_version
+from chassis.agent_class import CLASSES, KINDS
 from chassis.core.handle import echo
 from chassis.core.manifest import MANIFEST_VERSION, Manifest
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
@@ -22,6 +23,7 @@ from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
 from chassis.schemas import SCHEMA_DIR, generate, render
 from chassis.server import ChassisConfig, create_app
+from chassis.server.config import switched_on_modules
 from chassis.server.interfaces.errors import INTERFACE_KEY
 from chassis.server.interfaces.mcp import mount_agent_mcp
 from chassis.server.interfaces.native import native_router
@@ -280,6 +282,45 @@ async def test_manifest_agent_trust_shows_untrusted_with_the_remote_lane() -> No
     manifest = await _manifest(_stub_app(config))
     assert manifest["agent"]["trust"] == "untrusted"
     assert manifest["lane"] == "remote"
+
+
+# --- class, kind, and modules (008 H-14) -------------------------------------------------------
+
+
+async def test_manifest_class_kind_and_modules_are_empty_when_the_config_names_none() -> None:
+    manifest = await _manifest(_stub_app(_config()))
+    assert manifest["agent_class"] is None
+    assert manifest["kind"] is None
+    assert manifest["modules"] == []
+
+
+@pytest.mark.parametrize(
+    ("agent_class", "kind", "flags"),
+    [
+        ("stateless", "tool", {"harness": {"evaluator_gate": True}}),
+        ("stateless", "transformer", {"events": {"result_events": True}}),
+        ("stateless", "evaluator", {}),
+        ("orchestrator", "orchestrator", {}),
+        ("data", "data", {}),
+    ],
+)
+async def test_manifest_class_kind_and_modules_match_the_config(
+    agent_class: str, kind: str, flags: dict[str, Any]
+) -> None:
+    spec = {**CONFIG["spec"], "class": agent_class, "kind": kind, **flags}
+    config = ChassisConfig.model_validate({**CONFIG, "spec": spec})
+    manifest = await _manifest(_stub_app(config))
+    assert manifest["agent_class"] == config.spec.agent_class == agent_class
+    assert manifest["kind"] == config.spec.kind == kind
+    assert manifest["modules"] == sorted(switched_on_modules(config.spec))
+    assert manifest["modules"] == sorted(name for block in flags.values() for name in block)
+
+
+def test_manifest_class_and_kind_values_are_the_agent_class_values() -> None:
+    """A new class or kind in `chassis.agent_class` reaches the manifest and its schema."""
+    schema = Manifest.model_json_schema()["properties"]
+    assert tuple(schema["agent_class"]["anyOf"][0]["enum"]) == CLASSES
+    assert tuple(schema["kind"]["anyOf"][0]["enum"]) == KINDS
 
 
 # --- the image tag (056 CH-7) -----------------------------------------------------------------
