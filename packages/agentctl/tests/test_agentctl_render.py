@@ -107,6 +107,8 @@ def test_the_tree_holds_the_framework_files_and_nothing_else(
     common = COMMON if connector == "sidecar" else {f for f in COMMON if not _sidecar_only(f)}
     if connector == "remote":
         common = common | {"tests/test_remote_lane.py"}
+    if framework != "claude-agent":
+        common = common | {"tests/test_stateless.py"}  # 057 H-19, in process
     assert _files(agent) == common | src
 
 
