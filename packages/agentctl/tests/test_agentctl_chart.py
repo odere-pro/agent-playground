@@ -22,6 +22,8 @@ NEEDS_HELM = pytest.mark.skipif(HELM is None, reason="helm is not on PATH")
 LIBRARY = "file://../../.platform/deploy/helm/agent-lib"
 CHASSIS_PORT = 8080
 LANES = [("langgraph", "sidecar"), ("smolagents", "remote")]
+LIBRARY_CHASSIS_IMAGE = "kind.local/agent-platform/chassis:poc09"
+"""The default in deploy/helm/agent-lib/templates/_values.tpl (`agent-lib.defaults`)."""
 
 
 def _agent(tmp_path: Path, framework: str, connector: str) -> Path:
@@ -93,6 +95,16 @@ def test_the_chart_renders_the_chassis_from_the_library(
     ]
     assert "chassis" in containers
     assert "workload" in containers
+    # 059 H-15 box 5: the chassis image and tag come from the library chart, not the agent.
+    chassis_images = {
+        c["image"]
+        for doc in docs
+        if doc["kind"] == "Deployment"
+        for key in ("initContainers", "containers")
+        for c in doc["spec"]["template"]["spec"].get(key, [])
+        if c["name"] == "chassis"
+    }
+    assert chassis_images == {LIBRARY_CHASSIS_IMAGE}
     service = next(
         d for d in docs if d["kind"] == "Service" and d["metadata"]["name"] == "my-agent"
     )

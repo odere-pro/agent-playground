@@ -1,6 +1,6 @@
 """The rendered agent's own gates, run in the monorepo venv (it has every framework): its unit
-tests pass offline and its code is ruff clean under its own config. The kit-backed contract test
-needs `agent-testkit`; the PoC-9 scenario test runs the agent's `make test` once it is merged.
+tests and its kit-backed contract test pass offline, and its code is ruff clean under its own
+config. The PoC-9 scenario test runs the agent's `make test` once it is merged.
 """
 
 from __future__ import annotations
@@ -36,7 +36,10 @@ def _env(agent: Path) -> dict[str, str]:
     return env | {"PYTHONPATH": str(agent / "src")}
 
 
-def _pytest(agent: Path, test_file: str) -> subprocess.CompletedProcess[str]:
+def _pytest(
+    agent: Path, test_file: str, plugins: tuple[str, ...] = ()
+) -> subprocess.CompletedProcess[str]:
+    loaded = [arg for plugin in plugins for arg in ("-p", plugin)]
     return subprocess.run(
         [
             sys.executable,
@@ -45,6 +48,7 @@ def _pytest(agent: Path, test_file: str) -> subprocess.CompletedProcess[str]:
             "-q",
             "-p",
             "no:cacheprovider",
+            *loaded,
             "--noconftest",
             "--disable-socket",
             "--allow-unix-socket",
@@ -66,6 +70,17 @@ def _pytest(agent: Path, test_file: str) -> subprocess.CompletedProcess[str]:
 def test_rendered_unit_tests_pass_offline(tmp_path: Path, framework: str) -> None:
     done = _pytest(_agent(tmp_path, framework), "test_handle.py")
     assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-2000:]
+
+
+@pytest.mark.parametrize("framework", rules.FRAMEWORKS)
+def test_rendered_contract_test_passes_offline(tmp_path: Path, framework: str) -> None:
+    """059 H-15 box 4: each framework's event mapping passes the lane contract over A2A, with the
+    chassis in the `fake` profile as its own process (agent-testkit), on Unix sockets only."""
+    agent = _agent(tmp_path, framework)
+    done = _pytest(agent, "test_contract.py", plugins=("agent_testkit.plugin",))
+    assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-2000:]
+    assert " passed" in done.stdout
+    assert " skipped" not in done.stdout
 
 
 IN_PROCESS_STATELESS = tuple(f for f in rules.FRAMEWORKS if f != "claude-agent")
