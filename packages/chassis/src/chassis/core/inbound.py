@@ -257,6 +257,8 @@ PUBLIC_MESSAGES: Mapping[str, str] = {
     "a2a.transport": "the agent could not be reached",
     # Contract v8 (R2-11): the lane stream passed its event or byte cap.
     "a2a.stream_too_large": "the agent sent more than the stream limit",
+    # P-9 (2026-11-13): the workload answered a JSON-RPC error.
+    "a2a.rpc_error": "the agent refused or failed the request",
     "idempotency_conflict": "this Idempotency-Key was already used with a different request",
     "idempotency_in_progress": "a request with this Idempotency-Key is still running; retry later",
     "state_unavailable": "the chassis cannot reach its state store; retry later",

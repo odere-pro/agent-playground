@@ -12,8 +12,9 @@ wait, and read gets that long, and a deadline for the whole run, `timeout_ms` af
 checked on every read in every lane (`inprocess` included, where no HTTP timeout fires). Either is
 `error {code: "a2a.timeout", retryable: true}`. A transport failure (the sidecar dies mid-stream,
 the connection drops) is `error {code: "a2a.transport", retryable: true}` (suggested), never an
-exception from `run`; so is a stream that ends with no `end` or `error`. Closing the stream early,
-a timeout, a transport failure, an early end, or a local refusal of the stream sends
+exception from `run`; so is a stream that ends with no `end` or `error`. A JSON-RPC error answer
+from the workload is `error {code: "a2a.rpc_error", retryable: false}` (P-9). Closing the stream
+early, a timeout, a transport failure, an early end, or a local refusal of the stream sends
 `CancelTaskRequest` for a task the server has not finished (best effort), even when closing the
 stream raised (that is logged). One span per run; the task id is the span attribute
 `a2a.task_id`.
@@ -102,6 +103,10 @@ STREAM_TOO_LARGE_TEXT = "the agent sent more than the stream limit"
 """suggested: the fixed message of `a2a.stream_too_large`."""
 STREAM_CAPPED = "chassis.a2a.stream_capped"
 """suggested: the counter of a stream ended at a cap, labeled `lane`."""
+RPC_ERROR = "a2a.rpc_error"
+"""The error code of a JSON-RPC error answer from the workload (an `A2AError` that is not an
+`A2AClientError`). Not retryable: HTTP 502 by `status_for`. Decided 2026-11-13 (proposals.md
+P-9)."""
 
 
 PROPAGATED = frozenset({"baggage"})
@@ -321,6 +326,9 @@ class A2AConnector:
                 span.attributes["a2a.transport_error"] = type(exc).__name__
                 text = self._failure_text("a2a.transport", exc)
                 yield _marked(span, Error(code="a2a.transport", message=text, retryable=True))
+            except A2AError as exc:
+                text = self._failure_text(RPC_ERROR, exc) or type(exc).__name__
+                yield _marked(span, Error(code=RPC_ERROR, message=text, retryable=False))
             finally:
                 await self._finish(stream, run)
 

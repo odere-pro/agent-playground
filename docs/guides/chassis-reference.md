@@ -43,7 +43,7 @@ Paths under `chassis/` are `packages/chassis/src/chassis/`. Paths under `configs
   - `Interface`.
   - `status_for(code, retryable)` holds the PoC-3 status table. It maps `engine_error` and `internal_error` to 500.
   - PoC-4 adds 422 `idempotency_conflict`, 409 `idempotency_in_progress`, and 503 `state_unavailable`.
-  - `PUBLIC_MESSAGES` and `public_message(code)` are the fixed client-facing error text, on every interface since contract v8. suggested: the text. It includes `a2a.stream_too_large`.
+  - `PUBLIC_MESSAGES` and `public_message(code)` are the fixed client-facing error text, on every interface since contract v8. suggested: the text. It includes `a2a.stream_too_large` and `a2a.rpc_error`.
   - `answer_text` is the answer a chat format shows. `rest_of_answer` is what a stream sends after its deltas.
 - `manifest.py` is `Manifest` v0: `ManifestAgent`, `HttpInterface`, `McpInterface`, `OpenAPIRef`. suggested: the whole shape.
 - `results.py` is `TaskResult`, the result-event payload.
@@ -153,6 +153,7 @@ Each is built by `from_env()` and loaded lazily.
   - A timeout or transport `Error` keeps the exception text, cut to `ERROR_MESSAGE_MAX`.
   - `budget.timeout_ms` is both the per-read timeout and a whole-run deadline, in every lane. Running out is `a2a.timeout`, retryable.
   - A transport failure is `a2a.transport`. So is a stream with no `end` or `error`.
+  - A JSON-RPC error answer from the workload is `a2a.rpc_error`, not retryable (P-9, decided 2026-11-13). Before, it escaped `run` and became `engine_error`.
   - It cancels even when closing the stream raises.
   - It opens one span per run.
   - It has two hooks a lane can override: `_message_for` builds the A2A request and `_translator_for` makes the run's `EventTranslator`. The default `ChassisTranslator` reads `chassis.event`. The translator also reports the remote's `task_id` and whether the task is finished there. The connector cancels only a task that is not finished.
