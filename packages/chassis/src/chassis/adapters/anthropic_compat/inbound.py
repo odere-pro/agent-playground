@@ -146,7 +146,12 @@ other three are counted as ignored. Nothing else is merged, so an unread key, ho
 never walked by `materialize`."""
 
 ErrorKind = Literal[
-    "invalid_request_error", "not_found_error", "overloaded_error", "timeout_error", "api_error"
+    "invalid_request_error",
+    "not_found_error",
+    "rate_limit_error",
+    "overloaded_error",
+    "timeout_error",
+    "api_error",
 ]
 
 
@@ -156,6 +161,8 @@ def error_type_for(status: int) -> ErrorKind:
         return "invalid_request_error"
     if status == 404:
         return "not_found_error"
+    if status == 429:
+        return "rate_limit_error"
     if status == 503:
         return "overloaded_error"
     if status == 504:

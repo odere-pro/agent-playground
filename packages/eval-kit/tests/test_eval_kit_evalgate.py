@@ -199,3 +199,26 @@ def test_eval_kit_evalgate_load_reports_reads_files_and_folders(tmp_path: Path) 
     assert len(load_reports([folder])) == 1 and len(load_reports([single])) == 1
     with pytest.raises(GateError, match="no eval-report"):
         load_reports([tmp_path / "empty"])
+
+
+def test_a_run_below_the_floor_fails_with_no_previous_report(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The floor is the baseline's recorded rate, not a previous run: a first run, in an empty
+    folder, with no earlier report anywhere, fails on the rate alone (no must-pass case set)."""
+    baseline = load_baseline(BASELINE)
+    baseline["agents"]["simplifier"]["must_pass"] = []
+    baseline["agents"]["simplifier"]["engines"] = {"echo-python": {"sidecar": 0.8}}
+    baseline_file = tmp_path / "baseline.json"
+    baseline_file.write_text(json.dumps(baseline))
+    first_run = tmp_path / "first-run"
+    _write(first_run, [offline_report("echo-python", "sidecar")])  # 39/50 = 0.780
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["baseline.json", "first-run"]
+
+    code = main(["--baseline", str(baseline_file), "--report", str(first_run)])
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL simplifier echo-python sidecar 39/50 0.780 (baseline 0.800)" in out
+    assert "pass rate 0.780 < 0.800" in out
+    assert "must-pass" not in out

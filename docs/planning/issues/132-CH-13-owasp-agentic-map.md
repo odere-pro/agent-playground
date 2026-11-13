@@ -25,9 +25,9 @@ The OWASP agentic threat list (ASI01 to ASI10) and the vault's threat model are 
 
 ## Acceptance criteria
 
-- [ ] A table lists ASI01 to ASI10, each with its control and its evidence (a test id or a dated note), or "gap" with the issue that owns it.
-- [ ] The tool-description poisoning row names Snyk Agent Scan and 081 R-8.
-- [ ] Every gap has an open box in an existing issue or a new issue.
+- [x] A table lists ASI01 to ASI10, each with its control and its evidence (a test id or a dated note), or "gap" with the issue that owns it. Delivered by: the table in [`docs/specs/security.md`](../../specs/security.md), "The OWASP agentic threats mapped to the controls"; vault note used: `wiki/security/Threat model.md`.
+- [x] The tool-description poisoning row names Snyk Agent Scan and 081 R-8. Delivered by: the ASI04 row of the same table in [`docs/specs/security.md`](../../specs/security.md).
+- [x] Every gap has an open box in an existing issue or a new issue. Delivered by: new open boxes in [081](081-R-8-description-scanning.md) (real scan run), [038](038-X-1a-terraform-first-cloud.md) (mTLS), and [140](140-CH-20-session-memory-tools-and-saver.md) (memory screening); the other gaps sit in existing open boxes named in the table.
 - [ ] `platform-security` reviews the table, and the review is recorded.
 
 ## Dependencies

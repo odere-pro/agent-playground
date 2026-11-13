@@ -266,6 +266,9 @@ Each is built by `from_env()` and loaded lazily.
 - At most `MAX_WAITERS_PER_KEY` 16 duplicates wait on one in-flight key per replica (suggested).
   - The next one is 409 `idempotency_in_progress` at once: retryable, no `Retry-After`, no poll.
   - It counts `chassis.idempotency.waiters_full`. This is load shedding, not state (contract v8, H).
+- Each entry a checked caller creates counts against `spec.idempotency.new_keys_per_caller` (suggested: `10000`) per `ttl_s` window, in `StatePort` (`idempotency_quota.py`, 022 H-6).
+  - Past it: 429 `rate_limited` with `Retry-After`, and the new entry is freed again. One caller holds at most twice the cap per agent.
+  - A replay, a conflict, or a wait is not counted. With auth off nothing is counted.
 
 ### readiness.py
 

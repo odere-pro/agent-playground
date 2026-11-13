@@ -12,8 +12,9 @@ from typing import Any
 
 import httpx
 import yaml
+from chassis import CHASSIS_VERSION
 from chassis.server import ChassisConfig, create_app
-from poc_harness.promtext import families
+from poc_harness.promtext import families, samples
 
 ROOT = Path(__file__).resolve().parents[3]
 RULES = ROOT / "deploy/prometheus/rules/chassis.yaml"
@@ -36,8 +37,8 @@ def _alerts() -> dict[str, dict[str, Any]]:
     return {r["alert"]: r for r in _rules() if "alert" in r}
 
 
-async def _scrape() -> str:
-    app = create_app(ChassisConfig.model_validate(CONFIG))
+async def _scrape(config: dict[str, Any] = CONFIG) -> str:
+    app = create_app(ChassisConfig.model_validate(config))
     transport = httpx.ASGITransport(app=app)
     async with (
         httpx.AsyncClient(transport=transport, base_url="http://chassis") as client,
@@ -79,6 +80,39 @@ async def test_the_budget_alert_has_a_zero_to_rise_from_on_every_declared_route(
     assert 'chassis_model_budget_exhausted_total{agent="echo",route="fake-route"} 0' in (
         text.splitlines()
     ), text
+
+
+_RISE = re.compile(r"\b(?:increase|rate)\((chassis_[a-z0-9_]+_total)\b")
+GATED: dict[str, Any] = {
+    **CONFIG,
+    "spec": {
+        **CONFIG["spec"],
+        "adapters": {"evaluator": "fake"},
+        "harness": {"evaluator_gate": True},
+    },
+}
+"""The config the rise check scrapes: the gate on, so its counters are seeded too."""
+
+
+async def test_every_counter_a_rule_watches_rise_on_has_a_zero_before_traffic() -> None:
+    """117 X-3: a counter an `increase()` or `rate()` rule reads must be scraped at 0 before its
+    first count, or the rule misses that count (CI run 42634108264). A new rule on a counter the
+    chassis does not seed (`chassis_run_errors_total`, `chassis_tool_calls_total`) fails here."""
+    names = {name for rule in _rules() for name in _RISE.findall(rule["expr"])}
+    assert names, "no rule reads a counter with increase() or rate()"
+    seen = {name for name, _ in samples(await _scrape(GATED))}
+    assert names <= seen, sorted(names - seen)
+
+
+async def test_build_info_carries_the_chassis_version_for_an_alert_to_join() -> None:
+    """117 X-3: `chassis_build_info{version}` is 1, so a rule can carry the chassis version with
+    `* on (agent) group_left (version) chassis_build_info`."""
+    found = [
+        dict(labels)
+        for (name, labels), number in samples(await _scrape()).items()
+        if name == "chassis_build_info" and number == 1
+    ]
+    assert found == [{"agent": "echo", "version": CHASSIS_VERSION, "agent_version": "0.0.1"}]
 
 
 async def test_every_rule_names_a_metric_the_chassis_exports() -> None:
