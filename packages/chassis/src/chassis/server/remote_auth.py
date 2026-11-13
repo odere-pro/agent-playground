@@ -30,13 +30,14 @@ other non-`http` scope (a websocket is closed with 1008 before accept):
    under that run's budget, and only the remote serving that run can. Plain mode
    (`spec.engine.protocol: a2a`) has no secret: traceparent only, counted.
 
-`remote_tokens(auth)` reads the tokens at start. The listener's own token is
-`spec.engine.auth.proxy_token_env`, with `proxy_previous_token_env` for a rotation (R2-09): the
-remote never receives it, so it cannot replay the token the chassis sends it (`token_env`)
-against this listener. With `proxy_token_env` unset, the listener falls back to `token_env` and
-`previous_token_env`, one token both ways. A token shorter than `MIN_TOKEN_LENGTH` (suggested:
-32 characters), current or a set previous one, is refused; the error names the variable, never
-the value (R2-31).
+`remote_tokens(auth)` reads the tokens at start. One key per direction (R2-09; the default since
+055 CH-6): the listener's own token is `spec.engine.auth.proxy_token_env`, with
+`proxy_previous_token_env` for a rotation, and the token the chassis sends the remote
+(`token_env`) is never accepted here, so a remote cannot replay it against this listener. With
+`proxy_token_env` unset, or a listener token equal to an outbound one, the start fails with the
+reason; there is no fall back to one token both ways. A token shorter than `MIN_TOKEN_LENGTH`
+(suggested: 32 characters), current or a set previous one, is refused; the error names the
+variable, never the value (R2-31).
 
 `chassis serve --remote-proxy-host <pod IP>` runs this app on `--remote-proxy-port` (suggested
 8091), only in the `remote` lane (`chassis.server.cli`). The loopback proxy app is unchanged.
@@ -121,21 +122,44 @@ def _refusal(
     return body, headers
 
 
+ONE_KEY_BOTH_WAYS = (
+    "the remote listener needs spec.engine.auth.proxy_token_env, its own key: the workload token "
+    "Secret holds one key per direction, and token_env is the key the chassis sends to the "
+    "workload (055 CH-6)"
+)
+
+
 def remote_tokens(auth: Mapping[str, Any] | None) -> tuple[str, ...]:
     """The tokens the remote listener accepts, from `spec.engine.auth` (its mapping form).
 
-    With `proxy_token_env` set (R2-09): that token (required, not empty), then the one from
-    `proxy_previous_token_env` when it is set and not empty. The outbound `token_env` is then
-    not accepted, so a remote cannot replay the token the chassis sends it. With
-    `proxy_token_env` unset: `token_env` and `previous_token_env`, as before. Raises
-    `LookupError` when the current variable is unset or empty, and `ValueError` when a set token
-    is shorter than `MIN_TOKEN_LENGTH` (R2-31). Each error names the variable, never a value.
+    One key per direction (R2-09, the default since 055 CH-6): the listener accepts
+    `proxy_token_env` (required, not empty), then `proxy_previous_token_env` when it is set and
+    not empty. Never the outbound `token_env` or `previous_token_env`, so a remote cannot replay
+    the key the chassis sends it. Raises `LookupError` when `proxy_token_env` is not set (one key
+    both ways, `ONE_KEY_BOTH_WAYS`) or its variable is unset or empty; `ValueError` when a set
+    token is shorter than `MIN_TOKEN_LENGTH` (R2-31) or a listener token has the value of an
+    outbound one. Each error names the variable, never a value.
     """
     if not auth:
         raise LookupError("the remote proxy needs spec.engine.auth (a bearer token variable)")
-    if auth.get("proxy_token_env"):
-        return _read_pair(auth.get("proxy_token_env"), auth.get("proxy_previous_token_env"))
-    return _read_pair(auth.get("token_env"), auth.get("previous_token_env"))
+    if not auth.get("proxy_token_env"):
+        raise LookupError(ONE_KEY_BOTH_WAYS)
+    tokens = _read_pair(auth.get("proxy_token_env"), auth.get("proxy_previous_token_env"))
+    _refuse_outbound_values(auth, tokens)
+    return tokens
+
+
+def _refuse_outbound_values(auth: Mapping[str, Any], tokens: tuple[str, ...]) -> None:
+    """A listener token with the value of an outbound token is one key both ways: refused."""
+    for slot in ("token_env", "previous_token_env"):
+        name = auth.get(slot)
+        outbound = os.environ.get(str(name), "") if name else ""
+        if outbound and any(hmac.compare_digest(outbound, token) for token in tokens):
+            raise ValueError(
+                f"the remote listener's key (spec.engine.auth.proxy_token_env "
+                f"{auth.get('proxy_token_env')}) has the value of {slot} {name}: the workload "
+                "token Secret holds one key per direction (055 CH-6)"
+            )
 
 
 def _read_pair(current_name: object, previous_name: object) -> tuple[str, ...]:

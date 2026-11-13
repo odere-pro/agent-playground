@@ -16,6 +16,7 @@ import yaml
 from bakeoff.registry import Engine, Lane, check_lane
 
 __all__ = [
+    "CHASSIS_PROXY_TOKEN_ENV",
     "CHASSIS_TOKEN_ENV",
     "DUMMY_MODEL_KEY",
     "ROUTES",
@@ -30,7 +31,10 @@ __all__ = [
 ]
 
 CHASSIS_TOKEN_ENV = "BAKEOFF_REMOTE_TOKEN"
-"""`spec.engine.auth.token_env`: the connector sends it; the remote listener accepts it."""
+"""`spec.engine.auth.token_env`: the chassis-to-workload key; the connector sends it."""
+CHASSIS_PROXY_TOKEN_ENV = "BAKEOFF_REMOTE_PROXY_TOKEN"
+"""`spec.engine.auth.proxy_token_env`: the workload-to-chassis key; the remote listener accepts
+only it (one key per direction, 055 CH-6)."""
 WORKLOAD_TOKEN_ENV = "BAKEOFF_WORKLOAD_TOKEN"
 """The workload's `--require-token-env`."""
 DUMMY_MODEL_KEY = "bakeoff-dummy-key"  # pragma: allowlist secret
@@ -74,7 +78,11 @@ def chassis_config(
             raise ValueError(f"the {lane} lane needs the workload's port")
         section = {"connector": lane, "url": f"http://127.0.0.1:{workload_port}"}
         if lane == "remote":
-            section["auth"] = {"scheme": "bearer", "token_env": CHASSIS_TOKEN_ENV}
+            section["auth"] = {
+                "scheme": "bearer",
+                "token_env": CHASSIS_TOKEN_ENV,
+                "proxy_token_env": CHASSIS_PROXY_TOKEN_ENV,
+            }
     return {
         "profile": "local",
         "agent": {"name": "echo", "version": "0.0.1"},
@@ -131,9 +139,16 @@ def chassis_argv(
 
 
 def chassis_env_vars(
-    lane: Lane, *, fake_port: int, proxy_port: int, token: str, hosted: Hosted | None = None
+    lane: Lane,
+    *,
+    fake_port: int,
+    proxy_port: int,
+    token: str,
+    proxy_token: str,
+    hosted: Hosted | None = None,
 ) -> dict[str, str]:
-    """The chassis process's variables beyond `PATH` and `HOME`.
+    """The chassis process's variables beyond `PATH` and `HOME`. In the remote lane: `token`, the
+    chassis-to-workload key, and `proxy_token`, the workload-to-chassis key (055 CH-6).
 
     With `hosted`, the model adapter points at its URL with its LiteLLM key; `fake_port` is
     unused. No provider key is ever passed."""
@@ -149,6 +164,7 @@ def chassis_env_vars(
         env["CHASSIS_TOOL_URL"] = f"http://127.0.0.1:{proxy_port}/mcp"
     if lane == "remote":
         env[CHASSIS_TOKEN_ENV] = token
+        env[CHASSIS_PROXY_TOKEN_ENV] = proxy_token
     return env
 
 
@@ -179,13 +195,21 @@ def workload_argv(
 
 
 def workload_env_vars(
-    engine: Engine, lane: Lane, *, port: int, model_url: str, tool_url: str, token: str
+    engine: Engine,
+    lane: Lane,
+    *,
+    port: int,
+    model_url: str,
+    tool_url: str,
+    token: str,
+    proxy_token: str,
 ) -> dict[str, str]:
-    """The workload's variables beyond `PATH` and `HOME`: the allow-list, nothing else."""
+    """The workload's variables beyond `PATH` and `HOME`: the allow-list, nothing else. In the
+    remote lane it requires `token` and sends `proxy_token` (one key per direction, 055 CH-6)."""
     env = {"CHASSIS_MODEL_URL": model_url, "CHASSIS_TOOL_URL": tool_url}
     if engine.runner == "node":
         env.update({"HOST": "127.0.0.1", "PORT": str(port)})
     if lane == "remote":
-        env["CHASSIS_API_TOKEN"] = token
+        env["CHASSIS_API_TOKEN"] = proxy_token
         env[WORKLOAD_TOKEN_ENV] = token
     return env

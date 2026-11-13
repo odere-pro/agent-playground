@@ -62,6 +62,12 @@ put_secret() {
     kctl apply --server-side --force-conflicts --field-manager=poc06-seed -f - >/dev/null
 }
 
+# put_env_secret NS NAME: several keys, KEY=value lines on stdin.
+put_env_secret() {
+  kctl -n "$1" create secret generic "$2" --from-env-file=/dev/stdin --dry-run=client -o yaml |
+    kctl apply --server-side --force-conflicts --field-manager=poc06-seed -f - >/dev/null
+}
+
 # read_secret NS NAME KEY: the decoded value on stdout, for a command substitution only.
 read_secret() { kctl -n "$1" get secret "$2" -o "jsonpath={.data.$3}" | base64 -d; }
 
@@ -163,7 +169,7 @@ make_keys() {
 }
 
 seed_keys() {
-  local svc name value pending=()
+  local svc name to_workload to_chassis pending=()
   for svc in "${SERVICES[@]}"; do
     secret_exists "$AGENTS" "chassis-$svc-litellm" || pending+=("$svc")
   done
@@ -174,18 +180,26 @@ seed_keys() {
     if secret_exists "$AGENTS" "remote-$name-token" && secret_exists "$REMOTE" "remote-$name-token"; then
       continue
     fi
-    value=$(new_secret)
-    printf '%s' "$value" | put_secret "$AGENTS" "remote-$name-token" token
-    printf '%s' "$value" | put_secret "$REMOTE" "remote-$name-token" token
-    unset value
-    log "made remote-$name-token in $AGENTS and $REMOTE"
+    # Two keys, one per direction (055 CH-6): two random values, never equal.
+    to_workload=$(new_secret)
+    to_chassis=$(new_secret)
+    [[ $to_workload != "$to_chassis" ]] || die "remote-$name-token: the two keys came out equal"
+    printf 'chassis-to-workload=%s\nworkload-to-chassis=%s\n' "$to_workload" "$to_chassis" |
+      put_env_secret "$AGENTS" "remote-$name-token"
+    printf 'chassis-to-workload=%s\nworkload-to-chassis=%s\n' "$to_workload" "$to_chassis" |
+      put_env_secret "$REMOTE" "remote-$name-token"
+    unset to_workload to_chassis
+    log "made remote-$name-token (two keys) in $AGENTS and $REMOTE"
   done
   for name in "${CHASSIS_ONLY_REMOTES[@]}"; do
     secret_exists "$AGENTS" "remote-$name-token" && continue
-    value=$(new_secret)
-    printf '%s' "$value" | put_secret "$AGENTS" "remote-$name-token" token
-    unset value
-    log "made remote-$name-token in $AGENTS"
+    to_workload=$(new_secret)
+    to_chassis=$(new_secret)
+    [[ $to_workload != "$to_chassis" ]] || die "remote-$name-token: the two keys came out equal"
+    printf 'chassis-to-workload=%s\nworkload-to-chassis=%s\n' "$to_workload" "$to_chassis" |
+      put_env_secret "$AGENTS" "remote-$name-token"
+    unset to_workload to_chassis
+    log "made remote-$name-token (two keys) in $AGENTS"
   done
 }
 

@@ -70,8 +70,14 @@ remote:
   proxyClusterIP: ""
   terminationGracePeriodSeconds: 40
   # The Secret's name is not a value: <name>-workload-token (agent-lib.remoteTokenSecret).
+  # It holds two keys, one per direction (055 CH-6), so a remote that replays the key the
+  # chassis sends it cannot call the chassis's remote listener. suggested: the key names.
   tokenSecret:
-    key: token
+    keys:
+      # The chassis sends it (REMOTE_TOKEN); the workload requires it (CHASSIS_A2A_TOKEN).
+      toWorkload: chassis-to-workload
+      # The workload sends it (CHASSIS_API_TOKEN); the listener accepts it (REMOTE_PROXY_TOKEN).
+      toChassis: workload-to-chassis
 networkPolicy:
   ingressFrom: []
   chassisEgress: []
@@ -103,8 +109,9 @@ hpa:
 
 {{/*
 The remote workload's token Secret: one per remote, named after its pod's app.kubernetes.io/name
-(ADR-005 decision 1; admission rule 7c holds the pod to it). It must exist in the chassis's
-namespace and in remote.namespace. Takes the root.
+(ADR-005 decision 1; admission rule 7c holds the pod to it). It holds two keys with different
+values, remote.tokenSecret.keys.toWorkload and .toChassis (055 CH-6), and must exist in the
+chassis's namespace and in remote.namespace. Made outside the chart. Takes the root.
 */}}
 {{- define "agent-lib.remoteTokenSecret" -}}
 {{- printf "%s-workload-token" (include "agent-lib.fullname" .) -}}

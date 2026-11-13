@@ -113,9 +113,13 @@ def test_the_hosted_key_is_not_in_the_repr() -> None:
 
 def test_the_chassis_env_points_at_the_url_with_the_litellm_key_and_nothing_else() -> None:
     hosted = Hosted(URL, KEY, "local-small")
-    env = chassis_env_vars("sidecar", fake_port=0, proxy_port=6, token="t", hosted=hosted)
+    env = chassis_env_vars(
+        "sidecar", fake_port=0, proxy_port=6, token="t", proxy_token="p", hosted=hosted
+    )
     assert env == {"LITELLM_BASE_URL": URL, "LITELLM_API_KEY": KEY}
-    inproc = chassis_env_vars("inprocess", fake_port=0, proxy_port=6, token="t", hosted=hosted)
+    inproc = chassis_env_vars(
+        "inprocess", fake_port=0, proxy_port=6, token="t", proxy_token="p", hosted=hosted
+    )
     assert inproc["LITELLM_BASE_URL"] == URL
     assert inproc["CHASSIS_MODEL_URL"] == "http://127.0.0.1:6/v1"
 

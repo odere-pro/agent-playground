@@ -3,8 +3,9 @@ The containers. Each takes (dict "root" $ "v" <merged values> "lane" <sidecar|re
 one list item at column 0; the caller indents it.
 
 The chassis (uid 10001) is the only container with a Secret: chassis.secretEnv,
-chassis.envFromSecrets, chassis.secretVolumes, and in the remote lane REMOTE_TOKEN from the
-remote's token Secret, <name>-workload-token (agent-lib.remoteTokenSecret). Its public
+chassis.envFromSecrets, chassis.secretVolumes, and in the remote lane REMOTE_TOKEN and
+REMOTE_PROXY_TOKEN, the two keys of the remote's token Secret, <name>-workload-token
+(agent-lib.remoteTokenSecret; one key per direction, 055 CH-6). Its public
 port binds the pod IP, never 0.0.0.0, so loopback carries only the proxies (H13). The image's
 ENTRYPOINT is `chassis serve`; the chart sets args only, never a command (admission rule 6b).
 */}}
@@ -63,11 +64,18 @@ ENTRYPOINT is `chassis serve`; the chart sets args only, never a command (admiss
           key: {{ .key | quote }}
     {{- end }}
     {{- if eq .lane "remote" }}
+    # One key per direction (055 CH-6): it sends REMOTE_TOKEN to the workload, and its remote
+    # listener accepts only REMOTE_PROXY_TOKEN.
     - name: REMOTE_TOKEN
       valueFrom:
         secretKeyRef:
           name: {{ include "agent-lib.remoteTokenSecret" .root | quote }}
-          key: {{ $v.remote.tokenSecret.key | quote }}
+          key: {{ $v.remote.tokenSecret.keys.toWorkload | quote }}
+    - name: REMOTE_PROXY_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: {{ include "agent-lib.remoteTokenSecret" .root | quote }}
+          key: {{ $v.remote.tokenSecret.keys.toChassis | quote }}
     {{- end }}
   {{- with $c.envFromSecrets }}
   envFrom:
@@ -195,9 +203,11 @@ hung process restarts the pod without waiting for the pod's grace (024 CH-3, PoC
 
 {{/*
 The workload in the remote lane (uid 10002), in its own pod under gVisor. Its one Secret is its
-own bearer token, CHASSIS_API_TOKEN (ADR-005 decision 1: "no secrets mounted" means no provider
-key and no internal credential). It listens on the pod IP with the token required on every path
-(`--require-token-env`, the Python template only in PoC-5) and has no DNS, so the chassis's
+own token Secret (ADR-005 decision 1: "no secrets mounted" means no provider key and no internal
+credential), two keys, one per direction (055 CH-6): it requires CHASSIS_A2A_TOKEN, the key the
+chassis sends, on every path of its server (`--require-token-env`, the Python template only in
+PoC-5), and sends CHASSIS_API_TOKEN, the only key the chassis's remote listener accepts. It
+listens on the pod IP and has no DNS, so the chassis's
 remote proxy is a fixed ClusterIP given as plain env. Probes are TCP: the kubelet has no token.
 */}}
 {{- define "agent-lib.remoteWorkloadContainer" -}}
@@ -209,7 +219,7 @@ remote proxy is a fixed ClusterIP given as plain env. Probes are TCP: the kubele
   imagePullPolicy: {{ $w.pullPolicy }}
   args:
     - --require-token-env
-    - CHASSIS_API_TOKEN
+    - CHASSIS_A2A_TOKEN
     {{- range $w.args }}
     - {{ toString . | quote }}
     {{- end }}
@@ -226,11 +236,16 @@ remote proxy is a fixed ClusterIP given as plain env. Probes are TCP: the kubele
       value: {{ printf "%s/v1" $proxy | quote }}
     - name: CHASSIS_TOOL_URL
       value: {{ printf "%s/mcp" $proxy | quote }}
+    - name: CHASSIS_A2A_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: {{ include "agent-lib.remoteTokenSecret" .root | quote }}
+          key: {{ $v.remote.tokenSecret.keys.toWorkload | quote }}
     - name: CHASSIS_API_TOKEN
       valueFrom:
         secretKeyRef:
           name: {{ include "agent-lib.remoteTokenSecret" .root | quote }}
-          key: {{ $v.remote.tokenSecret.key | quote }}
+          key: {{ $v.remote.tokenSecret.keys.toChassis | quote }}
     {{- range $w.env }}
     - name: {{ .name | quote }}
       value: {{ toString .value | quote }}

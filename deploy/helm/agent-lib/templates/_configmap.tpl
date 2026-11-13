@@ -4,8 +4,10 @@ chassis container only. It is chassis.config with two fields filled when they ar
 
 - spec.engine.url: the workload on loopback (sidecar), or the workload's Service in the remote
   namespace (remote). The connector never follows the agent card's URL (ADR-005 decision 3).
-- spec.engine.auth (remote lane): the bearer scheme with the token in REMOTE_TOKEN, which the
-  chart puts in the chassis container from remote.tokenSecret.
+- spec.engine.auth (remote lane): the bearer scheme, one key per direction (055 CH-6): the
+  chassis sends REMOTE_TOKEN (token_env) and its remote listener accepts only REMOTE_PROXY_TOKEN
+  (proxy_token_env), which the chart puts in the chassis container from the two keys of
+  remote.tokenSecret. A given auth without proxy_token_env gets it filled the same way.
 
 No Secret value goes in here: the chassis reads its credentials from its env.
 */}}
@@ -22,8 +24,13 @@ No Secret value goes in here: the chassis reads its credentials from its env.
 {{- $_ := set $engine "url" (printf "http://127.0.0.1:%d" (int $v.workload.port)) -}}
 {{- end -}}
 {{- end -}}
-{{- if and (eq $engine.connector "remote") (not (hasKey $engine "auth")) -}}
+{{- if eq $engine.connector "remote" -}}
+{{- if not (hasKey $engine "auth") -}}
 {{- $_ := set $engine "auth" (dict "scheme" "bearer" "token_env" "REMOTE_TOKEN") -}}
+{{- end -}}
+{{- if not $engine.auth.proxy_token_env -}}
+{{- $_ := set $engine.auth "proxy_token_env" "REMOTE_PROXY_TOKEN" -}}
+{{- end -}}
 {{- end -}}
 {{- toYaml $cfg -}}
 {{- end -}}

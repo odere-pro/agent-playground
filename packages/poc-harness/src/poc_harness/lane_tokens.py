@@ -12,9 +12,14 @@ from dataclasses import dataclass
 import pytest
 
 TOKEN_ENV = "POC05_REMOTE_TOKEN"
-"""`spec.engine.auth.token_env`: the connector sends it; the remote listener accepts it."""
+"""`spec.engine.auth.token_env`: the chassis-to-workload key; the connector sends it."""
 PREVIOUS_TOKEN_ENV = "POC05_REMOTE_TOKEN_PREVIOUS"
-"""`spec.engine.auth.previous_token_env`: the remote listener also accepts it during a rotation."""
+"""`spec.engine.auth.previous_token_env`: the outbound key being rotated out."""
+PROXY_TOKEN_ENV = "POC05_REMOTE_PROXY_TOKEN"
+"""`spec.engine.auth.proxy_token_env`: the workload-to-chassis key; the remote listener accepts
+only it (055 CH-6)."""
+PROXY_PREVIOUS_ENV = "POC05_REMOTE_PROXY_TOKEN_PREVIOUS"
+"""`spec.engine.auth.proxy_previous_token_env`: the listener also accepts it during a rotation."""
 WORKLOAD_TOKEN_ENV = "POC05_WORKLOAD_TOKEN"
 """The workload server's `--require-token-env`."""
 WORKLOAD_PREVIOUS_ENV = "POC05_WORKLOAD_TOKEN_PREVIOUS"
@@ -44,23 +49,27 @@ def traceparent(trace_id: str) -> str:
 
 @dataclass(frozen=True)
 class Tokens:
-    """Who holds which token. In steady state all five are one value (`Tokens.one()`); during a
-    rotation the current and previous slots differ (plan section 2.2).
+    """Who holds which token. One key per direction (055 CH-6): in steady state `chassis` and
+    `workload` are the chassis-to-workload key, and `sends` and `proxy` the workload-to-chassis
+    key (`Tokens.one()`); during a rotation the current and previous slots differ.
     """
 
     chassis: str
-    """`TOKEN_ENV`: the connector sends it to the workload; the remote listener accepts it."""
+    """`TOKEN_ENV`: the connector sends it to the workload."""
     workload: str
     """`WORKLOAD_TOKEN_ENV`: the workload server requires it."""
     sends: str
     """`SENDS_ENV`: the workload sends it to the remote listener."""
     chassis_previous: str | None = None
     workload_previous: str | None = None
+    proxy: str | None = None
+    """`PROXY_TOKEN_ENV`: the remote listener accepts it. Unset, the listener cannot start."""
+    proxy_previous: str | None = None
 
     @classmethod
     def one(cls) -> Tokens:
-        token = new_token()
-        return cls(chassis=token, workload=token, sends=token)
+        to_workload, to_chassis = new_token(), new_token()
+        return cls(chassis=to_workload, workload=to_workload, sends=to_chassis, proxy=to_chassis)
 
     def values(self) -> set[str]:
         return {
@@ -71,18 +80,22 @@ class Tokens:
                 self.sends,
                 self.chassis_previous,
                 self.workload_previous,
+                self.proxy,
+                self.proxy_previous,
             )
             if t
         }
 
     def apply(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Set the variables; an unused previous slot is removed, not left from a former test."""
+        """Set the variables; an unused optional slot is removed, not left from a former test."""
         monkeypatch.setenv(TOKEN_ENV, self.chassis)
         monkeypatch.setenv(WORKLOAD_TOKEN_ENV, self.workload)
         monkeypatch.setenv(SENDS_ENV, self.sends)
         for name, value in (
             (PREVIOUS_TOKEN_ENV, self.chassis_previous),
             (WORKLOAD_PREVIOUS_ENV, self.workload_previous),
+            (PROXY_TOKEN_ENV, self.proxy),
+            (PROXY_PREVIOUS_ENV, self.proxy_previous),
         ):
             if value:
                 monkeypatch.setenv(name, value)
