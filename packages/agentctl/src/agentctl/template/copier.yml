@@ -9,7 +9,7 @@ _answers_file: .copier-answers.yml
 # The Compose stack is the sidecar shape: the workload shares the chassis's network. An agent in
 # the remote lane must never run that way, so it gets no Compose file; it runs under deploy/helm.
 _exclude:
-  - "{% if connector == 'remote' %}deploy{% endif %}"
+  - "{% if connector == 'remote' %}deploy/compose{% endif %}"
   - "{% if connector == 'remote' %}.vscode{% endif %}"
   - copier.yml
   - .git
