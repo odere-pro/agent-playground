@@ -17,7 +17,7 @@ dependencies = [
 [dependency-groups]
 # `langchain-mcp-adapters` is locked for one test only, the watch in
 # `tests/test_langgraph_handle.py`; product code never imports it (ADR-006).
-dev = ["fake-model-server", "fastmcp", "langchain-mcp-adapters"]
+dev = ["agent-testkit", "fake-model-server", "fastmcp", "langchain-mcp-adapters"]
 
 [build-system]
 requires = ["uv_build>=0.8,<0.12"]
