@@ -49,7 +49,9 @@ not in the response's `metrics` (they are gone). `close()` waits for pending sco
 inner connector.
 
 **Counters** (suggested names): `chassis.evaluator_calls{evaluator, mode, outcome}` with outcome
-`pass`, `fail`, or `error`; `chassis.gate_retries`; `chassis.gate_fallbacks`;
+`pass`, `fail`, `error`, or `skipped` (138 CH-18: a structured answer, `end.output` with no
+`text` and no `delta` text, is never judged and goes out as it is); `chassis.gate_retries`;
+`chassis.gate_fallbacks`;
 `chassis.gate_failed_open`; `chassis.gate_failed_closed`; `chassis.gate_stopped{reason}`;
 `chassis.gate_runs{mode}` (PoC-8), each sampled call, so the fallback rate is
 `chassis.gate_fallbacks` over `chassis.gate_runs{mode="sync"}`.
@@ -172,6 +174,15 @@ def _answer(events: list[Event]) -> str:
     return ""
 
 
+def _structured(events: list[Event]) -> bool:
+    """Is the answer structured (138 CH-18)? No `delta` text, and an `end.output` with no
+    `text`. A structured answer is not judged: a rubric for prose cannot score it."""
+    if any(isinstance(e, Delta) and e.text for e in events):
+        return False
+    end = next((e for e in events if isinstance(e, End)), None)
+    return end is not None and bool(end.output) and "text" not in (end.output or {})
+
+
 def _failed(events: list[Event]) -> bool:
     return any(isinstance(e, Error) for e in events) or not any(isinstance(e, End) for e in events)
 
@@ -264,11 +275,20 @@ class GatedEngine:
                     elif isinstance(event, Error):
                         failed = True
                     elif isinstance(event, End) and not failed:
-                        answer = "".join(text) or _answer([event])
-                        self._score_later(request, ctx, answer)
+                        if not text and _structured([event]):
+                            self._skipped("async")
+                        else:
+                            answer = "".join(text) or _answer([event])
+                            self._score_later(request, ctx, answer)
                 yield event
         finally:
             await _aclose(stream)
+
+    def _skipped(self, mode: str) -> None:
+        """A structured answer: no judge call, counted as `outcome="skipped"` (suggested)."""
+        self._telemetry.counter(
+            EVALUATOR_CALLS, evaluator=self.evaluator.name, mode=mode, outcome="skipped"
+        )
 
     def _score_later(self, request: Request, ctx: Context, answer: str) -> None:
         if len(self._pending) >= self._max_pending:
@@ -367,6 +387,11 @@ class GatedEngine:
             events = await self._attempt(*allowance.bounded(request, ctx))
             allowance.spend(_tokens(events))
             if _failed(events):
+                for event in _emit(events, attempt, before):
+                    yield event
+                return
+            if _structured(events):
+                self._skipped("sync")
                 for event in _emit(events, attempt, before):
                     yield event
                 return
