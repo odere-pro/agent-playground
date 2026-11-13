@@ -28,29 +28,38 @@ Open, for the user:
 
 ## Progress
 
-Measured on `main` with `make progress`, 2026-11-10: 144 of 344 boxes ticked (41%), 4 of 44 issues done. 200 boxes are open.
+Measured on `main` `4d6cf92` with `make progress`, 2026-11-13: 213 of 344 boxes ticked (61%), 6 of 44 issues done. 131 boxes are open.
 
-Estimated, not measured: the open and queued PRs below add about 30 to 35 boxes. After they merge, that is about 175 to 180 boxes, near 52%, with about 165 left. Run `make progress` again after the merges for the real numbers.
+| Phase | Issues done | Boxes ticked |
+| ----- | ----------- | ------------ |
+| A | 2 of 10 | 69 of 90 (76%) |
+| B | 1 of 10 | 50 of 76 (65%) |
+| C | 1 of 2 | 13 of 14 (92%) |
+| D | 0 of 3 | 7 of 15 (46%) |
+| E | 0 of 10 | 35 of 85 (41%) |
+| F | 0 of 6 | 28 of 46 (60%) |
+| G | 2 of 3 | 11 of 18 (61%) |
+
+The trend: 144 boxes (41%) on 2026-11-10; 183 (53%) after PRs 131 to 154; 197 (57%) after PRs 155 to 173; 213 (61%) after PRs 174 to 187.
 
 ## In progress
 
-Open PRs on GitHub, waiting on the user's merge:
+Nothing is in flight on 2026-11-13. No PR is open; PRs 131 to 187 are merged. `HANDOVER.md` lists what each delivered.
 
-| PR | Issue | What |
-| -- | ----- | ---- |
-| 131 | (cross-cutting) | Counters start at 0; a `chassis_build_info` metric |
-| 132 | 007 H-1 | The last boxes; retires the issue |
-| 133 | 002 G-1, 023 C-5 | The router guide and the disclosure client guide |
-| 134 | 015 H-8 | Testing kit boxes |
-| 135 | 057 H-19 | Stateless check boxes |
-| 136 | 022 H-6 | Security middleware boxes |
-| 137 | 132 CH-13 | The OWASP agentic map |
-| 138 | 017 H-4 | Harness feature boxes |
-| 139 | 009 CH-1 | Strict xfails until P-7 and P-9 are picked |
+Offline work is close to used up. The last wave triaged each open box by what it needs, then proved 22 boxes. Of the boxes it triaged:
 
-Built and reviewed, in the commit queue, no PR yet: 012 H-3, 024 CH-3, 010 H-12, 008 H-14, 037 M-2, 004 G-2 (a test only, no box), 016 H-9, 013 CH-2, 056 CH-7, 019 H-17, 054 H-16, 059 H-15, 137 CH-17 (code only, no box), 129 CH-10, 046 A-5. 008 H-14 and 019 H-17 are in no phase, so their boxes do not count above.
+| Needs | Boxes |
+| ----- | ----- |
+| A live Compose stack run | 28 |
+| The user's decision | 22 |
+| A real service or key | 8 |
+| Another issue first | 3 |
+| A person | 2 |
+| A live kind run | 1 |
 
-Stopped: 003 G-1b. A fix round is half applied and waits on the user.
+Not yet triaged, with open boxes: 001 DEC-1, 009 CH-1, 015 H-8, 022 H-6, 024 CH-3, 026 CH-4, 055 CH-6, 056 CH-7, 057 H-19, 137 CH-17, 139 CH-19, 005 G-3.
+
+Next, in order: the user's decisions, one small build per answer; the live Compose track; then the kind track. Docker was not running on 2026-11-13, so neither live track has been tried.
 
 ## Left to do
 
