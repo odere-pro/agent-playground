@@ -96,7 +96,7 @@ Waves are GitHub milestones. Each one ends in something that can be shown. The w
 
 | Wave | Issues | Ends with |
 | ---- | ------ | --------- |
-| Done: delivered by the PoC track | 007–138 | 9 issues, 22 days of the first estimate, not counted below |
+| Done: delivered by the PoC track | 007–138 | 10 issues, 23 days of the first estimate, not counted below |
 | W0 Decisions | 001 | Broker, first cloud, public A2A endpoint, banned words, and metric targets decided. Feeds phases D and E: the primary trace view and the north star |
 | W1 Router and baseline | 002–006 | Every model call goes through the router; token spend is counted and on a dashboard; the baseline clock is running. Feeds phases B and E; the baseline is parked |
 | W2 Chassis MVP | 008–026 | An echo workload runs behind the chassis: in the `sidecar` lane from the shared library chart, locally and in Kubernetes, and over A2A in memory in the chassis's tests. It answers through native, OpenAI, and Anthropic APIs (streaming and complete), is started by events and emits result events, is traced, holds no key, and passes the contract tests over both transports. Feeds phases A, B, E, and F |
@@ -129,8 +129,8 @@ Since 2026-11-06 the [product plan](../../plans/2026-11-06-agent-container-produ
 
 ## Critical path
 
-- **To template GA (H-15):** 009 CH-1 → 016 H-9 → 024 CH-3 → 026 CH-4 → 055 CH-6 → 059 H-15. About 18 working days. Template GA is phase F. The baseline ([005 G-3](005-G-3-baseline-report.md)) and the SLM steps are parked, so no baseline wait sits on this path.
-- **Longest chain overall:** 009 CH-1 → 016 H-9 → 024 CH-3 → 026 CH-4 → 055 CH-6 → 059 H-15 → 076 R-1 → 090 R-13 → 091 R-11 → 092 R-12 → 099 O-1 → 100 O-2 → 103 O-11 → 107 O-6 → 109 O-8 → 110 C-6 → 115 O-15. The registry search and the orchestrator engine are the long pole.
+- **To template GA (H-15):** 016 H-9 → 024 CH-3 → 026 CH-4 → 055 CH-6 → 059 H-15. About 17 working days. Template GA is phase F. The baseline ([005 G-3](005-G-3-baseline-report.md)) and the SLM steps are parked, so no baseline wait sits on this path.
+- **Longest chain overall:** 016 H-9 → 024 CH-3 → 026 CH-4 → 055 CH-6 → 059 H-15 → 076 R-1 → 090 R-13 → 091 R-11 → 092 R-12 → 099 O-1 → 100 O-2 → 103 O-11 → 107 O-6 → 109 O-8 → 110 C-6 → 115 O-15. The registry search and the orchestrator engine are the long pole.
 
 ## Open decisions and what they block
 
@@ -194,8 +194,8 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 
 ## Estimate check
 
-- **Open:** about 275 engineer-days (55 weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
-- **Done** (wave `WD`): 22 days over 9 of the issues. **Parked** (wave `WP`): 52.5 days over 23. Neither is in the open total.
+- **Open:** about 274 engineer-days (55 weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
+- **Done** (wave `WD`): 23 days over 10 of the issues. **Parked** (wave `WP`): 52.5 days over 23. Neither is in the open total.
 - **Phases A to F:** 86.5 days against the 8–10 weeks the product plan has left (suggested: 50–60 engineer-days), from [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md#totals). Phases A, B, and E are each about twice the plan's size. The rest of the open total is `later`: no phase needs it.
 - **The epic** says 29–33 weeks for one engineer. Either the epic assumes a lot of reuse, or the phase estimates need a second look with the team. The sizes here are first guesses; re-size in planning.
 
@@ -206,6 +206,7 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
 | 007 | H-1 | [Chassis package and image: ports, `handle` contract, JSON event schema, envelope](007-H-1-harness-library-ports-envelope.md) | chassis | P0 | S | — |
+| 009 | CH-1 | [Engine connectors `inprocess` and `sidecar` over A2A, plus the template A2A server that wraps `handle`](009-CH-1-engine-connectors-a2a.md) | chassis | P0 | S | [007](007-H-1-harness-library-ports-envelope.md) |
 | 011 | H-2 | [Inbound adapters: native, OpenAI-compatible, Anthropic-compatible, with streaming](011-H-2-inbound-adapters.md) | chassis, agent-profile | P0 | L | [007](007-H-1-harness-library-ports-envelope.md), [008](008-H-14-one-agent-interface.md), [009](009-CH-1-engine-connectors-a2a.md) |
 | 015 | H-8 | [Testing kit: fake adapters, contract tests per API, record and replay](015-H-8-testing-kit.md) | chassis | P0 | M | [011](011-H-2-inbound-adapters.md), [012](012-H-3-model-port.md), [009](009-CH-1-engine-connectors-a2a.md) |
 | 018 | H-18 | [Idempotency: key check, optional Valkey result cache, key passed to write tools](018-H-18-idempotency.md) | chassis | P0 | M | [007](007-H-1-harness-library-ports-envelope.md), [016](016-H-9-local-debug-profile.md), [009](009-CH-1-engine-connectors-a2a.md) |
@@ -235,7 +236,6 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
 | 008 | H-14 | [One agent interface for all classes (stateless, orchestrator, data)](008-H-14-one-agent-interface.md) | chassis | P0 | L | [007](007-H-1-harness-library-ports-envelope.md) |
-| 009 | CH-1 | [Engine connectors `inprocess` and `sidecar` over A2A, plus the template A2A server that wraps `handle`](009-CH-1-engine-connectors-a2a.md) | chassis | P0 | S | [007](007-H-1-harness-library-ports-envelope.md) |
 | 010 | H-12 | [Config loader: object storage, JSON Schema check, reload on change](010-H-12-config-loader.md) | chassis | P0 | M | [007](007-H-1-harness-library-ports-envelope.md) |
 | 012 | H-3 | [Model port to the LLM router, with a route map per task](012-H-3-model-port.md) | agent-profile | P0 | L | [003](003-G-1b-named-model-routes.md), [007](007-H-1-harness-library-ports-envelope.md), [004](004-G-2-token-cost-counting.md) |
 | 013 | CH-2 | [Outbound model proxy: an OpenAI- and Anthropic-compatible URL for workloads, forwarded with the service's scoped key](013-CH-2-outbound-model-proxy.md) | chassis, agent-profile | P0 | M | [012](012-H-3-model-port.md), [009](009-CH-1-engine-connectors-a2a.md) |

@@ -1,7 +1,7 @@
 ---
 title: "CH-1: Engine connectors `inprocess` and `sidecar` over A2A, plus the template A2A server that wraps `handle`"
 labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:S", "layer:chassis"]
-milestone: "W2 Chassis MVP"
+milestone: "Done: delivered by the PoC track"
 index: 9
 epic_id: CH-1
 depends_on: ["007 H-1"]
@@ -40,15 +40,17 @@ epic_refs: [F.1, F.2, G.1]
 - Model and tool calls from the workload (013 CH-2, 054 H-16).
 - The public A2A endpoint for outside callers (061 H-5).
 - Framework event mappings (058 CH-8).
-- Per-delta streaming in `inprocess`: it batches events, accepted for tests and local runs.
+- A box for per-delta streaming in `inprocess`. Since 2026-11-13 the lane streams (`StreamingASGITransport`, for the P-7 cancel), but no lane-level delta test claims it.
 - A call to the workload port from another container or host fails: moved to 024 CH-3 on 2026-11-06, with the cluster check for NetworkPolicy enforcement. Today `workload-a2a` binds `127.0.0.1` and refuses another host (`packages/workload-a2a/tests/test_workload_a2a_server.py::test_non_loopback_host_is_refused`).
 
 ## Acceptance criteria
 
+Delivered by: PoC-1, PoC-2, PoC-8, and, on 2026-11-13, the P-9 and P-7 tests (`packages/chassis/tests/test_a2a_cancel_rpc.py`)
+
 - [x] The same echo workload runs through `inprocess` and through `sidecar`, and returns the same envelope and event stream for the same input. Delivered in PoC-2: `pocs/poc-02-two-engines-one-contract/tests/test_lanes.py::test_sidecar_and_inprocess_give_the_same_stream[*]`, `::test_lane_contract_suite_passes_over_both_lanes`.
 - [x] Streaming works over A2A: the first `delta` reaches the client before the workload sends `end`. Delivered in PoC-2 for `sidecar`: `packages/chassis/tests/test_a2a_sidecar.py::test_deltas_arrive_one_at_a_time`. `inprocess` still batches (accepted: tests and local runs only).
 - [x] `inprocess` is refused outside the `fake` and `local` profiles. Delivered in PoC-2: `packages/chassis/tests/test_profiles.py::test_inprocess_refused_in_cloud`, `::test_build_ports_refuses_inprocess_in_cloud`; `packages/chassis/tests/test_server.py::test_config_refuses_the_lane_the_profile_forbids`.
-- [ ] A timeout cancels the A2A task, and the workload sees the cancel. PoC-2 delivered it for `sidecar` (`packages/chassis/tests/test_a2a_sidecar.py::test_timeout_mid_run_yields_a2a_timeout_and_cancels`). The Python server does interrupt `handle` mid-await: a2a-sdk cancels the producer task after `HandleExecutor.cancel` (`packages/chassis/tests/test_a2a_cancel_rpc.py::test_sidecar_timeout_cancels_handle_mid_await`). Open: `inprocess` sends no cancel (strict xfail `test_inprocess_timeout_cancels_handle_mid_await`; waits on proposals.md P-7).
+- [x] A timeout cancels the A2A task, and the workload sees the cancel, in all three lanes: `inprocess`, `sidecar`, and `remote` (user decision 2026-11-13, proposals.md P-7; [contract v9, G](../../contracts/contract-v9.md#g-cancel-in-every-lane-009-ch-1-p-7)). `inprocess` streams through `StreamingASGITransport`, so the shared `CancelTask` reaches `handle`. · Delivered by: `packages/chassis/tests/test_a2a_cancel_rpc.py::test_a_timeout_cancels_the_task_and_the_workload_sees_it[*]`, `::test_a_caller_that_leaves_cancels_the_task_and_the_workload_sees_it[*]`, `::test_a_timeout_in_remote_plain_mode_cancels_and_the_agent_sees_it`, `packages/chassis/tests/test_asgi_stream.py`
 - [x] One trace ID links the logs of the chassis and the workload. · Delivered in PoC-8: `pocs/poc-08-cross-cutting-build/tests/test_poc08_workload_logs.py::test_the_workload_logs_json_with_the_chassis_runs_trace_id`, `pocs/poc-08-cross-cutting-build/tests/test_poc08_c3_trace.py::test_every_call_has_metrics_and_json_logs_with_the_trace_id`.
 - [x] `inprocess` opens no socket: the suite passes with networking disabled. Delivered in PoC-1: `make test` runs with sockets disabled; evidence `pocs/poc-01-walking-skeleton/tests/test_a2a_inprocess.py::test_plugin_answers_over_a2a_in_memory`.
 - [x] The extra latency of the local hop is measured and recorded (p50 and p95), with the overhead per streamed delta and the time to first token. Delivered in PoC-2: `pocs/poc-02-two-engines-one-contract/tests/test_records.py::test_measurements_are_recorded`; [the measurements](../../../pocs/poc-02-two-engines-one-contract/notes/2026-10-01-measurements.md).

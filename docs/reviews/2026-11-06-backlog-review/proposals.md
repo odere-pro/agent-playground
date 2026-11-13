@@ -58,10 +58,11 @@ Each finding id is assigned here once, in bold. P-24 has no id: it carries two i
 ## Decided by the user, 2026-11-13
 
 - **P-9:** option 1. A JSON-RPC error answer from the workload is the new code `a2a.rpc_error`, not retryable (not `a2a.failed`, not `engine_error`). Built in 009 CH-1; recorded in [contract v9, E](../../contracts/contract-v9.md#e-a-json-rpc-error-from-the-workload-009-ch-1-p-9).
+- **P-7:** option 2 for the cancel, not option 1. The box "A timeout cancels the A2A task, and the workload sees the cancel" holds in all three lanes, `inprocess`, `sidecar`, and `remote`; it is not scoped to `sidecar` and `remote`. Built in 009 CH-1: `inprocess` now streams through `StreamingASGITransport`, so the one `CancelTask` path every lane uses reaches `handle`. Recorded in [contract v9, G](../../contracts/contract-v9.md#g-cancel-in-every-lane-009-ch-1-p-7).
 
 Done by a merged PR: **P-16.** Rule 9, the minimum chassis version, landed in `agent-lib` in PR #79; `docs/specs/architecture.md` and `docs/specs/security.md` name it.
 
-The other proposals, P-3, P-5, P-7, P-8, P-10 to P-15, P-17 to P-25, P-28, and P-30 to P-34, stay open. Each one's owner agent advises; a pick that changes code is its own PR after PR-R.
+The other proposals, P-3, P-5, P-8, P-10 to P-15, P-17 to P-25, P-28, and P-30 to P-34, stay open. Each one's owner agent advises; a pick that changes code is its own PR after PR-R.
 
 ## P-1: An evaluator outage: fail open or fail closed
 
@@ -155,6 +156,7 @@ The other proposals, P-3, P-5, P-7, P-8, P-10 to P-15, P-17 to P-25, P-28, and P
   1. Scope box 5 to `sidecar` and `remote`; move the `inprocess` cancel and the batching to `## Out of scope`.
   2. Build cancel and per-delta streaming into `inprocess`.
 - suggested: option 1. ADR-001 keeps `inprocess` for tests and local runs.
+- Decided 2026-11-13 by the user: not option 1. The cancel box holds in all three lanes, `inprocess` included. The cancel is built as option 2 asks, and `inprocess` streams as a side effect (`StreamingASGITransport`).
 - Owner: `chassis-architect`.
 - In the backlog: 009 CH-1 box 5: scope and tick per the pick.
 
