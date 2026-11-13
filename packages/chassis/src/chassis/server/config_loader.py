@@ -14,7 +14,9 @@ request, and a run keeps the `Context` it opened with. The pipeline's `Idempoten
 new `spec.idempotency` through `Idempotency.reload` on its next use (only `ttl_s` may differ).
 
 **What may change.** Only the paths in `RELOADABLE` (`chassis.server.config`). A document that
-changes any other leaf path is refused with `restart_required`.
+changes any other leaf path is refused with `restart_required`. The bootstrap file's values at
+`CEILINGS` (the per-call `spec.limits`, `spec.idempotency.ttl_s`) bound every store document: a
+value above one is refused with `over_ceiling`, at start and on a reload.
 
 **`start()`** loads, validates, and checks the store document against the bootstrap (or takes
 the bootstrap), sets `state.config` and `state.config_loaded`, then subscribes. An invalid
@@ -22,8 +24,9 @@ document fails startup with `ConfigRejected`, which names the failing fields (Py
 never a value.
 
 **`on_change(loaded)`** never raises. Accepted: `chassis.config.reloaded` and a log with the old
-and new `version`. Refused: the active config stays, `chassis.config.rejected{reason}` (`invalid`
-or `restart_required`), and a log with the field paths. suggested: the counter and log names.
+and new `version`. Refused: the active config stays, `chassis.config.rejected{reason}` (`invalid`,
+`restart_required`, or `over_ceiling`), and a log with the field paths. suggested: the counter
+and log names.
 
 **`version`** of a document is its own `version` field when set, else `content_hash` of the parsed
 document, so every replica that reads the same document reports the same `versions.config`.
@@ -44,11 +47,13 @@ from chassis.profiles import merge_adapters
 from chassis.server.config import RELOADABLE, ChassisConfig, content_hash, credential_paths
 
 __all__ = [
+    "CEILINGS",
     "REJECTED",
     "RELOADED",
     "ConfigRejected",
     "ConfigReloader",
     "changed_paths",
+    "over_ceiling",
     "parse_document",
     "restart_required",
     "uses_store",
@@ -59,7 +64,13 @@ log = logging.getLogger("chassis.config")
 RELOADED = "chassis.config.reloaded"
 REJECTED = "chassis.config.rejected"
 
-RejectReason = Literal["invalid", "restart_required"]
+RejectReason = Literal["invalid", "restart_required", "over_ceiling"]
+
+_REASON_TEXT: dict[str, str] = {
+    "invalid": "is invalid at",
+    "restart_required": "changes restart-only fields",
+    "over_ceiling": "raises a bootstrap ceiling at",
+}
 
 
 POLL_FAILED = "chassis.config.poll_failed"
@@ -72,7 +83,7 @@ class ConfigRejected(ValueError):
     def __init__(self, reason: RejectReason, paths: list[str]) -> None:
         self.reason: RejectReason = reason
         self.paths = paths
-        what = "is invalid at" if reason == "invalid" else "changes restart-only fields"
+        what = _REASON_TEXT[reason]
         super().__init__(f"config document {what}: {', '.join(paths) or '(document)'}")
 
 
@@ -137,6 +148,25 @@ def restart_required(old: ChassisConfig, new: ChassisConfig) -> list[str]:
     return [path for path in changed_paths(old, new) if not _reloadable(path)]
 
 
+CEILINGS: tuple[str, ...] = (
+    "spec.limits.max_tokens_max",
+    "spec.limits.timeout_ms_max",
+    "spec.limits.body_bytes_max",
+    "spec.limits.messages_max",
+    "spec.idempotency.ttl_s",
+)
+"""suggested (H-12): the paths whose bootstrap values bound every store document: what one call
+may ask for, and how long a cached result lives. A value may go down on a reload, never above
+the bootstrap file's. Capacity settings (`max_in_flight`, the rate limits) are not ceilings."""
+
+
+def over_ceiling(bootstrap: ChassisConfig, new: ChassisConfig) -> list[str]:
+    """The `CEILINGS` paths where `new` is above the bootstrap value."""
+    bound = _leaves(bootstrap.model_dump(mode="json"))
+    value = _leaves(new.model_dump(mode="json"))
+    return [path for path in CEILINGS if value[path] > bound[path]]
+
+
 class ConfigReloader:
     """Holds `state.config` (module docstring). `from_store` defaults to `uses_store(bootstrap)`."""
 
@@ -167,6 +197,9 @@ class ConfigReloader:
         paths = restart_required(active, new)
         if paths:
             raise ConfigRejected("restart_required", paths)
+        ceilings = over_ceiling(self.bootstrap, new)
+        if ceilings:
+            raise ConfigRejected("over_ceiling", ceilings)
         return new
 
     def _activate(self, config: ChassisConfig) -> None:
