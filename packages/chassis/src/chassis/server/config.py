@@ -193,9 +193,10 @@ class ModelSpec(BaseModel):
       Restart-only.
     - `routes: {}`: the route per task, keyed by the task the caller names in `input.data.task`.
       The pipeline resolves `routes[task]`, else `route`, into `ctx.model_route`, and the model
-      proxy forces every call of the run to it. A route the service's LiteLLM key does not list
-      is 403 `model_route_denied` at the first call; suggested: a check at load, which needs the
-      key and is not built. An empty task or route name is refused here.
+      proxy admits a call of the run only on that route; any other is refused at admission with
+      403 `model_route_denied`, never redirected (012 H-3). A route the LiteLLM key does not
+      list is 403 `model_route_denied` at the first call; suggested: a check at load, which
+      needs the key and is not built. An empty task or route name is refused here.
     - `judge_route: null`: the judge evaluator's route. Null: `CHASSIS_JUDGE_ROUTE`.
     """
 
@@ -357,6 +358,8 @@ class EventsSpec(BaseModel):
     """`spec.events` (PoC-4, 019 H-17). Restart-only. The adapter is `spec.adapters.events`.
     - `result_events: false`: publish `agents.task.completed.v1` or `agents.task.failed.v1` after
       each run.
+    - `include_input: false`: put the caller's (redacted) input into the result event. Off by
+      default: caller data stays off a shared broker until topic ACLs per service are in (020 X-8).
     - `consume`: run each event from a topic. Not built yet (PoC-4 P9 was optional and was not
       done): a non-null value is refused, never ignored. The type stays so the published schema
       does not change when the consumer arrives (019 H-17).
@@ -364,6 +367,7 @@ class EventsSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     result_events: bool = False
+    include_input: bool = False
     consume: EventsConsumeSpec | None = None
 
     @model_validator(mode="after")

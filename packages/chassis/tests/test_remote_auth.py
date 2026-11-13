@@ -107,6 +107,7 @@ def _run(
         budget=request.budget,
         versions=Versions(chassis=CHASSIS_VERSION),
         run_secret=SECRET if secret is None else secret,
+        model_route="fake-route",  # the route the bodies name; a run's only route (012 H-3)
     )
     return request, ctx
 

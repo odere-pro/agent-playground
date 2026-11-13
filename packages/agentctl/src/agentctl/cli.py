@@ -1,4 +1,5 @@
-"""`agentctl new <name> --kind ... [--framework ...] [--connector ...] [--dest DIR]`."""
+"""`agentctl new <name> --kind ... [--framework ...] [--trust ...] [--connector ...]
+[--key-route ROUTE ...] [--dest DIR]`."""
 
 from __future__ import annotations
 
@@ -19,10 +20,24 @@ def _parser() -> argparse.ArgumentParser:
     new.add_argument("--kind", required=True, choices=rules.KINDS)
     new.add_argument("--framework", default=rules.DEFAULT_FRAMEWORK, choices=rules.FRAMEWORKS)
     new.add_argument(
+        "--trust",
+        choices=rules.TRUSTS,
+        help="spec.trust (default: the framework's); untrusted needs the remote lane",
+    )
+    new.add_argument(
         "--connector",
-        default=rules.DEFAULT_CONNECTOR,
         choices=rules.CONNECTORS,
-        help="the lane; smolagents and claude-agent need remote",
+        help="the lane (default: sidecar, or remote when the agent is untrusted); "
+        "smolagents and claude-agent need remote",
+    )
+    new.add_argument(
+        "--key-route",
+        dest="key_routes",
+        action="append",
+        metavar="ROUTE",
+        help="a route the service's LiteLLM key lists; repeat for each "
+        f"(default: {', '.join(rules.DEFAULT_KEY_ROUTES)}). A generated route the key does not "
+        "list is refused",
     )
     new.add_argument("--dest", type=Path, default=Path.cwd(), help="parent folder (default: .)")
     new.add_argument(
@@ -38,20 +53,31 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _answers(args: argparse.Namespace, platform: Path) -> Answers:
+    """No `--connector`: the lane follows the resolved trust, as `copier.yml` does. Resolving it
+    raises `UsageError` for `--trust trusted` on an untrusted framework."""
+    connector = args.connector or rules.default_connector(
+        rules.resolve_trust(args.framework, args.trust)
+    )
+    return Answers(
+        agent_name=args.name,
+        kind=args.kind,
+        framework=args.framework,
+        connector=connector,
+        platform_path=platform.resolve() if platform.is_absolute() else platform,
+        trust=args.trust,
+        key_routes=tuple(args.key_routes or rules.DEFAULT_KEY_ROUTES),
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     platform = args.platform_path or find_platform(Path(__file__).resolve(), Path.cwd())
     if platform is None:
         print("agentctl: no agent-platform checkout found; pass --platform-path", file=sys.stderr)
         return 2
-    answers = Answers(
-        agent_name=args.name,
-        kind=args.kind,
-        framework=args.framework,
-        connector=args.connector,
-        platform_path=platform.resolve() if platform.is_absolute() else platform,
-    )
     try:
+        answers = _answers(args, platform)
         target = new_agent(answers, args.dest.resolve(), lock=not args.no_lock)
     except rules.UsageError as exc:
         print(f"agentctl: {exc}", file=sys.stderr)

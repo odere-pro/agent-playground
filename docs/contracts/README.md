@@ -17,6 +17,6 @@ A version here is a version of the document, not of the wire. The event schema s
 | [contract-v6.md](contract-v6.md) | PoC-7 | 2026-10-28 | Draft, additive over v5 |
 | [contract-v7.md](contract-v7.md) | PoC-8 | 2026-10-29 | Draft, additive over v6; superseded by v8 for what v8 names |
 | [contract-v8.md](contract-v8.md) | The core review of 2026-10-29 | 2026-11-06 | Draft, over v7; narrows the ids and event fields with no bump |
-| [contract-v9.md](contract-v9.md) | 136 CH-16, the model proxy under failure | 2026-11-08 | Draft, additive over v8; the newest version |
+| [contract-v9.md](contract-v9.md) | 136 CH-16, the model proxy under failure; 135 CH-15 (section D); 012 H-3 (section F) | 2026-11-08, F 2026-11-13 | Draft, additive over v8; the newest version. Section F (2026-11-13, user decision) replaces contract v6, G.4, line 376 ("whatever `model` the workload names") in full for a run's calls: any route but the run's is refused |
 
 The status comes from each file's header, or, where a file has no banner, from the next file's header.

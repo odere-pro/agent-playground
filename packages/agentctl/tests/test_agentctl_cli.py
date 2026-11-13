@@ -60,11 +60,104 @@ def test_an_unknown_framework_is_refused(tmp_path: Path, platform: Path) -> None
 def test_an_untrusted_framework_is_refused_in_the_sidecar_lane(
     tmp_path: Path, platform: Path, capsys: pytest.CaptureFixture[str], framework: str
 ) -> None:
-    code = _new(tmp_path, platform, "coder", "--kind", "tool", "--framework", framework)
+    args = ("--framework", framework, "--connector", "sidecar")
+    code = _new(tmp_path, platform, "coder", "--kind", "tool", *args)
     assert code == 2
     err = capsys.readouterr().err
     assert "untrusted" in err and "--connector remote" in err
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("framework", sorted(rules.UNTRUSTED))
+def test_an_untrusted_framework_with_no_connector_gets_the_remote_lane(
+    tmp_path: Path, platform: Path, framework: str
+) -> None:
+    """The lane default follows the resolved trust, as `copier.yml` does: no `--connector` on an
+    untrusted framework means `remote`, not a refusal."""
+    assert _new(tmp_path, platform, "coder", "--kind", "tool", "--framework", framework) == 0
+    answers = yaml.safe_load((tmp_path / "coder/.copier-answers.yml").read_text())
+    assert (answers["trust"], answers["connector"]) == ("untrusted", "remote")
+
+
+def test_trust_trusted_on_an_untrusted_framework_with_no_connector_is_refused(
+    tmp_path: Path, platform: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The lane default is worked out inside the refusal path: a bad `--trust` still exits 2."""
+    args = ("--framework", "smolagents", "--trust", "trusted")
+    assert _new(tmp_path, platform, "coder", "--kind", "tool", *args) == 2
+    assert "untrusted" in capsys.readouterr().err
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("framework", ["langgraph", *sorted(rules.UNTRUSTED)])
+def test_trust_untrusted_with_connector_sidecar_is_refused_and_writes_nothing(
+    tmp_path: Path, platform: Path, capsys: pytest.CaptureFixture[str], framework: str
+) -> None:
+    """059 H-15 box 3 (P-15, decided 2026-11-13): a clear error, exit 2, no output folder."""
+    args = ("--framework", framework, "--trust", "untrusted", "--connector", "sidecar")
+    assert _new(tmp_path, platform, "coder", "--kind", "tool", *args) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("agentctl: ")
+    assert "untrusted" in err and "--connector remote" in err and "'sidecar'" in err
+    assert list(tmp_path.iterdir()) == [], "nothing is written"
+
+
+def test_trust_untrusted_alone_picks_the_remote_lane(tmp_path: Path, platform: Path) -> None:
+    """059 H-15 box 2: `--trust untrusted` with no `--connector` renders the remote lane."""
+    assert _new(tmp_path, platform, "coder", "--kind", "tool", "--trust", "untrusted") == 0
+    agent = tmp_path / "coder"
+    answers = yaml.safe_load((agent / ".copier-answers.yml").read_text())
+    assert (answers["framework"], answers["trust"], answers["connector"]) == (
+        "langgraph",
+        "untrusted",
+        "remote",
+    )
+    config = yaml.safe_load((agent / "config/agent.yaml").read_text())
+    assert config["spec"]["trust"] == "untrusted"
+    assert config["spec"]["engine"]["connector"] == "remote"
+    assert not (agent / "deploy/compose").exists(), "Compose is the sidecar shape"
+
+
+@pytest.mark.parametrize("framework", sorted(rules.UNTRUSTED))
+def test_trust_trusted_on_an_untrusted_framework_is_refused(
+    tmp_path: Path, platform: Path, capsys: pytest.CaptureFixture[str], framework: str
+) -> None:
+    """The flag can only lower trust: an engine that runs model-written code stays untrusted."""
+    args = ("--framework", framework, "--trust", "trusted", "--connector", "remote")
+    assert _new(tmp_path, platform, "coder", "--kind", "tool", *args) == 2
+    assert "untrusted" in capsys.readouterr().err
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_without_trust_the_framework_decides(tmp_path: Path, platform: Path) -> None:
+    """The default is unchanged: no `--trust` means `rules.trust_of(framework)`, lane sidecar."""
+    assert _new(tmp_path, platform, "reader", "--kind", "tool") == 0
+    answers = yaml.safe_load((tmp_path / "reader/.copier-answers.yml").read_text())
+    assert (answers["trust"], answers["connector"]) == ("trusted", "sidecar")
+
+
+def test_a_generated_route_the_key_does_not_list_is_refused(
+    tmp_path: Path, platform: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """059 H-15 box 7: refuse, do not rewrite. Exit 2, the route named, nothing written."""
+    args = ("--key-route", "small-default", "--key-route", "local-small")
+    assert _new(tmp_path, platform, "reader", "--kind", "tool", *args) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("agentctl: ")
+    assert "'big-default'" in err and "small-default" in err and "--key-route" in err
+    assert list(tmp_path.iterdir()) == [], "nothing is written"
+
+
+def test_a_key_that_lists_the_generated_route_passes(tmp_path: Path, platform: Path) -> None:
+    args = ("--key-route", "local-small", "--key-route", "big-default")
+    assert _new(tmp_path, platform, "reader", "--kind", "tool", *args) == 0
+    assert (tmp_path / "reader/config/agent.yaml").is_file()
+
+
+def test_the_key_routes_default_to_the_generated_routes() -> None:
+    """agentctl has no offline source for the key; the default is what the template names."""
+    assert rules.DEFAULT_KEY_ROUTES == rules.GENERATED_ROUTES
+    rules.check_routes(rules.GENERATED_ROUTES, rules.DEFAULT_KEY_ROUTES)
 
 
 def test_the_trust_table_matches_adr_006() -> None:

@@ -1,6 +1,7 @@
 """PoC-8 (014 H-7): the router span. Every model call through either proxy route opens
 `chassis.model.route`: the route the workload asked for, the route the chassis calls, and whether
-the run's fallback route forced it. It sits in the run's trace, next to `chassis.model.call`.
+an uncorrelated call was pinned (a run's call is never redirected: 012 H-3). It sits in the run's
+trace, next to `chassis.model.call`.
 
 The other chassis spans already have tests: `chassis.run` (`test_otel_wiring.py`), the model proxy
 `chassis.model.call` (`test_model_proxy.py::test_a_call_of_an_in_flight_run_gets_a_span_and_is_
@@ -31,6 +32,15 @@ CONFIG: dict[str, Any] = {
 TRACE = "4bf92f3577b34da6a3ce929d0e0e4736"  # pragma: allowlist secret
 PARENT = "00f067aa0ba902b7"
 TRACEPARENT = f"00-{TRACE}-{PARENT}-01"
+ROUTED: dict[str, Any] = {
+    **CONFIG,
+    "spec": {
+        **CONFIG["spec"],
+        "model": {"route": "big-default", "fallback_route": "fallback-route"},
+    },
+}
+"""`CONFIG` naming the routes a run's calls use: a call of a run that names a route the config
+does not list is refused (012 H-3)."""
 CHAT = {"model": "big-default", "messages": [{"role": "user", "content": "hello"}]}
 MESSAGES = {**CHAT, "max_tokens": 64}
 
@@ -63,6 +73,7 @@ def _run() -> tuple[Request, Context]:
         agent_version=request.agent_version,
         budget=request.budget,
         versions=Versions(chassis=CHASSIS_VERSION),
+        model_route="big-default",  # the pipeline always sets the run's route
     )
     return request, ctx
 
@@ -75,21 +86,25 @@ def _client(app: Any) -> httpx.AsyncClient:
     ("path", "body", "fmt"),
     [("/v1/chat/completions", CHAT, "openai"), ("/v1/messages", MESSAGES, "anthropic")],
 )
-@pytest.mark.parametrize("forced", [False, True], ids=["as-asked", "forced"])
+@pytest.mark.parametrize("fallback", [False, True], ids=["run-route", "fallback-attempt"])
 async def test_every_proxied_model_call_has_a_route_span_in_the_run_trace(
-    path: str, body: dict[str, Any], fmt: str, forced: bool
+    path: str, body: dict[str, Any], fmt: str, fallback: bool
 ) -> None:
+    """In the gate's fallback attempt the run's route is the fallback route, and the workload
+    sends it (`ctx.model_route`); a run's call is never redirected, so `route.forced` is false."""
+    route = "fallback-route" if fallback else "big-default"
     ports = _ports()
-    app = create_app(ChassisConfig.model_validate(CONFIG), ports)
+    app = create_app(ChassisConfig.model_validate(ROUTED), ports)
     request, ctx = _run()
     async with (
         _client(create_proxy_app(app)) as client,
         app.router.lifespan_context(app),
         app.state.runs.register(request, ctx) as record,
     ):
-        if forced:
-            record.model_route = "fallback-route"
-        res = await client.post(path, json=body, headers={"traceparent": TRACEPARENT})
+        record.model_route = route
+        res = await client.post(
+            path, json={**body, "model": route}, headers={"traceparent": TRACEPARENT}
+        )
     assert res.status_code == 200, res.text
     telemetry = ports.telemetry
     assert isinstance(telemetry, InMemoryTelemetry)
@@ -98,9 +113,9 @@ async def test_every_proxied_model_call_has_a_route_span_in_the_run_trace(
     assert span.parent_id == PARENT, "a child of the workload's call, in the run's trace"
     attributes = span.attributes
     assert attributes["trace_id"] == TRACE and attributes["request_id"] == "req-1"
-    assert attributes["route.requested"] == "big-default"
-    assert attributes["route"] == ("fallback-route" if forced else "big-default")
-    assert attributes["route.forced"] is forced
+    assert attributes["route.requested"] == route
+    assert attributes["route"] == route
+    assert attributes["route.forced"] is False
     assert attributes["format"] == fmt
     (call,) = [s for s in telemetry.spans if s.name == "chassis.model.call"]
     assert call.attributes["route"] == attributes["route"]
@@ -147,7 +162,6 @@ async def test_an_uncorrelated_call_naming_another_route_is_sent_to_the_default_
     (call,) = [s for s in telemetry.spans if s.name == "chassis.model.call"]
     assert call.attributes["route"] == DEFAULT_ROUTE
     assert telemetry.counter_value("chassis.model_route_pinned", route=DEFAULT_ROUTE) == 1
-    assert telemetry.counter_value("chassis.model_route_forced", route=DEFAULT_ROUTE) == 0
 
 
 @pytest.mark.parametrize(
@@ -155,10 +169,11 @@ async def test_an_uncorrelated_call_naming_another_route_is_sent_to_the_default_
     [("/v1/chat/completions", CHAT), ("/v1/messages", MESSAGES)],
     ids=["openai", "anthropic"],
 )
-async def test_a_correlated_call_naming_another_route_keeps_its_route(
+async def test_a_correlated_call_naming_another_route_is_refused_not_pinned(
     path: str, body: dict[str, Any]
 ) -> None:
-    """The pin is for uncorrelated calls only: a run's call keeps the route it names."""
+    """The pin is for uncorrelated calls only: a run's call that names another route is 403
+    `model_route_denied` (012 H-3), with no routing span and no pin."""
     ports = _ports()
     app = create_app(ChassisConfig.model_validate(CONFIG), ports)
     request, ctx = _run()
@@ -170,10 +185,9 @@ async def test_a_correlated_call_naming_another_route_keeps_its_route(
         res = await client.post(
             path, json={**body, "model": OTHER_ROUTE}, headers={"traceparent": TRACEPARENT}
         )
-    assert res.status_code == 200, res.text
+    assert res.status_code == 403 and "model_route_denied" in res.text, res.text
     telemetry = ports.telemetry
     assert isinstance(telemetry, InMemoryTelemetry)
-    (span,) = [s for s in telemetry.spans if s.name == ROUTE_SPAN]
-    assert span.attributes["route"] == OTHER_ROUTE
-    assert span.attributes["route.forced"] is False
+    assert not [s for s in telemetry.spans if s.name == ROUTE_SPAN]
+    assert telemetry.counter_value("chassis.model_route_refused", route="big-default") == 1
     assert telemetry.counter_value("chassis.model_route_pinned", route=DEFAULT_ROUTE) == 0

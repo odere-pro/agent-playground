@@ -18,7 +18,9 @@ cd ~/work/my-agent && make setup test
 - `--kind` is `transformer` (text in, text out), `evaluator` (scores or labels an input), or `tool` (answers by calling tools). These are the stateless kinds of the epic.
 - `--framework` is `python`, `pydanticai`, `langgraph`, `langchain`, `openai-agents`, `smolagents`, or `claude-agent`. `langchain` is LangChain's `create_agent`, which runs on LangGraph: pick it for LangChain's agent and middleware, and `langgraph` to draw the graph yourself. Both share the event mapping, the MCP tools, and the tracing. The default is `langgraph` ([ADR-006](../planning/adr/006-agent-engines-default-supported-lanes.md), item 1, amended 2026-11-06); `pydanticai` stays supported.
 - The `langchain` variant's mapping streams every model token as a `delta`, whichever node made it. If you add `create_agent` middleware that calls a model, its tokens reach the caller too.
-- `--connector` is `sidecar` (the default) or `remote`. `smolagents` and `claude-agent` are allowed only with `remote` (section 5).
+- `--connector` is `sidecar` (the default) or `remote`. `smolagents` and `claude-agent` are allowed only with `remote`, which is then the default (section 5).
+- `--trust` is `trusted` or `untrusted` (suggested: the values); the default follows the framework. `--trust untrusted` runs a trusted framework as untrusted, so the lane is `remote` and the chart puts the workload in its own pod under gVisor. `--trust untrusted --connector sidecar` is refused, and so is `--trust trusted` on `smolagents` or `claude-agent`.
+- `--key-route ROUTE`, once per route, names the routes the agent's LiteLLM key lists. `agentctl` refuses a generated route the key does not list and writes nothing. It cannot read the key offline; with no `--key-route` the list is the template's route, `big-default` (suggested:).
 - `--dest DIR` is the parent folder of the new repo (default: the current folder). `--platform-path PATH` is the platform checkout (default: the one `agentctl` runs from).
 - `--no-lock` skips pinning the agent to the platform's tested versions. Without it, `agentctl` writes a `uv.lock` into the first commit.
 

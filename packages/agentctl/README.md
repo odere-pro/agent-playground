@@ -14,11 +14,16 @@ cd invoice-reader && make setup test run
 | `name` | a DNS label: lower case letters, digits, dashes | required |
 | `--kind` | `transformer`, `evaluator`, `tool` | required |
 | `--framework` | `python`, `pydanticai`, `langgraph`, `langchain` (`create_agent`), `openai-agents`, `smolagents`, `claude-agent` | `langgraph` (ADR-006, amended 2026-11-06) |
-| `--connector` | `sidecar`, `remote` | `sidecar` |
+| `--trust` | `trusted`, `untrusted` (suggested: the values, P-15) | the framework's (`rules.trust_of`) |
+| `--connector` | `sidecar`, `remote` | `sidecar`; `remote` for an untrusted agent |
+| `--key-route` | a route the service's LiteLLM key lists; repeat for each | `big-default` (suggested:) |
 | `--dest` | the parent folder | `.` |
 | `--platform-path` | the agent-platform checkout | the one agentctl runs from |
+| `--no-lock` | skip the platform pin and `uv.lock` | off |
 
-The trust rule (ADR-001 item 5): `smolagents` and `claude-agent` are untrusted and run only with `--connector remote`. The other four may use either lane. A refused argument exits 2 with the reason.
+The trust rule (ADR-001 item 5): `smolagents` and `claude-agent` are untrusted and run only in the `remote` lane, which is their default. The other five may use either lane. `--trust untrusted` runs a trusted framework as untrusted: the `remote` lane, so the chart puts the workload in its own pod under gVisor with default-deny egress. `--trust untrusted --connector sidecar` is refused, and so is `--trust trusted` on an untrusted framework. A refused argument exits 2 with the reason and writes nothing.
+
+The route check (012 H-3): each service has one LiteLLM key, minted at deploy, that lists the routes the service may use. agentctl refuses a generated route the key does not list; it does not rewrite the route. agentctl cannot read the real key offline, so `--key-route` states its list. With no `--key-route` the list is the route the template already names, `big-default`, so the check passes. Decided 2026-11-13: the list will come from a key manifest written at deploy; that is not built yet.
 
 ## What it writes
 

@@ -1,7 +1,7 @@
 ---
 title: "H-8: Testing kit: fake adapters, contract tests per API, record and replay"
 labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
-milestone: "W2 Chassis MVP"
+milestone: "Done: delivered by the PoC track"
 index: 15
 epic_id: H-8
 depends_on: ["011 H-2", "012 H-3", "009 CH-1"]
@@ -42,6 +42,8 @@ Contract tests are part of the Phase 0 done-when, and every agent needs the same
 
 ## Acceptance criteria
 
+Delivered by: PoC-2, PoC-3, PoC-6, PoC-9, the kit tests named on each box, and on 2026-11-13 the recorded `make test-integration` run (the Valkey binding of the state suite)
+
 - [x] The echo agent passes the contract suite for all three APIs, streaming and complete, in both transports: over A2A on localhost through `sidecar`, and over A2A in memory through `inprocess`. · Delivered in PoC-3: `pocs/poc-03-one-interface-every-client/tests/test_exit_criteria.py::test_exit_2_only_the_two_legitimate_groups_of_cells_skip`; `pocs/poc-03-one-interface-every-client/tests/test_interface_contract.py::TestInterfaces`.
 - [x] A broken response shape (for example a missing `status`) fails the matching contract test in both transports. · Delivered by: `packages/chassis/tests/test_interface_suite_broken_shape.py::test_a_missing_status_fails_the_native_complete_cell` (`inprocess` and `sidecar`; the native complete cell of `InterfaceContract.test_every_cell_answers` fails with "the envelope has no status", the stream cell still passes), `::test_the_native_cell_passes_over_a_sound_chassis`.
 - [x] The event-mapping contract test fails on a fixture stream with an event that does not match the schema. · Delivered by: `agent_testkit.event_mapping.EventMappingContract`; `packages/agent-testkit/tests/test_agent_testkit_event_mapping.py::test_the_schema_case_fails_on_a_fixture_event_that_does_not_match` (four bad fixtures), `::TestToyMapping` and `::TestToyMappingAsync` (a sound mapping passes).
@@ -51,8 +53,7 @@ Contract tests are part of the Phase 0 done-when, and every agent needs the same
 - [x] The whole suite runs with one command against a workload, by handle or by A2A endpoint, from an environment that has the kit but not the chassis package. · Delivered in PoC-9: `packages/agent-testkit/tests/test_agent_testkit_isolation.py::test_the_kit_imports_with_the_chassis_unimportable`.
 - [x] The suite runs in the `check` job on every PR. · Delivered in PoC-3: `.github/workflows/ci.yml` job `check` runs `make check`, which runs `make test`, the contract suites included.
 - [x] An engine that calls the model over HTTP runs offline against the fake model server, including streaming and a tool call. · Delivered in PoC-2 and PoC-6: `pocs/poc-02-two-engines-one-contract/tests/test_engines.py::test_python_engine_passes_offline_against_the_fake_model_server` (streaming); `pocs/poc-06a-bake-off-sidecar-lane/tests/test_poc06a_spec.py::test_the_lookup_task_calls_both_tools_in_order` (tool call).
-- [ ] A real adapter and its fake pass the same port contract suite, one with testcontainers and one in memory.
-  - Half proven offline: `packages/chassis/tests/test_state_contract.py::TestInMemoryState` binds `chassis_contracts.state.StatePortContract` and passes. The Valkey half, `packages/chassis/tests/integration/test_valkey_state_contract.py::TestValkeyState`, binds the same class and collects, but it needs Docker (`make test-integration`). Tick it after a recorded green run.
+- [x] A real adapter and its fake pass the same port contract suite, one with testcontainers and one in memory. · Delivered by: `chassis_contracts.state.StatePortContract` bound twice, `packages/chassis/tests/integration/test_valkey_state_contract.py::TestValkeyState` (Valkey in a testcontainer) and `packages/chassis/tests/test_state_contract.py::TestInMemoryState`, the same 13 cases passing in each; `make test-integration` green on 2026-11-13, `51 passed, 18 skipped, 246 deselected, 2 xfailed` ([the run note](../../../pocs/poc-04-stateless-scalable/notes/2026-11-13-integration-run.md)).
 - [x] Recording is refused unless the host ends in `.invalid` or the inner transport is ASGI. · Delivered by: `chassis_contracts.recording.RecordRefused`; `packages/contract-suites/tests/test_recording.py::test_recording_is_refused_when_the_host_may_be_real`, `::test_recording_is_allowed_when_the_host_is_under_invalid`, `::test_recording_is_allowed_when_the_inner_transport_is_asgi`, `::test_replay_is_never_refused_whatever_the_host`.
 - [x] In the `fake` profile, a test scripts the model's answer per case, with no chassis import. · Delivered by: `start_chassis(..., model_script=...)`, `WorkloadContract.model_script`, and the `agent_testkit_model_script` fixture; `packages/agent-testkit/tests/test_agent_testkit_model_script.py::test_each_case_gets_its_scripted_answer`, `::test_a_case_gets_its_scripted_model_error`, `::test_this_module_imports_no_chassis`.
 

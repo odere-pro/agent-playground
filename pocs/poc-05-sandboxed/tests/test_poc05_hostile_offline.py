@@ -452,11 +452,11 @@ async def test_h29_a_route_outside_the_key_is_refused_and_an_in_scope_call_is_20
     every commit."
 
     Exit criterion 1 (offline), H29, route scope, in two halves. First: inside a run, with its
-    own token, the remote calls the chassis's model proxy with a route the key does not list.
-    The chassis holds every call of a run to the run's route (`spec.model.routes`, else
-    `spec.model.route`, `docs/specs/models.md`; counted `chassis.model_route_forced`), so the
-    key never sees the remote's route: the call is 200 on the run's route, the control in-scope
-    call is 200, and the run ends `ok`. Second: the run's own route is outside the key
+    own token, the remote calls the chassis's model proxy with a route that is not the run's.
+    Admission refuses it with 403 `model_route_denied` before the model is called (012 H-3,
+    user decision 2026-11-13: a run's call may name only the run's route, never redirected), so
+    the key never sees the remote's route; the control call on the run's route is 200, and the
+    run ends `ok`. Second: the run's own route is outside the key
     (`spec.model.route` reloaded to it, no restart). The key's refusal reaches the remote as the
     fixed `model_route_denied` text, not retryable, with no completion, and the run ends in
     `error`. The workload streams, so it sees the stream's error frame; the 403 of a plain call
@@ -478,13 +478,14 @@ async def test_h29_a_route_outside_the_key_is_refused_and_an_in_scope_call_is_20
             picked = await _remote_chat(lane, run.traceparent, OUT_OF_SCOPE)
             in_scope = await _remote_chat(lane, run.traceparent)
         assert run.response is not None and run.response.json()["status"] == "ok", run.response
-        # The remote's own route never reaches the key: the call runs on the run's route.
-        assert picked[0] == 200, picked
-        assert picked[1]["choices"][0]["message"]["content"] == REPLY, picked
+        # The remote's own route never reaches the key: admission refuses it with a 403.
+        assert picked[0] == 403 and _code(picked[1]) == "model_route_denied", picked
+        assert picked[1]["error"]["retryable"] is False, picked
+        assert OUT_OF_SCOPE not in str(picked[1]), picked
         assert in_scope[0] == 200, in_scope
         assert in_scope[1]["choices"][0]["message"]["content"] == REPLY
         assert scoped[0].refused == [], scoped[0].refused
-        assert lane.counter_total("chassis.model_route_forced") == 1
+        assert lane.counter_total("chassis.model_route_refused") == 1
         # The run's route outside the key: `spec.model.route` reloads, the next run uses it.
         document = lane.app.state.config.model_dump(mode="json")
         document["spec"]["model"]["route"] = OUT_OF_SCOPE

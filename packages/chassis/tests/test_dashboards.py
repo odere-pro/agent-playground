@@ -16,7 +16,7 @@ import pytest
 from chassis.dashboards import (
     DASHBOARD_DIR,
     FALLBACK,
-    NO_FALLBACK,
+    FIRST_TRY,
     RETRY,
     agents_in,
     dashboard,
@@ -117,7 +117,7 @@ def _value(expr: str, counters: dict[str, float]) -> float:
     def term(match: re.Match[str]) -> str:
         name, labels = match.groups()
         assert 'agent="echo"' in labels, expr
-        if name == "chassis_gate_runs_total":
+        if name in ("chassis_gate_runs_total", "chassis_gate_first_attempt_passes_total"):
             assert 'mode="sync"' in labels, expr
         return repr(counters[name])
 
@@ -127,20 +127,27 @@ def _value(expr: str, counters: dict[str, float]) -> float:
 
 
 def test_the_gate_panels_work_out_from_fixed_counter_values() -> None:
-    # 10 sync runs, 3 retried attempts, 1 run sent to the fallback after its retry.
+    """046 A-5: per agent, the first-try pass rate is the run-level counter over sync gate runs,
+    exact; the retry rate is retried attempts per sync run. 10 sync runs: 8 passed on attempt 1,
+    1 passed on its retry, and 1 retried twice and went to the fallback (3 retried attempts).
+    The old estimate `1 - (retries + fallbacks) / runs` would read 0.6, not 0.8."""
     counters = {
         "chassis_gate_runs_total": 10.0,
+        "chassis_gate_first_attempt_passes_total": 8.0,
         "chassis_gate_retries_total": 3.0,
         "chassis_gate_fallbacks_total": 1.0,
     }
     board = dashboard("echo")
-    expected = {NO_FALLBACK: 0.9, RETRY: 0.3, FALLBACK: 0.1}
+    expected = {FIRST_TRY: 0.8, RETRY: 0.3, FALLBACK: 0.1}
     for title, value in expected.items():
         panel = _panel(board, title)
         [expr] = panel_exprs({"panels": [panel]})
         assert _value(expr, counters) == pytest.approx(value), title
         assert panel["fieldConfig"]["defaults"]["unit"] == "percentunit"
-    assert not [p for p in board["panels"] if "first-try" in p["title"].lower()]
+    [first_try] = panel_exprs({"panels": [_panel(board, FIRST_TRY)]})
+    assert "chassis_gate_first_attempt_passes_total" in first_try
+    assert "retries" not in first_try and "fallbacks" not in first_try
+    assert not [p for p in board["panels"] if "no fallback" in p["title"].lower()]
 
 
 def test_the_fallback_panel_draws_a_target_line_at_ten_percent() -> None:

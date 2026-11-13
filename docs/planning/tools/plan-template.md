@@ -57,7 +57,7 @@ New chassis issues from the ADR:
 
 How the OpenAI, Anthropic, and MCP formats map onto the one canonical request ({{L:H-2}}, {{L:H-13}}) is proposed in [ADR-003](../adr/003-chat-formats-onto-the-canonical-request.md), from PoC-3.
 
-That result events leave through a broker client in the chassis, not Dapr ({{L:H-17}}), is decided in [ADR-004](../adr/004-events-through-a-broker-client.md), from PoC-4, accepted 2026-10-08. The broker product stays open in {{L:DEC-1}}.
+That result events leave through a broker client in the chassis, not Dapr ({{L:H-17}}), is decided in [ADR-004](../adr/004-events-through-a-broker-client.md), from PoC-4, accepted 2026-10-08. The broker product stays open in {{L:DEC-1}}. That a result-event payload schema may break in place until the first consumer ships, and needs a new major and new topics after that, is decided in [ADR-016](../adr/016-result-event-payload-breaks-before-first-consumer.md), accepted 2026-11-13.
 
 How a remote workload authenticates to the chassis (one bearer token per remote, a separate listener) and how admission enforces the trust rule ({{L:CH-4}}, {{L:CH-6}}, a ValidatingAdmissionPolicy) is decided in [ADR-005](../adr/005-remote-lane-auth-and-trust-admission.md), from PoC-5, accepted 2026-10-09.
 

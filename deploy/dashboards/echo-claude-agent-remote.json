@@ -258,7 +258,7 @@
     {
       "id": 6,
       "type": "timeseries",
-      "title": "Evaluator gate sync runs with no fallback",
+      "title": "Evaluator gate first-try pass rate",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -290,8 +290,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "1 - sum(rate(chassis_gate_fallbacks_total{agent=\"echo-claude-agent-remote\"}[5m])) / sum(rate(chassis_gate_runs_total{agent=\"echo-claude-agent-remote\",mode=\"sync\"}[5m]))",
-          "legendFormat": "no fallback"
+          "expr": "sum(rate(chassis_gate_first_attempt_passes_total{agent=\"echo-claude-agent-remote\",mode=\"sync\"}[5m])) / sum(rate(chassis_gate_runs_total{agent=\"echo-claude-agent-remote\",mode=\"sync\"}[5m]))",
+          "legendFormat": "first-try pass rate"
         }
       ]
     },

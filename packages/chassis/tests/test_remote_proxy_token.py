@@ -91,6 +91,7 @@ def _run() -> tuple[Request, Context]:
         budget=request.budget,
         versions=Versions(chassis=CHASSIS_VERSION),
         run_secret=SECRET,
+        model_route="fake-route",  # the route the body names; a run's only route (012 H-3)
     )
     return request, ctx
 

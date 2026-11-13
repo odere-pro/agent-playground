@@ -1,0 +1,48 @@
+# LiteLLM for the router drill (router-drill.yaml): the two G-1b routes on the fake model, a price
+# per route, Postgres spend logs, and the `prometheus` callback. No credential in this file: the
+# master key and the database URL come from the environment.
+# `router-drill.sh up` copies it to .run/router-litellm.yaml; `swap` edits only that copy.
+model_list:
+  - model_name: big-default
+    model_info:
+      owner: platform
+      supports_function_calling: true
+      route_version: 1
+    litellm_params:
+      model: openai/fake-model
+      num_retries: 2
+      api_base: http://fake-model-server:8081/v1
+      api_key: fake  # pragma: allowlist secret (a placeholder; the fake takes no key)
+      # suggested: a price per route, so a call has a cost (G-2). Not a real provider's price.
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
+  - model_name: local-small
+    model_info:
+      owner: platform
+      supports_function_calling: false
+      route_version: 1
+    litellm_params:
+      model: openai/fake-model-fallback
+      num_retries: 2
+      api_base: http://fake-model-server:8081/v1
+      api_key: fake  # pragma: allowlist secret (a placeholder; the fake takes no key)
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+
+# CH-16: the same retries and two-way fallbacks as litellm.yaml, so every LiteLLM config under
+# deploy/ states them (test_litellm_route_resilience.py).
+router_settings:
+  fallbacks:
+    - big-default: [local-small]
+    - local-small: [big-default]
+
+litellm_settings:
+  callbacks: ["prometheus"]
+  turn_off_message_logging: true
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  # suggested: write spend logs every 2 s, so the drill reads them soon after the call.
+  proxy_batch_write_at: 2

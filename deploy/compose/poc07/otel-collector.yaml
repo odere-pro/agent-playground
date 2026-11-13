@@ -39,6 +39,16 @@
 #
 # Spans: `transform/redact_spans` masks span and span-event attributes with the same rules, and
 # keeps the chassis's id keys as they are. Offline check: test_poc07_stack_static.py.
+#
+# Sampling (014 H-7, ADR-007 item 8): a Collector policy, so one decision covers the chassis, the
+# workload, and LiteLLM. The SDKs export every span. `tail_sampling` runs first in the traces
+# pipeline. Its rate is `trace_sample_rate`: stack.sh turns TRACE_SAMPLE_RATE (0 to 1, default
+# 1.0) into TRACE_SAMPLE_PERCENT with ../trace_sample_percent.py, the one conversion. A trace
+# with an error span is kept at any rate, 0 included (decided by the user, 2026-11-13).
+# suggested: the decision waits 10 s for late spans.
+# The block is the same in ../poc08-litellm/otel-collector.yaml. The processor ships in the
+# contrib image (manifest at v0.163.2), not in the core one. Offline check:
+# packages/chassis/tests/test_trace_sampling.py.
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
@@ -57,6 +67,18 @@ receivers:
 processors:
   batch:
     timeout: 1s
+  # Policies are ORed: a trace is kept when any policy samples it.
+  tail_sampling:
+    decision_wait: 10s
+    policies:
+      - name: keep-errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      - name: trace-sample-rate
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: ${env:TRACE_SAMPLE_PERCENT}
   # Spans: the same attribute rules as the logs pipeline below, on span and span-event attributes.
   # Workload spans never pass the chassis's own redaction. Keep both lists equal:
   # test_poc07_stack_static.py checks it. The id keys (`ID_KEYS` in chassis.adapters.otel) are
@@ -164,7 +186,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [transform/redact_spans, batch]
+      processors: [tail_sampling, transform/redact_spans, batch]
       exporters: [otlphttp/langfuse, otlp/jaeger]
     logs:
       receivers: [otlp]

@@ -29,6 +29,7 @@ from chassis.server import ChassisConfig, create_app
 from chassis.server.config_loader import ConfigRejected
 from chassis_contracts.containers.minio import make_bucket, minio_container
 from minio import Minio
+from poc_harness.apps import running as lifespan_held
 from poc_harness.waits import wait_until_async
 from testcontainers.community.minio import MinioContainer
 
@@ -132,9 +133,11 @@ async def running(minio: MinioContainer) -> Any:  # an async iterator of one `Ru
     bootstrap = ChassisConfig.model_validate(with_changes(version="bootstrap"))
     app = create_app(bootstrap, ports(store, telemetry))
     transport = httpx.ASGITransport(app=app)
+    # The lifespan runs in a task of its own: FastMCP's task group must exit in the task it
+    # entered, and a fixture's setup and teardown run in different tasks.
     async with (
         httpx.AsyncClient(transport=transport, base_url="http://chassis") as client,
-        app.router.lifespan_context(app),
+        lifespan_held(app),
     ):
         yield Running(s3, bucket, store, telemetry, client)
     await store.aclose()

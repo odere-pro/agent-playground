@@ -77,10 +77,15 @@ route forwards a header.
 A model error on the OpenAI route keeps its `code`, `retryable`, and status, and sends the fixed
 text of the Anthropic route's row for it (`model_error_to_wire`); the upstream text is logged.
 
-The fallback route (PoC-7, 017 H-4). When the evaluator gate runs its fallback attempt it sets the
-run's `RunRecord.model_route`; `admit` then sends every call of that run to it, whatever `model` the
-workload names, and counts `chassis.model_route_forced{route}` (suggested). `Admission.route` is the
-route to call, on both routes. `chassis.model_calls` still counts the route the workload named.
+The run's route (012 H-3; user decision 2026-11-13). A call of a run may name only the run's
+route, `RunRecord.model_route`: the task's route, else `spec.model.route`. When the evaluator gate
+runs its fallback attempt (PoC-7, 017 H-4) it sets `RunRecord.model_route` and `ctx.model_route`
+to the fallback route, so the workload sends that. Any other route is refused by `admit` with the
+403 `model_route_denied` body below, before any budget is held or the model is called; it is
+never redirected. A chat stream gets the 403 as its status, with one error frame and `[DONE]`.
+Counted `chassis.model_route_refused{route}` by the run's route (suggested), or `unresolved` for a
+record with no route, which fails closed. `Admission.route` is the route to call, on both routes.
+`chassis.model_calls` counts the route the workload named.
 
 A refused model route (contract v5, A.9). A `ModelError` with code `http_401` or `http_403` (the
 model router refuses a route the key does not list) answers 403 `model_route_denied`, not 500, on
@@ -89,8 +94,8 @@ its error frame. The call is counted as `chassis.model_upstream_denied{route}` a
 
 The router span and usage (PoC-8, 014 H-7). Every admitted call opens `chassis.model.route` with
 the call's span attributes plus `route.requested` (the `model` the workload named), `route` (the
-one called), and `route.forced` (the run's fallback route won, or an uncorrelated call was pinned
-to `spec.model.route`). It is the chassis's routing
+one called), and `route.forced` (an uncorrelated call was pinned to `spec.model.route`; a run's
+call is never redirected, so it is always false there). It is the chassis's routing
 choice; the provider call itself is LiteLLM's own span. A call that reported usage counts
 `chassis.model_tokens{route, direction}` and, with a price in `spec.observability.prices`,
 `chassis.model_cost_microusd{route}` (`chassis.server.observability.count_usage`). A charge with

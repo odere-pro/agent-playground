@@ -41,11 +41,12 @@ Any span can carry `error.code`. The guard stages emit counters and logs, not a 
 | `chassis_model_cost_microusd_total` | `route` |
 | `chassis_tool_calls_total`, `chassis_tool_call_duration_seconds` | `tool` (`status` on the histogram) |
 | `chassis_gate_runs_total` | `mode` |
+| `chassis_gate_first_attempt_passes_total` | `mode`; one per gated run that passed the gate on attempt 1 (046 A-5; suggested: the name) |
 | `chassis_gate_retries_total`, `chassis_gate_fallbacks_total` | |
 | `chassis_evaluator_score_duration_seconds` (histogram) | `mode`, `status` |
 | `chassis_feedback_total` | `label` |
 
-Every refusal and failure has a counter: `guardrail_blocked{stage,reason}`, `guardrail_unavailable{stage}`, `auth_refused{code,path_class}`, `rate_limited{path_class}`, `output_url_masked`, `evaluator_calls{evaluator,mode,outcome}`, `gate_failed_open`, `gate_stopped{reason}` (suggested: `timeout`, `budget`; 017 H-4), `evaluator_dropped`, `feedback_failed{code}`, `events.published|publish_failed{topic}`, `model_calls_uncorrelated|refused{route}`, `model_route_forced{route}`, `model_upstream_denied{route}`, `model_stream_timeout{route}`, `requests_refused{reason}`, `remote.auth_failed{reason}`, `config.reloaded|rejected{reason}|poll_failed{reason}`, `client_disconnected`, `trace_id_reminted`, and the `chassis.idempotency.*` family. The full list is `chassis/metrics.py`.
+Every refusal and failure has a counter: `guardrail_blocked{stage,reason}`, `guardrail_unavailable{stage}`, `auth_refused{code,path_class}`, `rate_limited{path_class}`, `output_url_masked`, `evaluator_calls{evaluator,mode,outcome}`, `gate_failed_open`, `gate_stopped{reason}` (suggested: `timeout`, `budget`; 017 H-4), `evaluator_dropped`, `feedback_failed{code}`, `events.published|publish_failed{topic}`, `model_calls_uncorrelated|refused{route}`, `model_route_pinned{route}`, `model_route_refused{route}`, `model_upstream_denied{route}`, `model_stream_timeout{route}`, `requests_refused{reason}`, `remote.auth_failed{reason}`, `config.reloaded|rejected{reason}|poll_failed{reason}`, `client_disconnected`, `trace_id_reminted`, and the `chassis.idempotency.*` family. The full list is `chassis/metrics.py`.
 
 Model tokens and cost come from the proxy's usage and `spec.observability.prices`.
 
@@ -55,7 +56,7 @@ One redacted JSON line per record, with `request_id` and `trace_id` inside a run
 
 ## Dashboards
 
-`python -m chassis.dashboards` writes one Grafana dashboard per agent to `deploy/dashboards/`, a 5-minute window, seven panels: requests by interface and status, latency p50 and p95, errors by code, model tokens by direction, model cost per hour, the evaluator gate fallback rate, user feedback by label. The container dashboard that shows the [key metrics](metrics.md) is specified there.
+`python -m chassis.dashboards` writes one Grafana dashboard per agent to `deploy/dashboards/`, a 5-minute window, nine panels: requests by interface and status, latency p50 and p95, errors by code, model tokens by direction, model cost per hour, the evaluator gate's first-try pass rate (`chassis_gate_first_attempt_passes_total` over gate runs, both `mode="sync"`), retry rate, and fallback rate (a target line at 10%), user feedback by label. The container dashboard that shows the [key metrics](metrics.md) is specified there.
 
 ## Feedback
 
@@ -76,3 +77,29 @@ One redacted JSON line per record, with `request_id` and `trace_id` inside a run
 | Jaeger v2, Tempo in production | the second trace backend | the Collector |
 
 Which backends an environment lists is a deploy choice in the Collector's exporter list (`deploy/compose/poc07/otel-collector.yaml`). The workload never exports to a backend itself: `LANGSMITH_TRACING` stays unset, vendor trace export is switched off, and the egress rule stops a direct call. Sampling is a Collector policy, not a chassis setting.
+
+## Sampling
+
+Trace sampling is a Collector policy (ADR-007 item 8), and `trace_sample_rate` sets it. Decided by the user on 2026-11-13.
+
+- **The SDK keeps every span.** `OtelTelemetry` samples with `ALWAYS_ON`. It ignores `OTEL_TRACES_SAMPLER` and a caller's unsampled `traceparent` (flags `00`), so the Collector sees whole traces. The `traceparent` the chassis sends to the workload is always sampled (`01`).
+- **The Collector decides.** `tail_sampling` is the first processor of the traces pipeline, before redaction and the batch. Its policies are ORed: a trace is kept when any policy samples it.
+
+  | Policy | Keeps |
+  | ------ | ----- |
+  | `trace-sample-rate` (`probabilistic`) | `sampling_percentage: ${env:TRACE_SAMPLE_PERCENT}` of traces, by trace id hash |
+  | `keep-errors` (`status_code: [ERROR]`) | Every trace with an error span, at any rate, 0 included. Decided by the user, 2026-11-13. A run that ends in an error (an evaluator gate that fails closed included) has `error.code`, so its span status is error |
+
+  suggested: `decision_wait: 10s`, the time the Collector holds a trace for its late spans.
+- **The one source.** `TRACE_SAMPLE_RATE` is the epic's `trace_sample_rate`, from 0 to 1. suggested: 1.0 when unset, so every trace is kept. `deploy/compose/trace_sample_percent.py` turns it into `TRACE_SAMPLE_PERCENT` (0 to 100), the only conversion; a value outside 0 to 1 stops `stack.sh` before any compose call. Each `stack.sh` exports the percent, and Compose passes it to the Collector as `${TRACE_SAMPLE_PERCENT:?}`. Both Compose Collectors (`poc07`, `poc08-litellm`) carry the same block.
+- **The image.** `tail_sampling` is in the contrib distribution only. The pinned image is `otel/opentelemetry-collector-contrib:0.163.2`, whose manifest lists `tailsamplingprocessor v0.163.0`. The keys used are checked against that version's `config.go`.
+- **Helm.** The charts in `deploy/helm/` render agents, not the Collector, so no chart carries the rate yet. A Collector chart would render `TRACE_SAMPLE_PERCENT` from one value, for example `{{ mulf .Values.traceSampleRate 100 }}`. suggested: that shape; not built.
+- **One Collector per trace.** Tail sampling needs every span of a trace in the same Collector. With more than one replica, a `loadbalancing` exporter keyed by trace id goes in front. Not built.
+
+Offline check: `packages/chassis/tests/test_trace_sampling.py` (the SDK, the conversion, both configs, and the decision at rate 1.0 and 0). Still to show on a live Collector: that a rate of 0 drops an ok trace and keeps an error trace. The command, on the Mac or in CI:
+
+```bash
+TRACE_SAMPLE_RATE=0 deploy/compose/poc07/stack.sh up && deploy/compose/poc07/stack.sh wait
+```
+
+Then send one run that ends `end` and one that ends `error`, and assert that Jaeger's `GET /api/traces/<trace id>` finds the error run's trace within `SPAN_WAIT_S` and never finds the ok run's.

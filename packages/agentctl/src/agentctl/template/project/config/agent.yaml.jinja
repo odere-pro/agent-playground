@@ -10,7 +10,11 @@ spec:
   # Every kind this template offers (transformer, evaluator, tool) is of the stateless class.
   class: stateless
   kind: {{ kind }}
+{%- if trust == ('untrusted' if framework in ['smolagents', 'claude-agent'] else 'trusted') %}
   # {{ framework }} is {{ trust }} (ADR-006). `untrusted` runs only with connector `remote`.
+{%- else %}
+  # trust: {{ trust }} (set by --trust). `untrusted` runs only with connector `remote`.
+{%- endif %}
   trust: {{ trust }}
   # Merged over the `local` profile defaults per field. Those name services this file does not
   # start (MinIO, Valkey, OTel, MCP), so the overrides keep one process; swap them in config only.

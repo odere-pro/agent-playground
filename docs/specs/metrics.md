@@ -1,6 +1,6 @@
 # Key metrics
 
-The numbers that say whether the container works: one north star, the input metrics that move it, and the counter metrics that must not get worse while it rises. The vault's recipe is "a north star, two input metrics, and one metric to measure failure" (`notes/SDLC factory/01 - SDLC factory.md`). Every formula below uses what the chassis already emits ([observability](observability.md)), except the two marked *new*.
+The numbers that say whether the container works: one north star, the input metrics that move it, and the counter metrics that must not get worse while it rises. The vault's recipe is "a north star, two input metrics, and one metric to measure failure" (`notes/SDLC factory/01 - SDLC factory.md`). Every formula below uses what the chassis already emits ([observability](observability.md)), except the two marked *new*. The first-attempt counter was added for this set (046 A-5, an additive contract change).
 
 ## North star: good tasks per week
 
@@ -16,7 +16,7 @@ The levers. The first two are the primary pair.
 | Metric | Formula | Lever | Target on record |
 | ------ | ------- | ----- | ---------------- |
 | Agents live on the chassis | distinct `agent` labels with traffic in the week | adoption | none yet |
-| First-attempt pass rate | 1 − `evaluator_calls{outcome="fail"}` / `evaluator_calls{outcome in pass, fail}` (retries and fallbacks happen only in sync mode, so a ratio over gate runs would read 100% in async) | prompt and model quality, the route map | none yet |
+| First-attempt pass rate | `chassis_gate_first_attempt_passes_total{mode}` / `chassis_gate_runs_total{mode}`, per agent, exact (046 A-5, decided 2026-11-13; suggested: the counter name). The counter adds one per gated run that passed the gate on attempt 1: never for a retry that passes, a fallback, a fail-open, an engine error, or a structured answer; in async mode, when the run's one background score passes. The per-scoring pass rate, 1 − `evaluator_calls{outcome="fail"}` / `evaluator_calls{outcome in pass, fail}`, counts every scored attempt, so it is not this rate. Neither is 1 − (retries + fallbacks) / runs: a run that retries and then falls back adds to both | prompt and model quality, the route map | none yet |
 | Task success rate | `ok` runs / `chassis_requests_total`, per agent and interface | reliability | the X-3 error-rate SLO |
 | p95 run latency, and the chassis's share of it | `chassis_run_duration_seconds` p95; the stages' overhead | the pipeline's cost | suggested: a stage budget of 25 ms p50 and 50 ms p95 (022 H-6), recorded, not enforced |
 | Time to first demo | hours from `agentctl new` to a passing demo, by someone new | the template | under a day |
