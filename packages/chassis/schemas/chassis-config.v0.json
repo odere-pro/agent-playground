@@ -833,6 +833,23 @@
           ],
           "default": null
         },
+        "class": {
+          "anyOf": [
+            {
+              "enum": [
+                "stateless",
+                "orchestrator",
+                "data"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Class"
+        },
         "engine": {
           "$ref": "#/$defs/EngineSpec"
         },
@@ -856,6 +873,25 @@
         },
         "interfaces": {
           "$ref": "#/$defs/InterfacesSpec"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "transformer",
+                "evaluator",
+                "tool",
+                "orchestrator",
+                "data"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
         },
         "limits": {
           "$ref": "#/$defs/LimitsSpec"
