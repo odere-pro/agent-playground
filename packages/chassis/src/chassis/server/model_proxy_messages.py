@@ -181,12 +181,13 @@ class _MessagesStream(StreamingResponse):
         return error_response(err, self._request_id)
 
     def _note_timeout(self) -> None:
+        # Labeled by the route called, never by the workload's `model` (012 H-3).
         self._admission.bundle.telemetry.counter(
-            "chassis.model_stream_timeout", route=self._parsed.route
+            "chassis.model_stream_timeout", route=self._admission.route
         )
 
     def _note(self, exc: ModelError, err: WireError) -> None:
-        _note(self._admission.bundle.telemetry, self._parsed.route, exc, err)
+        _note(self._admission.bundle.telemetry, self._admission.route, exc, err)
 
     async def _body(
         self, chunks: AsyncIterator[ModelChunk], first: asyncio.Future[ModelChunk | None]
@@ -368,7 +369,7 @@ async def _complete(
             )
         except ModelError as exc:
             err = model_error_to_wire(exc)
-            _note(telemetry, parsed.route, exc, err)
+            _note(telemetry, admission.route, exc, err)
             return error_response(err, request_id)
         hold.settle(result.usage)
     return JSONResponse(

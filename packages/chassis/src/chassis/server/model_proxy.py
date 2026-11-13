@@ -85,7 +85,11 @@ to the fallback route, so the workload sends that. Any other route is refused by
 never redirected. A chat stream gets the 403 as its status, with one error frame and `[DONE]`.
 Counted `chassis.model_route_refused{route}` by the run's route (suggested), or `unresolved` for a
 record with no route, which fails closed. `Admission.route` is the route to call, on both routes.
-`chassis.model_calls` counts the route the workload named.
+`chassis.model_calls{route}` counts the route the call is sent to; a refused call is counted by
+the route it named only when the config declares it, else as `other` (`OTHER_ROUTE`). `model` is
+at most `MODEL_MAX_CHARS` characters on both routes (suggested 256): over it the OpenAI route
+answers FastAPI's 422 and the Anthropic route 400 `invalid_body`, before admission. So the
+workload's own string never becomes a metric label.
 
 A refused model route (contract v5, A.9). A `ModelError` with code `http_401` or `http_403` (the
 model router refuses a route the key does not list) answers 403 `model_route_denied`, not 500, on
@@ -124,6 +128,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import Message, Receive, Scope, Send
 
 from chassis.adapters.anthropic_compat.model_wire import (
+    MODEL_MAX_CHARS,
     TOO_LARGE,
     WireError,
     model_error_to_wire,
@@ -190,7 +195,8 @@ class ChatCompletionRequest(BaseModel):
     """The OpenAI body, the fields the port takes. Others are accepted and ignored."""
 
     model_config = ConfigDict(extra="ignore")
-    model: str
+    model: str = Field(max_length=MODEL_MAX_CHARS)
+    """The route. Over `MODEL_MAX_CHARS` it is FastAPI's 422, before admission (012 H-3)."""
     messages: list[dict[str, Any]]
     # suggested: 0.0 when the body names none, for repeatable test and eval runs; the epic gives
     # no default, and OpenAI's own is 1.0. Backlog 012 H-3 decides it.

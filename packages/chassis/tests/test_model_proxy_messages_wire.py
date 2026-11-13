@@ -392,4 +392,5 @@ async def test_the_route_skips_or_refuses_empty_turns_and_never_500s_when_a_turn
         "message": "invalid_body: messages[0].content: a user turn needs content",
     }
     assert broken.status_code == 400, broken.text
-    assert telemetry_of(ports).counter_value("chassis.model_calls", route="big-default") == 1
+    # Counted by the route it was sent to: uncorrelated, so `spec.model.route` (012 H-3).
+    assert telemetry_of(ports).counter_value("chassis.model_calls", route="fake-route") == 1
