@@ -105,8 +105,16 @@ def asgi_client(app: Any, *, raise_app_exceptions: bool = True) -> httpx.AsyncCl
     return httpx.AsyncClient(transport=transport, base_url="http://chassis")
 
 
-def run_request(max_tokens: int, *, timeout_ms: int = 30_000) -> tuple[Request, Context]:
-    """A run with a token and time budget, traced by `TRACE`, for `app.state.runs.register`."""
+RUN_ROUTE = "big-default"
+"""The run's route (`ctx.model_route`), the `model` every shared body names. A call of a run may
+name only its run's route (012 H-3), and the pipeline always sets one."""
+
+
+def run_request(
+    max_tokens: int, *, timeout_ms: int = 30_000, model_route: str | None = RUN_ROUTE
+) -> tuple[Request, Context]:
+    """A run with a token and time budget and the route `model_route`, traced by `TRACE`, for
+    `app.state.runs.register`."""
     request = Request(
         request_id="req-1",
         trace_id=TRACE,
@@ -124,6 +132,7 @@ def run_request(max_tokens: int, *, timeout_ms: int = 30_000) -> tuple[Request, 
         agent_version=request.agent_version,
         budget=request.budget,
         versions=Versions(chassis=CHASSIS_VERSION),
+        model_route=model_route,
     )
     return request, ctx
 

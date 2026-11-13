@@ -56,11 +56,12 @@ log = logging.getLogger("chassis.model_proxy")
 SPAN = "chassis.model.call"
 ROUTE_SPAN = "chassis.model.route"  # suggested: the routing choice (PoC-8)
 DENIED = "chassis.model_upstream_denied"  # suggested
-FORCED = "chassis.model_route_forced"  # suggested: a call sent to the run's route, not its own
 PINNED = "chassis.model_route_pinned"  # suggested: an uncorrelated call sent to `spec.model.route`
 ROUTE_REFUSED = "chassis.model_route_refused"
-"""suggested (012 H-3): a call of a run refused at admission for a route the service does not
-list, counted by the run's route (never the one asked for, which the workload picks)."""
+"""suggested (012 H-3): a call of a run refused at admission for a route that is not the run's,
+counted by the run's route (never the one asked for, which the workload picks)."""
+UNRESOLVED = "unresolved"
+"""suggested: the `route` label of `ROUTE_REFUSED` for a run whose record holds no route."""
 REQUESTED_LOG_CHARS = 64  # suggested: how much of an unlisted route name the warning keeps
 BUDGET_EXHAUSTED = "chassis.model_budget_exhausted"
 """suggested (CH-16): the router refused a call for the service's budget, by route. Exported as
@@ -448,18 +449,19 @@ ROUTE_DENIED = Refusal(
 caller sees one refusal for one cause. The body names no route and no key."""
 
 
-def _route_refused(
-    telemetry: TelemetryPort, record: RunRecord, requested: str, listed: Sequence[str]
-) -> Refusal | None:
-    """`ROUTE_DENIED` when a call of a run names a route the service does not list, else None.
-    The list is the live config's (`ModelSpec.declared_routes`); the LiteLLM key's own list is
-    not known to the chassis, so the config stands in for it."""
-    if not record.model_route or requested in listed:
+def _route_refused(telemetry: TelemetryPort, record: RunRecord, requested: str) -> Refusal | None:
+    """`ROUTE_DENIED` when a call of a run names any route but the run's own, else None (012 H-3;
+    user decision 2026-11-13: refuse, never redirect). The run's route is `RunRecord.model_route`:
+    the task's route, else `spec.model.route`, or the gate's fallback route for its fallback
+    attempt. It passes even after a reload drops it from the config: a run keeps the route it
+    opened with. A record with no route fails closed: every route is refused."""
+    if record.model_route is not None and requested == record.model_route:
         return None
-    telemetry.counter(ROUTE_REFUSED, route=record.model_route)
+    run_route = record.model_route or UNRESOLVED
+    telemetry.counter(ROUTE_REFUSED, route=run_route)
     log.warning(
-        "model route not listed for this service: run_route=%s requested=%r request_id=%s",
-        record.model_route,
+        "model route is not the run's route: run_route=%s requested=%r request_id=%s",
+        run_route,
         requested[:REQUESTED_LOG_CHARS],
         record.request_id,
     )
@@ -490,10 +492,10 @@ def admit(
 ) -> Admission | Refusal:
     """Steps 3 to 7 of the shared admission (contract v5, A.6): count the call, find its run,
     pick the route, refuse a spent run or a full uncorrelated cap with 429, else reserve. A call
-    of a run that names a route the service does not list is refused with 403
-    `model_route_denied` (012 H-3), never rewritten. A listed route goes to the run's route (a
-    run's fallback route wins); an uncorrelated call always gets `spec.model.route`. `fmt` is
-    `openai` or `anthropic`. The caller has checked `app.state.ready` and parsed the body.
+    of a run that names any route but the run's own is refused with 403 `model_route_denied`
+    (012 H-3), never redirected; an uncorrelated call always gets `spec.model.route` (R6).
+    `fmt` is `openai` or `anthropic`. The caller has checked `app.state.ready` and parsed the
+    body.
     """
     bundle: PortBundle = app.state.ports
     telemetry = bundle.telemetry
@@ -503,15 +505,9 @@ def admit(
     runs: RunRegistry = app.state.runs
     record = runs.lookup(trace_id) if trace_id is not None else None
     if record is not None:
-        listed = app.state.config.spec.model.declared_routes()
-        refused = _route_refused(telemetry, record, requested, listed)
+        refused = _route_refused(telemetry, record, requested)
         if refused is not None:
             return refused
-    if record is not None and record.model_route and record.model_route != route:
-        # The run's route wins: the task's route through `spec.model.routes`, else
-        # `spec.model.route`, or the gate's fallback route for its fallback attempt (PoC-7).
-        route = record.model_route
-        telemetry.counter(FORCED, route=route)
     if record is None and route != app.state.config.spec.model.route:
         # R6: a call with no run cannot pick its route; it gets the agent's default route.
         route = app.state.config.spec.model.route
@@ -551,7 +547,6 @@ __all__ = [
     "BUDGET_EXHAUSTED",
     "DEFAULT_UNCORRELATED_MAX_TOKENS",
     "DENIED",
-    "FORCED",
     "PINNED",
     "REQUESTED_LOG_CHARS",
     "ROUTE_DENIED",
@@ -559,6 +554,7 @@ __all__ = [
     "ROUTE_SPAN",
     "SPAN",
     "UNCORRELATED_REFUSED",
+    "UNRESOLVED",
     "WINDOW_S",
     "Admission",
     "BoundModel",
