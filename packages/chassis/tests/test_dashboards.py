@@ -13,7 +13,16 @@ from typing import Any
 
 import httpx
 import pytest
-from chassis.dashboards import DASHBOARD_DIR, agents_in, dashboard, main, panel_exprs
+from chassis.dashboards import (
+    DASHBOARD_DIR,
+    FALLBACK,
+    NO_FALLBACK,
+    RETRY,
+    agents_in,
+    dashboard,
+    main,
+    panel_exprs,
+)
 from chassis.server import ChassisConfig, create_app
 from poc_harness.promtext import families
 
@@ -90,3 +99,66 @@ def test_the_cli_writes_one_file_per_agent(tmp_path: Path) -> None:
     main(["--out", str(tmp_path), "alpha", "beta"])
     assert sorted(p.name for p in tmp_path.iterdir()) == ["alpha.json", "beta.json"]
     assert json.loads((tmp_path / "alpha.json").read_text()) == dashboard("alpha")
+
+
+def _panel(board: dict[str, Any], title: str) -> dict[str, Any]:
+    matches: list[dict[str, Any]] = [p for p in board["panels"] if p["title"] == title]
+    [panel] = matches
+    return panel
+
+
+_TERM = re.compile(r"sum\(rate\((chassis_[a-z_]+)\{([^}]*)\}\[5m\]\)\)")
+_ARITHMETIC = re.compile(r"[0-9.+\-*/() ]+")
+
+
+def _value(expr: str, counters: dict[str, float]) -> float:
+    """`expr` with each `sum(rate(...))` term set to its counter in `counters`, worked out."""
+
+    def term(match: re.Match[str]) -> str:
+        name, labels = match.groups()
+        assert 'agent="echo"' in labels, expr
+        if name == "chassis_gate_runs_total":
+            assert 'mode="sync"' in labels, expr
+        return repr(counters[name])
+
+    arithmetic = _TERM.sub(term, expr)
+    assert _ARITHMETIC.fullmatch(arithmetic), arithmetic
+    return float(eval(arithmetic))  # digits and operators only, checked above
+
+
+def test_the_gate_panels_work_out_from_fixed_counter_values() -> None:
+    # 10 sync runs, 3 retried attempts, 1 run sent to the fallback after its retry.
+    counters = {
+        "chassis_gate_runs_total": 10.0,
+        "chassis_gate_retries_total": 3.0,
+        "chassis_gate_fallbacks_total": 1.0,
+    }
+    board = dashboard("echo")
+    expected = {NO_FALLBACK: 0.9, RETRY: 0.3, FALLBACK: 0.1}
+    for title, value in expected.items():
+        panel = _panel(board, title)
+        [expr] = panel_exprs({"panels": [panel]})
+        assert _value(expr, counters) == pytest.approx(value), title
+        assert panel["fieldConfig"]["defaults"]["unit"] == "percentunit"
+    assert not [p for p in board["panels"] if "first-try" in p["title"].lower()]
+
+
+def test_the_fallback_panel_draws_a_target_line_at_ten_percent() -> None:
+    defaults = _panel(dashboard("echo"), "Evaluator gate fallback rate")["fieldConfig"]["defaults"]
+    assert [s["value"] for s in defaults["thresholds"]["steps"]] == [None, 0.1]
+    assert defaults["custom"]["thresholdsStyle"]["mode"] == "line"
+
+
+def test_every_panel_links_to_langfuse_traces_and_loki_logs() -> None:
+    board = dashboard("echo")
+    variables = {v["name"]: v["type"] for v in board["templating"]["list"]}
+    assert variables["langfuse_url"] == variables["langfuse_project"] == "textbox"
+    assert variables["loki_uid"] == "textbox"
+    for panel in board["panels"]:
+        links = {link["title"]: link["url"] for link in panel["links"]}
+        assert set(links) == {"Langfuse traces", "Loki logs"}, panel["title"]
+        langfuse = "${langfuse_url}/project/${langfuse_project}/traces?"
+        assert links["Langfuse traces"].startswith(langfuse)
+        assert "echo" in links["Langfuse traces"]
+        assert links["Loki logs"].startswith("/explore?")
+        assert "${loki_uid}" in links["Loki logs"] and "echo" in links["Loki logs"]
