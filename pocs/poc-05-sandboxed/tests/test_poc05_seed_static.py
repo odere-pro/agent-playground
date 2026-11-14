@@ -707,6 +707,50 @@ def test_seed_rotate_mints_a_key_when_no_old_key_is_left(tmp_path: Path, delete_
     assert "sk-madeup-new" not in written
 
 
+_STUB_KUBECTL_ALL_THERE = """#!/usr/bin/env bash
+case " $* " in
+  *" get namespace "*) exit 0 ;;
+  *go-template*) printf 'chassis-to-workload workload-to-chassis ' ;;
+  *" get secret "*) exit 0 ;;
+  *) echo "unexpected kubectl $*" >&2; exit 9 ;;
+esac
+"""
+
+
+@pytest.mark.skipif(not _has_jq(), reason="no jq")
+def test_seed_keys_writes_a_manifest_for_a_key_it_already_minted(tmp_path: Path) -> None:
+    """059 H-15: every Secret already there, so no key is minted and LiteLLM is never called,
+    yet each service gets its manifest from the seed's own `$MODEL`, never from the Secret. A
+    manifest already there is kept (security review, 2026-11-14)."""
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    (stubs / "kubectl").write_text(_STUB_KUBECTL_ALL_THERE)
+    (stubs / "curl").write_text("#!/bin/sh\necho curl-called >&2\nexit 9\n")
+    for stub in stubs.iterdir():
+        stub.chmod(0o755)
+    manifests = tmp_path / "manifests"
+    manifests.mkdir()
+    kept = manifests / "svc-echo-remote.json"
+    kept.write_text('{"version": 1, "key_alias": "svc-echo-remote", "routes": ["fake-chat"]}')
+    env = {
+        "PATH": f"{stubs}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+        "KEY_MANIFEST_DIR": str(manifests),
+    }
+
+    out = subprocess.run(
+        ["bash", str(SEED), "keys"], capture_output=True, text=True, timeout=60, env=env
+    )
+
+    assert out.returncode == 0, out.stderr
+    assert "curl-called" not in out.stderr and "unexpected kubectl" not in out.stderr
+    assert sorted(p.name for p in manifests.glob("*.json")) == [
+        "svc-echo-remote.json",
+        "svc-echo.json",
+    ]
+    assert json.loads((manifests / "svc-echo.json").read_text())["routes"] == ["fake-chat"]
+    assert "written_at" not in json.loads(kept.read_text()), "the old manifest is kept"
+
+
 # --- run.sh: the gateway key, the Job, the pool, the pinned manifest (reviews of 2026-10-09) ---
 
 

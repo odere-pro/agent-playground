@@ -1398,12 +1398,21 @@ def test_the_seed_writes_a_manifest_for_a_key_it_already_minted(tmp_path: Path) 
         "PATH": f"{stubs}:{os.environ['PATH']}",
         "KEY_MANIFEST_DIR": str(tmp_path / "manifests"),
     }
+    # A manifest already there is kept as it is (security review, 2026-11-14).
+    (tmp_path / "manifests").mkdir()
+    kept = tmp_path / "manifests/svc-typescript.json"
+    kept.write_text(
+        '{"version": 1, "key_alias": "svc-typescript", "routes": ["fake-chat"], '
+        '"written_at": "2026-01-01T00:00:00Z"}'
+    )
+    before = kept.read_text()
 
     out = subprocess.run(
         ["bash", str(SEED_SH), "keys"], capture_output=True, text=True, timeout=60, env=env
     )
 
     assert out.returncode == 0, out.stderr
+    assert kept.read_text() == before
     assert "curl-called" not in out.stderr and "unexpected kubectl" not in out.stderr
     names = sorted(p.name for p in (tmp_path / "manifests").glob("*.json"))
     services = re.search(r"(?ms)^SERVICES=\((.*?)^\)", SEED_SH.read_text())

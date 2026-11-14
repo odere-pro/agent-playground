@@ -187,7 +187,8 @@ seed_keys() {
   for svc in "${SERVICES[@]}"; do
     if secret_exists "$AGENTS" "chassis-$svc-litellm"; then
       # The key was minted here with $MODEL: its manifest comes from that, never from the Secret.
-      write_key_manifest "$KEY_MANIFESTS" "svc-$svc" "$MODEL"
+      # Only when none is there yet; a newly minted key always writes a fresh one.
+      [[ -e $KEY_MANIFESTS/svc-$svc.json ]] || write_key_manifest "$KEY_MANIFESTS" "svc-$svc" "$MODEL"
     else
       pending+=("$svc")
     fi

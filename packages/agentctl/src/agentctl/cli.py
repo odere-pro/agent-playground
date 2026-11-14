@@ -71,8 +71,11 @@ def _answers(args: argparse.Namespace, platform: Path) -> Answers:
     key_routes = tuple(args.key_routes or rules.DEFAULT_KEY_ROUTES)
     key_source = "the service's key"
     if args.key_manifest is not None:
+        # The alias is checked against `manifest.ALIAS`, so it is safe to print; the routes are not
+        # printed at all.
         manifest = read_key_manifest(args.key_manifest)
-        key_routes, key_source = manifest.routes, f"the key {manifest.key_alias!r}"
+        key_routes = manifest.routes
+        key_source = f"the key {manifest.key_alias} (--key-manifest {args.key_manifest})"
     return Answers(
         agent_name=args.name,
         kind=args.kind,
@@ -82,6 +85,7 @@ def _answers(args: argparse.Namespace, platform: Path) -> Answers:
         trust=args.trust,
         key_routes=key_routes,
         key_source=key_source,
+        echo_key_routes=args.key_manifest is None,
     )
 
 

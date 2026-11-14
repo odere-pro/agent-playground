@@ -26,15 +26,22 @@ The trust rule (ADR-001 item 5): `smolagents` and `claude-agent` are untrusted a
 
 The route check (012 H-3): each service has one LiteLLM key, minted at deploy, that lists the routes the service may use. agentctl refuses a generated route the key does not list; it does not rewrite the route. agentctl cannot read the real key offline, so `--key-route` states its list. With no `--key-route` the list is the route the template already names, `big-default`, so the check passes.
 
-The key manifest (decided 2026-11-13): when `seed.sh keys` (`deploy/kind/poc05/platform/` or `deploy/kind/poc06/`) runs, it writes each service key's routes to a file: for a key it mints, and for a key whose Secret is already there (the routes come from the seed's own model list, never from the Secret). `--key-manifest PATH` reads that file in place of `--key-route`. A missing file, bad JSON, or a wrong field exits 2 and writes nothing.
+The key manifest (decided 2026-11-13): when `seed.sh keys` (`deploy/kind/poc05/platform/` or `deploy/kind/poc06/`) runs, it writes each service key's routes to a file: for a key it mints, and for a key whose Secret is already there, when it has no manifest yet (the routes come from the seed's own model list, never from the Secret). An existing manifest is kept. After a Postgres reset, run `seed.sh rekey` (PoC-5), which mints new keys and so writes fresh manifests. `--key-manifest PATH` reads that file in place of `--key-route`. A missing file, bad JSON, or a wrong field exits 2 and writes nothing.
 
 - suggested: the path `deploy/kind/.key-manifests/svc-<svc>.json`, git-ignored; `KEY_MANIFEST_DIR` moves it.
-- suggested: the format, one JSON object, version 1: `{"version": 1, "key_alias": "svc-reader", "routes": ["fake-chat"], "written_at": "2026-11-14T10:00:00Z"}`. `routes` is the key's `models` list.
-- It names routes only, never the key. agentctl refuses any other field.
+- suggested: the format, one JSON object, version 1: `{"version": 1, "key_alias": "svc-reader", "routes": ["big-default"], "written_at": "2026-11-14T10:00:00Z"}`. `routes` is the key's `models` list.
+- `version` is the integer 1. `key_alias` is `svc-<name>` (lower case letters, digits, dashes). Each route is letters, digits, and `- _ . / :`, at most 256 characters (suggested:). A file that breaks a rule is refused before any use.
+- It names routes only, never the key. agentctl refuses any other field. No error prints a value from the file: a refusal names the manifest path, the alias, and the template's route, never the file's routes.
+
+The kind seeds mint their keys for `fake-chat`, and the template names `big-default`, so a PoC-5 or PoC-6 manifest is refused on purpose:
 
 ```bash
-agentctl new reader --kind tool --key-manifest deploy/kind/.key-manifests/svc-reader.json
+agentctl new reader --kind tool --key-manifest deploy/kind/.key-manifests/svc-echo.json
+# agentctl: the generated config names route(s) 'big-default', which the key svc-echo
+# (--key-manifest ...) does not list; ... nothing was written      (exit 2)
 ```
+
+A manifest whose key lists `big-default`, as in the format line above, passes.
 
 ## What it writes
 

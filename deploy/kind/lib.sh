@@ -32,8 +32,11 @@ write_key_manifest() {
   shift 2
   mkdir -p "$dir"
   tmp=$(mktemp "$dir/.$alias.XXXXXX")
-  jq -n --arg alias "$alias" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  if ! jq -n --arg alias "$alias" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{version: 1, key_alias: $alias, routes: $ARGS.positional, written_at: $at}' \
-    --args "$@" >"$tmp"
+    --args "$@" >"$tmp"; then
+    rm -f "$tmp"
+    die "could not write the key manifest for $alias"
+  fi
   mv "$tmp" "$dir/$alias.json"
 }

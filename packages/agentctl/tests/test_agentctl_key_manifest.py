@@ -63,8 +63,49 @@ def test_a_generated_route_the_manifest_does_not_list_is_refused(
     assert _new(dest, platform, "reader", "--kind", "tool", "--key-manifest", str(path)) == 2
     err = capsys.readouterr().err
     assert err.startswith("agentctl: ")
-    assert "'big-default'" in err and "fake-chat" in err and "svc-reader" in err
+    assert "'big-default'" in err and "svc-reader" in err and str(path) in err
+    assert "fake-chat" not in err, "the file's routes are never echoed"
     assert list(dest.iterdir()) == [], "nothing is written"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        _good(["sk-x"]),
+        _good(["fake-chat", "sk-x"]),
+        {**_good(["big-default"]), "key_alias": "sk-x"},
+        {**_good(["big-default"]), "key_alias": "svc-sk-x\n"},
+        _good(["big-default", "sk-x\u001b[0m"]),
+        _good(["big-default", "a" * 257]),
+        _good(["big-default", "has space"]),
+        {**_good(["big-default"]), "sk-x": 1},
+    ],
+    ids=[
+        "route-only",
+        "route-among-others",
+        "alias",
+        "alias-newline",
+        "route-escape",
+        "route-too-long",
+        "route-space",
+        "field-name",
+    ],
+)
+def test_a_value_from_the_manifest_is_never_echoed(
+    tmp_path: Path,
+    dest: Path,
+    platform: Path,
+    capsys: pytest.CaptureFixture[str],
+    body: dict[str, Any],
+) -> None:
+    """Security review (2026-11-14): a key pasted into the manifest is refused or matched, and
+    never printed; the alias and routes are checked against strict patterns before any use."""
+    path = _manifest(tmp_path, body)
+
+    assert _new(dest, platform, "reader", "--kind", "tool", "--key-manifest", str(path)) == 2
+    out = capsys.readouterr()
+    assert "sk-x" not in out.out and "sk-x" not in out.err
+    assert list(dest.iterdir()) == []
 
 
 @pytest.mark.parametrize(
@@ -73,6 +114,8 @@ def test_a_generated_route_the_manifest_does_not_list_is_refused(
         ("{not json", "not JSON"),
         ("[]", "one JSON object"),
         ({**_good(["big-default"]), "version": 2}, "version"),
+        ({**_good(["big-default"]), "version": True}, "version"),
+        ({**_good(["big-default"]), "version": 1.0}, "version"),
         ({k: v for k, v in _good(["big-default"]).items() if k != "routes"}, "routes"),
         (_good([]), "routes"),
         (_good(["big-default", ""]), "routes"),
@@ -85,6 +128,8 @@ def test_a_generated_route_the_manifest_does_not_list_is_refused(
         "not-json",
         "not-object",
         "bad-version",
+        "version-true",
+        "version-float",
         "no-routes",
         "empty-routes",
         "empty-route",
@@ -173,6 +218,32 @@ def test_the_seed_writer_and_agentctl_agree_on_the_format(
     got = manifest.read_key_manifest(path)
     assert (got.key_alias, got.routes) == ("svc-reader", ("fake-chat", "big-default"))
     assert _new(dest, platform, "reader", "--kind", "tool", "--key-manifest", str(path)) == 0
+
+
+def test_the_seed_writer_leaves_no_temp_file_when_jq_fails(tmp_path: Path) -> None:
+    """Security review (2026-11-14): a failed write stops the seed and removes its temp file."""
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    (stubs / "jq").write_text("#!/bin/sh\nexit 3\n")
+    (stubs / "jq").chmod(0o755)
+    folder = tmp_path / "manifests"
+    code = (
+        f"set -euo pipefail\nCONTEXT=c\nLOG_PREFIX=p\nsource {LIB}\n"
+        f'write_key_manifest "{folder}" svc-reader fake-chat\necho not-reached\n'
+    )
+
+    done = subprocess.run(
+        [shutil.which("bash") or "bash", "-c", code],
+        env={"PATH": f"{stubs}:/usr/bin:/bin"},
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert done.returncode == 1 and "not-reached" not in done.stdout
+    assert "[p] could not write the key manifest for svc-reader" in done.stderr
+    assert list(folder.iterdir()) == []
 
 
 @pytest.mark.parametrize("seed", SEEDS, ids=["poc05", "poc06"])

@@ -147,17 +147,23 @@ def check_lane(framework: str, connector: str, trust: str | None = None) -> None
 
 
 def check_routes(
-    generated: tuple[str, ...], key_routes: tuple[str, ...], key: str = "the service's key"
+    generated: tuple[str, ...],
+    key_routes: tuple[str, ...],
+    key: str = "the service's key",
+    *,
+    echo_key_routes: bool = True,
 ) -> None:
     """Refuse, never rewrite, a generated route the service's key does not list (012 H-3).
-    `key` names where the list came from in the message (a key manifest names its alias)."""
+    `key` names where the list came from in the message. A list read from a file is not echoed
+    (`echo_key_routes=False`): only the generated routes, which come from the template."""
     if not key_routes:
         raise UsageError("--key-route: the service's key must list at least one route")
     missing = [route for route in generated if route not in key_routes]
     if missing:
+        listed = f" ({', '.join(key_routes)})" if echo_key_routes else ""
         raise UsageError(
             f"the generated config names route(s) {', '.join(map(repr, missing))}, which "
-            f"{key} does not list ({', '.join(key_routes)}); add the route to the key "
+            f"{key} does not list{listed}; add the route to the key "
             "and pass it with --key-route or a fresh --key-manifest, or change the route after "
             "scaffolding (a call outside the key's list answers 403 model_route_denied); "
             "nothing was written"

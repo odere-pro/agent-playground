@@ -46,14 +46,21 @@ class Answers:
     key_routes: tuple[str, ...] = rules.DEFAULT_KEY_ROUTES
     """`--key-route` or `--key-manifest`: the routes the service's LiteLLM key lists."""
     key_source: str = "the service's key"
-    """Which key the routes belong to, for the refusal (a manifest gives its alias)."""
+    """Which key the routes belong to, for the refusal (a manifest gives its alias and path)."""
+    echo_key_routes: bool = True
+    """False for a list read from a key manifest: the refusal does not print the file's routes."""
 
     def check(self) -> None:
         """Every refusal comes before anything is written."""
         rules.check_name(self.agent_name)
         rules.check_choice(self.kind, rules.KINDS, "kind")
         rules.check_lane(self.framework, self.connector, self.trust)
-        rules.check_routes(rules.GENERATED_ROUTES, self.key_routes, self.key_source)
+        rules.check_routes(
+            rules.GENERATED_ROUTES,
+            self.key_routes,
+            self.key_source,
+            echo_key_routes=self.echo_key_routes,
+        )
         check_platform(self.platform_path)
 
     def data(self) -> dict[str, str]:
