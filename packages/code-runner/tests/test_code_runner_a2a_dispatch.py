@@ -873,12 +873,19 @@ async def test_code_runner_a2a_dispatch_each_pre_stream_fault_logs_its_own_reaso
     with caplog.at_level("INFO", logger="code_runner.a2a_dispatch"):
         response = await asyncio.wait_for(_post(door, _stream_body("r7")), timeout=5)
     _assert_platform_fault(response, "r7")
+    # The door's own lines only: httpx logs each request URL (the pod IP) at INFO on its own
+    # logger, which a run with a root level of INFO captures too.
+    door_lines = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "code_runner.a2a_dispatch"
+    ]
     outcomes = [
         part.removeprefix("outcome=")
-        for record in caplog.records
-        for part in record.getMessage().split()
+        for line in door_lines
+        for part in line.split()
         if part.startswith("outcome=")
     ]
     assert outcomes == [reason]
     for word in ("refused to", "10.244", "reset", "pod-words", "etcd"):
-        assert word not in caplog.text, word
+        assert not any(word in line for line in door_lines), word
