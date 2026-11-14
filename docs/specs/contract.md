@@ -139,7 +139,7 @@ One `Request` is one A2A task. The chassis is the A2A client; the template serve
 
 - The connector reads the agent card at `setup` (`/.well-known/agent-card.json`). The `sidecar` lane refuses a card whose interface URL is not loopback. The `remote` lane keeps only the JSON-RPC interface and pins its URL to `spec.engine.url`; a card with none is refused. `inprocess` builds the card from `spec.engine.card`.
 - The connector sends one `SendStreamingMessage`, always streaming; the collector folds it for `stream: false`. `Message.role` is `ROLE_USER`; `message_id` is a new UUID per send; `context_id` is `trace_id`. The server enqueues a `SUBMITTED` task first; the connector takes `Task.id` from it (span attribute `a2a.task_id`) and uses it for `CancelTask`.
-- **Timeout and cancel.** `budget.timeout_ms` is the httpx timeout per operation and the deadline for the whole run, checked on every read. On any early end (deadline, transport, bad event, mismatch, a client that left) the connector closes its stream, then sends `CancelTask` with the run's `traceparent`, best effort, within `CANCEL_TIMEOUT_S` (5 s, suggested). The server's `cancel` sets a flag, publishes `CANCELED`, and closes the generator in its own task. The task store is pruned once a task is terminal.
+- **Timeout and cancel.** `budget.timeout_ms` is the httpx timeout per operation and the deadline for the whole run, checked on every read. On any early end (deadline, transport, bad event, mismatch, a client that left) the connector closes its stream, then sends `CancelTask` with the run's `traceparent`, best effort, within `CANCEL_TIMEOUT_S` (5 s, suggested). The server's `cancel` sets a flag, publishes `CANCELED`, and closes the generator in its own task; a2a-sdk then cancels the producer task, so a `handle` stalled at an await gets `CancelledError`. This holds in every lane, `inprocess`, `sidecar`, and `remote` (chassis and plain mode), decided 2026-11-13 (P-7; [contract v9, G](../contracts/contract-v9.md#g-cancel-in-every-lane-009-ch-1-p-7)). The task store is pruned once a task is terminal.
 - `probe() -> bool` GETs the card (`sidecar`: 1 s; `remote`: `spec.engine.probe_timeout_s`). True on 200 only, never an exception.
 
 ### How events ride A2A (`adapters/a2a/mapping.py`)
@@ -176,7 +176,7 @@ A terminal update with no `chassis.event` becomes `end {status: ok}` (`COMPLETED
 
 | Lane | Transport | `spec.engine` keys | Where allowed |
 | ---- | --------- | ------------------ | ------------- |
-| `inprocess` | `httpx.ASGITransport`, no socket; events arrive in one batch after `handle` returns, so no mid-run cancel | `handle` (`module:attribute`, required), `card?` `{name, version, description}` | `fake` and `local` only |
+| `inprocess` | `StreamingASGITransport`, no socket; events stream as `handle` sends them, and the cancel lands mid-run | `handle` (`module:attribute`, required), `card?` `{name, version, description}` | `fake` and `local` only |
 | `sidecar` | `http://127.0.0.1:<port>` or `http://localhost:<port>` (scheme `http`, a port, nothing else), or `uds` (a Unix socket; `url` still fills `Host`) | `url` (required), `uds?` | every profile |
 | `remote` | `http(s)://host:port[/path]` over the network; `https` in `cloud`; `uds` refused in `cloud` | `url`, `auth` (required), `uds?`, `probe_timeout_s` (2.0), `protocol`, `a2a` | every profile; required for `spec.trust: untrusted` |
 
