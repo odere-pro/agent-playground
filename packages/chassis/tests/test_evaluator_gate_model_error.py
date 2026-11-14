@@ -98,8 +98,8 @@ class RouteModel(ScriptedModel):
         timeout_s: float | None = None,
     ) -> ModelResult:
         self.routes.append(route)
-        model = self.fallback if route == FALLBACK else super()
-        return await model.complete(
+        complete = self.fallback.complete if route == FALLBACK else super().complete
+        return await complete(
             messages,
             route=route,
             tools=tools,
