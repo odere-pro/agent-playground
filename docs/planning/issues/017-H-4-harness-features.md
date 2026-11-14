@@ -1,7 +1,7 @@
 ---
 title: "H-4: Harness features: schema check, evaluator gate, retry, fallback, timeout, budget"
 labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:M", "layer:chassis", "layer:agent-profile"]
-milestone: "W2 Chassis MVP"
+milestone: "Done: delivered by the PoC track"
 index: 17
 epic_id: H-4
 depends_on: ["010 H-12", "012 H-3", "009 CH-1", "013 CH-2"]
@@ -41,9 +41,11 @@ The gate's cost, a second model call per gated request, is decided in [ADR-010](
 - The output schema check, and `harness.timeout_ms` and `harness.budget.max_tokens` in agent config. `HarnessSpec` has none of them, and no product phase needs them. The envelope's budget is the limit.
 - The budget error code: P-11 in the [backlog review proposals](../../reviews/2026-11-06-backlog-review/proposals.md). A Python workload reports the proxy's `budget_exhausted` as `http_429`, so a client cannot tell a spent budget from a rate limit by its code.
 - The TypeScript echo's budget refusal. It has no tool loop, so the case is a strict xfail.
-- Retries and fallbacks LiteLLM can make per route (136 CH-16, gap review of 2026-11-07; decided in [ADR-013](../adr/013-model-call-retries-belong-to-the-router.md)). This issue's retry stage covers only the errors LiteLLM cannot see: a bad answer, a schema failure, a workload error. It never retries a `ModelError` the router already retried.
+- Retries and fallbacks LiteLLM can make per route (136 CH-16, gap review of 2026-11-07; decided in [ADR-013](../adr/013-model-call-retries-belong-to-the-router.md)). This issue's retry stage covers the errors LiteLLM cannot see: a bad answer, a schema failure, a workload error. Since [ADR-017](../adr/017-gate-retries-a-model-error-in-one-budget.md) (2026-11-13, superseding ADR-013 item 2), it also reruns an attempt that ends in a retryable model error the router already retried, within the run's one budget.
 
 ## Acceptance criteria
+
+Delivered by: PoC-4, PoC-5, PoC-7, PoC-8, the one-budget tests, and, on 2026-11-14, the model-error rerun tests (ADR-017)
 
 - [x] With `retries: 1` and a fake evaluator that scores below `threshold`, the call retries once, then falls back, and the response has `status: fallback`, in both transports. · Delivered in PoC-7, PoC-8: `packages/chassis/tests/test_evaluator_gate.py::test_a_failing_answer_retries_once_then_falls_back`, `pocs/poc-07-cross-cutting-decisions/tests/test_poc07_evals_gate.py::test_poc07_evals_gate_retries_once_then_falls_back` (sidecar), `pocs/poc-08-cross-cutting-build/tests/test_poc08_c6_gate.py::test_the_gate_retries_then_falls_back_to_the_configured_route` (every lane)
 - [x] A call that runs past `timeout_ms` stops and returns `status: error` with a timeout reason. In the `sidecar` lane, the A2A task is cancelled. · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/tests/test_timeout_budget_per_engine.py::test_past_timeout_ms_the_run_ends_with_a2a_timeout_and_the_task_is_cancelled`, `packages/chassis/tests/test_a2a_sidecar.py::test_timeout_mid_run_yields_a2a_timeout_and_cancels`
@@ -51,9 +53,9 @@ The gate's cost, a second model call per gated request, is decided in [ADR-010](
 - [x] A workload that ignores `ctx.budget` is still stopped by the model proxy. · Delivered in PoC-4, PoC-5: `pocs/poc-05-sandboxed/tests/test_poc05_hostile_offline.py::test_h29_past_the_run_budget_is_429_and_a_run_with_budget_left_is_200`; no workload reads `ctx.budget.max_tokens`
 - [x] Retries and fallbacks show in metrics as a fallback rate. · Delivered in PoC-8: `packages/chassis/tests/test_metrics.py::test_gated_runs_and_fallbacks_are_both_counted`, [contract v7 A.3](../../contracts/contract-v7.md#a3-the-families) (`chassis_gate_fallbacks_total` over `gate_runs`)
 - [x] With `evaluator_gate` off, no evaluator call is made. · Delivered in PoC-7: `packages/chassis/tests/test_evaluator_gate.py::test_gate_off_makes_no_evaluator_call_and_does_not_wrap`, `pocs/poc-07-cross-cutting-decisions/tests/test_poc07_evals_gate.py::test_poc07_evals_gate_off_makes_no_evaluator_call`
-- [ ] A scripted model error is retried up to `retries` times, then falls back to `fallback_route`, in both lanes, and the retry and fallback are counted.
+- [x] A scripted model error is retried up to `retries` times, then falls back to `fallback_route`, in both lanes, and the retry and fallback are counted. · Delivered by: `packages/chassis/tests/test_evaluator_gate_model_error.py::test_a_scripted_model_error_is_retried_in_both_lanes` (`sidecar`, `remote`), `::test_a_scripted_model_error_is_retried_then_falls_back` (through the model proxy), `::test_a_model_error_is_not_retried_with_no_time_left`, `::test_a_model_error_is_not_retried_with_no_tokens_left` ([ADR-017](../adr/017-gate-retries-a-model-error-in-one-budget.md))
 - [x] Across attempts the run keeps one `timeout_ms` and one `max_tokens`: each attempt gets what is left, and the judge's tokens count against the budget. · Delivered by: `packages/chassis/tests/test_evaluator_gate_budget.py::test_each_attempt_gets_the_tokens_left_and_the_judge_tokens_count`, `::test_each_attempt_gets_the_time_left`, `::test_no_tokens_left_stops_before_the_retry_with_budget_exhausted`, `::test_no_time_left_stops_before_the_retry_with_a2a_timeout` (`chassis.server.evaluator_gate.Allowance`)
-- [x] Retry, fallback, timeout, and budget paths are tested offline with the fake `EvaluatorPort` and scripted model errors. · Delivered in PoC-7 (retry, fallback: `packages/chassis/tests/test_evaluator_gate.py`) and by: `packages/chassis/tests/test_evaluator_gate_budget.py` (timeout, budget, and `::test_a_scripted_model_error_is_not_retried_by_the_gate`, the ADR-013 side of a scripted `ModelError`), offline with `ScriptedEvaluator` and `ScriptedModel`
+- [x] Retry, fallback, timeout, and budget paths are tested offline with the fake `EvaluatorPort` and scripted model errors. · Delivered in PoC-7 (retry, fallback: `packages/chassis/tests/test_evaluator_gate.py`) and by: `packages/chassis/tests/test_evaluator_gate_budget.py` (timeout, budget) and `packages/chassis/tests/test_evaluator_gate_model_error.py` (a scripted `ModelError`, ADR-017), offline with `ScriptedEvaluator` and `ScriptedModel`
 
 ## Dependencies
 

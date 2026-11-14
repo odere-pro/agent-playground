@@ -29,9 +29,13 @@ latency, `model_route` = the evaluator's route, e.g. the judge route), then the 
 each `metrics` with its `attempt`. So the response's `metrics` count every attempt and the gate,
 `attempts` is the number of attempts, and `model_route` is the route of the answer.
 
-An attempt that ends with an `error` event is sent as it is, not scored and not retried. A model
-error in particular is never retried here: the model router already retried it and took its
-fallback route (ADR-013). An evaluator outage (`EvaluatorError`) follows
+An attempt that ends with an `error` event is not scored. A retryable one (a model error, which
+the model router already retried per call) is rerun like a failed answer: up to `retries` more
+attempts, then the fallback route, within the run's one budget, counted the same (ADR-017, which
+supersedes ADR-013 item 2). With no fallback route, the last attempt's `error` goes out as it is.
+A non-retryable `error`, and any lane error (`a2a.*`: the workload's task may still be running),
+is sent as it is, never rerun. An
+evaluator outage (`EvaluatorError`) follows
 `spec.harness.evaluator_on_error` (reloadable, read per call). `fail_open` (the default,
 suggested): the attempt goes out as it is, counted as `chassis.gate_failed_open` and logged.
 `fail_closed`: the run ends with its `start`, the `metrics` so far, and one
@@ -158,6 +162,8 @@ GATE_TIMEOUT = "a2a.timeout"
 """The error code of a run with no time left for a rerun: the lane's own timeout code (504)."""
 GATE_BUDGET = "budget_exhausted"
 """The error code of a run with no tokens left for a rerun: the model proxy's own code."""
+LANE_CODES = "a2a."
+"""The prefix of the lane's own error codes (`a2a.transport`, `a2a.timeout`, ...): never rerun."""
 ASYNC_MAX_PENDING = 64
 """suggested: background scores in flight per replica; one more is dropped and counted."""
 SHUTDOWN_WAIT_S = 5.0
@@ -209,6 +215,16 @@ def _structured(events: list[Event]) -> bool:
 
 def _failed(events: list[Event]) -> bool:
     return any(isinstance(e, Error) for e in events) or not any(isinstance(e, End) for e in events)
+
+
+def _retryable(events: list[Event]) -> bool:
+    """Did the attempt end in a retryable `error` the gate may rerun (ADR-017)? The flag decides,
+    except for the lane's own `a2a.*` codes: after `a2a.transport` (or a timeout) the workload's
+    task may still be running, and a rerun would repeat its tool calls. A Python workload reports
+    the model proxy's failed call as `http_<status>`."""
+    return any(
+        isinstance(e, Error) and e.retryable and not e.code.startswith(LANE_CODES) for e in events
+    )
 
 
 class GatedEngine:
@@ -505,9 +521,15 @@ class GatedEngine:
             events = await self._attempt(*allowance.bounded(request, ctx))
             allowance.spend(_tokens(events))
             if _failed(events):
-                for event in _emit(events, attempt, before):
-                    yield event
-                return
+                # ADR-017: a retryable error (a model error the router already retried) is rerun
+                # like a failed answer, within the one budget; with no rerun left and no fallback
+                # route, or when it is not retryable, it goes out as it is.
+                if not _retryable(events) or (attempt == attempts and fallback is None):
+                    for event in _emit(events, attempt, before):
+                        yield event
+                    return
+                before.extend(_metrics_of(events, attempt))
+                continue
             if _structured(events):
                 self._skipped("sync")
                 for event in _emit(events, attempt, before):
@@ -540,7 +562,9 @@ class GatedEngine:
                 return
             before.extend(_metrics_of(events, attempt))
         if fallback is None:
-            message = f"the answer scored below {harness.threshold} on {attempts} attempts"
+            message = (
+                f"no answer passed the gate (threshold {harness.threshold}) in {attempts} attempts"
+            )
             for event in _closing(events, before, message):
                 yield event
             return
