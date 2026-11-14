@@ -126,8 +126,11 @@ class ProxyEngine(FakeEngine):
         transport = httpx.ASGITransport(app=self.proxy)
         async with httpx.AsyncClient(transport=transport, base_url="http://proxy") as c:
             res = await c.post("/v1/chat/completions", json=body, headers=headers)
-        if res.status_code != 200:
-            yield Error(code=f"http_{res.status_code}", message="model call failed", retryable=True)
+        if res.status_code != 200:  # as echo-python: a 5xx is retryable, a 4xx is not
+            retryable = res.status_code >= 500
+            yield Error(
+                code=f"http_{res.status_code}", message="model call failed", retryable=retryable
+            )
             return
         reply = res.json()
         yield Delta(text=reply["choices"][0]["message"]["content"])
@@ -232,6 +235,24 @@ async def test_a_model_error_is_not_retried_with_no_tokens_left() -> None:
     assert isinstance(error, Error) and error.code == GATE_BUDGET, events
     assert t.counter_value(GATE_STOPPED, reason="budget") == 1
     assert t.counter_value(GATE_RETRIES) == 0
+
+
+@pytest.mark.parametrize("code", ["a2a.transport", "a2a.timeout", "a2a.rpc_error"])
+async def test_a_retryable_lane_error_is_not_rerun(code: str) -> None:
+    """After `a2a.transport` the workload's task may still run; a rerun would repeat its tools."""
+    attempts = 0
+
+    async def cut(input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
+        nonlocal attempts
+        attempts += 1
+        yield Start(request_id=ctx.request_id)
+        yield Error(code=code, message="lane failed", retryable=True)
+
+    events, t = await gated(FakeEngine(handle=cut), Budget(max_tokens=1000, timeout_ms=30_000))
+    assert attempts == 1
+    error = events[-1]
+    assert isinstance(error, Error) and error.code == code and error.retryable, events
+    assert t.counter_value(GATE_RETRIES) == 0 and t.counter_value(GATE_FALLBACKS) == 0
 
 
 async def test_a_model_error_that_is_not_retryable_is_sent_as_it_is() -> None:

@@ -33,7 +33,8 @@ An attempt that ends with an `error` event is not scored. A retryable one (a mod
 the model router already retried per call) is rerun like a failed answer: up to `retries` more
 attempts, then the fallback route, within the run's one budget, counted the same (ADR-017, which
 supersedes ADR-013 item 2). With no fallback route, the last attempt's `error` goes out as it is.
-A non-retryable `error` is sent as it is, never rerun. An
+A non-retryable `error`, and any lane error (`a2a.*`: the workload's task may still be running),
+is sent as it is, never rerun. An
 evaluator outage (`EvaluatorError`) follows
 `spec.harness.evaluator_on_error` (reloadable, read per call). `fail_open` (the default,
 suggested): the attempt goes out as it is, counted as `chassis.gate_failed_open` and logged.
@@ -161,6 +162,8 @@ GATE_TIMEOUT = "a2a.timeout"
 """The error code of a run with no time left for a rerun: the lane's own timeout code (504)."""
 GATE_BUDGET = "budget_exhausted"
 """The error code of a run with no tokens left for a rerun: the model proxy's own code."""
+LANE_CODES = "a2a."
+"""The prefix of the lane's own error codes (`a2a.transport`, `a2a.timeout`, ...): never rerun."""
 ASYNC_MAX_PENDING = 64
 """suggested: background scores in flight per replica; one more is dropped and counted."""
 SHUTDOWN_WAIT_S = 5.0
@@ -215,9 +218,13 @@ def _failed(events: list[Event]) -> bool:
 
 
 def _retryable(events: list[Event]) -> bool:
-    """Did the attempt end in a retryable `error` (ADR-017)? The gate keys on the flag, not the
-    code: a Python workload reports the model proxy's failed call as `http_<status>`."""
-    return any(isinstance(e, Error) and e.retryable for e in events)
+    """Did the attempt end in a retryable `error` the gate may rerun (ADR-017)? The flag decides,
+    except for the lane's own `a2a.*` codes: after `a2a.transport` (or a timeout) the workload's
+    task may still be running, and a rerun would repeat its tool calls. A Python workload reports
+    the model proxy's failed call as `http_<status>`."""
+    return any(
+        isinstance(e, Error) and e.retryable and not e.code.startswith(LANE_CODES) for e in events
+    )
 
 
 class GatedEngine:
@@ -555,7 +562,9 @@ class GatedEngine:
                 return
             before.extend(_metrics_of(events, attempt))
         if fallback is None:
-            message = f"the answer scored below {harness.threshold} on {attempts} attempts"
+            message = (
+                f"no answer passed the gate (threshold {harness.threshold}) in {attempts} attempts"
+            )
             for event in _closing(events, before, message):
                 yield event
             return

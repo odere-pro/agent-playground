@@ -20,7 +20,7 @@ The gate sees only an attempt's events. A Python workload reports the model prox
 | Option | A model error in a gated run | Cost |
 | ------ | ---------------------------- | ---- |
 | 1. Keep ADR-013 item 2 | Ends the run; the fallback route is never tried | A configured fallback is unused on the path that needs it most |
-| 2. The gate reruns a retryable `error`, within the one budget | `retries` reruns, then the fallback route | Up to `num_retries × (retries + 1)` upstream calls on the main route, each paid from one budget |
+| 2. The gate reruns a retryable `error`, within the one budget | `retries` reruns, then the fallback route | Up to `(num_retries + 1) × (retries + 1)` upstream calls on the main route per model call, times the model calls per attempt, each paid from one budget |
 | 3. A new retry loop for model errors, outside the gate | Same as 2 | A second retry count, a second budget, new code |
 
 ## Decision
@@ -28,16 +28,18 @@ The gate sees only an attempt's events. A Python workload reports the model prox
 1. **The gate reruns an attempt that ends in a retryable `error`**, as it reruns a failed answer: up to `spec.harness.retries` more attempts on the same route, then one fallback attempt on `spec.model.fallback_route`, with `end.status: fallback`. The retry is counted as `chassis.gate_retries`, the fallback as `chassis.gate_fallbacks`. No new counter, no new setting.
 2. **One budget.** Every rerun starts only with time and tokens left (017 H-4, `Allowance`). Else the run ends with `a2a.timeout` or `budget_exhausted` and `chassis.gate_stopped{reason}`, as for a failed answer.
 3. **What goes out.** An errored attempt is never scored. Its `metrics` are kept with its `attempt` number. With no fallback route, the last attempt's `error` goes out as it is (not `evaluator_gate_failed`: the answer was never judged). An `error` with `retryable: false` goes out as it is, never rerun.
-4. **The gate keys on `retryable`, not on the code.** The gate cannot tell a model error from another retryable workload error, and ADR-013 item 2 already gave the gate the workload error. suggested: so any retryable `error` is rerun.
+4. **The gate keys on `retryable`, not on the code, except for the lane's own codes.** The gate cannot tell a model error from another retryable workload error, and ADR-013 item 2 already gave the gate the workload error, so any retryable `error` is rerun. A lane error (`a2a.transport`, `a2a.timeout`, `a2a.rpc_error`, every `a2a.*` code) is never rerun, retryable or not: the workload's task may still be running, and a rerun would repeat its tool calls.
 5. **Only sync mode.** Async mode and streams never rerun (ADR-010); a model error there ends the run, as before.
 6. ADR-013 item 1 stands: the adapter never retries a model call; one port call is one upstream call.
 
 ## Consequences
 
 - Easier: a provider fault the router could not hide reaches the configured fallback route. The fallback rate (`chassis.gate_fallbacks` over `chassis.gate_runs{mode="sync"}`) now counts model-error fallbacks too.
-- Harder: the two retry layers multiply. A dead main route costs up to `num_retries × (retries + 1)` upstream calls before the fallback; the one budget and the run's deadline cap the spend, not the count. The fallback rate no longer tells a bad answer from a model error; the per-attempt span and the `error` code in the log do.
+- Harder: the two retry layers multiply. A dead main route costs up to `(num_retries + 1) × (retries + 1)` upstream calls per model call before the fallback, times the model calls each attempt makes; the one budget and the run's deadline cap the spend, not the count.
+- Side effects: a model error that comes after tool calls reruns the whole agent, so those tool calls run again. A write tool is safe only through the run's idempotency key ([018 H-18](../issues/018-H-18-idempotency.md); the record's `keyed_run_key` is the same for every attempt). A tool with no key, or a read with a cost, repeats.
+- Lane errors are excluded: after `a2a.transport` or `a2a.timeout` the sidecar or remote task may still be running. A rerun beside it would run its tool calls twice at once, which the idempotency key does not order. So every `a2a.*` error ends the run as before. The fallback rate no longer tells a bad answer from a model error; the per-attempt span and the `error` code in the log do.
 - A workload that marks a non-transient error `retryable: true` gets it rerun. Each such rerun is still paid from the one budget and stops when it is spent.
-- Contract: [contract v9](../../contracts/contract-v9.md) does not say how the gate treats an errored attempt. The contract owner should add one line: in sync mode, an attempt ending in a retryable `error` is rerun and can end with `status: fallback`.
+- Contract: recorded as [contract v9](../../contracts/contract-v9.md) section I, item 28.
 
 ## Revisit
 
