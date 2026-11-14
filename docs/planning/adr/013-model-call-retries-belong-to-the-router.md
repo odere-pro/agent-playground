@@ -7,7 +7,7 @@
 
 ## Status
 
-Proposed, 2026-11-08. Written with the CH-16 PR; the user accepts it by merging.
+Proposed, 2026-11-08. Written with the CH-16 PR; the user accepts it by merging. Item 2 superseded by [ADR-017](017-gate-retries-a-model-error-in-one-budget.md), 2026-11-13.
 
 ## Context
 
@@ -25,7 +25,7 @@ Both at once is the worst case: a provider outage then costs `num_retries × cha
 ## Decision
 
 1. **The adapter never retries a model call.** One port call is one upstream call (`ModelPortContract.test_a_failed_call_goes_upstream_once`). The retries and the fallback routes are the model router's: every LiteLLM config under `deploy/` sets `num_retries` (suggested: 2) and a `router_settings.fallbacks` entry per route; an empty list states that a route has no safe fallback (a hosted bake-off route never falls back to the fake).
-2. **The chassis retry stage (017 H-4) covers only what the router cannot see:** a bad answer (the evaluator gate's low score, 042 A-2), a schema failure, a workload error. It reruns the agent, not the model call.
+2. **Superseded by [ADR-017](017-gate-retries-a-model-error-in-one-budget.md) on 2026-11-13:** the gate also reruns an attempt that ends in a retryable model error, within the run's one budget. The original text follows. **The chassis retry stage (017 H-4) covers only what the router cannot see:** a bad answer (the evaluator gate's low score, 042 A-2), a schema failure, a workload error. It reruns the agent, not the model call.
 3. **The port carries the run's time.** `ModelPort.complete` and `.stream` take `timeout_s`, the wall clock of the whole call; the proxy passes what the run has left of `budget.timeout_ms`. Past it the adapter raises `timeout` and closes the upstream connection. A call whose run ends first is cut and answered 403 `run_ended`.
 4. **The service's budget refusal is one code**, `service_budget_exhausted`, 429 on both proxy routes with `x-should-retry: false`, counted `chassis.model_budget_exhausted{route}`, with an alert on the counter. It is not retryable: the budget resets on its period.
 5. These are additive; they are recorded as [contract v9](../../contracts/contract-v9.md).
@@ -39,4 +39,4 @@ Both at once is the worst case: a provider outage then costs `num_retries × cha
 ## Revisit
 
 - A measured provider outage where `num_retries: 2` and the fallback route together did not keep the error rate inside the SLO (117 X-3): then the value, or a chassis-side circuit breaker, is the question.
-- 017 H-4's retry stage, when built: if it ever retries a `ModelError` the router already retried, this ADR is being broken.
+- 017 H-4's retry stage, when built: if it ever retries a `ModelError` the router already retried, this ADR is being broken. (Superseded by [ADR-017](017-gate-retries-a-model-error-in-one-budget.md): it now does, by decision.)

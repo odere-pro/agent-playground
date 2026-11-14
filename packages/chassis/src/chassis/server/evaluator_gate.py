@@ -29,9 +29,12 @@ latency, `model_route` = the evaluator's route, e.g. the judge route), then the 
 each `metrics` with its `attempt`. So the response's `metrics` count every attempt and the gate,
 `attempts` is the number of attempts, and `model_route` is the route of the answer.
 
-An attempt that ends with an `error` event is sent as it is, not scored and not retried. A model
-error in particular is never retried here: the model router already retried it and took its
-fallback route (ADR-013). An evaluator outage (`EvaluatorError`) follows
+An attempt that ends with an `error` event is not scored. A retryable one (a model error, which
+the model router already retried per call) is rerun like a failed answer: up to `retries` more
+attempts, then the fallback route, within the run's one budget, counted the same (ADR-017, which
+supersedes ADR-013 item 2). With no fallback route, the last attempt's `error` goes out as it is.
+A non-retryable `error` is sent as it is, never rerun. An
+evaluator outage (`EvaluatorError`) follows
 `spec.harness.evaluator_on_error` (reloadable, read per call). `fail_open` (the default,
 suggested): the attempt goes out as it is, counted as `chassis.gate_failed_open` and logged.
 `fail_closed`: the run ends with its `start`, the `metrics` so far, and one
@@ -209,6 +212,12 @@ def _structured(events: list[Event]) -> bool:
 
 def _failed(events: list[Event]) -> bool:
     return any(isinstance(e, Error) for e in events) or not any(isinstance(e, End) for e in events)
+
+
+def _retryable(events: list[Event]) -> bool:
+    """Did the attempt end in a retryable `error` (ADR-017)? The gate keys on the flag, not the
+    code: a Python workload reports the model proxy's failed call as `http_<status>`."""
+    return any(isinstance(e, Error) and e.retryable for e in events)
 
 
 class GatedEngine:
@@ -505,9 +514,15 @@ class GatedEngine:
             events = await self._attempt(*allowance.bounded(request, ctx))
             allowance.spend(_tokens(events))
             if _failed(events):
-                for event in _emit(events, attempt, before):
-                    yield event
-                return
+                # ADR-017: a retryable error (a model error the router already retried) is rerun
+                # like a failed answer, within the one budget; with no rerun left and no fallback
+                # route, or when it is not retryable, it goes out as it is.
+                if not _retryable(events) or (attempt == attempts and fallback is None):
+                    for event in _emit(events, attempt, before):
+                        yield event
+                    return
+                before.extend(_metrics_of(events, attempt))
+                continue
             if _structured(events):
                 self._skipped("sync")
                 for event in _emit(events, attempt, before):

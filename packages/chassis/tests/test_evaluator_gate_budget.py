@@ -1,9 +1,8 @@
 """One budget across the evaluator gate's attempts (017 H-4): one `timeout_ms` and one
-`max_tokens` for every attempt and the fallback, the judge's tokens included, and a scripted model
-error that the gate never retries (ADR-013: the router retries a model call, not the chassis).
+`max_tokens` for every attempt and the fallback, the judge's tokens included. A scripted model
+error inside a gated run: `test_evaluator_gate_model_error.py` (ADR-017).
 
-Offline: `FakeEngine` handles, a `ScriptedEvaluator` that reports judge tokens, and a
-`ScriptedModel` behind the model proxy for the scripted model error.
+Offline: `FakeEngine` handles and a `ScriptedEvaluator` that reports judge tokens.
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ from typing import Any
 
 import httpx
 from chassis.core.envelope import Budget, Context, TaskInput
-from chassis.core.events import Delta, End, Error, Event, Metrics, Start
+from chassis.core.events import Delta, End, Event, Metrics, Start
 from chassis.core.trace import trace_id_hex
 from chassis.fakes import (
     FakeEngine,
@@ -23,7 +22,6 @@ from chassis.fakes import (
     ScoreRule,
     ScriptedEvaluator,
     ScriptedModel,
-    ScriptRule,
 )
 from chassis.fakes.state import InMemoryState
 from chassis.ports.bundle import PortBundle
@@ -37,7 +35,6 @@ from chassis.server.evaluator_gate import (
     GATE_TIMEOUT,
     Allowance,
 )
-from chassis.server.proxy_app import create_proxy_app
 
 BAD = "The report was signed."
 INPUT = "simplify: The report was signed by Dana Ruiz on 4 May 2025."
@@ -211,43 +208,3 @@ def test_an_unregistered_run_counts_its_own_time_and_tokens() -> None:
     assert allowance.spent_reason() == "budget"
     assert 0 < allowance.left_ms() <= 60_000
     assert Allowance(Budget(timeout_ms=0), None).spent_reason() == "timeout"
-
-
-class ProxyErrorEngine(FakeEngine):
-    """Calls the model proxy once per attempt; a refused call ends the attempt with the error a
-    Python workload reports (`http_<status>`)."""
-
-    def __init__(self) -> None:
-        super().__init__(handle=self._handle_)
-        self.proxy: Any = None
-        self.attempts = 0
-
-    async def _handle_(self, input: TaskInput, ctx: Context) -> AsyncIterator[Event]:
-        self.attempts += 1
-        yield Start(request_id=ctx.request_id)
-        headers = {"traceparent": f"00-{trace_id_hex(ctx.trace_id)}-00f067aa0ba902b7-01"}
-        body = {"model": "big-default", "messages": [{"role": "user", "content": "simplify: x"}]}
-        async with client(self.proxy) as c:
-            res = await c.post("/v1/chat/completions", json=body, headers=headers)
-        if res.status_code != 200:
-            yield Error(code=f"http_{res.status_code}", message="model call failed", retryable=True)
-            return
-        yield Delta(text=BAD)
-        yield End()
-
-
-async def test_a_scripted_model_error_is_not_retried_by_the_gate() -> None:
-    model = ScriptedModel([ScriptRule(match="simplify", error="upstream_error", retryable=True)])
-    engine, judge = ProxyErrorEngine(), CostlyJudge()
-    bundle = ports(engine, judge, model)
-    app = create_app(config(retries=2), bundle)
-    engine.proxy = create_proxy_app(app)
-    async with client(app) as c, app.router.lifespan_context(app):
-        res = await c.post("/v1/run", json={"input": {"text": INPUT}, "trace_id": TRACE})
-    body = res.json()
-    assert body["status"] == "error" and body["output"]["error"]["code"].startswith("http_")
-    # One attempt, one upstream call: the router owns the model call's retries (ADR-013).
-    assert engine.attempts == 1 and len(model.calls) == 1
-    assert judge.cases == []  # an errored attempt is not scored
-    t = telemetry(bundle)
-    assert t.counter_value(GATE_RETRIES) == 0 and t.counter_value(GATE_FALLBACKS) == 0
