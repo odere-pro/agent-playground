@@ -294,7 +294,7 @@ async def test_code_runner_a2a_dispatch_claim_timeout_is_503_and_leaks_nothing(
     token_file: Path,
 ) -> None:
     """A claim not Ready in time is a platform fault, not the workload's answer: HTTP 503, which
-    the chassis connector maps to a retryable `a2a.transport` (contract v9, E, 2026-11-13)."""
+    the chassis connector maps to a retryable `a2a.transport` (contract v9, H.27)."""
     api, pods = FakeApi(ready=False), FakePods()
     response = await _post(_door(api, pods, token_file), _stream_body("r9"))
     _assert_platform_fault(response, "r9", "Ready")
@@ -303,7 +303,7 @@ async def test_code_runner_a2a_dispatch_claim_timeout_is_503_and_leaks_nothing(
 
 
 def _assert_platform_fault(response: httpx.Response, rpc_id: str, *leaks: str) -> None:
-    """A fault before the stream started (contract v9, E, decided 2026-11-13): HTTP 503, the
+    """A fault before the stream started (contract v9, H.27; proposals P-35): HTTP 503, the
     fixed body, `Retry-After: 1` as the chassis's own 503 (contract v9, D.12), and nothing
     else: no request id, no claim name, no error text, no JSON-RPC envelope."""
     assert response.status_code == PLATFORM_FAULT_STATUS == 503
@@ -694,7 +694,7 @@ async def test_code_runner_a2a_dispatch_pod_silent_after_the_stream_started_stay
 ) -> None:
     """The other side of the line: one whole event reached the caller, then the pod went
     silent. A retry could repeat side effects, so it stays 200 with the -32000 `sandbox_lost`
-    line (contract v9, E, decided 2026-11-13); never a 503."""
+    line (contract v9, H.27); never a 503."""
     first = SSE.split(b"\n\n")[0] + b"\n\n"
     api, pods = FakeApi(), FakePods([first])
     pods.hold = asyncio.Event()
@@ -827,3 +827,58 @@ async def test_code_runner_a2a_dispatch_encoded_pod_stream_is_the_rpc_error_and_
     assert error["code"] == UNAVAILABLE_CODE
     assert "not-read" not in response.text
     assert api.live() == set() and len(api.deleted) == 1
+
+
+async def _pod_5xx(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(502, json={"detail": "pod-words"})
+
+
+async def _pod_silent(request: httpx.Request) -> httpx.Response:
+    await asyncio.Event().wait()
+    raise AssertionError("unreachable")
+
+
+async def _pod_unreachable(request: httpx.Request) -> httpx.Response:
+    raise httpx.ConnectError("connection refused to 10.244.0.11")
+
+
+async def _pod_breaks_after_send(request: httpx.Request) -> httpx.Response:
+    raise httpx.ReadError("reset by 10.244.0.11")
+
+
+@pytest.mark.parametrize(
+    ("make_api", "answer", "reason"),
+    [
+        (_RefusingApi, None, "claim_refused"),
+        (lambda: FakeApi(ready=False), None, "not_ready"),
+        (FakeApi, _pod_5xx, "pod_5xx"),
+        (FakeApi, _pod_silent, "no_headers"),
+        (FakeApi, _pod_unreachable, "connect_error"),
+        (FakeApi, _pod_breaks_after_send, "send_error"),
+    ],
+    ids=["claim_refused", "not_ready", "pod_5xx", "no_headers", "connect_error", "send_error"],
+)
+async def test_code_runner_a2a_dispatch_each_pre_stream_fault_logs_its_own_reason(
+    token_file: Path,
+    caplog: pytest.LogCaptureFixture,
+    make_api: Callable[[], FakeApi],
+    answer: Answer | None,
+    reason: str,
+) -> None:
+    """Every pre-stream fault is the same 503 to the caller; the log's outcome tells them apart
+    with a fixed reason, never error text (contract v9, H.27; proposals P-35)."""
+    api, pods = make_api(), FakePods()
+    pods.answer = answer
+    door = _door_with(api, pods, token_file, headers_timeout_s=0.1)
+    with caplog.at_level("INFO", logger="code_runner.a2a_dispatch"):
+        response = await asyncio.wait_for(_post(door, _stream_body("r7")), timeout=5)
+    _assert_platform_fault(response, "r7")
+    outcomes = [
+        part.removeprefix("outcome=")
+        for record in caplog.records
+        for part in record.getMessage().split()
+        if part.startswith("outcome=")
+    ]
+    assert outcomes == [reason]
+    for word in ("refused to", "10.244", "reset", "pod-words", "etcd"):
+        assert word not in caplog.text, word

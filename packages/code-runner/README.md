@@ -107,15 +107,18 @@ Two `httpx` clients, never shared, and no Kubernetes SDK:
 - One port per engine, one process (`cli.run_servers`, one uvicorn server per port; a stop signal or the end of one stops all). A port serves only its engine: any other engine path there is 404 `unknown_engine`, with no claim. The NetworkPolicy lets each chassis reach its own port only.
 - Per streaming run: claim a pod, forward the body and the caller's headers to the pod on 9000, stream the answer back unchanged, delete the claim on every exit path. A cancel goes to the run's pod.
 - Timeouts (suggested): the pod's response headers 30 s, a cancel 10 s, the whole run 600 s (applied per read). A lost or late run ends with one last SSE event, a JSON-RPC error `-32000` `sandbox_lost`.
-- Errors split at one line: did the pod's stream start (contract v9, section E, decided 2026-11-13)? Before it, no byte reached the caller, so a retry repeats nothing. After it, a retry could repeat side effects.
+- Errors split at one line: did any byte of the pod's stream reach the caller ([contract v9, H.27](../../docs/contracts/contract-v9.md#h-a-platform-fault-before-the-stream-p-35), [P-35](../../docs/reviews/2026-11-06-backlog-review/proposals.md#p-35-a-platform-fault-before-the-stream))? Before it, the fault is a retryable 503: no byte reached the caller. A failed claim ran nothing. After a pod 5xx, a pod that sent no response headers, or a send error, the pod may have made model or tool calls, and a retry may repeat them; the user accepted that on 2026-11-14. After the stream started, a fault is not retryable.
+- An encoded pod stream is refused on its own rule: the door asked for `identity`, cannot scan an encoded stream for the task id, and the chassis caps no decoded bytes. So it is `-32000`, not retryable, and the claim is freed.
+- The log line's `outcome` names each pre-stream fault with a fixed reason, never error text: `claim_refused`, `not_ready`, `connect_error`, `no_headers`, `send_error`, `pod_5xx`. No free slot makes no claim; it logs `no_free_slot`.
 
   | Fault | Answer | Chassis reports |
   | ----- | ------ | --------------- |
   | No free slot within the claim timeout | HTTP 503 | `a2a.transport`, retryable |
   | Claim not created, or not Ready in time | HTTP 503 | `a2a.transport`, retryable |
   | Claimed pod never answers (port never opens, no response headers) | HTTP 503 | `a2a.transport`, retryable |
+  | Any other httpx error after the request was sent | HTTP 503 | `a2a.transport`, retryable |
   | Pod 5xx (before any stream byte) | HTTP 503 | `a2a.transport`, retryable |
-  | Pod 401 or 403 (the caller's credential) | same status, `{"error": "sandbox_refused"}` | `a2a.transport` |
+  | Pod 401 or 403 (the caller's credential) | same status, `{"error": "sandbox_refused"}` | `a2a.transport`, and the connector marks it `retryable: true` |
   | Any other pod status | `-32000` `sandbox_unavailable` | `a2a.rpc_error`, not retryable |
   | Encoded pod stream | `-32000` `sandbox_unavailable` | `a2a.rpc_error`, not retryable |
   | Stream breaks, or passes the run deadline | last SSE event `-32000` `sandbox_lost` | `a2a.rpc_error`, not retryable |
