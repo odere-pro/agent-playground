@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 from chassis.core.envelope import Context
+from chassis.ports.model import Usage
 from chassis.server import ChassisConfig, create_app
 from chassis.server.correlation import RunRecord
 from chassis.server.model_admission import ROUTE_REFUSED, ROUTE_SPAN, UNRESOLVED
@@ -187,6 +188,34 @@ async def test_a_run_with_no_resolved_route_refuses_every_route(path: str, route
     assert model.calls == []
     _assert_nothing_charged(record, telemetry)
     assert telemetry.counter_value(ROUTE_REFUSED, route=UNRESOLVED) == 1
+
+
+@pytest.mark.parametrize("stream", [False, True], ids=["complete", "stream"])
+@pytest.mark.parametrize("path", PATHS)
+async def test_a_spent_run_naming_another_route_is_403_not_429(path: str, stream: bool) -> None:
+    """The route check runs before the budget check: a run with no tokens left that names
+    another route gets 403 `model_route_denied`, not 429 `budget_exhausted`. This tells "never
+    reserved" from "reserved then released", which `_assert_nothing_charged` cannot."""
+    model = RecordingModel(PLAIN_WORDS)
+    ports = proxy_ports(model)
+    app = create_app(ChassisConfig.model_validate(CONFIG), ports)
+    request, ctx = run_request(BUDGET)
+    body = {**ANTHROPIC_BODY, "model": UNLISTED, "stream": stream}
+    async with (
+        asgi_client(create_proxy_app(app)) as client,
+        app.router.lifespan_context(app),
+        app.state.runs.register(request, _run(ctx)) as record,
+    ):
+        record.charge(Usage(output_tokens=BUDGET))
+        assert record.remaining_tokens == 0
+        res = await client.post(path, json=body, headers={"traceparent": TRACEPARENT})
+    assert res.status_code == 403, res.text
+    _assert_denied(path, res.text, stream=stream)
+    assert "budget_exhausted" not in res.text
+    assert model.calls == []
+    telemetry = telemetry_of(ports)
+    assert telemetry.counter_value(ROUTE_REFUSED, route=RESOLVED) == 1
+    assert telemetry.counter_value("chassis.model_calls_refused", route=RESOLVED) == 0
 
 
 @pytest.mark.parametrize("path", PATHS)

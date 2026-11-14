@@ -12,7 +12,8 @@
 # - One replica: the remote listener answers only for a run in flight in this process
 #   (`run_required`), so a second replica behind the same Service would answer 403 at random.
 # - Secrets, chassis container only: its LiteLLM virtual key, the Valkey password, and REMOTE_TOKEN
-#   from `remote-echo-token` (the same value the remote pod holds as CHASSIS_API_TOKEN).
+#   from `remote-echo-token` (key chassis-to-workload) and
+#   REMOTE_PROXY_TOKEN (key workload-to-chassis), one key per direction (055 CH-6).
 # - The pod's trust label is `untrusted`, the same value as `spec.trust` in its config: the label
 #   names the workload this chassis fronts. Admission reads it as a chassis-only pod (no workload
 #   image), so rule 2 does not apply.

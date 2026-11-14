@@ -62,7 +62,13 @@ from poc_harness.kind import (
     unpoliced_caller,
     warm_sandboxes,
 )
-from poc_harness.kind_controls import secret_sources, traceparent_headers
+from poc_harness.kind_controls import (
+    REMOTE_TOKEN_KEYS,
+    remote_token_sources,
+    secret_keys,
+    secret_sources,
+    traceparent_headers,
+)
 
 pytestmark = KIND_SANDBOX
 
@@ -510,14 +516,17 @@ def test_remote_holds_one_secret_its_own_token(remote: dict[str, Any]) -> None:
     remote pod, and neither holds a service account token."
 
     Criterion 4 (decision 2026-10-08: the remote's own token is allowed, nothing else), H25 for
-    the remote lane: the control refuses every other Secret. The pod spec takes exactly one value
-    from a Secret, `CHASSIS_API_TOKEN` from `remote-echo-token` in the workload container; no
-    `envFrom` Secret, no Secret or projected volume, no service account token
-    (`automountServiceAccountToken: false`, `/var/run/secrets/kubernetes.io` absent). Its live
-    env holds no chassis credential name. The allowed control: the live env does hold
-    `CHASSIS_API_TOKEN` (names only), and the path check sees `/etc/hosts`."""
+    the remote lane: the control refuses every other Secret. The pod spec takes exactly two values
+    from a Secret, both from its own `remote-echo-token` in the workload container, one key per
+    direction (055 CH-6): `CHASSIS_A2A_TOKEN` reads `chassis-to-workload` and `CHASSIS_API_TOKEN`
+    reads `workload-to-chassis`. No `envFrom` Secret, no Secret or projected volume, no service
+    account token (`automountServiceAccountToken: false`, `/var/run/secrets/kubernetes.io`
+    absent). Its live env holds no chassis credential name. The allowed control: the live env
+    does hold both token names (names only), and the path check sees `/etc/hosts`."""
     spec = remote["spec"]
-    assert secret_sources(spec) == [(WORKLOAD, TOKEN_ENV, TOKEN_SECRET)], secret_sources(spec)
+    want = remote_token_sources(WORKLOAD, TOKEN_SECRET)
+    assert secret_sources(spec) == want, secret_sources(spec)
+    assert secret_keys(spec) == REMOTE_TOKEN_KEYS, secret_keys(spec)
     assert spec["automountServiceAccountToken"] is False
 
     names, sa_dir, hosts = in_remote(
@@ -528,8 +537,13 @@ def test_remote_holds_one_secret_its_own_token(remote: dict[str, Any]) -> None:
             {"kind": "path", "path": "/etc/hosts"},
         ],
     )
-    assert TOKEN_ENV in names["names"], names
-    chassis_credentials = {"LITELLM_API_KEY", "VALKEY_PASSWORD", "REMOTE_TOKEN"}
+    assert set(REMOTE_TOKEN_KEYS) <= set(names["names"]), names
+    chassis_credentials = {
+        "LITELLM_API_KEY",
+        "VALKEY_PASSWORD",
+        "REMOTE_TOKEN",
+        "REMOTE_PROXY_TOKEN",
+    }
     assert not chassis_credentials & set(names["names"]), names
     assert not [n for n in names["names"] if n.endswith(("_API_KEY", "_PASSWORD", "_SECRET"))]
     assert sa_dir == {"exists": False}, sa_dir
