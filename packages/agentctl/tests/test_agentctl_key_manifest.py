@@ -30,7 +30,8 @@ def _manifest(folder: Path, body: Any, name: str = "svc-reader.json") -> Path:
     return path
 
 
-def _good(routes: list[str]) -> dict[str, Any]:
+def _good(routes: list[Any]) -> dict[str, Any]:
+    """`Any`: the malformed cases put a non-string route in the list on purpose."""
     return {
         "version": 1,
         "key_alias": "svc-reader",
