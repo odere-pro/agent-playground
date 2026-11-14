@@ -22,3 +22,21 @@
 kctl() { kubectl --context "$CONTEXT" "$@"; }
 log() { printf '[%s] %s\n' "$LOG_PREFIX" "$*" >&2; }
 die() { log "$*"; exit 1; }
+
+# write_key_manifest DIR ALIAS ROUTE...: the key manifest of one minted LiteLLM key (059 H-15),
+# DIR/ALIAS.json, which `agentctl new --key-manifest` reads. suggested: version 1, the fields
+# version, key_alias, routes (the key's `models`), written_at (UTC). Names only: never pass the
+# key. Written to a temp file in DIR, then moved, so a reader never sees half a file.
+write_key_manifest() {
+  local dir=$1 alias=$2 tmp
+  shift 2
+  mkdir -p "$dir"
+  tmp=$(mktemp "$dir/.$alias.XXXXXX")
+  if ! jq -n --arg alias "$alias" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{version: 1, key_alias: $alias, routes: $ARGS.positional, written_at: $at}' \
+    --args "$@" >"$tmp"; then
+    rm -f "$tmp"
+    die "could not write the key manifest for $alias"
+  fi
+  mv "$tmp" "$dir/$alias.json"
+}

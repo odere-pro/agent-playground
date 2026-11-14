@@ -1312,6 +1312,7 @@ def _seed_keys(tmp_path: Path, delete_code: str, listing: str) -> tuple[int, lis
         "STUB_CALLS": str(calls),
         "STUB_DELETE_CODE": delete_code,
         "STUB_LIST": listing,
+        "KEY_MANIFEST_DIR": str(tmp_path / "manifests"),
     }
     out = subprocess.run(
         ["bash", str(SEED_SH), "keys"],
@@ -1365,6 +1366,61 @@ def test_the_seed_mints_a_key_when_no_old_key_is_left(tmp_path: Path, delete_cod
     assert rc == 0, output
     assert calls.index("/key/delete") < calls.index("/key/generate")
     assert "sk-madeup-new" not in output and "madeup-master" not in output
+    # 059 H-15: one manifest per minted key, its routes only, never the key.
+    written = sorted((tmp_path / "manifests").glob("*.json"))
+    assert len(written) == calls.count("/key/generate") > 0
+    for path in written:
+        text = path.read_text()
+        assert json.loads(text)["routes"] == ["fake-chat"] and "sk-madeup-new" not in text
+
+
+_STUB_KUBECTL_ALL_THERE = """#!/usr/bin/env bash
+case " $* " in
+  *" get namespace "*) exit 0 ;;
+  *go-template*) printf 'chassis-to-workload workload-to-chassis ' ;;
+  *" get secret "*) exit 0 ;;
+  *) echo "unexpected kubectl $*" >&2; exit 9 ;;
+esac
+"""
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="no jq")
+def test_the_seed_writes_a_manifest_for_a_key_it_already_minted(tmp_path: Path) -> None:
+    """059 H-15: every Secret already there, so no key is minted and no LiteLLM call is made, yet
+    each service still gets its manifest, from the seed's own `$MODEL`, never from the Secret."""
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    (stubs / "kubectl").write_text(_STUB_KUBECTL_ALL_THERE)
+    (stubs / "kubectl").chmod(0o755)
+    (stubs / "curl").write_text("#!/bin/sh\necho curl-called >&2\nexit 9\n")
+    (stubs / "curl").chmod(0o755)
+    env = {
+        "PATH": f"{stubs}:{os.environ['PATH']}",
+        "KEY_MANIFEST_DIR": str(tmp_path / "manifests"),
+    }
+    # A manifest already there is kept as it is (security review, 2026-11-14).
+    (tmp_path / "manifests").mkdir()
+    kept = tmp_path / "manifests/svc-typescript.json"
+    kept.write_text(
+        '{"version": 1, "key_alias": "svc-typescript", "routes": ["fake-chat"], '
+        '"written_at": "2026-01-01T00:00:00Z"}'
+    )
+    before = kept.read_text()
+
+    out = subprocess.run(
+        ["bash", str(SEED_SH), "keys"], capture_output=True, text=True, timeout=60, env=env
+    )
+
+    assert out.returncode == 0, out.stderr
+    assert kept.read_text() == before
+    assert "curl-called" not in out.stderr and "unexpected kubectl" not in out.stderr
+    names = sorted(p.name for p in (tmp_path / "manifests").glob("*.json"))
+    services = re.search(r"(?ms)^SERVICES=\((.*?)^\)", SEED_SH.read_text())
+    assert services
+    assert names == sorted(f"svc-{svc}.json" for svc in services.group(1).split())
+    for name in names:
+        data = json.loads((tmp_path / "manifests" / name).read_text())
+        assert data["routes"] == ["fake-chat"]
 
 
 def test_the_seed_text_grants_only_the_fake_tools() -> None:

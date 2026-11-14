@@ -1,5 +1,5 @@
 """`agentctl new <name> --kind ... [--framework ...] [--trust ...] [--connector ...]
-[--key-route ROUTE ...] [--dest DIR]`."""
+[--key-route ROUTE ... | --key-manifest PATH] [--dest DIR]`."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from agentctl import rules
+from agentctl.manifest import read_key_manifest
 from agentctl.scaffold import Answers, find_platform, new_agent
 
 
@@ -30,7 +31,8 @@ def _parser() -> argparse.ArgumentParser:
         help="the lane (default: sidecar, or remote when the agent is untrusted); "
         "smolagents and claude-agent need remote",
     )
-    new.add_argument(
+    key = new.add_mutually_exclusive_group()
+    key.add_argument(
         "--key-route",
         dest="key_routes",
         action="append",
@@ -38,6 +40,13 @@ def _parser() -> argparse.ArgumentParser:
         help="a route the service's LiteLLM key lists; repeat for each "
         f"(default: {', '.join(rules.DEFAULT_KEY_ROUTES)}). A generated route the key does not "
         "list is refused",
+    )
+    key.add_argument(
+        "--key-manifest",
+        type=Path,
+        metavar="PATH",
+        help="the key manifest the deploy seed wrote (svc-<svc>.json); its routes are the key's "
+        "list, in place of --key-route",
     )
     new.add_argument("--dest", type=Path, default=Path.cwd(), help="parent folder (default: .)")
     new.add_argument(
@@ -59,6 +68,14 @@ def _answers(args: argparse.Namespace, platform: Path) -> Answers:
     connector = args.connector or rules.default_connector(
         rules.resolve_trust(args.framework, args.trust)
     )
+    key_routes = tuple(args.key_routes or rules.DEFAULT_KEY_ROUTES)
+    key_source = "the service's key"
+    if args.key_manifest is not None:
+        # The alias is checked against `manifest.ALIAS`, so it is safe to print; the routes are not
+        # printed at all.
+        manifest = read_key_manifest(args.key_manifest)
+        key_routes = manifest.routes
+        key_source = f"the key {manifest.key_alias} (--key-manifest {args.key_manifest})"
     return Answers(
         agent_name=args.name,
         kind=args.kind,
@@ -66,7 +83,9 @@ def _answers(args: argparse.Namespace, platform: Path) -> Answers:
         connector=connector,
         platform_path=platform.resolve() if platform.is_absolute() else platform,
         trust=args.trust,
-        key_routes=tuple(args.key_routes or rules.DEFAULT_KEY_ROUTES),
+        key_routes=key_routes,
+        key_source=key_source,
+        echo_key_routes=args.key_manifest is None,
     )
 
 
