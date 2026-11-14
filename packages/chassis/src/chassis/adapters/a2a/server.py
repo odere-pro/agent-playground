@@ -61,7 +61,7 @@ WireHandle = Callable[[dict[str, Any], dict[str, Any]], AsyncIterator[Any]]
 """`handle` as a workload writes it: dicts in, event dicts (or models with `model_dump`) out."""
 
 BASE_URL = "http://inprocess"
-"""The URL the in-process app answers on. No socket: `httpx.ASGITransport` routes it."""
+"""The URL the in-process app answers on. No socket: `StreamingASGITransport` routes it."""
 
 
 def _validate(yielded: dict[str, Any]) -> dict[str, Any]:

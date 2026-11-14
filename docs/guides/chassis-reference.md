@@ -158,12 +158,16 @@ Each is built by `from_env()` and loaded lazily.
   - A JSON-RPC error answer from the workload, any code, is `a2a.rpc_error`, not retryable (P-9, decided 2026-11-13). Before, a mapped code escaped `run` as `engine_error`, and an unmapped one was `a2a.transport`.
     - `is_jsonrpc_error_answer` decides it. A code outside a2a-sdk's map comes as a plain `A2AClientError` with the `JSON-RPC Error ` prefix, so the helper reads that prefix (SDK-pinned by a test).
   - It cancels even when closing the stream raises.
+  - A timeout or a caller that leaves sends one `CancelTask`, and the workload's `handle` sees `CancelledError` at its await. This holds in every lane: `inprocess`, `sidecar`, and `remote` in both modes (P-7, decided 2026-11-13; contract v9, G).
   - It opens one span per run.
   - It has two hooks a lane can override: `_message_for` builds the A2A request and `_translator_for` makes the run's `EventTranslator`. The default `ChassisTranslator` reads `chassis.event`. The translator also reports the remote's `task_id` and whether the task is finished there. The connector cancels only a task that is not finished.
-- `inprocess.py` is `InProcessConnector`. It runs that server in this process over `httpx.ASGITransport`.
-  - Events arrive in one batch.
-  - The run deadline ends the stream but not `handle`.
+- `inprocess.py` is `InProcessConnector`. It runs that server in this process over `StreamingASGITransport`. No socket.
+  - Events stream, so the task id arrives while `handle` runs, and the cancel lands mid-run, as in `sidecar`. Before 2026-11-13 the lane used `httpx.ASGITransport`: events came in one batch, and the deadline ended the stream but not `handle`.
   - `InProcessConnector.probe()` is `True`.
+- `asgi_stream.py` is `StreamingASGITransport`, the httpx transport of `inprocess`.
+  - It runs the app in its own task and returns the response at the app's headers. The body streams as the app sends it.
+  - Closing a response sends `http.disconnect`, then cancels the app call after `CLOSE_GRACE_S` 1 s (suggested). Closing the transport ends every call still open.
+  - An app error before the headers is raised; after them it is `httpx.ReadError`.
 - `sidecar.py` is `SidecarConnector`. It calls the workload's own server at a loopback `spec.engine.url`.
   - It uses TCP or the `spec.engine.uds` Unix socket.
   - It streams.
