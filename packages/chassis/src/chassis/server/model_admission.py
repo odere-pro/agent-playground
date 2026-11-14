@@ -28,7 +28,7 @@ import threading
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI
 from fastapi import Request as HTTPRequest
@@ -52,6 +52,9 @@ from chassis.ports.telemetry import TelemetryPort
 from chassis.server.correlation import RunRecord, RunRegistry, parse_traceparent
 from chassis.server.observability import count_usage
 
+if TYPE_CHECKING:
+    from chassis.server.config import ModelSpec
+
 log = logging.getLogger("chassis.model_proxy")
 SPAN = "chassis.model.call"
 ROUTE_SPAN = "chassis.model.route"  # suggested: the routing choice (PoC-8)
@@ -62,6 +65,10 @@ ROUTE_REFUSED = "chassis.model_route_refused"
 counted by the run's route (never the one asked for, which the workload picks)."""
 UNRESOLVED = "unresolved"
 """suggested: the `route` label of `ROUTE_REFUSED` for a run whose record holds no route."""
+OTHER_ROUTE = "other"
+"""suggested (012 H-3): the `route` label of `chassis.model_calls` for a refused call that names a
+route the config does not declare (`ModelSpec.declared_routes`). The workload picks `model`, so its
+own string never becomes a label: refused calls add no metric series."""
 REQUESTED_LOG_CHARS = 64  # suggested: how much of an unlisted route name the warning keeps
 BUDGET_EXHAUSTED = "chassis.model_budget_exhausted"
 """suggested (CH-16): the router refused a call for the service's budget, by route. Exported as
@@ -468,6 +475,12 @@ def _route_refused(telemetry: TelemetryPort, record: RunRecord, requested: str) 
     return ROUTE_DENIED
 
 
+def _label(model_spec: ModelSpec, requested: str) -> str:
+    """The `route` label of a refused call: the route when the config declares it, else
+    `OTHER_ROUTE`. The set of labels stays as small as the config."""
+    return requested if requested in model_spec.declared_routes() else OTHER_ROUTE
+
+
 def _span_attributes(
     route: str, trace_id: str | None, record: RunRecord | None, fmt: str, traceparent: str | None
 ) -> dict[str, Any]:
@@ -494,12 +507,13 @@ def admit(
     pick the route, refuse a spent run or a full uncorrelated cap with 429, else reserve. A call
     of a run that names any route but the run's own is refused with 403 `model_route_denied`
     (012 H-3), never redirected; an uncorrelated call always gets `spec.model.route` (R6).
-    `fmt` is `openai` or `anthropic`. The caller has checked `app.state.ready` and parsed the
-    body.
+    `chassis.model_calls{route}` counts the route the call is sent to; a refused route is counted
+    by its name only when the config declares it, else as `OTHER_ROUTE`. `fmt` is `openai` or
+    `anthropic`. The caller has checked `app.state.ready` and parsed the body.
     """
     bundle: PortBundle = app.state.ports
     telemetry = bundle.telemetry
-    telemetry.counter("chassis.model_calls", route=route)
+    model_spec = app.state.config.spec.model
     requested = route
     trace_id = parse_traceparent(traceparent)
     runs: RunRegistry = app.state.runs
@@ -507,11 +521,14 @@ def admit(
     if record is not None:
         refused = _route_refused(telemetry, record, requested)
         if refused is not None:
+            telemetry.counter("chassis.model_calls", route=_label(model_spec, requested))
             return refused
-    if record is None and route != app.state.config.spec.model.route:
+    if record is None and route != model_spec.route:
         # R6: a call with no run cannot pick its route; it gets the agent's default route.
-        route = app.state.config.spec.model.route
+        route = model_spec.route
         telemetry.counter(PINNED, route=route)
+    # The route the call is sent to: the run's own, or `spec.model.route`. Never the raw `model`.
+    telemetry.counter("chassis.model_calls", route=route)
     cap: UncorrelatedCap = app.state.uncorrelated_cap
     worst = 0
     if record is None:
@@ -547,6 +564,7 @@ __all__ = [
     "BUDGET_EXHAUSTED",
     "DEFAULT_UNCORRELATED_MAX_TOKENS",
     "DENIED",
+    "OTHER_ROUTE",
     "PINNED",
     "REQUESTED_LOG_CHARS",
     "ROUTE_DENIED",

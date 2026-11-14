@@ -138,6 +138,30 @@ def secret_sources(spec: dict[str, Any]) -> list[tuple[str, str, str]]:
     return found
 
 
+REMOTE_TOKEN_KEYS = {
+    "CHASSIS_A2A_TOKEN": "chassis-to-workload",
+    "CHASSIS_API_TOKEN": "workload-to-chassis",
+}
+"""A remote workload's two Secret values (055 CH-6): the key it requires from the chassis, and
+the key it sends to the chassis's remote listener. Each variable reads its own key."""
+
+
+def remote_token_sources(container: str, secret: str) -> list[tuple[str, str, str]]:
+    """What `secret_sources` must return for a remote workload: its two token variables, in
+    manifest order, both from its own Secret `secret`, and nothing else."""
+    return [(container, name, secret) for name in REMOTE_TOKEN_KEYS]
+
+
+def secret_keys(spec: dict[str, Any]) -> dict[str, str]:
+    """{env name: Secret key} for every env value a pod spec takes from a Secret."""
+    return {
+        e["name"]: e["valueFrom"]["secretKeyRef"]["key"]
+        for c in containers_of(spec)
+        for e in c.get("env", [])
+        if (e.get("valueFrom") or {}).get("secretKeyRef")
+    }
+
+
 @contextmanager
 def metadata_stand_in() -> Iterator[str]:
     """A stand-in at 169.254.169.254:80 on the kind node for the length of one test: the address

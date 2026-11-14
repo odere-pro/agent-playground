@@ -146,8 +146,10 @@ def test_the_litellm_config_routes_big_default_hosted_and_local_small_to_the_hos
     routes = {m["model_name"]: m["litellm_params"] for m in config["model_list"]}
 
     assert set(routes) == {"big-default", "local-small"}
+    # `num_retries` per route: ADR-013 (model-call retries belong to the router; suggested: 2).
     assert routes["big-default"] == {
         "model": "os.environ/POC06_HOSTED_MODEL",
+        "num_retries": 2,
         "api_key": "os.environ/POC06_HOSTED_API_KEY",  # pragma: allowlist secret
     }
     assert routes["local-small"]["api_base"] == "os.environ/POC06_LLAMA_BASE"

@@ -290,3 +290,47 @@ def test_stack_sh_makes_the_percent_from_the_rate(stack: str) -> None:
     text = (COMPOSE_DIR / stack / "stack.sh").read_text()
     assert 'python3 -I "$here/../trace_sample_percent.py"' in text
     assert f"export {PERCENT_VAR}" in text
+
+
+def _scripts_running_compose_on_a_file_needing_the_percent() -> list[Path]:
+    needing = {
+        path.parent
+        for path in COMPOSE_DIR.rglob("*.yaml")
+        if f"${{{PERCENT_VAR}:?}}" in path.read_text()
+    }
+    return sorted(
+        script
+        for folder in needing
+        for script in folder.glob("*.sh")
+        if "docker compose" in script.read_text()
+    )
+
+
+COMPOSE_SCRIPTS = _scripts_running_compose_on_a_file_needing_the_percent()
+
+
+def test_the_router_drill_is_among_the_compose_scripts() -> None:
+    """The scan finds the router drill, which builds its own compose call, not only stack.sh."""
+    names = {str(path.relative_to(COMPOSE_DIR)) for path in COMPOSE_SCRIPTS}
+
+    assert "poc08-litellm/router-drill.sh" in names, names
+
+
+@pytest.mark.parametrize(
+    "script", COMPOSE_SCRIPTS, ids=[str(p.relative_to(COMPOSE_DIR)) for p in COMPOSE_SCRIPTS]
+)
+def test_a_compose_script_exports_the_percent_before_any_compose_call(script: Path) -> None:
+    """A script that runs compose on a file needing the percent makes it first, or compose fails.
+
+    Compose interpolates `${TRACE_SAMPLE_PERCENT:?}` for the whole file, even when the Collector
+    is not started, so every such script makes it as stack.sh does, before its first compose call.
+    """
+    lines = script.read_text().splitlines()
+    convert = 'TRACE_SAMPLE_PERCENT="$(python3 -I "$here/../trace_sample_percent.py")"'
+
+    made = lines.index(convert) if convert in lines else len(lines)
+    exported = lines.index(f"export {PERCENT_VAR}") if f"export {PERCENT_VAR}" in lines else made
+    first_call = next(i for i, line in enumerate(lines) if '"${compose[@]}"' in line)
+
+    assert made < len(lines), f"{script.name} does not make {PERCENT_VAR} from the rate"
+    assert made < exported < first_call, f"{script.name} exports {PERCENT_VAR} too late"

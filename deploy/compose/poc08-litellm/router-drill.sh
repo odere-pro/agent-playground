@@ -20,6 +20,11 @@ config="$run_dir/router-litellm.yaml"
 project=${ROUTER_DRILL_PROJECT:-router1113}
 compose=(docker compose -p "$project" --env-file "$env_file"
   -f "$here/docker-compose.yaml" -f "$here/router-drill.yaml")
+# The base file needs TRACE_SAMPLE_PERCENT at interpolation, even with the Collector not started.
+# Made as stack.sh makes it: from TRACE_SAMPLE_RATE (0 to 1, default 1.0; 014 H-7), through the
+# one conversion. A bad rate stops here, before any compose call.
+TRACE_SAMPLE_PERCENT="$(python3 -I "$here/../trace_sample_percent.py")"
+export TRACE_SAMPLE_PERCENT
 platform=(postgres fake-model-server litellm)
 litellm=http://127.0.0.1:4013
 

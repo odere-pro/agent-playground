@@ -13,9 +13,9 @@ from __future__ import annotations
 import asyncio
 import json
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import aclosing, asynccontextmanager
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -167,7 +167,7 @@ async def _no_task_left(before: set[asyncio.Task[Any]]) -> None:
         return str(getattr(coro, "__qualname__", repr(coro)))
 
     def left() -> set[asyncio.Task[Any]]:
-        new = asyncio.all_tasks() - before - {asyncio.current_task()}  # type: ignore[operator]
+        new = asyncio.all_tasks() - before - {asyncio.current_task()}
         return {t for t in new if name(t) not in PER_LOOP}
 
     try:
@@ -213,12 +213,16 @@ async def test_a_caller_that_leaves_cancels_the_task_and_the_workload_sees_it(
         before = asyncio.all_tasks()
         try:
             async with asyncio.timeout(10):
-                async with aclosing(connector.run(request, make_context(request))) as run:
+                async with aclosing(
+                    cast(AsyncGenerator[Any], connector.run(request, make_context(request)))
+                ) as run:
                     first = await anext(run)
+            # The cancel holds before the connector closes (contract v9, G.24 and G.26).
+            async with asyncio.timeout(SEEN_WITHIN_S):
+                await cancelled.wait()
+            assert [s.method for s in recorder.rpc()] == ["SendStreamingMessage", "CancelTask"]
         finally:
             await connector.close()
-        async with asyncio.timeout(SEEN_WITHIN_S):
-            await cancelled.wait()
         await _no_task_left(before)
     assert first == Start(request_id=request.request_id)
     assert [s.method for s in recorder.rpc()] == ["SendStreamingMessage", "CancelTask"]

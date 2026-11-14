@@ -198,6 +198,9 @@ class ModelSpec(BaseModel):
       list is 403 `model_route_denied` at the first call; suggested: a check at load, which
       needs the key and is not built. An empty task or route name is refused here.
     - `judge_route: null`: the judge evaluator's route. Null: `CHASSIS_JUDGE_ROUTE`.
+
+    With `spec.engine.protocol: a2a` both `routes` and `fallback_route` are refused at load: the
+    plain remote never receives `ctx`, so it cannot learn a route other than `route` (012 H-3).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -561,6 +564,25 @@ class Spec(BaseModel):
     feedback: FeedbackSpec = Field(default_factory=FeedbackSpec)
     observability: ObservabilitySpec = Field(default_factory=ObservabilitySpec)
     governance: GovernanceSpec = Field(default_factory=GovernanceSpec)
+
+    @model_validator(mode="after")
+    def _plain_a2a_has_one_route(self) -> Spec:
+        """012 H-3: a plain-A2A remote (`spec.engine.protocol: a2a`) never receives `ctx`, so it
+        cannot learn a task route or the gate's fallback route, and the model proxy refuses any
+        route but the run's. Both are refused here, at load."""
+        if self.engine.protocol != "a2a":
+            return self
+        named = []
+        if self.model.routes:
+            named.append("spec.model.routes")
+        if self.model.fallback_route is not None:
+            named.append("spec.model.fallback_route")
+        if named:
+            raise ValueError(
+                f"{' and '.join(named)} is refused with spec.engine.protocol: a2a; a plain A2A "
+                "remote never receives ctx, so every run's route is spec.model.route (012 H-3)"
+            )
+        return self
 
 
 CLOUD_LIMITS: dict[str, Any] = {

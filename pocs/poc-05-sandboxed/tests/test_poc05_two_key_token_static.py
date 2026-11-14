@@ -19,6 +19,12 @@ from typing import Any
 
 import pytest
 import yaml
+from poc_harness.kind_controls import (
+    REMOTE_TOKEN_KEYS,
+    remote_token_sources,
+    secret_keys,
+    secret_sources,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 KIND_DIRS = (ROOT / "deploy/kind/poc05", ROOT / "deploy/kind/poc06")
@@ -118,6 +124,49 @@ def test_every_remote_chassis_config_names_one_key_per_direction() -> None:
             found.append(where)
             assert auth == want, where
     assert len(found) >= 5, found
+
+
+REMOTE_WORKLOADS = {
+    "remote-echo": ROOT / "deploy/kind/poc05/remote/remote-echo.yaml",
+    "remote-smolagents": ROOT / "deploy/kind/poc06/remote/remote-smolagents.yaml",
+    "remote-claude-agent": ROOT / "deploy/kind/poc06/remote/remote-claude-agent.yaml",
+    "remote-typescript": ROOT / "deploy/kind/poc06/remote/remote-typescript.yaml",
+}
+
+
+@pytest.mark.parametrize("name", sorted(REMOTE_WORKLOADS))
+def test_the_live_secret_check_expects_what_the_manifest_mounts(name: str) -> None:
+    """The kind criterion-4 tests (`test_poc05_kind_remote_controls.py`,
+    `test_poc06b_kind_remote_controls.py`) expect `remote_token_sources` and
+    `REMOTE_TOKEN_KEYS`. This pins the shipped pod specs to the same expectation offline: two
+    Secret sources, both from the remote's own Secret, each reading its own direction's key."""
+    docs = yaml.safe_load_all(REMOTE_WORKLOADS[name].read_text())
+    spec = next(
+        d["spec"]["podTemplate"]["spec"] for d in docs if "podTemplate" in d.get("spec", {})
+    )
+    assert secret_sources(spec) == remote_token_sources("workload", f"{name}-token")
+    assert secret_keys(spec) == REMOTE_TOKEN_KEYS
+
+
+KEY_NAMES_ONLY = "go-template={{range $k, $_ := .data}}{{$k}} {{end}}"
+"""Prints the Secret's key names, never a value."""
+
+
+@pytest.mark.parametrize("seed", SEEDS, ids=lambda p: p.parent.name)
+def test_the_seed_refuses_an_old_one_key_secret_and_can_rotate_it(seed: Path) -> None:
+    """An existing Secret is kept only if it holds both keys, checked by name only. The old
+    one-key Secret stops the seed with a message that names the rotate command, and
+    `seed.sh rotate remote-<name>-token` drops and remakes it."""
+    text = seed.read_text()
+    assert KEY_NAMES_ONLY in text, seed
+    assert "{{$_}}" not in text and "{{.}}" not in text, "a template must not print a value"
+    assert re.search(r"token_keys_ok\(\) \{", text), seed
+    assert re.search(r'token_keys_ok "\$AGENTS" "remote-\$name-token"', text), seed
+    assert re.search(r"die \"[^\"]*one-key[^\"]*rotate remote-\$name-token", text), seed
+    rotate = re.search(r"(?ms)^    remote-\*-token\)\n(.*?);;", text)
+    assert rotate, f"{seed}: no rotate case for remote-*-token"
+    assert 'drop_secret "$AGENTS" "$name"' in rotate.group(1), seed
+    assert "seed_keys" in rotate.group(1), seed
 
 
 @pytest.mark.parametrize("seed", SEEDS, ids=lambda p: p.parent.name)
