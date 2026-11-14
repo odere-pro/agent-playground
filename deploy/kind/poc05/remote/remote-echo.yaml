@@ -1,6 +1,6 @@
 # remote-echo: the remote lane's workload (plan sections 2.2, 2.4, 2.10, 2.11; T14). An
 # agent-sandbox Sandbox on gVisor running echo-python on the workload-a2a template, with the token
-# required on every path (`--require-token-env CHASSIS_API_TOKEN`), the agent card included. The
+# required on every path (`--require-token-env CHASSIS_A2A_TOKEN`), the agent card included. The
 # pod takes the Sandbox's name. Its chassis is `chassis-echo-remote` in poc05-agents.
 #
 # - Admission (admission/policy.yaml, rule 5): labels `agents.platform/lane: remote` and
@@ -11,8 +11,10 @@
 #   per-remote separation needs a namespace per remote (recorded exception, review F3).
 # - The token crosses the pod network in plain HTTP both ways (review F14, recorded): mTLS is the
 #   next step (ADR-005); on single-node kind the exposure is the node.
-# - The one secret: CHASSIS_API_TOKEN from `remote-echo-token` (seed.sh), as env in the workload
-#   container only (section 2.2).
+# - The one Secret, `remote-echo-token` (seed.sh), two keys, one per direction (055 CH-6), as env
+#   in the workload container only (section 2.2): CHASSIS_A2A_TOKEN (key chassis-to-workload),
+#   which it requires from the chassis, and CHASSIS_API_TOKEN (key workload-to-chassis), which
+#   it sends to the chassis's remote listener, the only key that listener accepts.
 # - No DNS (section 2.10): the chassis's remote proxy is the fixed ClusterIP of
 #   `chassis-echo-remote-proxy` (agents/chassis-echo-remote.yaml), given here as plain env.
 #   `enableServiceLinks: false`, so no Service variables leak in either.

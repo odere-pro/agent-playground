@@ -89,6 +89,43 @@ def test_the_a2a_block_forbids_extra_keys_and_bad_values() -> None:
         _config({**REMOTE, "protocol": "a2a", "a2a": {"context_id": "random"}})
 
 
+PLAIN: dict[str, Any] = {**REMOTE, "protocol": "a2a"}
+
+
+@pytest.mark.parametrize(
+    ("model", "field"),
+    [
+        ({"routes": {"simplify": "small-default"}}, "spec.model.routes"),
+        ({"fallback_route": "small-default"}, "spec.model.fallback_route"),
+    ],
+    ids=["routes", "fallback_route"],
+)
+def test_plain_mode_refuses_task_routes_and_the_fallback_route(
+    model: dict[str, Any], field: str
+) -> None:
+    """012 H-3: a plain remote never receives `ctx`, so it cannot learn its run's route. A task
+    route or a fallback route would end every such run in 403 `model_route_denied`; the config is
+    refused at load instead."""
+    document = {
+        "profile": "fake",
+        "agent": {"name": "simplifier", "version": "0.0.1"},
+        "spec": {"adapters": {"model": "fake"}, "engine": PLAIN, "model": model},
+    }
+    with pytest.raises(ValidationError) as caught:
+        ChassisConfig.model_validate(document)
+    assert f"{field} is refused with spec.engine.protocol: a2a" in str(caught.value)
+
+
+def test_plain_mode_keeps_its_one_route() -> None:
+    """Plain mode with `spec.model.route` alone loads: every run's route is that route."""
+    document = {
+        "profile": "fake",
+        "agent": {"name": "simplifier", "version": "0.0.1"},
+        "spec": {"engine": PLAIN, "model": {"route": "small-default", "routes": {}}},
+    }
+    assert ChassisConfig.model_validate(document).spec.model.route == "small-default"
+
+
 def test_other_lanes_see_the_v4_mapping() -> None:
     """Other lanes get the v4 mapping with no `protocol` or `a2a`."""
     mapping = _config({"connector": "sidecar", "url": "http://127.0.0.1:9100"}).spec.engine

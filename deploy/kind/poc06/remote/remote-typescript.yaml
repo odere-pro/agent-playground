@@ -2,7 +2,7 @@
 # deploy/kind/poc05/remote/remote-echo.yaml, with the Node image of the sidecar lane
 # (kind.local/agent-platform/echo-typescript:poc05, built by `poc05/run.sh build`).
 #
-# - `--require-token-env CHASSIS_API_TOKEN` puts the bearer check on every request, the agent card
+# - `--require-token-env CHASSIS_A2A_TOKEN` puts the bearer check on every request, the agent card
 #   included, and lets HOST be the pod IP. Drain is DRAIN_TIMEOUT_MS, not a flag.
 # - The Node image has no Python. The PoC-5 in-pod checks (`kubectl exec ... python`) cannot run
 #   here; the kind tests use a small Node probe instead (test_poc06b_kind_remote_controls.py), and
