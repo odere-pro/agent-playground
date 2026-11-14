@@ -21,10 +21,18 @@ Per engine path `/<engine>`:
 
 No inbound bearer here: each chassis sends its own remote token, which only its remote checks
 (`--require-token-env`). The door holds no remote token and never reads the caller's. Network
-policy limits who reaches the door. A claim that fails is `UNAVAILABLE_CODE`, which the a2a-sdk
-raises as `A2AClientError`, so the chassis connector reports a retryable `a2a.transport`.
-Errors have fixed text: never an upstream body, a header value, or the token. The log line has
-the engine, the outcome, sizes, and timing.
+policy limits who reaches the door. A platform fault before the stream started (no free slot, a
+failed claim, a pod 5xx, a pod that sends no response headers, any httpx error once the request
+was sent) is HTTP 503 with a fixed body (`PLATFORM_FAULT_STATUS`), so the chassis connector
+reports a retryable `a2a.transport` (contract v9, H.27; proposals P-35). No byte reached the
+caller, but in the last three cases the pod may have made model or tool calls, and a retry may
+repeat them; the user accepted that. The log's `outcome` names each fault with a fixed reason.
+A pod that sends an encoded stream is refused on its own rule: the door cannot scan it, so it is
+the JSON-RPC error `UNAVAILABLE_CODE`. A lost or late stream after it began, and a failed
+cancel, are that error too. The chassis reports it as `a2a.rpc_error`, not retryable (P-9).
+Errors have fixed text: never an
+upstream body, a header value, or the token. The log line has the engine, the outcome, sizes,
+and timing.
 
 The claim lifecycle, the API client, and the pod address check are `code_runner.dispatch`'s.
 """
@@ -57,7 +65,26 @@ from code_runner.runner import DEFAULT_LIMITS, RunnerError
 
 STREAM_METHODS = frozenset({"SendStreamingMessage", "message/stream"})
 CANCEL_METHODS = frozenset({"CancelTask", "tasks/cancel"})
-UNAVAILABLE_CODE = -32000  # not an A2A code: the client raises A2AClientError (retryable)
+# The door's own JSON-RPC error answer. Since P-9 the chassis connector reports any JSON-RPC
+# error answer as `a2a.rpc_error`, not retryable (contract v9, E.15).
+UNAVAILABLE_CODE = -32000
+# A platform fault before the stream started (no free slot, a failed claim, a pod 5xx, no response
+# headers, a send error) is not the workload's answer: HTTP 503 with a fixed body, which the a2a-sdk
+# raises as a plain `A2AClientError` ("HTTP Error 503") and the chassis connector reports as a
+# retryable `a2a.transport` (contract v9, H.27; proposals P-35). No stream byte reached the
+# caller. A failed claim ran nothing; after a pod 5xx, a pod that sent no headers, or a send
+# error, the pod may have made model or tool calls, and a retry may repeat them (accepted, P-35).
+PLATFORM_FAULT_STATUS = 503
+# The log's `outcome` for each pre-stream fault: fixed strings, never error text.
+CLAIM_REFUSED = "claim_refused"  # the claim create applied nothing, or may exist (a 5xx)
+NOT_READY = "not_ready"  # the claim was not Ready in time, or had no pod address
+CONNECT_ERROR = "connect_error"  # the pod's port did not open within the connect retry
+NO_HEADERS = "no_headers"  # the pod accepted the request and sent no response headers in time
+SEND_ERROR = "send_error"  # any other httpx error after the request was sent
+POD_5XX = "pod_5xx"  # the pod answered 5xx before any stream byte
+PLATFORM_FAULT_BODY = {"error": "sandbox_unavailable"}  # suggested: the fixed body
+PLATFORM_FAULT_RETRY_AFTER_S = 1  # suggested: as the chassis's 503 `overloaded` (contract v9, D.12)
+POD_FAULT_STATUSES = range(500, 600)  # a pod 5xx before the stream: the platform fault answer
 # The pod refused the caller's credential (401, 403) before the stream: the door answers with the
 # same HTTP status and a fixed body, as the pod did before the door existed. The a2a-sdk raises an
 # HTTP error status as A2AClientHTTPError, which the chassis connector reports as `a2a.transport`.
@@ -118,6 +145,14 @@ class FrontDoorConfig:
     remote_port: int = REMOTE_PORT
     # engine name -> the port that serves it; empty: one app serves every engine (tests, PoC-5)
     engine_ports: Mapping[str, int] = field(default_factory=dict)
+
+
+class _PreStreamFault(Exception):
+    """A fault before any stream byte went to the caller; `reason` is one fixed string."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
 
 
 @dataclass
@@ -190,6 +225,16 @@ def _rpc_error(rpc_id: object, code: int, message: str) -> JSONResponse:
 
 def _unavailable(rpc_id: object, message: str) -> JSONResponse:
     return _rpc_error(rpc_id, UNAVAILABLE_CODE, f"sandbox_unavailable: {message}")
+
+
+def _platform_fault() -> JSONResponse:
+    """The one answer to a fault before the stream started: no request id, no claim name, no
+    error text, no pod header."""
+    return JSONResponse(
+        dict(PLATFORM_FAULT_BODY),
+        status_code=PLATFORM_FAULT_STATUS,
+        headers={"Retry-After": str(PLATFORM_FAULT_RETRY_AFTER_S)},
+    )
 
 
 def _connection_named(values: list[str]) -> frozenset[str]:
@@ -372,28 +417,32 @@ class RunDispatcher:
             async with asyncio.timeout(self.config.claim_timeout_s):
                 await self._slots.acquire()
         except TimeoutError:
-            return _unavailable(rpc_id, "no free sandbox slot")
+            log.warning("a2a-dispatch no_free_slot engine=%s", engine.name)
+            return _platform_fault()
         claim = _Claim(f"run-{uuid.uuid4().hex}", engine.name, len(body))
         try:
             host = await self._claim(engine, claim)
             upstream = await self._open(host, body, _forward_headers(request))
-        except RunnerError as exc:
-            claim.outcome = exc.code
+        except _PreStreamFault as exc:
+            # No claim, or the claimed pod never answered: no stream byte went to the caller.
+            claim.outcome = exc.reason
             await self._release(claim)
-            return _unavailable(rpc_id, exc.message)
+            return _platform_fault()
         except BaseException:
             claim.outcome = "error"
             await self._release(claim)
             raise
         if upstream.status_code != 200:
             status = upstream.status_code
-            claim.outcome = f"status_{status}"
+            claim.outcome = POD_5XX if status in POD_FAULT_STATUSES else f"status_{status}"
             try:
                 await upstream.aclose()
             finally:
                 await self._release(claim)
             if status in REFUSED_STATUSES:
                 return JSONResponse({"error": "sandbox_refused"}, status_code=status)
+            if status in POD_FAULT_STATUSES:
+                return _platform_fault()
             return _unavailable(rpc_id, f"the sandbox refused the run (HTTP {status})")
         if _encoded(upstream):
             claim.outcome = "encoded"
@@ -424,14 +473,17 @@ class RunDispatcher:
         )
         claim.may_exist = created is not None
         if not created:
-            raise RunnerError("sandbox_unavailable", "no sandbox could be claimed")
-        return await self.claims.wait_ready(claim.name)
+            raise _PreStreamFault(CLAIM_REFUSED)
+        try:
+            return await self.claims.wait_ready(claim.name)
+        except RunnerError:
+            raise _PreStreamFault(NOT_READY) from None
 
     async def _relay(
         self, upstream: httpx.Response, run: _Run, claim: _Claim, rpc_id: object
     ) -> AsyncIterator[bytes]:
         """The pod's bytes, unchanged, until the stream ends. On the run deadline or a lost pod,
-        one last SSE event: the door's own retryable JSON-RPC error. The deadline is one for the
+        one last SSE event: the door's own JSON-RPC error. The deadline is one for the
         whole run, applied to each read, never across a `yield`."""
         deadline = asyncio.get_running_loop().time() + self.config.run_deadline_s
         chunks = upstream.aiter_raw()
@@ -496,14 +548,14 @@ class RunDispatcher:
                     return await self._upstream.send(request, stream=True)
             except TimeoutError:
                 log.warning("a2a-dispatch sandbox_silent")
-                raise RunnerError("sandbox_unavailable", "the sandbox did not answer") from None
+                raise _PreStreamFault(NO_HEADERS) from None
             except CONNECT_FAILED as exc:
                 if time.monotonic() >= deadline:
                     log.warning("a2a-dispatch sandbox_unreachable error=%s", type(exc).__name__)
-                    raise RunnerError("sandbox_unavailable", "the sandbox did not answer") from None
+                    raise _PreStreamFault(CONNECT_ERROR) from None
             except httpx.HTTPError as exc:
                 log.warning("a2a-dispatch sandbox_lost error=%s", type(exc).__name__)
-                raise RunnerError("sandbox_unavailable", "the sandbox did not answer") from None
+                raise _PreStreamFault(SEND_ERROR) from None
             await asyncio.sleep(self.config.poll_s)
 
 

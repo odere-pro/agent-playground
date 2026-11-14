@@ -40,6 +40,7 @@ Each finding id is assigned here once, in bold. P-24 has no id: it carries two i
 | P-32 | Agents calling agents | (gap review) | `chassis-architect` |
 | P-33 | The end user behind an app's token | (gap review) | `platform-security` |
 | P-34 | The epic's six success metrics in the metrics spec | (gap review) | `observability-expert` |
+| P-35 | A platform fault before the stream | (code-runner 503 review, 2026-11-13) | `chassis-architect` |
 
 ## Decided by the user, 2026-11-06
 
@@ -59,6 +60,11 @@ Each finding id is assigned here once, in bold. P-24 has no id: it carries two i
 
 - **P-9:** option 1. A JSON-RPC error answer from the workload is the new code `a2a.rpc_error`, not retryable (not `a2a.failed`, not `engine_error`). Built in 009 CH-1; recorded in [contract v9, E](../../contracts/contract-v9.md#e-a-json-rpc-error-from-the-workload-009-ch-1-p-9).
 - **P-7:** option 2 for the cancel, not option 1. The box "A timeout cancels the A2A task, and the workload sees the cancel" holds in all three lanes, `inprocess`, `sidecar`, and `remote`; it is not scoped to `sidecar` and `remote`. Built in 009 CH-1: `inprocess` now streams through `StreamingASGITransport`, so the one `CancelTask` path every lane uses reaches `handle`. Recorded in [contract v9, G](../../contracts/contract-v9.md#g-cancel-in-every-lane-009-ch-1-p-7).
+- **P-35:** option 1, for a failed sandbox claim. The code-runner front door answers a retryable HTTP 503.
+
+## Decided by the user, 2026-11-14
+
+- **P-35:** widened to every fault before the stream: a failed claim, a pod 5xx, a pod that sends no response headers, and any httpx error after the request was sent. All four answer a retryable 503. The user accepts that a retry may repeat model or tool calls the pod already made in the last three. Recorded in [contract v9, H.27](../../contracts/contract-v9.md#h-a-platform-fault-before-the-stream-p-35).
 
 Done by a merged PR: **P-16.** Rule 9, the minimum chassis version, landed in `agent-lib` in PR #79; `docs/specs/architecture.md` and `docs/specs/security.md` name it.
 
@@ -507,3 +513,17 @@ P-26 to P-34 come from the section "If phases A to F are all built: what is stil
   1. One line each in the spec: which track owns it, and that it is parked or `later`.
 - suggested: that text. A spec edit, outside `docs/planning`.
 - Owner: `observability-expert`.
+
+## P-35: A platform fault before the stream
+
+- Findings: none (the code-runner 503 review, 2026-11-13).
+- Issues: 009 CH-1. Related: P-9.
+- Where: `packages/code-runner/src/code_runner/a2a_dispatch.py` (`RunDispatcher.stream`, `_open`).
+- Conflict: Since P-9 the chassis reports any JSON-RPC error answer as `a2a.rpc_error`, not retryable. The front door answered a platform fault (no slot, a failed claim, a pod that never answers) with the JSON-RPC error `-32000`, so a passing fault was final.
+- Options:
+  1. Answer a fault before the stream with HTTP 503, a fixed body, and `Retry-After`, which the connector reports as `a2a.transport`, retryable.
+  2. Keep `-32000`, not retryable.
+- Decided 2026-11-13 by the user: option 1, for a failed sandbox claim.
+- Widened 2026-11-14 by the user: option 1 for all four cases: (1) a failed claim, (2) a pod 5xx, (3) a pod that sends no response headers, (4) any httpx error in `_open` after the request was sent. No byte reached the caller in any of them. In cases 2 to 4 the pod may already have made model or tool calls, and a retry may repeat them; the user accepts that risk. An encoded pod stream and every fault after the stream started stay `-32000`, not retryable.
+- Owner: `chassis-architect`.
+- In the backlog: none; recorded in [contract v9, H.27](../../contracts/contract-v9.md#h-a-platform-fault-before-the-stream-p-35).
