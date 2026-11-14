@@ -642,6 +642,7 @@ def _rotate(tmp_path: Path, delete_code: str, listing: str) -> tuple[int, list[s
         "STUB_CALLS": str(calls),
         "STUB_DELETE_CODE": delete_code,
         "STUB_LIST": listing,
+        "KEY_MANIFEST_DIR": str(tmp_path / "manifests"),
     }
     out = subprocess.run(
         ["bash", str(SEED), "rotate", "chassis-echo-litellm"],
@@ -700,6 +701,10 @@ def test_seed_rotate_mints_a_key_when_no_old_key_is_left(tmp_path: Path, delete_
     assert rc == 0, output
     assert calls.index("/key/delete") < calls.index("/key/generate")
     assert "sk-madeup-new" not in output and "madeup-master" not in output
+    # 059 H-15: the minted key's manifest names its routes, never the key.
+    written = (tmp_path / "manifests/svc-echo.json").read_text()
+    assert json.loads(written)["routes"] == ["fake-chat"]
+    assert "sk-madeup-new" not in written
 
 
 # --- run.sh: the gateway key, the Job, the pool, the pinned manifest (reviews of 2026-10-09) ---

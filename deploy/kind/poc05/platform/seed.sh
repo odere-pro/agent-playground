@@ -32,6 +32,9 @@ AGENTS=poc05-agents
 REMOTE=poc05-remote
 HERE=$(cd "$(dirname "$0")" && pwd)
 MODEL="fake-chat"
+# suggested: where each minted key's manifest goes (svc-<svc>.json, its routes only, never the
+# key), for `agentctl new --key-manifest` (059 H-15). Git-ignored. KEY_MANIFEST_DIR overrides it.
+KEY_MANIFESTS=${KEY_MANIFEST_DIR:-$HERE/../../.key-manifests}
 
 # One LiteLLM virtual key per chassis instance (T13's pods), with its MCP tool allow-list per
 # gateway server (suggested, section 2.9): "<svc>|<fake_tools tools>|<code_runner tools>".
@@ -236,7 +239,8 @@ make_keys() {
     fi
     printf '%s' "$key" | put_secret "$AGENTS" "chassis-$svc-litellm" LITELLM_API_KEY
     unset key resp
-    log "made $AGENTS/chassis-$svc-litellm (alias svc-$svc)"
+    write_key_manifest "$KEY_MANIFESTS" "svc-$svc" "$MODEL"
+    log "made $AGENTS/chassis-$svc-litellm (alias svc-$svc) and its key manifest"
   done
   unset master
   stop_forward
@@ -246,7 +250,12 @@ seed_keys() {
   local entry svc fake code name to_workload to_chassis pending=()
   for entry in "${SERVICES[@]}"; do
     IFS='|' read -r svc fake code <<<"$entry"
-    secret_exists "$AGENTS" "chassis-$svc-litellm" || pending+=("$entry")
+    if secret_exists "$AGENTS" "chassis-$svc-litellm"; then
+      # The key was minted here with $MODEL: its manifest comes from that, never from the Secret.
+      write_key_manifest "$KEY_MANIFESTS" "svc-$svc" "$MODEL"
+    else
+      pending+=("$entry")
+    fi
   done
   if ((${#pending[@]} > 0)); then
     make_keys "${pending[@]}"

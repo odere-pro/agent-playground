@@ -17,13 +17,24 @@ cd invoice-reader && make setup test run
 | `--trust` | `trusted`, `untrusted` (suggested: the values, P-15) | the framework's (`rules.trust_of`) |
 | `--connector` | `sidecar`, `remote` | `sidecar`; `remote` for an untrusted agent |
 | `--key-route` | a route the service's LiteLLM key lists; repeat for each | `big-default` (suggested:) |
+| `--key-manifest` | the key manifest the deploy seed wrote; its routes replace `--key-route` | none |
 | `--dest` | the parent folder | `.` |
 | `--platform-path` | the agent-platform checkout | the one agentctl runs from |
 | `--no-lock` | skip the platform pin and `uv.lock` | off |
 
 The trust rule (ADR-001 item 5): `smolagents` and `claude-agent` are untrusted and run only in the `remote` lane, which is their default. The other five may use either lane. `--trust untrusted` runs a trusted framework as untrusted: the `remote` lane, so the chart puts the workload in its own pod under gVisor with default-deny egress. `--trust untrusted --connector sidecar` is refused, and so is `--trust trusted` on an untrusted framework. A refused argument exits 2 with the reason and writes nothing.
 
-The route check (012 H-3): each service has one LiteLLM key, minted at deploy, that lists the routes the service may use. agentctl refuses a generated route the key does not list; it does not rewrite the route. agentctl cannot read the real key offline, so `--key-route` states its list. With no `--key-route` the list is the route the template already names, `big-default`, so the check passes. Decided 2026-11-13: the list will come from a key manifest written at deploy; that is not built yet.
+The route check (012 H-3): each service has one LiteLLM key, minted at deploy, that lists the routes the service may use. agentctl refuses a generated route the key does not list; it does not rewrite the route. agentctl cannot read the real key offline, so `--key-route` states its list. With no `--key-route` the list is the route the template already names, `big-default`, so the check passes.
+
+The key manifest (decided 2026-11-13): when `seed.sh keys` (`deploy/kind/poc05/platform/` or `deploy/kind/poc06/`) runs, it writes each service key's routes to a file: for a key it mints, and for a key whose Secret is already there (the routes come from the seed's own model list, never from the Secret). `--key-manifest PATH` reads that file in place of `--key-route`. A missing file, bad JSON, or a wrong field exits 2 and writes nothing.
+
+- suggested: the path `deploy/kind/.key-manifests/svc-<svc>.json`, git-ignored; `KEY_MANIFEST_DIR` moves it.
+- suggested: the format, one JSON object, version 1: `{"version": 1, "key_alias": "svc-reader", "routes": ["fake-chat"], "written_at": "2026-11-14T10:00:00Z"}`. `routes` is the key's `models` list.
+- It names routes only, never the key. agentctl refuses any other field.
+
+```bash
+agentctl new reader --kind tool --key-manifest deploy/kind/.key-manifests/svc-reader.json
+```
 
 ## What it writes
 

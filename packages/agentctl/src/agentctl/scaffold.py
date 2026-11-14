@@ -44,14 +44,16 @@ class Answers:
     trust: str | None = None
     """`--trust`; None leaves it to the framework (`rules.resolve_trust`)."""
     key_routes: tuple[str, ...] = rules.DEFAULT_KEY_ROUTES
-    """`--key-route`: the routes the service's LiteLLM key lists."""
+    """`--key-route` or `--key-manifest`: the routes the service's LiteLLM key lists."""
+    key_source: str = "the service's key"
+    """Which key the routes belong to, for the refusal (a manifest gives its alias)."""
 
     def check(self) -> None:
         """Every refusal comes before anything is written."""
         rules.check_name(self.agent_name)
         rules.check_choice(self.kind, rules.KINDS, "kind")
         rules.check_lane(self.framework, self.connector, self.trust)
-        rules.check_routes(rules.GENERATED_ROUTES, self.key_routes)
+        rules.check_routes(rules.GENERATED_ROUTES, self.key_routes, self.key_source)
         check_platform(self.platform_path)
 
     def data(self) -> dict[str, str]:

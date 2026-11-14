@@ -21,6 +21,8 @@ coverage.xml
 # Tracked logs under pocs/*/notes stay tracked; this only stops new ones.
 *.log
 *.kubeconfig
+# The key manifests the kind seed scripts write at deploy (059 H-15): route names, made per cluster.
+deploy/kind/.key-manifests/
 **/kubeconfig*
 pocs/*/notes/hostile/*.jsonl
 .idea/
