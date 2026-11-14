@@ -17,7 +17,10 @@ run_dir="$here/.run"
 env_file="$run_dir/router.env"
 key_file="$run_dir/chassis.env"
 config="$run_dir/router-litellm.yaml"
+scrape_key="$run_dir/prometheus-scrape.key"
 project=${ROUTER_DRILL_PROJECT:-router1113}
+# router-drill.yaml names its networks from it, so a second project does not share them.
+export ROUTER_DRILL_PROJECT="$project"
 compose=(docker compose -p "$project" --env-file "$env_file"
   -f "$here/docker-compose.yaml" -f "$here/router-drill.yaml")
 # The base file needs TRACE_SAMPLE_PERCENT at interpolation, even with the Collector not started.
@@ -62,6 +65,32 @@ sys.stdout.write(f"LITELLM_API_KEY={key}\n")
   echo "minted $alias (agent:$agent) into $out"
 }
 
+# The scrape key (004 G-2): LiteLLM answers `GET /metrics/` with 401 to no credential, so
+# Prometheus sends a virtual key that may call `/metrics` and nothing else (no model route, no
+# budget). The raw value goes to $scrape_key, which Prometheus reads as `credentials_file`. The
+# file is 0444 so Prometheus's user in the container can read it; .run/ is 0700, so no other
+# host user can. Never printed.
+mint_scrape() {
+  local master resp
+  master=$(sed -n 's/^LITELLM_MASTER_KEY=//p' "$env_file")
+  resp=$(printf 'Authorization: Bearer %s\n' "$master" |
+    curl -sS -m 30 -H @- -H 'Content-Type: application/json' \
+      --data-binary '{"key_alias":"prometheus-scrape","models":["no-route"],"max_budget":0,"allowed_routes":["/metrics","/metrics/"]}' \
+      "$litellm/key/generate")
+  unset master
+  umask 077
+  printf '%s' "$resp" | python3 -I -c '
+import json, sys
+key = json.load(sys.stdin).get("key")
+if not key:
+    sys.exit("router-drill.sh: LiteLLM refused the scrape key")
+sys.stdout.write(key)
+' >"$scrape_key"
+  unset resp
+  chmod 444 "$scrape_key"
+  echo "minted prometheus-scrape into $scrape_key"
+}
+
 swap() {
   (cd "$root" && uv run --no-sync python -I -c '
 import sys, yaml
@@ -87,6 +116,8 @@ for path in glob.glob(sys.argv[1] + "/*.env"):
         _, sep, value = line.strip().partition("=")
         if sep and len(value) >= 8:
             secrets.append(value)
+for path in glob.glob(sys.argv[1] + "/*.key"):
+    secrets.append(open(path).read().strip())
 shapes = re.compile(r"sk-[A-Za-z0-9_-]{8,}|Bearer [A-Za-z0-9._-]+")
 for line in sys.stdin:
     for value in secrets:
@@ -103,6 +134,7 @@ case "${1:-}" in
     chmod 644 "$config"
     "${compose[@]}" up -d --wait --quiet-pull --build "${platform[@]}"
     mint svc-echo echo "$key_file"
+    mint_scrape
     "${compose[@]}" up -d --wait --build chassis prometheus
     ;;
   down)
@@ -124,6 +156,8 @@ for path in glob.glob(sys.argv[1] + "/*.env"):
         _, sep, value = line.strip().partition("=")
         if sep and len(value) >= 8:
             secrets.append(value)
+for path in glob.glob(sys.argv[1] + "/*.key"):
+    secrets.append(open(path).read().strip())
 shapes = re.compile(r"sk-[A-Za-z0-9_-]{8,}|Bearer [A-Za-z0-9._-]{8,}")
 lines = hits = 0
 for line in sys.stdin:

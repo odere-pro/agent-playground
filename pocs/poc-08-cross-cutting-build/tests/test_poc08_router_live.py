@@ -1,7 +1,7 @@
 """Router drill: a real LiteLLM (the pinned v1.103.0) in front of the fake model server, with
 Postgres spend logs and Prometheus, for the keyless router boxes of 002 G-1, 003 G-1b, 004 G-2,
 and 012 H-3. `network`; collected only with `ROUTER_DRILL=1` (conftest.py), so `make test` never
-sees it. By hand:
+sees it. By hand (ROUTER_DRILL_PROJECT, default router1113, names the Compose project):
 
     deploy/compose/poc08-litellm/router-drill.sh up
     ROUTER_DRILL=1 uv run pytest -m network -v \\
@@ -342,20 +342,34 @@ def _prom_series(query: str) -> list[dict[str, Any]]:
     return list(answer.json()["data"]["result"])
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="2026-11-13 run: LiteLLM v1.103.0 answers Prometheus's GET /metrics/ with 401, so no "
-    "litellm_* series is scraped (pocs/poc-08-cross-cutting-build/notes/2026-11-13-router-live.md)",
-)
+def _litellm_target() -> dict[str, Any]:
+    with httpx.Client(base_url=PROMETHEUS, timeout=30, trust_env=False) as client:
+        answer = client.get("/api/v1/targets", params={"state": "active"})
+    assert answer.status_code == 200, answer.text[:300]
+    targets = [
+        t for t in answer.json()["data"]["activeTargets"] if t["labels"].get("job") == "litellm"
+    ]
+    assert len(targets) == 1, targets
+    return dict(targets[0])
+
+
 def test_prometheus_scrapes_token_and_cost_metrics_by_agent_and_route(
     alpha: _Key, alpha_calls: dict[str, Any]
 ) -> None:
     """Prometheus scrapes the token and cost metrics, labeled by agent and route; `user` is in
     the usage record only.
 
+    The scrape sends the `prometheus-scrape` key (router-drill.sh), so LiteLLM's target is up.
     The agent label is the calling key's alias (`svc-alpha-*`, tagged `agent:alpha`); the route
-    label is the model group. No label carries the call's user value; the usage record does.
+    label is the model group. No LiteLLM series has a label named for a user (the scrape drops
+    them) or the call's user value; the usage record has the user.
     """
+    deadline = time.monotonic() + WAIT_S
+    target = _litellm_target()
+    while target["health"] != "up" and time.monotonic() < deadline:
+        time.sleep(POLL_S)
+        target = _litellm_target()
+    assert target["health"] == "up", target.get("lastError")
     names = (
         "litellm_input_tokens_metric_total",
         "litellm_output_tokens_metric_total",
@@ -379,6 +393,12 @@ def test_prometheus_scrapes_token_and_cost_metrics_by_agent_and_route(
             assert labels.get("api_key_alias", "").startswith("svc-alpha"), labels
             assert ROUTE in (labels.get("model_group"), labels.get("requested_model")), labels
             assert alpha_calls["user"] not in labels.values(), labels
+    every = _prom_series('{job="litellm"}')
+    assert any(s["metric"]["__name__"].startswith("litellm_") for s in every)
+    user_labels = sorted({k for s in every for k in s["metric"] if "user" in k.lower()})
+    print(json.dumps({"litellm_series": len(every), "user_labels": user_labels}))
+    assert user_labels == []
+    assert not any(alpha_calls["user"] in s["metric"].values() for s in every)
     assert any(r["user"] == alpha_calls["user"] for r in _rows_of(alpha, 3))
 
 
