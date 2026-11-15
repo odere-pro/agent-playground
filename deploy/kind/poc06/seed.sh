@@ -200,6 +200,11 @@ seed_keys() {
       fi
       die "remote-$name-token is the old one-key Secret; run: $0 rotate remote-$name-token"
     fi
+    # In one namespace only (an old seed made kagent-adk's in $AGENTS only): never overwrite it in
+    # place, since the running chassis would keep the old key. Rotate drops both and restarts.
+    if secret_exists "$AGENTS" "remote-$name-token" || secret_exists "$REMOTE" "remote-$name-token"; then
+      die "remote-$name-token exists in one namespace only; run: $0 rotate remote-$name-token"
+    fi
     # Two keys, one per direction (055 CH-6): two random values, never equal.
     to_workload=$(new_secret)
     to_chassis=$(new_secret)

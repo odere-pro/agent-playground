@@ -89,7 +89,7 @@ Run: `poc06-kind` 38007359399 (job 114079121220, kind run 4). Result: 70 passed,
 
 Cause (reproduced locally, details in the probe note, Item 4): the pod runs with the OTel exporters `none`, so kagent's `instrument_app` does not instrument the app and the inbound `traceparent` is dropped; and the model client uses `httpx2`, which the httpx instrumentor does not patch. The probe's "same trace id reached the model" was measured on 0.4.0 from PyPI with exporters on. It does not hold for the source build at the pin.
 
-Fix: `run_kagent_adk.py` in `deploy/kind/poc06/kagent/remote-kagent-adk.yaml` now registers `TraceparentPassthroughPlugin` after `LLMPassthroughPlugin` (since 055 CH-6 it is the only plugin; passthrough is off). It copies the inbound `traceparent` onto every model request through a request hook on the model's client. The bearer passthrough is unchanged. The exporters stay off. Offline tests: `tests/test_poc06b_kagent_traceparent.py`. Not yet shown on kind: that waits for the next `poc06-kind` run.
+Fix: `run_kagent_adk.py` in `deploy/kind/poc06/kagent/remote-kagent-adk.yaml` now registers `TraceparentPassthroughPlugin`, its only plugin: key passthrough is off since 055 CH-6. It copies the inbound `traceparent` onto every model request through a request hook on the model's client. The exporters stay off. Offline tests: `tests/test_poc06b_kagent_traceparent.py`. Not yet shown on kind: that waits for the next `poc06-kind` run.
 
 ## Kind runs (CI, `poc06-kind.yml`)
 

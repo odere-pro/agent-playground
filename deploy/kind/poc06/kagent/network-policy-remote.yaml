@@ -14,7 +14,8 @@ spec:
       app.kubernetes.io/name: remote-kagent-adk
   policyTypes: [Ingress, Egress]
   # 9000 only from the front door, which claimed this pod for one run (core review R6-11). The
-  # runtime checks no bearer, so this policy and the front door's ingress are the control.
+  # launcher's BearerGate checks the bearer (kagent itself checks none); this policy and the front
+  # door's ingress are a second layer (055 CH-6).
   ingress:
     - from:
         - namespaceSelector:

@@ -1410,6 +1410,53 @@ esac
 """
 
 
+_STUB_KUBECTL_ONE_NAMESPACE = """#!/usr/bin/env bash
+printf '%s\\n' "$*" >>"$STUB_CALLS"
+case " $* " in
+  *" get namespace "*) exit 0 ;;
+  *" -n $STUB_MISSING_NS get secret $STUB_MISSING "*) exit 1 ;;
+  *go-template*) printf 'chassis-to-workload workload-to-chassis ' ;;
+  *" get secret "*) exit 0 ;;
+  *) echo "unexpected kubectl $*" >&2; exit 9 ;;
+esac
+"""
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="no jq")
+@pytest.mark.parametrize("missing_ns", ["poc05-remote", "poc05-agents"])
+def test_the_seed_refuses_a_token_that_exists_in_one_namespace_only(
+    tmp_path: Path, missing_ns: str
+) -> None:
+    """055 CH-6, security review: an old seed made remote-kagent-adk-token in poc05-agents only.
+    A token Secret in one namespace only stops the seed with the rotate command; it is never
+    overwritten in place (the chassis would keep the old key until a restart)."""
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    (stubs / "kubectl").write_text(_STUB_KUBECTL_ONE_NAMESPACE)
+    (stubs / "kubectl").chmod(0o755)
+    (stubs / "curl").write_text("#!/bin/sh\necho curl-called >&2\nexit 9\n")
+    (stubs / "curl").chmod(0o755)
+    calls = tmp_path / "calls"
+    calls.touch()
+    env = {
+        "PATH": f"{stubs}:{os.environ['PATH']}",
+        "STUB_CALLS": str(calls),
+        "STUB_MISSING": "remote-kagent-adk-token",
+        "STUB_MISSING_NS": missing_ns,
+        "KEY_MANIFEST_DIR": str(tmp_path / "manifests"),
+    }
+
+    out = subprocess.run(
+        ["bash", str(SEED_SH), "keys"], capture_output=True, text=True, timeout=60, env=env
+    )
+
+    written = [c for c in calls.read_text().splitlines() if " apply " in f" {c} "]
+    assert out.returncode != 0, out.stderr
+    assert "rotate remote-kagent-adk-token" in out.stderr
+    assert not [c for c in written if "remote-kagent-adk-token" in c], written
+    assert "unexpected kubectl" not in out.stderr
+
+
 @pytest.mark.skipif(shutil.which("jq") is None, reason="no jq")
 def test_the_seed_writes_a_manifest_for_a_key_it_already_minted(tmp_path: Path) -> None:
     """059 H-15: every Secret already there, so no key is minted and no LiteLLM call is made, yet
