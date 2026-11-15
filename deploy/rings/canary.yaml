@@ -1,0 +1,9 @@
+# Ring overlay (canary) for the chassis rollout (056 CH-7, ADR-001 item 9).
+# The first ring. suggested: one non-critical service (agent-rings refuses any other count).
+# Every service in this ring layers this file on its own values (agent-rings: valueFiles).
+# chassisTag: empty follows the library's chassis.image.tag. A release sets the previous tag in
+# each ring it has not reached; a promotion clears it here; a rollback sets it back. One value.
+# A service's own chassis.image.tag is a pin and wins over this. Steps: ./README.md.
+ring:
+  name: canary
+  chassisTag: ""

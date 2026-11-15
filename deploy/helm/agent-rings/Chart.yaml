@@ -1,0 +1,11 @@
+# agent-rings: the chassis rollout rings as Argo CD Applications (056 CH-7, ADR-001 item 9).
+# The platform's chart, installed once in Argo CD's namespace, never by a service. One
+# Application per service, its ring's overlay (deploy/rings/<ring>.yaml) last in its value files,
+# and the ring's sync wave on it: canary 0, ten-percent 1, all 2. No dependency.
+# The render test: pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_rings.py.
+apiVersion: v2
+name: agent-rings
+description: The chassis rollout rings, one Argo CD Application per service in its ring's sync wave.
+type: application
+version: 0.1.0
+appVersion: "0.0.1"

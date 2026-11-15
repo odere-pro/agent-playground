@@ -1,0 +1,14 @@
+# agent-rings values (056 CH-7). Every value here is suggested: the epic names Argo CD and the
+# ring order (canary, then 10%, then all), nothing else.
+# The repository Argo CD reads the service charts and deploy/rings/ from, and the revision.
+repoURL: https://github.com/odere-pro/agent-playground.git
+targetRevision: main
+# The Argo CD project every Application belongs to.
+project: default
+# The ring overlays' folder, from the repository root.
+ringsDir: deploy/rings
+# The cluster every service deploys to. Rings across clusters come after 038 X-1a.
+destinationServer: https://kubernetes.default.svc
+# One entry per service: name, path (its chart, from the repository root), namespace, ring.
+# suggested: exactly one canary, a non-critical service; the render refuses any other count.
+services: []
