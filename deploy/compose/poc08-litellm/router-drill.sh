@@ -85,9 +85,12 @@ key = json.load(sys.stdin).get("key")
 if not key:
     sys.exit("router-drill.sh: LiteLLM refused the scrape key")
 sys.stdout.write(key)
-' >"$scrape_key"
+' >"$scrape_key.new"
   unset resp
-  chmod 444 "$scrape_key"
+  # A second `up` finds the old 0444 file: write a new 0600 file, then make it 0444 and move it
+  # over the old one, so the write never needs the old file's write bit.
+  chmod 444 "$scrape_key.new"
+  mv -f "$scrape_key.new" "$scrape_key"
   echo "minted prometheus-scrape into $scrape_key"
 }
 
@@ -117,7 +120,9 @@ for path in glob.glob(sys.argv[1] + "/*.env"):
         if sep and len(value) >= 8:
             secrets.append(value)
 for path in glob.glob(sys.argv[1] + "/*.key"):
-    secrets.append(open(path).read().strip())
+    value = open(path).read().strip()
+    if len(value) >= 8:
+        secrets.append(value)
 shapes = re.compile(r"sk-[A-Za-z0-9_-]{8,}|Bearer [A-Za-z0-9._-]+")
 for line in sys.stdin:
     for value in secrets:
@@ -133,8 +138,9 @@ case "${1:-}" in
     cp "$here/router-drill.litellm.yaml" "$config"
     chmod 644 "$config"
     "${compose[@]}" up -d --wait --quiet-pull --build "${platform[@]}"
-    mint svc-echo echo "$key_file"
-    mint_scrape
+    # A second `up` keeps the keys of the first: LiteLLM refuses a second key with the same alias.
+    [[ -s "$key_file" ]] || mint svc-echo echo "$key_file"
+    [[ -s "$scrape_key" ]] || mint_scrape
     "${compose[@]}" up -d --wait --build chassis prometheus
     ;;
   down)
@@ -157,7 +163,9 @@ for path in glob.glob(sys.argv[1] + "/*.env"):
         if sep and len(value) >= 8:
             secrets.append(value)
 for path in glob.glob(sys.argv[1] + "/*.key"):
-    secrets.append(open(path).read().strip())
+    value = open(path).read().strip()
+    if len(value) >= 8:
+        secrets.append(value)
 shapes = re.compile(r"sk-[A-Za-z0-9_-]{8,}|Bearer [A-Za-z0-9._-]{8,}")
 lines = hits = 0
 for line in sys.stdin:
