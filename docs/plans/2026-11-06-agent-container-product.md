@@ -28,31 +28,29 @@ Open, for the user:
 
 ## Progress
 
-Measured on `main` `c19947b` with `make progress`, 2026-11-15: 236 of 344 boxes ticked (68%), 10 of 44 issues done. 108 boxes are open.
+Measured on `main` `fe55768` with `make progress`, 2026-11-15: 243 of 344 boxes ticked (70%), 10 of 44 issues done. 101 boxes are open.
 
 | Phase | Issues done | Boxes ticked |
 | ----- | ----------- | ------------ |
 | A | 4 of 10 | 73 of 90 (81%) |
 | B | 2 of 10 | 57 of 76 (75%) |
 | C | 1 of 2 | 13 of 14 (92%) |
-| D | 0 of 3 | 7 of 15 (46%) |
-| E | 0 of 10 | 44 of 85 (51%) |
+| D | 0 of 3 | 8 of 15 (53%) |
+| E | 0 of 10 | 50 of 85 (58%) |
 | F | 1 of 6 | 31 of 46 (67%) |
 | G | 2 of 3 | 11 of 18 (61%) |
 
-The trend: 144 boxes (41%) on 2026-11-10; 183 (53%) after PRs 131 to 154; 197 (57%) after PRs 155 to 173; 213 (61%) after PRs 174 to 187; 236 (68%) after PRs 188 to 214.
+The trend: 144 boxes (41%) on 2026-11-10; 183 (53%) after PRs 131 to 154; 197 (57%) after PRs 155 to 173; 213 (61%) after PRs 174 to 187; 236 (68%) after PRs 188 to 214; 243 (70%) after PRs 215 to 218.
 
 ## In progress
 
-On 2026-11-15, at `main` `c19947b`. No PR is open; PRs 188 to 214 are merged. `HANDOVER.md` lists what each delivered.
+On 2026-11-15, at `main` `fe55768`. No PR is open; PRs 215 to 218 are merged. `HANDOVER.md` lists what each delivered. PR 218 records the user's decisions of 2026-11-15 in 001 DEC-1, 022 H-6, 132 CH-13, and 139 CH-19.
 
-In flight:
+In flight, in the old session:
 
-- 055 CH-6: two keys for the kagent-adk remote (`feat/055-kagent-two-key-1115`). It needs a `platform-security` review before its PR.
-- 016 H-9: the dev reload build (`feat/016-dev-reload-1115`), then its live hot-reload run (`test/016-hot-reload-live-1115`).
-- The router-drill rerun on `main` (`test/router-drill-rerun-1115`). PR 195 ran before the stricter 012 H-3 route rule of PR 208.
+- 016 H-9: the dev hot reload (`feat/016-dev-reload-1115`). Built and reviewed; its live hot-reload Compose run and its PR are next.
 
-Next, in order: land those; then the kind track on a fresh `poc05` cluster (055 CH-6 live, 059 H-15 box 2, the 004 G-2 kind box, 024 CH-3, 026 CH-4); then the builds 056 CH-7 and 139 CH-19 need first. `HANDOVER.md` "Next steps" has the full list.
+Next, in order: the kind track on a fresh `poc05` cluster (055 CH-6 live with kagent-adk, 059 H-15 box 2, the 004 G-2 kind box); then 024 CH-3 and 026 CH-4; then 139 CH-19 and 056 CH-7; then 022 H-6, 132 CH-13, the north star, and 020 X-8 on NATS. `HANDOVER.md` "Next steps" has the full list.
 
 ## Left to do
 
