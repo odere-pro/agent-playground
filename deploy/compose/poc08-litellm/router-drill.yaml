@@ -43,6 +43,8 @@ services:
     command: ["--config.file=/etc/prometheus/prometheus.yml"]
     volumes:
       - ./router-drill.prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # The scrape key, minted by `router-drill.sh up` (git-ignored .run/, never in the repo).
+      - ./.run/prometheus-scrape.key:/etc/prometheus/litellm-scrape.key:ro
     ports:
       - 127.0.0.1:9013:9090
     networks: [edge]
@@ -52,7 +54,7 @@ services:
 
 networks:
   edge:
-    name: router1113-edge
+    name: ${ROUTER_DRILL_PROJECT:-router1113}-edge
   platform:
-    name: router1113-platform
+    name: ${ROUTER_DRILL_PROJECT:-router1113}-platform
     internal: true
