@@ -5,12 +5,13 @@ suite in `tests/integration/test_kafka_events_contract.py`.
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 
 import pytest
 from chassis.fakes import InMemoryBus
 from chassis.ports.events import EventPort
-from chassis_contracts.events import EventPortContract, Settle, make_event
+from chassis_contracts.events import UNKNOWN_EXTENSION, EventPortContract, Settle, make_event
 
 SETTLE_LOOP_TURNS = 100
 """The bus does no I/O and retries with `sleep(0)`, so all it can still do happens in loop turns,
@@ -59,3 +60,18 @@ def test_kafka_from_env_needs_bootstrap_servers(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
     port = KafkaEvents.from_env()
     assert (port.bootstrap_servers, port.security_protocol) == ("kafka:9092", "PLAINTEXT")
+
+
+@pytest.mark.parametrize("adapter", ["kafka", "dapr"])
+def test_each_broker_reader_accepts_and_drops_an_unknown_extension(adapter: str) -> None:
+    """Contract v9 J.29 at each real reader's decode step: an event from a newer producer is
+    read, not dropped as invalid, and its unknown extension is gone."""
+    from chassis.adapters.dapr.events import _decode as dapr_decode
+    from chassis.adapters.kafka.events import _decode as kafka_decode
+
+    sent = make_event("t.v1")
+    body = json.dumps({**json.loads(sent.to_wire()), UNKNOWN_EXTENSION: "x"}).encode()
+    read = (kafka_decode if adapter == "kafka" else dapr_decode)(body)
+    assert read is not None
+    assert UNKNOWN_EXTENSION not in json.loads(read.to_wire())
+    assert read.to_wire() == sent.to_wire()
