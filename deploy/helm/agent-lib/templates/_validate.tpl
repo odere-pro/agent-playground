@@ -22,7 +22,7 @@ the merged values; prints nothing; fails the render with an "agent-lib:" message
   platform's (agent-lib.admission), the supported chassis tags the library's.
 */}}
 {{- define "agent-lib.validateServiceValues" -}}
-{{- $keys := list "nameOverride" "replicas" "terminationGracePeriodSeconds" "chassis" "workload" "service" "remote" "networkPolicy" "hpa" -}}
+{{- $keys := list "nameOverride" "replicas" "terminationGracePeriodSeconds" "chassis" "workload" "service" "remote" "networkPolicy" "hpa" "ring" -}}
 {{- range $k, $_ := . -}}
 {{- if eq $k "admission" -}}
 {{- fail "agent-lib: admission is not a service value. The admission rules are the platform's (agent-lib.admission, deploy/helm/agent-admission) and bind to the namespace, so a service cannot switch them off" -}}
@@ -33,6 +33,11 @@ the merged values; prints nothing; fails the render with an "agent-lib:" message
 {{- end -}}
 {{- if hasKey (dig "chassis" "image" (dict) .) "supportedTags" -}}
 {{- fail "agent-lib: chassis.image.supportedTags is set once, in the library chart (ADR-001 item 9), never by a service; pin chassis.image.tag to one of them" -}}
+{{- end -}}
+{{- range $k, $_ := (get . "ring" | default (dict)) -}}
+{{- if not (has $k (list "name" "chassisTag")) -}}
+{{- fail (printf "agent-lib: ring.%s is not a value the chart reads; a ring overlay (deploy/rings/<ring>.yaml) sets ring.name and ring.chassisTag only" $k) -}}
+{{- end -}}
 {{- end -}}
 {{- if dig "remote" "tokenSecret" "name" "" . -}}
 {{- fail "agent-lib: remote.tokenSecret.name is not a value: the chart names the remote's one Secret after its pod, <name>-workload-token (ADR-005 decision 1; admission rule 7c)" -}}
@@ -143,6 +148,16 @@ and argparse accepts abbreviations, so a deny-list cannot hold. */ -}}
 {{- end -}}
 {{- end -}}
 {{- $img := $v.chassis.image -}}
+{{- $ring := $v.ring -}}
+{{- if and $ring.name (not (has (toString $ring.name) (list "canary" "ten-percent" "all"))) -}}
+{{- fail (printf "agent-lib: ring.name %q must be canary, ten-percent, or all, the rollout rings in order (056 CH-7; deploy/rings/)" (toString $ring.name)) -}}
+{{- end -}}
+{{- if eq (toString $ring.chassisTag) "latest" -}}
+{{- fail "agent-lib: ring.chassisTag latest is not a pin; hold the ring on a supported tag, or leave it empty to follow the library" -}}
+{{- end -}}
+{{- if and $ring.chassisTag (not (has (toString $ring.chassisTag) $img.supportedTags)) -}}
+{{- fail (printf "agent-lib: ring.chassisTag %s is below the minimum chassis version; the library chart supports %s, so a ring holds only the current or the previous tag (ADR-001 item 9)" (toString $ring.chassisTag) (join ", " $img.supportedTags)) -}}
+{{- end -}}
 {{- if eq (toString $img.tag) "latest" -}}
 {{- fail "agent-lib: chassis.image.tag latest is not a pin; set a supported tag, with a digest next to it if you pin by digest" -}}
 {{- end -}}

@@ -7,11 +7,13 @@ The shared Helm library chart that adds the chassis to every agent's pod (backlo
 | `agent-lib/` | The library chart (`type: library`). Named templates, no objects of its own |
 | `example-agent/` | An application chart that depends on `agent-lib` (`file://../agent-lib`) and renders a sidecar-lane agent: the chassis and `echo-python`. The service template copies it |
 | `agent-admission/` | The platform's chart: the admission rules from `agent-lib.admission`, installed once per cluster in the platform's namespace, never by a service ([the admission rules](#the-admission-rules)) |
+| `agent-rings/` | The platform's chart: one Argo CD Application per service, in its ring's sync wave, with its ring's overlay from `../rings/` (056 CH-7; [the rings](../rings/README.md)) |
 
 ```bash
 helm dependency update --skip-refresh deploy/helm/example-agent   # file:// only, no network
 helm dependency update --skip-refresh deploy/helm/agent-admission
 helm lint deploy/helm/agent-lib deploy/helm/example-agent deploy/helm/agent-admission
+helm lint deploy/helm/agent-rings
 helm template example-agent deploy/helm/example-agent --namespace agents
 helm template agent-admission deploy/helm/agent-admission --namespace agent-platform-system
 make test-poc POC=09                                               # the chart tests, if helm is on PATH
@@ -72,6 +74,7 @@ The second check on the boundary (ADR-005 decision 4: the trust rule is checked 
 - `agent-chassis-version`, the policy: rule 9, the minimum chassis version (ADR-001 item 9; 026 CH-4), read the way the node resolves the image: with `imageSource: pull-never` every chassis image carries a tag in `supportedChassisTags` and no digest; with `imageSource: digest` every chassis image carries a digest in `supportedChassisDigests`, because the runtime ignores a tag beside a digest. It is its own policy because a binding carries one action list for the whole policy, and this is the one rule that warns first. Its spec is `deploy/kind/poc05/admission/chassis-version-policy.yaml`'s, held equal by the same test file.
 - `agent-chassis-version`, the binding: the trust rule's namespaces and params, with `validationActions` from `admission.chassisVersionAction`: `Deny` (the default) renders `[Deny, Audit]`; `Warn` renders `[Warn, Audit]`, and a pod below the minimum is admitted with rule 9's message as a warning on the request and an audit annotation. Warn-first (ADR-001 item 9: "it warns first, then enforces"): after a chassis release raises the minimum, the platform sets `Warn` for one ring cycle (suggested), then `Deny`. No other value renders, so the rule cannot be switched off. The kind test `test_poc05_kind_admission.py::test_a_chassis_below_the_minimum_is_admitted_with_a_warning_in_the_warn_ring` shows the warning and the return to `Deny`.
 - `agent-trust-params`, the ConfigMap in the platform release's namespace: `registryPrefix`, `imageSource` (`pull-never` on kind, `digest` on a cloud), `trustedRepositories`, and `supportedChassisDigests` (digest mode; required there) from `agent-admission/values.yaml`; `supportedChassisTags` from the library's own `chassis.image.supportedTags`, so a chassis release that bumps the tag in `agent-lib` bumps the minimum version on a tag-loaded cluster. Both policies read it.
+- The binding of rule 9 in `Warn` mode carries `agents.platform/chassis-version-ring: warn`.
 
 The platform's objects and PoC-5's kustomize set share the names `agent-trust-rule`, `agent-chassis-version`, and `agent-trust-params`, so a cluster carries one or the other: install the chart on a cluster without the kustomize set, or delete that set first. Not in the chart: the agent-sandbox extension rules (T1 to T5, C1 to C5) and the RBAC, which are the PoC-5 code runner's (`deploy/kind/poc05/admission/`), and the trust list's source (hand-kept until signatures, 025 H-10).
 
@@ -100,6 +103,7 @@ Defaults are in `agent-lib.defaults` (`agent-lib/templates/_values.tpl`); a serv
 | `networkPolicy.chassisEgress` | `[]` | Egress rules for the chassis pod besides DNS: each with `to` (peers by `namespaceSelector.matchLabels` and `podSelector.matchLabels`) and `ports` |
 | `networkPolicy.dns` | `kube-system`, `k8s-app: kube-dns` | The DNS peer; `podLabels` may not be empty |
 | `hpa.enabled`, `.minReplicas`, `.maxReplicas`, `.targetCPUUtilizationPercentage` | false, 2, 5, 70 | |
+| `ring.name`, `ring.chassisTag` | empty, empty | Set by the ring overlay `../rings/<ring>.yaml`, not the service's values (056 CH-7). The name (`canary`, `ten-percent`, `all`) labels the chassis pod `agents.platform/chassis-ring`; the tag holds the ring on a supported tag. A service's own `chassis.image.tag` wins over it |
 
 `agent-admission/values.yaml` holds `admission.params.registryPrefix`, `.imageSource`, `.trustedRepositories`, `.supportedChassisDigests`, and `admission.chassisVersionAction` (`Deny` or `Warn`, rule 9's binding); any other key under `admission` is refused.
 

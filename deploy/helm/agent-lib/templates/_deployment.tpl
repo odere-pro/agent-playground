@@ -48,6 +48,9 @@ spec:
         agents.platform/role: chassis
         agents.platform/lane: {{ $lane }}
         agents.platform/trust: {{ $trust }}
+        {{- with $v.ring.name }}
+        agents.platform/chassis-ring: {{ . }}
+        {{- end }}
       annotations:
         checksum/chassis-config: {{ include "agent-lib.chassisConfig" . | sha256sum | quote }}
     spec:
