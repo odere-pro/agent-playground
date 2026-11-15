@@ -29,8 +29,8 @@ def test_a_cloud_event_has_the_spec_defaults_and_drops_unset_extensions_on_the_w
     wire = json.loads(event.to_wire())
     assert wire["specversion"] == "1.0" and wire["datacontenttype"] == "application/json"
     assert wire["partitionkey"] == "k" and "traceparent" not in wire
-    with pytest.raises(ValidationError):
-        CloudEvent.model_validate({**wire, "unknown": 1})
+    read = CloudEvent.model_validate({**wire, "unknown": 1})  # contract v9 J.29: dropped
+    assert json.loads(read.to_wire()) == wire
 
 
 async def test_no_events_drops_a_publish_and_refuses_a_subscription() -> None:
