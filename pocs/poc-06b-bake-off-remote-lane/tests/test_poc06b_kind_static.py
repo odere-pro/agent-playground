@@ -11,8 +11,8 @@ kagent-adk):
   RuntimeDefault, cpu and memory limits, size-capped emptyDirs, no service account token, no host
   access, and the per-pod PID cap (the kubelet's `podPidsLimit` in PoC-5's `cluster.yaml`, which
   no pod here overrides);
-- Secrets in the chassis container only; a remote holds its own token and nothing else (kagent-adk
-  holds none, it uses the inbound bearer as its model key);
+- Secrets in the chassis container only; a remote holds its own token and nothing else (its two
+  keys, one per direction, 055 CH-6; kagent-adk too, with key passthrough off);
 - every remote on gVisor, with TCP probes, a fixed proxy ClusterIP, and a model and tool URL that
   name it;
 - every chassis config loads, and matches its pod;
@@ -480,7 +480,7 @@ def test_secrets_reach_the_chassis_container_only(pod: Pod, c: Doc) -> None:
 
 @pytest.mark.parametrize(("pod", "c"), REMOTE_WORKLOADS, ids=_ids(REMOTE_WORKLOADS))
 def test_a_remote_workload_gets_only_its_own_token_secret(pod: Pod, c: Doc) -> None:
-    """A remote workload gets only its own token (and kagent-adk none: its bearer is its key)."""
+    """A remote workload gets only its own token Secret, kagent-adk included (055 CH-6)."""
     want = EXPECT["remotes"][pod.id]["secret"]
 
     refs = set(_secret_refs(c))
@@ -770,7 +770,8 @@ def test_the_remote_reaches_its_chassis_at_the_fixed_service_ip(name: str) -> No
 
 
 def test_the_kagent_model_url_names_the_fixed_service_ip() -> None:
-    """kagent-adk's model goes to its chassis's remote listener and passes the bearer through."""
+    """kagent-adk's model goes to its chassis's remote listener, with key passthrough off: the
+    inbound bearer is never sent back as the model key (055 CH-6, one key per direction)."""
     cm = next(o.doc for o in _objects("kagent") if o.kind == "ConfigMap")
 
     model = json.loads(cm["data"]["config.json"])["model"]
@@ -778,8 +779,29 @@ def test_the_kagent_model_url_names_the_fixed_service_ip() -> None:
     assert model["base_url"] == f"{_proxy_base('remote-kagent-adk')}/v1", (
         "the model goes to the chassis's remote listener"
     )
-    assert model["api_key_passthrough"] is True
+    assert model["api_key_passthrough"] is False
     assert "api_key" not in model and "api_key_secret" not in model
+
+
+def test_kagent_requires_one_key_and_sends_the_other() -> None:
+    """055 CH-6: the kagent-adk pod reads its two keys from its own Secret, one per direction.
+    The launcher requires `CHASSIS_A2A_TOKEN` on every inbound call and hands
+    `CHASSIS_API_TOKEN` to the model client as OPENAI_API_KEY, in process only: no pod env
+    name ends in `_API_KEY`."""
+    c = _pod("remote-kagent-adk").containers()[0]
+    cm = next(o.doc for o in _objects("kagent") if o.kind == "ConfigMap")
+    src = cm["data"]["run_kagent_adk.py"]
+
+    env = _env(c)
+    required = env["CHASSIS_A2A_TOKEN"]["valueFrom"]["secretKeyRef"]
+    sent = env["CHASSIS_API_TOKEN"]["valueFrom"]["secretKeyRef"]
+
+    assert (required["key"], sent["key"]) == ("chassis-to-workload", "workload-to-chassis")
+    assert required["name"] == sent["name"] == "remote-kagent-adk-token"
+    assert "OPENAI_API_KEY" not in env
+    assert "LLMPassthroughPlugin" not in src
+    assert "hmac.compare_digest" in src
+    assert src.index("BearerGate(") < src.index("uvicorn.run(")
 
 
 @pytest.mark.parametrize("name", TOKEN_REMOTES)
@@ -1207,13 +1229,17 @@ KCTL = 'kctl() { kubectl --context "$CONTEXT" "$@"; }'
 
 
 def test_the_seed_makes_every_secret_the_manifests_name() -> None:
-    """The seed's arrays make exactly the Secrets the pods name, and the remotes' tokens."""
+    """The seed's arrays make exactly the Secrets the pods name, and the remotes' tokens. Every
+    remote, kagent-adk included, gets its token in both namespaces (055 CH-6): no remote is
+    chassis-only."""
     seed = SEED_SH.read_text()
     services, remotes = _array(seed, "SERVICES"), _array(seed, "REMOTES")
-    chassis_only = _array(seed, "CHASSIS_ONLY_REMOTES")
 
     made = {f"chassis-{s}-litellm" for s in services}
-    made |= {f"remote-{r}-token" for r in [*remotes, *chassis_only]}
+    made |= {f"remote-{r}-token" for r in remotes}
+
+    assert "CHASSIS_ONLY_REMOTES" not in seed
+    assert "kagent-adk" in remotes
     named = {r for _, c in CONTAINERS for r in _secret_refs(c) if r != "valkey-auth"}
 
     assert named == made
@@ -1382,6 +1408,53 @@ case " $* " in
   *) echo "unexpected kubectl $*" >&2; exit 9 ;;
 esac
 """
+
+
+_STUB_KUBECTL_ONE_NAMESPACE = """#!/usr/bin/env bash
+printf '%s\\n' "$*" >>"$STUB_CALLS"
+case " $* " in
+  *" get namespace "*) exit 0 ;;
+  *" -n $STUB_MISSING_NS get secret $STUB_MISSING "*) exit 1 ;;
+  *go-template*) printf 'chassis-to-workload workload-to-chassis ' ;;
+  *" get secret "*) exit 0 ;;
+  *) echo "unexpected kubectl $*" >&2; exit 9 ;;
+esac
+"""
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="no jq")
+@pytest.mark.parametrize("missing_ns", ["poc05-remote", "poc05-agents"])
+def test_the_seed_refuses_a_token_that_exists_in_one_namespace_only(
+    tmp_path: Path, missing_ns: str
+) -> None:
+    """055 CH-6, security review: an old seed made remote-kagent-adk-token in poc05-agents only.
+    A token Secret in one namespace only stops the seed with the rotate command; it is never
+    overwritten in place (the chassis would keep the old key until a restart)."""
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    (stubs / "kubectl").write_text(_STUB_KUBECTL_ONE_NAMESPACE)
+    (stubs / "kubectl").chmod(0o755)
+    (stubs / "curl").write_text("#!/bin/sh\necho curl-called >&2\nexit 9\n")
+    (stubs / "curl").chmod(0o755)
+    calls = tmp_path / "calls"
+    calls.touch()
+    env = {
+        "PATH": f"{stubs}:{os.environ['PATH']}",
+        "STUB_CALLS": str(calls),
+        "STUB_MISSING": "remote-kagent-adk-token",
+        "STUB_MISSING_NS": missing_ns,
+        "KEY_MANIFEST_DIR": str(tmp_path / "manifests"),
+    }
+
+    out = subprocess.run(
+        ["bash", str(SEED_SH), "keys"], capture_output=True, text=True, timeout=60, env=env
+    )
+
+    written = [c for c in calls.read_text().splitlines() if " apply " in f" {c} "]
+    assert out.returncode != 0, out.stderr
+    assert "rotate remote-kagent-adk-token" in out.stderr
+    assert not [c for c in written if "remote-kagent-adk-token" in c], written
+    assert "unexpected kubectl" not in out.stderr
 
 
 @pytest.mark.skipif(shutil.which("jq") is None, reason="no jq")

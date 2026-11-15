@@ -10,17 +10,23 @@
 #   its task store, and there is none here. The probe ran the same app with `local=True` (in-memory
 #   task store); `run_kagent_adk.py` below is that run, from this ConfigMap, started with the
 #   image's venv Python. It is our file, not the image's; the image only supplies the libraries.
-# - The model: an OpenAI-compatible config whose base_url is the chassis's remote proxy listener
-#   and key passthrough on, so the inbound bearer (the per-remote token) is the model key and the
-#   run's traceparent reaches the proxy (probe note, item 4; the launcher forwards it itself, see
-#   TraceparentPassthroughPlugin). The pod holds no Secret.
-#   Recorded deviation: the URL is the fixed ClusterIP, not a DNS name, because the remote lane
-#   has no DNS (H20). The DNS-name rule in the probe note comes from Substrate's credential proxy,
-#   which is not used here.
-# - Inbound auth: the runtime checks no bearer (probe note, item 5). The control is the
-#   NetworkPolicy: 9000 only from the front door remote-run-dispatch, which any PoC-6 remote
-#   chassis may call (core review R6-11). What the chassis cannot control is listed in
-#   notes/2026-10-09-lanes-b-kind.md.
+# - Keys (055 CH-6): the pod holds one Secret, its own remote-kagent-adk-token, with one key per
+#   direction, like the other remotes. CHASSIS_A2A_TOKEN (chassis-to-workload) is the bearer it
+#   requires; CHASSIS_API_TOKEN (workload-to-chassis) is the bearer it sends to the listener.
+# - The model: an OpenAI-compatible config whose base_url is the chassis's remote proxy listener,
+#   with key passthrough off, so the inbound bearer is never sent back as the model key. The
+#   launcher copies CHASSIS_API_TOKEN into OPENAI_API_KEY in its own process, which AsyncOpenAI
+#   reads when no api_key is set (kagent at the pinned commit); no pod env name is a key name.
+#   The run's traceparent reaches the proxy through TraceparentPassthroughPlugin (probe note,
+#   item 4). Recorded deviation: the URL is the fixed ClusterIP, not a DNS name, because the
+#   remote lane has no DNS (H20). The DNS-name rule in the probe note comes from Substrate's
+#   credential proxy, which is not used here.
+# - Inbound auth: kagent's runtime checks no bearer (probe note, item 5). The check is our
+#   wrapper: the launcher's BearerGate answers 401 on every path unless the bearer is the
+#   chassis-to-workload key (hmac.compare_digest). The NetworkPolicy still lets 9000 in only from
+#   the front door remote-run-dispatch, which any PoC-6 remote chassis may call (core review
+#   R6-11) and which forwards Authorization unchanged. What the chassis cannot control is listed
+#   in notes/2026-10-09-lanes-b-kind.md.
 # - OTEL exporters are off: with defaults the last event waited 16 s on an unreachable collector.
 apiVersion: v1
 kind: ServiceAccount
@@ -39,13 +45,16 @@ metadata:
   labels:
     app.kubernetes.io/name: remote-kagent-adk
 data:
-  config.json: '{"model": {"type": "openai", "model": "fake-chat", "base_url": "http://10.96.0.95:8091/v1", "api_key_passthrough": true}, "description": "kagent-adk behind the chassis remote lane", "instruction": "Rewrite in plain words. Short sentences. Keep every fact.", "stream": true}'  # pragma: allowlist secret (a flag name, no value)
+  config.json: '{"model": {"type": "openai", "model": "fake-chat", "base_url": "http://10.96.0.95:8091/v1", "api_key_passthrough": false}, "description": "kagent-adk behind the chassis remote lane", "instruction": "Rewrite in plain words. Short sentences. Keep every fact.", "stream": true}'  # pragma: allowlist secret (a flag name, no value)
   run_kagent_adk.py: |
     """Run the kagent ADK runtime as `kagent-adk static` builds it, with local=True (in-memory
     task store, no kagent API). Usage: run_kagent_adk.py CONFIG_DIR HOST PORT. After kagent's
-    cli.py at the pinned commit; the probe ran the same code."""
+    cli.py at the pinned commit; the probe ran the same code. Two keys, one per direction (055
+    CH-6): BearerGate requires CHASSIS_A2A_TOKEN inbound; CHASSIS_API_TOKEN becomes the model's
+    OPENAI_API_KEY. No key is ever logged or put in a message."""
 
     import contextvars
+    import hmac
     import json
     import os
     import re
@@ -56,7 +65,6 @@ data:
     from google.adk.plugins.base_plugin import BasePlugin
     from google.protobuf.json_format import ParseDict
     from kagent.adk import AgentConfig, KAgentApp
-    from kagent.adk._llm_passthrough_plugin import LLMPassthroughPlugin
     from kagent.core import bootstrap, instrument_app
     from kagent.core.telemetry import conv
 
@@ -75,14 +83,14 @@ data:
 
 
     class TraceparentPassthroughPlugin(BasePlugin):
-        """Forward the inbound `traceparent` to the model, as LLMPassthroughPlugin does the bearer.
+        """Forward the inbound `traceparent` to the model, the way kagent's own passthrough plugin forwards the bearer.
 
         Why: OTel carries it only if the exporters are on, and here they are off (`instrument_app`
         returns early), so the model call would start a new trace and the chassis proxy would
         answer 403 run_required. The openai client uses httpx2, which OTel's httpx instrumentor
         does not patch either. So this reads the header from the A2A request state, where kagent
-        keeps it, and a request hook on the model's own client sets it. Run it after
-        LLMPassthroughPlugin: a new bearer rebuilds the model's client, and the hook goes on the new one.
+        keeps it, and a request hook on the model's own client sets it. It is the only plugin:
+        key passthrough is off (055 CH-6), so nothing rebuilds the model's client per request.
         """
 
         def __init__(self):
@@ -99,14 +107,70 @@ data:
             return None
 
 
+    INBOUND_KEY_ENV = "CHASSIS_A2A_TOKEN"  # chassis-to-workload: the bearer this pod requires
+    OUTBOUND_KEY_ENV = "CHASSIS_API_TOKEN"  # workload-to-chassis: the bearer the model sends
+    UNAUTHENTICATED = b'{"error":"unauthenticated"}'
+
+
+    def read_keys(environ):
+        """(inbound, outbound) from the env. Stop the start if either is missing or both are the
+        same value: one key both ways is what 055 CH-6 removed. Messages name variables only."""
+        inbound = environ.get(INBOUND_KEY_ENV, "")
+        outbound = environ.get(OUTBOUND_KEY_ENV, "")
+        if not inbound or not outbound:
+            raise SystemExit(f"kagent-adk: set both {INBOUND_KEY_ENV} and {OUTBOUND_KEY_ENV}")
+        if hmac.compare_digest(inbound.encode(), outbound.encode()):
+            raise SystemExit(f"kagent-adk: {INBOUND_KEY_ENV} and {OUTBOUND_KEY_ENV} must differ")
+        return inbound, outbound
+
+
+    class BearerGate:
+        """ASGI wrapper: every HTTP request must carry `Authorization: Bearer <key>`, compared in
+        constant time; anything else gets one fixed 401 and never reaches kagent. kagent itself
+        checks no bearer, so this is the pod's only inbound key check. Lifespan passes; a
+        websocket (kagent serves none) is closed."""
+
+        def __init__(self, app, key):
+            self.app = app
+            self._key = key.encode()
+
+        def _allowed(self, scope):
+            values = [v for k, v in scope.get("headers", []) if k.lower() == b"authorization"]
+            if len(values) != 1:
+                return False
+            scheme, _, given = values[0].partition(b" ")
+            return scheme.lower() == b"bearer" and hmac.compare_digest(given, self._key)
+
+        async def __call__(self, scope, receive, send):
+            if scope["type"] == "lifespan" or (scope["type"] == "http" and self._allowed(scope)):
+                await self.app(scope, receive, send)
+                return
+            if scope["type"] == "websocket":
+                await send({"type": "websocket.close", "code": 1008})
+                return
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"www-authenticate", b"Bearer"),
+                    ],
+                }
+            )
+            await send({"type": "http.response.body", "body": UNAUTHENTICATED})
+
+
     def main():
         cfg_dir, host, port = sys.argv[1], sys.argv[2], int(sys.argv[3])
+        inbound_key, outbound_key = read_keys(os.environ)
+        # AsyncOpenAI reads the OpenAI key variable when no key is set; set here, in process only.
+        os.environ["OPENAI_API_KEY"] = outbound_key  # pragma: allowlist secret (a variable)
+        del outbound_key
         os.environ.setdefault("KAGENT_PORT", str(port + 1000))
         agent_config = AgentConfig.model_validate(json.load(open(os.path.join(cfg_dir, "config.json"))))
         card = ParseDict(json.load(open(os.path.join(cfg_dir, "agent-card.json"))), AgentCard())
-        plugins = None
-        if agent_config.model.api_key_passthrough:
-            plugins = [LLMPassthroughPlugin(), TraceparentPassthroughPlugin()]
+        plugins = [TraceparentPassthroughPlugin()]
         kapp = KAgentApp(
             lambda: agent_config.to_agent("kagent_adk", None, False),
             card,
@@ -119,7 +183,8 @@ data:
         server = kapp.build(local=True)
         bootstrap(conv.KagentRuntimeValues.ADK_PYTHON, fallback_name=card.name)
         instrument_app(server)
-        uvicorn.run(server, host=host, port=port, log_level="info", log_config=None)
+        gated = BearerGate(server, inbound_key)  # the outermost layer: no unauthenticated call reaches kagent
+        uvicorn.run(gated, host=host, port=port, log_level="info", log_config=None)
 
 
     if __name__ == "__main__":
@@ -204,6 +269,16 @@ spec:
               value: none
             - name: OTEL_LOGS_EXPORTER
               value: none
+            - name: CHASSIS_A2A_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: remote-kagent-adk-token
+                  key: chassis-to-workload
+            - name: CHASSIS_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: remote-kagent-adk-token
+                  key: workload-to-chassis
           ports:
             - name: a2a
               containerPort: 9000

@@ -2,7 +2,7 @@
 plan sections 2.2, 2.3, 2.10, 2.11; threat model H17 to H21, H23, H28) for each new remote pod:
 `remote-smolagents`, `remote-claude-agent`, `remote-typescript`, and `remote-kagent-adk`.
 
-Exit criteria 1 and 4: the remote holds no credential but its own token (kagent-adk holds none),
+Exit criteria 1 and 4: the remote holds no credential but its own token (kagent-adk too),
 reaches nothing but its chassis's listener, has no DNS, runs on a read-only root with a writable
 `/tmp`, is held by the pids cap, and runs on gVisor next to a runc pod. Every refusal asserts its
 paired allowed control in the same test.
@@ -157,7 +157,7 @@ def test_remote_holds_one_secret_its_own_token(engine: KindEngine) -> None:
     """Criterion 4: the control refuses every other Secret. The pod spec takes exactly two values
     from a Secret, both from its own `remote-<name>-token` in the workload container, one key
     per direction (055 CH-6): `CHASSIS_A2A_TOKEN` reads `chassis-to-workload` and
-    `CHASSIS_API_TOKEN` reads `workload-to-chassis` (none for kagent-adk); no `envFrom` Secret,
+    `CHASSIS_API_TOKEN` reads `workload-to-chassis` (kagent-adk too); no `envFrom` Secret,
     no Secret or projected volume, no service account token (`automountServiceAccountToken:
     false`, the token directory absent). Its live env holds no chassis credential name. The
     allowed control: the live env does hold both token names (names only), and the path check
@@ -190,9 +190,9 @@ def test_remote_holds_one_secret_its_own_token(engine: KindEngine) -> None:
 def test_listener_answers_only_the_remote_token_inside_a_run(engine: KindEngine) -> None:
     """H17: the control refuses a model call to the remote listener (8091, from the remote pod) with
     no token (401), with a token it did not issue (401), on `/v1/chat/completions` and on
-    `/v1/messages`, and refuses the remote's own token outside a run (403 `run_required`; not for
-    kagent-adk, which holds no token in its env). The allowed control, a 200 inside a run with
-    the same token, is `test_poc06b_kind_engines.py`: a run cannot end `ok` unless the listener
+    `/v1/messages`, and refuses the remote's own token outside a run (403 `run_required`;
+    kagent-adk too, since 055 CH-6 gave it its own key). The allowed control, a 200 inside a run
+    with the same token, is `test_poc06b_kind_engines.py`: a run cannot end `ok` unless the listener
     answered the model calls."""
     remote = remote_pod(engine)
     assert engine.proxy_ip is not None

@@ -5,7 +5,8 @@
 # One port per engine (suggested: 9001 claude-agent, 9002 smolagents, 9003 typescript, 9004
 # kagent-adk), one process: a port serves only its own engine, and any other path there is 404 with
 # no claim. The NetworkPolicy lets each chassis reach its own engine's port only, so no chassis can
-# start a run on another engine (kagent-adk checks no bearer, so this is its only inbound control).
+# start a run on another engine. Each remote also checks its own bearer (kagent-adk through its
+# launcher's BearerGate, 055 CH-6), so the policy is a second layer.
 # Per streaming A2A run the door creates a SandboxClaim on the pool remote-<engine>, waits for it,
 # streams the run to and from the claimed pod's IP on 9000, and deletes the claim after (the pod
 # goes with it). A card fetch never claims. Code: packages/code-runner/src/code_runner/a2a_dispatch.py.
@@ -17,7 +18,7 @@
 #   (../admission/remote-run-rbac.yaml, applied by the cluster admin), capped by a ResourceQuota.
 # - No model key, tool key, or remote token. No inbound bearer of its own: each chassis sends its own
 #   remote token, passed through untouched to the pod, whose workload checks it
-#   (`--require-token-env`; kagent-adk checks none, see ../kagent/remote-kagent-adk.yaml).
+#   (`--require-token-env`; kagent-adk through BearerGate, see ../kagent/remote-kagent-adk.yaml).
 # - The cards below are pinned here, not read from a pod: a fetch must not claim a pod. The door sets
 #   each interface URL to its own /<engine> URL; the chassis pins it to its configured URL anyway.
 # - NetworkPolicy (remote-run-dispatch-network-policy.yaml, applied by path as the cluster admin):

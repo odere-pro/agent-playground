@@ -333,7 +333,7 @@ def test_kagent_adk_names_its_own_model_so_hosted_sh_edits_the_workload_config()
     assert cm["metadata"]["name"] == "remote-kagent-adk-config"
     config = json.loads(cm["data"]["config.json"])
     assert config["model"]["model"] == "fake-chat", "the route is the workload's pick"
-    assert config["model"]["api_key_passthrough"] is True
+    assert config["model"]["api_key_passthrough"] is False, "055 CH-6: one key per direction"
     text = HOSTED_SH.read_text()
     assert "KAGENT_CM=remote-kagent-adk-config" in text and ".model.model = $m" in text
     proxy = (ROOT / "packages/chassis/src/chassis/server/model_proxy.py").read_text()
