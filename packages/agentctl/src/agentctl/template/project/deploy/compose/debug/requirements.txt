@@ -1,8 +1,10 @@
-# debugpy for the Compose debug volume. Every file of the release is pinned by hash; pip installs
-# with --require-hashes. Regenerate with:
-#   echo 'debugpy==<version>' | uv pip compile - --generate-hashes --python-version 3.12 \
-#     --python-platform x86_64-manylinux_2_28 --only-binary :all: --no-header
-# and bump the image tag and the volume name in ../docker-compose.yaml with it.
+# debugpy and watchfiles for the Compose debug volume. Every file of the release is pinned by
+# hash; pip installs with --require-hashes --no-deps. Regenerate with:
+#   printf 'debugpy==<version>\nwatchfiles==<version>\n' | uv pip compile - --generate-hashes \
+#     --python-version 3.12 --python-platform x86_64-manylinux_2_28 --only-binary :all: \
+#     --no-header --no-deps
+# and bump the image tag and the volume name in ../docker-compose.yaml with it. watchfiles is the
+# `dev` profile's reloader (016 H-9); keep its version the platform's uv.lock pin.
 debugpy==1.8.22 \
     --hash=sha256:0c1104233340196e5cbf5514e7dfdbb98968e730cfd7fdd6f3d72a082be838a9 \
     --hash=sha256:12bc7f368182b517cf26c76a2393fff65354e365fa1552b6241e66edff17997b \
@@ -34,3 +36,18 @@ debugpy==1.8.22 \
     --hash=sha256:fa47099176d1d612bef69e9f74658a5687a9f05bd80fb5710f99959bace85735 \
     --hash=sha256:feea785c7bbeb8cfd5b01a63f9061c899dc468c8be81671141a29305774fa294 \
     --hash=sha256:ffeeaf4dfe1534375902040df32a4c48f721fd35a4d4d337ac72a44d4176075b
+watchfiles==1.3.0 \
+    --hash=sha256:000b9688fc8133037a8b075c8ebf98f32844ff8964dda61e85c1db547dafc441 \
+    --hash=sha256:bbc1198edfdc90fda0600f825aa94150f428dfcbf8138746f55998e0e660d64c \
+    --hash=sha256:4af9c464d410e8c44b58ddf1cbec7c3a02c1cb2c6c80df9c74659ba2fbda0ab5 \
+    --hash=sha256:eb94e40b9a0db19636b5e3fed0a9803452ecc7381df13b385272abb779ee83ca \
+    --hash=sha256:7398930a2b76b9dc67a4e6b8bfc7baf30946892a86f417a3920c07bdd6febc30 \
+    --hash=sha256:025b108f2d5cc2799cb941f79380df3e8b22bfb589c218e801767fe78d598c95 \
+    --hash=sha256:be9ef3cd403d756a304a0a08a112163c63da7ec72c8c9d083c98818291ff8f29 \
+    --hash=sha256:b5768b49e426fd5b550b012c866db347cdf15c398ef98dc557b6e6b72fa74cd1 \
+    --hash=sha256:d36c72fcdc08f143d87316a4c4c3b064e340da2c7383d39803950740ed418935 \
+    --hash=sha256:f0c9865240e065a2247f4b5248528ae3d01e0e8ae071462c250c884dc16e3ee3 \
+    --hash=sha256:380f513d26cc2e598266b88d66456e07d67ef4be8f0f435a1154d9c44b43d509 \
+    --hash=sha256:509d9f74d2bec5c1f4cd868ddcfe0c9601f7ea53066dfcb19d8ede742c4de661 \
+    --hash=sha256:1acabde19b67e673274e89a04d613b7fb1f122e2c4b8ec9a581e59c149264b61 \
+    --hash=sha256:d978cc1dd7ba44f5590d7de74f7a9c8be7262d9e469c2c0efb8bbfc2574321dc

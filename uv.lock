@@ -3888,6 +3888,11 @@ otel = [
     { name = "opentelemetry-sdk" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "watchfiles" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "a2a-sdk", extras = ["http-server"], specifier = ">=1.2,<2" },
@@ -3898,6 +3903,9 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.30" },
 ]
 provides-extras = ["otel"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "watchfiles", specifier = "==1.3.0" }]
 
 [[package]]
 name = "wrapt"
