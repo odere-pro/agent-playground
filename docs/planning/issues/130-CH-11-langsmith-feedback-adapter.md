@@ -17,7 +17,7 @@ Langfuse is the only `FeedbackPort` backend today (the [product plan](../../plan
 
 - A `langsmith` adapter behind `FeedbackPort` (ADR-009 item 3a) writes a score onto the run's LangSmith trace.
 - It binds the `FeedbackPort` contract suite with the fake and the Langfuse adapter.
-- Where the score goes when both backends run follows 001 DEC-1.
+- Where the score goes when both backends run follows 001 DEC-1: to the primary view only, LangSmith in `cloud` and Langfuse elsewhere (decided 2026-11-15).
 
 ## Out of scope
 

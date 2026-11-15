@@ -31,7 +31,7 @@ The [product plan](../../plans/2026-11-06-agent-container-product.md) puts LangC
 - [x] `fake-langsmith` (a package beside `fake-langfuse`) records an OTLP trace, and an offline test reads it back · Delivered by: `uv run pytest packages/fake-langsmith -q` gives `8 passed`; `packages/fake-langsmith/tests/test_fake_langsmith_server.py` posts OTLP protobuf and OTLP/JSON (hex ids) and reads the spans back by trace id, parent links included.
 - [ ] A stack test: one run is one trace in `fake-langsmith`, with the graph steps under the run span.
 - [ ] A stack test: the LangSmith key is in the Collector only; the chassis, the workload, and the logs hold none.
-- [ ] The primary trace view per environment is written where 001 DEC-1 records it.
+- [x] The primary trace view per environment is written where 001 DEC-1 records it. · Delivered by: [001 DEC-1](001-DEC-1-resolve-open-decisions.md#decisions), decision 5 (2026-11-15), and the 2026-11-15 amendments to `docs/planning/adr/007-observability-otel-collector-langfuse.md` and `docs/planning/adr/009-feedback-langfuse-scores-event.md`.
 
 ## Dependencies
 

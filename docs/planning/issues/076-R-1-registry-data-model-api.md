@@ -15,6 +15,7 @@ The registry is how agents and the orchestrator find agents, tools, APIs, and MC
 
 ## What
 
+- The registry base, our own on Postgres or ToolHive Registry Server, is picked in this issue, before its first box. 001 DEC-1 deferred it here on 2026-11-15 (decided by the user).
 - A registry service built on the chassis, from the service template (025 H-10), with its own OpenAPI 3.1 spec, on Postgres 17 with pgvector (CloudNativePG). Suggested: class `data`, since it alone writes its store.
 - Only the registry's chassis holds the store credential. suggested: the chassis exposes the store to its workload as MCP tools through the tool proxy (054 H-16). This is gap (a) in [the gaps in the backlog plan](000-plan.md#adr-001-follow-ups). It is an open decision, needed before W7, not before phases A to F.
 - Entry fields from F.3: `name`, `type` (`agent`, `tool`, `api`, `mcp`), `task`, `description`, input and output schema, `endpoint`, `version`, `auth`, `owner`, `tags`, `trust_level` (the epic's `trust`), `status`.

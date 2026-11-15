@@ -17,7 +17,7 @@ Each PoC has its own Compose or kind stack. Nothing brings up LiteLLM, the MCP g
 
 - `make platform-up` on kind, from `deploy/helm`: LiteLLM, the MCP gateway, Valkey, Kafka, the OTel Collector, a trace backend, and the example agent. `make platform-down` removes it.
 - The example agent's demo is the smoke test.
-- The chart's default chassis image is a published tag.
+- The chart's default chassis image is a published tag: `ghcr.io/odere-pro/agent-chassis`, tagged `vMAJOR.MINOR.PATCH` and pinned by digest in the chart. Decided by the user on 2026-11-15. Building and publishing the image is separate work.
 - It reuses the stacks that exist: `deploy/kind/poc05/`, `deploy/kind/poc06/`, `deploy/compose/poc07/`, and `deploy/helm/`.
 
 ## Out of scope

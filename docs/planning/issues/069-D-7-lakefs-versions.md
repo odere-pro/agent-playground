@@ -15,6 +15,7 @@ A model is only reproducible if the exact data it trained on can be read back la
 
 ## What
 
+- The pick between lakeFS and DVC is made in this issue, before its first box. 001 DEC-1 deferred it here on 2026-11-15 (decided by the user). The bullets below assume lakeFS until then.
 - lakeFS runs as a service on the platform object storage (MinIO locally, S3 or GCS in the cloud), in Docker Compose and on Kubernetes.
 - Golden set data lives in a lakeFS repository. Each version is a lakeFS commit, and its commit ID is the version ID.
 - The golden set agent creates versions through the lakeFS API, with metadata: record count, split counts, schema version, `source` counts, and creator.

@@ -137,3 +137,12 @@ Reopen this decision on any of these:
 2. Should an `untrusted` remote get `user.id` in its baggage? Today it does, in every lane (item 3).
 3. What may an `untrusted` remote send to the trace: its spans through a separate, token-checked Collector receiver, or nothing (item 9)?
 4. Is LangSmith the primary LLM-trace view in `cloud`, with Langfuse for `local` and self-hosted runs, or do both run in every environment (item 10)?
+
+## Amendment (2026-11-15)
+
+Decided by the user on 2026-11-15, recorded in [001 DEC-1](../issues/001-DEC-1-resolve-open-decisions.md#decisions). It closes open question 4. The text of item 10 does not change.
+
+- **The primary trace view per environment.** LangSmith in the `cloud` profile. Langfuse in the `local` and `fake` profiles and in self-hosted runs.
+- **The Collector may export to both.** An environment may list both exporters in its traces pipeline. Which ones it lists stays a deploy choice (item 10).
+- **The score goes to the primary view only.** See the [ADR-009](009-feedback-langfuse-scores-event.md) amendment of the same date.
+- **Why.** The product puts LangChain, LangGraph, and LangSmith first, so `cloud` reads traces in LangSmith. Langfuse runs offline and self-hosted, so the other profiles keep it.

@@ -101,3 +101,11 @@ Reopen this decision on any of these:
 3. Should the comment stored in Langfuse be regex-redacted too, or kept as written (item 5)?
 4. How does an app that calls with its own token pass its end user's id (Consequences)?
 5. When an environment lists both LangSmith and Langfuse as trace backends (ADR-007, open question 4), does the score go to one of them or to both (item 3a)? suggested: one, the primary view, because two writes can leave a half-written state that the single `feedback_id` cannot repair.
+
+## Amendment (2026-11-15)
+
+Decided by the user on 2026-11-15, recorded in [001 DEC-1](../issues/001-DEC-1-resolve-open-decisions.md#decisions). It closes open question 5. The text of item 3a does not change.
+
+- **The score goes to the primary trace view only.** That is `langsmith` in the `cloud` profile, and `langfuse` in the `local` and `fake` profiles and in self-hosted runs ([ADR-007](007-observability-otel-collector-langfuse.md) amendment of the same date). When feedback is on, `spec.adapters.feedback` names that one store. The `none` default of item 1 does not change.
+- **The traces may go to both.** The Collector may export to both backends. The score is written once.
+- **Why.** Two writes can leave a half-written state that the single `feedback_id` cannot repair (open question 5).
