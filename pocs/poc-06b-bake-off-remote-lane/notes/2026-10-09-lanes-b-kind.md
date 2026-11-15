@@ -30,7 +30,7 @@ All in PoC-5's namespaces and cluster: chassis pods in `poc05-agents`, remotes i
    - **Launcher.** The image's `kagent-adk static` builds the app against a kagent API server for its task store; none exists here. The ConfigMap carries `run_kagent_adk.py`, the probe's launcher (same app, `local=True`, in-memory task store), started with the image's venv Python `/.kagent/.venv/bin/python`. The image supplies libraries only.
    - OTEL exporters are set to `none` in the pod env (the probe saw 16.8 s with the defaults, 0.64 s with them off).
    - **Deviation from the task text:** the model `base_url` is the chassis's fixed ClusterIP, not a DNS name. The remote lane has no DNS (PoC-5 H20, tested), and giving kagent a kube-dns edge would weaken that. The DNS-name rule in the probe note comes from Substrate's credential proxy, which is not used here.
-   - The runtime checks no inbound bearer (probe note, item 5). The control is the NetworkPolicy (9000 only from its chassis). It holds no Secret: the inbound bearer is its model key (`api_key_passthrough`).
+   - The runtime checks no inbound bearer (probe note, item 5). Since 055 CH-6 (2026-11-15) the launcher checks it: `BearerGate` wraps the app and answers 401 unless the bearer is the `chassis-to-workload` key. The pod holds its own two-key Secret, `remote-kagent-adk-token`; `api_key_passthrough` is off, and the launcher hands `workload-to-chassis` to the model client as `OPENAI_API_KEY`, in process. The NetworkPolicy (9000 only from the front door) still stands. Offline tests: `tests/test_poc06b_kagent_traceparent.py`; not yet shown on kind. <!-- pragma: allowlist secret (variable names) -->
 
 ## Recorded exceptions
 
@@ -75,7 +75,7 @@ All in PoC-5's namespaces and cluster: chassis pods in `poc05-agents`, remotes i
 ## What the chassis cannot see or control for kagent-adk (this slice)
 
 - Tool calls and the model's turns inside the runtime (plain mode maps artifacts to deltas and reads token usage from `kagent.dev/a2a/usage`).
-- Whether the runtime checks the inbound bearer (it does not).
+- Whether the runtime checks the inbound bearer (it does not). The bearer check is our wrapper, `BearerGate` in `run_kagent_adk.py`, not kagent itself: a kagent change that adds a second listener or route outside the wrapped app would not be checked.
 - The runtime's own telemetry and its state (OTEL is set off in the manifest; in-memory task store).
 - Kagent's controller, Substrate, and PostgreSQL are not part of this slice, so nothing here says what they would do to the admission rules or the memory budget.
 
@@ -89,7 +89,7 @@ Run: `poc06-kind` 38007359399 (job 114079121220, kind run 4). Result: 70 passed,
 
 Cause (reproduced locally, details in the probe note, Item 4): the pod runs with the OTel exporters `none`, so kagent's `instrument_app` does not instrument the app and the inbound `traceparent` is dropped; and the model client uses `httpx2`, which the httpx instrumentor does not patch. The probe's "same trace id reached the model" was measured on 0.4.0 from PyPI with exporters on. It does not hold for the source build at the pin.
 
-Fix: `run_kagent_adk.py` in `deploy/kind/poc06/kagent/remote-kagent-adk.yaml` now registers `TraceparentPassthroughPlugin` after `LLMPassthroughPlugin`. It copies the inbound `traceparent` onto every model request through a request hook on the model's client. The bearer passthrough is unchanged. The exporters stay off. Offline tests: `tests/test_poc06b_kagent_traceparent.py`. Not yet shown on kind: that waits for the next `poc06-kind` run.
+Fix: `run_kagent_adk.py` in `deploy/kind/poc06/kagent/remote-kagent-adk.yaml` now registers `TraceparentPassthroughPlugin` after `LLMPassthroughPlugin` (since 055 CH-6 it is the only plugin; passthrough is off). It copies the inbound `traceparent` onto every model request through a request hook on the model's client. The bearer passthrough is unchanged. The exporters stay off. Offline tests: `tests/test_poc06b_kagent_traceparent.py`. Not yet shown on kind: that waits for the next `poc06-kind` run.
 
 ## Kind runs (CI, `poc06-kind.yml`)
 

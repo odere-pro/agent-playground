@@ -150,6 +150,7 @@ ENGINES: tuple[KindEngine, ...] = (
         marker=" [text]",
         plain=True,
         proxy_ip="10.96.0.95",
+        token_secret="remote-kagent-adk-token",  # pragma: allowlist secret (a Secret name)
     ),
 )
 REMOTES = tuple(e for e in ENGINES if e.lane == "remote")

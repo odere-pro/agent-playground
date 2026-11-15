@@ -131,6 +131,7 @@ REMOTE_WORKLOADS = {
     "remote-smolagents": ROOT / "deploy/kind/poc06/remote/remote-smolagents.yaml",
     "remote-claude-agent": ROOT / "deploy/kind/poc06/remote/remote-claude-agent.yaml",
     "remote-typescript": ROOT / "deploy/kind/poc06/remote/remote-typescript.yaml",
+    "remote-kagent-adk": ROOT / "deploy/kind/poc06/kagent/remote-kagent-adk.yaml",
 }
 
 

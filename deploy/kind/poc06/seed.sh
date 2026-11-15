@@ -48,10 +48,7 @@ SERVICES=(
 )
 # One token per remote, in poc05-agents (its chassis) and poc05-remote (the remote pod). Rule 7c
 # (admission) ties remote-<name>-token to the pod label app.kubernetes.io/name: remote-<name>.
-REMOTES=(smolagents claude-agent typescript)
-# kagent-adk uses its inbound bearer as its model key (api_key_passthrough) and holds no Secret, so
-# its token is made in poc05-agents only.
-CHASSIS_ONLY_REMOTES=(kagent-adk)
+REMOTES=(smolagents claude-agent typescript kagent-adk)
 
 # shellcheck source=deploy/kind/lib.sh
 source "$HERE/../lib.sh"
@@ -213,19 +210,6 @@ seed_keys() {
       put_env_secret "$REMOTE" "remote-$name-token"
     unset to_workload to_chassis
     log "made remote-$name-token (two keys) in $AGENTS and $REMOTE"
-  done
-  for name in "${CHASSIS_ONLY_REMOTES[@]}"; do
-    if secret_exists "$AGENTS" "remote-$name-token"; then
-      token_keys_ok "$AGENTS" "remote-$name-token" && continue
-      die "remote-$name-token is the old one-key Secret; run: $0 rotate remote-$name-token"
-    fi
-    to_workload=$(new_secret)
-    to_chassis=$(new_secret)
-    [[ $to_workload != "$to_chassis" ]] || die "remote-$name-token: the two keys came out equal"
-    printf 'chassis-to-workload=%s\nworkload-to-chassis=%s\n' "$to_workload" "$to_chassis" |
-      put_env_secret "$AGENTS" "remote-$name-token"
-    unset to_workload to_chassis
-    log "made remote-$name-token (two keys) in $AGENTS"
   done
 }
 
