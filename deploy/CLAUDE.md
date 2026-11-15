@@ -11,6 +11,7 @@ Everything here follows ADR-001. Ask `platform-security` before changing anythin
 - The Docker VM is shared with other projects. The PoC-4 scale stack goes only through `compose/scale.sh` (project `poc04`, `-p poc04 -f docker-compose.scale.yaml` on every call) and kind only through `kind/run.sh` (`--name poc04`, `--context kind-poc04`). PoC-5's cluster goes only through `kind/poc05/run.sh` (`make kind-poc05 ARGS="<verb>"`; `--name poc05`, `--context kind-poc05`). The library chart's cluster goes only through `kind/chart/run.sh` (`make kind-chart ARGS="<verb>"`; `--name agent-chart`, `--context kind-agent-chart`). Only one agent at a time uses Docker or kind. Never prune, never touch another project's container or context.
 - `dashboards/` is generated (`uv run python -m chassis.dashboards`). Add an agent to `dashboards/agents.txt` and regenerate; never edit a dashboard's JSON.
 - Generated secrets live in `compose/.env.poc04` (mode 600, git-ignored) or a kind Secret; never in a file under version control, never printed. Only the chassis (and daprd) get them; the workload gets none.
+  - One exception, approved by the user on 2026-11-15 (004 G-2): Prometheus may hold one LiteLLM scrape key. It is an exception to ADR-001 hard requirement 1. Scope: one key, `/metrics` routes only, no model, mounted read-only into Prometheus only, in the PoC-8 router-drill Compose stack. Anything wider is a new `platform-security` question.
 
 ## kind PoC-5 (`kind/poc05/`)
 
