@@ -53,8 +53,9 @@ dc --profile dev down
 ```
 
 - `workload-dev` mounts `src/{{ package_name }}` read-only over the installed package, `/app/.venv/lib/python3.12/site-packages/{{ package_name }}`, and runs `workload-a2a serve --reload --reload-dir` on that folder. The A2A server runs in a child process; on a change, watchfiles stops it (SIGINT) and starts a new one. The container and the chassis stay up, and the chassis keeps its network namespace.
-- watchfiles comes in the debug volume, pinned by hash in `debug/requirements.txt` to the platform's lock. The image, the `fake` and `local` profiles, and the Helm chart never have it, never mount `src/`, and never pass `--reload`.
+- watchfiles comes in the debug volume's `reload/` folder, pinned by hash in `debug/reload-requirements.txt` to the platform's lock. Only `workload-dev` puts that folder on `PYTHONPATH`. The image, the `fake` and `local` profiles, and the Helm chart cannot import it, never mount `src/`, and never pass `--reload`.
 - A call in flight when you save is cut off; send it again. `/ready` may answer 503 for a second while the new server starts.
+- A save that does not import (a syntax error) leaves the reloader up with no server until the next save: `workload-dev` turns unhealthy and `/v1/run` fails. The error is in `logs workload-dev`; fix it and save again.
 - A change to `pyproject.toml` or a new dependency still needs the image: `dc --profile dev up -d --wait --build --force-recreate chassis-fake workload-dev`.
 - The workload debugger is off in `dev`: debugpy starts in PID 1, which is the reloader here, not the server. Debug the workload in `fake`.
 - No change seen on your file system (some Docker Desktop file sharing): set `WATCHFILES_FORCE_POLLING=true` in `workload-dev`'s environment in an override file.
@@ -67,7 +68,7 @@ Without `dev`, swap the workload after a code change: `dc --profile fake up -d -
   `docker build -f {{ platform_path }}/packages/chassis/Dockerfile -t agent-platform/chassis:poc09 {{ platform_path }}`
 - The fake model server: built from `{{ platform }}` (relative to this folder) by `--build`.
 - The workload: built from the root `Dockerfile` by `--build`, tagged `{{ agent_name }}:dev`.
-- debugpy: `debug/debugpy.Dockerfile`, the platform's pinned python base, debugpy and watchfiles pinned by hash in `debug/requirements.txt`.
+- debugpy: `debug/debugpy.Dockerfile`, the platform's pinned python base, debugpy and watchfiles pinned by hash in `debug/requirements.txt` and `debug/reload-requirements.txt`.
 
 ## Debuggers
 

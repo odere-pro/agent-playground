@@ -23,6 +23,8 @@ SITE = "/app/.venv/lib/python3.12/site-packages"
 LIVE = f"{SITE}/{PACKAGE}"
 SOURCE_MOUNT = f"../../src/{PACKAGE}:{LIVE}:ro"
 DEFAULT_PROFILES = ("fake", "local")
+RELOAD_PATH = "/opt/debugpy/reload"
+"""watchfiles's folder in the debug volume; only workload-dev has it on PYTHONPATH."""
 
 
 @pytest.fixture(scope="module")
@@ -72,6 +74,9 @@ def test_the_dev_profile_mounts_the_source_read_only_and_runs_the_reloader(
     assert workload["command"] == ["--reload", "--reload-dir", LIVE]
     assert "ports" not in workload and "restart" not in workload
     assert workload["read_only"] is True and workload["user"] == "10002:10002"
+    # A literal empty value: an exported WORKLOAD_DEBUGPY_LISTEN must not reach the reloader.
+    assert workload["environment"]["DEBUGPY_LISTEN"] == ""
+    assert workload["environment"]["PYTHONPATH"] == f"/opt/debugpy:{RELOAD_PATH}"
 
 
 def test_a_workload_change_never_touches_the_chassis(compose: dict[str, Any]) -> None:
@@ -100,6 +105,8 @@ def test_the_default_profiles_never_mount_the_source_or_reload(
         }, name
         assert not any("src" in str(v) for v in svc.get("volumes", [])), name
         assert "--reload" not in svc.get("command", []), name
+        pythonpath = str(svc.get("environment", {}).get("PYTHONPATH", ""))
+        assert RELOAD_PATH not in pythonpath, f"{name} can import watchfiles"
     assert "command" not in compose["services"][f"workload-{profile}"]
 
 
@@ -117,7 +124,8 @@ def test_the_dev_volume_pins_watchfiles_to_the_platform_lock(
     agent: Path, compose: dict[str, Any]
 ) -> None:
     debug = agent / "deploy/compose/debug"
-    requirements = (debug / "requirements.txt").read_text()
+    assert "watchfiles" not in (debug / "requirements.txt").read_text(), "not on debugpy's path"
+    requirements = (debug / "reload-requirements.txt").read_text()
     version = _locked_version("watchfiles")
     assert f"watchfiles=={version} \\" in requirements
     block = requirements.split(f"watchfiles=={version}", 1)[1]
@@ -126,7 +134,8 @@ def test_the_dev_volume_pins_watchfiles_to_the_platform_lock(
     lock = (ROOT / "uv.lock").read_text()
     assert all(h in lock for h in hashes), "every watchfiles hash is one the platform locked"
     # watchfiles needs anyio, which the workload's own venv has; pip must not fetch it.
-    assert "--no-deps" in (debug / "debugpy.Dockerfile").read_text()
+    dockerfile = (debug / "debugpy.Dockerfile").read_text()
+    assert f"--no-deps --target {RELOAD_PATH} -r /tmp/reload-requirements.txt" in dockerfile
     # A new tool set gets a fresh volume: Docker fills a named volume only while it is empty.
     assert f"watchfiles-{version}" in compose["volumes"]["debugpy"]["name"]
     assert f"watchfiles-{version}" in compose["services"]["debugpy"]["image"]

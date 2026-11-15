@@ -171,7 +171,7 @@ def _serve_with_reload(args: argparse.Namespace) -> None:
     """Run `serve_parsed` in a child process; restart it when a watched file changes.
 
     watchfiles is not a dependency of this package: the dev volume brings it (the generated
-    repo's `deploy/compose/debug/requirements.txt`), never the production image.
+    repo's `deploy/compose/debug/reload-requirements.txt`), never the production image.
     """
     try:
         from watchfiles import run_process

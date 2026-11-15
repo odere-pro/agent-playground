@@ -70,12 +70,12 @@ def test_serve_reload_child_builds_and_runs_the_server(
     monkeypatch.setattr(uvicorn.Server, "run", lambda self, sockets=None: ran.append(self))
     cli.main(_serve_args(tmp_path, "--reload", "--reload-dir", str(tmp_path)))
     [(_, kwargs)] = recorder.calls
+    assert ran == [], "the reloader process never serves; only its child does"
 
     kwargs["target"](*kwargs["args"])
 
     [server] = ran
     assert server.config.uds == str(tmp_path / "w.sock")
-    assert server.config.reload is False, "uvicorn's own reload stays off; watchfiles restarts"
 
 
 def test_serve_reload_needs_a_watch_dir(tmp_path: Path) -> None:

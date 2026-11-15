@@ -196,7 +196,12 @@ services:
       - --reload
       - --reload-dir
       - /app/.venv/lib/python3.12/site-packages/{{ package_name }}
-    environment: *workload-env
+    environment:
+      <<: *workload-env
+      # watchfiles lives in the volume's reload/ folder; only this service puts it on the path.
+      PYTHONPATH: /opt/debugpy:/opt/debugpy/reload
+      # Always off, even with WORKLOAD_DEBUGPY_LISTEN exported: PID 1 here is the reloader.
+      DEBUGPY_LISTEN: ""
     depends_on:
       chassis-fake:
         condition: service_started
