@@ -9,6 +9,11 @@ bearer check on every request and is the only way to bind a host that is not loo
 `--require-token-env`) also accepts the token in `$NAME` while a rotation runs; an unset or empty
 variable is ignored. Logs are JSON, one object per line (`logs.configure_logging`, set up at start
 with the card name as `agent` and `--log-level`).
+
+`--reload --reload-dir DIR` (dev only, 016 H-9) runs the server in a child process under
+watchfiles and restarts it when a file in DIR changes. watchfiles is not a dependency: the
+generated repo's Compose `dev` profile brings it in the debug volume. Without `--reload` nothing
+changes.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from __future__ import annotations
 import argparse
 import importlib
 from collections.abc import Sequence
+from pathlib import Path
 from typing import cast
 
 import uvicorn
@@ -78,6 +84,18 @@ def _parser() -> argparse.ArgumentParser:
         help="during a token rotation, also accept the value of $NAME; unset or empty is "
         "ignored; needs --require-token-env",
     )
+    serve.add_argument(
+        "--reload",
+        action="store_true",
+        help="dev only: restart the server when a file in a --reload-dir changes (watchfiles)",
+    )
+    serve.add_argument(
+        "--reload-dir",
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="a folder --reload watches; repeat for more; at least one with --reload",
+    )
     serve.add_argument("--log-level", default="info")
     return parser
 
@@ -130,9 +148,56 @@ def _build(args: argparse.Namespace) -> uvicorn.Server:
         raise SystemExit(f"workload-a2a: {exc}") from exc
 
 
-def main(argv: Sequence[str] | None = None) -> None:
-    """Build the server, set up JSON logs, run."""
-    args = _parser().parse_args(argv)
+def serve_parsed(args: argparse.Namespace) -> None:
+    """Build the server from parsed arguments, set up JSON logs, run. The reloader's child."""
     server = _build(args)
     configure_logging(agent=args.name or args.handle, level=args.log_level)
     server.run()
+
+
+RELOAD_IGNORE_DIRS = ("__pycache__", ".git", ".mypy_cache", ".pytest_cache", ".hypothesis")
+"""Folders a save inside never reloads. Unlike watchfiles's default, not `.venv`: the watched
+package sits in one."""
+
+
+def _check_reload(args: argparse.Namespace) -> None:
+    if args.reload_dir and not args.reload:
+        raise SystemExit("workload-a2a: --reload-dir needs --reload")
+    if not args.reload:
+        return
+    if not args.reload_dir:
+        raise SystemExit("workload-a2a: --reload needs at least one --reload-dir")
+    for folder in args.reload_dir:
+        if not Path(folder).is_dir():
+            raise SystemExit(f"workload-a2a: --reload-dir {folder} is not a directory")
+
+
+def _serve_with_reload(args: argparse.Namespace) -> None:
+    """Run `serve_parsed` in a child process; restart it when a watched file changes.
+
+    watchfiles is not a dependency of this package: the dev volume brings it (the generated
+    repo's `deploy/compose/debug/reload-requirements.txt`), never the production image.
+    """
+    try:
+        from watchfiles import DefaultFilter, run_process
+    except ImportError as exc:
+        raise SystemExit(
+            "workload-a2a: --reload needs watchfiles; the Compose `dev` profile's debug volume "
+            "has it, the production image does not"
+        ) from exc
+    configure_logging(agent=args.name or args.handle, level=args.log_level)
+    child = argparse.Namespace(**{**vars(args), "reload": False, "reload_dir": []})
+    # The dev profile watches the package where `uv sync` installed it, under `/app/.venv`. The
+    # default filter drops any path with a `.venv` part, so it would never see a save there.
+    keep = DefaultFilter(ignore_dirs=RELOAD_IGNORE_DIRS)
+    run_process(*args.reload_dir, target=serve_parsed, args=(child,), watch_filter=keep)
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Build the server, set up JSON logs, run; under the reloader with `--reload` (dev only)."""
+    args = _parser().parse_args(argv)
+    _check_reload(args)
+    if args.reload:
+        _serve_with_reload(args)
+        return
+    serve_parsed(args)
