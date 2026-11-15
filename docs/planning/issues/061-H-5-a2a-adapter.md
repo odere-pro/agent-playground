@@ -11,7 +11,7 @@ epic_refs: [G.1, B.5]
 
 ## Why
 
-A2A lets agents from other systems call platform agents as agents, with task states and a signed card that says who they are. This issue is only the public A2A endpoint for outside callers. A2A from the chassis to its workloads already ships in 009 CH-1, because [ADR-001](../adr/001-chassis-delivery-model.md) makes it the one contract to workloads. 001 DEC-1 decides only whether the public endpoint ships in version 1. It is P2 until then; if it ships, this issue moves to P1. It needs only the inbound adapters (011 H-2) and reuses the `a2a-sdk` already in the chassis, so it can run in parallel with the rest of the wave.
+A2A lets agents from other systems call platform agents as agents, with task states and a signed card that says who they are. This issue is only the public A2A endpoint for outside callers. A2A from the chassis to its workloads already ships in 009 CH-1, because [ADR-001](../adr/001-chassis-delivery-model.md) makes it the one contract to workloads. 001 DEC-1 decided it on 2026-11-15: the public endpoint is not in version 1, so this issue stays P2. It needs only the inbound adapters (011 H-2) and reuses the `a2a-sdk` already in the chassis, so it can run in parallel with the rest of the wave.
 
 ## What
 
@@ -33,7 +33,7 @@ A2A lets agents from other systems call platform agents as agents, with task sta
 
 ## Out of scope
 
-- Deciding whether the public endpoint ships in version 1. That is 001 DEC-1.
+- Deciding whether the public endpoint ships in version 1. 001 DEC-1 decided it on 2026-11-15: not in version 1.
 - A2A from the chassis to its workloads (009 CH-1) and to `remote` workloads (055 CH-6).
 - Finding A2A agents through the registry (076 R-1).
 - The orchestrator calling agents over A2A (099 O-1).

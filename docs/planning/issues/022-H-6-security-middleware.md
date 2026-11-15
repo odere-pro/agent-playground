@@ -15,9 +15,9 @@ Every agent needs the same auth, limits, and PII rules, so the chassis pipeline 
 
 ## What
 
-- Caller auth on every inbound adapter: OIDC bearer tokens or caller API keys.
+- Caller auth on every inbound adapter: OIDC bearer tokens only in version 1, decided by the user in 001 DEC-1 on 2026-11-15.
   - Decided in [ADR-008](../adr/008-security-identity-guardrails-defense-in-depth.md) and [contract v6](../../contracts/contract-v6.md#d-auth-guard-stages-and-the-new-error-codes): `OidcAuth` behind `AuthPort`, one scope per route from `spec.security`, with 401 `unauthenticated`, 403 `forbidden`, and 503 `auth_unavailable`. `/manifest`, `/openapi.json`, and `/docs` need the read scope.
-  - Caller API keys are not built (an ADR-008 open question). `/metrics` needs `agent:read` in the `cloud` profile and is open by default elsewhere: P-4, decided 2026-11-08 in the [backlog review proposals](../../reviews/2026-11-06-backlog-review/proposals.md), built in 134 CH-14.
+  - Caller API keys are parked, not built ([ADR-008](../adr/008-security-identity-guardrails-defense-in-depth.md#amendment-2026-11-15) amendment, 2026-11-15). `/metrics` needs `agent:read` in the `cloud` profile and is open by default elsewhere: P-4, decided 2026-11-08 in the [backlog review proposals](../../reviews/2026-11-06-backlog-review/proposals.md), built in 134 CH-14.
   - The in-process MCP hop is never trusted by loopback address or by `x-chassis-interface`, and `x-chassis-interface: mcp` is never used for billing or quotas.
 - Scopes from `spec.security.scopes` (for example `simplify:run`), with separate read and write scopes.
 - Rate limits per agent and per caller in `StatePort`, kept in Valkey in the stack profiles, so limits hold across pods and the process stays stateless: 429 `rate_limited` with `Retry-After` ([contract v7](../../contracts/contract-v7.md#c-rate-limits) C). A store outage lets calls through unlimited, decided 2026-11-06 (P-2), except in the `cloud` profile, which refuses counted calls with 503 `state_unavailable` (P-26, decided 2026-11-08). The limit is a rate, not a cap, so new idempotency keys per caller get their own cap.
@@ -46,12 +46,14 @@ Every agent needs the same auth, limits, and PII rules, so the chassis pipeline 
 - Tool allow-lists and write-tool rules (054 H-16).
 - MCP read and write scopes, and confirmation on destructive tools (095 P-4).
 - `security.allowed_agents`, the only agents this agent may call. It matters only when one agent calls another, so it goes to the orchestrator wave.
+- Caller API keys: a second `AuthPort` adapter or the IdP's client-credentials flow. Parked as later work on 2026-11-15 (001 DEC-1, ADR-008 amendment).
 - A cluster-wide uncorrelated cap. `spec.limits.uncorrelated_tokens_per_minute` is per replica; LiteLLM's key budget is the cluster cap ([contract v4](../../contracts/contract-v4.md), Known gaps).
 
 ## Acceptance criteria
 
 - [x] A call with no bearer token or a wrong one gets 401 on every run and read route. Only `/health` and `/ready` are open, and `/metrics` outside the `cloud` profile (P-4, decided 2026-11-08: `cloud` needs `agent:read`, built in 134 CH-14). · Delivered in PoC-7, CH-14: `packages/chassis/tests/test_security_auth.py::test_every_other_route_needs_a_token` (no token and a forged one, 401 Bearer on `/v1/run`, both chat interfaces, `/v1/mcp`, `/manifest`, `/openapi.json`, `/docs`, `/v1/feedback`, an unknown route), `::test_health_and_ready_need_no_token`, `packages/chassis/tests/test_cloud_profile_defaults.py::test_fake_and_local_metrics_need_no_token_with_auth_on`, `::test_cloud_metrics_need_a_token_with_agent_read`
-- [ ] A call with no caller API key or a wrong one gets 401 on every run and read route. Open: caller API keys are not built, an ADR-008 open question that needs a decision first. No test exists to cite.
+- [ ] A call with no OIDC bearer or a wrong one gets 401 on every run and read route.
+  - Open. The route test `packages/chassis/tests/test_security_auth.py::test_every_other_route_needs_a_token` runs `StaticTokens`, not `OidcAuth`. `packages/chassis/tests/test_oidc_adapter.py::TestOidcAuth` checks `OidcAuth` at the port only. No test puts `OidcAuth` in front of every run and read route.
 - [x] A valid caller without the needed scope gets 403. · Delivered in PoC-7: `packages/chassis/tests/test_security_auth.py::test_run_scope_is_needed_on_every_run_interface`, `::test_read_scope_is_needed_for_the_manifest_and_docs` (403 `forbidden`, contract v6 D.4)
 - [ ] A caller over its rate limit gets 429, and the limit holds across two pods. Open until a stack test runs two chassis processes on one Valkey and shows one bucket.
   - Open. The offline half is proven: `packages/chassis/tests/test_rate_limit.py::test_two_replicas_share_the_limit_through_the_store` (two apps on one `InMemoryState`: 429 from both, another caller still 200) and `::test_past_the_limit_every_run_interface_answers_429_in_its_own_shape`. Real Valkey across two processes needs Docker.

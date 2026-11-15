@@ -11,7 +11,7 @@ epic_refs: [E.5, principles]
 
 ## Why
 
-[ADR-010](../adr/010-evals-offline-tool-online-gate.md) keeps the golden cases and results in Langfuse datasets (item 2). Its note of 2026-11-06 makes LangSmith datasets a candidate store, under the trial's rule: the same verdicts on the 20 golden cases on two engines. `eval_kit.langfuse_datasets` is tested against a stub only, and no workflow calls it. The [product plan](../../plans/2026-11-06-agent-container-product.md) puts both datasets in phase D.
+[ADR-010](../adr/010-evals-offline-tool-online-gate.md) keeps the golden cases and results in Langfuse datasets (item 2). The user accepted Langfuse as the golden-set store in 001 DEC-1 on 2026-11-15. ADR-010's note of 2026-11-06 makes LangSmith datasets a candidate store, under the trial's rule: the same verdicts on the 20 golden cases on two engines. `eval_kit.langfuse_datasets` is tested against a stub only, and no workflow calls it. The [product plan](../../plans/2026-11-06-agent-container-product.md) puts both datasets in phase D.
 
 ## What
 

@@ -15,13 +15,18 @@ Split from X-1. The first cloud must give the chassis the same cluster contract 
 
 ## What
 
-- One Terraform module for the first cloud, per DEC-1 (AWS or GCP): a Kubernetes cluster, networking, IAM, and object storage buckets for the config store and datasets.
+- One Terraform module for the first cloud, per DEC-1: AWS, for staging and prod, decided by the user on 2026-11-15. It holds an EKS cluster, networking, IAM, and S3 buckets for the config store and datasets.
+- The cluster needs PoC-5 proved, on AWS:
+  - a gVisor RuntimeClass, from a self-managed EKS node group with gVisor installed;
+  - a CNI that enforces NetworkPolicy;
+  - ValidatingAdmissionPolicy;
+  - Kubernetes 1.33 or later.
 - Kubernetes 1.33 or later, for native sidecars: the workload runs as one next to the chassis ([ADR-001](../adr/001-chassis-delivery-model.md), [ADR-012](../adr/012-drain-order-on-rollout.md)).
 - Cloud-neutral module inputs and outputs (for example cluster name, region, node pools, and bucket names in; cluster endpoint and bucket URLs out), so 116 X-1b can match them.
 - The environments dev, staging, and prod, each with its own remote state and locking.
 - Cluster add-ons installed through Argo CD: CloudNativePG (Postgres 17 with pgvector), Vault with External Secrets, cert-manager, and the observability stack. Admission is the ValidatingAdmissionPolicy and its parameter file (`deploy/kind/poc05/admission/`), not Kyverno.
 - What the chassis lanes need from the cluster:
-  - a gVisor RuntimeClass for `remote` pods: GKE Sandbox on GCP, or gVisor or Kata on EKS nodes;
+  - a gVisor RuntimeClass for `remote` pods, on the self-managed EKS node group above (GKE Sandbox is the 116 X-1b path if the second cloud is GCP);
   - a CNI that enforces NetworkPolicy, so default-deny egress holds.
 - Decided in [ADR-005](../adr/005-remote-lane-auth-and-trust-admission.md) (items 1, 4) and [ADR-006](../adr/006-agent-engines-default-supported-lanes.md): one bearer token per remote, a ValidatingAdmissionPolicy for the trust rule, and no managed runtime, so no cloud auth adapter.
 - One LiteLLM virtual key per service, with its MCP gateway grants, provisioned from code with no manual steps (suggested: a Terraform provider or a bootstrap job run by Argo CD).

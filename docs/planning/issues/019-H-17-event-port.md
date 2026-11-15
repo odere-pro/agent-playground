@@ -11,7 +11,7 @@ epic_refs: [B.4, D.1, D.2, R13]
 
 ## Why
 
-Stateless agents never store records: they send a one-way result event, and a data agent stores it. This port is how results reach the recorder (040 D-0) and the audit log (072 C-3). Under [ADR-001](../adr/001-chassis-delivery-model.md), the workload never publishes itself. It streams its events to the chassis over A2A, and the chassis publishes the result event. This issue ships the first broker adapter, the one chosen in 001 DEC-1. The other adapters come in 060 H-23.
+Stateless agents never store records: they send a one-way result event, and a data agent stores it. This port is how results reach the recorder (040 D-0) and the audit log (072 C-3). Under [ADR-001](../adr/001-chassis-delivery-model.md), the workload never publishes itself. It streams its events to the chassis over A2A, and the chassis publishes the result event. This issue ships the first broker adapter, the one chosen in 001 DEC-1: NATS JetStream, decided by the user on 2026-11-15. The other adapters come in 060 H-23.
 
 ## What
 
@@ -24,6 +24,7 @@ Stateless agents never store records: they send a one-way result event, and a da
 - `input` goes into a result event only when `spec.events.include_input` is true (default false; decided 2026-11-13). This and `original_model` break the v1 payload in place, by [ADR-016](../adr/016-result-event-payload-breaks-before-first-consumer.md): no consumer exists yet. Until topic ACLs per service are in (020 X-8), caller data must not go on a shared broker.
 - Switched on by the `result_events` module. Publishing never changes the response; a failed publish is retried and counted in metrics. Result events publish in the background, never in the request's path.
 - The broker client adapter for the broker chosen in DEC-1 (see Reuse), plus an in-memory fake for tests. Built in PoC-4: `EventPort` (`packages/chassis/src/chassis/ports/events.py`), the in-memory bus, and a `kafka` adapter on aiokafka, bound to `EventPortContract`.
+- The DEC-1 broker is NATS JetStream (decided 2026-11-15). So this issue builds a `nats` adapter (suggested: on nats-py). It must pass the bar in [ADR-004](../adr/004-events-through-a-broker-client.md) item 8: all 8 `EventPortContract` cases against a real NATS server started by the test, with no xfail. The `kafka` adapter stays as a swap behind the port.
 - Dapr or a broker client in the chassis (gap (c) in the [backlog plan](000-plan.md#adr-001-follow-ups)): the broker client, decided in [ADR-004](../adr/004-events-through-a-broker-client.md), accepted 2026-10-08. Dapr would be a third container in every pod, with its own localhost API to close and its own release train. The `dapr` adapter stays as a tested alternative, the default in no profile. If Dapr is ever deployed, its API needs a token mounted into the chassis container only (ADR-004, item 4).
 
 ## Reuse

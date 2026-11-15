@@ -24,7 +24,7 @@ Records alone are not a golden set. The golden set agent turns recorded calls in
 - Suggested record states: `new`, `scored`, `in_review`, `approved`, `rejected`.
 - Records whose `source` is not cleared for training are flagged, so they never reach a training set.
 - Metrics: records scored, share sent to review, and judge cost per record.
-- Decided in ADR-010 items 2 and 11: the golden cases and results live in Langfuse datasets and experiments. LangSmith datasets are a second store once the phase D trial passes.
+- Decided in ADR-010 items 2 and 11: the golden cases and results live in Langfuse datasets and experiments. The user accepted Langfuse as the golden-set store in 001 DEC-1 on 2026-11-15. LangSmith datasets are a second store once the phase D trial passes.
 - Blocked on follow-up (a) in the backlog plan (a service that writes its own store): decide before the first box.
 - Status after PoC-7 ([backlog changes](../../../pocs/poc-07-cross-cutting-decisions/notes/backlog-changes.md)): this agent may consume `agents.feedback.received.v1`. The open Langfuse question is answered by ADR-010 item 2: Langfuse datasets, with LangSmith a candidate.
 - Status after PoC-8: the golden set is about 50 cases for one agent, the simplifier (`packages/eval-kit/src/eval_kit/golden/`). Every other agent needs its own set, and that is this issue's work.

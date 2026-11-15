@@ -11,11 +11,11 @@ epic_refs: [D.1, H]
 
 ## Why
 
-Pulled forward from Phase 8: the event port, the recorder (040 D-0), and the audit log (072 C-3) all need a running broker. It runs in Docker Compose for the local platform and on Kubernetes for the cloud. The broker is the one chosen in 001 DEC-1: NATS JetStream (recommended) or the company's Kafka.
+Pulled forward from Phase 8: the event port, the recorder (040 D-0), and the audit log (072 C-3) all need a running broker. It runs in Docker Compose for the local platform and on Kubernetes for the cloud. The broker is the one chosen in 001 DEC-1: NATS JetStream, decided by the user on 2026-11-15.
 
 ## What
 
-- The broker per DEC-1, added to the Docker Compose profile from 016 H-9, and installed on Kubernetes by the method DEC-1 picks (Strimzi, a managed service, or a chart). If DEC-1 picks the company's existing Kafka, this issue connects to it instead of running a new one.
+- The broker per DEC-1, NATS JetStream (decided 2026-11-15), added to the Docker Compose profile from 016 H-9 and installed on Kubernetes (suggested: the NATS Helm chart with JetStream on). Its adapter must pass the bar in [ADR-004](../adr/004-events-through-a-broker-client.md) item 8 (019 H-17). Retention needs and who runs the broker are not decided yet (suggested: the platform team runs it).
 - Streams or topics created from config for every event type in the D.3 catalog, with auto-create off.
 - Persistent storage, so events survive a broker restart.
 - Retention per stream set in config, so events can be replayed to rebuild records and investigate incidents.

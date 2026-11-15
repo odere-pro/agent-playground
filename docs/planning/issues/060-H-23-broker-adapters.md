@@ -23,7 +23,7 @@ The broker sits behind a port, so the platform can run with any broker and on an
 - One shared contract test suite runs against every adapter.
 - Suggested: local emulators in CI (Redpanda for Kafka, LocalStack for AWS, the Pub/Sub emulator for GCP).
 - The bar for each adapter: it passes the whole `EventPortContract` against a real broker, with no xfail ([ADR-004](../adr/004-events-through-a-broker-client.md), item 8). Today only `kafka` does. `chassis.core` and `chassis.ports.events` import no broker client (`pocs/poc-05-sandboxed/tests/test_poc05_events_agnostic.py`).
-- The first broker is picked in the DEC-1 pack. Until then `events: none` stays the default in every profile (ADR-004, item 5).
+- The first broker is NATS JetStream, decided by the user in 001 DEC-1 on 2026-11-15; 019 H-17 builds its adapter to ADR-004 item 8. So this issue covers Kafka, AWS, and GCP. The `kafka` adapter from PoC-4 already passes the suite. Until the NATS adapter ships, `events: none` stays the default in every profile (ADR-004, item 5).
 
 ## Reuse
 

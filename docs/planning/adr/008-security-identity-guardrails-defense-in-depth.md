@@ -172,3 +172,11 @@ Reopen this decision on any of these:
 1. The hash half is decided by the user on 2026-11-08 (P-27): `user.id` is the `sha256[:32]` of the subject in every lane. Still open: should an `untrusted` remote get no `user.id` at all (item 3, shared with ADR-007)?
 2. API keys for callers: a second `AuthPort` adapter, or the IdP's client-credentials flow (item 2)?
 3. For a `minimal` agent with `ai_generated_marking: true`, is `X-AI-Disclosure-Required: true` right, or does legal want it off (item 7)?
+
+## Amendment (2026-11-15)
+
+Decided by the user on 2026-11-15, recorded in [001 DEC-1](../issues/001-DEC-1-resolve-open-decisions.md#decisions). It closes open question 2.
+
+- **Caller auth in version 1 is OIDC only.** `OidcAuth` behind `AuthPort`, one scope per route, and 401 `unauthenticated` for no token or a bad one (item 2). The text of item 2 does not change.
+- **Caller API keys are parked.** Neither a second `AuthPort` adapter nor the IdP's client-credentials flow is built in version 1. They are later work, named under Out of scope in 022 H-6.
+- **Why.** One way in keeps the auth surface small, and `OidcAuth` is built and passes its contract suite. No version 1 caller needs a key.
