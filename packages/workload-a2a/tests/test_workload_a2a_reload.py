@@ -78,6 +78,27 @@ def test_serve_reload_child_builds_and_runs_the_server(
     assert server.config.uds == str(tmp_path / "w.sock")
 
 
+def test_serve_reload_sees_a_change_in_an_installed_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The dev profile watches the package where `uv sync` put it, under `/app/.venv`.
+    watchfiles's default filter drops every path with a `.venv` part, so no save ever reloaded
+    (the live run, 2026-11-15)."""
+    from watchfiles import Change
+
+    recorder = Recorder()
+    monkeypatch.setattr("watchfiles.run_process", recorder)
+    cli.main(_serve_args(tmp_path, "--reload", "--reload-dir", str(tmp_path)))
+    [(_, kwargs)] = recorder.calls
+    keep = kwargs["watch_filter"]
+    package = "/app/.venv/lib/python3.12/site-packages/my_agent"
+
+    assert keep(Change.modified, f"{package}/handle.py")
+    assert keep(Change.added, f"{package}/prompts/system.txt")
+    assert not keep(Change.modified, f"{package}/__pycache__/handle.cpython-312.pyc")
+    assert not keep(Change.modified, f"{package}/.handle.py.swp")
+
+
 def test_serve_reload_needs_a_watch_dir(tmp_path: Path) -> None:
     with pytest.raises(SystemExit, match="--reload needs at least one --reload-dir"):
         cli.main(_serve_args(tmp_path, "--reload"))

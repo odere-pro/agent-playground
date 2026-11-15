@@ -155,6 +155,11 @@ def serve_parsed(args: argparse.Namespace) -> None:
     server.run()
 
 
+RELOAD_IGNORE_DIRS = ("__pycache__", ".git", ".mypy_cache", ".pytest_cache", ".hypothesis")
+"""Folders a save inside never reloads. Unlike watchfiles's default, not `.venv`: the watched
+package sits in one."""
+
+
 def _check_reload(args: argparse.Namespace) -> None:
     if args.reload_dir and not args.reload:
         raise SystemExit("workload-a2a: --reload-dir needs --reload")
@@ -174,7 +179,7 @@ def _serve_with_reload(args: argparse.Namespace) -> None:
     repo's `deploy/compose/debug/reload-requirements.txt`), never the production image.
     """
     try:
-        from watchfiles import run_process
+        from watchfiles import DefaultFilter, run_process
     except ImportError as exc:
         raise SystemExit(
             "workload-a2a: --reload needs watchfiles; the Compose `dev` profile's debug volume "
@@ -182,7 +187,10 @@ def _serve_with_reload(args: argparse.Namespace) -> None:
         ) from exc
     configure_logging(agent=args.name or args.handle, level=args.log_level)
     child = argparse.Namespace(**{**vars(args), "reload": False, "reload_dir": []})
-    run_process(*args.reload_dir, target=serve_parsed, args=(child,))
+    # The dev profile watches the package where `uv sync` installed it, under `/app/.venv`. The
+    # default filter drops any path with a `.venv` part, so it would never see a save there.
+    keep = DefaultFilter(ignore_dirs=RELOAD_IGNORE_DIRS)
+    run_process(*args.reload_dir, target=serve_parsed, args=(child,), watch_filter=keep)
 
 
 def main(argv: Sequence[str] | None = None) -> None:
