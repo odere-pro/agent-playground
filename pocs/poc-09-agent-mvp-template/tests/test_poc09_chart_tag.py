@@ -22,15 +22,23 @@ from typing import Any
 
 import pytest
 import yaml
-from chart_render import NAMESPACE, NEEDS_HELM, Charts, Doc, make_charts, pod_of, values_file
+from chart_render import (
+    CHASSIS_REPOSITORY,
+    CURRENT_TAG,
+    NAMESPACE,
+    NEEDS_HELM,
+    NEW_TAG,
+    Charts,
+    Doc,
+    bump_library,
+    make_charts,
+    pod_of,
+    values_file,
+)
 
 pytestmark = NEEDS_HELM
 
-REPOSITORY = "kind.local/agent-platform/chassis"
-CURRENT_TAG = "poc09"
-NEW_TAG = "poc10"
-TAG_LINE = f"    tag: {CURRENT_TAG}\n"
-SUPPORTED_LINE = f"    supportedTags: [{CURRENT_TAG}, poc08]\n"
+REPOSITORY = CHASSIS_REPOSITORY
 TAG_ENV = "CHASSIS_IMAGE_TAG"
 SERVICES = {
     "example-agent": "kind.local/agent-platform/echo-python:poc09",
@@ -38,23 +46,11 @@ SERVICES = {
 }
 
 
-def _bump_library(charts: Charts) -> None:
-    """A chassis release: the tag and its supported list change in the library chart only."""
-    path = charts.example.parent / "agent-lib/templates/_values.tpl"
-    text = path.read_text(encoding="utf-8")
-    assert text.count(TAG_LINE) == 1 and text.count(SUPPORTED_LINE) == 1, "the tag moved"
-    text = text.replace(TAG_LINE, f"    tag: {NEW_TAG}\n")
-    text = text.replace(SUPPORTED_LINE, f"    supportedTags: [{NEW_TAG}, {CURRENT_TAG}]\n")
-    path.write_text(text, encoding="utf-8")
-    for chart in (charts.example, charts.admission):
-        charts.helm("dependency", "update", "--skip-refresh", str(chart))
-
-
 @pytest.fixture(scope="module")
 def released(tmp_path_factory: pytest.TempPathFactory) -> tuple[Charts, Charts]:
     before = make_charts(tmp_path_factory.mktemp("helm-before"))
     after = make_charts(tmp_path_factory.mktemp("helm-after"))
-    _bump_library(after)
+    bump_library(after)
     return before, after
 
 
