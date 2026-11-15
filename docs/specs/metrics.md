@@ -2,20 +2,26 @@
 
 The numbers that say whether the container works: one north star, the input metrics that move it, and the counter metrics that must not get worse while it rises. The vault's recipe is "a north star, two input metrics, and one metric to measure failure" (`notes/SDLC factory/01 - SDLC factory.md`). Every formula below uses what the chassis already emits ([observability](observability.md)), except the two marked *new*. The first-attempt counter was added for this set (046 A-5, an additive contract change).
 
-## North star: good tasks per week
+## North star: agents in production on the chassis
 
-A good task is one run that ends `ok`, within its budget, and that the evaluator passed when it was scored. It counts value the container delivered, not traffic. It rises only when more agents run on the chassis, they answer well, and the controls stay out of the way.
+The number of agents that served real work in production through the chassis in the week. It counts adoption: how many agents the container carries. Chosen by the user on 2026-11-15 ([001 DEC-1](../planning/issues/001-DEC-1-resolve-open-decisions.md#decisions), decision 4).
 
-- Formula: runs with `status="ok"` in `chassis_run_duration_seconds`, minus runs with `evaluator_calls{outcome="fail"}`, per week, summed over agents.
-- The alternative, if adoption matters more than output: agents in production on the chassis, from the manifests in the service registry (*new*: the registry count). Which one is the north star is an open decision in [the plan](../plans/2026-11-06-agent-container-product.md).
+- **On the chassis:** the agent's pods run the chassis image in front of the workload, deployed with the `agent-lib` chart, in a namespace labeled `agents.platform/admission: enforce` ([architecture](architecture.md)). Its `/metrics` samples carry its name in the `agent` label ([contract](contract.md)).
+- **In production:** suggested: the chassis runs in the `cloud` profile, in the production cluster of the first cloud (AWS, 001 DEC-1, decision 2). A staging, `local`, or `fake` run does not count.
+- **Served real work:** suggested: at least one run that ended `ok` in the week.
+- **Formula:** suggested: `count(count by (agent) (increase(chassis_run_duration_seconds_count{status="ok", environment="prod"}[1w]) > 0))`. One agent counts once, whatever its versions, lanes, or replicas. suggested: the week is an ISO week, in UTC.
+- **Source:** suggested: `chassis_run_duration_seconds{status}` from `GET /metrics` (`chassis/metrics.py`), the same family the task success rate uses. 001 DEC-1 leaves the source open. The decision pack framed it as a count of registry manifests. The chassis sets no environment label. *new*: the production scrape adds `environment="prod"` (suggested: the label name and value). The label says which cluster the pod runs in.
+- **Later:** the registry's manifests (076 R-1) can cross-check the count. The registry is not built.
+
+**The baseline rule.** The north star and its inputs get no target until the first real week of production. That week's numbers become the baseline, recorded in a weekly note by the `record-measurement` skill. Targets are then set against the baseline. The targets already on record in the tables below come from their own ADR or issue, and they stay.
 
 ## Input metrics
 
-The levers. The first two are the primary pair.
+The levers.
 
 | Metric | Formula | Lever | Target on record |
 | ------ | ------- | ----- | ---------------- |
-| Agents live on the chassis | distinct `agent` labels with traffic in the week | adoption | none yet |
+| Good tasks per week | runs with `status="ok"` in `chassis_run_duration_seconds`, minus runs with `evaluator_calls{outcome="fail"}`, per week, summed over agents. A good task is one run that ends `ok`, within its budget, and that the evaluator passed when it was scored | suggested: output, the agents in production answer well | none yet |
 | First-attempt pass rate | `chassis_gate_first_attempt_passes_total{mode}` / `chassis_gate_runs_total{mode}`, per agent, exact (046 A-5, decided 2026-11-13; suggested: the counter name). The counter adds one per gated run that passed the gate on attempt 1: never for a retry that passes, a fallback, a fail-open, an engine error, or a structured answer; in async mode, when the run's one background score passes. The per-scoring pass rate, 1 − `evaluator_calls{outcome="fail"}` / `evaluator_calls{outcome in pass, fail}`, counts every scored attempt, so it is not this rate. Neither is 1 − (retries + fallbacks) / runs: a run that retries and then falls back adds to both | prompt and model quality, the route map | none yet |
 | Task success rate | `ok` runs / `chassis_requests_total`, per agent and interface | reliability | the X-3 error-rate SLO |
 | p95 run latency, and the chassis's share of it | `chassis_run_duration_seconds` p95; the stages' overhead | the pipeline's cost | suggested: a stage budget of 25 ms p50 and 50 ms p95 (022 H-6), recorded, not enforced |

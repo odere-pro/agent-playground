@@ -30,6 +30,7 @@ The OWASP agentic threat list (ASI01 to ASI10) and the vault's threat model are 
 - [x] Every gap has an open box in an existing issue or a new issue. Delivered by: new open boxes in [081](081-R-8-description-scanning.md) (real scan run), [038](038-X-1a-terraform-first-cloud.md) (mTLS), and [140](140-CH-20-session-memory-tools-and-saver.md) (memory screening); the other gaps sit in existing open boxes named in the table.
 - [ ] `platform-security` reviews the table, and the review is recorded.
   - Open. How it closes, decided by the user on 2026-11-15: the `platform-security` agent reviews the table and writes a dated note. The user signs off in that note. The sign-off closes the box.
+  - Review written 2026-11-15: [`docs/reviews/2026-11-15-owasp-agentic-map-review.md`](../../reviews/2026-11-15-owasp-agentic-map-review.md). No CRITICAL, two HIGH (ASI04, ASI05). Waiting on the user's sign-off in that note.
 
 ## Dependencies
 

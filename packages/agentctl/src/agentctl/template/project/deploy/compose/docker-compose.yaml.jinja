@@ -7,6 +7,8 @@
 #        internet once the images exist.
 # local: the chassis runs config/agent.yaml against your LiteLLM (or another OpenAI-compatible
 #        endpoint) at LITELLM_BASE_URL. LITELLM_API_KEY goes into the chassis container only.
+# dev:   the `fake` stack with hot reload: src/ is live in the workload, no rebuild, no restart
+#        (`--profile dev up -d --wait --build`). Dev only. Pick one of the three, never two.
 #
 # The sidecar lane, as in the platform's deploy/compose/docker-compose.sidecar.yaml: the workload
 # has `network_mode: service:chassis-<profile>`, so it shares the chassis's network namespace the
@@ -107,12 +109,13 @@ x-workload-env: &workload-env
 
 services:
   debugpy:
-    # One shot: its first run copies /opt/debugpy into the empty volume, then it exits 0.
-    profiles: [fake, local]
+    # One shot: its first run copies /opt/debugpy into the empty volume, then it exits 0. The
+    # volume also holds watchfiles, the `dev` profile's reloader.
+    profiles: [fake, local, dev]
     build:
       context: ./debug
       dockerfile: debugpy.Dockerfile
-    image: {{ agent_name }}-debugpy:1.8.22
+    image: {{ agent_name }}-watchfiles-1.3.0-debugpy:1.8.22
     <<: *hardening
     network_mode: none
     volumes:
@@ -120,7 +123,7 @@ services:
 
   fake-model-server:
     # The platform's scripted OpenAI-compatible server. No port, no key.
-    profiles: [fake]
+    profiles: [fake, dev]
     build:
       context: ../../.platform
       dockerfile: packages/fake-model-server/Dockerfile
@@ -140,7 +143,8 @@ services:
 
   chassis-fake:
     <<: *chassis
-    profiles: [fake]
+    # `dev` runs this same chassis in front of workload-dev.
+    profiles: [fake, dev]
     ports:
       - "127.0.0.1:${CHASSIS_PORT:-8080}:8080"
       # debugpy has no login. Published in this profile only: it holds no key. The workload shares
@@ -172,6 +176,32 @@ services:
     environment:
       <<: *workload-env
       DEBUGPY_LISTEN: ${WORKLOAD_DEBUGPY_LISTEN-auto:5679}
+    depends_on:
+      chassis-fake:
+        condition: service_started
+
+  workload-dev:
+    # The dev loop (016 H-9): the `fake` stack with the workload's source live. Dev only: never
+    # in `fake` or `local`, the Dockerfile, or the Helm chart. src/ is mounted read-only over the
+    # installed package, and `--reload` restarts the A2A server in a child process when a file
+    # there changes. The chassis is not restarted. The reloader is PID 1, so the workload
+    # debugger is off here; use `fake` to debug the workload.
+    <<: *workload
+    profiles: [dev]
+    network_mode: "service:chassis-fake"
+    volumes:
+      - debugpy:/opt/debugpy:ro
+      - ../../src/{{ package_name }}:/app/.venv/lib/python3.12/site-packages/{{ package_name }}:ro
+    command:
+      - --reload
+      - --reload-dir
+      - /app/.venv/lib/python3.12/site-packages/{{ package_name }}
+    environment:
+      <<: *workload-env
+      # watchfiles lives in the volume's reload/ folder; only this service puts it on the path.
+      PYTHONPATH: /opt/debugpy:/opt/debugpy/reload
+      # Always off, even with WORKLOAD_DEBUGPY_LISTEN exported: PID 1 here is the reloader.
+      DEBUGPY_LISTEN: ""
     depends_on:
       chassis-fake:
         condition: service_started
@@ -212,8 +242,8 @@ services:
 
 volumes:
   debugpy:
-    # Versioned name: a new debugpy gets a fresh volume, never the old files.
-    name: {{ agent_name }}-debugpy-1.8.22
+    # Versioned name: a new debugpy or watchfiles gets a fresh volume, never the old files.
+    name: {{ agent_name }}-watchfiles-1.3.0-debugpy-1.8.22
 
 networks:
   default:

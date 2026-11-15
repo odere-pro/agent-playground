@@ -2,7 +2,8 @@
 # with --require-hashes. Regenerate with:
 #   echo 'debugpy==<version>' | uv pip compile - --generate-hashes --python-version 3.12 \
 #     --python-platform x86_64-manylinux_2_28 --only-binary :all: --no-header
-# and bump the image tag and the volume name in ../docker-compose.yaml with it.
+# and bump the image tag and the volume name in ../docker-compose.yaml with it. The `dev`
+# profile's reloader is pinned apart, in reload-requirements.txt.
 debugpy==1.8.22 \
     --hash=sha256:0c1104233340196e5cbf5514e7dfdbb98968e730cfd7fdd6f3d72a082be838a9 \
     --hash=sha256:12bc7f368182b517cf26c76a2393fff65354e365fa1552b6241e66edff17997b \

@@ -7,6 +7,10 @@ Date: 2026-11-06
 
 The one plan to ship the agent container. It shows what is in progress and what is left, in order. What the container *is* lives in [the specs](../specs/README.md). Why each rule exists lives in the ADRs. What each PoC proved lives in the PoC READMEs and in [what is left](../planning/poc/011-what-is-left.md). Done work is in git history and `HANDOVER.md`, not here.
 
+## North star
+
+The goal is agents in production on the chassis. Its definition and its source are in [metrics](../specs/metrics.md#north-star-agents-in-production-on-the-chassis). No target is set until the first real week of production. That week becomes the baseline. Decided by the user on 2026-11-15 ([001 DEC-1](../planning/issues/001-DEC-1-resolve-open-decisions.md#decisions), decision 4).
+
 ## Decisions
 
 From the user, 2026-11-06:
@@ -21,10 +25,10 @@ From the user, 2026-11-06:
 
 The sources are the decisions in the [backlog review proposals](../reviews/2026-11-06-backlog-review/proposals.md).
 
-Open, for the user:
+From the user, 2026-11-15 ([001 DEC-1](../planning/issues/001-DEC-1-resolve-open-decisions.md#decisions)):
 
-1. **The north star.** "Good tasks per week", or "agents in production on the chassis" ([metrics](../specs/metrics.md)).
-2. **The primary trace view per environment**, LangSmith or Langfuse, and where the score goes when both run (ADR-007 open question 4, ADR-009 open question 5).
+- The north star is agents in production on the chassis (above).
+- The primary trace view is LangSmith in `cloud`, and Langfuse in `local`, `fake`, and self-hosted runs. The score goes to the primary view only ([ADR-007](../planning/adr/007-observability-otel-collector-langfuse.md#amendment-2026-11-15), [ADR-009](../planning/adr/009-feedback-langfuse-scores-event.md#amendment-2026-11-15)).
 
 ## Progress
 
@@ -50,7 +54,7 @@ In flight, in the old session:
 
 - 016 H-9: the dev hot reload (`feat/016-dev-reload-1115`). Built and reviewed; its live hot-reload Compose run and its PR are next.
 
-Next, in order: the kind track on a fresh `poc05` cluster (055 CH-6 live with kagent-adk, 059 H-15 box 2, the 004 G-2 kind box); then 024 CH-3 and 026 CH-4; then 139 CH-19 and 056 CH-7; then 022 H-6, 132 CH-13, the north star, and 020 X-8 on NATS. `HANDOVER.md` "Next steps" has the full list.
+Next, in order: the kind track on a fresh `poc05` cluster (055 CH-6 live with kagent-adk, 059 H-15 box 2, the 004 G-2 kind box); then 024 CH-3 and 026 CH-4; then 139 CH-19 and 056 CH-7; then 022 H-6, 132 CH-13, and 020 X-8 on NATS. `HANDOVER.md` "Next steps" has the full list.
 
 ## Left to do
 
@@ -72,7 +76,7 @@ Next, in order: the kind track on a fresh `poc05` cluster (055 CH-6 live with ka
 - 046 A-5: a run-level first-attempt counter. It is a contract change.
 - 132 CH-13: the `platform-security` review box.
 - P-28 (write tools off unless named, with an approval checkpoint) and P-31 (the rubric shape).
-- 001 DEC-1: the open decisions, including the north star and the trace view above.
+- 001 DEC-1: the owners for the epic's live dependencies (cloud account, golden set reviewer, legal and compliance).
 - 137 CH-17: a second person labels 20% of the gate set.
 - P-30: the event schema versions on the agent card.
 

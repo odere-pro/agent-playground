@@ -50,6 +50,7 @@ COMMON = {
     ".vscode/launch.json",
     "deploy/compose/README.md",
     "deploy/compose/debug/debugpy.Dockerfile",
+    "deploy/compose/debug/reload-requirements.txt",
     "deploy/compose/debug/requirements.txt",
     "deploy/compose/debug/sitecustomize.py",
     "deploy/compose/docker-compose.yaml",
