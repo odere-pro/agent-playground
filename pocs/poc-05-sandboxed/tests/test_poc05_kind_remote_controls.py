@@ -78,6 +78,9 @@ REMOTE = "remote-echo"
 REMOTE_CHASSIS = "chassis-echo-remote"
 PROXY_IP = "10.96.0.91"  # the fixed ClusterIP of chassis-echo-remote-proxy
 TOKEN_ENV = "CHASSIS_API_TOKEN"
+A2A_TOKEN_ENV = "CHASSIS_A2A_TOKEN"  # the key the remote requires from its chassis
+CHASSIS_SENDS_ENV = "REMOTE_TOKEN"  # the chassis's copy of chassis-to-workload
+CHASSIS_ACCEPTS_ENV = "REMOTE_PROXY_TOKEN"  # its copy of workload-to-chassis
 TOKEN_SECRET = "remote-echo-token"  # pragma: allowlist secret (a Secret name)
 OUTSIDE_IP = "1.1.1.1"  # a literal public address: no DNS involved
 DISPATCH = "code-runner-dispatch"
@@ -162,24 +165,27 @@ def test_h17_listener_answers_only_the_remote_token_inside_a_run(
     its own credential."
 
     Criterion 6, H17: the control refuses a model call to the remote listener (8091, from the
-    remote pod) with no token (401) and with a token it did not issue (401), and refuses the
-    remote's own token outside a run (403 `run_required`). The allowed control: inside a run with
-    that same traceparent, the remote's calls with its own token are answered 200 (the run ends
-    `ok` with the fake model's reply, and the listener's 200 count for the remote's IP grows);
-    after the run the same call is 403 again."""
+    remote pod) with no token (401), with a token it did not issue (401), and with the key for
+    the other direction, `CHASSIS_A2A_TOKEN` (`chassis-to-workload`, 401; 055 CH-6), and refuses
+    the remote's own token outside a run (403 `run_required`). The allowed control: inside a run
+    with that same traceparent, the remote's calls with its own token are answered 200 (the run
+    ends `ok` with the fake model's reply, and the listener's 200 count for the remote's IP
+    grows); after the run the same call is 403 again."""
     url = f"http://{PROXY_IP}:8091/v1"
     trace = traceparent_headers(uuid.uuid4().hex)
-    bare, stranger, outside = in_remote(
+    bare, stranger, crossed, outside = in_remote(
         remote,
         [
             chat(url, headers=trace),
             chat(url, headers={**trace, "Authorization": f"Bearer {NOT_A_KEY}"}),
+            chat(url, headers=trace, auth_env=A2A_TOKEN_ENV),
             chat(url, headers=trace, auth_env=TOKEN_ENV),
         ],
     )
     assert bare["status"] == 401 and "remote_unauthenticated" in bare["head"], bare
     assert stranger["status"] == 401 and "remote_unauthenticated" in stranger["head"], stranger
     assert NOT_A_KEY not in stranger["head"]
+    assert crossed["status"] == 401 and "remote_unauthenticated" in crossed["head"], crossed
     assert outside["status"] == 403 and "run_required" in outside["head"], outside
 
     remote_ip = remote["status"]["podIP"]
@@ -253,6 +259,31 @@ def test_h18_remote_port_refuses_every_caller_but_its_chassis(
     )
     assert own_pod.get("connected") is True, own_pod
     assert own_svc.get("connected") is True, own_svc
+
+
+def test_remote_port_takes_only_the_key_for_its_direction(
+    remote: dict[str, Any], remote_chassis: dict[str, Any]
+) -> None:
+    """Criterion 6: "The remote pod reaches only the chassis's model and tool proxies, and only with
+    its own credential."
+
+    055 CH-6, the two-key Secret, live: one key per direction, and each side refuses the other's.
+    The control refuses a call from the chassis to the remote's A2A port (9000, its agent card)
+    with the key the chassis's listener accepts (`REMOTE_PROXY_TOKEN`, `workload-to-chassis`):
+    401 from the remote's bearer check. The allowed control: the same call with the key the
+    chassis sends (`REMOTE_TOKEN`, `chassis-to-workload`) is 200. The other half, the remote's
+    `CHASSIS_A2A_TOKEN` refused by the listener, is in H17. Both keys are named by their env
+    variable and read inside the chassis container; neither leaves it."""
+    card = f"http://{remote['status']['podIP']}:9000/.well-known/agent-card.json"
+    crossed, allowed = in_chassis(
+        remote_chassis,
+        [
+            {"kind": "http", "url": card, "auth_env": CHASSIS_ACCEPTS_ENV},
+            {"kind": "http", "url": card, "auth_env": CHASSIS_SENDS_ENV},
+        ],
+    )
+    assert crossed.get("status") == 401 and "unauthorized" in crossed["head"], crossed
+    assert allowed.get("status") == 200, allowed
 
 
 @pytest.mark.parametrize("app", [SIDECAR_POD, REMOTE_CHASSIS])

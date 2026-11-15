@@ -84,6 +84,7 @@ pytestmark = KIND_BAKEOFF
 REPO = Path(__file__).resolve().parents[3]
 CLUSTER_YAML = REPO / "deploy" / "kind" / "poc05" / "cluster.yaml"
 TOKEN_ENV = "CHASSIS_API_TOKEN"
+A2A_TOKEN_ENV = "CHASSIS_A2A_TOKEN"  # the key the remote requires from its chassis
 OUTSIDE_IP = "1.1.1.1"  # a literal public address: no DNS involved
 POC05_PROXY_IP = "10.96.0.91"  # the PoC-5 remote's chassis proxy
 NAME_LABEL = "app.kubernetes.io/name"
@@ -190,10 +191,11 @@ def test_remote_holds_one_secret_its_own_token(engine: KindEngine) -> None:
 def test_listener_answers_only_the_remote_token_inside_a_run(engine: KindEngine) -> None:
     """H17: the control refuses a model call to the remote listener (8091, from the remote pod) with
     no token (401), with a token it did not issue (401), on `/v1/chat/completions` and on
-    `/v1/messages`, and refuses the remote's own token outside a run (403 `run_required`;
-    kagent-adk too, since 055 CH-6 gave it its own key). The allowed control, a 200 inside a run
-    with the same token, is `test_poc06b_kind_engines.py`: a run cannot end `ok` unless the listener
-    answered the model calls."""
+    `/v1/messages`, and with the key for the other direction, `CHASSIS_A2A_TOKEN`
+    (`chassis-to-workload`, 401; 055 CH-6), and refuses the remote's own token outside a run
+    (403 `run_required`; kagent-adk too, since 055 CH-6 gave it its own two keys). The allowed
+    control, a 200 inside a run with the same token, is `test_poc06b_kind_engines.py`: a run
+    cannot end `ok` unless the listener answered the model calls."""
     remote = remote_pod(engine)
     assert engine.proxy_ip is not None
     trace = traceparent_headers(uuid.uuid4().hex)
@@ -207,6 +209,7 @@ def test_listener_answers_only_the_remote_token_inside_a_run(engine: KindEngine)
         post(messages_url, headers={**trace, **stranger}),
     ]
     if engine.token_secret:
+        checks.append(post(chat_url, headers=trace, auth_env=A2A_TOKEN_ENV))
         checks.append(post(chat_url, headers=trace, auth_env=TOKEN_ENV))
     results = in_remote(engine, remote, checks)
     for result in results[:4]:
@@ -215,7 +218,9 @@ def test_listener_answers_only_the_remote_token_inside_a_run(engine: KindEngine)
     assert "remote_unauthenticated" in results[1]["head"], results[1]
     assert NOT_A_KEY not in results[1]["head"]
     if engine.token_secret:
-        assert results[4]["status"] == 403 and "run_required" in results[4]["head"], results[4]
+        crossed, own = results[4], results[5]
+        assert crossed["status"] == 401 and "remote_unauthenticated" in crossed["head"], crossed
+        assert own["status"] == 403 and "run_required" in own["head"], own
 
 
 # --- who may reach whom -----------------------------------------------------------------------
