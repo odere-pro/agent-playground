@@ -28,38 +28,31 @@ Open, for the user:
 
 ## Progress
 
-Measured on `main` `4d6cf92` with `make progress`, 2026-11-13: 213 of 344 boxes ticked (61%), 6 of 44 issues done. 131 boxes are open.
+Measured on `main` `c19947b` with `make progress`, 2026-11-15: 236 of 344 boxes ticked (68%), 10 of 44 issues done. 108 boxes are open.
 
 | Phase | Issues done | Boxes ticked |
 | ----- | ----------- | ------------ |
-| A | 2 of 10 | 69 of 90 (76%) |
-| B | 1 of 10 | 50 of 76 (65%) |
+| A | 4 of 10 | 73 of 90 (81%) |
+| B | 2 of 10 | 57 of 76 (75%) |
 | C | 1 of 2 | 13 of 14 (92%) |
 | D | 0 of 3 | 7 of 15 (46%) |
-| E | 0 of 10 | 35 of 85 (41%) |
-| F | 0 of 6 | 28 of 46 (60%) |
+| E | 0 of 10 | 44 of 85 (51%) |
+| F | 1 of 6 | 31 of 46 (67%) |
 | G | 2 of 3 | 11 of 18 (61%) |
 
-The trend: 144 boxes (41%) on 2026-11-10; 183 (53%) after PRs 131 to 154; 197 (57%) after PRs 155 to 173; 213 (61%) after PRs 174 to 187.
+The trend: 144 boxes (41%) on 2026-11-10; 183 (53%) after PRs 131 to 154; 197 (57%) after PRs 155 to 173; 213 (61%) after PRs 174 to 187; 236 (68%) after PRs 188 to 214.
 
 ## In progress
 
-Nothing is in flight on 2026-11-13. No PR is open; PRs 131 to 187 are merged. `HANDOVER.md` lists what each delivered.
+On 2026-11-15, at `main` `c19947b`. No PR is open; PRs 188 to 214 are merged. `HANDOVER.md` lists what each delivered.
 
-Offline work is close to used up. The last wave triaged each open box by what it needs, then proved 22 boxes. Of the boxes it triaged:
+In flight:
 
-| Needs | Boxes |
-| ----- | ----- |
-| A live Compose stack run | 28 |
-| The user's decision | 22 |
-| A real service or key | 8 |
-| Another issue first | 3 |
-| A person | 2 |
-| A live kind run | 1 |
+- 055 CH-6: two keys for the kagent-adk remote (`feat/055-kagent-two-key-1115`). It needs a `platform-security` review before its PR.
+- 016 H-9: the dev reload build (`feat/016-dev-reload-1115`), then its live hot-reload run (`test/016-hot-reload-live-1115`).
+- The router-drill rerun on `main` (`test/router-drill-rerun-1115`). PR 195 ran before the stricter 012 H-3 route rule of PR 208.
 
-Not yet triaged, with open boxes: 001 DEC-1, 009 CH-1, 015 H-8, 022 H-6, 024 CH-3, 026 CH-4, 055 CH-6, 056 CH-7, 057 H-19, 137 CH-17, 139 CH-19, 005 G-3.
-
-Next, in order: the user's decisions, one small build per answer; the live Compose track; then the kind track. Docker was not running on 2026-11-13, so neither live track has been tried.
+Next, in order: land those; then the kind track on a fresh `poc05` cluster (055 CH-6 live, 059 H-15 box 2, the 004 G-2 kind box, 024 CH-3, 026 CH-4); then the builds 056 CH-7 and 139 CH-19 need first. `HANDOVER.md` "Next steps" has the full list.
 
 ## Left to do
 
