@@ -22,6 +22,7 @@ from kind_chart import (
     CHASSIS_REPOSITORY,
     CURRENT_TAG,
     DRILL_IMAGES,
+    LIBRARY_REPOSITORY,
     NAMESPACE,
     NEXT_TAG,
     SECRET,
@@ -59,11 +60,17 @@ def test_the_drill_tags_are_the_ones_the_charts_name() -> None:
     library bump moves CURRENT_TAG here and in run.sh, or the drill installs an image the node
     does not hold."""
     defaults = re.search(
-        r"^  image:\n    repository: (\S+)\n    tag: (\S+)$", _text(LIBRARY_VALUES), re.M
+        r"^  image:\n    repository: (\S+)\n(?:    #.*\n)*    tag: (\S+)$",
+        _text(LIBRARY_VALUES),
+        re.M,
     )
     assert defaults, "agent-lib.defaults moved its chassis image"
-    assert (defaults.group(1), defaults.group(2)) == (CHASSIS_REPOSITORY, CURRENT_TAG)
-    assert yaml.safe_load(_text(VALUES_KIND))["workload"]["image"] == WORKLOAD_IMAGE
+    assert (defaults.group(1), defaults.group(2)) == (LIBRARY_REPOSITORY, CURRENT_TAG)
+    kind = yaml.safe_load(_text(VALUES_KIND))
+    assert kind["workload"]["image"] == WORKLOAD_IMAGE
+    # The node holds one image per name, so the drill runs the loaded chassis by tag (139 CH-19).
+    assert kind["chassis"]["image"]["repository"] == CHASSIS_REPOSITORY
+    assert kind["chassis"]["image"]["digest"] == ""
     assert NEXT_TAG != CURRENT_TAG
 
 

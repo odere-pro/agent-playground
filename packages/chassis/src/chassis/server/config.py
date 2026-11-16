@@ -431,8 +431,9 @@ class HarnessSpec(BaseModel):
     - `threshold: 0.7`: a score below it fails the attempt.
     - `retries: 1`: attempts after the first, before the fallback.
     - `evaluator_sample_rate: 1.0`: the share of calls that are gated. Reloadable.
-    - `evaluator_mode: sync`: `sync` scores before the answer leaves, then retries or falls back;
-      `async` scores after, never changes the answer, and records the score. A stream is async.
+    - `evaluator_mode: async`: `async` scores after, never changes the answer, and records the
+      score; `sync` scores before the answer leaves, then retries or falls back. A stream is async.
+      `sync` is opt-in until the judge is calibrated (137 CH-17; ADR-010 item 10, 2026-11-16).
     - `evaluator_on_error: fail_open` (finding R7-17): what a sync-mode evaluator outage does.
       `fail_open` sends the attempt as it is and counts it; `fail_closed` ends the run with one
       `error {code: evaluator_gate_failed}` (not retryable, as in contract v6) and sends none of
@@ -451,7 +452,7 @@ class HarnessSpec(BaseModel):
     threshold: float = Field(default=0.7, ge=0, le=1)
     retries: int = Field(default=1, ge=0, le=5)
     evaluator_sample_rate: float = Field(default=1.0, ge=0, le=1)
-    evaluator_mode: Literal["sync", "async"] = "sync"
+    evaluator_mode: Literal["sync", "async"] = "async"
     evaluator_on_error: Literal["fail_open", "fail_closed"] = "fail_open"
     rubric: str = DEFAULT_RUBRIC
     shadow_evaluator: str | None = None

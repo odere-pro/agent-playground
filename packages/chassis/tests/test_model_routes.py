@@ -324,13 +324,17 @@ async def test_the_proxy_leaves_a_call_on_the_resolved_route_alone() -> None:
     assert span.attributes["route.forced"] is False
 
 
+SYNC_GATE = {"evaluator_gate": True, "evaluator_mode": "sync"}
+"""`sync`, named: the code default is `async` (137 CH-17), which never retries or falls back."""
+
+
 async def test_the_gates_fallback_route_still_replaces_the_mapped_route() -> None:
     """Two attempts on the task's route, then the fallback attempt on the fallback route: the
     gate puts it in `ctx.model_route`, the workload sends it, and admission lets it through."""
     engine = ProxyWorkload()  # sends `ctx.model_route`
     model = RouteModel([ScriptRule(match="simplify", reply=BAD)])
     evaluator = ScriptedEvaluator([ScoreRule(match=BAD, score=0.2)], default=0.9)
-    config = _config({"fallback_route": "fallback-route"}, harness={"evaluator_gate": True})
+    config = _config({"fallback_route": "fallback-route"}, harness=SYNC_GATE)
     res, app = await _run_through_proxy(config, engine, model, evaluator)
     assert res.json()["status"] == "fallback", res.text
     assert model.routes == ["small-default", "small-default", "fallback-route"]
@@ -344,7 +348,7 @@ async def test_a_fallback_attempt_that_names_the_first_route_is_refused() -> Non
     engine = ProxyWorkload(asks="small-default")
     model = RouteModel([ScriptRule(match="simplify", reply=BAD)])
     evaluator = ScriptedEvaluator([ScoreRule(match=BAD, score=0.2)], default=0.9)
-    config = _config({"fallback_route": "fallback-route"}, harness={"evaluator_gate": True})
+    config = _config({"fallback_route": "fallback-route"}, harness=SYNC_GATE)
     res, app = await _run_through_proxy(config, engine, model, evaluator)
     assert model.routes == ["small-default", "small-default"]
     assert [s for s, _ in engine.answers] == [200, 200, 403]
@@ -371,7 +375,7 @@ async def test_the_gate_scores_on_spec_model_judge_route_else_the_judges_own(
     judge = JudgeEvaluator(
         LiteLLMModel("http://judge/v1", transport=httpx.ASGITransport(app=models)), route="judge"
     )
-    config = _config({"judge_route": judge_route}, harness={"evaluator_gate": True})
+    config = _config({"judge_route": judge_route}, harness=SYNC_GATE)
     app = create_app(config, _ports(evaluator=judge))
     async with _client(app) as c, app.router.lifespan_context(app):
         res = await c.post("/v1/run", json=_body("simplify: x", "simplify"))

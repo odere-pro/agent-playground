@@ -39,6 +39,7 @@ COMMON = {
     "tests/conftest.py",
     "tests/test_contract.py",
     "tests/test_handle.py",
+    "tests/test_stateless_lane.py",  # 057 H-19, both processes, every framework
     "tests/suites/test_eval.py",
     "tests/suites/test_hostile.py",
     "tests/suites/test_load_smoke.py",

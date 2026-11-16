@@ -34,8 +34,9 @@ The judge has not been calibrated against people. The gate set has 10 `fail` cas
   - Half done: `eval_kit.calibration.cohen_kappa` computes kappa (`packages/eval-kit/tests/test_eval_kit_calibration.py`). The second labeler and the dated note are still open.
 - [ ] The judge's TPR and TNR against the labels are recorded from the Mac run. Both are at or above 0.85 (suggested), or the shortfall and the next step are written down.
   - Half done: `eval_kit.calibration.tpr_tnr` and `TARGET_RATE = 0.85` (`test_eval_kit_calibration.py`). The Mac run and its numbers are still open.
-- [ ] Until both are met, no profile sets `evaluator_mode: sync`, and a profile test holds it.
-  - Open: `chassis.profiles` sets no harness field, but `HarnessConfig.evaluator_mode` defaults to `sync` (`server/config.py`) and `deploy/compose/poc08/chassis/drill.yaml` sets it. Whether the default flips to `async` is a decision for the chassis owner.
+- [x] Until both are met, no profile sets `evaluator_mode: sync`, and a profile test holds it. · Delivered by: `packages/chassis/tests/test_evaluator_mode_profiles.py::test_the_gate_on_with_no_mode_loads_async`, `::test_no_bundled_config_loads_sync`, `::test_a_named_sync_mode_is_kept` (run 2026-11-16)
+  - Decided by the user on 2026-11-16: the code default is `async` and `sync` is opt-in ([ADR-010](../adr/010-evals-offline-tool-online-gate.md) item 10, amendment).
+  - `deploy/compose/poc08/chassis/drill.yaml` keeps `evaluator_mode: sync` as a named opt-in for the PoC-8 drill, which the 2026-11-16 decision allows (`pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_static.py` asserts it).
 - [ ] After the first Mac run, the cases added per failure type carry `source`, and `golden/` stays the only source of cases.
 
 ## Dependencies

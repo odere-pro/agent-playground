@@ -75,10 +75,10 @@ IMAGES=(
 # CHART_NEXT is the next chassis release for the tag-bump test: that build with one label more, so
 # its image id differs. Loaded like IMAGES; never pushed, never run outside poc05-chart.
 CHART_TAGS=(
-  "$REGISTRY/chassis:poc05|$REGISTRY/chassis:poc09"
+  "$REGISTRY/chassis:poc05|$REGISTRY/chassis:v0.1.0"
   "$REGISTRY/echo-python:poc05|$REGISTRY/echo-python:poc09"
 )
-CHART_NEXT=$REGISTRY/chassis:poc10
+CHART_NEXT=$REGISTRY/chassis:v0.2.0
 CHART_IMAGES=("${CHART_TAGS[@]#*|}" "$CHART_NEXT")
 
 # shellcheck source=deploy/kind/lib.sh
@@ -151,7 +151,7 @@ chart_images() {
     IFS='|' read -r built tag <<<"$entry"
     docker tag "$built" "$tag"
   done
-  printf 'FROM %s\nLABEL agents.platform/chassis-release=poc10\n' "$REGISTRY/chassis:poc09" |
+  printf 'FROM %s\nLABEL agents.platform/chassis-release=v0.2.0\n' "$REGISTRY/chassis:v0.1.0" |
     docker build -t "$CHART_NEXT" -
 }
 
