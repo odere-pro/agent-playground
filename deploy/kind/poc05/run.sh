@@ -22,6 +22,7 @@
 #                                     does not exist yet
 #   deploy/kind/poc05/run.sh test-chart  the library chart's kind test (024 CH-3): two example-agent
 #                                     releases in poc05-chart, installed and removed by the test
+#   deploy/kind/poc05/run.sh test-ch4  the 026 CH-4 kind test: `seed.sh rekey` under a request loop
 #   deploy/kind/poc05/run.sh with-gateway CMD...  run CMD with a port-forward to LiteLLM and
 #                                     POC05_GATEWAY_MCP_URL, POC05_CHASSIS_VIRTUAL_KEY exported
 #                                     (the key from its Secret, never in argv or output); last verb
@@ -626,6 +627,13 @@ run_tests_chart() {
     pocs/poc-09-agent-mvp-template/tests/test_poc09_kind_chart.py -v -s -rs)
 }
 
+# 026 CH-4 on this cluster: `seed.sh rekey` while both PoC-5 services answer, and the keys'
+# duration. It rolls agent-echo and chassis-echo-remote onto new keys.
+run_tests_ch4() {
+  (cd "$ROOT" && env KIND_DRILLS=1 uv run pytest -m network \
+    pocs/poc-09-agent-mvp-template/tests/test_poc09_kind_ch4.py -v -s -rs --tb=short)
+}
+
 # with_gateway CMD...: the kind tests that call the gateway from the host (test_poc05_kind_*.py)
 # need its URL and the chassis's virtual key. Port-forward LiteLLM on a free local port, export
 # both, run CMD, then stop the forward. The key goes from the Secret into this process's env only:
@@ -822,7 +830,7 @@ pod_logs() {
   done
 }
 
-usage() { sed -n '2,37p' "$0"; }
+usage() { sed -n '2,38p' "$0"; }
 
 (($# > 0)) || { usage; exit 0; }
 # `with-gateway` takes the rest of the line as its command, so it ends the verb list.
@@ -853,6 +861,7 @@ for cmd in "$@"; do
     test) run_tests ;;
     test-remote) run_tests_remote ;;
     test-chart) run_tests_chart ;;
+    test-ch4) run_tests_ch4 ;;
     pods) pods ;;
     logs) pod_logs ;;
     redact) redact_logs ;;
