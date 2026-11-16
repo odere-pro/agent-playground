@@ -8,8 +8,12 @@ workload:
   image: kind.local/agent-platform/echo-python:poc09
   pullPolicy: Never
 
+# The chassis: the image `kind load` put in the node, under the library's tag (v0.1.0), not the
+# published one. No digest: the node's store holds one image per name (139 CH-19).
 chassis:
   image:
+    repository: kind.local/agent-platform/chassis
+    digest: ""
     pullPolicy: Never
   env: []
   secretEnv: []

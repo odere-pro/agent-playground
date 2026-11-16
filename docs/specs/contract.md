@@ -556,7 +556,7 @@ Body, strict: `request_id` (required), `score` (required, a number in [0, 1]), `
 | `spec.events` | `result_events` false; `include_input` false; `consume` null (a value is refused) |
 | `spec.security` | `run_scope` `agent:run`; `feedback_scope` `agent:feedback`; `read_scope` `agent:read` |
 | `spec.guardrails` | `input`, `tool_output`, `output`: true; `on_unavailable` `fail_closed`; `stream_secrets` true; `output_url_allow` `[]` |
-| `spec.harness` | `evaluator_gate` false; `threshold` 0.7; `retries` 1 (0 to 5); `evaluator_sample_rate` 1.0; `evaluator_mode` `sync` |
+| `spec.harness` | `evaluator_gate` false; `threshold` 0.7; `retries` 1 (0 to 5); `evaluator_sample_rate` 1.0; `evaluator_mode` `async` (`sync` is opt-in until 137 CH-17's TPR and TNR are met; ADR-010 item 10, 2026-11-16) |
 | `spec.feedback` | `enabled` true; `lookup_ttl_s` 604800; `events` false; `score_name` `user-feedback` |
 | `spec.observability` | `session_header` `x-session-id`; `log_level` `info`; `metrics_scope` null (`cloud`: `spec.security.read_scope`); `prices {}` per route `{input_per_mtok, output_per_mtok}` |
 | `spec.governance` | `risk_class` `minimal`; `ai_generated_marking` null |

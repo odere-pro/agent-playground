@@ -15,6 +15,9 @@ answers: a list of rules, each `{"match": <text in the last user message>, "repl
 `{"match": ..., "error": <code>, "retryable": ...}` (the chassis's `ScriptRule` fields), written to
 a file and passed as `--model-script`.
 
+With `read_only_root=True` each runs under the `readonly_root` launcher: a write outside the
+`allow` folders is refused and logged, and `Process.refused_writes()` reads it back (057 H-19).
+
 Both are stopped with SIGTERM, then SIGKILL after `STOP_TIMEOUT_S`. Each process writes its output
 to a log file next to its socket; a start that fails quotes the log tail.
 """
@@ -37,6 +40,7 @@ from typing import Any
 
 import httpx
 
+from agent_testkit.readonly_root import LAUNCHER, Write, refused_writes
 from agent_testkit.settings import AgentRef, ChassisSource
 
 DATA = Path(__file__).parent / "data"
@@ -87,6 +91,13 @@ class Process:
     name: str
     popen: subprocess.Popen[bytes]
     log: Path
+
+    def refused_writes(self) -> list[Write]:
+        """The writes a read-only root refused in this process so far (`readonly_root`)."""
+        try:
+            return refused_writes(self.log.read_text(errors="replace"))
+        except OSError:
+            return []
 
     def log_tail(self) -> str:
         try:
@@ -243,10 +254,18 @@ def _scratch() -> Iterator[Path]:
         shutil.rmtree(root, ignore_errors=True)
 
 
-def workload_argv(ref: AgentRef, listen: Sequence[str]) -> list[str]:
-    """`listen` is `--uds <path>`, or `--host`, `--port`, and the token flag in the remote lane."""
+def read_only(container: str, allow: Sequence[str] = ()) -> list[str]:
+    """The launcher and its flags: run what follows with a read-only root (`readonly_root`)."""
+    flags = [arg for folder in allow for arg in ("--allow", folder)]
+    return [str(LAUNCHER), "--container", container, *flags]
+
+
+def workload_argv(ref: AgentRef, listen: Sequence[str], launcher: Sequence[str] = ()) -> list[str]:
+    """`listen` is `--uds <path>`, or `--host`, `--port`, and the token flag in the remote lane.
+    `launcher` goes before `-m` (`read_only`)."""
     return [
         sys.executable,
+        *launcher,
         "-m",
         "workload_a2a",
         "serve",
@@ -270,8 +289,11 @@ def start_workload(
     block_chassis: bool = True,
     timeout_s: float = WORKLOAD_START_S,
     remote_token: str | None = None,
+    read_only_root: bool = False,
+    allow: Sequence[str] = (),
 ) -> Iterator[Workload]:
     """Start the workload's A2A server and wait for its agent card. `env` adds variables.
+    `read_only_root` refuses every write outside `allow` (module docstring).
 
     With `remote_token` it serves the `remote` lane: TCP on loopback, the bearer token required.
     There is no Unix socket, so `start_chassis` is what waits for it, through `/ready`.
@@ -298,9 +320,10 @@ def start_workload(
         if block_chassis:
             paths = [str(_guard_dir(root)), child.get("PYTHONPATH", "")]
             child["PYTHONPATH"] = os.pathsep.join(p for p in paths if p)
-        process = _spawn(
-            f"workload {agent.handle}", workload_argv(agent, listen), child, root / "workload.log"
-        )
+        # The socket is the kit's, not the pod's: in a pod the lane runs over loopback.
+        launcher = read_only("workload", [uds, *allow]) if read_only_root else []
+        argv = workload_argv(agent, listen, launcher)
+        process = _spawn(f"workload {agent.handle}", argv, child, root / "workload.log")
         try:
             if remote_token is not None:
                 url = f"http://127.0.0.1:{tcp_port}"
@@ -350,12 +373,15 @@ def chassis_argv(
     uds: str,
     proxy_port: int,
     model_script: Path | None = None,
+    launcher: Sequence[str] = (),
 ) -> list[str]:
+    """`launcher` goes before the serve script (`read_only`)."""
     (public_port,) = free_ports(1)  # never bound: the public listener is on `uds`
     script = ["--model-script", str(model_script)] if model_script is not None else []
     return [
         *source.command,
         "-I",
+        *launcher,
         str(CHASSIS_SERVE),
         *script,
         "--uds",
@@ -385,9 +411,11 @@ def start_chassis(
     adapters: Mapping[str, str] | None = None,
     env: Mapping[str, str] | None = None,
     model_script: ModelScript | None = None,
+    read_only_root: bool = False,
 ) -> Iterator[Chassis]:
     """Start the chassis in the `fake` profile in front of `workload`; wait for `/ready`.
-    `model_script` scripts the fake model's answers (module docstring)."""
+    `model_script` scripts the fake model's answers; `read_only_root` refuses every write
+    (module docstring)."""
     with _scratch() as root:
         uds = str(root / "chassis.sock")
         config = root / "chassis.yaml"  # JSON is YAML
@@ -397,7 +425,8 @@ def start_chassis(
         script = None
         if model_script is not None:
             script = write_model_script(model_script, root / "model-script.json")
-        argv = chassis_argv(source, config, uds, workload.proxy_port, script)
+        launcher = read_only("chassis", [uds]) if read_only_root else []
+        argv = chassis_argv(source, config, uds, workload.proxy_port, script, launcher)
         process = _spawn("chassis", argv, child, root / "chassis.log")
         try:
             _wait_for(process, uds, "/ready", timeout_s)

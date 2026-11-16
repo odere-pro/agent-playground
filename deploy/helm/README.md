@@ -84,7 +84,7 @@ Defaults are in `agent-lib.defaults` (`agent-lib/templates/_values.tpl`); a serv
 
 | Key | Default | What |
 | --- | ------- | ---- |
-| `chassis.image.repository`, `.tag`, `.digest` | `kind.local/agent-platform/chassis`, `poc09`, empty | The chassis image, set once here. A service holds the previous tag with `chassis.image.tag`; the tag must be in `chassis.image.supportedTags` (`[poc09, poc08]`, the library's, not a value) |
+| `chassis.image.repository`, `.tag`, `.digest` | `ghcr.io/odere-pro/agent-chassis`, `v0.1.0` (suggested), the published digest (all zeros until `scripts/publish_chassis.sh publish` runs) | The chassis image, set once here (139 CH-19). The digest pins this repository and tag only: a service that sets another `.tag` or `.repository` sets `.digest` too (that image's digest, or `""` to pin by tag, as `values-kind.yaml` does), or the render fails. The tag must be in `chassis.image.supportedTags` (`[v0.1.0, poc09]`, the library's, not a value) |
 | `chassis.port`, `.proxyPort`, `.remoteProxyPort` | 8080, 8090, 8091 | Public port, loopback proxies, remote proxy listener |
 | `chassis.startupWaitSeconds`, `.drainDelaySeconds`, `.drainTimeoutSeconds` | 120, 10, 30 | 024 CH-3, PoC-4 status |
 | `chassis.env` | `[]` | Plain `name`/`value` pairs |

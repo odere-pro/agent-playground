@@ -7,9 +7,12 @@ the charts (`agent-lib.defaults` in `_values.tpl`), and both services are render
 - A bump in the library alone changes the chassis image in every service's pod template, and
   nothing else in the pod: no workload image changes, so no service image is rebuilt. A changed
   pod template is what makes a Deployment roll out; the rollout itself on a cluster is not run here.
-- A service holds the previous tag with one value, `chassis.image.tag`, while the other service
-  takes the new one (056 CH-7, render half). The chart also sets `CHASSIS_IMAGE_TAG` from that
-  value, so the comparisons strip it with the image.
+- A service holds the previous tag, while the other service takes the new one (056 CH-7, render
+  half). The chart also sets `CHASSIS_IMAGE_TAG` from that value, so the comparisons strip it
+  with the image. Where the chassis is pinned by tag (kind: `values-kind.yaml`, digest ""), the
+  hold is one value, `chassis.image.tag`. Since 139 CH-19 the library's default image is pinned
+  by digest, and a digest pins one tag, so on that image the hold is two values:
+  `chassis.image.tag` and that tag's `chassis.image.digest`.
 
 Skipped, with the reason, when `helm` is not on PATH.
 """
@@ -25,12 +28,15 @@ import yaml
 from chart_render import (
     CHASSIS_REPOSITORY,
     CURRENT_TAG,
+    KIND_CHASSIS_REPOSITORY,
     NAMESPACE,
     NEEDS_HELM,
+    NEW_DIGEST,
     NEW_TAG,
     Charts,
     Doc,
     bump_library,
+    library_digest,
     make_charts,
     pod_of,
     values_file,
@@ -54,10 +60,17 @@ def released(tmp_path_factory: pytest.TempPathFactory) -> tuple[Charts, Charts]:
     return before, after
 
 
-def _render(charts: Charts, release: str, tmp_path: Path, extra: dict[str, Any]) -> Doc:
+def _render(
+    charts: Charts, release: str, tmp_path: Path, extra: dict[str, Any], kind: bool = False
+) -> Doc:
+    """`release` rendered with its workload image and `extra`; on `kind`, `values-kind.yaml`
+    first, as the kind drill installs it (the chassis by tag, no digest)."""
     values: dict[str, Any] = {"workload": {"image": SERVICES[release]}, **extra}
     path = values_file(tmp_path / release, values)
-    proc = charts.render(charts.example, release, NAMESPACE, path)
+    args = ["template", release, str(charts.example), "--namespace", NAMESPACE]
+    if kind:
+        args += ["-f", str(charts.example / "values-kind.yaml")]
+    proc = charts.helm(*args, "-f", str(path))
     docs = [d for d in yaml.safe_load_all(proc.stdout) if d]
     return pod_of(docs, release)
 
@@ -92,7 +105,7 @@ def _without_chassis_image(pod: Doc) -> Doc:
         image = container.pop("image")
         env = container.get("env", [])
         tags = [e for e in env if e["name"] == TAG_ENV]
-        assert [e["value"] for e in tags] == [image.rsplit(":", 1)[1]], (image, tags)
+        assert [e["value"] for e in tags] == [image.split("@")[0].rsplit(":", 1)[1]], (image, tags)
         container["env"] = [e for e in env if e["name"] != TAG_ENV]
     return stripped
 
@@ -104,8 +117,8 @@ def test_a_library_tag_bump_reaches_every_service_and_rebuilds_no_service_image(
     for release, workload_image in SERVICES.items():
         old = _render(before, release, tmp_path / "before", {})
         new = _render(after, release, tmp_path / "after", {})
-        assert _image(old, "chassis") == f"{REPOSITORY}:{CURRENT_TAG}"
-        assert _image(new, "chassis") == f"{REPOSITORY}:{NEW_TAG}", release
+        assert _image(old, "chassis") == f"{REPOSITORY}:{CURRENT_TAG}@{library_digest(before)}"
+        assert _image(new, "chassis") == f"{REPOSITORY}:{NEW_TAG}@{NEW_DIGEST}", release
         # The workload image is the service's own and does not move with the chassis.
         assert _image(old, "workload") == _image(new, "workload") == workload_image
         # Only the chassis image differs, so the pod template changes and the Deployment rolls.
@@ -113,16 +126,34 @@ def test_a_library_tag_bump_reaches_every_service_and_rebuilds_no_service_image(
         assert _without_chassis_image(old) == _without_chassis_image(new), release
 
 
+def test_a_service_pins_the_previous_chassis_tag_with_its_digest(
+    released: tuple[Charts, Charts], tmp_path: Path
+) -> None:
+    before, after = released
+    current_digest = library_digest(before)
+    pin = {"chassis": {"image": {"tag": CURRENT_TAG, "digest": current_digest}}}
+    pinned = _render(after, "example-agent", tmp_path / "pinned", pin)
+    moved = _render(after, "other-agent", tmp_path / "moved", {})
+    assert _image(pinned, "chassis") == f"{REPOSITORY}:{CURRENT_TAG}@{current_digest}"
+    assert _image(moved, "chassis") == f"{REPOSITORY}:{NEW_TAG}@{NEW_DIGEST}"
+    assert (_tag_env(pinned), _tag_env(moved)) == (CURRENT_TAG, NEW_TAG), "each reports its tag"
+    # The pin is the only thing that differs from the unpinned render of the same service.
+    unpinned = _render(after, "example-agent", tmp_path / "unpinned", {})
+    assert _without_chassis_image(pinned) == _without_chassis_image(unpinned)
+
+
 def test_a_service_pins_the_previous_chassis_tag_with_one_value(
     released: tuple[Charts, Charts], tmp_path: Path
 ) -> None:
+    """024 CH-3 box 3: where the chassis is pinned by tag (the kind drill's values, digest ""),
+    one value, `chassis.image.tag`, holds a service on the previous tag after a library bump."""
     _, after = released
     pin = {"chassis": {"image": {"tag": CURRENT_TAG}}}
-    pinned = _render(after, "example-agent", tmp_path / "pinned", pin)
-    moved = _render(after, "other-agent", tmp_path / "moved", {})
-    assert _image(pinned, "chassis") == f"{REPOSITORY}:{CURRENT_TAG}"
-    assert _image(moved, "chassis") == f"{REPOSITORY}:{NEW_TAG}"
+    pinned = _render(after, "example-agent", tmp_path / "pinned", pin, kind=True)
+    moved = _render(after, "other-agent", tmp_path / "moved", {}, kind=True)
+    assert _image(pinned, "chassis") == f"{KIND_CHASSIS_REPOSITORY}:{CURRENT_TAG}"
+    assert _image(moved, "chassis") == f"{KIND_CHASSIS_REPOSITORY}:{NEW_TAG}"
     assert (_tag_env(pinned), _tag_env(moved)) == (CURRENT_TAG, NEW_TAG), "each reports its tag"
     # The pin is the one value that differs from the unpinned render of the same service.
-    unpinned = _render(after, "example-agent", tmp_path / "unpinned", {})
+    unpinned = _render(after, "example-agent", tmp_path / "unpinned", {}, kind=True)
     assert _without_chassis_image(pinned) == _without_chassis_image(unpinned)

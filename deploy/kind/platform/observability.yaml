@@ -1,0 +1,222 @@
+# The reference stack's trace path (139 CH-19): the OTel Collector and Jaeger, in poc05-platform.
+# The chassis exports OTLP/HTTP to the Collector on 4318; the Collector sends every span to
+# Jaeger's OTLP/gRPC on 4317. Jaeger keeps spans in memory and serves its UI and query API on
+# 16686, reached by `kubectl port-forward` only (the kubelet path needs no NetworkPolicy rule).
+#
+# Images: PoC-7's pins (deploy/compose/poc07/docker-compose.yaml), the same tags and digests.
+# Their users are the images' own, 10001 for both (third-party images keep their users,
+# deploy/README.md "Container uids").
+#
+# Receiver auth, as PoC-7 (review R7-15): the OTLP receiver needs `Authorization: Bearer <token>`.
+# The token is the Secret `otel-collector-auth` (key `token`), made by run.sh through a pipe; it
+# is in no file. Only the chassis gets the header (the Secret `example-agent-otlp`, through the
+# chart's chassis.secretEnv); the workload shares the pod's network but gets no token.
+#
+# Not here, suggested: PoC-7's span and log redaction and tail sampling. The chassis redacts its
+# own spans; workload spans would need the Collector's rules (a follow-up of this stack).
+# NetworkPolicies are in network-policy.yaml, applied by path as the cluster admin.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  labels:
+    app.kubernetes.io/name: otel-collector
+    app.kubernetes.io/part-of: platform
+data:
+  config.yaml: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+      bearertokenauth:
+        scheme: Bearer
+        token: ${env:OTLP_CHASSIS_TOKEN}
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+            auth:
+              authenticator: bearertokenauth
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 80
+        spike_limit_percentage: 20
+      batch: {}
+    exporters:
+      otlp/jaeger:
+        endpoint: jaeger.poc05-platform.svc.cluster.local:4317
+        tls:
+          insecure: true
+    service:
+      extensions: [health_check, bearertokenauth]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp/jaeger]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  labels:
+    app.kubernetes.io/name: otel-collector
+    app.kubernetes.io/part-of: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: otel-collector
+        app.kubernetes.io/part-of: platform
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: otel-collector
+          image: docker.io/otel/opentelemetry-collector-contrib:0.163.2@sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849
+          imagePullPolicy: IfNotPresent
+          args: ["--config=/etc/otelcol/config.yaml"]
+          env:
+            - name: OTLP_CHASSIS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: otel-collector-auth
+                  key: token
+          ports:
+            - name: otlp-http
+              containerPort: 4318
+            - name: health
+              containerPort: 13133
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 13133
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  labels:
+    app.kubernetes.io/name: otel-collector
+spec:
+  selector:
+    app.kubernetes.io/name: otel-collector
+  ports:
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+  labels:
+    app.kubernetes.io/name: jaeger
+    app.kubernetes.io/part-of: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: jaeger
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: jaeger
+        app.kubernetes.io/part-of: platform
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: jaeger
+          image: docker.io/jaegertracing/jaeger:2.21.0@sha256:3d0ac795ff98aa04d1be04311d2dac6c25b4bfc8322dc02e53bc5b170c5018c3
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: query
+              containerPort: 16686
+          readinessProbe:
+            tcpSocket:
+              port: 16686
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger
+  labels:
+    app.kubernetes.io/name: jaeger
+spec:
+  selector:
+    app.kubernetes.io/name: jaeger
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: query
+      port: 16686
+      targetPort: 16686
+      protocol: TCP

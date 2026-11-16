@@ -10,6 +10,10 @@ then `all` (suggested names; the epic gives the order). Each ring is a values ov
   the previous tag in the rings it has not reached; a promotion clears it in the next ring; a
   rollback sets it back. Each step is one value in one file.
 - A service's own `chassis.image.tag` is a pin, and wins over its ring.
+- The library's digest pins the library's tag only (139 CH-19). So a hold is one value where the
+  chassis is pinned by tag (a service's `chassis.image.digest: ""`, as on kind); under the
+  library's digest the render refuses a hold rather than run the library's image under the held
+  tag's name.
 
 `deploy/helm/agent-rings` renders one Argo CD Application per service, its ring's overlay in its
 value files and the ring's sync wave on it (canary 0, ten-percent 1, all 2), so a fast-ring
@@ -31,6 +35,7 @@ from chart_render import (
     CURRENT_TAG,
     NAMESPACE,
     NEEDS_HELM,
+    NEW_DIGEST,
     NEW_TAG,
     PREVIOUS_TAG,
     Charts,
@@ -51,6 +56,8 @@ WAVES = {"canary": "0", "ten-percent": "1", "all": "2"}
 RING_LABEL = "agents.platform/chassis-ring"
 WAVE = "argocd.argoproj.io/sync-wave"
 WORKLOAD_IMAGE = "kind.local/agent-platform/echo-python:poc09"
+# The service pins its chassis by tag, so a ring's hold names the image it runs (139 CH-19).
+BY_TAG: dict[str, Any] = {"chassis": {"image": {"digest": ""}}}
 
 
 @pytest.fixture(scope="module")
@@ -77,8 +84,11 @@ def _render(
     charts: Charts, tmp_path: Path, overlay: dict[str, Any], service: dict[str, Any] | None = None
 ) -> Doc:
     """Render `example-agent` with the service's values, then the ring overlay on top, as Argo
-    CD passes them (`valueFiles: [values.yaml, <ring>.yaml]`)."""
-    own = values_file(tmp_path / "own", {"workload": {"image": WORKLOAD_IMAGE}, **(service or {})})
+    CD passes them (`valueFiles: [values.yaml, <ring>.yaml]`). The service's values default to
+    BY_TAG."""
+    own = values_file(
+        tmp_path / "own", {"workload": {"image": WORKLOAD_IMAGE}, **(service or BY_TAG)}
+    )
     ring = values_file(tmp_path / "ring", overlay)
     proc = charts.helm(
         "template", "example-agent", str(charts.example), "--namespace", NAMESPACE,
@@ -182,10 +192,31 @@ def test_a_pinned_service_keeps_its_tag_whatever_its_ring_holds(
     released: Charts, tmp_path: Path, ring: str
 ) -> None:
     """A service's own `chassis.image.tag` wins over the ring's, in every release step."""
-    pin = {"chassis": {"image": {"tag": CURRENT_TAG}}}
+    pin = {"chassis": {"image": {"tag": CURRENT_TAG, "digest": ""}}}
     for held in ("", CURRENT_TAG):
         pod = _render(released, tmp_path / (held or "follow"), _with_tag(ring, held), pin)
         assert _chassis_tag(pod) == CURRENT_TAG, (ring, held)
+
+
+@pytest.mark.parametrize("ring", RINGS)
+def test_a_ring_hold_under_the_library_digest_is_refused(
+    released: Charts, tmp_path: Path, ring: str
+) -> None:
+    """139 CH-19 with 056 CH-7: the library's digest pins its own tag. A service that keeps it
+    follows its ring onto that image only; a hold needs the service's own digest."""
+    own = values_file(tmp_path / "own", {"workload": {"image": WORKLOAD_IMAGE}})
+    for held in ("", CURRENT_TAG):
+        overlay = values_file(tmp_path / (held or "follow"), _with_tag(ring, held))
+        proc = released.helm(
+            "template", "example-agent", str(released.example), "--namespace", NAMESPACE,
+            "-f", str(own), "-f", str(overlay), check=False,
+        )  # fmt: skip
+        if not held:
+            pod = pod_of([d for d in yaml.safe_load_all(proc.stdout) if d], "example-agent")
+            assert containers(pod)["chassis"]["image"].endswith(f":{NEW_TAG}@{NEW_DIGEST}")
+            continue
+        assert proc.returncode != 0, f"rendered {ring}'s hold under the library's digest"
+        assert "ring.chassisTag" in proc.stderr and "chassis.image.digest" in proc.stderr
 
 
 # --- refusals ---------------------------------------------------------------------------------

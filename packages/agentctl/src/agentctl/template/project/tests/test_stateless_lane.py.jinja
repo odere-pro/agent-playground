@@ -1,0 +1,72 @@
+"""The stateless check (057 H-19) in the `sidecar` lane: real processes, a read-only root on both.
+
+The workload and the chassis (`fake` profile) each run as their own process with a read-only root
+(`agent_testkit.readonly_root`). The same requests run on fresh pods and on one reused pod, in
+shuffled order, through the chassis. A write by either container (also while it stops), a file
+left in a scratch volume, or an answer that differs on the reused pod fails the test and names the
+container or the call. Keep what must outlive a call behind the chassis (`StatePort`), never on
+local disk.
+"""
+
+from __future__ import annotations
+{% if framework == 'claude-agent' %}
+import pytest
+{%- endif %}
+from agent_testkit.settings import AgentRef, ChassisSource
+from agent_testkit.stateless_lane import LanePods{% if framework == 'claude-agent' %}, ScratchLeftover{% endif %}, check_lane
+
+REQUESTS = [
+    {"text": "simplify: the quick brown fox", "data": {}},
+    {"text": "something else", "data": {}},
+    {"text": "simplify: a second text", "data": {}},
+]
+MODEL_SCRIPT = [{"match": "simplify", "reply": "Plain words. Short sentences. Same facts."}]
+# suggested: 120 s per process start, what the platform's own kit tests need on a loaded machine.
+START_S = 120.0
+{%- if framework == 'claude-agent' %}
+# The Claude Code CLI needs a HOME on disk. In the pod it is under /tmp, a memory-backed emptyDir;
+# here it is a fresh folder per pod, and it must be empty once each call is done.
+SCRATCH_VAR: str | None = "CLAUDE_AGENT_HOME_BASE"
+# Known gap, so a leftover there is reported only after every other check has passed.
+DEFER_SCRATCH = True
+{%- elif framework == 'smolagents' %}
+# `filelock` (a smolagents dependency) makes and removes a temp folder when it is imported. In the
+# pod /tmp is a memory-backed emptyDir; here TMPDIR is a fresh folder per pod, and it must be
+# empty once each call is done.
+SCRATCH_VAR: str | None = "TMPDIR"
+DEFER_SCRATCH = False
+{%- else %}
+# No writable volume: any write fails.
+SCRATCH_VAR: str | None = None
+DEFER_SCRATCH = False
+{%- endif %}
+
+
+{% if framework == 'claude-agent' -%}
+# Known gap (057 H-19): on `end` the A2A server closes `handle`, which stops the CLI while it still
+# writes, so the run's HOME (its transcript, `.claude.json`, MCP logs) outlives the call. Only that
+# finding (`ScratchLeftover`) is expected; a write outside HOME, an answer that differs on the
+# reused pod, or any other error still fails. Strict: remove this mark once `handle` removes HOME
+# only after the CLI has exited.
+@pytest.mark.xfail(
+    strict=True,
+    raises=ScratchLeftover,
+    reason="claude-agent: the run's HOME outlives the call (057 H-19)",
+)
+{% endif -%}
+def test_no_data_is_kept_on_disk_or_between_calls_in_the_sidecar_lane(
+    agent_handle_ref: AgentRef, agent_testkit_chassis_source: ChassisSource
+) -> None:
+    pods = LanePods(
+        agent_handle_ref,
+        agent_testkit_chassis_source,
+        model_script=MODEL_SCRIPT,
+        scratch_var=SCRATCH_VAR,
+        start_s=START_S,
+        defer_scratch=DEFER_SCRATCH,
+    )
+
+    report = check_lane(pods, REQUESTS, seed=1)
+
+    assert report.read_only == ("workload", "chassis")
+    assert len(report.outputs) == len(REQUESTS)

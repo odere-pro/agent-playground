@@ -297,11 +297,15 @@ class _RouteEngine(FakeEngine):
         yield End()
 
 
+SYNC_GATE = {"evaluator_gate": True, "evaluator_mode": "sync", "retries": 0, "threshold": 0.7}
+"""A gated run that falls back: `sync`, named, since the code default is `async` (137 CH-17)."""
+
+
 async def test_gated_runs_and_fallbacks_are_both_counted() -> None:
     evaluator = ScriptedEvaluator([ScoreRule(match=BAD, score=0.2)], default=0.9)
     config = _config(
         model={"route": "big-default", "fallback_route": FALLBACK},
-        harness={"evaluator_gate": True, "retries": 0, "threshold": 0.7},
+        harness=SYNC_GATE,
     )
     app = create_app(config, _ports(_RouteEngine(), evaluator=evaluator))
     text = await _scrape(app, {"input": {"text": "simplify: x"}})
@@ -367,7 +371,7 @@ async def test_a_seeded_gate_counter_counts_on_from_zero() -> None:
     evaluator = ScriptedEvaluator([ScoreRule(match=BAD, score=0.2)], default=0.9)
     config = _config(
         model={"route": "big-default", "fallback_route": FALLBACK},
-        harness={"evaluator_gate": True, "retries": 0, "threshold": 0.7},
+        harness=SYNC_GATE,
     )
     app = create_app(config, _ports(_RouteEngine(), evaluator=evaluator))
     lines = (await _scrape(app, {"input": {"text": "simplify: x"}})).splitlines()

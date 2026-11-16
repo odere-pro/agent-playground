@@ -91,6 +91,7 @@ class CostlyJudge(ScriptedEvaluator):
 
 
 def config(**harness: Any) -> ChassisConfig:
+    """A gated config in `sync` mode, named: the code default is `async` (137 CH-17)."""
     return ChassisConfig.model_validate(
         {
             "version": "cfg-gate-budget",
@@ -99,7 +100,13 @@ def config(**harness: Any) -> ChassisConfig:
             "spec": {
                 "engine": {"connector": "inprocess", "handle": "chassis.core.handle:echo_wire"},
                 "model": {"route": "big-default", "fallback_route": FALLBACK},
-                "harness": {"evaluator_gate": True, "retries": 1, "threshold": 0.7, **harness},
+                "harness": {
+                    "evaluator_gate": True,
+                    "evaluator_mode": "sync",
+                    "retries": 1,
+                    "threshold": 0.7,
+                    **harness,
+                },
             },
         }
     )

@@ -62,12 +62,12 @@ The defaults as built (`chassis/server/config.py`, `HarnessSpec`; `profiles.py`)
 | Setting | Built today | Target, suggested | Reason for the target |
 | ------- | ----------- | ----------------- | --------------------- |
 | `spec.harness.evaluator_gate` | `false` | `true` | every answer can be scored |
-| `evaluator_mode` | `sync` | `async` | a sync judge adds its latency to every answer |
+| `evaluator_mode` | `async` (since 2026-11-16; `sync` is opt-in) | `async` | a sync judge adds its latency to every answer, and the judge is not calibrated yet (137 CH-17) |
 | `evaluator_sample_rate` | `1.0` | `0.1` | a small judge at rate 1.0 costs about 2.6 times the answer; at 0.1 it is $5 per million requests |
 | `spec.adapters.evaluator` | `none` in every profile | `judge` on the judge route | the cheapest route that passes the agreement test |
 | `threshold`, `retries` | `0.7`, `1` | the same | as built |
 
-The gate is not a security boundary: "No prompt, classifier or judge is a security boundary" (the vault's agent security strategy). Sync mode stays for agents that opt in. Before the target defaults are final, the judge's latency, cost, and agreement with people on the gate set (`packages/eval-kit`, `golden/cases-gate.yaml`, 30 cases) must be measured; async becomes the default anyway if a sync judge adds more than 50% to p95.
+The gate is not a security boundary: "No prompt, classifier or judge is a security boundary" (the vault's agent security strategy). Sync mode stays for agents that opt in. Before the target defaults are final, the judge's latency, cost, and agreement with people on the gate set (`packages/eval-kit`, `golden/cases-gate.yaml`, 30 cases) must be measured. `async` is already the code default (ADR-010 item 10, amended 2026-11-16).
 
 ## What is parked
 
