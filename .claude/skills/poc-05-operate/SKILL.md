@@ -56,6 +56,12 @@ deploy/kind/poc05/run.sh test-remote
 ```
 Last good numbers: the same section.
 
+The library chart's kind test (024 CH-3: the tag rollout, the workload port, the Secrets, the liveness restart), on `poc05-chart` after `up`:
+```
+deploy/kind/poc05/run.sh test-chart
+```
+It installs two example-agent releases with helm and removes them after. Evidence: `pocs/poc-09-agent-mvp-template/notes/2026-11-15-024-kind-chart-poc05.md`.
+
 One file:
 ```
 KIND_DRILLS=1 uv run pytest -m network pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py -q -rs
