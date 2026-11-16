@@ -1,0 +1,18 @@
+# The LangSmith switch for the PoC-7 stack (129 CH-10, ADR-007 item 10). Off by default.
+#
+# `stack.sh <verb> --langsmith` adds this file after docker-compose.yaml. It changes one
+# service, otel-collector: a second `--config` with the `otlphttp/langsmith` exporter, and the
+# three LangSmith variables. No other service gets the key. The image, the ports, and the
+# hardening stay as docker-compose.yaml sets them.
+#
+# LANGSMITH_API_KEY comes from the caller's environment; stack.sh never writes it to a file.
+# Every variable is `${NAME:?}`, so a missing one fails closed. The default stack reads none.
+services:
+  otel-collector:
+    command: ["--config=/etc/otelcol/config.yaml", "--config=/etc/otelcol/langsmith.yaml"]
+    environment:
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:?}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:?}
+      LANGSMITH_OTLP_ENDPOINT: ${LANGSMITH_OTLP_ENDPOINT:?}
+    volumes:
+      - ./otel-collector.langsmith.yaml:/etc/otelcol/langsmith.yaml:ro

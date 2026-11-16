@@ -27,10 +27,11 @@ The [product plan](../../plans/2026-11-06-agent-container-product.md) puts LangC
 
 ## Acceptance criteria
 
-- [ ] `deploy` holds the exporter behind a profile switch; the default stack runs without it.
+- [x] `deploy` holds the exporter behind a profile switch; the default stack runs without it. · Delivered by: Offline, 2026-11-16: `packages/chassis/tests/test_collector_langsmith_switch.py::test_docker_compose_renders_the_default_stack_with_no_langsmith_key`, `::test_default_collector_config_has_no_langsmith_exporter_or_variable`, `::test_switch_sends_traces_to_langfuse_jaeger_and_langsmith`, `::test_langsmith_exporter_reads_its_key_from_the_environment_only`, `::test_docker_compose_renders_the_switch_with_the_key_in_the_collector_only`, `::test_stack_sh_refuses_an_endpoint_off_the_allow_list_before_any_docker_call`. `uv run pytest packages/chassis/tests/test_collector_langsmith_switch.py --disable-socket -q` gives `18 passed`. The switch is the `--langsmith` flag of `deploy/compose/poc07/stack.sh`, which adds `deploy/compose/poc07/docker-compose.langsmith.yaml` and `deploy/compose/poc07/otel-collector.langsmith.yaml`. No live Collector run yet.
+  - OPEN: LangSmith key scope not checked. Until it is, use a service key in its own workspace, holding only this project.
 - [x] `fake-langsmith` (a package beside `fake-langfuse`) records an OTLP trace, and an offline test reads it back · Delivered by: `uv run pytest packages/fake-langsmith -q` gives `8 passed`; `packages/fake-langsmith/tests/test_fake_langsmith_server.py` posts OTLP protobuf and OTLP/JSON (hex ids) and reads the spans back by trace id, parent links included.
 - [ ] A stack test: one run is one trace in `fake-langsmith`, with the graph steps under the run span.
-- [ ] A stack test: the LangSmith key is in the Collector only; the chassis, the workload, and the logs hold none.
+- [ ] A stack test: the trace key `LANGSMITH_API_KEY` is in the Collector only; the workload and the logs hold none; the chassis holds only the 130 CH-11 feedback key.
 - [x] The primary trace view per environment is written where 001 DEC-1 records it. · Delivered by: [001 DEC-1](001-DEC-1-resolve-open-decisions.md#decisions), decision 5 (2026-11-15), and the 2026-11-15 amendments to `docs/planning/adr/007-observability-otel-collector-langfuse.md` and `docs/planning/adr/009-feedback-langfuse-scores-event.md`.
 
 ## Dependencies
