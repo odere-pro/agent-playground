@@ -1,6 +1,6 @@
 # Key metrics
 
-The numbers that say whether the container works: one north star, the input metrics that move it, and the counter metrics that must not get worse while it rises. The vault's recipe is "a north star, two input metrics, and one metric to measure failure" (`notes/SDLC factory/01 - SDLC factory.md`). Every formula below uses what the chassis already emits ([observability](observability.md)), except the two marked *new*. The first-attempt counter was added for this set (046 A-5, an additive contract change).
+The numbers that say whether the container works: one north star, the input metrics that move it, and the counter metrics that must not get worse while it rises. The vault's recipe is "a north star, two input metrics, and one metric to measure failure" (`notes/SDLC factory/01 - SDLC factory.md`). Every formula below uses what the chassis already emits ([observability](observability.md)), except the one marked *new*. The first-attempt counter was added for this set (046 A-5, an additive contract change).
 
 ## North star: agents in production on the chassis
 
@@ -49,6 +49,6 @@ The epic's success metrics include three this set leaves out on purpose, because
 
 ## How the container shows them
 
-- *new*: one container dashboard next to the per-agent ones, with three rows: the north star, the inputs, the counters. `python -m chassis.dashboards` writes it to `deploy/dashboards/container.json`.
+- One container dashboard next to the per-agent ones, with three rows: the north star, the inputs, the counters (046 A-5). `python -m chassis.dashboards` writes it to `deploy/dashboards/container.json`, from `chassis/dashboards/container.py`. A metric with no Prometheus family (time to first demo, release lead time, escapes, guardrail false blocks on the golden set, secret leaks, sidecar cost per replica, rollbacks) is a text panel that names its source. The north star panel shows no data until the production scrape adds `environment="prod"`. suggested: "per week" is the trailing seven days on the board, since PromQL cannot align to an ISO week. suggested: good tasks on the board are a lower bound: each failed scoring is subtracted, including retries that later passed, so cost per good task reads high by the same bias.
 - SLOs and burn-rate alerts on availability, p95, error rate, and the gate fallback rate are [117 X-3](../planning/issues/117-X-3-slos-alerts.md).
 - The weekly numbers go to one note per week, by the `record-measurement` skill, so a number is never claimed without its run.

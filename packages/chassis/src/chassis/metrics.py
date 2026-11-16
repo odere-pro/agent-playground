@@ -91,6 +91,26 @@ DECLARED: Mapping[str, tuple[str, str]] = {
         "counter",
         "Gated runs refused because the evaluator failed (fail_closed).",
     ),
+    "chassis_gate_stopped_total": (
+        "counter",
+        "Gate reruns the run's one budget stopped, by reason (timeout, budget).",
+    ),
+    "chassis_evaluator_calls_total": (
+        "counter",
+        "Evaluator scorings, by evaluator, mode, and outcome (pass, fail, error, skipped).",
+    ),
+    "chassis_evaluator_agreement_total": (
+        "counter",
+        "Shadow scorings, by pair (main:shadow) and agree (138 CH-18).",
+    ),
+    "chassis_gate_feedback_failed_total": (
+        "counter",
+        "Gate scores the feedback store did not store, by code (138 CH-18).",
+    ),
+    "chassis_guardrail_unavailable_total": (
+        "counter",
+        "Guardrail checks that could not answer, by stage.",
+    ),
     "chassis_feedback_total": ("counter", "Feedback stored on a run's trace, by label."),
     "chassis_runs_in_flight": ("gauge", "Runs in flight on this replica (CH-15)."),
     "chassis_build_info": ("gauge", "Always 1; the labels name the chassis and agent versions."),
