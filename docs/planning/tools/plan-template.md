@@ -142,10 +142,10 @@ Tracked in {{L:DEC-1}}. What each one unblocks in phases A to F, with a `suggest
 | First cloud: AWS or GCP | {{L:X-1a}}, then {{L:X-2}} and {{L:X-1b}} |
 | Whether the public A2A endpoint ships in version 1. A2A to workloads ships per ADR-001 | {{L:H-5}} |
 | Banned-word list and final success-metric targets. Parked with the SLM track, except the `facts_kept` floor for a hosted model | {{L:S-1}}, {{L:S-3}}, {{L:G-3}} |
-| The north star: "good tasks per week" or "agents in production on the chassis" (phase E) | {{L:A-5}}, {{L:X-3}}, {{L:X-7}} |
 | The primary trace view per environment, LangSmith or Langfuse, and where the score goes when both run (phase D; ADR-007 open question 4, ADR-009 open question 5) | {{L:CH-10}}, {{L:CH-11}}, {{L:A-5}} |
 | The router's home before a cloud exists. Parked with the SLM track: only the baseline needed it. For the product, the router runs in each deploy stack | {{L:G-3}} (parked) |
 | Decided 2026-11-06: an evaluator outage and a rate-limit store outage both fail open everywhere, as built (P-1, P-2 in the review's [fix plan](../../reviews/2026-11-06-backlog-review/fix-plan.md#user-decisions-2026-11-06)) | Nothing now. {{L:X-3}} adds an alert for each |
+| Decided: the north star is "agents in production on the chassis" ({{L:DEC-1}}, decision 4). It lives in the [product plan](../../plans/2026-11-06-agent-container-product.md#north-star) and [the metrics spec](../../specs/metrics.md#north-star-agents-in-production-on-the-chassis) | Nothing now. {{L:A-5}}, {{L:X-3}}, and {{L:X-7}} use it (phase E) |
 
 ## Changes from the epic
 
