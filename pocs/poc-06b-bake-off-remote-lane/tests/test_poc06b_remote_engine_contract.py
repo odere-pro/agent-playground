@@ -72,7 +72,9 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 class _ReplayedQuery:
     """Stands in for the SDK's `query`: yields the smoke task's SDK messages, starts no CLI."""
 
-    def __call__(self, *, prompt: Any, options: Any = None) -> AsyncIterator[Any]:
+    def __call__(
+        self, *, prompt: Any, options: Any = None, transport: Any = None
+    ) -> AsyncIterator[Any]:
         return self._run()
 
     async def _run(self) -> AsyncIterator[Any]:

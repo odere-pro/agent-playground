@@ -110,9 +110,11 @@ class FakeQuery:
         self.run_dirs: list[tuple[Path, Path]] = []
         self.closed = False
 
-    def __call__(self, *, prompt: Any, options: ClaudeAgentOptions | None = None) -> Any:
+    def __call__(
+        self, *, prompt: Any, options: ClaudeAgentOptions | None = None, transport: Any = None
+    ) -> Any:
         assert options is not None
-        self.calls.append({"prompt": prompt, "options": options})
+        self.calls.append({"prompt": prompt, "options": options, "transport": transport})
         return self._run(options)
 
     async def _run(self, options: ClaudeAgentOptions) -> AsyncIterator[Any]:

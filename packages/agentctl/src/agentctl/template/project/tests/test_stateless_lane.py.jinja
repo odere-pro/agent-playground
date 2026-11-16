@@ -9,11 +9,9 @@ local disk.
 """
 
 from __future__ import annotations
-{% if framework == 'claude-agent' %}
-import pytest
-{%- endif %}
+
 from agent_testkit.settings import AgentRef, ChassisSource
-from agent_testkit.stateless_lane import LanePods{% if framework == 'claude-agent' %}, ScratchLeftover{% endif %}, check_lane
+from agent_testkit.stateless_lane import LanePods, check_lane
 
 REQUESTS = [
     {"text": "simplify: the quick brown fox", "data": {}},
@@ -27,33 +25,17 @@ START_S = 120.0
 # The Claude Code CLI needs a HOME on disk. In the pod it is under /tmp, a memory-backed emptyDir;
 # here it is a fresh folder per pod, and it must be empty once each call is done.
 SCRATCH_VAR: str | None = "CLAUDE_AGENT_HOME_BASE"
-# Known gap, so a leftover there is reported only after every other check has passed.
-DEFER_SCRATCH = True
 {%- elif framework == 'smolagents' %}
 # `filelock` (a smolagents dependency) makes and removes a temp folder when it is imported. In the
 # pod /tmp is a memory-backed emptyDir; here TMPDIR is a fresh folder per pod, and it must be
 # empty once each call is done.
 SCRATCH_VAR: str | None = "TMPDIR"
-DEFER_SCRATCH = False
 {%- else %}
 # No writable volume: any write fails.
 SCRATCH_VAR: str | None = None
-DEFER_SCRATCH = False
 {%- endif %}
 
 
-{% if framework == 'claude-agent' -%}
-# Known gap (057 H-19): on `end` the A2A server closes `handle`, which stops the CLI while it still
-# writes, so the run's HOME (its transcript, `.claude.json`, MCP logs) outlives the call. Only that
-# finding (`ScratchLeftover`) is expected; a write outside HOME, an answer that differs on the
-# reused pod, or any other error still fails. Strict: remove this mark once `handle` removes HOME
-# only after the CLI has exited.
-@pytest.mark.xfail(
-    strict=True,
-    raises=ScratchLeftover,
-    reason="claude-agent: the run's HOME outlives the call (057 H-19)",
-)
-{% endif -%}
 def test_no_data_is_kept_on_disk_or_between_calls_in_the_sidecar_lane(
     agent_handle_ref: AgentRef, agent_testkit_chassis_source: ChassisSource
 ) -> None:
@@ -63,7 +45,6 @@ def test_no_data_is_kept_on_disk_or_between_calls_in_the_sidecar_lane(
         model_script=MODEL_SCRIPT,
         scratch_var=SCRATCH_VAR,
         start_s=START_S,
-        defer_scratch=DEFER_SCRATCH,
     )
 
     report = check_lane(pods, REQUESTS, seed=1)
