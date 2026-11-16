@@ -102,7 +102,13 @@ def gate_config(url: str, uds: str, **harness: Any) -> ChassisConfig:
             "spec": {
                 "engine": {"connector": "sidecar", "url": url, "uds": uds},
                 "model": {"route": ROUTE, "fallback_route": FALLBACK_ROUTE},
-                "harness": {"evaluator_gate": True, "retries": 1, "threshold": 0.7, **harness},
+                "harness": {
+                    "evaluator_gate": True,
+                    "evaluator_mode": "sync",  # named: the code default is async (137 CH-17)
+                    "retries": 1,
+                    "threshold": 0.7,
+                    **harness,
+                },
             },
         }
     )
