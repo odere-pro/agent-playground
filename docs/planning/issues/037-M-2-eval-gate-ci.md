@@ -1,7 +1,7 @@
 ---
 title: "M-2: Eval gate in CI: a change ships only if it passes the golden set against the baseline"
 labels: ["story", "priority:P0", "phase:2-simplifier-slm", "area:lifecycle", "size:S", "layer:platform"]
-milestone: "W3 Simplifier SLM"
+milestone: "Done: delivered by the PoC track"
 index: 37
 epic_id: M-2
 depends_on: ["028 S-3"]
@@ -35,11 +35,14 @@ This is P0 because of the epic principle: nothing ships without an eval. The gat
 
 ## Acceptance criteria
 
-- [x] A pull request starts the eval gate in CI with no manual step. · Delivered in PoC-8: `.github/workflows/poc08-evals.yml` (on: pull_request with no paths filter; jobs evals, regression, redteam); `pocs/poc-08-cross-cutting-build/tests/test_poc08_c1_ci.py::test_poc08_evals_runs_the_gate_and_the_redteam_set_on_every_supported_engine`; run 40919685333 on `0457ae1` (`pocs/poc-08-cross-cutting-build/README.md`, exit criterion "Offline evals")
+Delivered by: PoC-8, the floor and dataset tests, and, on 2026-11-16, the prompt tests (`packages/eval-kit/tests/test_eval_kit_prompt_gate.py`)
+
+- [x] A pull request starts the eval gate in CI with no manual step. · Delivered in PoC-8: `.github/workflows/poc08-evals.yml` (since 2026-11-08: on a pull request that touches the gate's paths, the workloads folder among them, and on a push to main; one job, `evals`, with the gate, regression, and red-team steps; until then, on every pull request in separate jobs); `pocs/poc-08-cross-cutting-build/tests/test_poc08_c1_ci.py::test_poc08_evals_runs_the_gate_and_the_redteam_set_on_every_supported_engine`; run 40919685333 on `0457ae1` (`pocs/poc-08-cross-cutting-build/README.md`, exit criterion "Offline evals")
 - [x] A change that drops facts fails the gate, and the merge is blocked with a report. · Delivered in PoC-8: `packages/eval-kit/tests/test_eval_kit_evalgate.py::test_eval_kit_evalgate_fails_the_drop_facts_logic_on_every_baseline_target` and `::test_eval_kit_evalgate_fails_when_a_known_bad_answer_starts_to_pass`; `pocs/poc-08-cross-cutting-build/tests/test_poc08_c5_regression.py::test_the_gate_fails_drop_facts_and_passes_normal_on_every_baseline_target`; `pocs/poc-08-cross-cutting-build/notes/2026-10-29-eval-gate.md` (drop-facts 0/50 against 0.780); `evals/gate/baseline.json`
 - [x] A pass rate below the baseline floor fails, with or without a previous run. · Delivered by: `packages/eval-kit/tests/test_eval_kit_evalgate.py::test_a_run_below_the_floor_fails_with_no_previous_report` (a first run, 0.780 against a 0.800 floor, no must-pass case, no earlier report: exit 1, "pass rate 0.780 < 0.800"); the gate reads only `evals/gate/baseline.json`, never a previous report
 - [x] Eval results are attached to the CI run. · Delivered in PoC-8: `.github/workflows/poc08-evals.yml`, upload-artifact steps `poc08-eval-reports-<engine>` and `poc08-eval-reports-drop-facts` (run 40919685333)
-- [ ] A change to the simplifier prompt runs the same gate before release, and the prompt reaches the gate's input. (Proving test, suggested name: `test_a_changed_prompt_changes_the_gate_input`.)
+- [x] A change to the simplifier prompt runs the same gate before release, and the prompt reaches the gate's input. (Proving test, suggested name: `test_a_changed_prompt_changes_the_gate_input`.) · Delivered by: `packages/eval-kit/tests/test_eval_kit_prompt_gate.py::test_a_changed_prompt_changes_the_gate_input` (run 2026-11-16); the gate's case file and model script, `echo_python` with its prompt changed, its model call through the chassis outbound model proxy (in process) to the fake model server, and the changed system message in the upstream body the server recorded; `::test_a_changed_prompt_starts_the_gate_workflow` (the workloads glob is in the `poc08-evals` path filter for pull requests and pushes, and its `evals` job runs `eval_kit.evalrun` and `eval_kit.evalgate`)
+  - This proves the prompt reaches the model input, not that the gate can catch a worse prompt. The scripted model ignores the prompt, so the score cannot move offline. A real-model run with a degraded prompt, which must drop below the 0.800 floor, waits on the phase B hosted-judge floor (DEC-1).
 - [x] Pointing the gate at another dataset version needs a config change only. · Delivered by: `packages/eval-kit/tests/test_eval_kit_evalgate.py::test_evalgate_reads_the_dataset_named_in_the_baseline` (a tmp baseline whose `dataset` names a tmp 3-case file: the ids, the `fail` labels, and the case count come from that file, in `record` and in the CLI check; a count mismatch exits 2), `packages/eval-kit/tests/test_eval_kit_evalrun.py::test_eval_kit_evalrun_gate_golden_runs_the_dataset_named_in_the_baseline` (the CI eval run's `GOLDEN_CASES` file holds the 3 cases a tmp baseline names), and `test_eval_kit_evalgate.py::test_evalgate_fails_a_report_whose_case_ids_are_not_the_dataset`; `evals/gate/baseline.json` names the packaged gate files in `dataset`. The offline scripted model's answers for new cases come from `python -m eval_kit.golden.generate`, a generated file, not code
 
 ## Dependencies
