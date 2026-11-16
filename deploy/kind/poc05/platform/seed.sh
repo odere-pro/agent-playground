@@ -4,7 +4,8 @@
 #
 #   seed.sh base          first pass, before the platform starts: litellm-master, litellm-db,
 #                         valkey-auth, minio-root, chassis-echo-minio (both namespaces),
-#                         code-runner-dispatch-token (poc05-platform only)
+#                         code-runner-dispatch-token (poc05-platform only),
+#                         chart-drill-token (poc05-chart)
 #   seed.sh keys          second pass, once LiteLLM is Ready: one virtual key per chassis
 #                         (chassis-<svc>-litellm) and one token per remote (remote-<name>-token)
 #   seed.sh rotate NAME   replace one Secret (and its LiteLLM key); then restart what mounts it
@@ -30,6 +31,8 @@ LOG_PREFIX=seed
 PLATFORM=poc05-platform
 AGENTS=poc05-agents
 REMOTE=poc05-remote
+# The library chart's drill (024 CH-3): two example-agent releases a kind test installs.
+CHART=poc05-chart
 HERE=$(cd "$(dirname "$0")" && pwd)
 MODEL="fake-chat"
 # suggested: where each minted key's manifest goes (svc-<svc>.json, its routes only, never the
@@ -145,6 +148,15 @@ seed_base() {
     printf '%s' "$value" | put_secret "$PLATFORM" "$STORE_READER_SECRET" CONFIG_S3_SECRET_KEY
     unset value
     log "made $STORE_READER_SECRET in $AGENTS (the chassis) and $PLATFORM (for minio-init)"
+  fi
+  # The library chart's drill (024 CH-3): a stand-in credential the chart gives the chassis
+  # container only, as env and as a file. No service reads its value; the kind test checks names
+  # and paths from inside the workload (test_poc09_kind_chart.py).
+  if ! secret_exists "$CHART" chart-drill-token; then
+    value=$(new_secret)
+    printf '%s' "$value" | put_secret "$CHART" chart-drill-token token
+    unset value
+    log "made $CHART/chart-drill-token"
   fi
 }
 
@@ -337,7 +349,7 @@ rekey() {
 
 status() {
   local ns
-  for ns in "$PLATFORM" "$AGENTS" "$REMOTE"; do
+  for ns in "$PLATFORM" "$AGENTS" "$REMOTE" "$CHART"; do
     printf '%s:\n' "$ns"
     kctl -n "$ns" get secrets -o name | sed 's#^secret/#  #'
   done

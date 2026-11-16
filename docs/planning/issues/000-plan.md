@@ -96,7 +96,7 @@ Waves are GitHub milestones. Each one ends in something that can be shown. The w
 
 | Wave | Issues | Ends with |
 | ---- | ------ | --------- |
-| Done: delivered by the PoC track | 007–138 | 12 issues, 26.5 days of the first estimate, not counted below |
+| Done: delivered by the PoC track | 007–138 | 13 issues, 31.5 days of the first estimate, not counted below |
 | W0 Decisions | 001 | Broker, first cloud, public A2A endpoint, banned words, and metric targets decided. Feeds phases D and E: the primary trace view and the north star |
 | W1 Router and baseline | 002–006 | Every model call goes through the router; token spend is counted and on a dashboard; the baseline clock is running. Feeds phases B and E; the baseline is parked |
 | W2 Chassis MVP | 008–026 | An echo workload runs behind the chassis: in the `sidecar` lane from the shared library chart, locally and in Kubernetes, and over A2A in memory in the chassis's tests. It answers through native, OpenAI, and Anthropic APIs (streaming and complete), is started by events and emits result events, is traced, holds no key, and passes the contract tests over both transports. Feeds phases A, B, E, and F |
@@ -129,8 +129,8 @@ Since 2026-11-06 the [product plan](../../plans/2026-11-06-agent-container-produ
 
 ## Critical path
 
-- **To template GA (H-15):** 024 CH-3 → 026 CH-4 → 055 CH-6 → 059 H-15. About 16 working days. Template GA is phase F. The baseline ([005 G-3](005-G-3-baseline-report.md)) and the SLM steps are parked, so no baseline wait sits on this path.
-- **Longest chain overall:** 024 CH-3 → 026 CH-4 → 055 CH-6 → 059 H-15 → 076 R-1 → 090 R-13 → 091 R-11 → 092 R-12 → 099 O-1 → 100 O-2 → 103 O-11 → 107 O-6 → 109 O-8 → 110 C-6 → 115 O-15. The registry search and the orchestrator engine are the long pole.
+- **To template GA (H-15):** 002 G-1 → 026 CH-4 → 055 CH-6 → 059 H-15. About 13.5 working days. Template GA is phase F. The baseline ([005 G-3](005-G-3-baseline-report.md)) and the SLM steps are parked, so no baseline wait sits on this path.
+- **Longest chain overall:** 002 G-1 → 026 CH-4 → 055 CH-6 → 059 H-15 → 076 R-1 → 090 R-13 → 091 R-11 → 092 R-12 → 099 O-1 → 100 O-2 → 103 O-11 → 107 O-6 → 109 O-8 → 110 C-6 → 115 O-15. The registry search and the orchestrator engine are the long pole.
 
 ## Open decisions and what they block
 
@@ -194,8 +194,8 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 
 ## Estimate check
 
-- **Open:** about 270.5 engineer-days (54 weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
-- **Done** (wave `WD`): 26.5 days over 12 of the issues. **Parked** (wave `WP`): 52.5 days over 23. Neither is in the open total.
+- **Open:** about 265.5 engineer-days (53 weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
+- **Done** (wave `WD`): 31.5 days over 13 of the issues. **Parked** (wave `WP`): 52.5 days over 23. Neither is in the open total.
 - **Phases A to F:** 86.5 days against the 8–10 weeks the product plan has left (suggested: 50–60 engineer-days), from [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md#totals). Phases A, B, and E are each about twice the plan's size. The rest of the open total is `later`: no phase needs it.
 - **The epic** says 29–33 weeks for one engineer. Either the epic assumes a lot of reuse, or the phase estimates need a second look with the team. The sizes here are first guesses; re-size in planning.
 
@@ -212,6 +212,7 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | 016 | H-9 | [Local debug profile: Docker Compose, hot reload, debugger port](016-H-9-local-debug-profile.md) | chassis | P0 | S | [011](011-H-2-inbound-adapters.md), [009](009-CH-1-engine-connectors-a2a.md) |
 | 017 | H-4 | [Harness features: schema check, evaluator gate, retry, fallback, timeout, budget](017-H-4-harness-features.md) | chassis, agent-profile | P0 | M | [010](010-H-12-config-loader.md), [012](012-H-3-model-port.md), [009](009-CH-1-engine-connectors-a2a.md), [013](013-CH-2-outbound-model-proxy.md) |
 | 018 | H-18 | [Idempotency: key check, optional Valkey result cache, key passed to write tools](018-H-18-idempotency.md) | chassis | P0 | M | [007](007-H-1-harness-library-ports-envelope.md), [016](016-H-9-local-debug-profile.md), [009](009-CH-1-engine-connectors-a2a.md) |
+| 024 | CH-3 | [Shared Helm library chart: chassis sidecar with a pinned tag, secrets on the chassis only, Service on the chassis port](024-CH-3-helm-library-chart.md) | chassis | P0 | L | [009](009-CH-1-engine-connectors-a2a.md), [016](016-H-9-local-debug-profile.md) |
 | 128 | CH-9 | [LangGraph checkpointer and interrupts: one ADR each](128-CH-9-langgraph-checkpointer-interrupts.md) | chassis | P2 | S | [058](058-CH-8-framework-event-mappings.md) |
 | 134 | CH-14 | [Security defaults in the cloud profile: no uncorrelated tokens, unknown tools refused, auth required](134-CH-14-cloud-security-defaults.md) | chassis | P0 | M | [013](013-CH-2-outbound-model-proxy.md), [022](022-H-6-security-middleware.md) |
 | 135 | CH-15 | [Backpressure: a cap on runs in flight per replica, 503 overloaded, and a gauge to scale on](135-CH-15-backpressure.md) | chassis | P1 | M | [017](017-H-4-harness-features.md), [014](014-H-7-observability.md) |
@@ -247,7 +248,6 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | 021 | H-20 | [Event consumer adapter: agents started by CloudEvents, same core as REST](021-H-20-event-consumer-adapter.md) | chassis | P0 | M | [011](011-H-2-inbound-adapters.md), [019](019-H-17-event-port.md), [020](020-X-8-event-broker.md) |
 | 022 | H-6 | [Security middleware: auth, scopes, rate limits, PII redaction](022-H-6-security-middleware.md) | chassis, agent-profile | P0 | M | [011](011-H-2-inbound-adapters.md), [018](018-H-18-idempotency.md) |
 | 023 | C-5 | [AI-generated marking on outputs and a disclosure flag for client apps](023-C-5-ai-generated-marking.md) | agent-profile | P1 | S | [010](010-H-12-config-loader.md), [011](011-H-2-inbound-adapters.md), [019](019-H-17-event-port.md) |
-| 024 | CH-3 | [Shared Helm library chart: chassis sidecar with a pinned tag, secrets on the chassis only, Service on the chassis port](024-CH-3-helm-library-chart.md) | chassis | P0 | L | [009](009-CH-1-engine-connectors-a2a.md), [016](016-H-9-local-debug-profile.md) |
 | 025 | H-10 | [Service template: workload Dockerfile, Helm chart on the chassis library chart, CI (tests, signing, deploy, registration)](025-H-10-template-repo.md) | chassis | P0 | M | [015](015-H-8-testing-kit.md), [016](016-H-9-local-debug-profile.md), [024](024-CH-3-helm-library-chart.md) |
 | 026 | CH-4 | [Chassis-only credentials for every internal service, and default-deny egress per workload pod](026-CH-4-chassis-only-credentials-egress.md) | chassis | P0 | L | [002](002-G-1-litellm-router.md), [024](024-CH-3-helm-library-chart.md) |
 

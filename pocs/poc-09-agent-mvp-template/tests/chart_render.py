@@ -61,11 +61,16 @@ class Charts:
     rings: Path
     env: dict[str, str]
 
-    def helm(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def helm(
+        self, *args: str, check: bool = True, timeout: int = 60
+    ) -> subprocess.CompletedProcess[str]:
+        """`helm` with `args`; `timeout` in seconds caps the process (a kind install that waits
+        for Ready passes more than its own `--timeout`)."""
         assert HELM is not None
         proc = subprocess.run(
-            [HELM, *args], capture_output=True, text=True, timeout=60, check=False, env=self.env
-        )
+            [HELM, *args], capture_output=True, text=True, timeout=timeout, check=False,
+            env=self.env,
+        )  # fmt: skip
         if check and proc.returncode != 0:
             pytest.fail(
                 f"helm {' '.join(args)} exited {proc.returncode}:\n{proc.stdout}\n{proc.stderr}"
