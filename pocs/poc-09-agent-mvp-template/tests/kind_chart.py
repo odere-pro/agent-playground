@@ -23,9 +23,10 @@ from typing import Any
 
 from chart_render import CHASSIS_REPOSITORY as PUBLISHED_REPOSITORY
 from chart_render import CURRENT_TAG as CURRENT_TAG
-from chart_render import KIND_CHASSIS_REPOSITORY as CHASSIS_REPOSITORY
+from chart_render import KIND_CHASSIS_REPOSITORY as KIND_CHASSIS_REPOSITORY
 from chart_render import NEW_TAG
 
+CHASSIS_REPOSITORY = KIND_CHASSIS_REPOSITORY
 LIBRARY_REPOSITORY = PUBLISHED_REPOSITORY
 CONTEXT = "kind-poc05"
 NAMESPACE = "poc05-chart"
