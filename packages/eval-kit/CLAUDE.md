@@ -9,4 +9,5 @@ The eval code on the bake-off stack: the PoC-7 eval tool trial, the PoC-8 eval g
 - Baselines: `evals/gate/baseline.json` and `evals/redteam/baseline.json`. Rewrite them only from real runs (`--record`), never by hand. A business-logic variant (`--logic drop-facts`) is a generated model script, never engine or chassis code.
 - `evalcheck` is the offline reference scorer for tests; CI scores with DeepEval. Make targets: `evals`, `evals-regression`, `redteam`. CI: `.github/workflows/poc07-evals.yml`, `.github/workflows/poc08-evals.yml`.
 - `bakeoff` keeps one compatibility module per moved CLI (`evaltrial`, `evalgate`, `evalrun`, `redteam`, `langfuse_datasets`, `golden.generate`), so the commands in dated notes still run. Write new commands as `python -m eval_kit.<module>`.
+- Tests may import a workload (for example `echo_python`) through the root workspace; it is not in this package's `pyproject.toml`, and product code here never imports one.
 - Tests start with the package name (`test_eval_kit_*`). A test that spawns a process on a socket is marked `network`.

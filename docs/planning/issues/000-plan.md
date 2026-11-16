@@ -257,7 +257,6 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
 | 028 | S-3 | [`facts_kept` and banned-word scoring for the eval gate and the judge](028-S-3-simplifier-metrics.md) | platform | P0 | S | — |
-| 037 | M-2 | [Eval gate in CI: a change ships only if it passes the golden set against the baseline](037-M-2-eval-gate-ci.md) | platform | P0 | S | [028](028-S-3-simplifier-metrics.md) |
 | 038 | X-1a | [Terraform module for the first cloud (AWS or GCP)](038-X-1a-terraform-first-cloud.md) | platform | P0 | L | [001](001-DEC-1-resolve-open-decisions.md), [025](025-H-10-template-repo.md), [026](026-CH-4-chassis-only-credentials-egress.md) |
 
 ### W4 Simplifier agent live
