@@ -200,7 +200,7 @@ Guardrails, rate limits, marking, and the evaluator gate are `spec.guardrails`, 
 - The kit is `agent_testkit`. It starts the chassis in the `fake` profile as its own process, from the platform's `uv.lock`, and drives the workload over A2A. Your environment never installs the chassis.
 - The fixture `workload` starts your `handle` behind the template server. The fixture `chassis` gives `.run(input)`: a plain call that sends one run and returns the envelope, a dict with `status` and `output`.
 - The class `agent_testkit.contract.WorkloadContract` is the lane contract suite. Subclass it in `tests/` and it runs every case against your workload.
-- **The fake model answers `ok` to every call.** It cannot be scripted per test yet. So a test or an eval case that only checks the model's text checks the fake, not your logic. Put the logic you want to test in plain Python that `handle` calls, and test that.
+- **The fake model answers `ok` to every call** in `make test`. `make eval` scripts it per case: each case's input gets that case's reference. Either way a check on the model's text alone checks the fake, not your logic. Put the logic you want to test in plain Python that `handle` calls, and test that.
 - Offline: set `UV_OFFLINE=1` once the uv cache is filled. `make test` fills the chassis's part first (`make chassis-env`), which needs the network on a new machine.
 
 ```python
@@ -231,8 +231,11 @@ docker compose -f deploy/compose/docker-compose.yaml --profile local up   # Lite
 **Offline evals** use DeepEval on the golden set ([ADR-010](../planning/adr/010-evals-offline-tool-online-gate.md), item 1).
 
 - In the agent repo: `make eval` runs your golden cases in `evals/cases.yaml` through the chassis and writes `reports/eval.json`.
-- Each case has `id`, `input` (the run's input), and `expect`. `expect.status` is one status the run must end with (default: `ok` or `fallback`). `expect.contains` is text the JSON of the output must hold.
-- The template's one case checks the plumbing only: the fake model answers `ok`. Add cases on what your logic adds, so a change that breaks it fails `make eval`.
+- The file is in the platform's golden-set schema (`eval_kit.golden`): `version: 1`, and per case `id`, `task`, `input` (sent as `{"text": input}`), `expect` (`contains`, `banned`, `tool_calls`), `rubric`, `reference`, and `label`.
+- The fake model is scripted per case: it answers each case's input with the case's reference. Each answer gets the gate's four checks: `contains`, `banned`, `tools`, and the scripted judge on the `rubric`. The judge passes an answer that holds a reference labeled `pass`, and fails any other. Its score per case is in `meta.judge` of the report (`eval-report.v0`).
+- The template's one case, `g01`, passes when your logic keeps the model's answer whole. Add cases on what your logic adds, so a change that breaks it fails `make eval`.
+- Use `task: simplifier` with `tool_calls: []`. A `lookup` case must expect a tool call, and the agent repo's eval does not script tool calls yet, so a lookup case stops `make eval` with an error.
+- A run that ends in a status other than `ok` or `fallback` fails its case, even when its text passes. The reason is in `meta.status` of the report.
 - In this monorepo: `make evals` runs every engine and lane and checks the baseline. `make evals-regression` shows a logic change that drops facts and fails the gate.
 - A change to the business logic, the prompt, or the model needs a passing eval.
 

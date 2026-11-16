@@ -19,7 +19,9 @@ from typing import Any, ClassVar
 
 import pytest
 import yaml
+from fake_model_server import Script
 
+from agent_testkit import evalcases
 from agent_testkit.processes import (
     REMOTE_CHASSIS_TOKEN,
     Chassis,
@@ -137,30 +139,77 @@ class RedTeamInputs:
 
 
 class EvalCases:
-    """The agent's golden cases, `evals/cases.yaml`: break the logic and this fails.
+    """The agent's golden cases, `evals/cases.yaml`, judged: break the logic and this fails.
 
-    Each case has `id`, `input`, and `expect`, with `status` (default `ok` or `fallback`) and
-    `contains`, text the JSON of the output must hold. The report goes to `reports/eval.json`.
+    The file is in the platform's golden-set schema (`evalcases.CASES_SCHEMA`). Each case runs
+    through a chassis whose fake model is scripted per case: the case's `input` (sent as
+    `{"text": input}`) gets `model_reply(case)`, by default the case's `reference`. Each answer
+    gets the four checks of the platform's gate: `contains`, `banned`, `tools`, and the scripted
+    judge's verdict on the `rubric`, which passes only an answer that holds a reference the
+    human `label` calls `pass`. A run that ends outside `run_statuses` fails its case, whatever
+    its text. The report, `eval-report.v0` with the judge's score per case in `meta.judge` and
+    the status failures in `meta.status`, goes to `reports/eval.json`.
     """
 
-    def test_every_case_passes(self, chassis: Chassis, pytestconfig: pytest.Config) -> None:
-        root = pytestconfig.rootpath
-        cases = yaml.safe_load((root / "evals/cases.yaml").read_text())["cases"]
-        rows = [_score(chassis, case) for case in cases]
-        report: Path = root / "reports/eval.json"
-        report.parent.mkdir(exist_ok=True)
-        report.write_text(json.dumps({"cases": rows}, indent=2))
-        assert rows, "evals/cases.yaml has no case"
-        assert [row for row in rows if not row["passed"]] == []
+    cases_file: ClassVar[str] = "evals/cases.yaml"
+    report_file: ClassVar[str] = "reports/eval.json"
+    run_statuses: ClassVar[tuple[str, ...]] = RUN_STATUSES
 
+    @classmethod
+    def model_reply(cls, case: evalcases.Case) -> str:
+        """What the fake model answers to `case`. Override it for an engine that wants another
+        shape, for example a code block."""
+        return case.reference
 
-def _score(chassis: Chassis, case: dict[str, Any]) -> dict[str, Any]:
-    envelope = chassis.run(case["input"])
-    expect = case.get("expect") or {}
-    statuses = (expect["status"],) if "status" in expect else RUN_STATUSES
-    output = json.dumps(envelope.get("output"), sort_keys=True)
-    passed = envelope["status"] in statuses and str(expect.get("contains", "")) in output
-    return {"id": case["id"], "passed": passed, "status": envelope["status"], "output": output}
+    @pytest.fixture(scope="class")
+    @classmethod
+    def eval_cases(cls, pytestconfig: pytest.Config) -> list[evalcases.Case]:
+        path = pytestconfig.rootpath / cls.cases_file
+        return evalcases.parse_cases(yaml.safe_load(path.read_text()))
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def judged(
+        cls,
+        workload: Workload,
+        agent_testkit_chassis_source: ChassisSource,
+        eval_cases: list[evalcases.Case],
+    ) -> Iterator[Chassis]:
+        script = evalcases.model_script(eval_cases, cls.model_reply)
+        with start_chassis(workload, agent_testkit_chassis_source, model_script=script) as chassis:
+            yield chassis
+
+    def test_every_case_passes_the_judge(
+        self,
+        judged: Chassis,
+        workload: Workload,
+        eval_cases: list[evalcases.Case],
+        pytestconfig: pytest.Config,
+    ) -> None:
+        judge = Script.model_validate(evalcases.judge_script(eval_cases))
+        rows: list[dict[str, Any]] = []
+        scores: dict[str, int] = {}
+        status: dict[str, str] = {}
+        for case in eval_cases:
+            envelope = judged.run({"text": case.input})
+            row, scores[case.id] = evalcases.judge_run(case, envelope, judge, self.run_statuses)
+            rows.append(row)
+            if problem := evalcases.status_problem(envelope, self.run_statuses):
+                status[case.id] = problem
+        report = evalcases.report(workload.ref.name, rows, scores, status)
+        path: Path = pytestconfig.rootpath / self.report_file
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(json.dumps(report, indent=2))
+        assert rows, f"{self.cases_file} has no case"
+        failed = {
+            row["id"]: [
+                *([status[row["id"]]] if row["id"] in status else []),
+                *(a["reason"] for a in row["assertions"] if not a["pass"]),
+            ]
+            for row in report["cases"]
+            if not row["pass"]
+        }
+        assert failed == {}
 
 
 class RemoteLane:

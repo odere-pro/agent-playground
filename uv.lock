@@ -128,7 +128,9 @@ version = "0.1.0"
 source = { editable = "packages/agent-testkit" }
 dependencies = [
     { name = "a2a-sdk", extra = ["http-server"] },
+    { name = "fake-model-server" },
     { name = "httpx" },
+    { name = "jsonschema" },
     { name = "pytest" },
     { name = "pyyaml" },
     { name = "workload-a2a" },
@@ -137,7 +139,9 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "a2a-sdk", extras = ["http-server"], specifier = ">=1.2,<2" },
+    { name = "fake-model-server", editable = "packages/fake-model-server" },
     { name = "httpx", specifier = ">=0.28" },
+    { name = "jsonschema", specifier = ">=4.26" },
     { name = "pytest", specifier = ">=8.4" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "workload-a2a", editable = "packages/workload-a2a" },

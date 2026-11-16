@@ -5,6 +5,7 @@ config. The PoC-9 scenario test runs the agent's `make test` once it is merged.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -141,3 +142,17 @@ def test_rendered_remote_lane_suite_passes_offline_for_trust_untrusted(tmp_path:
     done = _pytest(agent, "test_remote_lane.py", plugins=("agent_testkit.plugin",))
     assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-2000:]
     assert " passed" in done.stdout and " skipped" not in done.stdout, done.stdout[-3000:]
+
+
+@pytest.mark.parametrize(("framework", "trust"), LANES)
+def test_rendered_judged_eval_passes_offline(
+    tmp_path: Path, framework: str, trust: str | None
+) -> None:
+    """059 H-15: the template's judged case passes each framework's `make eval` suite, with the
+    fake model scripted per case and the scripted judge (`agent_testkit.evalcases`)."""
+    agent = _agent(tmp_path, framework, trust)
+    done = _pytest(agent, "suites/test_eval.py", plugins=("agent_testkit.plugin",))
+    assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-2000:]
+    report = json.loads((agent / "reports/eval.json").read_text())
+    assert report["summary"] == {"total": 1, "passed": 1, "failed": 0}, report
+    assert report["meta"]["judge"] == {"g01": 1}
