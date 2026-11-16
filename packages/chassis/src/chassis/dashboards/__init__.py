@@ -8,9 +8,10 @@ Every metric a query names is one the chassis exports (`chassis.metrics`);
 
 `python -m chassis.dashboards [--out DIR] [AGENT ...]` writes `<agent>.json` per agent into
 `DASHBOARD_DIR` (run it from the repository root), by default for the agents listed in its
-`agents.txt`. The files there are generated: edit this template, never them. The datasource is
-the dashboard variable `datasource`, so one file fits any Prometheus. suggested: the panels, the
-windows, and the layout.
+`agents.txt`, and always `container.json`, the container dashboard with the key metrics
+(`chassis.dashboards.container`, 046 A-5). The files there are generated: edit this template,
+never them. The datasource is the dashboard variable `datasource`, so one file fits any
+Prometheus. suggested: the panels, the windows, and the layout.
 """
 
 from __future__ import annotations
@@ -23,13 +24,35 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from chassis.dashboards._grafana import (
+    DATASOURCE,
+    DATASOURCE_VARIABLE,
+    FALLBACK_TARGET,
+    WINDOW,
+    target_line,
+)
+from chassis.dashboards.container import (
+    CONTAINER,
+    COUNTERS_ROW,
+    INPUTS_ROW,
+    NORTH_STAR_ROW,
+    container_dashboard,
+)
+
 __all__ = [
     "AGENTS_FILE",
+    "CONTAINER",
+    "COUNTERS_ROW",
     "DASHBOARD_DIR",
     "FALLBACK",
+    "FALLBACK_TARGET",
     "FIRST_TRY",
+    "INPUTS_ROW",
+    "NORTH_STAR_ROW",
     "RETRY",
+    "WINDOW",
     "agents_in",
+    "container_dashboard",
     "dashboard",
     "main",
     "panel_exprs",
@@ -40,9 +63,7 @@ AGENTS_FILE = "agents.txt"
 """In the output folder: the agents to generate, one per line, `#` for a comment. The list is
 deploy config, not chassis code (no agent or engine name lives in the chassis)."""
 _AGENT = re.compile(r"[a-z0-9][a-z0-9._-]{0,62}")
-_DATASOURCE = {"type": "prometheus", "uid": "${datasource}"}
-WINDOW = "5m"
-"""suggested: the rate window."""
+_DATASOURCE = DATASOURCE
 FIRST_TRY = "Evaluator gate first-try pass rate"
 """046 A-5: sync runs that passed the gate on attempt 1 over sync gate runs, from the run-level
 counter `chassis_gate_first_attempt_passes_total`. Exact, unlike `1 - (retries + fallbacks) /
@@ -50,8 +71,6 @@ runs`: the gate counts each retried attempt and, after the last retry, a fallbac
 can add to both counters and to retries more than once."""
 RETRY = "Evaluator gate retry rate"
 FALLBACK = "Evaluator gate fallback rate"
-FALLBACK_TARGET = 0.1
-"""The gate fallback rate target from `docs/specs/metrics.md` (below 10%), drawn as a line."""
 _LINK_VARIABLES = (
     ("langfuse_url", "Langfuse URL"),
     ("langfuse_project", "Langfuse project id"),
@@ -97,14 +116,7 @@ def _links(agent: str) -> list[dict[str, Any]]:
 def _field_defaults(title: str, unit: str) -> dict[str, Any]:
     defaults: dict[str, Any] = {"unit": unit}
     if title == FALLBACK:
-        defaults["thresholds"] = {
-            "mode": "absolute",
-            "steps": [
-                {"color": "green", "value": None},
-                {"color": "red", "value": FALLBACK_TARGET},
-            ],
-        }
-        defaults["custom"] = {"thresholdsStyle": {"mode": "line"}}
+        defaults.update(target_line(FALLBACK_TARGET))
     return defaults
 
 
@@ -183,9 +195,12 @@ def _panels(agent: str) -> list[tuple[str, str, list[tuple[str, str]]]]:
 
 
 def dashboard(agent: str) -> dict[str, Any]:
-    """The dashboard for `agent`. `ValueError` for a name that is not a plain agent name."""
+    """The dashboard for `agent`. `ValueError` for a name that is not a plain agent name, or
+    for `container`, the container dashboard's file name."""
     if not _AGENT.fullmatch(agent):
         raise ValueError(f"not an agent name: {agent!r}")
+    if agent == CONTAINER:
+        raise ValueError(f"{CONTAINER!r} is the container dashboard's file, not an agent")
     panels = []
     for index, (title, unit, queries) in enumerate(_panels(agent)):
         panels.append(
@@ -213,12 +228,7 @@ def dashboard(agent: str) -> dict[str, Any]:
         "time": {"from": "now-6h", "to": "now"},
         "templating": {
             "list": [
-                {
-                    "name": "datasource",
-                    "type": "datasource",
-                    "query": "prometheus",
-                    "label": "Data",
-                },
+                DATASOURCE_VARIABLE,
                 *(
                     {"name": name, "type": "textbox", "query": "", "label": label}
                     for name, label in _LINK_VARIABLES
@@ -231,8 +241,8 @@ def dashboard(agent: str) -> dict[str, Any]:
 
 
 def panel_exprs(board: dict[str, Any]) -> list[str]:
-    """Every PromQL query in `board`."""
-    return [t["expr"] for p in board["panels"] for t in p["targets"]]
+    """Every PromQL query in `board`. Row and text panels have none."""
+    return [t["expr"] for p in board["panels"] for t in p.get("targets", [])]
 
 
 def agents_in(folder: Path) -> list[str]:
@@ -248,7 +258,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(argv)
     out: Path = args.out
     out.mkdir(parents=True, exist_ok=True)
-    for agent in args.agents or agents_in(out):
-        path = out / f"{agent}.json"
-        path.write_text(json.dumps(dashboard(agent), indent=2) + "\n")
+    boards = {agent: dashboard(agent) for agent in args.agents or agents_in(out)}
+    boards[CONTAINER] = container_dashboard()
+    for name, board in boards.items():
+        path = out / f"{name}.json"
+        path.write_text(json.dumps(board, indent=2) + "\n")
         print(path)

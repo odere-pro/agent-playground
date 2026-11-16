@@ -53,6 +53,8 @@ New chassis issues from the ADR:
 - {{L:CH-5}}: service operations, declared in config and routed by the chassis.
 - {{L:CH-6}}: the `remote` lane and the trust rule.
 - {{L:CH-7}}: chassis release in rings, with a minimum-version rule.
+- {{L:CH-21}}: the chassis repository under the registry prefix, so admission finds the library's chassis on a digest cluster (a user decision).
+- {{L:CH-22}}: one tag-to-digest map in the library chart, written on publish and read by the minimum-version rule, so a pin or a ring hold is one value.
 - {{L:CH-8}}: framework event mappings and one non-Python workload.
 
 How the OpenAI, Anthropic, and MCP formats map onto the one canonical request ({{L:H-2}}, {{L:H-13}}) is proposed in [ADR-003](../adr/003-chat-formats-onto-the-canonical-request.md), from PoC-3.

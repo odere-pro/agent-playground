@@ -185,6 +185,8 @@ ROWS = [
     ('CH-18', 'The judge per agent: rubric by name, escapes on the trace, a shadow judge', 'judge-per-agent', 'WD', '0', 'evaluator', 'P1', 'M', ['A-2'], ['B.2', 'G.2'], 'story', "Was W6. Retired 2026-11-13: delivered by the structured-answer skip (PR 160) and the rubric, score feedback, and shadow judge tests. From the product plan's gap review (2026-11-07), phase B second step. Owner: eval-expert."),
     ('CH-19', 'One reference stack: make platform-up on kind from deploy/helm, with the example agent as smoke test', 'reference-stack', 'W10', '8', 'infra', 'P1', 'L', ['CH-3', 'CH-4', 'X-8'], ['G.4', 'H'], 'story', "From the product plan's gap review (2026-11-07), operating it: no phase owns it. Owner: platform-security."),
     ('CH-20', 'Session memory tools on the tool proxy, and the LangGraph saver over them', 'session-memory-tools-and-saver', 'W10', '0', 'harness', 'P2', 'M', ['CH-9', 'H-16'], ['F.1', 'B.5'], 'story', 'From ADR-014 (2026-11-09): the build issue for session state behind StatePort. Owner: chassis-architect.'),
+    ('CH-21', 'The chassis repository under the registry prefix, so admission finds the library chassis', 'chassis-repository-under-prefix', 'W10', '0', 'harness', 'P2', 'S', ['CH-19'], ['G.4'], 'decision', "Found by chassis-architect's review of CH-22 (2026-11-16): rules 7b and 9 find the chassis as <registryPrefix>chassis, which the library's repository never matches. Needs the user's pick, (a) or (b). Product phase G. suggested: size S, priority P2. Owner: chassis-architect."),
+    ('CH-22', 'One tag-to-digest map in agent-lib: written on publish, read by admission rule 9', 'chassis-digest-map', 'W10', '0', 'harness', 'P2', 'M', ['CH-7', 'CH-19', 'CH-21'], ['G.4'], 'story', "Follow-up to 056 CH-7, recommended by chassis-architect 2026-11-16 after the rings ran on kind (PR 240). Product phase G. suggested: size M, priority P2. Owner: chassis-architect."),
 ]
 
 
@@ -192,7 +194,7 @@ ROWS = [
 CHASSIS = {"H-1", "H-14", "H-12", "H-2", "H-7", "H-8", "H-9", "H-4", "H-18", "H-17", "H-20", "H-6", "H-10",
            "H-13", "H-21", "H-22", "H-19", "H-15", "H-23", "H-11",
            "CH-1", "CH-2", "CH-3", "CH-4", "CH-5", "CH-6", "CH-7", "CH-8", "CH-9", "CH-10", "CH-11",
-           "CH-14", "CH-15", "CH-16", "CH-18"}
+           "CH-14", "CH-15", "CH-16", "CH-18", "CH-22", "CH-21"}
 AGENT_PROFILE = {"H-2", "H-3", "H-4", "H-6", "H-5", "H-16", "C-5", "G-4", "CH-2", "CH-17", "CH-18"}
 
 
