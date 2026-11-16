@@ -1,0 +1,67 @@
+# The reference stack's trace path in poc05-platform (139 CH-19). The namespace's `default-deny`
+# (deploy/kind/poc05/base/default-deny.yaml) refuses everything else, both ways. Peers by labels,
+# no ipBlock (deploy/CLAUDE.md). Applied by path as the cluster admin (deploy/kind/policies.sh).
+#
+# - otel-collector: in from the chassis pods of poc05-agents on 4318 (the chart's chassis pods
+#   carry `agents.platform/role: chassis`); out to Jaeger on 4317 and to DNS.
+# - jaeger: in from the Collector on 4317; out to nothing. The UI and query API on 16686 are
+#   reached by `kubectl port-forward` through the kubelet, which needs no rule here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-collector
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-agents
+          podSelector:
+            matchLabels:
+              agents.platform/role: chassis
+      ports:
+        - port: 4318
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: jaeger
+      ports:
+        - port: 4317
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: jaeger
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: jaeger
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: otel-collector
+      ports:
+        - port: 4317
+          protocol: TCP
+  egress: []

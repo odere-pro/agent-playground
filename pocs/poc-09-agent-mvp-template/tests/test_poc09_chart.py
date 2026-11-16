@@ -30,6 +30,7 @@ The admission and egress rules the chart carries are in `test_poc09_chart_bounda
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -46,9 +47,11 @@ from chart_render import (
     REMOTE_VALUES,
     WORKLOAD_PORT,
     WORKLOAD_UID,
+    ZERO_DIGEST,
     Charts,
     Doc,
     containers,
+    make_charts,
     one,
     secret_names,
     values_file,
@@ -56,6 +59,15 @@ from chart_render import (
 )
 
 pytestmark = NEEDS_HELM
+
+# 139 CH-19: the chart's default chassis image is the published one, tagged and pinned by digest
+# (decided 2026-11-15). suggested: v0.1.0, from packages/chassis/pyproject.toml; poc09, the
+# kind-era tag, is the previous one a service may pin on kind.
+PUBLISHED_CHASSIS = "ghcr.io/odere-pro/agent-chassis"
+RELEASE_TAG = "v0.1.0"
+PREVIOUS_TAG = "poc09"
+KIND_CHASSIS = "kind.local/agent-platform/chassis"
+DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def _assert_hardened(container: Doc, uid: int) -> None:
@@ -102,7 +114,7 @@ def test_sidecar_lane_renders_one_pod_with_the_chassis_and_the_workload(chart: C
     assert [c["name"] for c in pod["containers"]] == ["chassis"]
     assert "runtimeClassName" not in pod
     image = by_name["chassis"]["image"]
-    assert image.startswith("kind.local/agent-platform/chassis:") and not image.endswith(":latest")
+    assert image.startswith(f"{PUBLISHED_CHASSIS}:") and not image.endswith(":latest")
     assert not [d for d in docs if d["kind"] == "HorizontalPodAutoscaler"], "HPA is off by default"
 
 
@@ -549,7 +561,9 @@ def test_the_kind_values_pull_nothing_and_hold_no_secret(chart: Charts) -> None:
     assert one(docs, "HorizontalPodAutoscaler", RELEASE)["spec"]["minReplicas"] == 2
 
 
-PINNED: dict[str, Any] = {"chassis": {"image": {"tag": "poc08"}}}
+# The previous tag has no digest on the registry: a service that moves off the library's tag
+# names its own digest, here "" (139 CH-19; the library's digest pins the library's tag only).
+PINNED: dict[str, Any] = {"chassis": {"image": {"tag": PREVIOUS_TAG, "digest": ""}}}
 
 
 @pytest.mark.parametrize("values", [None, PINNED, REMOTE_VALUES], ids=["default", "pin", "remote"])
@@ -564,4 +578,59 @@ def test_chassis_env_carries_the_image_tag_it_runs(
     env = {e["name"]: e.get("value") for e in chassis["env"]}
     assert env["CHASSIS_IMAGE_TAG"] == tag
     if values is PINNED:
-        assert tag == "poc08", "a service pinned to the previous tag reports that tag"
+        assert tag == PREVIOUS_TAG, "a service pinned to the previous tag reports that tag"
+
+
+# --- 139 CH-19: the published default chassis image ---------------------------------------------
+
+
+def _chassis_image(docs: list[Doc]) -> str:
+    pod = one(docs, "Deployment", RELEASE)["spec"]["template"]["spec"]
+    image: str = containers(pod)["chassis"]["image"]
+    return image
+
+
+def test_the_default_chassis_image_is_the_published_tag_pinned_by_digest(chart: Charts) -> None:
+    """139 CH-19 box 4, render half: no kind.local default. The digest is the one
+    scripts/publish_chassis.sh writes; until the first push it is the all-zero placeholder."""
+    image = _chassis_image(chart.template())
+    assert not image.startswith("kind.local/"), f"the default is a kind image: {image}"
+    name, digest = image.split("@")
+    assert name == f"{PUBLISHED_CHASSIS}:{RELEASE_TAG}"
+    assert DIGEST.match(digest), digest
+
+
+def test_the_kind_values_run_the_loaded_chassis_under_the_release_tag(chart: Charts) -> None:
+    """On kind the image is loaded into the node (PoC-5 rule 8): same tag, no digest, no pull."""
+    docs = chart.template(HELM_DIR / "example-agent/values-kind.yaml")
+    assert _chassis_image(docs) == f"{KIND_CHASSIS}:{RELEASE_TAG}"
+
+
+@pytest.mark.parametrize(
+    "image",
+    [{"tag": PREVIOUS_TAG}, {"repository": KIND_CHASSIS}],
+    ids=["tag", "repository"],
+)
+def test_a_service_that_moves_off_the_library_image_must_name_its_digest(
+    chart: Charts, tmp_path: Path, image: dict[str, str]
+) -> None:
+    """The library's digest pins the library's repository and tag only. Keeping it under another
+    tag or repository would run an image other than the one named, so the render refuses."""
+    path = values_file(tmp_path, {"chassis": {"image": image}})
+    proc = chart.helm("template", RELEASE, str(chart.example), "-f", str(path), check=False)
+    assert proc.returncode != 0, f"rendered, want a refusal:\n{proc.stdout}"
+    assert "chassis.image.digest" in proc.stderr, proc.stderr
+
+
+def test_the_all_zero_placeholder_digest_is_refused_outside_kind(tmp_path: Path) -> None:
+    """Before the first push the library's digest is all zeros. A default render (a cloud) fails
+    and names the publish step; the kind values (digest "") still render."""
+    charts = make_charts(tmp_path / "charts", published=False)
+    lib = (charts.example.parent / "agent-lib/templates/_values.tpl").read_text()
+    if ZERO_DIGEST not in lib:
+        pytest.skip("the chassis is published: the library holds a real digest")
+    proc = charts.helm("template", RELEASE, str(charts.example), check=False)
+    assert proc.returncode != 0, proc.stdout
+    assert "placeholder" in proc.stderr and "publish_chassis.sh" in proc.stderr, proc.stderr
+    kind = charts.example / "values-kind.yaml"
+    assert charts.helm("template", RELEASE, str(charts.example), "-f", str(kind)).returncode == 0

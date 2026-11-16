@@ -11,7 +11,7 @@ is used as rendered; the drill values only point it at this cluster:
   run needs no key and no platform service;
 - a free fixed ClusterIP for the remote proxy (the default, 10.96.0.92, is PoC-6 smolagents').
 
-The chassis image is this checkout's PoC-5 build, tagged `poc09`, the library chart's tag. The
+The chassis image is this checkout's PoC-5 build, tagged `v0.1.0`, the library chart's tag. The
 release goes in two namespaces of its own, `h15-agents` and `my-agent-remote`, with Pod Security
 `restricted`. They do not carry `agents.platform/admission: enforce`, so PoC-5's admission rules
 do not apply; the box is about the chart's pods, not admission. The test makes the token Secret
@@ -56,8 +56,8 @@ WORKLOAD_DEPLOY = f"{AGENT}-workload"
 TOKEN_SECRET = f"{AGENT}-workload-token"  # pragma: allowlist secret (a Secret name)
 WORKLOAD_IMAGE = f"kind.local/agent-platform/{AGENT}:h15"
 CHASSIS_BUILT = "kind.local/agent-platform/chassis:poc05"
-CHASSIS_IMAGE = "kind.local/agent-platform/chassis:poc09"
-"""The library chart's chassis tag (`agent-lib.defaults`)."""
+CHASSIS_IMAGE = "kind.local/agent-platform/chassis:v0.1.0"
+"""The library chart's chassis tag (`agent-lib.defaults`), under the kind.local repository."""
 PROXY_IP = "10.96.0.97"
 """suggested: a fixed ClusterIP no PoC-5 or PoC-6 Service takes (they use .91 to .95)."""
 OUTSIDE_IP = "1.1.1.1"  # a literal public address: no DNS involved
@@ -65,7 +65,11 @@ GVISOR = "gvisor"
 DRILL_VALUES: dict[str, Any] = {
     "workload": {"image": WORKLOAD_IMAGE, "pullPolicy": "Never"},
     "chassis": {
-        "image": {"pullPolicy": "Never"},
+        "image": {
+            "repository": "kind.local/agent-platform/chassis",
+            "digest": "",
+            "pullPolicy": "Never",
+        },
         "env": [],
         "secretEnv": [],
         "config": {"spec": {"adapters": {"model": "fake"}}},

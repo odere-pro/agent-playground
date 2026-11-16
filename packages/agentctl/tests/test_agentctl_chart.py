@@ -7,6 +7,7 @@ reads a `file://` path and never the network. Skipped when `helm` is not on PATH
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -27,8 +28,30 @@ UNTRUSTED = ("langgraph", "remote", "untrusted")
 """059 H-15 box 2: `--trust untrusted` on a trusted framework renders the remote chart."""
 ALL_LANES = [*LANES, UNTRUSTED]
 GVISOR = "gvisor"
-LIBRARY_CHASSIS_IMAGE = "kind.local/agent-platform/chassis:poc09"
-"""The default in deploy/helm/agent-lib/templates/_values.tpl (`agent-lib.defaults`)."""
+_LIBRARY_DIGEST = re.search(
+    r"^    digest: (sha256:[0-9a-f]{64})$",
+    (ROOT / "deploy/helm/agent-lib/templates/_values.tpl").read_text(),
+    re.M,
+)
+assert _LIBRARY_DIGEST is not None, "the library chart pins its chassis by digest"
+ZERO_DIGEST = "sha256:" + "0" * 64
+PUBLISHED_STAND_IN = "sha256:" + "e" * 64
+"""The chart refuses the all-zero placeholder (139 CH-19), so before the first push the test's
+platform copy holds this stand-in for the digest scripts/publish_chassis.sh writes."""
+_DIGEST = _LIBRARY_DIGEST.group(1)
+_DIGEST = PUBLISHED_STAND_IN if _DIGEST == ZERO_DIGEST else _DIGEST
+LIBRARY_CHASSIS_IMAGE = f"ghcr.io/odere-pro/agent-chassis:v0.1.0@{_DIGEST}"
+"""The default in deploy/helm/agent-lib/templates/_values.tpl (`agent-lib.defaults`): the
+published image, pinned by digest."""
+
+
+def _platform(tmp_path: Path) -> Path:
+    """The platform the agent links to: the library chart only, with the published digest."""
+    lib = tmp_path / "platform/deploy/helm/agent-lib"
+    shutil.copytree(ROOT / "deploy/helm/agent-lib", lib, dirs_exist_ok=True)
+    values = lib / "templates/_values.tpl"
+    values.write_text(values.read_text().replace(ZERO_DIGEST, PUBLISHED_STAND_IN))
+    return tmp_path / "platform"
 
 
 def _agent(tmp_path: Path, framework: str, connector: str, trust: str | None = None) -> Path:
@@ -41,7 +64,7 @@ def _agent(tmp_path: Path, framework: str, connector: str, trust: str | None = N
         trust=trust,
     )
     agent = render(answers, tmp_path)
-    (agent / ".platform").symlink_to(ROOT)
+    (agent / ".platform").symlink_to(_platform(tmp_path))
     return agent
 
 

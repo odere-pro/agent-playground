@@ -3,7 +3,7 @@
 The shared library chart (backlog 024 CH-3) and one example chart that includes it. `deploy/CLAUDE.md` still applies. Ask `platform-security` before changing anything that touches a Secret, a NetworkPolicy, the RuntimeClass, or a security context.
 
 - `agent-lib/` is `type: library`: named templates only, in `templates/_*.tpl`. It renders nothing on its own.
-- The chassis image tag is set once, in `agent-lib.defaults` (`templates/_values.tpl`). A service pins the previous tag with one value, `chassis.image.tag`. Never `latest`.
+- The chassis image is set once, in `agent-lib.defaults` (`templates/_values.tpl`): `ghcr.io/odere-pro/agent-chassis`, tag and digest (139 CH-19; `scripts/publish_chassis.sh` writes the digest). A service pins another tag with `chassis.image.tag` and its `chassis.image.digest`. Never `latest`.
 - Secrets go to the chassis container only, through `chassis.secretEnv`, `chassis.envFromSecrets`, or `chassis.secretVolumes`. The workload has an allow-list of keys and plain env only; `templates/_validate.tpl` fails the render otherwise. Do not add a workload key that can carry a Secret, a volume, or a security context.
 - The uids are not values: chassis 10001, workload 10002 (the uid table in `deploy/README.md`).
 - The lane and the trust level come from the chassis config (`chassis.config.spec.engine.connector`, `chassis.config.spec.trust`). `untrusted` needs `remote`. The remote lane is two pods; the workload pod runs under gVisor with its own token only, the Secret `<name>-workload-token` the chart names (ADR-005). That Secret holds two keys, one per direction (055 CH-6); never map one key both ways.
