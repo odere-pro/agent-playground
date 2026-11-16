@@ -12,6 +12,9 @@
 #   review F3). Namespace labels are the platform's: no tenant role may edit a namespace.
 # - poc05-smoke has no admission label: `run.sh smoke` runs its busybox pods there, before or
 #   after admission is installed, with the same PSA level and default deny.
+# - poc05-chart has no admission label either: the library chart's drill (024 CH-3,
+#   pocs/poc-09-agent-mvp-template/tests/test_poc09_kind_chart.py) installs example-agent there
+#   with helm. Whether the chart's defaults pass admission is 026 CH-4's box, not this drill's.
 # NetworkPolicy selectors use the built-in `kubernetes.io/metadata.name` label.
 apiVersion: v1
 kind: Namespace
@@ -92,6 +95,18 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: poc05-smoke
+  labels:
+    agents.platform/poc: "05"
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# The library chart's drill (024 CH-3): two example-agent releases, installed by the kind test.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: poc05-chart
   labels:
     agents.platform/poc: "05"
     pod-security.kubernetes.io/enforce: restricted

@@ -1,0 +1,59 @@
+# The chassis rollout rings' promotion gate (056 CH-7; the product plan, phase G). A ring is
+# promoted only while both gate alerts are quiet for it for the hold time (suggested: one hour,
+# the issue's value). Steps and what to do when one fires: deploy/rings/README.md.
+#
+# The `ring` label is not the chassis's: Prometheus copies it from the pod label
+# agents.platform/chassis-ring (agent-lib sets it from the ring overlay) with this relabel rule in
+# the kubernetes_sd scrape job, which the kind stack adds with 117 X-3:
+#   - source_labels: [__meta_kubernetes_pod_label_agents_platform_chassis_ring]
+#     target_label: ring
+#
+# The baseline is ring="all", the services a release has not reached, still on the previous tag.
+# The gate reads only the rings a release has reached (canary, ten-percent); after the last
+# promotion there is nothing to compare, and it stays quiet.
+#
+# Limits (suggested, the epic gives none):
+# - The chassis does not seed chassis_requests_total, chassis_run_errors_total, or the run
+#   histogram at 0, so rate() misses each new pod's first count. Over a one-hour window with
+#   traffic this is small; a canary with almost no traffic proves little either way.
+# - The thresholds: an error ratio twice the baseline and above 1%; a p95 latency 1.5 times the
+#   baseline and above 0.5 s. Both wait 10 minutes before they fire.
+# Every rule names a metric the chassis exports (packages/chassis/tests/test_ring_gate_rules.py).
+groups:
+  - name: chassis-rings
+    rules:
+      - record: chassis:ring_run_error_ratio:rate1h
+        expr: >-
+          sum by (ring) (rate(chassis_run_errors_total[1h]))
+          / sum by (ring) (rate(chassis_requests_total[1h]))
+      - record: chassis:ring_run_latency_p95_seconds:1h
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (ring, le) (rate(chassis_run_duration_seconds_bucket[1h])))
+      - alert: ChassisRingErrorRateAboveBaseline
+        expr: >-
+          (chassis:ring_run_error_ratio:rate1h{ring=~"canary|ten-percent"}
+            > ignoring (ring) group_left () (2 * chassis:ring_run_error_ratio:rate1h{ring="all"}))
+          and chassis:ring_run_error_ratio:rate1h{ring=~"canary|ten-percent"} > 0.01
+        for: 10m
+        labels:
+          severity: critical
+          gate: chassis-ring
+        annotations:
+          summary: "Chassis ring {{ $labels.ring }}: the run error rate is above the previous tag's"
+          description: "{{ $value | humanizePercentage }} of runs in ring {{ $labels.ring }} ended with an error over the last hour, more than twice the ring still on the previous chassis tag. Do not promote; roll the ring back if it holds."
+          runbook_url: https://github.com/odere-pro/agent-playground/blob/main/deploy/rings/README.md#a-gate-alert-fires
+      - alert: ChassisRingLatencyAboveBaseline
+        expr: >-
+          (chassis:ring_run_latency_p95_seconds:1h{ring=~"canary|ten-percent"}
+            > ignoring (ring) group_left ()
+              (1.5 * chassis:ring_run_latency_p95_seconds:1h{ring="all"}))
+          and chassis:ring_run_latency_p95_seconds:1h{ring=~"canary|ten-percent"} > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          gate: chassis-ring
+        annotations:
+          summary: "Chassis ring {{ $labels.ring }}: the p95 run latency is above the previous tag's"
+          description: "The p95 run latency in ring {{ $labels.ring }} is {{ $value | humanizeDuration }} over the last hour, more than 1.5 times the ring still on the previous chassis tag. Do not promote until it holds."
+          runbook_url: https://github.com/odere-pro/agent-playground/blob/main/deploy/rings/README.md#a-gate-alert-fires

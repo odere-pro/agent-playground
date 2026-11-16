@@ -20,6 +20,8 @@
 #   deploy/kind/poc05/run.sh test-remote  the kind remote-lane, code-runner, and sidecar hostile
 #                                     files (CI job); fails naming any file in REMOTE_TESTS that
 #                                     does not exist yet
+#   deploy/kind/poc05/run.sh test-chart  the library chart's kind test (024 CH-3): two example-agent
+#                                     releases in poc05-chart, installed and removed by the test
 #   deploy/kind/poc05/run.sh with-gateway CMD...  run CMD with a port-forward to LiteLLM and
 #                                     POC05_GATEWAY_MCP_URL, POC05_CHASSIS_VIRTUAL_KEY exported
 #                                     (the key from its Secret, never in argv or output); last verb
@@ -65,6 +67,18 @@ IMAGES=(
   "$REGISTRY/echo-python:poc05|packages/workloads/echo-python/Dockerfile|."
   "$REGISTRY/echo-typescript:poc05|packages/workloads/echo-typescript/Dockerfile|packages/workloads/echo-typescript"
 )
+
+# The library chart's drill (024 CH-3; pocs/poc-09-agent-mvp-template/tests/test_poc09_kind_chart.py)
+# runs deploy/helm/example-agent, which names the chart's own tags. "<built image>|<chart tag>":
+# the same build under the tag the library (chassis) and values-kind.yaml (workload) name.
+# CHART_NEXT is the next chassis release for the tag-bump test: that build with one label more, so
+# its image id differs. Loaded like IMAGES; never pushed, never run outside poc05-chart.
+CHART_TAGS=(
+  "$REGISTRY/chassis:poc05|$REGISTRY/chassis:poc09"
+  "$REGISTRY/echo-python:poc05|$REGISTRY/echo-python:poc09"
+)
+CHART_NEXT=$REGISTRY/chassis:poc10
+CHART_IMAGES=("${CHART_TAGS[@]#*|}" "$CHART_NEXT")
 
 # shellcheck source=deploy/kind/lib.sh
 source "$HERE/../lib.sh"
@@ -126,12 +140,27 @@ build() {
     IFS='|' read -r image dockerfile context <<<"$entry"
     docker build -t "$image" -f "$ROOT/$dockerfile" "$ROOT/$context"
   done
+  chart_images
+}
+
+# chart_images: the chart drill's tags of this build, and the next chassis release.
+chart_images() {
+  local entry built tag
+  for entry in "${CHART_TAGS[@]}"; do
+    IFS='|' read -r built tag <<<"$entry"
+    docker tag "$built" "$tag"
+  done
+  printf 'FROM %s\nLABEL agents.platform/chassis-release=poc10\n' "$REGISTRY/chassis:poc09" |
+    docker build -t "$CHART_NEXT" -
 }
 
 load() {
   local entry image
   for entry in "${IMAGES[@]}"; do
     image=${entry%%|*}
+    kind load docker-image "$image" --name "$CLUSTER"
+  done
+  for image in "${CHART_IMAGES[@]}"; do
     kind load docker-image "$image" --name "$CLUSTER"
   done
 }
@@ -589,6 +618,14 @@ run_tests_remote() {
   (cd "$ROOT" && with_gateway env KIND_DRILLS=1 uv run pytest -m network "${REMOTE_TESTS[@]}" -q -rs)
 }
 
+# The library chart's four live boxes (024 CH-3) on this cluster: the tag rollout, the workload
+# port, the Secrets, the liveness restart. `up` makes what it needs (images, poc05-chart, its
+# Secret); the test installs and removes the two releases itself, with helm as cluster admin.
+run_tests_chart() {
+  (cd "$ROOT" && env KIND_DRILLS=1 uv run pytest -m network \
+    pocs/poc-09-agent-mvp-template/tests/test_poc09_kind_chart.py -v -s -rs)
+}
+
 # with_gateway CMD...: the kind tests that call the gateway from the host (test_poc05_kind_*.py)
 # need its URL and the chassis's virtual key. Port-forward LiteLLM on a free local port, export
 # both, run CMD, then stop the forward. The key goes from the Secret into this process's env only:
@@ -785,7 +822,7 @@ pod_logs() {
   done
 }
 
-usage() { sed -n '2,35p' "$0"; }
+usage() { sed -n '2,37p' "$0"; }
 
 (($# > 0)) || { usage; exit 0; }
 # `with-gateway` takes the rest of the line as its command, so it ends the verb list.
@@ -815,6 +852,7 @@ for cmd in "$@"; do
     up) up ;;
     test) run_tests ;;
     test-remote) run_tests_remote ;;
+    test-chart) run_tests_chart ;;
     pods) pods ;;
     logs) pod_logs ;;
     redact) redact_logs ;;

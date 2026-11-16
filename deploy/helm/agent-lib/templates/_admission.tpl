@@ -159,6 +159,11 @@ metadata:
   name: agent-chassis-version
   labels:
     {{- include "agent-lib.labels" (dict "root" . "name" "agent-chassis-version") | nindent 4 }}
+  {{- if eq $a.chassisVersionAction "Warn" }}
+  # The warn-first ring of a new minimum (056 CH-7), shown on the object, not only in values.
+  annotations:
+    agents.platform/chassis-version-ring: warn
+  {{- end }}
 spec:
   policyName: agent-chassis-version
   validationActions: [{{ $a.chassisVersionAction }}, Audit]

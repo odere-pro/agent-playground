@@ -1,7 +1,7 @@
 ---
 title: "C-5: AI-generated marking on outputs and a disclosure flag for client apps"
 labels: ["story", "priority:P1", "phase:9-governance", "area:governance", "size:S", "layer:agent-profile"]
-milestone: "W2 Chassis MVP"
+milestone: "Done: delivered by the PoC track"
 index: 23
 epic_id: C-5
 depends_on: ["010 H-12", "011 H-2", "019 H-17"]
@@ -20,11 +20,12 @@ Agents with `limited` risk and above must mark every output as AI-generated (E.4
   - the `ai_marking` body field in the OpenAI and Anthropic formats, complete and on every chunk;
   - the `aigenerated` CloudEvent extension on result events, so stored records keep it;
   - `Access-Control-Expose-Headers` for the two flags, so browser clients can read them.
-- The chassis sets the marking on the way out, after the workload's events come back. Whatever the workload sends in those headers or that field is overwritten.
+- The chassis sets the marking on the way out, after the workload's events come back. Whatever the workload sends in those headers or that field is overwritten. On native `/v1/run` and `/v1/mcp` the marking is the two headers: `output` belongs to the workload, and the chassis does not read or rewrite it (narrowed by the user on 2026-11-15 on the chassis-architect's recommendation).
 - Marking on when `governance.risk_class` is `limited` or `high`, or when `governance.ai_generated_marking` is `true`.
 - A config check that refuses `ai_generated_marking: false` for `limited` and `high` agents.
 - A short guide for client app teams: how to read the flags and show a disclosure. It is due before the AI Act Art. 50(2) date, 2026-12-02 (phase A, decided 2026-11-06).
-- `CloudEvent` has `extra="forbid"` (`packages/chassis/src/chassis/ports/events.py`), so a consumer on a chassis older than PoC-8 rejects an event with `aigenerated`. Accept and drop unknown extensions from now on, or roll consumers out before producers for every new extension: 001 DEC-1 decides. suggested: accept and drop them.
+- `CloudEvent` had `extra="forbid"` (`packages/chassis/src/chassis/ports/events.py`), so a consumer on a chassis older than PoC-8 rejects an event with `aigenerated`. Decided by the user on 2026-11-15 on the chassis-architect's recommendation ([001 DEC-1](001-DEC-1-resolve-open-decisions.md#decisions), decision 7; [contract v9](../../contracts/contract-v9.md#j-a-reader-drops-a-cloudevent-extension-it-does-not-know-023-c-5), J.29): accept and drop unknown extensions from now on, and before a producer sends a new extension, every consumer runs a chassis that drops unknown ones.
+- Known gap, the shipped readers: a reader built before commit 5b71cb7 refuses `aigenerated`, and no code change fixes it. Such a consumer must be upgraded before it reads a marked result event.
 
 ## Out of scope
 
@@ -35,6 +36,8 @@ Agents with `limited` risk and above must mark every output as AI-generated (E.4
 
 ## Acceptance criteria
 
+Delivered by: PoC-7, PoC-8, and, on 2026-11-15, the override tests in the `sidecar` and `remote` lanes (`packages/chassis/tests/test_marking_override.py`) and the unknown-extension reader (`packages/chassis/tests/test_events_contract.py`, contract v9 J.29)
+
 - [x] An agent with `risk_class: limited` marks every output through all three APIs, streaming and complete: the two headers everywhere, and the `ai_marking` body field in OpenAI and Anthropic. · Delivered in PoC-7, PoC-8: `packages/chassis/tests/test_marking.py::test_limited_marks_every_interface_streaming_and_complete`, `packages/chassis/tests/test_marking_body.py::test_the_openai_body_carries_the_flags_complete_and_on_every_chunk`, `::test_the_anthropic_body_carries_the_flags_complete_and_on_message_start`, [contract v7 E.1](../../contracts/contract-v7.md#e1-the-body-field)
 - [x] A `limited` or `high` agent with `ai_generated_marking: false` is refused at config load. · Delivered in PoC-7: `packages/chassis/tests/test_marking.py::test_marking_false_is_refused_for_limited_and_high`
 - [x] A `minimal` agent with `ai_generated_marking: true` marks its outputs; with `false`, it does not. · Delivered in PoC-7: `packages/chassis/tests/test_marking.py::test_minimal_marks_only_when_asked`
@@ -42,10 +45,8 @@ Agents with `limited` risk and above must mark every output as AI-generated (E.4
 - [x] Result events carry the same marking as the `aigenerated` CloudEvent extension. · Delivered in PoC-8: `packages/chassis/tests/test_marking_body.py::test_result_events_carry_the_aigenerated_extension`, [contract v7 E.2](../../contracts/contract-v7.md#e2-the-cloudevent-extension)
 - [x] A contract test checks the marking on every endpoint. · Delivered by: `packages/chassis/tests/test_marking_routes.py::test_every_route_is_marked_when_it_runs_and_unmarked_otherwise_inprocess`, `::test_every_route_is_marked_when_it_runs_and_unmarked_otherwise_over_a2a`, `::test_no_route_is_marked_when_marking_is_off` (driven by `app.routes`: run routes marked complete and streamed, MCP included; `/health`, `/ready`, `/manifest`, `/metrics`, and the docs unmarked)
 - [x] The marking holds in the `inprocess` and `sidecar` lanes, with the same flags for the same input. · Delivered in PoC-7: `packages/chassis/tests/test_marking.py::test_inprocess_and_sidecar_give_the_same_flags`
-- [ ] A test workload that sends its own marking, in the headers or in the `ai_marking` body field, still gets the chassis's marking on a `limited` agent's output, because the chassis sets it on the way out.
-  - Proven so far in `packages/chassis/tests/test_marking_override.py`: `true` headers on every run interface, `/v1/mcp` included (`::test_a_workload_that_sends_its_own_marking_still_gets_the_chassis_marking`, `::test_a_workload_with_its_own_marking_still_gets_true_headers_over_mcp`); `false` headers already on the response are replaced (`::test_mark_outputs_replaces_false_headers_already_on_the_response`); a `false` top-level `ai_marking` in the OpenAI and Anthropic bodies is replaced (`::test_with_marking_replaces_a_false_top_level_ai_marking`).
-  - Open: native `/v1/run` passes the workload's own `output.ai_marking: false` through, next to `X-AI-Generated: true`. Overwriting or stripping it changes the frozen contract-v5 envelope, so it needs a chassis-architect decision; the other path is to narrow this box to "the native marking is the headers only".
-- [ ] A consumer on a chassis older than PoC-8 reads an event with `aigenerated`.
+- [x] A test workload that sends its own marking, in the headers or in the `ai_marking` body field, still gets the chassis's marking on a `limited` agent's output, because the chassis sets it on the way out. On native `/v1/run` and `/v1/mcp`, the marking is the two headers: `output` belongs to the workload, and the chassis does not read or rewrite it. Narrowed by the user on 2026-11-15 on the chassis-architect's recommendation. · Delivered by: `packages/chassis/tests/test_marking_override.py::test_a_workload_that_sends_its_own_marking_still_gets_the_chassis_marking[*-sidecar]`, `[*-remote]` (`true` headers on every run interface, complete and streamed; the OpenAI and Anthropic `ai_marking`; native `output` passed through as the workload sent it), `::test_a_workload_with_its_own_marking_still_gets_true_headers_over_mcp[sidecar]`, `[remote]`, `::test_mark_outputs_replaces_false_headers_already_on_the_response`, `::test_with_marking_replaces_a_false_top_level_ai_marking`; `inprocess`: `packages/chassis/tests/test_marking.py::test_a_workload_that_claims_not_ai_generated_is_still_marked`, `test_marking_routes.py::test_every_route_is_marked_when_it_runs_and_unmarked_otherwise_inprocess`; the spec's marking section (`docs/specs/contract.md`); guide: [show that an answer is AI-generated](../../guides/client-app-ai-disclosure.md#what-a-workload-cannot-do)
+- [x] A current reader accepts an event with an extension it does not know. · Delivered by: `chassis_contracts.events.EventPortContract.test_a_reader_accepts_an_event_with_an_extension_it_does_not_know` and `::test_a_known_attribute_with_a_bad_value_is_still_refused`, bound in `packages/chassis/tests/test_events_contract.py::TestInMemoryBus`; `test_events_contract.py::test_each_broker_reader_accepts_and_drops_an_unknown_extension[kafka]`, `[dapr]`; [contract v9 J.29](../../contracts/contract-v9.md#j-a-reader-drops-a-cloudevent-extension-it-does-not-know-023-c-5) (decided 2026-11-15, 001 DEC-1 decision 7). The shipped-reader gap stays: a reader built before commit 5b71cb7 refuses `aigenerated` (see What).
 
 ## Dependencies
 

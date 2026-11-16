@@ -8,6 +8,12 @@ The chassis image is set here, once, for every service that includes this chart 
 A release bumps `chassis.image.tag` below; a service holds the previous tag with one value,
 `chassis.image.tag`, in its own values. suggested: `poc09` until the chassis has release tags
 (056 CH-7). The uids are not values: they come from the uid table in deploy/README.md.
+
+The rollout rings (056 CH-7): a service layers its ring's overlay, deploy/rings/<ring>.yaml, on
+its own values. `ring.name` labels the chassis pod agents.platform/chassis-ring. `ring.chassisTag`
+holds the ring on a tag while a release has not reached it; empty follows the library's tag. The
+tag a pod runs is, first to last: the service's own `chassis.image.tag` (a pin), the ring's
+`ring.chassisTag`, the library's tag. Each must be a supported tag.
 */}}
 {{- define "agent-lib.defaults" -}}
 nameOverride: ""
@@ -85,6 +91,10 @@ networkPolicy:
     namespace: kube-system
     podLabels:
       k8s-app: kube-dns
+# 056 CH-7: set by the ring overlay (deploy/rings/<ring>.yaml), not by the service's own values.
+ring:
+  name: ""
+  chassisTag: ""
 hpa:
   enabled: false
   minReplicas: 2
@@ -103,8 +113,22 @@ hpa:
 {{- $user := .Values | toYaml | fromYaml -}}
 {{- include "agent-lib.validateServiceValues" $user -}}
 {{- $v := mergeOverwrite $defaults $user -}}
+{{- include "agent-lib.ringTag" (dict "v" $v "user" $user) -}}
 {{- include "agent-lib.validate" $v -}}
 {{- toYaml $v -}}
+{{- end -}}
+
+{{/*
+The ring holds the chassis tag (056 CH-7) unless the service pins its own: a pin is a
+`chassis.image.tag` in the service's values, so it is read before the defaults are merged. Sets
+the merged chassis.image.tag in place; prints nothing. Takes (dict "v" <merged> "user" <raw>).
+*/}}
+{{- define "agent-lib.ringTag" -}}
+{{- $held := toString .v.ring.chassisTag -}}
+{{- $pinned := dig "chassis" "image" "tag" "" .user -}}
+{{- if and $held (not $pinned) -}}
+{{- $_ := set .v.chassis.image "tag" $held -}}
+{{- end -}}
 {{- end -}}
 
 {{/*

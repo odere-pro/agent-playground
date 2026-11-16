@@ -40,7 +40,7 @@ NAMESPACE = "agents"
 REMOTE_NAMESPACE = "agents-remote"
 ADMISSION_RELEASE = "agent-admission"
 PLATFORM_NAMESPACE = "agent-platform-system"
-CHARTS = ("agent-lib", "example-agent", "agent-admission")
+CHARTS = ("agent-lib", "example-agent", "agent-admission", "agent-rings")
 
 # The remote lane: the chassis pod in the release namespace, the workload pod under gVisor in its
 # own. The token Secret is not a value: the chart names it after the workload (admission rule 7c).
@@ -58,13 +58,19 @@ class Charts:
 
     example: Path
     admission: Path
+    rings: Path
     env: dict[str, str]
 
-    def helm(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def helm(
+        self, *args: str, check: bool = True, timeout: int = 60
+    ) -> subprocess.CompletedProcess[str]:
+        """`helm` with `args`; `timeout` in seconds caps the process (a kind install that waits
+        for Ready passes more than its own `--timeout`)."""
         assert HELM is not None
         proc = subprocess.run(
-            [HELM, *args], capture_output=True, text=True, timeout=60, check=False, env=self.env
-        )
+            [HELM, *args], capture_output=True, text=True, timeout=timeout, check=False,
+            env=self.env,
+        )  # fmt: skip
         if check and proc.returncode != 0:
             pytest.fail(
                 f"helm {' '.join(args)} exited {proc.returncode}:\n{proc.stdout}\n{proc.stderr}"
@@ -100,11 +106,41 @@ def make_charts(base: Path) -> Charts:
         "HELM_CONFIG_HOME": str(base / ".config"),
         "HELM_DATA_HOME": str(base / ".data"),
     }
-    charts = Charts(example=base / "example-agent", admission=base / "agent-admission", env=env)
+    charts = Charts(
+        example=base / "example-agent",
+        admission=base / "agent-admission",
+        rings=base / "agent-rings",
+        env=env,
+    )
     # A file:// dependency only: no repo, no index, no network.
     for chart in (charts.example, charts.admission):
         charts.helm("dependency", "update", "--skip-refresh", str(chart))
     return charts
+
+
+CHASSIS_REPOSITORY = "kind.local/agent-platform/chassis"
+# The library's chassis tag today and its supported list (`agent-lib.defaults`, `_values.tpl`).
+CURRENT_TAG = "poc09"
+PREVIOUS_TAG = "poc08"
+NEW_TAG = "poc10"
+
+
+def bump_library(charts: Charts, new: str = NEW_TAG) -> None:
+    """A chassis release (056 CH-7): the tag and its supported list change in the library only.
+
+    `chassis.image.tag` becomes `new`, and the supported list becomes `[new, current]`, so the
+    current tag is the previous one a service may pin. Then the dependencies are built again.
+    """
+    path = charts.example.parent / "agent-lib/templates/_values.tpl"
+    text = path.read_text(encoding="utf-8")
+    tag_line = f"    tag: {CURRENT_TAG}\n"
+    supported_line = f"    supportedTags: [{CURRENT_TAG}, {PREVIOUS_TAG}]\n"
+    assert text.count(tag_line) == 1 and text.count(supported_line) == 1, "the tag moved"
+    text = text.replace(tag_line, f"    tag: {new}\n")
+    text = text.replace(supported_line, f"    supportedTags: [{new}, {CURRENT_TAG}]\n")
+    path.write_text(text, encoding="utf-8")
+    for chart in (charts.example, charts.admission):
+        charts.helm("dependency", "update", "--skip-refresh", str(chart))
 
 
 def values_file(tmp_path: Path, values: dict[str, Any]) -> Path:
