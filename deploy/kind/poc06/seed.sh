@@ -126,7 +126,8 @@ start_forward() {
 
 # The /key/generate body, the shape of deploy/kind/poc05/platform/seed.sh key_body: the model
 # route, the route groups openai_routes and mcp_inference_routes only, and the per-key MCP
-# permission for the gateway server fake_tools.
+# permission for the gateway server fake_tools. Not PoC-5's `duration` (026 CH-4): PoC-6 keys do
+# not expire, and PoC-6 has no `rekey`.
 key_body() {
   jq -nc --arg alias "svc-$1" --arg tag "agent:$1" --arg model "$MODEL" --arg tools "$TOOLS" '
     ($tools | split(",") | map(select(. != ""))) as $t
