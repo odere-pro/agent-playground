@@ -110,9 +110,10 @@ def check_engine(bundle: PortBundle, config: ChassisConfig, *, built: bool) -> N
 async def close_ports(bundle: PortBundle) -> None:
     """Close the engine, the model adapter when it has an `aclose()`, the feedback adapter when it
     has one (PoC-7), the state store, the event port, the config port when it has an `aclose()`
-    (S3Config holds a client), the evaluator when it has one (PoC-7), and last the telemetry
-    adapter when it has one (`OtelTelemetry` flushes its spans), in that order. Each one closes
-    even when an earlier one raises.
+    (S3Config holds a client), the evaluator when it has one (PoC-7), the auth adapter when it has
+    one (`OidcAuth` holds its JWKS client), and last the telemetry adapter when it has one
+    (`OtelTelemetry` flushes its spans), in that order. Each one closes even when an earlier one
+    raises.
     """
     closers = [
         getattr(getattr(bundle, "telemetry", None), "aclose", None),
@@ -123,6 +124,7 @@ async def close_ports(bundle: PortBundle) -> None:
         bundle.events.aclose,
         getattr(bundle.config, "aclose", None),
         getattr(getattr(bundle, "evaluator", None), "aclose", None),
+        getattr(getattr(bundle, "auth", None), "aclose", None),
     ]
     async with AsyncExitStack() as stack:
         for closer in reversed(closers):  # the stack runs them last in, first out
