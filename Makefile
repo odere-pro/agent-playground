@@ -18,7 +18,7 @@ DONE_POC_TESTS := $(wildcard $(addsuffix /tests,$(DONE_POCS)))
 
 .PHONY: help setup evals evals-regression redteam eval-datasets fmt fmt-check lint lint-extra type \
 	test test-gate test-poc test-pocs-done gate-paths test-integration load-test \
-	kind-poc04 kind-poc05 kind-poc06 kind-chart bakeoff poc06-mac record-cassettes \
+	kind-poc04 kind-poc05 kind-poc06 kind-chart platform-up platform-smoke platform-down bakeoff poc06-mac record-cassettes \
 	quick check planning-sync planning-check planning-check-strict progress schemas harness-lint \
 	fake-model-server ts-check clean
 
@@ -96,6 +96,16 @@ kind-poc06: ## PoC-6 engines on the PoC-5 kind cluster: make kind-poc06 ARGS="..
 
 kind-chart: ## The library chart on kind (ADR-012 drain drill, H14): make kind-chart ARGS="up"
 	deploy/kind/chart/run.sh $(ARGS)
+
+# 139 CH-19: the reference stack on the PoC-5 cluster. PLATFORM_DRY_RUN=1 prints the commands only.
+platform-up: ## Reference stack on kind: LiteLLM, MCP gateway, Valkey, Kafka, Collector, Jaeger, example agent
+	deploy/kind/platform/run.sh up
+
+platform-smoke: ## Reference stack smoke test: the seven parts Ready, the example agent's demo, one trace
+	deploy/kind/platform/run.sh smoke
+
+platform-down: ## Remove the reference stack (deletes the poc05 kind cluster)
+	deploy/kind/platform/run.sh down
 
 bakeoff: ## PoC-6 benchmark kit: make bakeoff ARGS="..."
 	uv run python -m bakeoff $(ARGS)

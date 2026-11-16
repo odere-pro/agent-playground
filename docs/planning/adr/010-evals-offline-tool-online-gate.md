@@ -11,6 +11,8 @@ Accepted, 2026-10-30, by the user. Proposed 2026-10-28. Its open questions stay 
 
 **Note, 2026-11-06.** [ADR-007](007-observability-otel-collector-langfuse.md) item 10 adds LangSmith as a trace backend. LangSmith datasets and experiments are then a candidate store for the golden cases and results next to Langfuse (item 2). They become a supported store under the same rule the trial used for the offline tool: the same verdicts on the 20 golden cases on two engines. DeepEval stays the CI pick. Nothing else in this ADR changes.
 
+**Amended on 2026-11-16, by the user: item 10, the gate's mode default is `async`.** `sync` is opt-in until 137 CH-17's TPR and TNR are met. The sample rate stays open, with 042 A-2. Item 10 holds the amended text.
+
 The trial is done for the offline tool. Part of the gate's numbers waits:
 
 - **The offline tool is DeepEval 4.3.2.** Both tools ran on the same 20 golden cases on `echo-python` and `echo-langgraph` and gave the same verdict on every case ([eval tool trial](../../../pocs/poc-07-cross-cutting-decisions/notes/2026-10-28-eval-tool-trial.md)). CI: `poc07-evals` passed on commit `9d942ee`, [run 40730858164](https://github.com/odere-pro/agent-playground/actions/runs/40730858164) (DeepEval on the 20 golden cases, two engines).
@@ -114,7 +116,8 @@ Options for the online gate:
 10. **The recommendation, to confirm with the numbers above** (suggested):
     - With a big-model `judge`: `async`, sample rate 0.1, for monitoring. `sync` only where a hard quality bar is the point (the simplifier's `facts_kept`, 042 A-2), and the owner accepts the cost.
     - With an `encoder` that passes 074 E-2's agreement bar: `sync` at rate 1.0, with a sampled `judge` in `async` for drift (075 E-3).
-    - The numbers so far back this reading: sync at rate 1.0 with an LLM judge undoes the SLM saving. OPEN (user): the code's defaults are `sync` and 1.0 (`HarnessSpec`). The gate is off by default, so they matter only when it is switched on. Change them to `async` and 0.1 now, or wait for the Mac numbers?
+    - The numbers so far back this reading: sync at rate 1.0 with an LLM judge undoes the SLM saving. The mode is decided (the amendment below). OPEN (user): the code's sample rate is 1.0 (`HarnessSpec`). The gate is off by default, so it matters only when the gate is switched on. Change it to 0.1 now, or wait for the Mac numbers (042 A-2)?
+    - **Amended 2026-11-16, decided by the user (the mode):** `async` is the code default (`HarnessSpec.evaluator_mode`). `sync` is opt-in: an agent names it. That holds until 137 CH-17's TPR and TNR are met. The sample rate stays 1.0 in code; its change, with the `cloud` profile's gate settings, stays with 042 A-2. Evidence: `packages/chassis/tests/test_evaluator_mode_profiles.py::test_the_gate_on_with_no_mode_loads_async`.
 11. **Where each hook lives:**
 
     | Hook | Lives in |
@@ -166,5 +169,5 @@ Reopen this decision on any of these:
 ## Open questions for the user
 
 1. Keep the evaluator outage as fail-open in sync mode, or count it as a failed attempt, as 042 A-2 suggests (item 4)? Decided by the user on 2026-11-06 (P-1): an outage fails open everywhere.
-2. Change the gate's defaults from `sync` and 1.0 to `async` and 0.1 now, or wait for the Mac numbers (item 10)?
+2. Change the gate's defaults from `sync` and 1.0 to `async` and 0.1 now, or wait for the Mac numbers (item 10)? The mode is decided by the user on 2026-11-16: `async` is the default and `sync` is opt-in until 137 CH-17 is met (item 10). The sample rate stays with 042 A-2.
 3. Does 042 A-2 keep the `evaluator-facts` agent behind `EvaluatorPort`, or use the `judge` adapter (G7)?

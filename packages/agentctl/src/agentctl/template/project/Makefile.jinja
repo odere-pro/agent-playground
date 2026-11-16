@@ -54,6 +54,8 @@ endif
 
 sign: ## suggested: cosign keyless signing of a pushed digest: make sign IMAGE_REF=ref@sha256:...
 	@test -n "$(IMAGE_REF)" || { echo "set IMAGE_REF=<image>@<digest>"; exit 2; }
+	@# A tag can move after it is signed; sign the digest the push wrote, never a tag.
+	@[[ "$(IMAGE_REF)" =~ @sha256:[0-9a-f]{64}$$ ]] || { echo "IMAGE_REF must be <image>@sha256:<64 hex>"; exit 2; }
 	cosign sign --yes $(IMAGE_REF)
 
 # This agent's own suites (agent_testkit.suites), offline. The platform's full suites, on a real

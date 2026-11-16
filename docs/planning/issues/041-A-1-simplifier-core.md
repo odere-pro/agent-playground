@@ -16,7 +16,7 @@ The simplifier is the first real agent and the source of the first measured savi
 ## What
 
 - A new agent from the template repo (025 H-10): class `stateless`, kind `transformer`, config `agents/simplifier.yaml` in the config store.
-- The core `handle(input: TaskInput, ctx: Context)` rewrites text in plain language, using the system prompt from `prompts.system_ref` (rewrite rules and banned words from 027 S-1).
+- The core `handle(input: TaskInput, ctx: Context)` rewrites text in plain language, with a system prompt the workload ships itself (rewrite rules and banned words from 027 S-1); its version goes in `versions.prompt` (P-8).
 - Model calls go only through the chassis model proxy (013 CH-2) to the `simplifier-slm` route, with `temperature: 0` and `max_tokens: 800`. The workload holds no key.
 - Output is JSON, checked against the agent's output schema (the H-4 schema check), with guided decoding on the vLLM route.
 - The core returns `start`, `delta`, `metrics`, and `end` events, so every inbound adapter can stream or return a complete response.

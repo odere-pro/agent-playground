@@ -96,7 +96,7 @@ Waves are GitHub milestones. Each one ends in something that can be shown. The w
 
 | Wave | Issues | Ends with |
 | ---- | ------ | --------- |
-| Done: delivered by the PoC track | 007–138 | 14 issues, 32.5 days of the first estimate, not counted below |
+| Done: delivered by the PoC track | 007–138 | 16 issues, 40 days of the first estimate, not counted below |
 | W0 Decisions | 001 | Broker, first cloud, public A2A endpoint, banned words, and metric targets decided. Feeds phases D and E: the primary trace view and the north star |
 | W1 Router and baseline | 002–006 | Every model call goes through the router; token spend is counted and on a dashboard; the baseline clock is running. Feeds phases B and E; the baseline is parked |
 | W2 Chassis MVP | 008–026 | An echo workload runs behind the chassis: in the `sidecar` lane from the shared library chart, locally and in Kubernetes, and over A2A in memory in the chassis's tests. It answers through native, OpenAI, and Anthropic APIs (streaming and complete), is started by events and emits result events, is traced, holds no key, and passes the contract tests over both transports. Feeds phases A, B, E, and F |
@@ -194,8 +194,8 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 
 ## Estimate check
 
-- **Open:** about 264.5 engineer-days (53 weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
-- **Done** (wave `WD`): 32.5 days over 14 of the issues. **Parked** (wave `WP`): 52.5 days over 23. Neither is in the open total.
+- **Open:** about 257 engineer-days (51 weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
+- **Done** (wave `WD`): 40 days over 16 of the issues. **Parked** (wave `WP`): 52.5 days over 23. Neither is in the open total.
 - **Phases A to F:** 86.5 days against the 8–10 weeks the product plan has left (suggested: 50–60 engineer-days), from [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md#totals). Phases A, B, and E are each about twice the plan's size. The rest of the open total is `later`: no phase needs it.
 - **The epic** says 29–33 weeks for one engineer. Either the epic assumes a lot of reuse, or the phase estimates need a second look with the team. The sizes here are first guesses; re-size in planning.
 
@@ -207,6 +207,7 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
 | 007 | H-1 | [Chassis package and image: ports, `handle` contract, JSON event schema, envelope](007-H-1-harness-library-ports-envelope.md) | chassis | P0 | S | — |
 | 009 | CH-1 | [Engine connectors `inprocess` and `sidecar` over A2A, plus the template A2A server that wraps `handle`](009-CH-1-engine-connectors-a2a.md) | chassis | P0 | S | [007](007-H-1-harness-library-ports-envelope.md) |
+| 010 | H-12 | [Config loader: object storage, JSON Schema check, reload on change](010-H-12-config-loader.md) | chassis | P0 | M | [007](007-H-1-harness-library-ports-envelope.md) |
 | 011 | H-2 | [Inbound adapters: native, OpenAI-compatible, Anthropic-compatible, with streaming](011-H-2-inbound-adapters.md) | chassis, agent-profile | P0 | L | [007](007-H-1-harness-library-ports-envelope.md), [008](008-H-14-one-agent-interface.md), [009](009-CH-1-engine-connectors-a2a.md) |
 | 015 | H-8 | [Testing kit: fake adapters, contract tests per API, record and replay](015-H-8-testing-kit.md) | chassis | P0 | M | [011](011-H-2-inbound-adapters.md), [012](012-H-3-model-port.md), [009](009-CH-1-engine-connectors-a2a.md) |
 | 016 | H-9 | [Local debug profile: Docker Compose, hot reload, debugger port](016-H-9-local-debug-profile.md) | chassis | P0 | S | [011](011-H-2-inbound-adapters.md), [009](009-CH-1-engine-connectors-a2a.md) |
@@ -214,6 +215,7 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | 018 | H-18 | [Idempotency: key check, optional Valkey result cache, key passed to write tools](018-H-18-idempotency.md) | chassis | P0 | M | [007](007-H-1-harness-library-ports-envelope.md), [016](016-H-9-local-debug-profile.md), [009](009-CH-1-engine-connectors-a2a.md) |
 | 023 | C-5 | [AI-generated marking on outputs and a disclosure flag for client apps](023-C-5-ai-generated-marking.md) | agent-profile | P1 | S | [010](010-H-12-config-loader.md), [011](011-H-2-inbound-adapters.md), [019](019-H-17-event-port.md) |
 | 024 | CH-3 | [Shared Helm library chart: chassis sidecar with a pinned tag, secrets on the chassis only, Service on the chassis port](024-CH-3-helm-library-chart.md) | chassis | P0 | L | [009](009-CH-1-engine-connectors-a2a.md), [016](016-H-9-local-debug-profile.md) |
+| 058 | CH-8 | [Framework event mappings and one non-Python workload in the service template](058-CH-8-framework-event-mappings.md) | chassis | P1 | L | [015](015-H-8-testing-kit.md) |
 | 128 | CH-9 | [LangGraph checkpointer and interrupts: one ADR each](128-CH-9-langgraph-checkpointer-interrupts.md) | chassis | P2 | S | [058](058-CH-8-framework-event-mappings.md) |
 | 134 | CH-14 | [Security defaults in the cloud profile: no uncorrelated tokens, unknown tools refused, auth required](134-CH-14-cloud-security-defaults.md) | chassis | P0 | M | [013](013-CH-2-outbound-model-proxy.md), [022](022-H-6-security-middleware.md) |
 | 135 | CH-15 | [Backpressure: a cap on runs in flight per replica, 503 overloaded, and a gauge to scale on](135-CH-15-backpressure.md) | chassis | P1 | M | [017](017-H-4-harness-features.md), [014](014-H-7-observability.md) |
@@ -240,7 +242,6 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
 | 008 | H-14 | [One agent interface for all classes (stateless, orchestrator, data)](008-H-14-one-agent-interface.md) | chassis | P0 | L | [007](007-H-1-harness-library-ports-envelope.md) |
-| 010 | H-12 | [Config loader: object storage, JSON Schema check, reload on change](010-H-12-config-loader.md) | chassis | P0 | M | [007](007-H-1-harness-library-ports-envelope.md) |
 | 012 | H-3 | [Model port to the LLM router, with a route map per task](012-H-3-model-port.md) | agent-profile | P0 | L | [003](003-G-1b-named-model-routes.md), [007](007-H-1-harness-library-ports-envelope.md), [004](004-G-2-token-cost-counting.md) |
 | 013 | CH-2 | [Outbound model proxy: an OpenAI- and Anthropic-compatible URL for workloads, forwarded with the service's scoped key](013-CH-2-outbound-model-proxy.md) | chassis, agent-profile | P0 | M | [012](012-H-3-model-port.md), [009](009-CH-1-engine-connectors-a2a.md) |
 | 014 | H-7 | [Observability: logs, traces, metrics, Langfuse](014-H-7-observability.md) | chassis | P0 | M | [007](007-H-1-harness-library-ports-envelope.md), [009](009-CH-1-engine-connectors-a2a.md) |
@@ -256,7 +257,6 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
 | 028 | S-3 | [`facts_kept` and banned-word scoring for the eval gate and the judge](028-S-3-simplifier-metrics.md) | platform | P0 | S | — |
-| 037 | M-2 | [Eval gate in CI: a change ships only if it passes the golden set against the baseline](037-M-2-eval-gate-ci.md) | platform | P0 | S | [028](028-S-3-simplifier-metrics.md) |
 | 038 | X-1a | [Terraform module for the first cloud (AWS or GCP)](038-X-1a-terraform-first-cloud.md) | platform | P0 | L | [001](001-DEC-1-resolve-open-decisions.md), [025](025-H-10-template-repo.md), [026](026-CH-4-chassis-only-credentials-egress.md) |
 
 ### W4 Simplifier agent live
@@ -279,7 +279,6 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | 055 | CH-6 | [Remote lane and the trust rule: sandboxed pod or managed runtime over A2A, cloud auth adapter, admission check](055-CH-6-remote-lane-trust-rule.md) | chassis | P1 | S | [009](009-CH-1-engine-connectors-a2a.md), [026](026-CH-4-chassis-only-credentials-egress.md), [010](010-H-12-config-loader.md), [024](024-CH-3-helm-library-chart.md) |
 | 056 | CH-7 | [Chassis release in rings, with a per-service pin and a minimum-version admission rule](056-CH-7-chassis-release-rings.md) | chassis | P1 | L | [024](024-CH-3-helm-library-chart.md), [055](055-CH-6-remote-lane-trust-rule.md), [014](014-H-7-observability.md) |
 | 057 | H-19 | [Stateless check in CI: fail the build on local disk writes or kept data](057-H-19-stateless-check-ci.md) | chassis | P1 | M | [025](025-H-10-template-repo.md), [015](015-H-8-testing-kit.md) |
-| 058 | CH-8 | [Framework event mappings and one non-Python workload in the service template](058-CH-8-framework-event-mappings.md) | chassis | P1 | L | [015](015-H-8-testing-kit.md) |
 | 059 | H-15 | [Agent factory CLI: scaffold an agent by class and kind, modules by config](059-H-15-agent-factory-cli.md) | chassis | P1 | L | [025](025-H-10-template-repo.md), [057](057-H-19-stateless-check-ci.md), [058](058-CH-8-framework-event-mappings.md), [055](055-CH-6-remote-lane-trust-rule.md), [024](024-CH-3-helm-library-chart.md) |
 | 060 | H-23 | [More broker adapters behind the event port: Kafka, AWS, GCP](060-H-23-broker-adapters.md) | chassis | P2 | S | [021](021-H-20-event-consumer-adapter.md), [053](053-H-22-event-reliability.md) |
 | 061 | H-5 | [A2A adapter: JSON-RPC endpoint, task states, signed agent card](061-H-5-a2a-adapter.md) | agent-profile | P2 | S | [001](001-DEC-1-resolve-open-decisions.md), [011](011-H-2-inbound-adapters.md) |

@@ -7,7 +7,8 @@
 # pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py (criterion 5) and
 # test_poc09_chart_boundary.py (the admission and default-deny egress rules the chart carries:
 # PoC-5 criteria 5 and 7, the product plan phase A), and the chassis tag and ring
-# tests (024 CH-3, 056 CH-7: test_poc09_chart_tag.py and _rings.py), under the
+# tests (024 CH-3, 056 CH-7: test_poc09_chart_tag.py and _rings.py), and the config-store
+# credential test (010 H-12: _config_store.py, which also scans the workload sources), under the
 # offline gate
 # (scripts/check_offline.sh: no socket, no key). The tests skip when helm is not on PATH; here
 # POC09_HELM_REQUIRED=1 turns that skip into a failure.
@@ -36,6 +37,10 @@ on:
       - pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_boundary.py
       - pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_tag.py
       - pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_rings.py
+      - pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_config_store.py
+      - packages/workloads/**
+      - packages/workload-a2a/src/**
+      - packages/agentctl/src/agentctl/template/**
       - scripts/check_offline.sh
       - pyproject.toml
       - uv.lock
@@ -91,4 +96,5 @@ jobs:
             pocs/poc-09-agent-mvp-template/tests/test_poc09_chart.py \
             pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_boundary.py \
             pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_tag.py \
-            pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_rings.py
+            pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_rings.py \
+            pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_config_store.py

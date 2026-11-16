@@ -132,7 +132,8 @@ def _config(
                 "engine": engine,
                 "model": {"route": ROUTE, "fallback_route": fallback},
                 "prompt": {"version": "simplifier-v1"},
-                "harness": {"evaluator_gate": True, **harness},
+                # `sync`, named: the code default is async (137 CH-17).
+                "harness": {"evaluator_gate": True, "evaluator_mode": "sync", **harness},
                 "governance": {"risk_class": "limited"},
                 **overrides,
             },

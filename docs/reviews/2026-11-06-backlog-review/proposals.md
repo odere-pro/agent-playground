@@ -66,9 +66,13 @@ Each finding id is assigned here once, in bold. P-24 has no id: it carries two i
 
 - **P-35:** widened to every fault before the stream: a failed claim, a pod 5xx, a pod that sends no response headers, and any httpx error after the request was sent. All four answer a retryable 503. The user accepts that a retry may repeat model or tool calls the pod already made in the last three. Recorded in [contract v9, H.27](../../contracts/contract-v9.md#h-a-platform-fault-before-the-stream-p-35).
 
+## Decided by the user, 2026-11-16
+
+- **P-8:** option 1. The `ctx` half of 010 H-12 box 11 is dropped: the workload keeps its own prompt, and the chassis reports its version in `versions.prompt`. The box keeps the no-config-store-credential half.
+
 Done by a merged PR: **P-16.** Rule 9, the minimum chassis version, landed in `agent-lib` in PR #79; `docs/specs/architecture.md` and `docs/specs/security.md` name it.
 
-The other proposals, P-3, P-5, P-8, P-10 to P-15, P-17 to P-25, P-28, and P-30 to P-34, stay open. Each one's owner agent advises; a pick that changes code is its own PR after PR-R.
+The other proposals, P-3, P-5, P-10 to P-15, P-17 to P-25, P-28, and P-30 to P-34, stay open. Each one's owner agent advises; a pick that changes code is its own PR after PR-R.
 
 ## P-1: An evaluator outage: fail open or fail closed
 
@@ -176,6 +180,7 @@ The other proposals, P-3, P-5, P-8, P-10 to P-15, P-17 to P-25, P-28, and P-30 t
   1. Drop the `ctx` half: the workload owns its prompt, and the chassis reports its version.
   2. Add config and prompt fields to `Context` (a contract change).
 - suggested: option 1. Keep the no-credential half open in phase A; it ticks when the sidecar kind suite runs in CI (`pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py::test_minio_refuses_the_workload_and_any_unsigned_call`).
+- Decided 2026-11-16 by the user: option 1. The workload keeps its own prompt; the chassis reports its version. 010 H-12 box 11 keeps the no-credential half only.
 - Owner: `chassis-architect`.
 - In the backlog: 010 H-12 box 11: rewrite per the pick.
 

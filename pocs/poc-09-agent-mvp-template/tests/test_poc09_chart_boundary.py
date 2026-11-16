@@ -66,9 +66,11 @@ WORKLOAD = f"{RELEASE}-workload"
 # The sidecar lane as the kind drill runs it (pull-never, admission rule 8), and the remote lane
 # with its images from the cluster store too.
 KIND_VALUES = HELM_DIR / "example-agent/values-kind.yaml"
+# The chassis loaded into the node, values-kind.yaml's repository (139 CH-19).
+KIND_CHASSIS = "kind.local/agent-platform/chassis"
 REMOTE_KIND_VALUES: dict[str, Any] = {
     "chassis": {
-        "image": {"pullPolicy": "Never"},
+        "image": {"repository": KIND_CHASSIS, "digest": "", "pullPolicy": "Never"},
         "config": {"spec": {"trust": "untrusted", "engine": {"connector": "remote"}}},
     },
     "workload": {"image": "kind.local/agent-platform/echo-python:poc09", "pullPolicy": "Never"},
@@ -207,7 +209,7 @@ def test_the_params_list_the_trusted_repositories_and_the_library_chassis_tags(
     params = _params(chart)
     pod = one(chart.template(), "Deployment", RELEASE)["spec"]["template"]["spec"]
 
-    tag = containers(pod)["chassis"]["image"].rsplit(":", 1)[1]
+    tag = containers(pod)["chassis"]["image"].split("@")[0].rsplit(":", 1)[1]
 
     assert params.prefix == "kind.local/agent-platform/"
     assert params.image_source == "pull-never"
@@ -289,7 +291,7 @@ def test_in_digest_mode_rule_9_reads_the_chassis_digest_not_the_tag(
     service = values_file(
         tmp_path / "svc",
         {
-            "chassis": {"image": {"digest": DIGEST}},
+            "chassis": {"image": {"repository": KIND_CHASSIS, "digest": DIGEST}},
             "workload": {"image": "kind.local/agent-platform/echo-python@" + DIGEST},
         },
     )

@@ -226,6 +226,20 @@ WARN_RING = json.dumps({"spec": {"validationActions": ["Warn", "Audit"]}})
 RING_SETTLE_TRIES = 15
 
 
+def _assert_version_binding_enforces() -> None:
+    """`agent-chassis-version`'s binding is on [Deny, Audit] before a test patches it, so a
+    binding a killed run left on Warn is reported, not silently fixed."""
+    before = kubectl(
+        "get", "validatingadmissionpolicybinding", VERSION_POLICY_NAME,
+        "-o", "jsonpath={.spec.validationActions}",
+    )  # fmt: skip
+    assert before.returncode == 0, before.stderr
+    assert json.loads(before.stdout) == ["Deny", "Audit"], (
+        f"the binding is not in the enforce ring before the test: {before.stdout}; a killed run "
+        "left it on Warn; restore it with `deploy/kind/poc05/run.sh admission`"
+    )
+
+
 def _dry_run_until(path: Path, admitted: bool) -> subprocess.CompletedProcess[str]:
     """`kubectl apply --dry-run=server` of `path` as the deployer, retried until it is admitted
     (or refused) as asked, so a binding patched a moment ago has reached admission."""
@@ -244,15 +258,7 @@ def test_a_chassis_below_the_minimum_is_admitted_with_a_warning_in_the_warn_ring
     from its file ([Deny, Audit]) refuses the same pod again. The trust rule's binding is not
     touched: the paired control is that a rule-1 fixture stays refused while rule 9 warns."""
     rule1 = FIXTURES / "rule1-trust-label" / "rejected.yaml"
-    before = kubectl(
-        "get", "validatingadmissionpolicybinding", VERSION_POLICY_NAME,
-        "-o", "jsonpath={.spec.validationActions}",
-    )  # fmt: skip
-    assert before.returncode == 0, before.stderr
-    assert json.loads(before.stdout) == ["Deny", "Audit"], (
-        f"the binding is not in the enforce ring before the test: {before.stdout}; a killed run "
-        "left it on Warn; restore it with `deploy/kind/poc05/run.sh admission`"
-    )
+    _assert_version_binding_enforces()
     patched = kubectl(
         "patch", "validatingadmissionpolicybinding", VERSION_POLICY_NAME, "--type", "merge",
         "-p", WARN_RING,
@@ -382,22 +388,54 @@ def _dry_run_text(manifest: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+NO_PARAMS = "no params found"
+
+
+def _denied_by_trust_rule(path: Path) -> subprocess.CompletedProcess[str]:
+    """The dry run of `path` as the deployer, retried until `agent-trust-rule` is what refuses,
+    so the version binding patched to Warn a moment ago has reached admission."""
+    for _ in range(RING_SETTLE_TRIES):
+        got = kubectl("apply", "--dry-run=server", "-f", str(path), as_user=DEPLOYER)
+        if got.returncode != 0 and "'agent-trust-rule'" in _one_line(got.stderr):
+            return got
+        time.sleep(1)
+    return got
+
+
 def test_missing_params_deny_everything() -> None:
     """`parameterNotFoundAction: Deny`: with the params gone even an admitted twin is refused;
-    restored, it is admitted again. Deletes and re-applies the real params ConfigMap."""
+    restored, it is admitted again. Deletes and re-applies the real params ConfigMap.
+
+    `agent-chassis-version` reads the same params and also denies without them; the API server
+    names one denying policy, in no fixed order. So its binding is on [Warn, Audit] while the
+    params are gone, and `agent-trust-rule` must refuse on its own. (A denied request carries no
+    Warn binding's warning, so rule 9 is not read here.) Both are restored from their files
+    after, also on failure."""
     twin = FIXTURES / "rule1-trust-label" / "admitted.yaml"
     ns, name = PARAMS
     params = str(ADMISSION / "params.yaml")
-    deleted = kubectl("delete", "configmap", name, "-n", ns)
-    assert deleted.returncode == 0, deleted.stderr
+    _assert_version_binding_enforces()
+    patched = kubectl(
+        "patch", "validatingadmissionpolicybinding", VERSION_POLICY_NAME, "--type", "merge",
+        "-p", WARN_RING,
+    )  # fmt: skip
+    assert patched.returncode == 0, patched.stderr
     try:
-        denied = kubectl("apply", "--dry-run=server", "-f", str(twin), as_user=DEPLOYER)
-        assert denied.returncode != 0, denied.stdout
-        assert "agent-trust-rule" in _one_line(denied.stderr), denied.stderr
+        deleted = kubectl("delete", "configmap", name, "-n", ns)
+        assert deleted.returncode == 0, deleted.stderr
+        denied = _denied_by_trust_rule(twin)
     finally:
-        restored = kubectl("apply", "-f", params)
-        assert restored.returncode == 0, restored.stderr
+        try:
+            restored = kubectl("apply", "-f", params)
+        finally:
+            ring = kubectl("apply", "-f", str(VERSION_BINDING))
+    assert restored.returncode == 0, restored.stderr
+    assert ring.returncode == 0, ring.stderr
     admitted = kubectl("apply", "--dry-run=server", "-f", str(twin), as_user=DEPLOYER)
+
+    err = _one_line(denied.stderr)
+    assert denied.returncode != 0, denied.stdout
+    assert "'agent-trust-rule'" in err and NO_PARAMS in err, err
     assert admitted.returncode == 0, admitted.stderr
 
 
@@ -413,12 +451,16 @@ def _pinned(image: str) -> str:
     return image + DIGEST
 
 
-def _with_digests(pod: dict[str, object]) -> dict[str, object]:
-    """A copy of `pod` with every image pinned by `DIGEST` next to its tag."""
+def _with_digests(pod: dict[str, object], only: str | None = None) -> dict[str, object]:
+    """A copy of `pod` with every image pinned by `DIGEST` next to its tag, or only the image of
+    the container named `only`."""
     spec = pod["spec"]
     assert isinstance(spec, dict)
     pinned = {
-        key: [{**c, "image": _pinned(c["image"])} for c in spec[key]]
+        key: [
+            {**c, "image": _pinned(c["image"])} if only in (None, c["name"]) else c
+            for c in spec[key]
+        ]
         for key in ("initContainers", "containers")
         if key in spec
     }
@@ -430,10 +472,15 @@ def test_digest_mode_refuses_a_tag_and_admits_its_digest_twin(tmp_path: Path) ->
     in the `sidecar` lane."
 
     Exit criterion 7, rule 8 with `imageSource: digest` (the cloud mode, review R5a-15): with
-    the params patched to `digest`, a sidecar pod whose images carry only a tag is refused by
-    `agent-trust-rule` with 'trust rule 8', and its twin pinned by `@sha256` is admitted. The
-    params are restored after, also on failure, and the tag-only pod is admitted again."""
+    the params patched to `digest`, a sidecar pod whose workload image carries only a tag is
+    refused by `agent-trust-rule` with 'trust rule 8', and its twin with every image pinned by
+    `@sha256` is admitted. The chassis is pinned in both, so rule 9 (`agent-chassis-version`,
+    which in digest mode refuses a chassis without a listed digest) admits both and cannot be
+    the policy that refuses. The params are restored after, also on failure, and the tag-only
+    pod is admitted again."""
     tagged = yaml.safe_load(RULE8_TWIN.read_text())
+    refused_path = tmp_path / "rule8-workload-tag.yaml"
+    refused_path.write_text(yaml.safe_dump(_with_digests(tagged, only="chassis")))
     pinned_path = tmp_path / "rule8-digest.yaml"
     pinned_path.write_text(yaml.safe_dump(_with_digests(tagged)))
     ns, name = PARAMS
@@ -443,7 +490,7 @@ def test_digest_mode_refuses_a_tag_and_admits_its_digest_twin(tmp_path: Path) ->
     patched = kubectl("patch", "configmap", name, "-n", ns, "--type", "merge", "-p", patch)
     assert patched.returncode == 0, patched.stderr
     try:
-        refused = kubectl("apply", "--dry-run=server", "-f", str(RULE8_TWIN), as_user=DEPLOYER)
+        refused = kubectl("apply", "--dry-run=server", "-f", str(refused_path), as_user=DEPLOYER)
         admitted = kubectl("apply", "--dry-run=server", "-f", str(pinned_path), as_user=DEPLOYER)
     finally:
         restored = kubectl("apply", "-f", params)
