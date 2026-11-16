@@ -5,7 +5,7 @@ milestone: "W5 Chassis completion"
 index: 56
 epic_id: CH-7
 depends_on: ["024 CH-3", "055 CH-6", "014 H-7"]
-blocks: ["077 C-1", "083 R-2"]
+blocks: ["077 C-1", "083 R-2", "142 CH-22"]
 epic_refs: [G.4]
 ---
 
@@ -60,7 +60,7 @@ epic_refs: [G.4]
 ## Dependencies
 
 - Depends on: [024 CH-3](024-CH-3-helm-library-chart.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [014 H-7](014-H-7-observability.md)
-- Blocks: [077 C-1](077-C-1-governance-enforcement.md), [083 R-2](083-R-2-kubernetes-controller.md)
+- Blocks: [077 C-1](077-C-1-governance-enforcement.md), [083 R-2](083-R-2-kubernetes-controller.md), [142 CH-22](142-CH-22-chassis-digest-map.md)
 
 ## References
 

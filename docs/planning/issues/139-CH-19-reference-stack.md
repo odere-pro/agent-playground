@@ -5,7 +5,7 @@ milestone: "W10 Production readiness"
 index: 139
 epic_id: CH-19
 depends_on: ["024 CH-3", "026 CH-4", "020 X-8"]
-blocks: []
+blocks: ["141 CH-21", "142 CH-22"]
 epic_refs: [G.4, H]
 ---
 
@@ -36,7 +36,7 @@ Each PoC has its own Compose or kind stack. Nothing brings up LiteLLM, the MCP g
 ## Dependencies
 
 - Depends on: [024 CH-3](024-CH-3-helm-library-chart.md), [026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [020 X-8](020-X-8-event-broker.md)
-- Blocks: none
+- Blocks: [141 CH-21](141-CH-21-chassis-repository-under-prefix.md), [142 CH-22](142-CH-22-chassis-digest-map.md)
 
 ## References
 
