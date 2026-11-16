@@ -11,6 +11,9 @@
 # - chassis: the drill's agent `echo`, every PoC-8 stage on (chassis/drill.yaml).
 # - chassis-stages, chassis-plain: the same agent code with the PoC-8 request stages on and off,
 #   for the latency measurement only (chassis/stages.yaml, chassis/plain.yaml).
+# - chassis-rl-a, chassis-rl-b: two chassis on one config and one Valkey, for the 022 H-6 drill
+#   "the limit holds across two pods" (chassis/ratelimit.yaml, tests/test_poc08_stack_ratelimit.py).
+#   Not scraped: the dashboards are the drill chassis's.
 # - fake-model-server: the model and the judge (fake-model/poc08.yaml). No key, no egress.
 # - valkey: the state store: the rate limit buckets, idempotency, the feedback lookup.
 # - prometheus: scrapes the three chassis at /metrics (prometheus/prometheus.yml).
@@ -58,6 +61,12 @@ x-chassis-env: &chassis-env
   VALKEY_URL: valkey://valkey:6379/0
   VALKEY_PASSWORD: ${VALKEY_PASSWORD:?set by stack.sh}
 
+x-ratelimit-env: &ratelimit-env
+  <<: *chassis-env
+  # Two callers, the same on both rate-limit chassis: one spends its bucket, the other must still
+  # get 200. Both tokens are made by stack.sh.
+  CHASSIS_STATIC_TOKENS: '{"${POC08_RUN_TOKEN:?set by stack.sh}": {"subject": "poc08-ratelimit", "scopes": ["agent:run"]}, "${POC08_OTHER_TOKEN:?set by stack.sh}": {"subject": "poc08-ratelimit-other", "scopes": ["agent:run"]}}'
+
 services:
   chassis:
     <<: *chassis
@@ -89,6 +98,21 @@ services:
     environment: *chassis-env
     ports:
       - 127.0.0.1:18090:8080
+
+  # 022 H-6: two chassis, one config, one caller map, one Valkey: one bucket per caller.
+  chassis-rl-a:
+    <<: *chassis
+    command: [--config, /etc/chassis/ratelimit.yaml, --host, 0.0.0.0, --port, "8080", --drain-delay-s, "1"]
+    environment: *ratelimit-env
+    ports:
+      - 127.0.0.1:18091:8080
+
+  chassis-rl-b:
+    <<: *chassis
+    command: [--config, /etc/chassis/ratelimit.yaml, --host, 0.0.0.0, --port, "8080", --drain-delay-s, "1"]
+    environment: *ratelimit-env
+    ports:
+      - 127.0.0.1:18092:8080
 
   fake-model-server:
     <<: *hardening

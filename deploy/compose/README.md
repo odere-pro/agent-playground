@@ -123,6 +123,14 @@ deploy/compose/poc07/stack.sh down    # project poc07 only
 
 `stack.sh digests` prints each image's current digest, to bump the pins. CI runs the stack in `.github/workflows/poc07-stack.yml`. The offline checks are `pocs/poc-07-cross-cutting-decisions/tests/test_poc07_stack_static.py`.
 
+**LangSmith switch (129 CH-10, ADR-007 item 10).** The default stack has no LangSmith exporter and reads no LangSmith variable. Add `--langsmith` after the verb to turn it on:
+
+```bash
+LANGSMITH_API_KEY=... deploy/compose/poc07/stack.sh up --langsmith
+```
+
+The flag adds `poc07/docker-compose.langsmith.yaml`. That file gives only `otel-collector` the key and a second `--config`, `poc07/otel-collector.langsmith.yaml`. The overlay adds the `otlphttp/langsmith` exporter and restates the traces exporter list, because the Collector replaces a list when it merges configs. Redaction still runs before every exporter. `LANGSMITH_API_KEY` is the trace key, in the Collector only (the chassis's feedback key is a separate variable, 130 CH-11). It comes from your environment; `stack.sh` never writes it to a file, and `logs` masks it. suggested: `LANGSMITH_OTLP_ENDPOINT` defaults to `https://api.smith.langchain.com/otel` and `LANGSMITH_PROJECT` to `poc07`. The endpoint must be `https://api.smith.langchain.com/otel`, `https://eu.api.smith.langchain.com/otel`, or `http://fake-langsmith:8000/otel` (suggested: the fake's name and port; no stack runs it yet); `stack.sh` refuses any other before it calls docker. Offline checks: `packages/chassis/tests/test_collector_langsmith_switch.py`.
+
 **Hardening.** `jaeger` and `otel-collector` use the same `x-hardening` block as the scale stack: `cap_drop: [ALL]`, `no-new-privileges`, `read_only: true`, and a tmpfs for `/tmp`. Both keep data in memory only. The Collector holds `LANGFUSE_AUTH` and `OTLP_CHASSIS_TOKEN`.
 
 **Deviations.** These services run without the hardening block. Each image is third party, and what it writes or needs was not checked with a run:
@@ -133,6 +141,8 @@ deploy/compose/poc07/stack.sh down    # project poc07 only
 - `minio`: its entrypoint runs `mkdir` and writes `/data` in the container.
 - `redis`: writes its data directory in the container; not checked.
 - `postgres`: its entrypoint runs `initdb` and may switch users, which needs capabilities.
+
+Egress: Compose has no egress control, so any service here can reach any host. The real rule lives in Kubernetes (ADR-007 item 9). With `--langsmith`, `stack.sh` narrows it for the trace key: it refuses any `LANGSMITH_OTLP_ENDPOINT` other than LangSmith US, LangSmith EU, or the in-stack `fake-langsmith`.
 
 **MinIO image.** This stack uses `cgr.dev/chainguard/minio`, the image Langfuse's own compose file names. The scale stack uses `pgsty/minio`, because MinIO stopped publishing its own images. The two were not compared.
 
