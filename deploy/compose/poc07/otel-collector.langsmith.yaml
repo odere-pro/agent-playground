@@ -1,0 +1,25 @@
+# LangSmith as one more trace backend (129 CH-10, ADR-007 item 10). Off by default.
+#
+# `stack.sh <verb> --langsmith` passes this file to the Collector as a second `--config`, after
+# otel-collector.yaml. The Collector merges its configs: maps merge key by key, and a list is
+# replaced whole. So the traces pipeline below restates the whole exporter list. It adds no
+# processor, so `transform/redact_spans` still runs before every exporter, LangSmith included.
+#
+# The key is `${env:LANGSMITH_API_KEY}`, set only on the Collector service, and only by
+# docker-compose.langsmith.yaml. It is never written in this file.
+# suggested: the endpoint and the headers, from ADR-007 item 10. stack.sh sets the endpoint to
+# https://api.smith.langchain.com/otel and the project to poc07 unless the caller sets them, and
+# refuses an endpoint off its allow-list (LangSmith US, LangSmith EU, the in-stack fake).
+# The exporter appends /v1/traces, the route fake-langsmith serves (`POST /otel/v1/traces`).
+# Offline check: packages/chassis/tests/test_collector_langsmith_switch.py.
+exporters:
+  otlphttp/langsmith:
+    endpoint: ${env:LANGSMITH_OTLP_ENDPOINT}
+    headers:
+      x-api-key: ${env:LANGSMITH_API_KEY}
+      Langsmith-Project: ${env:LANGSMITH_PROJECT}
+
+service:
+  pipelines:
+    traces:
+      exporters: [otlphttp/langfuse, otlp/jaeger, otlphttp/langsmith]

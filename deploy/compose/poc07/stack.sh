@@ -1,15 +1,54 @@
 #!/usr/bin/env bash
 # PoC-7 stack: Langfuse v4, the OTel Collector, Jaeger.
-# Usage: stack.sh up|wait|down|digests|env|logs
+# Usage: stack.sh up|wait|down|digests|env|logs [--langsmith]
 # Every credential is generated into .env.poc07 (mode 600, git-ignored) and never printed.
 # The chassis's OTLP token is one of them: the Collector's receiver refuses a call without it.
 # `wait` polls the three endpoints from the host: the jaeger and collector images have no shell,
 # so they carry no in-container healthcheck. `logs` prints log tails with every env file value
 # masked, for CI on failure.
+# `--langsmith` (129 CH-10) adds docker-compose.langsmith.yaml: the Collector also exports traces
+# to LangSmith. It needs the trace key LANGSMITH_API_KEY in the caller's environment, never in a
+# file, and an endpoint on the allow-list below. The default stack reads no LangSmith variable.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 env_file="$here/.env.poc07"
 compose=(docker compose -p poc07 --env-file "$env_file" -f "$here/docker-compose.yaml")
+
+# The only endpoints the Collector may send the trace key to: LangSmith US, LangSmith EU, and the
+# in-stack fake. suggested: the fake's service name and port (`fake-langsmith`, 8000); no stack
+# runs that service yet. Compose has no egress control, so this list is the narrowing.
+LANGSMITH_ENDPOINTS=(
+  https://api.smith.langchain.com/otel
+  https://eu.api.smith.langchain.com/otel
+  http://fake-langsmith:8000/otel
+)
+
+# Exits non-zero when LANGSMITH_OTLP_ENDPOINT is not on the list. Prints only the name.
+check_langsmith_endpoint() {
+  local allowed
+  for allowed in "${LANGSMITH_ENDPOINTS[@]}"; do
+    [[ "$LANGSMITH_OTLP_ENDPOINT" == "$allowed" ]] && return 0
+  done
+  echo "stack.sh: LANGSMITH_OTLP_ENDPOINT is not on the allow-list" >&2
+  exit 2
+}
+
+case "${2:-}" in
+  "") ;;
+  --langsmith)
+    # Fails closed without the key. Only the variable's name is printed.
+    : "${LANGSMITH_API_KEY:?--langsmith needs LANGSMITH_API_KEY in the environment}"
+    # suggested: the default endpoint (ADR-007 item 10) and the project name.
+    export LANGSMITH_OTLP_ENDPOINT="${LANGSMITH_OTLP_ENDPOINT:-${LANGSMITH_ENDPOINTS[0]}}"
+    export LANGSMITH_PROJECT="${LANGSMITH_PROJECT:-poc07}"
+    check_langsmith_endpoint
+    compose+=(-f "$here/docker-compose.langsmith.yaml")
+    ;;
+  *)
+    echo "usage: $0 up|wait|down|digests|env|logs [--langsmith]" >&2
+    exit 2
+    ;;
+esac
 # The Collector's tail sampling percent from TRACE_SAMPLE_RATE (0 to 1, default 1.0; 014 H-7).
 # A bad rate stops here, before any compose call.
 TRACE_SAMPLE_PERCENT="$(python3 -I "$here/../trace_sample_percent.py")"
@@ -62,12 +101,16 @@ wait_ready() {
   done
 }
 
-# Masks every value of the env file, and anything shaped like a Langfuse key or a Basic or
-# Bearer header, in stdin. The values are read inside Python and never echoed.
+# Masks every value of the env file, LANGSMITH_API_KEY when set, and anything shaped like a
+# Langfuse or LangSmith key (`lsv2_`, or the older `ls__`) or a Basic or Bearer header, in stdin. The values are read inside
+# Python and never echoed.
 redact() {
   python3 -I -c '
-import re, sys
+import os, re, sys
 secrets = []
+langsmith_key = os.environ.get("LANGSMITH_API_KEY")
+if langsmith_key and len(langsmith_key) >= 8:
+    secrets.append(langsmith_key)
 try:
     with open(sys.argv[1]) as f:
         for line in f:
@@ -76,7 +119,7 @@ try:
                 secrets.append(value)
 except FileNotFoundError:
     pass
-shapes = re.compile(r"(pk|sk)-lf-[0-9A-Za-z-]+|(Basic|Bearer) [A-Za-z0-9+/=._-]+")
+shapes = re.compile(r"(pk|sk)-lf-[0-9A-Za-z-]+|(lsv2_|ls__)[0-9A-Za-z_]+|(Basic|Bearer) [A-Za-z0-9+/=._-]+")
 for line in sys.stdin:
     for value in secrets:
         line = line.replace(value, "***")
@@ -114,7 +157,7 @@ case "${1:-}" in
     echo "POC07_ENV_FILE=$env_file"
     ;;
   *)
-    echo "usage: $0 up|wait|down|digests|env|logs" >&2
+    echo "usage: $0 up|wait|down|digests|env|logs [--langsmith]" >&2
     exit 2
     ;;
 esac
