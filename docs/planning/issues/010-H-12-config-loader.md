@@ -1,7 +1,7 @@
 ---
 title: "H-12: Config loader: object storage, JSON Schema check, reload on change"
 labels: ["story", "priority:P0", "phase:0-harness", "area:harness", "size:M", "layer:chassis"]
-milestone: "W2 Chassis MVP"
+milestone: "Done: delivered by the PoC track"
 index: 10
 epic_id: H-12
 depends_on: ["007 H-1"]
@@ -11,12 +11,12 @@ epic_refs: [C.1, E.4]
 
 ## Why
 
-Every agent's config lives in the config store, checked against a JSON Schema and reloaded without a restart (B.2). Under [ADR-001](../adr/001-chassis-delivery-model.md), only the chassis reads the store: the store needs a credential that only the chassis holds (hard requirement 1). The workload gets its config and prompts from the chassis. Most chassis features read their settings from it, so it comes early in the chassis wave. The config JSON Schema checks `risk_class` from day one, as compliance by design; 077 C-1 later adds the other governance fields and enforcement on activation.
+Every agent's config lives in the config store, checked against a JSON Schema and reloaded without a restart (B.2). Under [ADR-001](../adr/001-chassis-delivery-model.md), only the chassis reads the store: the store needs a credential that only the chassis holds (hard requirement 1). The workload keeps its own config and prompt and never reads the store (P-8). Most chassis features read their settings from it, so it comes early in the chassis wave. The config JSON Schema checks `risk_class` from day one, as compliance by design; 077 C-1 later adds the other governance fields and enforcement on activation.
 
 ## What
 
 - A loader, run only in the chassis, that reads one `AgentConfig` YAML file (`apiVersion: agents/v1`) from the config store: a versioned object storage bucket (MinIO locally, S3 on AWS, GCS on GCP), through the S3 API. Built in PoC-4: a `ConfigPort` on the S3 API (`minio` and `s3`, one class `S3Config`).
-- The workload gets its config and prompts through `ctx`, never from the store.
+- The workload keeps its own config and prompt and never reads the store; the chassis never hands it a store credential. The chassis reports the prompt version in `versions.prompt` (P-8, decided 2026-11-16 by the user).
 - `agent-config.schema.json` in the store's `schemas/` folder, covering every C.1 field, from `metadata` and `spec.class` to `events` and `secrets`. Today the store document is checked against `ChassisConfig`, published as `schemas/chassis-config.v0.json`.
 - The fields ADR-001 adds to the schema:
   - `spec.engine`: `connector`, plus `url` and `auth` for `remote`;
@@ -27,7 +27,7 @@ Every agent's config lives in the config store, checked against a JSON Schema an
 - A check on load: an invalid config stops the chassis from starting.
 - Reload on change without a restart. An invalid change is refused and the last good version stays active (suggested: poll the object version; the `config.config.changed.v1` event can replace polling later). Built in PoC-4: a valid change to a reloadable path takes effect with no restart, and a change to a restart-only path is refused. `versions.config` names the content (`<version>+<hash12>`), so every replica that reads the same document reports the same value ([contract v3](../../contracts/contract-v3.md#config)).
 - Ceilings: the bootstrap file's per-call `spec.limits` (`max_tokens_max`, `timeout_ms_max`, `body_bytes_max`, `messages_max`) and `spec.idempotency.ttl_s` bound every store document; a value above one is refused with `over_ceiling` and the last good config stays (suggested: `CEILINGS` in `chassis.server.config_loader`). A store document can still change `spec.model.route` and `spec.prompt` at run time (`deploy/compose/SECURITY.md`, section 7). `/openapi.json` keeps the start limits after a reload, and the `/v1/run` description says so.
-- Referenced files, such as `prompts.system_ref`, loaded by the chassis and passed to the workload in `ctx`.
+- Referenced files passed to the workload in `ctx`, such as `prompts.system_ref`: dropped by P-8 on 2026-11-16.
 - Secrets never appear as values in the config. They reach the chassis container through the chart (`secretEnv`; architecture spec, "The deploy shape"), and a credential-shaped value in the config is refused.
 - `spec.adapters`: the adapter per port (for example `model: litellm`, `events: dapr`, `state: valkey`), and profiles `fake`, `local`, and `cloud` that set them all at once. This is an addition to the C.1 schema, so any component can be swapped by config. `spec.adapters` is merged over the profile defaults field by field. The `fake` profile implies `inprocess`. The `cloud` profile refuses `inprocess` and the `fake` and `memory` adapters (suggested). The one lane key is `spec.engine.connector`; `spec.adapters.engine` is refused.
 - A local-file `ConfigPort` adapter for the `fake` profile, next to the S3 one.
@@ -44,6 +44,8 @@ Every agent's config lives in the config store, checked against a JSON Schema an
 
 ## Acceptance criteria
 
+Delivered by: PoC-1, PoC-2, PoC-4, PoC-5, the config check and ceiling tests, and, on 2026-11-16, the chart render test (`pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_config_store.py`)
+
 - [x] The echo agent starts with its config read from a MinIO bucket (started by the test). · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/notes/2026-10-01-drills.md` section 4; `pocs/poc-04-stateless-scalable/tests/test_config_minio.py::test_a_store_change_reaches_the_next_request_when_it_comes_from_s3` (`network`).
 - [x] A config that breaks the schema is refused at start, and the error names the failing field. · Delivered in PoC-4: `packages/chassis/tests/test_config_loader.py::test_start_fails_on_an_invalid_document_and_names_the_field_not_the_value`.
 - [x] A valid change is picked up without a restart; an invalid change is refused and the last good version stays active. · Delivered in PoC-4: `pocs/poc-04-stateless-scalable/tests/test_config_reload.py::test_a_change_takes_effect_on_the_next_request_with_no_restart`, `::test_a_bad_config_is_refused_and_the_last_good_one_stays`; [contract v3](../../contracts/contract-v3.md#config).
@@ -54,7 +56,7 @@ Every agent's config lives in the config store, checked against a JSON Schema an
 - [x] The agent starts in the `fake` profile with no network and no keys, in the `inprocess` lane. Delivered in PoC-1: `pocs/poc-01-walking-skeleton/tests/test_serve.py::test_chassis_serve_starts_from_config`, run by `make test` with sockets disabled and keys stripped.
 - [x] The `cloud` profile with `spec.engine.connector: inprocess` fails at start. Delivered in PoC-2: `packages/chassis/tests/test_profiles.py::test_inprocess_refused_in_cloud`, `::test_build_ports_refuses_inprocess_in_cloud`; `packages/chassis/tests/test_server.py::test_config_refuses_the_lane_the_profile_forbids`.
 - [x] A `remote` config without `spec.engine.url` fails the schema check. · Delivered in PoC-5: `pocs/poc-05-sandboxed/tests/test_poc05_trust_config.py::test_the_remote_lane_requires_a_url`.
-- [ ] The workload gets its config and system prompt through `ctx`. The workload container is given no config-store credential.
+- [x] The workload container is given no config-store credential. The workload keeps its own prompt; the chassis reports the prompt version through `versions.prompt` (P-8, decided 2026-11-16 by the user: option 1, the `ctx` half dropped). · Delivered by: `pocs/poc-09-agent-mvp-template/tests/test_poc09_chart_config_store.py::test_sidecar_lane_the_workload_gets_no_config_store_credential`, `::test_remote_lane_the_workload_gets_no_config_store_credential`, `::test_a_store_key_on_the_workload_fails_the_render`, `::test_no_workload_source_can_reach_the_config_store`, `::test_the_store_client_pattern_catches_a_store_import`; run 2026-11-16, offline (`helm template`, store keys on the chassis as the paired control). Live, PoC-5: `pocs/poc-05-sandboxed/tests/test_poc05_kind_hardreq1.py::test_minio_refuses_the_workload_without_the_chassis_key` (MinIO refuses the workload container; not rerun here).
 - [x] A reload that passes a ceiling from the bootstrap file is refused, and the last good config stays (suggested: ceilings for `spec.limits` and `ttl_s`). · Delivered by: `packages/chassis/tests/test_config_loader.py::test_a_reload_past_a_bootstrap_ceiling_is_refused_and_the_last_good_stays`, `::test_a_reload_at_or_under_the_bootstrap_ceiling_is_taken`, `::test_a_start_document_past_a_bootstrap_ceiling_fails_startup`.
 - [x] `/openapi.json` shows the limits in force after a reload, or says it shows the start values. · Delivered by: `packages/chassis/tests/test_limits.py::test_openapi_says_it_shows_the_start_limits_after_a_reload`.
 
