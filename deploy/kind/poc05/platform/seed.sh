@@ -3,13 +3,17 @@
 # docs/plans/2026-10-02-poc-05-sandboxed.md, section 2.9; bring-up order in section 8).
 #
 #   seed.sh base          first pass, before the platform starts: litellm-master, litellm-db,
-#                         valkey-auth, minio-root, chassis-echo-minio (both namespaces),
-#                         code-runner-dispatch-token (poc05-platform only),
-#                         chart-drill-token (poc05-chart)
+#                         valkey-auth (one Valkey user per chassis), minio-root,
+#                         chassis-echo-minio (both namespaces), code-runner-dispatch-token
+#                         (poc05-platform only), chart-drill-token (poc05-chart)
 #   seed.sh keys          second pass, once LiteLLM is Ready: one virtual key per chassis
 #                         (chassis-<svc>-litellm) and one token per remote (remote-<name>-token)
 #   seed.sh rotate NAME   replace one Secret (and its LiteLLM key); then restart what mounts it
-#   seed.sh rekey         new virtual keys for every service (after a Postgres restart)
+#   seed.sh rekey         a new virtual key for every PoC-5 service while the old one answers:
+#                         mint, restart what mounts it, then revoke the old key (026 CH-4)
+#   seed.sh revoke-grants SVC  take every MCP tool grant off SVC's key (026 CH-4)
+#   seed.sh revoke SVC    delete SVC's key and its Secret (026 CH-4)
+#   seed.sh key-info      per key alias: how many keys, created, expires (no key, no hash)
 #   seed.sh status        which Secrets exist (names only)
 #
 # Rules (checked by pocs/poc-05-sandboxed/tests/test_poc05_seed_static.py):
@@ -48,6 +52,28 @@ SERVICES=(
 # One token per remote (section 2.2), in poc05-agents (the chassis) and poc05-remote (T14).
 # No probe entries: T10 is dropped (2026-10-02), so no pod would mount them (security review, 8).
 REMOTES=(echo)
+# The credential drill's two services (026 CH-4; pocs/poc-09-agent-mvp-template/tests/
+# test_poc09_kind_ch4.py): two releases of the library chart in $CHART, each with its own key
+# (Secret chassis-<svc>-litellm) and its own Valkey user limited to `<svc>:*` (Secret
+# chassis-<svc>-valkey). "<svc>|<model>|<fake_tools tools>|<code_runner tools>": a tool and a key
+# prefix the other service does not have. Open: a model of its own for ch4-b needs a second route
+# in platform/litellm/config.yaml and its pinned copy in deploy/kind/poc06/hosted/.
+CHART_SERVICES=(
+  "ch4-a|fake-chat|glossary_lookup|"
+  "ch4-b|fake-chat|note_write|"
+)
+# suggested: every virtual key expires after 30 days (026 CH-4, gap review 2026-11-07); `rekey`
+# replaces it before then.
+KEY_DURATION=30d
+# What a per-service Valkey user may do, on its own key prefix only: an allow-list, never +@all.
+# What the chassis's client sends (packages/chassis/src/chassis/adapters/valkey/state.py): GET,
+# SET, DEL; EVALSHA and, on NOSCRIPT, SCRIPT LOAD for its compare-and-set script; PING for its
+# idle health check. AUTH needs no grant. No FUNCTION, no other SCRIPT subcommand, no DBSIZE, no
+# key listing, no channels.
+SERVICE_ACL="resetchannels -@all +get +set +del +evalsha +script|load +ping"
+# suggested: how long a key renamed to svc-<svc>-retiring stays valid if a rekey dies before it
+# revokes it (platform-security, 2026-11-16).
+RETIRE_DURATION=1h
 # The MinIO secret key of the one chassis that reads its config from the store (agent-echo,
 # `config: minio`). Its user name, `chassis-echo`, is plain text in agent-echo.yaml and minio.yaml.
 STORE_READER_SECRET=chassis-echo-minio
@@ -83,6 +109,46 @@ put_env_secret() {
 # read_secret NS NAME KEY: the decoded value on stdout, for a command substitution only.
 read_secret() { kctl -n "$1" get secret "$2" -o "jsonpath={.data.$3}" | base64 -d; }
 
+valkey_secrets_exist() {
+  local svc
+  secret_exists "$PLATFORM" valkey-auth && secret_exists "$AGENTS" valkey-auth || return 1
+  for svc in "${CHART_SERVICES[@]%%|*}"; do
+    secret_exists "$CHART" "chassis-$svc-valkey" || return 1
+  done
+}
+
+# valkey_acl: the Valkey ACL file on stdout, for a pipe into its Secret. Additive: a password
+# whose Secret exists is read back and kept, so adding the drill users never changes the PoC-5
+# chassis password; a missing one is made here. Only each password's SHA-256 goes into the file
+# (acl_user). -@dangerous: no FLUSHALL, KEYS, CONFIG, DEBUG (review F9). `chassis`: the PoC-5
+# agents' one user, every key (unchanged). Each drill service: its own user, its own prefix, an
+# allow-list of commands (B12, 026 CH-4).
+valkey_acl() {
+  local svc
+  printf 'user default off\n'
+  valkey_password "$AGENTS" valkey-auth | acl_user chassis '~* &* +@all -@admin -@dangerous'
+  for svc in "${CHART_SERVICES[@]%%|*}"; do
+    valkey_password "$CHART" "chassis-$svc-valkey" | acl_user "$svc" "~$svc:* $SERVICE_ACL"
+  done
+}
+
+# valkey_password NS NAME: the password in NS/NAME on stdout, for a pipe into acl_user only. A
+# missing Secret is made first.
+valkey_password() {
+  local value
+  if ! secret_exists "$1" "$2"; then
+    value=$(new_secret)
+    printf '%s' "$value" | put_secret "$1" "$2" VALKEY_PASSWORD
+    unset value
+  fi
+  read_secret "$1" "$2" VALKEY_PASSWORD
+}
+
+# acl_user NAME RULES: one ACL line for the password on stdin; only its SHA-256 is written.
+acl_user() {
+  openssl dgst -sha256 -r | awk -v user="$1" -v rules="$2" '{ print "user " user " on #" $1 " " rules }'
+}
+
 preflight() {
   local tool
   for tool in kubectl jq openssl curl base64; do
@@ -95,7 +161,7 @@ preflight() {
 # --- first pass -------------------------------------------------------------------------------
 
 seed_base() {
-  local value hash
+  local value
   if ! secret_exists "$PLATFORM" litellm-master; then
     value=$(new_secret)
     printf '%s' "$value" | put_secret "$PLATFORM" litellm-master LITELLM_MASTER_KEY
@@ -108,17 +174,11 @@ seed_base() {
     unset value
     log "made $PLATFORM/litellm-db"
   fi
-  # Valkey gets an ACL file with the SHA-256 of the password; the chassis gets the password.
-  if ! { secret_exists "$PLATFORM" valkey-auth && secret_exists "$AGENTS" valkey-auth; }; then
-    value=$(new_secret)
-    hash=$(printf '%s' "$value" | openssl dgst -sha256 -r | cut -d' ' -f1)
-    # -@dangerous: no FLUSHALL, KEYS, CONFIG, DEBUG (review F9). The chassis uses GET, SET, DEL.
-    # One user for every agent: B12 (per-agent key patterns) stays open until PoC-8.
-    printf 'user default off\nuser chassis on #%s ~* &* +@all -@admin -@dangerous\n' "$hash" |
-      put_secret "$PLATFORM" valkey-auth auth.conf
-    printf '%s' "$value" | put_secret "$AGENTS" valkey-auth VALKEY_PASSWORD
-    unset value hash
-    log "made valkey-auth in $PLATFORM (ACL file) and $AGENTS (password)"
+  # Valkey gets an ACL file with the SHA-256 of each password; each chassis gets its password.
+  if ! valkey_secrets_exist; then
+    valkey_acl | put_secret "$PLATFORM" valkey-auth auth.conf
+    log "made valkey-auth in $PLATFORM (ACL file); kept or made each password in $AGENTS and" \
+      "$CHART (${CHART_SERVICES[*]%%|*}); a running Valkey loads the file only on restart"
   fi
   # MinIO secrets are 48 hex characters, as the PoC-4 scale stack uses with the same image.
   if ! secret_exists "$PLATFORM" minio-root; then
@@ -202,14 +262,16 @@ start_forward() {
 # - `allowed_routes` (review F16): the route groups `openai_routes` (chat, models) and
 #   `mcp_inference_routes` (/mcp and its tool calls). Management routes, MCP server CRUD
 #   included, answer 403 for such a key.
+# - `duration` (026 CH-4): the key expires after $KEY_DURATION (LiteLLM sets `expires`).
+# key_body SVC MODEL FAKE_TOOLS CODE_TOOLS
 key_body() {
-  jq -nc --arg alias "svc-$1" --arg tag "agent:$1" --arg model "$MODEL" \
-    --arg fake "$2" --arg code "$3" '
+  jq -nc --arg alias "svc-$1" --arg tag "agent:$1" --arg model "$2" \
+    --arg fake "$3" --arg code "$4" --arg duration "$KEY_DURATION" '
     def tools($s): $s | split(",") | map(select(. != ""));
     ({fake_tools: tools($fake), code_runner: tools($code)} | with_entries(select(.value != [])))
       as $perm
     | {key_alias: $alias, models: [$model], max_budget: 1.0, budget_duration: "1d",
-       rpm_limit: 600, metadata: {tags: [$tag]},
+       duration: $duration, rpm_limit: 600, metadata: {tags: [$tag]},
        allowed_routes: ["openai_routes", "mcp_inference_routes"],
        object_permission: {mcp_servers: ($perm | keys), mcp_tool_permissions: $perm}}'
 }
@@ -231,17 +293,41 @@ drop_old_key() {
   unset status left
 }
 
-# make_keys ENTRY...: needs LITELLM up. Each old key with the same alias is deleted first, and
-# checked gone, so a rotate, or a Secret lost while Postgres kept the key, never leaves two live keys.
+# all_services: every service as "NS|SVC|MODEL|FAKE_TOOLS|CODE_TOOLS", one per line: the PoC-5
+# chassis pods (SERVICES, in $AGENTS, all on $MODEL), then the drill's (CHART_SERVICES, in $CHART).
+all_services() {
+  local entry svc model fake code
+  for entry in "${SERVICES[@]}"; do
+    IFS='|' read -r svc fake code <<<"$entry"
+    printf '%s|%s|%s|%s|%s\n' "$AGENTS" "$svc" "$MODEL" "$fake" "$code"
+  done
+  for entry in "${CHART_SERVICES[@]}"; do
+    IFS='|' read -r svc model fake code <<<"$entry"
+    printf '%s|%s|%s|%s|%s\n' "$CHART" "$svc" "$model" "$fake" "$code"
+  done
+}
+
+# service_entry SVC: SVC's line from all_services; fails for an unknown service.
+service_entry() {
+  local line
+  while IFS= read -r line; do
+    [[ $(cut -d'|' -f2 <<<"$line") != "$1" ]] || { printf '%s\n' "$line"; return 0; }
+  done < <(all_services)
+  return 1
+}
+
+# make_keys ENTRY...: entries as all_services prints them; needs LITELLM up. Each old key with the
+# same alias is deleted first, and checked gone, so a rotate, or a Secret lost while Postgres kept
+# the key, never leaves two live keys.
 make_keys() {
-  local entry svc fake code master body resp key
+  local entry ns svc model fake code master body resp key
   start_forward
   master=$(read_secret "$PLATFORM" litellm-master LITELLM_MASTER_KEY)
   [[ -n $master ]] || die "$PLATFORM/litellm-master is empty; run: seed.sh base"
   for entry in "$@"; do
-    IFS='|' read -r svc fake code <<<"$entry"
+    IFS='|' read -r ns svc model fake code <<<"$entry"
     drop_old_key "$svc"
-    body=$(key_body "$svc" "$fake" "$code")
+    body=$(key_body "$svc" "$model" "$fake" "$code")
     resp=$(printf 'Authorization: Bearer %s\n' "$master" | curl -sS -H @- -H 'Content-Type: application/json' --data-binary "$body" "$LITELLM/key/generate")
     if ! key=$(printf '%s' "$resp" | jq -er .key); then
       # A failed call has no key in it; show LiteLLM's error message only.
@@ -249,27 +335,30 @@ make_keys() {
       unset master resp
       die "LiteLLM refused the key for $svc"
     fi
-    printf '%s' "$key" | put_secret "$AGENTS" "chassis-$svc-litellm" LITELLM_API_KEY
+    printf '%s' "$key" | put_secret "$ns" "chassis-$svc-litellm" LITELLM_API_KEY
     unset key resp
-    write_key_manifest "$KEY_MANIFESTS" "svc-$svc" "$MODEL"
-    log "made $AGENTS/chassis-$svc-litellm (alias svc-$svc) and its key manifest"
+    # Key manifests are for agentctl (059 H-15): the PoC-5 services only, not the drill's.
+    if [[ $ns == "$AGENTS" ]]; then
+      write_key_manifest "$KEY_MANIFESTS" "svc-$svc" "$model"
+    fi
+    log "made $ns/chassis-$svc-litellm (alias svc-$svc, model $model, expires in $KEY_DURATION)"
   done
   unset master
   stop_forward
 }
 
 seed_keys() {
-  local entry svc fake code name to_workload to_chassis pending=()
-  for entry in "${SERVICES[@]}"; do
-    IFS='|' read -r svc fake code <<<"$entry"
-    if secret_exists "$AGENTS" "chassis-$svc-litellm"; then
-      # The key was minted here with $MODEL: its manifest comes from that, never from the Secret.
-      # Only when none is there yet; `rekey` (after a Postgres reset) writes a fresh one.
-      [[ -e $KEY_MANIFESTS/svc-$svc.json ]] || write_key_manifest "$KEY_MANIFESTS" "svc-$svc" "$MODEL"
-    else
+  local entry ns svc model name to_workload to_chassis pending=()
+  while IFS= read -r entry; do
+    IFS='|' read -r ns svc model _ <<<"$entry"
+    if ! secret_exists "$ns" "chassis-$svc-litellm"; then
       pending+=("$entry")
+    elif [[ $ns == "$AGENTS" && ! -e $KEY_MANIFESTS/svc-$svc.json ]]; then
+      # The key was minted here with $model: its manifest comes from that, never from the Secret.
+      # Only when none is there yet; `rekey` writes a fresh one.
+      write_key_manifest "$KEY_MANIFESTS" "svc-$svc" "$model"
     fi
-  done
+  done < <(all_services)
   if ((${#pending[@]} > 0)); then
     make_keys "${pending[@]}"
   fi
@@ -296,16 +385,8 @@ seed_keys() {
 
 # --- rotate, rekey, status ---------------------------------------------------------------------
 
-service_known() {
-  local entry
-  for entry in "${SERVICES[@]}"; do
-    [[ ${entry%%|*} != "$1" ]] || return 0
-  done
-  return 1
-}
-
 rotate() {
-  local name=${1:-}
+  local name=${1:-} svc entry
   case $name in
     litellm-master | litellm-db | minio-root | code-runner-dispatch-token)
       drop_secret "$PLATFORM" "$name"
@@ -314,6 +395,9 @@ rotate() {
     valkey-auth)
       drop_secret "$PLATFORM" "$name"
       drop_secret "$AGENTS" "$name"
+      for svc in "${CHART_SERVICES[@]%%|*}"; do
+        drop_secret "$CHART" "chassis-$svc-valkey"
+      done
       seed_base
       ;;
     chassis-echo-minio)
@@ -322,9 +406,10 @@ rotate() {
       seed_base
       ;;
     chassis-*-litellm)
-      local svc=${name#chassis-}
-      service_known "${svc%-litellm}" || die "no service ${svc%-litellm} in SERVICES"
-      drop_secret "$AGENTS" "$name"
+      svc=${name#chassis-}
+      entry=$(service_entry "${svc%-litellm}") ||
+        die "no service ${svc%-litellm} in SERVICES or CHART_SERVICES"
+      drop_secret "${entry%%|*}" "$name"
       seed_keys
       ;;
     remote-*-token)
@@ -339,12 +424,203 @@ rotate() {
     "chassis-echo-minio: first delete job/minio-init and run run.sh apply)"
 }
 
+# --- rekey and revoke (026 CH-4) ----------------------------------------------------------------
+#
+# A call that carries a key in its body (/key/update) sends the master key and the body through
+# one curl config on stdin (`-K -`): neither is in any argv. The JSON body holds no backslash, so
+# escaping its quotes is all the config syntax needs.
+
+# admin_update BODY_JSON_ON_STDIN: POST /key/update with the body on stdin; prints the HTTP status.
+# Reads `master` from the caller (bash dynamic scope), never as an argument.
+admin_update() {
+  local body
+  body=$(cat)
+  printf 'header = "Authorization: Bearer %s"\nheader = "Content-Type: application/json"\ndata-binary = "%s"\n' "$master" "${body//\"/\\\"}" | curl -sS -o /dev/null -w '%{http_code}' -K - "$LITELLM/key/update" 2>/dev/null || printf '000'
+  unset body
+}
+
+# update_key NS SVC JQ_ARGS... FILTER: /key/update for the key in NS/chassis-SVC-litellm, the body
+# made by FILTER with the key as `.`; prints the HTTP status. Reads `master` from the caller.
+update_key() {
+  local ns=$1 svc=$2 key
+  shift 2
+  key=$(read_secret "$ns" "chassis-$svc-litellm" LITELLM_API_KEY)
+  printf '%s' "$key" | jq -Rc "$@" | admin_update
+  unset key
+}
+
+# key_count ALIAS: how many keys LiteLLM holds under ALIAS; fails closed on any error.
+key_count() {
+  local left
+  left=$(printf 'Authorization: Bearer %s\n' "$master" | curl -fsS -H @- --get --data-urlencode "key_alias=$1" "$LITELLM/key/list" 2>/dev/null) ||
+    die "LiteLLM /key/list failed for $1"
+  printf '%s' "$left" | jq -er 'if (.keys | type) == "array" then .keys | length else error end' 2>/dev/null ||
+    die "LiteLLM /key/list for $1 has no key list"
+  unset left
+}
+
+# delete_alias ALIAS: delete every key under ALIAS, and check none is left (as drop_old_key).
+delete_alias() {
+  local gone status
+  gone=$(jq -nc --arg alias "$1" '{key_aliases: [$alias]}')
+  status=$(printf 'Authorization: Bearer %s\n' "$master" | curl -sS -o /dev/null -w '%{http_code}' -H @- -H 'Content-Type: application/json' --data-binary "$gone" "$LITELLM/key/delete" 2>/dev/null) || status=000
+  [[ $status =~ ^(2[0-9][0-9]|400|404)$ ]] || die "LiteLLM /key/delete failed for $1"
+  [[ $(key_count "$1") == 0 ]] || die "a key with alias $1 is still live after /key/delete"
+}
+
+# require_status WANT WHAT: GET /v1/models with the key on stdin; dies unless LiteLLM answers
+# HTTP WANT, and logs "WHAT gets HTTP <code>". Refuses an empty key, which proves nothing.
+require_status() {
+  local key
+  key=$(cat)
+  [[ -n $key ]] || die "$2: no key to check with"
+  printf 'Authorization: Bearer %s\n' "$key" | curl -sS -o /dev/null -w '%{http_code}' -H @- "$LITELLM/v1/models" 2>/dev/null | expect_code "$1" "$2"
+  unset key
+}
+
+# expect_code WANT WHAT: the HTTP status on stdin must be WANT.
+expect_code() {
+  local code
+  code=$(cat)
+  [[ $code == "$1" ]] || die "$2 gets HTTP ${code:-000}, want $1"
+  log "$2 gets HTTP $code"
+}
+
+# restart_consumers NS SECRET: restart every Deployment in NS whose pods read SECRET, and wait
+# until each has rolled. Rolling with maxUnavailable 0, so an old pod answers until its new one is
+# Ready.
+restart_consumers() {
+  local name
+  for name in $(kctl -n "$1" get deployments -o json | jq -r --arg s "$2" '.items[]
+      | select([.spec.template.spec | ((.containers // []) + (.initContainers // []))[]
+          | ((.env // [])[] | .valueFrom.secretKeyRef.name?), ((.envFrom // [])[] | .secretRef.name?)]
+        | index($s))
+      | .metadata.name'); do
+    kctl -n "$1" rollout restart "deployment/$name" >/dev/null
+    kctl -n "$1" rollout status "deployment/$name" --timeout=300s >/dev/null ||
+      die "rekey: $1/$name did not roll out with the new key; the old key is still live"
+    log "rekey: $1/$name rolled out with the new key"
+  done
+}
+
+# rekey_one ENTRY: one service, the old key kept live until every pod holds the new one.
+# 1. The old key is read from its Secret and held (never printed).
+# 2. The live key moves to the alias svc-SVC-retiring (aliases are unique in LiteLLM) and gets
+#    `duration: $RETIRE_DURATION`, so it dies on its own if this run stops before step 5.
+# 3. A new key is minted under svc-SVC and overwrites the Secret (a server-side apply: the Secret
+#    is never missing, so no pod start fails on it).
+# 4. Every Deployment that reads the Secret rolls; the old pods answer with the old key meanwhile.
+# 5. The retiring key is deleted and checked gone; the held old key must get 401 on /v1/models
+#    (LiteLLM caches keys, so the list alone is no proof) and the new key 200.
+# No live old key (a Postgres reset): steps 2 and 5 are skipped, and the service has no working
+# key until step 4. After a Postgres reset, `seed.sh keys` is the documented step (runbook).
+rekey_one() {
+  local ns svc master old updated retiring had_old=0
+  IFS='|' read -r ns svc _ <<<"$1"
+  retiring=svc-$svc-retiring
+  start_forward
+  master=$(read_secret "$PLATFORM" litellm-master LITELLM_MASTER_KEY)
+  [[ -n $master ]] || die "$PLATFORM/litellm-master is empty; run: seed.sh base"
+  [[ $(key_count "$retiring") == 0 ]] ||
+    die "a key under $retiring is left from an unfinished rekey; check which pods use it first"
+  if secret_exists "$ns" "chassis-$svc-litellm"; then
+    old=$(read_secret "$ns" "chassis-$svc-litellm" LITELLM_API_KEY)
+    updated=$(update_key "$ns" "$svc" --arg alias "$retiring" --arg duration "$RETIRE_DURATION" '{key: ., key_alias: $alias, duration: $duration}')
+    if [[ $updated =~ ^2[0-9][0-9]$ && $(key_count "$retiring") == 1 ]]; then
+      had_old=1
+      log "rekey: the live key of svc-$svc is now $retiring (expires in $RETIRE_DURATION) until the pods roll"
+    else
+      # Fail closed: a live key that could not be moved would be deleted by make_keys.
+      [[ $(key_count "svc-$svc") == 0 ]] ||
+        die "rekey: the live key of svc-$svc could not be moved (HTTP $updated); nothing changed"
+      log "rekey: svc-$svc has no live key to keep (HTTP $updated); minting a new one"
+    fi
+  fi
+  unset master
+  stop_forward
+  make_keys "$1"
+  restart_consumers "$ns" "chassis-$svc-litellm"
+  if ((had_old == 0)); then
+    unset old
+    return 0
+  fi
+  start_forward
+  master=$(read_secret "$PLATFORM" litellm-master LITELLM_MASTER_KEY)
+  delete_alias "$retiring"
+  unset master
+  printf '%s' "$old" | require_status 401 "rekey: svc-$svc old key"
+  unset old
+  read_secret "$ns" "chassis-$svc-litellm" LITELLM_API_KEY | require_status 200 "rekey: svc-$svc new key"
+  log "rekey: svc-$svc old key revoked ($retiring deleted), new key answers (HTTP 200)"
+  stop_forward
+}
+
 rekey() {
   local entry
-  for entry in "${SERVICES[@]}"; do
-    drop_secret "$AGENTS" "chassis-${entry%%|*}-litellm"
-  done
-  seed_keys
+  while IFS= read -r entry; do
+    [[ ${entry%%|*} == "$AGENTS" ]] || continue
+    rekey_one "$entry"
+  done < <(all_services)
+}
+
+# revoke_grants SVC: SVC's key keeps its models but loses every MCP tool grant. An empty grant
+# refuses tools/list (it does not fall open), but LiteLLM serves the cached grant for about 60 s
+# after the update (measured on poc05, 2026-11-16); `revoke` (a delete) takes effect at once.
+revoke_grants() {
+  local entry ns svc master updated
+  entry=$(service_entry "${1:-}") || die "revoke-grants: no service '${1:-}'"
+  IFS='|' read -r ns svc _ <<<"$entry"
+  start_forward
+  master=$(read_secret "$PLATFORM" litellm-master LITELLM_MASTER_KEY)
+  updated=$(update_key "$ns" "$svc" '{key: ., object_permission: {mcp_servers: [], mcp_tool_permissions: {}}}')
+  unset master
+  [[ $updated =~ ^2[0-9][0-9]$ ]] || die "revoke-grants: LiteLLM /key/update for svc-$svc: HTTP $updated"
+  stop_forward
+  log "revoked every tool grant of svc-$svc"
+}
+
+# revoke SVC: delete SVC's key (and with it its grants) and its Secret; the held key must then get
+# 401. `seed.sh keys` mints a new one; the pods keep the dead key until they restart. A service
+# with no Secret and no key left is already revoked: exit 0.
+revoke() {
+  local entry ns svc master old
+  entry=$(service_entry "${1:-}") || die "revoke: no service '${1:-}'"
+  IFS='|' read -r ns svc _ <<<"$entry"
+  start_forward
+  master=$(read_secret "$PLATFORM" litellm-master LITELLM_MASTER_KEY)
+  if ! secret_exists "$ns" "chassis-$svc-litellm"; then
+    delete_alias "svc-$svc"
+    unset master
+    stop_forward
+    log "svc-$svc is already revoked: no Secret, no key under svc-$svc"
+    return 0
+  fi
+  old=$(read_secret "$ns" "chassis-$svc-litellm" LITELLM_API_KEY)
+  delete_alias "svc-$svc"
+  unset master
+  printf '%s' "$old" | require_status 401 "revoke: svc-$svc deleted key"
+  unset old
+  stop_forward
+  drop_secret "$ns" "chassis-$svc-litellm"
+  log "revoked svc-$svc: key deleted (HTTP 401 on /v1/models), Secret $ns/chassis-$svc-litellm dropped"
+}
+
+# key_info: one JSON line per alias (each service's and its -retiring one): how many keys, and
+# each key's created_at and expires. No key, no hash, no other field.
+key_info() {
+  local entry svc alias master
+  start_forward
+  master=$(read_secret "$PLATFORM" litellm-master LITELLM_MASTER_KEY)
+  while IFS= read -r entry; do
+    svc=$(cut -d'|' -f2 <<<"$entry")
+    for alias in "svc-$svc" "svc-$svc-retiring"; do
+      printf 'Authorization: Bearer %s\n' "$master" | curl -fsS -H @- --get --data-urlencode "key_alias=$alias" --data-urlencode return_full_object=true "$LITELLM/key/list" 2>/dev/null |
+        jq -c --arg alias "$alias" '{alias: $alias, keys: [.keys[] | {created_at, expires}]}' ||
+        die "key-info: LiteLLM /key/list failed for $alias"
+    done
+  done < <(all_services)
+  unset master
+  stop_forward
 }
 
 status() {
@@ -394,7 +670,7 @@ seed_kafka_topics() {
   done
 }
 
-usage() { sed -n '2,14p' "$0"; }
+usage() { sed -n '2,19p' "$0"; }
 
 (($# > 0)) || { usage; exit 0; }
 case $1 in
@@ -402,6 +678,9 @@ case $1 in
   keys) preflight; seed_keys ;;
   rotate) preflight; rotate "${2:-}" ;;
   rekey) preflight; rekey ;;
+  revoke-grants) preflight; revoke_grants "${2:-}" ;;
+  revoke) preflight; revoke "${2:-}" ;;
+  key-info) preflight; key_info ;;
   kafka) preflight; seed_kafka ;;
   kafka-topics) preflight; seed_kafka_topics ;;
   status) status ;;

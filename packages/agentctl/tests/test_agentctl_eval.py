@@ -5,6 +5,7 @@ The rendered file must load with `eval_kit.golden.parse_cases`, the platform's o
 `make eval` run is the generated repo's own target, as a developer runs it: `agentctl new` (with
 `uv lock`), then `make eval` with `UV_OFFLINE=1`, no key, no socket but Unix and loopback. One case
 is added that the judge must fail, so the one run shows a pass, a fail, and the judge's scores.
+The file also proves 058 CH-8: the LangGraph default (no `--framework`) passes `make eval`.
 """
 
 from __future__ import annotations
@@ -63,12 +64,13 @@ def _env() -> dict[str, str]:
     return keep | {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "UV_OFFLINE": "1"}
 
 
-@pytest.mark.slow
-def test_make_eval_runs_the_judge_on_the_per_case_fake_model(tmp_path: Path) -> None:
+def _new(tmp_path: Path, *flags: str) -> Path:
+    """`agentctl new ev-agent --kind transformer` with `flags`, locked offline; the agent folder."""
     made = subprocess.run(
         [
             *(sys.executable, "-m", "agentctl", "new", "ev-agent", "--kind", "transformer"),
-            *("--framework", "python", "--dest", str(tmp_path), "--platform-path", str(ROOT)),
+            *flags,
+            *("--dest", str(tmp_path), "--platform-path", str(ROOT)),
         ],
         env=_env(),
         capture_output=True,
@@ -76,15 +78,42 @@ def test_make_eval_runs_the_judge_on_the_per_case_fake_model(tmp_path: Path) -> 
         timeout=300,
     )
     assert made.returncode == 0, made.stderr
-    agent = tmp_path / "ev-agent"
+    return tmp_path / "ev-agent"
+
+
+def _make_eval(agent: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["make", "eval"], cwd=agent, env=_env(), capture_output=True, text=True, timeout=900
+    )
+
+
+@pytest.mark.slow
+def test_make_eval_passes_on_the_langgraph_default(tmp_path: Path) -> None:
+    """058 CH-8: the agent `agentctl new` scaffolds with no `--framework` passes its own evals."""
+    agent = _new(tmp_path)
+    answers = yaml.safe_load((agent / ".copier-answers.yml").read_text())
+    assert answers["framework"] == rules.DEFAULT_FRAMEWORK == "langgraph"
+    cases = yaml.safe_load((agent / "evals/cases.yaml").read_text())["cases"]
+
+    done = _make_eval(agent)
+
+    tail = done.stdout[-3000:] + done.stderr[-2000:]
+    assert done.returncode == 0, tail
+    report = json.loads((agent / "reports/eval.json").read_text())
+    validate_report(report)
+    assert report["summary"] == {"total": len(cases), "passed": len(cases), "failed": 0}
+    assert report["meta"]["judge"] == {case["id"]: 1 for case in cases}
+
+
+@pytest.mark.slow
+def test_make_eval_runs_the_judge_on_the_per_case_fake_model(tmp_path: Path) -> None:
+    agent = _new(tmp_path, "--framework", "python")
     cases_file = agent / "evals/cases.yaml"
     data = yaml.safe_load(cases_file.read_text())
     (template_case,) = data["cases"]
     cases_file.write_text(yaml.safe_dump({**data, "cases": [template_case, FAIL_CASE]}))
 
-    done = subprocess.run(
-        ["make", "eval"], cwd=agent, env=_env(), capture_output=True, text=True, timeout=900
-    )
+    done = _make_eval(agent)
 
     tail = done.stdout[-3000:] + done.stderr[-2000:]
     assert done.returncode != 0, tail

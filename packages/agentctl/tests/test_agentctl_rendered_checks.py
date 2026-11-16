@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from agent_testkit.readonly_root import MARKER
 from agentctl import rules
 from agentctl.scaffold import Answers, render
 
@@ -48,9 +49,9 @@ def _env(agent: Path) -> dict[str, str]:
 
 
 def _pytest(
-    agent: Path, test_file: str, plugins: tuple[str, ...] = ()
+    agent: Path, test_file: str, plugins: tuple[str, ...] = (), extra: tuple[str, ...] = ()
 ) -> subprocess.CompletedProcess[str]:
-    loaded = [arg for plugin in plugins for arg in ("-p", plugin)]
+    loaded = [arg for plugin in plugins for arg in ("-p", plugin)] + list(extra)
     return subprocess.run(
         [
             sys.executable,
@@ -119,6 +120,100 @@ def test_rendered_stateless_check_passes_offline(tmp_path: Path, framework: str)
 
 def test_the_stateless_check_is_not_rendered_for_claude_agent(tmp_path: Path) -> None:
     assert not (_agent(tmp_path, "claude-agent") / "tests/test_stateless.py").exists()
+
+
+@pytest.mark.parametrize("framework", rules.FRAMEWORKS)
+def test_rendered_stateless_lane_check_passes_offline(tmp_path: Path, framework: str) -> None:
+    """057 H-19: each framework's example passes the `sidecar` lane check: the workload and the
+    chassis as processes, each with a read-only root, fresh pods against one reused pod.
+    claude-agent runs its CLI against the fake model, with its HOME in a scratch volume that must
+    be empty after each call; it is a known gap (`KNOWN_STATEFUL`), so the check runs as `xfail`."""
+    agent = _agent(tmp_path, framework)
+    done = _pytest(
+        agent, "test_stateless_lane.py", plugins=("agent_testkit.plugin",), extra=("-rx",)
+    )
+    assert done.returncode == 0, _findings(done) + done.stdout[-3000:] + done.stderr[-2000:]
+    if framework not in KNOWN_STATEFUL:
+        assert "1 passed" in done.stdout, _findings(done) + done.stdout[-3000:]
+        return
+    assert "1 xfailed" in done.stdout and "XFAIL" in done.stdout, done.stdout[-3000:]
+    # `-rx` names the reason only; with `--runxfail` the same run fails and shows the finding.
+    shown = _pytest(
+        agent, "test_stateless_lane.py", plugins=("agent_testkit.plugin",), extra=("--runxfail",)
+    )
+    assert shown.returncode == 1, shown.stdout[-3000:] + shown.stderr[-2000:]
+    assert "ScratchLeftover" in shown.stdout, shown.stdout[-3000:]
+    assert " left " in shown.stdout and "scratch volume" in shown.stdout, shown.stdout[-3000:]
+    assert "claude-run-" in shown.stdout, shown.stdout[-3000:]  # the run's HOME
+
+
+def _findings(done: subprocess.CompletedProcess[str]) -> str:
+    """Every stateless finding in the whole output (the write marker, `wrote`, `left`), so a
+    failure names the container and the path even when the tail cut them off."""
+    lines = (done.stdout + done.stderr).splitlines()
+    keys = (MARKER, "stateless check", " wrote ", " left ")
+    hits = dict.fromkeys(line.strip() for line in lines if any(key in line for key in keys))
+    return "stateless findings:\n" + "\n".join(hits) + "\n--- output tail ---\n" if hits else ""
+
+
+KNOWN_STATEFUL = {"claude-agent"}
+"""On `end` the A2A server closes `handle`, which stops the CLI mid-write, so the run's HOME can
+outlive the call (057 H-19). The template marks its lane check `xfail` until `handle` is fixed."""
+
+
+STATEFUL = """
+
+_seen: list[str] = []
+_plain = handle
+
+
+async def handle(input, ctx):  # noqa: F811  (the red case: a handle that keeps data)
+    _seen.append(str(input.get("text")))
+    async for out in _plain(input, ctx):
+        yield out
+        if out["type"] == "start":
+            yield {"schema_version": "0", "type": "delta", "text": f"[{len(_seen)}] "}
+"""
+WRITER = """
+
+_plain = handle
+
+
+async def handle(input, ctx):  # noqa: F811  (the red case: a handle that writes a file)
+    try:
+        open("{path}", "w").close()
+    except OSError:
+        pass
+    async for out in _plain(input, ctx):
+        yield out
+"""
+
+
+def _with(tmp_path: Path, extra: str) -> Path:
+    agent = _agent(tmp_path, "python")
+    handle = agent / "src/my_agent/handle.py"
+    handle.write_text(handle.read_text() + extra)
+    return agent
+
+
+def test_the_stateless_lane_check_catches_a_stateful_handle(tmp_path: Path) -> None:
+    """The red case on a rendered agent: a handle that keeps a count of past requests in a module
+    list fails the rendered check, and the failure names the call that differed."""
+    agent = _with(tmp_path, STATEFUL)
+    done = _pytest(agent, "test_stateless_lane.py", plugins=("agent_testkit.plugin",))
+    assert done.returncode == 1, done.stdout[-3000:] + done.stderr[-2000:]
+    assert "differed on the reused pod" in done.stdout, done.stdout[-3000:]
+
+
+def test_the_stateless_lane_check_catches_a_handle_that_writes_a_file(tmp_path: Path) -> None:
+    """The red case for the disk: a handle that writes a file and hides the error fails, and the
+    failure names the workload container and the path."""
+    target = tmp_path / "kept.txt"
+    agent = _with(tmp_path, WRITER.format(path=target))
+    done = _pytest(agent, "test_stateless_lane.py", plugins=("agent_testkit.plugin",))
+    assert done.returncode == 1, done.stdout[-3000:] + done.stderr[-2000:]
+    assert f"container 'workload' wrote {target}" in done.stdout, done.stdout[-3000:]
+    assert not target.exists()
 
 
 @pytest.mark.parametrize(("framework", "trust"), LANES)

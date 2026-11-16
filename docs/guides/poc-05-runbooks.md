@@ -216,6 +216,17 @@ $ kubectl --context kind-poc05 -n poc05-agents logs deploy/agent-echo -c chassis
 
 **Fix.** Either wait for the budget period, or raise the budget on the LiteLLM key or team (`seed.sh` on kind holds the key body). Then check the spend that drained it: `chassis_model_tokens_total` and `chassis_model_cost_microusd_total` by route on the agent's dashboard. A budget drained by one agent in minutes is a runaway loop or an uncorrelated caller; the uncorrelated cap (`spec.limits.uncorrelated_tokens_per_minute`) is the first thing to read.
 
+## Replacing a service's LiteLLM key, or keys lost after a Postgres reset
+
+**Symptom.** Every model or tool call from a chassis gets 401 from LiteLLM, or a key nears its `expires` (`seed.sh key-info` prints `created_at` and `expires` per alias; keys last 30 days, suggested). The same 401 follows a Postgres restart: the keys lived in its database.
+
+**Check.** `deploy/kind/poc05/platform/seed.sh key-info`. One key under `svc-<svc>` and none under `svc-<svc>-retiring` is the normal state. A key under `svc-<svc>-retiring` means a rekey stopped part way.
+
+**Fix.**
+- Keys still live, to replace them (026 CH-4): `seed.sh rekey`. Per PoC-5 service it moves the live key to `svc-<svc>-retiring` (valid for 1 h more, suggested), mints a new key, rolls the Deployments that read it, deletes the old key, and checks it gets 401 and the new key 200. The services keep answering (`pocs/poc-09-agent-mvp-template/tests/test_poc09_kind_ch4.py`).
+- After a Postgres reset (the keys are gone): `seed.sh rotate chassis-<svc>-litellm` for each service, or drop their Secrets and run `seed.sh keys`. Either mints a new key and rewrites the Secret; then restart the pods that read it (`kubectl --context kind-poc05 -n poc05-agents rollout restart deploy/<name>`). `rekey` works here too, but has no old key to keep.
+- A key left under `svc-<svc>-retiring`: find which pods still run with it (they started before the Secret changed) and restart them. The key expires on its own within the hour. `rekey` refuses to run until it is gone.
+
 ## Rotating the remote token
 
 **Symptom.** The remote token must change: it leaked, or it is due.

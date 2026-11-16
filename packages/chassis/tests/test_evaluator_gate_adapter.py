@@ -62,7 +62,12 @@ def config(**spec: Any) -> ChassisConfig:
             "spec": {
                 "engine": {"connector": "inprocess", "handle": "chassis.core.handle:echo_wire"},
                 "model": {"route": "big-default", "fallback_route": "big-fallback"},
-                "harness": {"evaluator_gate": True, "retries": 1, "threshold": 0.7},
+                "harness": {
+                    "evaluator_gate": True,
+                    "evaluator_mode": "sync",  # named: the code default is async (137 CH-17)
+                    "retries": 1,
+                    "threshold": 0.7,
+                },
                 **spec,
             },
         }

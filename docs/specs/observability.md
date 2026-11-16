@@ -56,7 +56,7 @@ One redacted JSON line per record, with `request_id` and `trace_id` inside a run
 
 ## Dashboards
 
-`python -m chassis.dashboards` writes one Grafana dashboard per agent to `deploy/dashboards/`, a 5-minute window, nine panels: requests by interface and status, latency p50 and p95, errors by code, model tokens by direction, model cost per hour, the evaluator gate's first-try pass rate (`chassis_gate_first_attempt_passes_total` over gate runs, both `mode="sync"`), retry rate, and fallback rate (a target line at 10%), user feedback by label. The container dashboard that shows the [key metrics](metrics.md) is specified there.
+`python -m chassis.dashboards` writes one Grafana dashboard per agent to `deploy/dashboards/`, a 5-minute window, nine panels: requests by interface and status, latency p50 and p95, errors by code, model tokens by direction, model cost per hour, the evaluator gate's first-try pass rate (`chassis_gate_first_attempt_passes_total` over gate runs, both `mode="sync"`), retry rate, and fallback rate (a target line at 10%), user feedback by label. It also writes `deploy/dashboards/container.json`, the container dashboard with the [key metrics](metrics.md) in three rows (046 A-5); it is specified there.
 
 ## Feedback
 

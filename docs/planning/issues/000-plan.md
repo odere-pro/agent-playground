@@ -21,7 +21,7 @@ The agent server is now a **service chassis**: the standard every microservice i
 
 | Layer | Meaning | Issues |
 | ----- | ------- | ------ |
-| `chassis` | The standard for every service, whatever runs inside | 35 |
+| `chassis` | The standard for every service, whatever runs inside | 37 |
 | `agent-profile` | Modules only agent workloads need (model and tool proxies, LLM guardrails, evaluator gate, AI marking, A2A) | 11 |
 | `platform` | Services and infrastructure built on the chassis (router, SLMs, data agents, registry, orchestrator, production, governance) | 99 |
 
@@ -53,6 +53,8 @@ New chassis issues from the ADR:
 - [050 CH-5](050-CH-5-service-operations.md): service operations, declared in config and routed by the chassis.
 - [055 CH-6](055-CH-6-remote-lane-trust-rule.md): the `remote` lane and the trust rule.
 - [056 CH-7](056-CH-7-chassis-release-rings.md): chassis release in rings, with a minimum-version rule.
+- [141 CH-21](141-CH-21-chassis-repository-under-prefix.md): the chassis repository under the registry prefix, so admission finds the library's chassis on a digest cluster (a user decision).
+- [142 CH-22](142-CH-22-chassis-digest-map.md): one tag-to-digest map in the library chart, written on publish and read by the minimum-version rule, so a pin or a ring hold is one value.
 - [058 CH-8](058-CH-8-framework-event-mappings.md): framework event mappings and one non-Python workload.
 
 How the OpenAI, Anthropic, and MCP formats map onto the one canonical request ([011 H-2](011-H-2-inbound-adapters.md), [051 H-13](051-H-13-openapi-mcp-tools.md)) is proposed in [ADR-003](../adr/003-chat-formats-onto-the-canonical-request.md), from PoC-3.
@@ -85,7 +87,7 @@ The ports, fakes, and test layers are described in the PoC plan: [../poc/000-pla
 | -------- | ------- | ----- |
 | P0 | Critical path to the first measured savings: router and baseline, harness MVP, simplifier SLM, simplifier agent live with the recorder | 42 |
 | P1 | Needed to meet the epic acceptance criteria | 86 |
-| P2 | Optional; can slip without breaking an acceptance criterion | 9 |
+| P2 | Optional; can slip without breaking an acceptance criterion | 11 |
 | P3 | Later phases (10 and 11): plan only | 3 |
 
 Sizes: `S` is up to 1 day, `M` is 2–3 days, `L` is 4–5 days. Nothing is bigger than a week; split it if it grows.
@@ -96,7 +98,7 @@ Waves are GitHub milestones. Each one ends in something that can be shown. The w
 
 | Wave | Issues | Ends with |
 | ---- | ------ | --------- |
-| Done: delivered by the PoC track | 007–138 | 15 issues, 35 days of the first estimate, not counted below |
+| Done: delivered by the PoC track | 007–138 | 17 issues, 41 days of the first estimate, not counted below |
 | W0 Decisions | 001 | Broker, first cloud, public A2A endpoint, banned words, and metric targets decided. Feeds phases D and E: the primary trace view and the north star |
 | W1 Router and baseline | 002–006 | Every model call goes through the router; token spend is counted and on a dashboard; the baseline clock is running. Feeds phases B and E; the baseline is parked |
 | W2 Chassis MVP | 008–026 | An echo workload runs behind the chassis: in the `sidecar` lane from the shared library chart, locally and in Kubernetes, and over A2A in memory in the chassis's tests. It answers through native, OpenAI, and Anthropic APIs (streaming and complete), is started by events and emits result events, is traced, holds no key, and passes the contract tests over both transports. Feeds phases A, B, E, and F |
@@ -107,7 +109,7 @@ Waves are GitHub milestones. Each one ends in something that can be shown. The w
 | W7 Registry and governance gate | 076–093 | Phase 5 done-when; no agent goes live without a governance block. `later`: no phase |
 | W8 Platform MCP server | 094–097 | Phase 6 done-when: an MCP client searches the registry, runs an agent, and exports a golden set version. `later`: no phase |
 | W9 Orchestrator | 098–115 | Phase 7 done-when. `later`: no phase |
-| W10 Production readiness | 116–140 | Phase 8 done-when: both clouds from Terraform, restore test passes, SLO alerts fire. Feeds phases A and E |
+| W10 Production readiness | 116–142 | Phase 8 done-when: both clouds from Terraform, restore test passes, SLO alerts fire. Feeds phases A and E |
 | W11 Compliance evidence | 123–132 | Phase 9 done-when: documentation pack and control mapping for any agent version. Feeds phase E |
 | W12 Later | 125–126 | Plans for Phases 10 and 11. `later`: no phase |
 | Parked: the SLM track (2026-11-06) | 005–127 | 23 issues, 52.5 days, not counted above |
@@ -194,8 +196,8 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 
 ## Estimate check
 
-- **Open:** about 262 engineer-days (52 weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
-- **Done** (wave `WD`): 35 days over 15 of the issues. **Parked** (wave `WP`): 52.5 days over 23. Neither is in the open total.
+- **Open:** about 259.5 engineer-days (52 weeks) for W0–W11, after the reuse picks. Before them it was about 305 days (61 weeks).
+- **Done** (wave `WD`): 41 days over 17 of the issues. **Parked** (wave `WP`): 52.5 days over 23. Neither is in the open total.
 - **Phases A to F:** 86.5 days against the 8–10 weeks the product plan has left (suggested: 50–60 engineer-days), from [the phase map](../../reviews/2026-11-06-backlog-review/phase-map.md#totals). Phases A, B, and E are each about twice the plan's size. The rest of the open total is `later`: no phase needs it.
 - **The epic** says 29–33 weeks for one engineer. Either the epic assumes a lot of reuse, or the phase estimates need a second look with the team. The sizes here are first guesses; re-size in planning.
 
@@ -215,6 +217,8 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | 018 | H-18 | [Idempotency: key check, optional Valkey result cache, key passed to write tools](018-H-18-idempotency.md) | chassis | P0 | M | [007](007-H-1-harness-library-ports-envelope.md), [016](016-H-9-local-debug-profile.md), [009](009-CH-1-engine-connectors-a2a.md) |
 | 023 | C-5 | [AI-generated marking on outputs and a disclosure flag for client apps](023-C-5-ai-generated-marking.md) | agent-profile | P1 | S | [010](010-H-12-config-loader.md), [011](011-H-2-inbound-adapters.md), [019](019-H-17-event-port.md) |
 | 024 | CH-3 | [Shared Helm library chart: chassis sidecar with a pinned tag, secrets on the chassis only, Service on the chassis port](024-CH-3-helm-library-chart.md) | chassis | P0 | L | [009](009-CH-1-engine-connectors-a2a.md), [016](016-H-9-local-debug-profile.md) |
+| 037 | M-2 | [Eval gate in CI: a change ships only if it passes the golden set against the baseline](037-M-2-eval-gate-ci.md) | platform | P0 | S | [028](028-S-3-simplifier-metrics.md) |
+| 058 | CH-8 | [Framework event mappings and one non-Python workload in the service template](058-CH-8-framework-event-mappings.md) | chassis | P1 | L | [015](015-H-8-testing-kit.md) |
 | 128 | CH-9 | [LangGraph checkpointer and interrupts: one ADR each](128-CH-9-langgraph-checkpointer-interrupts.md) | chassis | P2 | S | [058](058-CH-8-framework-event-mappings.md) |
 | 134 | CH-14 | [Security defaults in the cloud profile: no uncorrelated tokens, unknown tools refused, auth required](134-CH-14-cloud-security-defaults.md) | chassis | P0 | M | [013](013-CH-2-outbound-model-proxy.md), [022](022-H-6-security-middleware.md) |
 | 135 | CH-15 | [Backpressure: a cap on runs in flight per replica, 503 overloaded, and a gauge to scale on](135-CH-15-backpressure.md) | chassis | P1 | M | [017](017-H-4-harness-features.md), [014](014-H-7-observability.md) |
@@ -256,7 +260,6 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | # | ID | Issue | Layer | Priority | Size | Depends on |
 | - | -- | ----- | ----- | -------- | ---- | ---------- |
 | 028 | S-3 | [`facts_kept` and banned-word scoring for the eval gate and the judge](028-S-3-simplifier-metrics.md) | platform | P0 | S | — |
-| 037 | M-2 | [Eval gate in CI: a change ships only if it passes the golden set against the baseline](037-M-2-eval-gate-ci.md) | platform | P0 | S | [028](028-S-3-simplifier-metrics.md) |
 | 038 | X-1a | [Terraform module for the first cloud (AWS or GCP)](038-X-1a-terraform-first-cloud.md) | platform | P0 | L | [001](001-DEC-1-resolve-open-decisions.md), [025](025-H-10-template-repo.md), [026](026-CH-4-chassis-only-credentials-egress.md) |
 
 ### W4 Simplifier agent live
@@ -279,7 +282,6 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | 055 | CH-6 | [Remote lane and the trust rule: sandboxed pod or managed runtime over A2A, cloud auth adapter, admission check](055-CH-6-remote-lane-trust-rule.md) | chassis | P1 | S | [009](009-CH-1-engine-connectors-a2a.md), [026](026-CH-4-chassis-only-credentials-egress.md), [010](010-H-12-config-loader.md), [024](024-CH-3-helm-library-chart.md) |
 | 056 | CH-7 | [Chassis release in rings, with a per-service pin and a minimum-version admission rule](056-CH-7-chassis-release-rings.md) | chassis | P1 | L | [024](024-CH-3-helm-library-chart.md), [055](055-CH-6-remote-lane-trust-rule.md), [014](014-H-7-observability.md) |
 | 057 | H-19 | [Stateless check in CI: fail the build on local disk writes or kept data](057-H-19-stateless-check-ci.md) | chassis | P1 | M | [025](025-H-10-template-repo.md), [015](015-H-8-testing-kit.md) |
-| 058 | CH-8 | [Framework event mappings and one non-Python workload in the service template](058-CH-8-framework-event-mappings.md) | chassis | P1 | L | [015](015-H-8-testing-kit.md) |
 | 059 | H-15 | [Agent factory CLI: scaffold an agent by class and kind, modules by config](059-H-15-agent-factory-cli.md) | chassis | P1 | L | [025](025-H-10-template-repo.md), [057](057-H-19-stateless-check-ci.md), [058](058-CH-8-framework-event-mappings.md), [055](055-CH-6-remote-lane-trust-rule.md), [024](024-CH-3-helm-library-chart.md) |
 | 060 | H-23 | [More broker adapters behind the event port: Kafka, AWS, GCP](060-H-23-broker-adapters.md) | chassis | P2 | S | [021](021-H-20-event-consumer-adapter.md), [053](053-H-22-event-reliability.md) |
 | 061 | H-5 | [A2A adapter: JSON-RPC endpoint, task states, signed agent card](061-H-5-a2a-adapter.md) | agent-profile | P2 | S | [001](001-DEC-1-resolve-open-decisions.md), [011](011-H-2-inbound-adapters.md) |
@@ -372,6 +374,8 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | 133 | X-5b | [Load tests for agent pools, the registry, and event bursts](133-X-5b-load-tests-pools-registry.md) | platform | P1 | M | [091](091-R-11-hybrid-search.md), [104](104-O-3-agent-pools-keda.md), [117](117-X-3-slos-alerts.md) |
 | 139 | CH-19 | [One reference stack: make platform-up on kind from deploy/helm, with the example agent as smoke test](139-CH-19-reference-stack.md) | platform | P1 | L | [024](024-CH-3-helm-library-chart.md), [026](026-CH-4-chassis-only-credentials-egress.md), [020](020-X-8-event-broker.md) |
 | 140 | CH-20 | [Session memory tools on the tool proxy, and the LangGraph saver over them](140-CH-20-session-memory-tools-and-saver.md) | platform | P2 | M | [128](128-CH-9-langgraph-checkpointer-interrupts.md), [054](054-H-16-tool-port.md) |
+| 141 | CH-21 | [The chassis repository under the registry prefix, so admission finds the library chassis](141-CH-21-chassis-repository-under-prefix.md) | chassis | P2 | S | [139](139-CH-19-reference-stack.md) |
+| 142 | CH-22 | [One tag-to-digest map in agent-lib: written on publish, read by admission rule 9](142-CH-22-chassis-digest-map.md) | chassis | P2 | M | [056](056-CH-7-chassis-release-rings.md), [139](139-CH-19-reference-stack.md), [141](141-CH-21-chassis-repository-under-prefix.md) |
 
 ### W11 Compliance evidence
 
@@ -421,7 +425,7 @@ ADR-001 does not settle these. Each has a suggested default and a home issue, an
 | Epic phase | Issues |
 | ---------- | ------ |
 | [Open decisions](../slm-agent-platform-epic-v3.md#open-decisions) | [001 DEC-1](001-DEC-1-resolve-open-decisions.md) |
-| [Phase 0](../slm-agent-platform-epic-v3.md#phase-0-agent-harness) | [007 H-1](007-H-1-harness-library-ports-envelope.md), [008 H-14](008-H-14-one-agent-interface.md), [009 CH-1](009-CH-1-engine-connectors-a2a.md), [010 H-12](010-H-12-config-loader.md), [011 H-2](011-H-2-inbound-adapters.md), [012 H-3](012-H-3-model-port.md), [013 CH-2](013-CH-2-outbound-model-proxy.md), [014 H-7](014-H-7-observability.md), [015 H-8](015-H-8-testing-kit.md), [016 H-9](016-H-9-local-debug-profile.md), [017 H-4](017-H-4-harness-features.md), [018 H-18](018-H-18-idempotency.md), [019 H-17](019-H-17-event-port.md), [021 H-20](021-H-20-event-consumer-adapter.md), [022 H-6](022-H-6-security-middleware.md), [024 CH-3](024-CH-3-helm-library-chart.md), [025 H-10](025-H-10-template-repo.md), [026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [050 CH-5](050-CH-5-service-operations.md), [051 H-13](051-H-13-openapi-mcp-tools.md), [052 H-21](052-H-21-asyncapi-spec.md), [053 H-22](053-H-22-event-reliability.md), [054 H-16](054-H-16-tool-port.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [056 CH-7](056-CH-7-chassis-release-rings.md), [057 H-19](057-H-19-stateless-check-ci.md), [058 CH-8](058-CH-8-framework-event-mappings.md), [059 H-15](059-H-15-agent-factory-cli.md), [060 H-23](060-H-23-broker-adapters.md), [061 H-5](061-H-5-a2a-adapter.md), [062 H-11](062-H-11-adapter-package.md), [128 CH-9](128-CH-9-langgraph-checkpointer-interrupts.md), [129 CH-10](129-CH-10-langsmith-trace-backend.md), [130 CH-11](130-CH-11-langsmith-feedback-adapter.md), [134 CH-14](134-CH-14-cloud-security-defaults.md), [135 CH-15](135-CH-15-backpressure.md), [136 CH-16](136-CH-16-model-proxy-failures.md), [138 CH-18](138-CH-18-judge-per-agent.md), [140 CH-20](140-CH-20-session-memory-tools-and-saver.md) |
+| [Phase 0](../slm-agent-platform-epic-v3.md#phase-0-agent-harness) | [007 H-1](007-H-1-harness-library-ports-envelope.md), [008 H-14](008-H-14-one-agent-interface.md), [009 CH-1](009-CH-1-engine-connectors-a2a.md), [010 H-12](010-H-12-config-loader.md), [011 H-2](011-H-2-inbound-adapters.md), [012 H-3](012-H-3-model-port.md), [013 CH-2](013-CH-2-outbound-model-proxy.md), [014 H-7](014-H-7-observability.md), [015 H-8](015-H-8-testing-kit.md), [016 H-9](016-H-9-local-debug-profile.md), [017 H-4](017-H-4-harness-features.md), [018 H-18](018-H-18-idempotency.md), [019 H-17](019-H-17-event-port.md), [021 H-20](021-H-20-event-consumer-adapter.md), [022 H-6](022-H-6-security-middleware.md), [024 CH-3](024-CH-3-helm-library-chart.md), [025 H-10](025-H-10-template-repo.md), [026 CH-4](026-CH-4-chassis-only-credentials-egress.md), [050 CH-5](050-CH-5-service-operations.md), [051 H-13](051-H-13-openapi-mcp-tools.md), [052 H-21](052-H-21-asyncapi-spec.md), [053 H-22](053-H-22-event-reliability.md), [054 H-16](054-H-16-tool-port.md), [055 CH-6](055-CH-6-remote-lane-trust-rule.md), [056 CH-7](056-CH-7-chassis-release-rings.md), [057 H-19](057-H-19-stateless-check-ci.md), [058 CH-8](058-CH-8-framework-event-mappings.md), [059 H-15](059-H-15-agent-factory-cli.md), [060 H-23](060-H-23-broker-adapters.md), [061 H-5](061-H-5-a2a-adapter.md), [062 H-11](062-H-11-adapter-package.md), [128 CH-9](128-CH-9-langgraph-checkpointer-interrupts.md), [129 CH-10](129-CH-10-langsmith-trace-backend.md), [130 CH-11](130-CH-11-langsmith-feedback-adapter.md), [134 CH-14](134-CH-14-cloud-security-defaults.md), [135 CH-15](135-CH-15-backpressure.md), [136 CH-16](136-CH-16-model-proxy-failures.md), [138 CH-18](138-CH-18-judge-per-agent.md), [140 CH-20](140-CH-20-session-memory-tools-and-saver.md), [141 CH-21](141-CH-21-chassis-repository-under-prefix.md), [142 CH-22](142-CH-22-chassis-digest-map.md) |
 | [Phase 1](../slm-agent-platform-epic-v3.md#phase-1-baseline-and-llm-router) | [002 G-1](002-G-1-litellm-router.md), [003 G-1b](003-G-1b-named-model-routes.md), [004 G-2](004-G-2-token-cost-counting.md), [005 G-3](005-G-3-baseline-report.md), [006 G-6](006-G-6-savings-dashboard.md), [031 G-5](031-G-5-cost-model-break-even.md), [044 G-4](044-G-4-history-swap.md) |
 | [Phase 2](../slm-agent-platform-epic-v3.md#phase-2-simplifier-slm-and-model-lifecycle) | [027 S-1](027-S-1-rewrite-rules.md), [028 S-3](028-S-3-simplifier-metrics.md), [029 S-2](029-S-2-training-data-generation.md), [030 S-4](030-S-4-hand-review-test-set.md), [032 M-1](032-M-1-mlflow.md), [033 S-5](033-S-5-training-pipeline.md), [035 S-6](035-S-6-train-candidates.md), [036 S-7](036-S-7-serve-with-vllm.md), [037 M-2](037-M-2-eval-gate-ci.md), [047 M-3](047-M-3-shadow-mode.md), [048 M-4](048-M-4-canary-rollback.md), [049 M-5](049-M-5-quantized-variants.md), [063 S-8](063-S-8-tool-call-finetune.md), [131 CH-12](131-CH-12-golden-cases-datasets.md) |
 | [Phase 3](../slm-agent-platform-epic-v3.md#phase-3-simplifier-agent) | [041 A-1](041-A-1-simplifier-core.md), [042 A-2](042-A-2-evaluator-gate-fallback.md), [043 A-3](043-A-3-result-events.md), [045 A-4](045-A-4-history-swap-on.md), [046 A-5](046-A-5-agent-dashboard.md), [137 CH-17](137-CH-17-judge-calibration.md) |

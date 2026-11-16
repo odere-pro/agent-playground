@@ -1,0 +1,21 @@
+# The trust rule's params on the reference stack (139 CH-19): PoC-5's
+# (deploy/kind/poc05/admission/params.yaml), plus one chassis tag. Applied by run.sh as the cluster
+# admin, as PoC-5 and PoC-6 apply theirs; it replaces PoC-5's ConfigMap in the live cluster only.
+#
+# - supportedChassisTags: PoC-5's `poc05`, and `v0.1.0`, the library chart's tag
+#   (deploy/helm/agent-lib, `chassis.image.tag`). The example agent's chassis is the image run.sh
+#   loads as kind.local/agent-platform/chassis:v0.1.0, so rule 9 admits it.
+# Every other key is PoC-5's, unchanged (tests/test_platform_stack_static.py holds them equal).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-trust-params
+  namespace: agent-platform-system
+  labels:
+    agents.platform/poc: "05"
+data:
+  registryPrefix: kind.local/agent-platform/
+  imageSource: pull-never
+  trustedRepositories: kind.local/agent-platform/echo-python,kind.local/agent-platform/echo-typescript
+  supportedChassisTags: poc05,v0.1.0
+  supportedChassisDigests: ""
