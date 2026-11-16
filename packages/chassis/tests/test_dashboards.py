@@ -1,4 +1,5 @@
-"""PoC-8 (014 H-7, G.2): one Grafana dashboard per agent, made from one template.
+"""PoC-8 (014 H-7, G.2): one Grafana dashboard per agent, made from one template, and (046 A-5)
+one container dashboard with the key metrics of `docs/specs/metrics.md`.
 
 Each panel's PromQL names only metrics the chassis exports at `GET /metrics`, and the files under
 `deploy/dashboards/` are exactly what the generator makes. Offline.
@@ -14,15 +15,23 @@ from typing import Any
 import httpx
 import pytest
 from chassis.dashboards import (
+    CONTAINER,
+    COUNTERS_ROW,
     DASHBOARD_DIR,
     FALLBACK,
+    FALLBACK_TARGET,
     FIRST_TRY,
+    INPUTS_ROW,
+    NORTH_STAR_ROW,
     RETRY,
     agents_in,
+    container_dashboard,
     dashboard,
     main,
     panel_exprs,
 )
+from chassis.dashboards.container import good_tasks
+from chassis.metrics import DECLARED
 from chassis.server import ChassisConfig, create_app
 from poc_harness.promtext import families
 
@@ -89,16 +98,161 @@ def test_the_generated_files_are_up_to_date() -> None:
     folder = ROOT / DASHBOARD_DIR
     agents = agents_in(folder)
     assert "echo" in agents
-    assert sorted(p.stem for p in folder.glob("*.json")) == sorted(agents)
+    assert sorted(p.stem for p in folder.glob("*.json")) == sorted([*agents, CONTAINER])
     for agent in agents:
         on_disk = json.loads((folder / f"{agent}.json").read_text())
         assert on_disk == dashboard(agent), f"run: uv run python -m chassis.dashboards ({agent})"
+    on_disk = json.loads((folder / f"{CONTAINER}.json").read_text())
+    assert on_disk == container_dashboard(), "run: uv run python -m chassis.dashboards"
 
 
-def test_the_cli_writes_one_file_per_agent(tmp_path: Path) -> None:
+def test_the_cli_writes_one_file_per_agent_and_the_container_board(tmp_path: Path) -> None:
     main(["--out", str(tmp_path), "alpha", "beta"])
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["alpha.json", "beta.json"]
+    names = sorted(p.name for p in tmp_path.iterdir())
+    assert names == ["alpha.json", "beta.json", "container.json"]
     assert json.loads((tmp_path / "alpha.json").read_text()) == dashboard("alpha")
+    assert json.loads((tmp_path / "container.json").read_text()) == container_dashboard()
+
+
+def test_no_agent_takes_the_container_boards_file_name() -> None:
+    with pytest.raises(ValueError, match="container"):
+        dashboard(CONTAINER)
+
+
+# --- 046 A-5: the container board, from docs/specs/metrics.md ---
+
+METRICS_SPEC = ROOT / "docs/specs/metrics.md"
+
+
+def _section(heading: str) -> str:
+    text = METRICS_SPEC.read_text()
+    start = text.index(f"\n## {heading}\n")
+    end = text.find("\n## ", start + 1)
+    return text[start : end if end != -1 else None]
+
+
+def _table_metrics(heading: str) -> list[str]:
+    """The first cell of each body row of the one table under `## <heading>`."""
+    rows = [line for line in _section(heading).splitlines() if line.startswith("| ")]
+    return [row.split("|")[1].strip() for row in rows[2:]]  # the header, then the rule
+
+
+def _north_star() -> tuple[str, str]:
+    """(the north star's name, its formula) from metrics.md."""
+    text = METRICS_SPEC.read_text()
+    name = re.search(r"^## North star: (.+)$", text, re.M)
+    formula = re.search(r"^- \*\*Formula:\*\* suggested: `([^`]+)`", text, re.M)
+    assert name and formula
+    return name.group(1), formula.group(1)
+
+
+def _rows(board: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Each row's title, with the panels under it, in board order."""
+    rows: dict[str, list[dict[str, Any]]] = {}
+    current: list[dict[str, Any]] | None = None
+    for panel in board["panels"]:
+        if panel["type"] == "row":
+            current = rows.setdefault(panel["title"], [])
+        else:
+            assert current is not None, f"{panel['title']} is above every row"
+            current.append(panel)
+    return rows
+
+
+def _titled(panels: list[dict[str, Any]], title: str) -> dict[str, Any]:
+    matches = [p for p in panels if p["title"].lower() == title.lower()]
+    assert len(matches) == 1, f"{title!r}: {[p['title'] for p in panels]}"
+    return matches[0]
+
+
+def test_the_container_board_has_a_row_for_the_north_star_its_inputs_and_the_counters() -> None:
+    inputs, counters = _table_metrics("Input metrics"), _table_metrics("Counter metrics")
+    assert len(inputs) == 6 and len(counters) == 8, (inputs, counters)
+    rows = _rows(container_dashboard())
+    assert list(rows) == [NORTH_STAR_ROW, INPUTS_ROW, COUNTERS_ROW]
+    name, _ = _north_star()
+    _titled(rows[NORTH_STAR_ROW], name)
+    for metric in inputs:
+        _titled(rows[INPUTS_ROW], metric)
+    for metric in counters:
+        _titled(rows[COUNTERS_ROW], metric)
+
+
+async def test_every_container_query_names_a_declared_metric_the_chassis_exports() -> None:
+    exported = await _exported()
+    exprs = panel_exprs(container_dashboard())
+    assert exprs, "the container board has queries"
+    for expr in exprs:
+        names = _METRIC.findall(expr)
+        assert names, f"no chassis metric in {expr!r}"
+        for name in names:
+            family = _family(name, exported)
+            assert family, f"{name} in {expr!r} is not exported"
+            assert family in DECLARED, f"{family} in {expr!r} is not declared"
+
+
+def test_the_north_star_query_is_the_spec_formula_and_says_the_label_is_missing() -> None:
+    name, formula = _north_star()
+    panel = _titled(_rows(container_dashboard())[NORTH_STAR_ROW], name)
+    assert panel_exprs({"panels": [panel]}) == [formula]
+    assert 'environment="prod"' in formula
+    assert 'environment="prod"' in panel["description"]
+    assert "sets no environment label" in panel["description"]
+
+
+NO_PROMETHEUS_SOURCE = (
+    "Time to first demo",
+    "Chassis release lead time",
+    "Escapes: passed the gate, then bad feedback",
+    "Guardrail false blocks",
+    "Secret or credential leaks",
+    "Sidecar cost per replica",
+    "Rollbacks per chassis release",
+)
+
+
+def test_a_metric_with_no_prometheus_source_is_a_text_panel_that_names_its_source() -> None:
+    board = container_dashboard()
+    panels = [p for row in _rows(board).values() for p in row]
+    for title in NO_PROMETHEUS_SOURCE:
+        panel = _titled(panels, title)
+        assert panel["type"] == "text", title
+        assert "targets" not in panel, title
+        assert "**Source:**" in panel["options"]["content"], title
+    for panel in panels:
+        if panel["type"] != "text":
+            assert panel["targets"], panel["title"]
+
+
+def test_good_tasks_is_a_lower_bound_and_keeps_agents_with_no_failed_scoring() -> None:
+    """046 A-5 review: failed scorings are subtracted, retries that later passed included, so
+    the count is a lower bound, and cost per good task carries the same bias. Per agent, an agent
+    with no failed scoring must read its ok runs, not drop out: `(failed or ok * 0)`."""
+    ok = 'sum by (agent) (increase(chassis_run_duration_seconds_count{status="ok"}[1w]))'
+    failed = 'sum by (agent) (increase(chassis_evaluator_calls_total{outcome="fail"}[1w]))'
+    assert good_tasks("by (agent)") == f"({ok} - ({failed} or {ok} * 0))"
+    assert "vector(0)" not in good_tasks() and "vector(0)" not in good_tasks("by (agent)")
+    rows = _rows(container_dashboard())
+    bound = "a lower bound: each failed scoring is subtracted, including retries that later passed"
+    good = _titled(rows[INPUTS_ROW], "Good tasks per week")
+    cost = _titled(rows[COUNTERS_ROW], "Cost per good task")
+    assert panel_exprs({"panels": [good]}) == [good_tasks()]
+    assert good_tasks() in panel_exprs({"panels": [cost]})[0]
+    assert bound in good["description"] and bound in cost["description"]
+
+
+def test_a_text_panel_says_the_chassis_exports_no_family_for_it() -> None:
+    panels = [p for row in _rows(container_dashboard()).values() for p in row]
+    for panel in (p for p in panels if p["type"] == "text"):
+        assert "The chassis exports no family for it" in panel["options"]["content"]
+
+
+def test_the_container_gate_fallback_panel_draws_a_target_line_at_ten_percent() -> None:
+    counters = _rows(container_dashboard())[COUNTERS_ROW]
+    panel = _titled(counters, "Gate fallback rate and fail-open rate")
+    defaults = panel["fieldConfig"]["defaults"]
+    assert [s["value"] for s in defaults["thresholds"]["steps"]] == [None, FALLBACK_TARGET]
+    assert defaults["custom"]["thresholdsStyle"]["mode"] == "line"
 
 
 def _panel(board: dict[str, Any], title: str) -> dict[str, Any]:

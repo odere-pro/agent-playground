@@ -1,0 +1,558 @@
+{
+  "uid": "chassis-container",
+  "title": "Chassis container: key metrics",
+  "tags": [
+    "chassis",
+    "container"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "label": "Data"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "North star",
+      "collapsed": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Agents in production on the chassis",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 1
+      },
+      "description": "Agents with at least one ok run in production in the last seven days (docs/specs/metrics.md). The query needs `environment=\"prod\"`, and the chassis sets no environment label: the production scrape adds it (suggested: the name and value). Until a scrape adds it, this panel shows no data. No target until the first real week sets the baseline.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(count by (agent) (increase(chassis_run_duration_seconds_count{status=\"ok\", environment=\"prod\"}[1w]) > 0))",
+          "legendFormat": "agents"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "row",
+      "title": "Input metrics",
+      "collapsed": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "panels": []
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Good tasks per week",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "description": "Ok runs minus failed evaluator scorings, over the last seven days, summed over agents. It is a lower bound: each failed scoring is subtracted, including retries that later passed.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(increase(chassis_run_duration_seconds_count{status=\"ok\"}[1w])) - (sum(increase(chassis_evaluator_calls_total{outcome=\"fail\"}[1w])) or sum(increase(chassis_run_duration_seconds_count{status=\"ok\"}[1w])) * 0))",
+          "legendFormat": "good tasks"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "First-attempt pass rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "description": "Gated runs that passed on attempt 1 over gated runs, per agent, exact.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent, mode) (rate(chassis_gate_first_attempt_passes_total[5m])) / sum by (agent, mode) (rate(chassis_gate_runs_total[5m]))",
+          "legendFormat": "{{agent}} {{mode}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Task success rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "description": "Ok runs over runs started, per agent and interface.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent, interface) (rate(chassis_run_duration_seconds_count{status=\"ok\"}[5m])) / sum by (agent, interface) (rate(chassis_requests_total[5m]))",
+          "legendFormat": "{{agent}} {{interface}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "p95 run latency, and the chassis's share of it",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "description": "The run p95 and the engine call p95 per agent. The gap between them is roughly the chassis's share. suggested: a stage budget of 25 ms p50 and 50 ms p95 (022 H-6), recorded, not enforced.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, agent) (rate(chassis_run_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{agent}} run p95"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le, agent) (rate(chassis_engine_run_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{agent}} engine p95"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "text",
+      "title": "Time to first demo",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Formula:** hours from `agentctl new` to a passing demo, by someone new\n\n**Source:** a timed run of `agentctl new` (`packages/agentctl`) by a new user\n\n**Target on record:** under a day\n\nThe chassis exports no family for it, so it is a weekly number in the `record-measurement` note, not a query."
+      }
+    },
+    {
+      "id": 9,
+      "type": "text",
+      "title": "Chassis release lead time",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Formula:** hours from a chassis tag to the last ring\n\n**Source:** the ring rollout record of each chassis release\n\n**Target on record:** none yet\n\nThe chassis exports no family for it, so it is a weekly number in the `record-measurement` note, not a query."
+      }
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Counter metrics",
+      "collapsed": false,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "text",
+      "title": "Escapes: passed the gate, then bad feedback",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Formula:** runs with `evaluator_calls{outcome=\"pass\"}` and later `chassis_feedback_total{label=\"bad\"}` (or a score below 0.5), per week\n\n**Source:** the gate scores and user feedback on each run's trace in the trace store (`FeedbackPort`, the score named `spec.harness.rubric`); a per-run join PromQL cannot do\n\n**Target on record:** if online scores fall more than 10 points under offline, review the golden set\n\nThe chassis exports no family for it, so it is a weekly number in the `record-measurement` note, not a query."
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Cost per good task",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      },
+      "description": "Model cost over the last seven days, every route and the judge included, over good tasks. Only routes in `spec.observability.prices` have a cost. Target: the G-5 break-even. Good tasks here are a lower bound: each failed scoring is subtracted, including retries that later passed. So this cost reads high by the same bias.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(chassis_model_cost_microusd_total[1w])) / 1e6 / (sum(increase(chassis_run_duration_seconds_count{status=\"ok\"}[1w])) - (sum(increase(chassis_evaluator_calls_total{outcome=\"fail\"}[1w])) or sum(increase(chassis_run_duration_seconds_count{status=\"ok\"}[1w])) * 0))",
+          "legendFormat": "USD per good task"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "text",
+      "title": "Guardrail false blocks",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 43
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Formula:** blocks on golden inputs / golden inputs\n\n**Source:** an eval run of the golden set (`packages/eval-kit/golden/`) through the guardrail\n\n**Target on record:** below 1% false positives (ADR-008)\n\nThe chassis exports no family for it, so it is a weekly number in the `record-measurement` note, not a query."
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Guardrail unavailable rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 43
+      },
+      "description": "The other half of guardrail false blocks: checks the guardrail could not answer, over runs started.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent) (rate(chassis_guardrail_unavailable_total[5m])) / sum by (agent) (rate(chassis_requests_total[5m]))",
+          "legendFormat": "{{agent}}"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "text",
+      "title": "Secret or credential leaks",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 51
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Formula:** stream secret guard hits that reached a client; red-team misses\n\n**Source:** `python -m eval_kit.redteam` (the misses); a hit that reached a client has no counter: the chassis counts a block, not a leak\n\n**Target on record:** zero; red team 18 of 18\n\nThe chassis exports no family for it, so it is a weekly number in the `record-measurement` note, not a query."
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Judge agreement and stored gate scores (138 CH-18)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 51
+      },
+      "description": "How often the main and the shadow judge agree, when `spec.harness.shadow_evaluator` is set. The scores the store missed are the next panel.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent, pair) (rate(chassis_evaluator_agreement_total{agree=\"true\"}[5m])) / sum by (agent, pair) (rate(chassis_evaluator_agreement_total[5m]))",
+          "legendFormat": "{{agent}} {{pair}}"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Gate scores not stored",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 59
+      },
+      "description": "Gate scores `FeedbackPort` did not store, per hour. The escapes join needs every one.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent, code) (increase(chassis_gate_feedback_failed_total[1h]))",
+          "legendFormat": "{{agent}} {{code}}"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Gate fallback rate and fail-open rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 59
+      },
+      "description": "Fallbacks over sync gate runs (target below 10%, the line), and fail-opens over gate runs (alert above suggested: 1% over 15 minutes, 117 X-3).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.1
+              }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent) (rate(chassis_gate_fallbacks_total[5m])) / sum by (agent) (rate(chassis_gate_runs_total{mode=\"sync\"}[5m]))",
+          "legendFormat": "{{agent}} fallback"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (agent) (rate(chassis_gate_failed_open_total[5m])) / sum by (agent) (rate(chassis_gate_runs_total[5m]))",
+          "legendFormat": "{{agent}} fail-open"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Gate reruns stopped by the budget",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 67
+      },
+      "description": "Reruns the run's one budget stopped, per hour, by `timeout` or `budget` (017 H-4).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (agent, reason) (increase(chassis_gate_stopped_total[1h]))",
+          "legendFormat": "{{agent}} {{reason}}"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "text",
+      "title": "Sidecar cost per replica",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 67
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Formula:** CPU and RSS per chassis container\n\n**Source:** the load run (`python -m load_tools.run_matrix`); the chassis does not export its own CPU or memory\n\n**Target on record:** 0.05 to 0.1 vCPU, 128 to 256 MiB (ADR-001)\n\nThe chassis exports no family for it, so it is a weekly number in the `record-measurement` note, not a query."
+      }
+    },
+    {
+      "id": 21,
+      "type": "text",
+      "title": "Rollbacks per chassis release",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 75
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Formula:** releases pinned back by any service / releases\n\n**Source:** the ring rollout record of each chassis release\n\n**Target on record:** none yet\n\nThe chassis exports no family for it, so it is a weekly number in the `record-measurement` note, not a query."
+      }
+    }
+  ]
+}
