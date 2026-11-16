@@ -275,6 +275,12 @@ def test_docker_compose_renders_the_default_stack_with_no_langsmith_key(env_file
 
 
 def test_docker_compose_refuses_the_switch_without_the_key(env_file: Path) -> None:
+    # Set the overlay's other variables, so the key is the only one missing. Compose names
+    # only the first missing variable, and which one comes first differs between versions.
+    env_file.write_text(
+        env_file.read_text() + "LANGSMITH_PROJECT=poc07\nLANGSMITH_OTLP_ENDPOINT=http://x/otel\n"
+    )
+
     result = _compose_config(env_file, COMPOSE_OVERLAY, key=None)
 
     assert result.returncode != 0
