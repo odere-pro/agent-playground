@@ -56,13 +56,15 @@ A browser can read a custom header only when the server exposes it. The chassis 
 
 ## What a workload cannot do
 
-The chassis sets the mark on the way out, after the workload's events come back. A workload cannot remove it. Whatever the workload sends in those headers or in `ai_marking` is overwritten.
+The chassis sets the mark on the way out, after the workload's events come back. A workload cannot remove it. Whatever the workload sends in those headers or in the top-level `ai_marking` of an OpenAI or Anthropic body is overwritten.
+
+On native `/v1/run` and `/v1/mcp` the mark is the two headers. `output` belongs to the workload: the chassis does not read or rewrite it. A key such as `ai_marking` inside `output` is the workload's own claim, not the mark. Do not read it.
 
 ## Evidence
 
 - Headers on every interface, streaming and complete: `packages/chassis/tests/test_marking.py::test_limited_marks_every_interface_streaming_and_complete`.
 - Refusals are marked: `test_marking.py::test_a_refused_call_on_a_run_route_is_marked`.
-- A workload cannot unmark: `test_marking.py::test_a_workload_that_claims_not_ai_generated_is_still_marked`.
+- A workload cannot unmark: `test_marking.py::test_a_workload_that_claims_not_ai_generated_is_still_marked`; in the `sidecar` and `remote` lanes, `packages/chassis/tests/test_marking_override.py::test_a_workload_that_sends_its_own_marking_still_gets_the_chassis_marking` and `::test_a_workload_with_its_own_marking_still_gets_true_headers_over_mcp`.
 - Body field: `packages/chassis/tests/test_marking_body.py::test_the_openai_body_carries_the_flags_complete_and_on_every_chunk` and `::test_the_anthropic_body_carries_the_flags_complete_and_on_message_start`.
 - Browser exposure: `test_marking_body.py::test_the_marked_response_exposes_the_marking_headers_to_browsers`.
 - Result events: `test_marking_body.py::test_result_events_carry_the_aigenerated_extension`.

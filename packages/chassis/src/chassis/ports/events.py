@@ -23,9 +23,14 @@ DLQ_SUFFIX = ".dlq"
 
 
 class CloudEvent(BaseModel):
-    """CloudEvents 1.0, structured mode, JSON. Extensions are top-level attributes."""
+    """CloudEvents 1.0, structured mode, JSON. Extensions are top-level attributes.
 
-    model_config = ConfigDict(extra="forbid")
+    An extension this reader does not know is accepted and dropped (contract v9 J.29, decided
+    2026-11-15): a newer producer's event still reads here, without it. A known attribute keeps
+    its type. Only this envelope ignores unknown names; run events and every other model refuse
+    them."""
+
+    model_config = ConfigDict(extra="ignore")
     specversion: Literal["1.0"] = "1.0"
     id: str
     """`uuid4().hex`."""

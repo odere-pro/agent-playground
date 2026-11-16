@@ -28,10 +28,13 @@ from chassis.ports.events import (
     EventPort,
     PublishFailed,
 )
+from pydantic import ValidationError
 
 SCHEMA_PATH = Path(__file__).parent / "data" / "cloudevents-1.0.schema.json"
 ATTRIBUTE_NAME = re.compile(r"^[a-z0-9]{1,20}$")
 """CloudEvents 1.0: attribute names are lowercase a-z and 0-9, 20 characters at most."""
+UNKNOWN_EXTENSION = "futureext"
+"""An extension no reader knows today: a newer producer's (contract v9 J.29)."""
 SECRET_TEXT = "secret-detail-do-not-forward"
 """The failing handler's message. It must never reach the dead-letter event."""
 
@@ -183,6 +186,32 @@ class EventPortContract:
         for name in ("traceparent", "idempotencykey", "configversion", "modelroute"):
             assert wire[name] == getattr(event, name)
         assert wire["partitionkey"] == "idem-1"
+
+    async def test_a_reader_accepts_an_event_with_an_extension_it_does_not_know(
+        self, event_port: EventPort, topic: str, deliver_timeout_s: float
+    ) -> None:
+        """Contract v9 J.29: a current reader accepts an event with an extension it does not
+        know and drops it; the event it passes on carries only the attributes it knows."""
+        sent = make_event(topic, partitionkey="k")
+        wire = {**json.loads(sent.to_wire()), UNKNOWN_EXTENSION: "from-a-newer-producer"}
+        read = CloudEvent.model_validate_json(json.dumps(wire))
+        assert UNKNOWN_EXTENSION not in read.model_dump()
+        assert UNKNOWN_EXTENSION not in json.loads(read.to_wire())
+        assert json.loads(read.to_wire()) == json.loads(sent.to_wire())
+        inbox = Inbox()
+        sub = await event_port.subscribe(topic, inbox, group=f"{topic}.g")
+        await event_port.publish(topic, read)
+        await wait_until(lambda: len(inbox.received) >= 1, deliver_timeout_s, "the event")
+        await sub.close()
+        got = assert_valid_cloudevent(inbox.received[0])
+        assert UNKNOWN_EXTENSION not in got
+        assert got["id"] == sent.id
+
+    def test_a_known_attribute_with_a_bad_value_is_still_refused(self) -> None:
+        """Only unknown names are dropped (J.29); a known attribute keeps its type."""
+        wire = {**json.loads(make_event("t.v1").to_wire()), "aigenerated": "not-a-flag"}
+        with pytest.raises(ValidationError):
+            CloudEvent.model_validate_json(json.dumps(wire))
 
     async def test_events_with_one_partition_key_keep_their_order(
         self, event_port: EventPort, topic: str, deliver_timeout_s: float
