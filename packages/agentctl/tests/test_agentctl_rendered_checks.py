@@ -127,24 +127,12 @@ def test_rendered_stateless_lane_check_passes_offline(tmp_path: Path, framework:
     """057 H-19: each framework's example passes the `sidecar` lane check: the workload and the
     chassis as processes, each with a read-only root, fresh pods against one reused pod.
     claude-agent runs its CLI against the fake model, with its HOME in a scratch volume that must
-    be empty after each call; it is a known gap (`KNOWN_STATEFUL`), so the check runs as `xfail`."""
+    be empty after each call: `handle` removes HOME only after the CLI has exited."""
     agent = _agent(tmp_path, framework)
-    done = _pytest(
-        agent, "test_stateless_lane.py", plugins=("agent_testkit.plugin",), extra=("-rx",)
-    )
+    done = _pytest(agent, "test_stateless_lane.py", plugins=("agent_testkit.plugin",))
     assert done.returncode == 0, _findings(done) + done.stdout[-3000:] + done.stderr[-2000:]
-    if framework not in KNOWN_STATEFUL:
-        assert "1 passed" in done.stdout, _findings(done) + done.stdout[-3000:]
-        return
-    assert "1 xfailed" in done.stdout and "XFAIL" in done.stdout, done.stdout[-3000:]
-    # `-rx` names the reason only; with `--runxfail` the same run fails and shows the finding.
-    shown = _pytest(
-        agent, "test_stateless_lane.py", plugins=("agent_testkit.plugin",), extra=("--runxfail",)
-    )
-    assert shown.returncode == 1, shown.stdout[-3000:] + shown.stderr[-2000:]
-    assert "ScratchLeftover" in shown.stdout, shown.stdout[-3000:]
-    assert " left " in shown.stdout and "scratch volume" in shown.stdout, shown.stdout[-3000:]
-    assert "claude-run-" in shown.stdout, shown.stdout[-3000:]  # the run's HOME
+    assert "1 passed" in done.stdout, _findings(done) + done.stdout[-3000:]
+    assert "xfail" not in done.stdout.lower(), done.stdout[-3000:]
 
 
 def _findings(done: subprocess.CompletedProcess[str]) -> str:
@@ -154,11 +142,6 @@ def _findings(done: subprocess.CompletedProcess[str]) -> str:
     keys = (MARKER, "stateless check", " wrote ", " left ")
     hits = dict.fromkeys(line.strip() for line in lines if any(key in line for key in keys))
     return "stateless findings:\n" + "\n".join(hits) + "\n--- output tail ---\n" if hits else ""
-
-
-KNOWN_STATEFUL = {"claude-agent"}
-"""On `end` the A2A server closes `handle`, which stops the CLI mid-write, so the run's HOME can
-outlive the call (057 H-19). The template marks its lane check `xfail` until `handle` is fixed."""
 
 
 STATEFUL = """

@@ -4,6 +4,7 @@ The simplifier as a Claude Agent SDK agent (PoC-6, 6b), shell and file tools on.
 
 - One public thing: `echo_claude_agent.handle`, the wire form (dicts in, event dicts out, `schema_version: "0"`). Served by `workload-a2a serve --handle echo_claude_agent:handle`.
 - One test hook: `echo_claude_agent.handle.query_fn` (default: the SDK's `query`). Tests feed SDK message objects through it; no CLI starts. It replaced the skeleton's `transport` hooks.
+- A second hook: `transport_fn` (default: the SDK's `SubprocessCLITransport`). `handle` passes the transport to `query_fn` and awaits its `close()` before it removes `HOME`: closing the SDK's `query()` does not stop the CLI. Never `rmtree(..., ignore_errors=True)`; a failed delete is logged.
 - The SDK mapping lives in `mapping.py` only. Error codes: `http_<status>`, `tool_loop_exceeded`, `timeout`, `model_error`, `cli_error`, `env_not_clean`.
 - Never import `chassis`; import-linter enforces it. Copy constants from echo-python, do not import it.
 - No model key. Never read an `*_API_KEY` variable. `CHASSIS_API_TOKEN` is the per-remote chassis token. Model and MCP URLs point at the chassis.

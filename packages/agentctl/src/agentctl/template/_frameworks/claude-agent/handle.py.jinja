@@ -19,7 +19,11 @@ so it is `untrusted` and runs in the `remote` lane only.
   bearer token; else the model gets a placeholder (the loopback proxy ignores it). No provider key
   is read or accepted: see the guard below.
 - `HOME` is a fresh directory per run under `CLAUDE_AGENT_HOME_BASE` (default `/tmp`), removed
-  after the run. The work dir (`cwd`) is inside it.
+  after the run, once the CLI has exited. The work dir (`cwd`) is inside it. Closing the SDK's
+  `query()` does not stop the CLI (it reads its inner generator with a plain `async for`), so
+  `handle` builds the run's transport itself and awaits its `close()`: stdin EOF and 5 s to exit,
+  then SIGTERM and 5 s, then SIGKILL. That runs whether the run is drained, closed early, or
+  cancelled. A file the delete cannot remove is logged, never dropped in silence.
 - The environment guard: the SDK merges `os.environ` into the CLI's environment, so any
   `ANTHROPIC_*` or `CLAUDE_*` variable in this process would reach the CLI and the shell tool. If
   one is present that this run does not override, `handle` yields `start` then `env_not_clean`
@@ -28,7 +32,7 @@ so it is `untrusted` and runs in the `remote` lane only.
   Code prompt. The input text is the prompt (a user turn), never part of the system prompt.
 - Limits: `max_turns` 4 (three tool rounds and the answer). The deadline is `ctx.budget.timeout_ms`
   for the whole run (suggested: 30 s); it is checked at each wait for the next SDK message, and on
-  expiry the SDK generator is closed, which stops the CLI.
+  expiry the SDK generator is closed and the CLI is stopped as above.
 """
 
 from __future__ import annotations
@@ -44,7 +48,8 @@ from contextlib import aclosing, suppress
 from pathlib import Path
 from typing import Any
 
-from claude_agent_sdk import ClaudeAgentOptions, query
+from claude_agent_sdk import ClaudeAgentOptions, Transport, query
+from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
 from claude_agent_sdk.types import McpHttpServerConfig
 from workload_a2a.events import DEFAULT_TIMEOUT_S as DEFAULT_TIMEOUT_S
 from workload_a2a.events import MAX_MESSAGE, event
@@ -94,10 +99,20 @@ GUARDED_PREFIXES = ("ANTHROPIC_", "CLAUDE_")
 
 log = logging.getLogger(__name__)
 
+_cleanups: set[asyncio.Task[None]] = set()
+"""The running stop-and-remove tasks. `asyncio.shield` keeps no strong reference to its inner
+task, so this set does, until each one is done."""
+
 query_fn: Callable[..., AsyncIterator[Any]] = query
 """Test-only hook: the SDK's `query`. A test replaces it with a fake that yields SDK message
 objects, so no CLI starts. (This replaces the skeleton's `transport` hooks: the CLI is the HTTP
-client here, and this process makes no model or MCP request of its own.)"""
+client here, and this process makes no model or MCP request of its own.) It is called with
+`prompt`, `options`, and `transport`."""
+
+transport_fn: Callable[[str, ClaudeAgentOptions], Transport] = SubprocessCLITransport
+"""Builds the run's CLI transport (default: the SDK's subprocess transport, which the pinned SDK
+does not export by a public name). `handle` passes it to `query_fn` and awaits its `close()`
+before it removes `HOME`, so a test replaces it with a fake CLI to check the order."""
 
 
 def unclean_names() -> list[str]:
@@ -232,12 +247,15 @@ async def _run(
     mapper = EventMapper(route)
     stderr_tail: deque[str] = deque(maxlen=3)
     home: Path | None = None
+    transport: Transport | None = None
     stream: AsyncIterator[Any] | None = None
     final: dict[str, Any] | None = None
     try:
         home = _make_home()
         options = _options(ctx, route, token, home, stderr_tail.append)
-        stream = query_fn(prompt=str(input.get("text") or ""), options=options)
+        prompt = str(input.get("text") or "")
+        transport = transport_fn(prompt, options)
+        stream = query_fn(prompt=prompt, options=options, transport=transport)
         async with aclosing(_mapped(stream, mapper, timeout_s(ctx))) as events:
             async for out in events:
                 if out["type"] == "error":
@@ -247,9 +265,15 @@ async def _run(
     except Exception as exc:
         final = _failure(exc, stderr_tail, token, str(ctx.get("run_secret") or "") or None)
     finally:
-        await _close(stream)
-        if home is not None:
-            shutil.rmtree(home, ignore_errors=True)
+        try:
+            await _close(stream)
+        finally:
+            # Shielded: a second cancel must not skip the stop or leave `HOME` on disk. On a second
+            # cancel the handle returns at once, and the stop and the removal finish after it.
+            cleanup = asyncio.create_task(_end_run(transport, home))
+            _cleanups.add(cleanup)
+            cleanup.add_done_callback(_cleanups.discard)
+            await asyncio.shield(cleanup)
     if final is not None:
         yield final
     elif not mapper.done:
@@ -316,6 +340,27 @@ async def _close(stream: AsyncIterator[Any] | None) -> None:
     if aclose is not None:
         with suppress(Exception):
             await aclose()
+
+
+async def _end_run(transport: Transport | None, home: Path | None) -> None:
+    """Stop the CLI, wait for it to exit, then remove `HOME`. Never raises."""
+    if transport is not None:
+        try:
+            # Bounded by the SDK (about 20 s): stdin EOF, then SIGTERM, then SIGKILL.
+            await transport.close()
+        except Exception as exc:
+            log.warning("stopping the CLI failed: %s", type(exc).__name__)
+    if home is not None:
+        _remove_home(home)
+
+
+def _remove_home(home: Path) -> None:
+    """Delete `HOME`; log each path that cannot be removed. Never raises."""
+
+    def report(_func: Callable[..., Any], path: str, exc: BaseException) -> None:
+        log.warning("could not remove %s from the run home: %s", path, type(exc).__name__)
+
+    shutil.rmtree(home, onexc=report)
 
 
 def _hidden(values: tuple[str | None, ...]) -> tuple[str, ...]:
