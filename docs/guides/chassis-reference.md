@@ -568,7 +568,7 @@ Spec: [contract v7](../contracts/contract-v7.md). Decisions: ADR-007 and ADR-008
 | ------ | ------------ | ----------- |
 | `chassis/metrics.py` | `MetricsRegistry`: counters and span histograms in memory, the Prometheus text format, the declared families. Both telemetry adapters hold one at `.metrics` | A.3 |
 | `chassis/logs.py` | `configure_logging`, `JsonFormatter`, `run_context`: one redacted JSON line with `request_id` and `trace_id` | B |
-| `chassis/dashboards/` | `python -m chassis.dashboards`: one Grafana dashboard per agent in `agents.txt`, written to `deploy/dashboards/`; the gate panels are the first-try pass rate (`chassis_gate_first_attempt_passes_total` over sync gate runs, 046 A-5), the retry rate, and the fallback rate | B |
+| `chassis/dashboards/` | `python -m chassis.dashboards`: one Grafana dashboard per agent in `agents.txt`, written to `deploy/dashboards/`; the gate panels are the first-try pass rate (`chassis_gate_first_attempt_passes_total` over sync gate runs, 046 A-5), the retry rate, and the fallback rate; plus `container.json` (`container.py`, 046 A-5), the north star, input, and counter rows of `docs/specs/metrics.md` | B |
 | `chassis/server/observability.py` | `GET /metrics` and `OpenMetrics` (open when no `metrics_scope`); `count_usage` for tokens and cost; the live gauge `chassis_runs_in_flight` from the run registry (CH-15); with the gate on, every gate counter at 0, `chassis_gate_runs_total` and `chassis_gate_first_attempt_passes_total` for both modes | A |
 | `chassis/server/rate_limit.py` | The per-caller token bucket in `StatePort`, 429 `rate_limited` with `Retry-After` | C |
 | `chassis/server/stream_guard.py` | The stream secret check and URL masking on every streamed run | D.1 |
