@@ -13,8 +13,9 @@ Two checks, each failing with a `StatelessError` that names the container:
   plain-data module global of the agent's packages may move on the reused pod. In process, a pod
   is a fresh import of the agent's packages (`Pods`); `sys.modules` is put back afterwards.
 
-What it does not cover: the chassis container and the real read-only root, which need the
-process run in the `sidecar` lane; state kept in an object whose `repr` does not change.
+What it does not cover: the chassis container and real processes, which
+`agent_testkit.stateless_lane` runs in the `sidecar` lane; state kept in an object whose `repr`
+does not change.
 The PoC-4 scenario this starts from: `pocs/poc-04-stateless-scalable/tests/test_hidden_state.py`.
 """
 
@@ -23,39 +24,22 @@ from __future__ import annotations
 import collections
 import errno
 import importlib
-import os
 import random
 import sys
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from pathlib import Path
 from types import ModuleType, TracebackType
 from typing import Any
+
+from agent_testkit.readonly_root import PATH_EVENTS, counts, written
+from agent_testkit.readonly_root import Write as Write
 
 WireHandle = Callable[[dict[str, Any], dict[str, Any]], AsyncIterator[dict[str, Any]]]
 """`handle(input, ctx)`: plain dicts in, event dicts out (the wire form of the contract)."""
 
 WORKLOAD = "workload"
 """The default container name: the agent's own container in the pod."""
-NOT_THE_ROOT = frozenset({"/dev/null", "/dev/stdout", "/dev/stderr"})
-"""Paths a container may open for writing on a read-only root."""
-WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC
-PATH_EVENTS = {
-    "os.mkdir": (0,),
-    "os.rmdir": (0,),
-    "os.remove": (0,),
-    "os.rename": (0, 1),
-    "os.replace": (0, 1),
-    "os.symlink": (1,),
-    "os.link": (1,),
-    "os.truncate": (0,),
-    "os.chmod": (0,),
-    "os.chown": (0,),
-    "os.utime": (0,),
-    "sqlite3.connect": (0,),
-}
-"""Audit events that change the file system, and the positions of their path arguments."""
 KEPT_TYPES = (dict, list, set, bytearray, int, float, str, bytes, tuple, collections.deque)
 """Module globals of these types are compared before and after the reused pod's calls."""
 DEFAULT_SEED = 0
@@ -65,18 +49,6 @@ class StatelessError(AssertionError):
     """An agent kept data between calls; the message names the container and what it kept."""
 
 
-@dataclass(frozen=True)
-class Write:
-    """One refused write: the container, the audit event, and the path."""
-
-    container: str
-    event: str
-    path: str
-
-    def __str__(self) -> str:
-        return f"container {self.container!r} wrote {self.path} ({self.event})"
-
-
 class _Slot:
     """The guard that is on, if any. Process-wide, so a write from any thread is seen."""
 
@@ -84,35 +56,11 @@ class _Slot:
     hooked: bool = False
 
 
-def _as_path(value: Any) -> str | None:
-    if isinstance(value, int) or value is None:
-        return None  # a file descriptor: its open was audited already
-    try:
-        path = os.fsdecode(os.fspath(value))
-    except TypeError:
-        return None
-    return str(Path(path).absolute()) if path != ":memory:" else None
-
-
-def _written(event: str, args: tuple[Any, ...]) -> list[str]:
-    """The paths an audit event writes to; `[]` when it writes nothing."""
-    if event == "open":
-        flags = args[2] if len(args) > 2 and isinstance(args[2], int) else 0
-        path = _as_path(args[0]) if flags & WRITE_FLAGS else None
-        return [path] if path else []
-    paths = (_as_path(args[i]) for i in PATH_EVENTS.get(event, ()) if i < len(args))
-    return [path for path in paths if path]
-
-
-def _counts(path: str) -> bool:
-    return path not in NOT_THE_ROOT and "__pycache__" not in Path(path).parts
-
-
 def _audit(event: str, args: tuple[Any, ...]) -> None:
     guard = _Slot.guard
     if guard is None or (event != "open" and event not in PATH_EVENTS):
         return
-    paths = [path for path in _written(event, args) if _counts(path)]
+    paths = [path for path in written(event, args) if counts(path)]
     if paths:
         guard.refuse(event, paths)
 
@@ -147,7 +95,7 @@ class WriteGuard:
         _Slot.guard = None
 
 
-def _disk_error(writes: Sequence[Write]) -> StatelessError:
+def disk_error(writes: Sequence[Write]) -> StatelessError:
     listed = "; ".join(str(write) for write in writes)
     return StatelessError(
         f"stateless check, disk: {listed}. The root file system is read-only and the pod has "
@@ -169,10 +117,10 @@ async def run_call(
             events = [event async for event in handle(input, ctx)]
     except Exception as exc:
         if guard.writes:
-            raise _disk_error(guard.writes) from exc
+            raise disk_error(guard.writes) from exc
         raise
     if guard.writes:
-        raise _disk_error(guard.writes)
+        raise disk_error(guard.writes)
     return events
 
 
