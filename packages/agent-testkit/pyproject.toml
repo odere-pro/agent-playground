@@ -11,6 +11,9 @@ dependencies = [
   "httpx>=0.28",
   "pytest>=8.4",
   "pyyaml>=6.0",
+  # The scripted judge (`evalcases`) and the golden-set schema check.
+  "fake-model-server",
+  "jsonschema>=4.26",
 ]
 
 [build-system]

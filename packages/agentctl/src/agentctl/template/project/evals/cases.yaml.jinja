@@ -1,14 +1,24 @@
-# The golden cases `make eval` runs through the chassis. Each case: `id`, `input`, and `expect`.
-# `expect.status`: the status the run must end with (default: ok or fallback). `expect.contains`:
-# text the JSON of the output must hold. The fake model answers `ok` to every call, so the case
-# below checks the plumbing only. Add cases on what your logic adds.
+# The golden cases `make eval` runs through the chassis, in the platform's golden-set schema
+# (eval_kit.golden; a copy is agent_testkit.evalcases.CASES_SCHEMA). Each case: `id` (g01, g02,
+# ...), `task`, `input` ("simplify: ...", sent as the run's `{"text": ...}`), `expect`
+# (`contains`, optional `banned`, `tool_calls: []`), `rubric` (what the judge checks), `reference`
+# (a model answer), and `label` (the human label of `reference`). Use `task: simplifier` only: the
+# schema's other task, `lookup`, must expect a tool call, and this eval does not script tool calls
+# yet, so a lookup case stops `make eval` with an error.
+#
+# Offline, the fake model is scripted per case: it answers each case's input with its reference.
+# The scripted judge passes an answer that holds a reference labeled `pass` and fails any other,
+# with a score (1 or 0) in reports/eval.json. So a `pass` case checks that your logic keeps the
+# model's answer whole. Add cases on what your logic adds. A run that ends in a status other than
+# ok or fallback fails its case.
+version: 1
 cases:
-  - id: greeting
-    input: {text: hello big world}
-{%- if framework == 'smolagents' %}
-    # The fake model writes no `<code>` block, so this ends in an error (tests/test_contract.py).
-    # Replace it when you give the agent a model that does.
-    expect: {status: error}
-{%- else %}
-    expect: {contains: ok}
-{%- endif %}
+  - id: g01
+    task: simplifier
+    input: "simplify: hello big world"
+    expect:
+      contains: [hello, world]
+      tool_calls: []
+    rubric: The answer keeps every fact of the input in plain words.
+    reference: Hello, big world.
+    label: pass
