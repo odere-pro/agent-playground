@@ -24,6 +24,10 @@ so it is `untrusted` and runs in the `remote` lane only.
   `handle` builds the run's transport itself and awaits its `close()`: stdin EOF and 5 s to exit,
   then SIGTERM and 5 s, then SIGKILL. That runs whether the run is drained, closed early, or
   cancelled. A file the delete cannot remove is logged, never dropped in silence.
+- The CLI's temp files go in `HOME` too: `TMPDIR`, `CLAUDE_CODE_TMPDIR`, and `XDG_RUNTIME_DIR`
+  are one private (0700) folder, `HOME/tmp`. Else the CLI inherits this process's values (on
+  Linux its temp root is `os.tmpdir()`, that is `TMPDIR`) and leaves `cc-socks` and
+  `claude-<uid>/fswatch-probe-*` in the shared `/tmp` after the call.
 - The environment guard: the SDK merges `os.environ` into the CLI's environment, so any
   `ANTHROPIC_*` or `CLAUDE_*` variable in this process would reach the CLI and the shell tool. If
   one is present that this run does not override, `handle` yields `start` then `env_not_clean`
@@ -69,6 +73,11 @@ TOOL_URL_VAR = "CHASSIS_TOOL_URL"
 DEFAULT_TOOL_URL = "http://127.0.0.1:8090/mcp"
 HOME_BASE_VAR = "CLAUDE_AGENT_HOME_BASE"
 DEFAULT_HOME_BASE = "/tmp"
+# The run's temp folder, in HOME. Short on purpose: the CLI gives a child process its temp root
+# only when `<root>/claude-<uid>` fits in 44 bytes (else it uses `/tmp/claude-<uid>`), and
+# `/tmp/claude-run-XXXXXXXX/tmp/claude-10002` is 41.
+TMP_DIR = "tmp"
+TEMP_VARS = ("TMPDIR", "CLAUDE_CODE_TMPDIR", "XDG_RUNTIME_DIR")
 MCP_SERVER = "chassis"
 # suggested: 3 tool rounds and the answer.
 MAX_TURNS = 4
@@ -92,6 +101,7 @@ OVERRIDDEN = frozenset(
         "ANTHROPIC_SMALL_FAST_MODEL",
         "ANTHROPIC_CUSTOM_HEADERS",
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+        "CLAUDE_CODE_TMPDIR",
         HOME_BASE_VAR,
     }
 )
@@ -151,6 +161,7 @@ def build_options(
         "ANTHROPIC_CUSTOM_HEADERS": "\n".join(lines),
         **DISABLE_FLAGS,
         "HOME": str(home),
+        **dict.fromkeys(TEMP_VARS, str(home / TMP_DIR)),
     }
     headers: dict[str, str] = {}
     if traceparent:
@@ -291,6 +302,7 @@ def _options(
 ) -> ClaudeAgentOptions:
     cwd = home / "work"
     cwd.mkdir()
+    (home / TMP_DIR).mkdir(mode=0o700)  # the CLI wants a private runtime dir
     return build_options(ctx, route, token, home, cwd, stderr)
 
 

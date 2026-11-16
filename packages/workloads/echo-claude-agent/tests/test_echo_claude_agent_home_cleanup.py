@@ -37,17 +37,30 @@ def clean_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     for name in list(os.environ):
         if name.startswith(("ANTHROPIC_", "CLAUDE", "CHASSIS_")):
             monkeypatch.delenv(name)
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
     base = tmp_path / "base"
     monkeypatch.setenv("CLAUDE_AGENT_HOME_BASE", str(base))
+    # As the stateless lane check and the pod do: the process's temp folder is the scratch base.
+    monkeypatch.setenv("TMPDIR", str(base))
     return base
+
+
+def cli_env(options: ClaudeAgentOptions) -> dict[str, str]:
+    """The CLI's environment as the SDK builds it: `os.environ`, then `options.env` on top."""
+    return {**os.environ, **options.env}
 
 
 class WritingCLI:
     """A fake CLI process: it writes the files the real CLI writes into `HOME`, recreating
-    folders as the CLI does, until `close()` stops it or `MOMENT_S` passes."""
+    folders as the CLI does, until `close()` stops it or `MOMENT_S` passes. Like the Linux CLI,
+    it also writes its temp files: `cc-socks` under `XDG_RUNTIME_DIR`, else its temp root, and
+    `claude-<uid>/fswatch-probe-*` under its temp root (`CLAUDE_CODE_TMPDIR`, else `TMPDIR`)."""
 
-    def __init__(self, home: Path) -> None:
-        self.home = home
+    def __init__(self, options: ClaudeAgentOptions) -> None:
+        env = cli_env(options)
+        self.home = Path(env["HOME"])
+        self.tmp = Path(env.get("CLAUDE_CODE_TMPDIR") or env["TMPDIR"])
+        self.runtime = Path(env.get("XDG_RUNTIME_DIR") or self.tmp)
         self.stop = asyncio.Event()
         self.task = asyncio.create_task(self._write())
 
@@ -69,13 +82,19 @@ class WritingCLI:
         (projects / "s-1.jsonl").write_text(f"turn {n}\n")
         (logs / "log.txt").write_text(f"line {n}\n")
         (self.home / ".claude.json").write_text("{}")
+        socks = self.runtime / "cc-socks"
+        probe = self.tmp / f"claude-{os.getuid()}" / "fswatch-probe-aBc123"
+        socks.mkdir(parents=True, exist_ok=True)
+        probe.mkdir(parents=True, exist_ok=True)
+        (socks / "4242.sock").write_text("")
+        (probe / "probe").write_text(f"probe {n}\n")
 
 
 class FakeTransport:
     """The `Transport` `handle` builds per run: `close()` returns once the CLI has exited."""
 
     def __init__(self, prompt: Any, options: ClaudeAgentOptions) -> None:
-        self.cli = WritingCLI(Path(options.env["HOME"]))
+        self.cli = WritingCLI(options)
         self.closed = False
 
     async def close(self) -> None:
@@ -89,7 +108,7 @@ def fake_query(*, hang: bool) -> Callable[..., AsyncIterator[Any]]:
 
     def query(*, prompt: Any, options: ClaudeAgentOptions, transport: Any = None) -> Any:
         if transport is None:  # no transport given: the run owns a CLI no one can stop
-            WritingCLI(Path(options.env["HOME"]))
+            WritingCLI(options)
         return messages(hang)
 
     return query
@@ -124,6 +143,10 @@ def call() -> AsyncGenerator[dict[str, Any], None]:
     """`handle` as the async generator it is (its annotation says `AsyncIterator`)."""
     stream: Any = handle({"text": "simplify: Hello.", "data": {}}, CTX)
     return cast(AsyncGenerator[dict[str, Any], None], stream)
+
+
+def mode_of(path: Path) -> int:
+    return path.stat().st_mode & 0o777
 
 
 def left_on_disk(base: Path) -> list[Path]:
@@ -180,6 +203,48 @@ async def test_handle_leaves_no_home_file_when_the_task_is_cancelled_mid_run(
     await after_the_moment()
 
     assert left_on_disk(clean_env) == []
+
+
+async def test_handle_leaves_no_cli_temp_file_when_tmpdir_and_xdg_runtime_dir_are_inherited(
+    monkeypatch: pytest.MonkeyPatch, clean_env: Path
+) -> None:
+    """The process's `TMPDIR` and `XDG_RUNTIME_DIR` are the scratch base (as in the lane check
+    on Linux): the CLI's `cc-socks` and `claude-<uid>/fswatch-probe-*` still go with `HOME`."""
+    runtime = clean_env / "run-user"
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+    install(monkeypatch)
+
+    events = [e async for e in call()]
+    await after_the_moment()
+
+    assert events[-1]["type"] == "end"
+    assert left_on_disk(clean_env) == []
+
+
+async def test_handle_points_every_cli_temp_root_into_the_run_home_when_it_builds_the_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`TMPDIR`, `CLAUDE_CODE_TMPDIR`, and `XDG_RUNTIME_DIR` are one private folder in `HOME`."""
+    seen: list[ClaudeAgentOptions] = []
+
+    def query(*, prompt: Any, options: ClaudeAgentOptions, transport: Any = None) -> Any:
+        seen.append(options)
+        return messages(hang=False)
+
+    monkeypatch.setattr(handle_module, "query_fn", query)
+    monkeypatch.setattr(handle_module, "transport_fn", FakeTransport)
+
+    stream = call()
+    await anext(stream)
+    await anext(stream)  # the run is live, its folders exist
+    env = seen[0].env
+    tmp = Path(env["TMPDIR"])
+    mode = mode_of(tmp)
+    await stream.aclose()
+
+    assert tmp.parent == Path(env["HOME"])
+    assert env["CLAUDE_CODE_TMPDIR"] == env["XDG_RUNTIME_DIR"] == str(tmp)
+    assert mode == 0o700
 
 
 class SlowTransport(FakeTransport):
