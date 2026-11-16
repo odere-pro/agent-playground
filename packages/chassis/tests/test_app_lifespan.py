@@ -5,9 +5,12 @@ exit stops the background tasks, then the pending events, then the ports, in tha
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 
+import httpx
 import pytest
+from chassis.adapters.oidc import OidcAuth
 from chassis.core.handle import echo
 from chassis.fakes import FakeEngine, InMemoryConfig, InMemoryTelemetry, ScriptedModel
 from chassis.fakes.events import InMemoryBus
@@ -184,3 +187,21 @@ async def test_lifespan_stops_in_the_fixed_order_when_it_exits(
     assert app.state.pipeline.on_finished == []
     assert app.state.feedback_events is None
     assert (app.state.ready, app.state.draining) == (False, True)
+
+
+async def test_close_ports_closes_the_oidc_auth_http_client() -> None:
+    """022 H-6: `OidcAuth` holds an httpx client for the JWKS. `close_ports` closes it."""
+    # Arrange
+    auth = OidcAuth(
+        "https://idp.test",
+        "agent",
+        "https://idp.test/jwks",
+        transport=httpx.MockTransport(lambda request: httpx.Response(500)),
+    )
+    bundle = replace(_ports(_CountingEngine(), _CountingModel(), _CountingConfig()), auth=auth)
+
+    # Act
+    await app_module.close_ports(bundle)
+
+    # Assert
+    assert auth._client.is_closed

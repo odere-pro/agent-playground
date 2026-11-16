@@ -1,7 +1,17 @@
-"""The golden cases in `evals/cases.yaml`."""
+"""The golden cases in `evals/cases.yaml`, judged."""
 
+{% if framework == 'smolagents' -%}
+from agent_testkit.evalcases import Case
+{% endif -%}
 from agent_testkit.suites import EvalCases
 
 
 class TestEvalCases(EvalCases):
+{%- if framework == 'smolagents' %}
+    # A CodeAgent ends its run in code: the fake model answers with `final_answer(...)`.
+    @classmethod
+    def model_reply(cls, case: Case) -> str:
+        return f'<code>\nfinal_answer("{case.reference}")\n</code>'
+{%- else %}
     pass
+{%- endif %}

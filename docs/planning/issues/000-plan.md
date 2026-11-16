@@ -142,10 +142,10 @@ Tracked in [001 DEC-1](001-DEC-1-resolve-open-decisions.md). What each one unblo
 | First cloud: AWS or GCP | [038 X-1a](038-X-1a-terraform-first-cloud.md), then [039 X-2](039-X-2-gpu-setup.md) and [116 X-1b](116-X-1b-terraform-second-cloud.md) |
 | Whether the public A2A endpoint ships in version 1. A2A to workloads ships per ADR-001 | [061 H-5](061-H-5-a2a-adapter.md) |
 | Banned-word list and final success-metric targets. Parked with the SLM track, except the `facts_kept` floor for a hosted model | [027 S-1](027-S-1-rewrite-rules.md), [028 S-3](028-S-3-simplifier-metrics.md), [005 G-3](005-G-3-baseline-report.md) |
-| The north star: "good tasks per week" or "agents in production on the chassis" (phase E) | [046 A-5](046-A-5-agent-dashboard.md), [117 X-3](117-X-3-slos-alerts.md), [120 X-7](120-X-7-cost-dashboard.md) |
 | The primary trace view per environment, LangSmith or Langfuse, and where the score goes when both run (phase D; ADR-007 open question 4, ADR-009 open question 5) | [129 CH-10](129-CH-10-langsmith-trace-backend.md), [130 CH-11](130-CH-11-langsmith-feedback-adapter.md), [046 A-5](046-A-5-agent-dashboard.md) |
 | The router's home before a cloud exists. Parked with the SLM track: only the baseline needed it. For the product, the router runs in each deploy stack | [005 G-3](005-G-3-baseline-report.md) (parked) |
 | Decided 2026-11-06: an evaluator outage and a rate-limit store outage both fail open everywhere, as built (P-1, P-2 in the review's [fix plan](../../reviews/2026-11-06-backlog-review/fix-plan.md#user-decisions-2026-11-06)) | Nothing now. [117 X-3](117-X-3-slos-alerts.md) adds an alert for each |
+| Decided: the north star is "agents in production on the chassis" ([001 DEC-1](001-DEC-1-resolve-open-decisions.md), decision 4). It lives in the [product plan](../../plans/2026-11-06-agent-container-product.md#north-star) and [the metrics spec](../../specs/metrics.md#north-star-agents-in-production-on-the-chassis) | Nothing now. [046 A-5](046-A-5-agent-dashboard.md), [117 X-3](117-X-3-slos-alerts.md), and [120 X-7](120-X-7-cost-dashboard.md) use it (phase E) |
 
 ## Changes from the epic
 
