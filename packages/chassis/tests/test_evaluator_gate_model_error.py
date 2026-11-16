@@ -59,6 +59,7 @@ TOKEN_ENV = "H4_TEST_REMOTE_TOKEN"
 
 
 def config(**harness: Any) -> ChassisConfig:
+    """A gated config in `sync` mode, named: the code default is `async` (137 CH-17)."""
     fallback = harness.pop("fallback_route", FALLBACK)
     return ChassisConfig.model_validate(
         {
@@ -68,7 +69,13 @@ def config(**harness: Any) -> ChassisConfig:
             "spec": {
                 "engine": {"connector": "inprocess", "handle": "chassis.core.handle:echo_wire"},
                 "model": {"route": ROUTE, "fallback_route": fallback},
-                "harness": {"evaluator_gate": True, "retries": 2, "threshold": 0.7, **harness},
+                "harness": {
+                    "evaluator_gate": True,
+                    "evaluator_mode": "sync",
+                    "retries": 2,
+                    "threshold": 0.7,
+                    **harness,
+                },
             },
         }
     )
