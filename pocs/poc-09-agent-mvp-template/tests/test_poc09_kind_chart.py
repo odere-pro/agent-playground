@@ -15,8 +15,8 @@ NetworkPolicy (`run.sh smoke`, "netpol denied"). One test per box:
 - The liveness restart: the workload process is stopped (SIGSTOP from the node, the only place a
   container's init process takes it). Its exec probe times out, the kubelet kills it with the
   probe's own grace and starts it again, and the pod is Ready again. The chassis keeps running.
-- The tag rollout: the library's chassis tag is bumped in a copy of the charts (`poc09` to
-  `poc10`, as `test_poc09_chart_tag.py` renders it) and both releases are upgraded with their
+- The tag rollout: the library's chassis tag is bumped in a copy of the charts (`v0.1.0` to
+  `v0.2.0`, as `test_poc09_chart_tag.py` renders it) and both releases are upgraded with their
   values unchanged. Each gets a new pod whose chassis runs the new image id; its workload runs
   the same image id as before, so no service image was built. The releases go back after.
 

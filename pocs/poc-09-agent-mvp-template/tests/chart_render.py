@@ -10,6 +10,7 @@ turns that skip into a failure.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from collections.abc import Iterator
@@ -96,11 +97,24 @@ class Charts:
         return [d for d in yaml.safe_load_all(proc.stdout) if d]
 
 
-def make_charts(base: Path) -> Charts:
+ZERO_DIGEST = "sha256:" + "0" * 64
+"""The library's placeholder until the first push; the chart refuses to render it (139 CH-19)."""
+PUBLISHED_STAND_IN = "sha256:" + "e" * 64
+"""What `make_charts` writes in its copy in place of the placeholder: the publish step's digest."""
+
+
+def make_charts(base: Path, published: bool = True) -> Charts:
+    """The charts in `base`. `published` stands in for scripts/publish_chassis.sh: the copy's
+    all-zero chassis digest becomes PUBLISHED_STAND_IN, so a default render works before the first
+    push. A real digest in the chart is kept as it is."""
     for name in CHARTS:
         shutil.copytree(
             HELM_DIR / name, base / name, ignore=shutil.ignore_patterns("charts", "Chart.lock")
         )
+    if published:
+        values = base / "agent-lib/templates/_values.tpl"
+        text = values.read_text(encoding="utf-8")
+        values.write_text(text.replace(ZERO_DIGEST, PUBLISHED_STAND_IN), encoding="utf-8")
     env = {k: v for k, v in os.environ.items() if k in {"PATH", "HOME", "TMPDIR", "LANG"}} | {
         "HELM_CACHE_HOME": str(base / ".cache"),
         "HELM_CONFIG_HOME": str(base / ".config"),
@@ -118,29 +132,46 @@ def make_charts(base: Path) -> Charts:
     return charts
 
 
-CHASSIS_REPOSITORY = "kind.local/agent-platform/chassis"
+CHASSIS_REPOSITORY = "ghcr.io/odere-pro/agent-chassis"
+"""The library's chassis image: the published one, pinned by digest (139 CH-19)."""
+KIND_CHASSIS_REPOSITORY = "kind.local/agent-platform/chassis"
+"""values-kind.yaml's chassis: the image `kind load` puts in the node, under the library's tag."""
 # The library's chassis tag today and its supported list (`agent-lib.defaults`, `_values.tpl`).
-CURRENT_TAG = "poc09"
-PREVIOUS_TAG = "poc08"
-NEW_TAG = "poc10"
+CURRENT_TAG = "v0.1.0"
+PREVIOUS_TAG = "poc09"
+NEW_TAG = "v0.2.0"
+NEW_DIGEST = "sha256:" + "1" * 64
+"""The digest the publish step writes for NEW_TAG in a bump."""
 
 
-def bump_library(charts: Charts, new: str = NEW_TAG) -> None:
-    """A chassis release (056 CH-7): the tag and its supported list change in the library only.
+def bump_library(charts: Charts, new: str = NEW_TAG, new_digest: str = NEW_DIGEST) -> None:
+    """A chassis release (056 CH-7): the tag, its digest, and the supported list change in the
+    library only.
 
-    `chassis.image.tag` becomes `new`, and the supported list becomes `[new, current]`, so the
-    current tag is the previous one a service may pin. Then the dependencies are built again.
+    `chassis.image.tag` becomes `new`, its digest `new_digest` (139 CH-19: the publish step writes
+    it), and the supported list becomes `[new, current]`, so the current tag is the previous one a
+    service may pin. Then the dependencies are built again.
     """
     path = charts.example.parent / "agent-lib/templates/_values.tpl"
     text = path.read_text(encoding="utf-8")
     tag_line = f"    tag: {CURRENT_TAG}\n"
     supported_line = f"    supportedTags: [{CURRENT_TAG}, {PREVIOUS_TAG}]\n"
+    digest_lines = re.findall(r"^    digest: sha256:[0-9a-f]{64}\n", text, re.M)
     assert text.count(tag_line) == 1 and text.count(supported_line) == 1, "the tag moved"
+    assert len(digest_lines) == 1, "the digest moved"
     text = text.replace(tag_line, f"    tag: {new}\n")
+    text = text.replace(digest_lines[0], f"    digest: {new_digest}\n")
     text = text.replace(supported_line, f"    supportedTags: [{new}, {CURRENT_TAG}]\n")
     path.write_text(text, encoding="utf-8")
     for chart in (charts.example, charts.admission):
         charts.helm("dependency", "update", "--skip-refresh", str(chart))
+
+
+def library_digest(charts: Charts) -> str:
+    """The chassis digest in a chart copy's library: the publish step's (or its stand-in)."""
+    text = (charts.example.parent / "agent-lib/templates/_values.tpl").read_text(encoding="utf-8")
+    (digest,) = re.findall(r"^    digest: (sha256:[0-9a-f]{64})$", text, re.M)
+    return str(digest)
 
 
 def values_file(tmp_path: Path, values: dict[str, Any]) -> Path:

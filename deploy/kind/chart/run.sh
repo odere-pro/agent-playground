@@ -33,7 +33,8 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
 BUILD_ROOT=${BUILD_ROOT:-$ROOT}
 URL=${CHART_KIND_URL:-http://127.0.0.1:18082}
-CHASSIS_IMAGE=kind.local/agent-platform/chassis:poc09
+# The library chart's chassis tag; values-kind.yaml names the kind.local repository (139 CH-19).
+CHASSIS_IMAGE=kind.local/agent-platform/chassis:v0.1.0
 ECHO_IMAGE=kind.local/agent-platform/echo-python:poc09
 H14_IMAGE=kind.local/agent-platform/h14-squat:poc09
 IMAGES=("$CHASSIS_IMAGE" "$ECHO_IMAGE" "$H14_IMAGE")

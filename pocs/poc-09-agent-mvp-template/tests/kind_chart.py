@@ -7,8 +7,10 @@ services that include the library chart. They run in `poc05-chart`, a namespace 
 admission rules: whether the chart's defaults pass admission is 026 CH-4.
 
 The images are built and loaded by `deploy/kind/poc05/run.sh` (`build`, `load`). The chart's own
-tags, `poc09`, are this checkout's `poc05` builds under a second tag. `poc10` is the next chassis
-release: the same build with one label more, so its image id differs.
+tags are this checkout's `poc05` builds under a second tag: the chassis under the library's tag
+(`v0.1.0`) in the `kind.local` repository `values-kind.yaml` names (139 CH-19), the workload under
+`poc09`. `v0.2.0` is the next chassis release: the same build with one label more, so its image
+id differs.
 
 The chassis gets one stand-in credential, `chart-drill-token`, made by `seed.sh base` through a
 pipe, as an env variable and as a mounted file. Nothing reads its value; the tests check names
@@ -19,16 +21,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from chart_render import CHASSIS_REPOSITORY as CHASSIS_REPOSITORY
+from chart_render import CHASSIS_REPOSITORY as PUBLISHED_REPOSITORY
 from chart_render import CURRENT_TAG as CURRENT_TAG
+from chart_render import KIND_CHASSIS_REPOSITORY as CHASSIS_REPOSITORY
 from chart_render import NEW_TAG
 
+LIBRARY_REPOSITORY = PUBLISHED_REPOSITORY
 CONTEXT = "kind-poc05"
 NAMESPACE = "poc05-chart"
 RELEASES = ("chart-a", "chart-b")
 REGISTRY = "kind.local/agent-platform"
 # The library's chassis tag today (`agent-lib.defaults`), and the release a bump moves to
-# (`chart_render.bump_library`).
+# (`chart_render.bump_library`). On kind, CHASSIS_REPOSITORY is values-kind.yaml's, loaded into
+# the node and pinned by tag; LIBRARY_REPOSITORY is the published default it replaces.
 NEXT_TAG = NEW_TAG
 WORKLOAD_IMAGE = f"{REGISTRY}/echo-python:poc09"
 # The images run.sh puts on the node for the drill, besides its own `poc05` builds.

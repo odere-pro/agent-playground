@@ -47,6 +47,27 @@ the merged values; prints nothing; fails the render with an "agent-lib:" message
 {{- end -}}
 {{- end -}}
 
+{{/*
+The library's digest pins the library's repository and tag only (139 CH-19). A pod that runs
+another chassis.image.tag or .repository under that digest would run the library's image under
+another name. The tag in effect is the service's pin or its ring's ring.chassisTag (056 CH-7), so
+this runs after agent-lib.ringTag and agent-lib.validate (an unsupported tag is named as such). Such a service must set chassis.image.digest itself: the other
+image's digest, or "" to pin by tag (kind, where the image is loaded into the node). Takes
+(dict "v" <merged values, ring applied> "user" <service values> "defaults" <library defaults>).
+*/}}
+{{- define "agent-lib.validateImagePin" -}}
+{{- $lib := .defaults.chassis.image -}}
+{{- $img := .v.chassis.image -}}
+{{- $own := dig "chassis" "image" (dict) .user -}}
+{{- if and $lib.digest (not (hasKey $own "digest")) -}}
+{{- range $key := list "repository" "tag" -}}
+{{- if ne (toString (get $img $key)) (toString (get $lib $key)) -}}
+{{- fail (printf "agent-lib: chassis.image.%s %s (the service's value or its ring's ring.chassisTag) is not the library's %s, and the library's digest pins %s:%s only; set chassis.image.digest too (that image's digest, or \"\" to pin by tag)" $key (toString (get $img $key)) (toString (get $lib $key)) $lib.repository (toString $lib.tag)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{/* A NetworkPolicy peer named by labels: no ipBlock, a namespace and a pod, neither empty. Takes (dict "peer" <peer> "where" <values path>). */}}
 {{- define "agent-lib.validatePeer" -}}
 {{- $p := .peer -}}
@@ -169,6 +190,9 @@ and argparse accepts abbreviations, so a deny-list cannot hold. */ -}}
 {{- end -}}
 {{- if and $img.digest (not (regexMatch "^sha256:[a-f0-9]{64}$" $img.digest)) -}}
 {{- fail (printf "agent-lib: chassis.image.digest %s is not sha256:<64 hex>" $img.digest) -}}
+{{- end -}}
+{{- if eq (toString $img.digest) (printf "sha256:%s" (repeat 64 "0")) -}}
+{{- fail "agent-lib: chassis.image.digest is the all-zero placeholder: no chassis is published yet (scripts/publish_chassis.sh publish). On kind, set the kind.local repository and digest \"\" (values-kind.yaml)" -}}
 {{- end -}}
 {{- if not (kindIs "map" $v.chassis.config) -}}
 {{- fail "agent-lib: chassis.config must be the chassis config document (a map)" -}}

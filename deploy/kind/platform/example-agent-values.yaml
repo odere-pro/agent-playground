@@ -1,0 +1,37 @@
+# example-agent on the reference stack (139 CH-19), applied after
+# deploy/helm/example-agent/values-kind.yaml. Only what differs from it: the chassis exports its
+# traces to the OTel Collector in poc05-platform, and may reach it.
+#
+# The model, tools, and state stay the `fake` profile's, so the smoke test needs no key.
+# suggested: a model call through LiteLLM (139 box 3) is the next values change: `model: litellm`,
+# a virtual key from seed.sh in chassis.secretEnv, and egress to LiteLLM on 4000.
+#
+# No secret value here. OTEL_EXPORTER_OTLP_HEADERS ("Authorization=Bearer <token>") is the Secret
+# `example-agent-otlp`, made by run.sh through a pipe; only the chassis mounts it.
+chassis:
+  env:
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: http://otel-collector.poc05-platform.svc.cluster.local:4318
+    - name: OTEL_SERVICE_NAME
+      value: example-agent
+  secretEnv:
+    - name: OTEL_EXPORTER_OTLP_HEADERS
+      secretName: example-agent-otlp  # pragma: allowlist secret (a Secret name, no value)
+      key: OTEL_EXPORTER_OTLP_HEADERS
+  config:
+    spec:
+      adapters:
+        telemetry: otel
+
+networkPolicy:
+  chassisEgress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: poc05-platform
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: otel-collector
+      ports:
+        - port: 4318
+          protocol: TCP
