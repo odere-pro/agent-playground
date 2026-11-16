@@ -3,8 +3,9 @@ name: poc08-stack
 # PoC-8 stack drill: Prometheus scrapes a real chassis and Grafana loads the generated dashboards
 # (scope item "Observability" of pocs/poc-08-cross-cutting-build/README.md).
 #
-# What it runs: `deploy/compose/poc08/stack.sh up` (three chassis built from
-# packages/chassis/Dockerfile, the fake model server, Valkey, Prometheus, Grafana), `stack.sh wait`
+# What it runs: `deploy/compose/poc08/stack.sh up` (five chassis built from
+# packages/chassis/Dockerfile: three for this drill and the latency, two for the 022 H-6
+# rate-limit drill, which this workflow does not run; the fake model server, Valkey, Prometheus, Grafana), `stack.sh wait`
 # (host-side polls), `stack.sh digests` (image digests into the log, to pin them), then the
 # `network` drill test_poc08_stack_metrics.py (every panel query of deploy/dashboards/echo.json on
 # the real Prometheus, Grafana's dashboards and datasource), then the latency measurement

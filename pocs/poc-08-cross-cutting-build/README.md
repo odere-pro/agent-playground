@@ -60,14 +60,20 @@ make redteam                                                 # the red-team set,
 
 CI runs them in `.github/workflows/poc08-evals.yml`, on pull requests and pushes to `main` that touch what the gate is made of. Since 2026-11-08 that is one job, `evals`, with a log group per engine; before, it was one job per engine (the paths are in the workflow).
 
-The two stack drills (Docker, localhost only, no key from outside; each `stack.sh` makes its own credentials into a git-ignored file and never prints them; verbs `up|wait|down|digests|env|logs`):
+The stack drills (Docker, localhost only, no key from outside; each `stack.sh` makes its own credentials into a git-ignored file and never prints them; verbs `up|wait|down|digests|env|logs`):
 
 ```bash
-# Prometheus and Grafana on three chassis, then the p50 and p95 of the PoC-8 stages
+# Prometheus and Grafana on the three drill chassis, then the p50 and p95 of the PoC-8 stages
 deploy/compose/poc08/stack.sh up && deploy/compose/poc08/stack.sh wait
 export "$(deploy/compose/poc08/stack.sh env)"
 COMPOSE_STACK=1 uv run pytest -m network -v pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_metrics.py
 uv run python pocs/poc-08-cross-cutting-build/tests/poc08_stack_latency.py --out artifacts/poc08-stack/latency.json
+deploy/compose/poc08/stack.sh down
+
+# 022 H-6: one rate-limit bucket across two chassis (chassis-rl-a, chassis-rl-b) on one Valkey
+deploy/compose/poc08/stack.sh up && deploy/compose/poc08/stack.sh wait
+export "$(deploy/compose/poc08/stack.sh env)"
+COMPOSE_STACK=1 uv run pytest -m network -v -s pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_ratelimit.py
 deploy/compose/poc08/stack.sh down
 
 # A real LiteLLM (Presidio hook, OTel callback) in the trace, Jaeger behind the Collector
@@ -85,7 +91,7 @@ CI runs them by hand (`workflow_dispatch`, since 2026-11-08) in `.github/workflo
 
 ## Notes and decisions
 
-Dated files in `notes/`: the [red team](notes/2026-10-29-redteam.md), the [eval gate](notes/2026-10-29-eval-gate.md), and the [stack drills](notes/2026-10-30-stack-drills.md). The contract is [contract v7](../../docs/contracts/contract-v7.md); the build notes are in ADR-007 and ADR-008. [notes/backlog-changes.md](notes/backlog-changes.md) lists what the backlog should change and the open questions for the user.
+Dated files in `notes/`: the [red team](notes/2026-10-29-redteam.md), the [eval gate](notes/2026-10-29-eval-gate.md), the [stack drills](notes/2026-10-30-stack-drills.md), and the [rate limit across two chassis](notes/2026-11-16-022-rate-limit-two-chassis.md) (022 H-6, 3 passed on 2026-11-16). The contract is [contract v7](../../docs/contracts/contract-v7.md); the build notes are in ADR-007 and ADR-008. [notes/backlog-changes.md](notes/backlog-changes.md) lists what the backlog should change and the open questions for the user.
 
 What waits, in one place:
 
