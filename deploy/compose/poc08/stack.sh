@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# PoC-8 stack: three chassis, the fake model server, Valkey, Prometheus, Grafana.
+# PoC-8 stack: five chassis (three for the drill and the latency, two for the 022 H-6 rate
+# limit drill), the fake model server, Valkey, Prometheus, Grafana.
 # Usage: stack.sh up|wait|down|digests|env|logs
 # Every credential is generated into .env.poc08 (mode 600, git-ignored) and never printed:
-# the run token of the static auth adapter, the Valkey password, the Grafana admin password.
+# the run token of the static auth adapter, the second caller's token (the rate-limit drill),
+# the Valkey password, the Grafana admin password.
 # `up` builds our two images, then starts the project `poc08`. `wait` polls every endpoint from
 # the host: the Prometheus and Grafana images carry no healthcheck here. `logs` prints log tails
 # with every env file value masked, for CI on failure. `down` removes project poc08 only.
@@ -11,15 +13,20 @@ here="$(cd "$(dirname "$0")" && pwd)"
 env_file="$here/.env.poc08"
 compose=(docker compose -p poc08 --env-file "$env_file" -f "$here/docker-compose.yaml")
 
+# Keeps an existing env file and appends each key it lacks, so a file from before a new key was
+# added still satisfies every `${VAR:?}` (`down` included). A new file is mode 600.
 make_env() {
-  [[ -f "$env_file" ]] && return 0
   (
     umask 077
-    {
-      echo "POC08_RUN_TOKEN=poc08-$(openssl rand -hex 24)"
-      echo "VALKEY_PASSWORD=$(openssl rand -hex 24)"
-      echo "GRAFANA_ADMIN_PASSWORD=$(openssl rand -hex 24)"
-    } >"$env_file"
+    touch "$env_file"
+    grep -q '^POC08_RUN_TOKEN=' "$env_file" ||
+      echo "POC08_RUN_TOKEN=poc08-$(openssl rand -hex 24)" >>"$env_file"
+    grep -q '^POC08_OTHER_TOKEN=' "$env_file" ||
+      echo "POC08_OTHER_TOKEN=poc08-$(openssl rand -hex 24)" >>"$env_file"
+    grep -q '^VALKEY_PASSWORD=' "$env_file" ||
+      echo "VALKEY_PASSWORD=$(openssl rand -hex 24)" >>"$env_file"
+    grep -q '^GRAFANA_ADMIN_PASSWORD=' "$env_file" ||
+      echo "GRAFANA_ADMIN_PASSWORD=$(openssl rand -hex 24)" >>"$env_file"
   )
 }
 
@@ -31,6 +38,8 @@ wait_ready() {
     http://127.0.0.1:18088/ready \
     http://127.0.0.1:18089/ready \
     http://127.0.0.1:18090/ready \
+    http://127.0.0.1:18091/ready \
+    http://127.0.0.1:18092/ready \
     http://127.0.0.1:19090/-/ready \
     http://127.0.0.1:13000/api/health; do
     until curl -fsS -o /dev/null -m 5 "$url" 2>/dev/null; do

@@ -1,0 +1,39 @@
+# 022 H-6, "the limit holds across two pods" (services `chassis-rl-a` and `chassis-rl-b`). Both
+# chassis run this file, with one caller map and one Valkey, so one caller has one bucket key
+# (`ratelimit:echo-ratelimit:<subject hash>`) on both. The drill:
+# pocs/poc-08-cross-cutting-build/tests/test_poc08_stack_ratelimit.py.
+#   - its own agent name, so the drill's other tests never spend this bucket;
+#   - only auth and the rate limit on: no guardrail, no gate, no feedback;
+#   - fail_closed: a 200 proves Valkey answered the bucket check.
+profile: local
+agent:
+  name: echo-ratelimit
+  version: 0.0.1
+spec:
+  adapters:
+    model: litellm
+    config: memory
+    telemetry: memory
+    tools: fake
+    state: valkey
+    events: none
+    auth: static
+    guardrails: none
+    evaluator: none
+    feedback: none
+  engine:
+    connector: inprocess
+    handle: echo_python:handle
+  model:
+    route: big-default
+  prompt:
+    version: simplifier-v1
+  limits:
+    rate_limit: true
+    # suggested: a bucket of 6 that refills one token a minute, so no refill changes the count
+    # inside the drill's 30 s window.
+    requests_per_minute: 1
+    request_burst: 6
+    rate_limit_on_unavailable: fail_closed
+  governance:
+    risk_class: minimal
