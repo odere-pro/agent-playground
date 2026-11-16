@@ -247,17 +247,49 @@ def test_the_seed_writer_leaves_no_temp_file_when_jq_fails(tmp_path: Path) -> No
     assert list(folder.iterdir()) == []
 
 
-@pytest.mark.parametrize("seed", SEEDS, ids=["poc05", "poc06"])
-def test_each_seed_writes_the_manifest_right_after_it_stores_the_key(seed: Path) -> None:
-    """Both seed scripts call `write_key_manifest` with the key's alias and its `models` list:
-    after `put_secret` for a new key, and for a key whose Secret is already there."""
-    text = seed.read_text()
+def _body(text: str, name: str) -> str:
+    """The body of the bash function NAME: from `NAME() {` to its closing `}` at column 0."""
+    start = text.index(f"\n{name}() {{\n")
+    return text[start : text.index("\n}\n", start)]
 
-    stored = text.index('put_secret "$AGENTS" "chassis-$svc-litellm" LITELLM_API_KEY')
-    written = text.index('write_key_manifest "$KEY_MANIFESTS" "svc-$svc" "$MODEL"')
-    assert stored < written
+
+# Per seed: the namespace and model variables its make_keys loop uses. poc05 loops over
+# all_services entries (026 CH-4), so the names are the loop's own; poc06 uses the globals.
+STORES = (
+    pytest.param(SEEDS[0], "$ns", "$model", id="poc05"),
+    pytest.param(SEEDS[1], "$AGENTS", "$MODEL", id="poc06"),
+)
+
+
+@pytest.mark.parametrize(("seed", "ns", "model"), STORES)
+def test_each_seed_writes_the_manifest_right_after_it_stores_the_key(
+    seed: Path, ns: str, model: str
+) -> None:
+    """Both seed scripts call `write_key_manifest` with the key's alias and its `models` list:
+    after `put_secret` for a new key, and for a key whose Secret is already there. A rekey
+    (poc05, 026 CH-4) mints through the same make_keys, so it writes a fresh manifest too."""
+    text = seed.read_text()
+    store = f'put_secret "{ns}" "chassis-$svc-litellm" LITELLM_API_KEY'
+    write = f'write_key_manifest "$KEY_MANIFESTS" "svc-$svc" "{model}"'
     assert "KEY_MANIFESTS=${KEY_MANIFEST_DIR:-$HERE/" in text
-    # A key whose Secret is already there still gets its manifest, from $MODEL, not the Secret.
-    seed_keys = text[text.index("seed_keys() {") :]
-    kept = seed_keys.index('if secret_exists "$AGENTS" "chassis-$svc-litellm"; then')
-    assert seed_keys.index('write_key_manifest "$KEY_MANIFESTS" "svc-$svc" "$MODEL"') > kept
+
+    # The key is stored in one place only, so no mint path skips the manifest.
+    assert text.count("LITELLM_API_KEY\n") == text.count(store + "\n") == 1
+    minted = _body(text, "make_keys")
+    stored = minted.index(store)
+    written = minted.index(write)
+    assert stored < written < minted.index("\n  done", stored), "same loop pass, after the store"
+    # A key whose Secret is already there still gets its manifest, from the model, not the Secret.
+    seed_keys = _body(text, "seed_keys")
+    kept = seed_keys.index(f'secret_exists "{ns}" "chassis-$svc-litellm"; then')
+    assert seed_keys.index(write) > kept
+    assert 'make_keys "${pending[@]}"' in seed_keys
+
+
+def test_the_poc05_rekey_mints_through_make_keys_with_the_platform_model() -> None:
+    """026 CH-4: `rekey` overwrites the Secret through make_keys, so the manifest follows the new
+    key; every PoC-5 service's model is $MODEL, the model its manifest lists."""
+    text = SEEDS[0].read_text()
+
+    assert 'make_keys "$1"' in _body(text, "rekey_one")
+    assert '"$AGENTS" "$svc" "$MODEL" "$fake" "$code"' in _body(text, "all_services")
